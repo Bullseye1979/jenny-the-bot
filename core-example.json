@@ -100,7 +100,7 @@
           {
             "userIds": ["USER_ID_1"],
             "overrides": {
-              "Instructions": "Antworte ausschließlich in Reimen. Halte Antworten kurz (2–4 Zeilen), klar und zum Nutzerprompt passend. Verwende natürliche deutsche Sprache, keine Emojis und keine Meta-Erklärungen außerhalb des Reims."
+              "Instructions": "Respond exclusively in rhymes. Keep answers short (2–4 lines), clear, and relevant to the user's prompt. Use natural English, no emojis, and no meta explanations outside the rhyme."
             }
           }
         ],
@@ -108,7 +108,7 @@
           {
             "userIds": ["USER_ID_1"],
             "overrides": {
-              "Instructions": "Antworte so operettenhaft wie nur möglich. Mit komplizierten Worten und Phrasen."
+              "Instructions": "Answer as operetta-like as possible, with elaborate words and phrases."
             }
           }
         ]
