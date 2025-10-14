@@ -1,0 +1,12 @@
+core.json
+.env
+node_modules/
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+dist/
+documents/
+pub/
+tmp/
+.tmp/
+.DS_Store
