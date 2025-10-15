@@ -265,7 +265,8 @@ function getSystemContent(wo) {
   ].filter(Boolean).join("\n\n");
   const policy = [
     "Policy:",
-    "- Do NOT run tools unless they are necessary to answer the payload."
+    "- Do NOT run tools unless they are necessary to answer the payload.",
+    "- Only answer the latest request. The history and [context] are just for reference."
   ].join("\n");
   const out = [policy, base || "You are a helpful assistant."].join("\n\n");
   return out;
