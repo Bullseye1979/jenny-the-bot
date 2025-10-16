@@ -1,56 +1,38 @@
 /***************************************************************
-/* filename: "getVeo3Video.js"                                 *
+/* filename: "geMakeVideoFromText.js"                          *
 /* Version 1.0                                                 *
-/* Purpose: Generate short videos via Replicate (prepaid PAYG),*
-/*          download to ./pub/documents and return public URL. *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
+/* Purpose: Create a brand-new short video purely from text    *
+/*          prompt via Replicate (Veo), save under ./pub,      *
+/*          and return a public URL.                           *
 /***************************************************************/
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MODULE_NAME = "getVeo3Video";
+const MODULE_NAME = "geMakeVideoFromText";
 
 /***************************************************************
-/* getEnsureDir (absPath)                                      *
+/* utils                                                       *
 /***************************************************************/
 function getEnsureDir(absPath) {
   if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
 }
-
-/***************************************************************
-/* getRandSuffix ()                                            *
-/***************************************************************/
 function getRandSuffix() {
   const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
   return n.slice(-6);
 }
-
-/***************************************************************
-/* getGuessExtFromCtype (ctype)                                *
-/***************************************************************/
 function getGuessExtFromCtype(ctype) {
   const c = String(ctype || "").toLowerCase();
   if (c.includes("webm")) return ".webm";
   if (c.includes("quicktime") || c.includes("mov")) return ".mov";
   return ".mp4";
 }
-
-/***************************************************************
-/* getBuildPublicUrl (base, filename)                          *
-/***************************************************************/
 function getBuildPublicUrl(base, filename) {
   if (!base) return `/documents/${filename}`;
   const trimmed = String(base).replace(/\/+$/, "");
   return `${trimmed}/documents/${filename}`;
 }
-
-/***************************************************************
-/* getSaveBuffer (buf, dirAbs, ext)                            *
-/***************************************************************/
 function getSaveBuffer(buf, dirAbs, ext = ".mp4") {
   getEnsureDir(dirAbs);
   const filename = `video_${Date.now()}_${getRandSuffix()}${ext}`;
@@ -58,10 +40,6 @@ function getSaveBuffer(buf, dirAbs, ext = ".mp4") {
   fs.writeFileSync(abs, buf);
   return { filename, abs };
 }
-
-/***************************************************************
-/* getDownloadToBuffer (url)                                   *
-/***************************************************************/
 async function getDownloadToBuffer(url) {
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -71,22 +49,26 @@ async function getDownloadToBuffer(url) {
 }
 
 /***************************************************************
-/* getStrictToolConfig (wo)                                    *
+/* config from workingObject (video*)                          *
 /***************************************************************/
-function getStrictToolConfig(wo) {
-  const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
-  const apiToken = String(cfg.apiToken || "").trim();
-  const baseUrl = String(cfg.baseUrl || "https://api.replicate.com/v1");
-  const model = String(cfg.model || "google/veo-3-fast");
-  const pollIntervalMs = Number.isFinite(cfg.pollIntervalMs) ? cfg.pollIntervalMs : 5000;
-  const timeoutMs = Number.isFinite(cfg.timeoutMs) ? cfg.timeoutMs : 600000;
-  const public_base_url = typeof cfg.public_base_url === "string" ? cfg.public_base_url : null;
-  if (!apiToken) throw new Error(`[${MODULE_NAME}] missing toolsconfig.${MODULE_NAME}.apiToken`);
+function getStrictToolConfigFromWO(wo = {}) {
+  const apiToken = String(wo.videoApiToken || "").trim();
+  if (!apiToken) throw new Error(`[${MODULE_NAME}] missing workingObject.videoApiToken`);
+
+  const baseUrl = String(wo.videoBaseUrl || "https://api.replicate.com/v1").trim();
+  const model = String(wo.videoModel || "google/veo-3-fast").trim();
+
+  const pollIntervalMs = Number.isFinite(wo.videoPollIntervalMs) ? wo.videoPollIntervalMs : 5000;
+  const timeoutMs = Number.isFinite(wo.videoTimeoutMs) ? wo.videoTimeoutMs : 600000;
+
+  const public_base_url =
+    typeof wo.videoPublicBaseUrl === "string" ? wo.videoPublicBaseUrl.replace(/\/+$/, "") : null;
+
   return { apiToken, baseUrl, model, pollIntervalMs, timeoutMs, public_base_url };
 }
 
 /***************************************************************
-/* getCreatePrediction (cfg, input, model)                     *
+/* replicate helpers                                           *
 /***************************************************************/
 async function getCreatePrediction(cfg, input, model) {
   const [owner, name] = String(model).split("/");
@@ -103,10 +85,6 @@ async function getCreatePrediction(cfg, input, model) {
   if (!id) throw new Error("start failed: missing prediction id");
   return id;
 }
-
-/***************************************************************
-/* getWaitPrediction (cfg, id)                                 *
-/***************************************************************/
 async function getWaitPrediction(cfg, id) {
   const started = Date.now();
   for (;;) {
@@ -123,10 +101,6 @@ async function getWaitPrediction(cfg, id) {
     await new Promise(r => setTimeout(r, cfg.pollIntervalMs));
   }
 }
-
-/***************************************************************
-/* getExtractFirstOutputUrl (data)                             *
-/***************************************************************/
 function getExtractFirstOutputUrl(data) {
   const out = data?.output;
   if (!out) return null;
@@ -137,32 +111,15 @@ function getExtractFirstOutputUrl(data) {
 }
 
 /***************************************************************
-/* validateImageUrl (imageURL)                                 *
+/* input-building (T2V only)                                   *
 /***************************************************************/
-function validateImageUrl(u) {
-  const s = String(u || "").trim();
-  if (!s) return null;
-  if (!/^https?:\/\//i.test(s)) return null;
-  return s;
-}
-
-/***************************************************************
-/* buildInput(prompt, imageUrl)                                *
-/***************************************************************/
-function buildInput(prompt, imageUrl) {
+function buildInput(prompt) {
   const p = String(prompt || "");
-  // imageURL ist jetzt verpflichtend; wir setzen immer init-image Felder
-  return {
-    prompt: p,
-    text_prompt: p,
-    image: imageUrl,
-    image_url: imageUrl,
-    init_image: imageUrl
-  };
+  return { prompt: p, text_prompt: p };
 }
 
 /***************************************************************
-/* runSinglePrediction({ cfg, model, input })                  *
+/* single prediction                                           *
 /***************************************************************/
 async function runSinglePrediction({ cfg, model, input }) {
   let predictionId;
@@ -195,22 +152,17 @@ async function runSinglePrediction({ cfg, model, input }) {
 }
 
 /***************************************************************
-/* getInvoke (args, coreData)                                  *
+/* invoke                                                      *
 /***************************************************************/
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
-  const cfg = getStrictToolConfig(wo);
+  const cfg = getStrictToolConfigFromWO(wo);
 
   const prompt = String(args?.prompt ?? "").trim();
   if (!prompt) return { ok: false, error: "Missing prompt" };
 
-  const imageURL = validateImageUrl(args?.imageURL);
-  if (!imageURL) return { ok: false, error: `[${MODULE_NAME}] Missing or invalid 'imageURL' (must be http/https).` };
-
-  const model = cfg.model;
-  const input = buildInput(prompt, imageURL);
-
-  const res = await runSinglePrediction({ cfg, model, input });
+  const input = buildInput(prompt);
+  const res = await runSinglePrediction({ cfg, model: cfg.model, input });
   if (res.ok) res.input = input;
   return res;
 }
@@ -222,14 +174,13 @@ export default {
     function: {
       name: MODULE_NAME,
       description:
-        "Generate a short video by transforming a single reference image with the given prompt. Requires args.imageURL (http/https).",
+        "Create a brand-new short video from text only using Replicate Veo. Do not use this when asked to animate or transform an existing picture. Required: prompt. Do NOT provide imageURL for this tool.",
       parameters: {
         type: "object",
         properties: {
-          prompt: { type: "string", description: "Text prompt describing the transformation you want." },
-          imageURL: { type: "string", format: "uri", description: "Public image URL (http/https) to animate/transform." }
+          prompt: { type: "string", description: "Describe the video you want to generate from scratch." }
         },
-        required: ["prompt", "imageURL"],
+        required: ["prompt"],
         additionalProperties: false
       }
     }

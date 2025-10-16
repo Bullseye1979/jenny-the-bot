@@ -12,6 +12,19 @@ import { getContext, setContext } from "../core/context.js";
 
 const MODULE_NAME = "core-ai";
 
+/* ===== Logging helpers ===== */
+const ARG_PREVIEW_MAX = 400;
+const RESULT_PREVIEW_MAX = 400;
+
+function toJsonSafe(v) {
+  try { return typeof v === "string" ? v : JSON.stringify(v); }
+  catch { return String(v); }
+}
+function preview(str, max = 400) {
+  const s = String(str ?? "");
+  return s.length > max ? s.slice(0, max) + " …[truncated]" : s;
+}
+
 /***************************************************************
 /* functionSignature: getNum (value, defaultValue)             *
 /* Returns a finite number or the provided default             *
@@ -236,20 +249,78 @@ function getToolDefs(toolModules) {
 /***************************************************************
 /* functionSignature: getExecToolCall (toolModules, call, data)*
 /* Executes a single tool call and returns a tool message      *
+/*  --> With detailed logging                                  *
 /***************************************************************/
 async function getExecToolCall(toolModules, toolCall, coreData) {
+  const wo = coreData?.workingObject || {};
   const name = toolCall?.function?.name || toolCall?.name;
   const argsRaw = toolCall?.function?.arguments ?? toolCall?.arguments ?? "{}";
   const args = typeof argsRaw === "string" ? getTryParseJSON(argsRaw, {}) : (argsRaw || {});
   const tool = toolModules.find(t => (t.definition?.function?.name || t.name) === name);
+
+  const startTs = Date.now();
+  wo.logging?.push({
+    timestamp: new Date().toISOString(),
+    severity: "info",
+    module: MODULE_NAME,
+    exitStatus: "started",
+    message: `Tool call start`,
+    details: {
+      tool_call_id: toolCall?.id || null,
+      tool: name || null,
+      args_preview: preview(toJsonSafe(args), ARG_PREVIEW_MAX)
+    }
+  });
+
   if (!tool) {
-    return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: `Tool "${name}" not found` }) };
+    const msg = { error: `Tool "${name}" not found` };
+    wo.logging?.push({
+      timestamp: new Date().toISOString(),
+      severity: "error",
+      module: MODULE_NAME,
+      exitStatus: "failed",
+      message: `Tool call failed (not found)`,
+      details: {
+        tool_call_id: toolCall?.id || null,
+        tool: name || null
+      }
+    });
+    return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
+
   try {
     const result = await tool.invoke(args, coreData);
+    const durationMs = Date.now() - startTs;
+    wo.logging?.push({
+      timestamp: new Date().toISOString(),
+      severity: "info",
+      module: MODULE_NAME,
+      exitStatus: "success",
+      message: `Tool call success`,
+      details: {
+        tool_call_id: toolCall?.id || null,
+        tool: name,
+        duration_ms: durationMs,
+        result_preview: preview(toJsonSafe(result), RESULT_PREVIEW_MAX)
+      }
+    });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
+    const durationMs = Date.now() - startTs;
+    wo.logging?.push({
+      timestamp: new Date().toISOString(),
+      severity: "error",
+      module: MODULE_NAME,
+      exitStatus: "failed",
+      message: `Tool call error`,
+      details: {
+        tool_call_id: toolCall?.id || null,
+        tool: name,
+        duration_ms: durationMs,
+        error: String(e?.message || e)
+      }
+    });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
   }
 }
@@ -317,6 +388,7 @@ export default async function getCoreAi(coreData) {
   const toolDefs = kiCfg.exposeTools ? getToolDefs(toolModules) : [];
   const persistQueue = [];
   let finalText = "";
+
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
@@ -352,6 +424,7 @@ export default async function getCoreAi(coreData) {
       const finish = choice?.finish_reason;
       const msg = choice?.message || {};
       const toolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
+
       const assistantMsg = { role: "assistant", content: typeof msg.content === "string" ? msg.content : "" };
       if (toolCalls && toolCalls.length) {
         assistantMsg.tool_calls = toolCalls.map(tc => ({
@@ -364,21 +437,38 @@ export default async function getCoreAi(coreData) {
               : (tc?.function?.arguments ? JSON.stringify(tc.function.arguments) : "{}")
           }
         }));
+
+        // Sammel-Log für geplante Toolcalls der Runde
+        wo.logging.push({
+          timestamp: new Date().toISOString(),
+          severity: "info",
+          module: MODULE_NAME,
+          exitStatus: "success",
+          message: `Assistant requested tool call(s): ${toolCalls.map(t => t?.function?.name).filter(Boolean).join(", ") || "(unknown)"}`,
+          details: {
+            count: toolCalls.length,
+            ids: toolCalls.map(t => t?.id).filter(Boolean)
+          }
+        });
       }
       messages.push(assistantMsg);
       persistQueue.push(assistantMsg);
+
       if (toolCalls && toolCalls.length && toolModules.length) {
         for (const tc of toolCalls) {
           const toolMsg = await getExecToolCall(toolModules, tc, coreData);
           messages.push(toolMsg);
           persistQueue.push(toolMsg);
         }
+        // Nach Tools eine weitere Modell-Runde zulassen
         continue;
       }
+
       if (finish === "length") {
         messages.push({ role: "user", content: "continue" });
         continue;
       }
+
       finalText = typeof msg.content === "string" ? msg.content.trim() : "";
       break;
     } catch (err) {
@@ -398,6 +488,8 @@ export default async function getCoreAi(coreData) {
       clearTimeout(timer);
     }
   }
+
+  // Persist
   for (const turn of persistQueue) {
     try {
       await setContext(wo, turn);
@@ -411,6 +503,7 @@ export default async function getCoreAi(coreData) {
       });
     }
   }
+
   wo.Response = finalText || "[Empty AI response]";
   wo.logging.push({
     timestamp: new Date().toISOString(),
