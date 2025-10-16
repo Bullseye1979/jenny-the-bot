@@ -15,16 +15,14 @@ import { fileURLToPath } from "node:url";
 const MODULE_NAME = "getVeo3Video";
 
 /***************************************************************
-/* functionSignature: getEnsureDir (absPath)                   *
-/* Ensures a directory exists (recursive)                      *
+/* getEnsureDir (absPath)                                      *
 /***************************************************************/
 function getEnsureDir(absPath) {
   if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
 }
 
 /***************************************************************
-/* functionSignature: getRandSuffix ()                         *
-/* Returns a short random suffix                               *
+/* getRandSuffix ()                                            *
 /***************************************************************/
 function getRandSuffix() {
   const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
@@ -32,8 +30,7 @@ function getRandSuffix() {
 }
 
 /***************************************************************
-/* functionSignature: getGuessExtFromCtype (ctype)             *
-/* Maps a content-type to a common video extension             *
+/* getGuessExtFromCtype (ctype)                                *
 /***************************************************************/
 function getGuessExtFromCtype(ctype) {
   const c = String(ctype || "").toLowerCase();
@@ -43,8 +40,7 @@ function getGuessExtFromCtype(ctype) {
 }
 
 /***************************************************************
-/* functionSignature: getBuildPublicUrl (base, filename)       *
-/* Builds a public URL for a saved documents file              *
+/* getBuildPublicUrl (base, filename)                          *
 /***************************************************************/
 function getBuildPublicUrl(base, filename) {
   if (!base) return `/documents/${filename}`;
@@ -53,8 +49,7 @@ function getBuildPublicUrl(base, filename) {
 }
 
 /***************************************************************
-/* functionSignature: getSaveBuffer (buf, dirAbs, ext)         *
-/* Saves a buffer into pub/documents and returns metadata      *
+/* getSaveBuffer (buf, dirAbs, ext)                            *
 /***************************************************************/
 function getSaveBuffer(buf, dirAbs, ext = ".mp4") {
   getEnsureDir(dirAbs);
@@ -65,8 +60,7 @@ function getSaveBuffer(buf, dirAbs, ext = ".mp4") {
 }
 
 /***************************************************************
-/* functionSignature: getDownloadToBuffer (url)                *
-/* Downloads a URL into a Buffer and returns {buf,ctype}       *
+/* getDownloadToBuffer (url)                                   *
 /***************************************************************/
 async function getDownloadToBuffer(url) {
   const res = await fetch(url, { redirect: "follow" });
@@ -77,8 +71,7 @@ async function getDownloadToBuffer(url) {
 }
 
 /***************************************************************
-/* functionSignature: getStrictToolConfig (wo)                 *
-/* Reads and validates toolsconfig for this module             *
+/* getStrictToolConfig (wo)                                    *
 /***************************************************************/
 function getStrictToolConfig(wo) {
   const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
@@ -93,8 +86,7 @@ function getStrictToolConfig(wo) {
 }
 
 /***************************************************************
-/* functionSignature: getCreatePrediction (cfg, input, model)  *
-/* Starts a Replicate prediction and returns its id            *
+/* getCreatePrediction (cfg, input, model)                     *
 /***************************************************************/
 async function getCreatePrediction(cfg, input, model) {
   const [owner, name] = String(model).split("/");
@@ -113,8 +105,7 @@ async function getCreatePrediction(cfg, input, model) {
 }
 
 /***************************************************************
-/* functionSignature: getWaitPrediction (cfg, id)              *
-/* Polls Replicate until the prediction is done or times out   *
+/* getWaitPrediction (cfg, id)                                 *
 /***************************************************************/
 async function getWaitPrediction(cfg, id) {
   const started = Date.now();
@@ -134,8 +125,7 @@ async function getWaitPrediction(cfg, id) {
 }
 
 /***************************************************************
-/* functionSignature: getExtractFirstOutputUrl (data)          *
-/* Extracts the first output URL from Replicate response       *
+/* getExtractFirstOutputUrl (data)                             *
 /***************************************************************/
 function getExtractFirstOutputUrl(data) {
   const out = data?.output;
@@ -147,56 +137,82 @@ function getExtractFirstOutputUrl(data) {
 }
 
 /***************************************************************
-/* functionSignature: getInvoke (args, coreData)               *
-/* Generates a Veo 3 video via Replicate and saves the file    *
+/* validateImageUrl (imageURL)                                 *
+/***************************************************************/
+function validateImageUrl(u) {
+  const s = String(u || "").trim();
+  if (!s) return null;
+  if (!/^https?:\/\//i.test(s)) return null;
+  return s;
+}
+
+/***************************************************************
+/* buildInput(prompt, imageUrl)                                *
+/***************************************************************/
+function buildInput(prompt, imageUrl) {
+  const p = String(prompt || "");
+  // imageURL ist jetzt verpflichtend; wir setzen immer init-image Felder
+  return {
+    prompt: p,
+    text_prompt: p,
+    image: imageUrl,
+    image_url: imageUrl,
+    init_image: imageUrl
+  };
+}
+
+/***************************************************************
+/* runSinglePrediction({ cfg, model, input })                  *
+/***************************************************************/
+async function runSinglePrediction({ cfg, model, input }) {
+  let predictionId;
+  try {
+    predictionId = await getCreatePrediction(cfg, input, model);
+    const finalData = await getWaitPrediction(cfg, predictionId);
+    const url = getExtractFirstOutputUrl(finalData);
+    if (!url) return { ok: false, error: "No output URL returned", predictionId };
+
+    const { buf, ctype } = await getDownloadToBuffer(url);
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const documentsDir = path.join(__dirname, "..", "pub", "documents");
+    const saved = getSaveBuffer(buf, documentsDir, getGuessExtFromCtype(ctype));
+
+    return {
+      ok: true,
+      provider: "replicate",
+      model,
+      predictionId,
+      file: {
+        filename: saved.filename,
+        path: saved.abs,
+        url: getBuildPublicUrl(cfg.public_base_url, saved.filename)
+      }
+    };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e), predictionId };
+  }
+}
+
+/***************************************************************
+/* getInvoke (args, coreData)                                  *
 /***************************************************************/
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const cfg = getStrictToolConfig(wo);
 
-  const prompt = String(args?.prompt || wo?.payload || "").trim();
-  const image_url = String(args?.image_url || "").trim();
-
+  const prompt = String(args?.prompt ?? "").trim();
   if (!prompt) return { ok: false, error: "Missing prompt" };
 
+  const imageURL = validateImageUrl(args?.imageURL);
+  if (!imageURL) return { ok: false, error: `[${MODULE_NAME}] Missing or invalid 'imageURL' (must be http/https).` };
+
   const model = cfg.model;
+  const input = buildInput(prompt, imageURL);
 
-  const input = image_url
-    ? { prompt, image: image_url }
-    : { prompt };
-
-  let predictionId;
-  try {
-    predictionId = await getCreatePrediction(cfg, input, model);
-  } catch (e) {
-    return { ok: false, error: e?.message || String(e) };
-  }
-
-  let finalData;
-  try {
-    finalData = await getWaitPrediction(cfg, predictionId);
-  } catch (e) {
-    return { ok: false, error: e?.message || String(e), predictionId };
-  }
-
-  const url = getExtractFirstOutputUrl(finalData);
-  if (!url) return { ok: false, error: "No output URL returned", predictionId };
-
-  const { buf, ctype } = await getDownloadToBuffer(url);
-
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  const documentsDir = path.join(__dirname, "..", "pub", "documents");
-  const saved = getSaveBuffer(buf, documentsDir, getGuessExtFromCtype(ctype));
-
-  return {
-    ok: true,
-    provider: "replicate",
-    model,
-    predictionId,
-    input,
-    file: { filename: saved.filename, path: saved.abs, url: getBuildPublicUrl(cfg.public_base_url, saved.filename) }
-  };
+  const res = await runSinglePrediction({ cfg, model, input });
+  if (res.ok) res.input = input;
+  return res;
 }
 
 export default {
@@ -205,14 +221,15 @@ export default {
     type: "function",
     function: {
       name: MODULE_NAME,
-      description: "Simple rule: if image_url is provided, animate/transform that image with the prompt; if not, generate a video from the prompt alone.",
+      description:
+        "Generate a short video by transforming a single reference image with the given prompt. Requires args.imageURL (http/https).",
       parameters: {
         type: "object",
         properties: {
-          prompt: { type: "string", description: "Text prompt describing the video or the transformation to apply." },
-          image_url: { type: "string", description: "Public image URL to animate/transform. Provide when the task is animation/transformation; omit for pure generation." }
+          prompt: { type: "string", description: "Text prompt describing the transformation you want." },
+          imageURL: { type: "string", format: "uri", description: "Public image URL (http/https) to animate/transform." }
         },
-        required: ["prompt"],
+        required: ["prompt", "imageURL"],
         additionalProperties: false
       }
     }
