@@ -1,25 +1,35 @@
 /***************************************************************
 /* filename: "01000-core-ai.js"                                *
-/* Version 1.0                                                 *
+/* Version 1.1                                                 *
 /* Purpose: Platform-agnostic AI runner using payload as input *
 /***************************************************************/
 /***************************************************************
-/*                                                             *
+/* Version 1.1:    Write active tool name to registry for      *
+/*                 presence updates                             *
+/* Version 1.0:    Initial version                              *
 /***************************************************************/
 
 import fetch from "node-fetch";
 import { getContext, setContext } from "../core/context.js";
+import { putItem } from "../core/registry.js";
 
 const MODULE_NAME = "core-ai";
-
-/* ===== Logging helpers ===== */
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 
+/***************************************************************
+/* functionSignature: toJsonSafe (value)                       *
+/* Returns a JSON string or a safe string fallback             *
+/***************************************************************/
 function toJsonSafe(v) {
   try { return typeof v === "string" ? v : JSON.stringify(v); }
   catch { return String(v); }
 }
+
+/***************************************************************
+/* functionSignature: preview (str, max)                       *
+/* Returns a truncated preview of a string                     *
+/***************************************************************/
 function preview(str, max = 400) {
   const s = String(str ?? "");
   return s.length > max ? s.slice(0, max) + " …[truncated]" : s;
@@ -121,7 +131,7 @@ function setPrintContextJson(contextObj) {
 }
 
 /***************************************************************
-/* functionSignature: getRuntimeContextFromLast (wo, cfg, rec) *
+/* functionSignature: getRuntimeContextFromLast (wo,cfg,rec)   *
 /* Builds runtime context object from the last history record  *
 /***************************************************************/
 function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
@@ -247,9 +257,8 @@ function getToolDefs(toolModules) {
 }
 
 /***************************************************************
-/* functionSignature: getExecToolCall (toolModules, call, data)*
-/* Executes a single tool call and returns a tool message      *
-/*  --> With detailed logging                                  *
+/* functionSignature: getExecToolCall (modules, call, core)    *
+/* Executes a single tool call and writes status to registry   *
 /***************************************************************/
 async function getExecToolCall(toolModules, toolCall, coreData) {
   const wo = coreData?.workingObject || {};
@@ -264,7 +273,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     severity: "info",
     module: MODULE_NAME,
     exitStatus: "started",
-    message: `Tool call start`,
+    message: "Tool call start",
     details: {
       tool_call_id: toolCall?.id || null,
       tool: name || null,
@@ -279,7 +288,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       severity: "error",
       module: MODULE_NAME,
       exitStatus: "failed",
-      message: `Tool call failed (not found)`,
+      message: "Tool call failed (not found)",
       details: {
         tool_call_id: toolCall?.id || null,
         tool: name || null
@@ -289,6 +298,8 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   }
 
   try {
+    try { await putItem(name, "status:tool"); } catch {}
+
     const result = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
     wo.logging?.push({
@@ -296,7 +307,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "success",
-      message: `Tool call success`,
+      message: "Tool call success",
       details: {
         tool_call_id: toolCall?.id || null,
         tool: name,
@@ -313,7 +324,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       severity: "error",
       module: MODULE_NAME,
       exitStatus: "failed",
-      message: `Tool call error`,
+      message: "Tool call error",
       details: {
         tool_call_id: toolCall?.id || null,
         tool: name,
@@ -322,6 +333,8 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       }
     });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
+  } finally {
+    try { await putItem("", "status:tool"); } catch {}
   }
 }
 
@@ -437,8 +450,6 @@ export default async function getCoreAi(coreData) {
               : (tc?.function?.arguments ? JSON.stringify(tc.function.arguments) : "{}")
           }
         }));
-
-        // Sammel-Log für geplante Toolcalls der Runde
         wo.logging.push({
           timestamp: new Date().toISOString(),
           severity: "info",
@@ -460,7 +471,6 @@ export default async function getCoreAi(coreData) {
           messages.push(toolMsg);
           persistQueue.push(toolMsg);
         }
-        // Nach Tools eine weitere Modell-Runde zulassen
         continue;
       }
 
@@ -489,7 +499,6 @@ export default async function getCoreAi(coreData) {
     }
   }
 
-  // Persist
   for (const turn of persistQueue) {
     try {
       await setContext(wo, turn);
