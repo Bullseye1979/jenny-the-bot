@@ -1,12 +1,10 @@
 /***************************************************************
 /* filename: "01000-core-ai.js"                                *
-/* Version 1.1                                                 *
+/* Version 1.0                                                 *
 /* Purpose: Platform-agnostic AI runner using payload as input *
 /***************************************************************/
 /***************************************************************
-/* Version 1.1:    Write active tool name to registry for      *
-/*                 presence updates                             *
-/* Version 1.0:    Initial version                              *
+/*                                                             *
 /***************************************************************/
 
 import fetch from "node-fetch";
