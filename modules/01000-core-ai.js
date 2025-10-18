@@ -7,7 +7,6 @@
 /*                                                             *
 /***************************************************************/
 
-import fetch from "node-fetch";
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 
@@ -64,8 +63,7 @@ function getStr(value, defaultValue) {
 function getKiCfg(wo) {
   const includeHistory = getBool(wo?.IncludeHistory, true);
   const includeHistoryTools = getBool(wo?.IncludeHistoryTools, false);
-  const includeRuntimeContext = getBool(wo?.IncludeRuntimeContext, true);
-  const printRuntimeContextBox = getBool(wo?.PrintRuntimeContextBox, true);
+  const includeRuntimeContext = getBool(wo?.IncludeRuntimeContext, false);
 
   const toolsList = Array.isArray(wo?.Tools) ? wo.Tools : [];
   if (Array.isArray(wo?.tools) && !Array.isArray(wo?.Tools)) {
@@ -95,7 +93,6 @@ function getKiCfg(wo) {
     includeHistory,
     includeHistoryTools,
     includeRuntimeContext,
-    printRuntimeContextBox,
     exposeTools,
     toolsList,
     toolChoice,
@@ -114,38 +111,6 @@ function getKiCfg(wo) {
 /***************************************************************/
 function getTryParseJSON(text, fallback = {}) {
   try { return JSON.parse(text); } catch { return fallback; }
-}
-
-/***************************************************************
-/* functionSignature: getRenderBoxedRed (title, text)          *
-/* Renders a red console box for diagnostics                   *
-/***************************************************************/
-function getRenderBoxedRed(title, text) {
-  const red = "\x1b[31m";
-  const reset = "\x1b[0m";
-  const lines = String(text).split("\n");
-  const width = Math.min(200, Math.max(title.length + 4, ...lines.map(l => l.length + 2)) + 2);
-  const top = "┏" + "━".repeat(width - 2) + "┓";
-  const bottom = "┗" + "━".repeat(width - 2) + "┛";
-  const pad = (s) => "│ " + s + " ".repeat(Math.max(0, width - 3 - s.length)) + "│";
-  const out = [
-    red + top,
-    pad(" " + title + " "),
-    "├" + "─".repeat(width - 2) + "┤",
-    ...lines.map(pad),
-    bottom + reset
-  ].join("\n");
-  return out;
-}
-
-/***************************************************************
-/* functionSignature: setPrintContextJson (contextObj)         *
-/* Prints runtime context as a boxed JSON to console           *
-/***************************************************************/
-function setPrintContextJson(contextObj) {
-  const json = JSON.stringify(contextObj, null, 2);
-  const boxed = getRenderBoxedRed("CONTEXT JSON", json);
-  console.log(boxed);
 }
 
 /***************************************************************
@@ -170,9 +135,8 @@ function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
 /* functionSignature: getAppendedContextBlockToUserContent (t,c,k) *
 /* Appends a [context] JSON block to user content              *
 /***************************************************************/
-function getAppendedContextBlockToUserContent(baseText, contextObj, kiCfg) {
+function getAppendedContextBlockToUserContent(baseText, contextObj) {
   if (!contextObj || typeof contextObj !== "object") return baseText ?? "";
-  if (kiCfg.printRuntimeContextBox) setPrintContextJson(contextObj);
   const jsonBlock = "```json\n" + JSON.stringify(contextObj) + "\n```";
   return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
 }
@@ -355,7 +319,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
 /***************************************************************/
 function getMaybePseudoToolCall(text) {
   if (!text || typeof text !== "string") return null;
-  const m = text.match(/\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*?\})/m);
+  const m = text.match(/^\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*\})$/m);
   if (!m) return null;
   const name = m[1];
   let args = {};
@@ -365,7 +329,7 @@ function getMaybePseudoToolCall(text) {
 
 /***************************************************************
 /* functionSignature: getPseudoToolSpecs (names, wo)           *
-/* Extracts minimal specs for pseudo tools                     *
+/* Extracts specs incl. arg descriptions & types               *
 /***************************************************************/
 async function getPseudoToolSpecs(names, wo) {
   const specs = [];
@@ -378,21 +342,32 @@ async function getPseudoToolSpecs(names, wo) {
       const description = def?.description || def?.name || name;
 
       const flat = {};
+      const meta = {};
+
       if (parameters?.properties && typeof parameters.properties === "object") {
         for (const [k, v] of Object.entries(parameters.properties)) {
           const t = typeof v?.type === "string" ? v.type : "string";
+          meta[k] = {
+            type: t,
+            description: typeof v?.description === "string" ? v.description.trim() : ""
+          };
           if (Object.prototype.hasOwnProperty.call(v, "default")) {
             flat[k] = v.default;
           } else if (t === "number" || t === "integer") {
             flat[k] = 0;
           } else if (t === "boolean") {
             flat[k] = false;
+          } else if (t === "array") {
+            flat[k] = [];
+          } else if (t === "object") {
+            flat[k] = {};
           } else {
-            flat[k] = "";
+            const desc = meta[k].description || k;
+            flat[k] = `<${desc}>`;
           }
         }
       }
-      specs.push({ name, description, argsTemplate: flat });
+      specs.push({ name, description, argsTemplate: flat, argsMeta: meta });
     } catch (e) {
       wo?.logging?.push({
         timestamp: new Date().toISOString(),
@@ -407,8 +382,39 @@ async function getPseudoToolSpecs(names, wo) {
 }
 
 /***************************************************************
+/* functionSignature: getPseudoExamplesFromDefs (specs)        *
+/* Creates one-line pseudo tool examples incl. arg legends     *
+/***************************************************************/
+function getPseudoExamplesFromDefs(specs) {
+  if (!Array.isArray(specs) || !specs.length) return "";
+  const names = specs.map(s => s.name).join(", ");
+  const lines = [];
+  lines.push("<EXAMPLES>");
+  lines.push("# Pseudo-tool examples (valid JSON; placeholders in <...>).");
+  lines.push("# THESE ARE THE ONLY AVAILABLE PSEUDO TOOLS. DO NOT INVENT NEW NAMES.");
+  lines.push(`# ALLOWED_TOOL_NAMES: ${names}`);
+  lines.push("# A TOOL CALL MUST BE THE ONLY CONTENT OF THE MESSAGE (no markdown, no extra text, no leading/trailing spaces).");
+  for (const s of specs) {
+    const args = JSON.stringify(s.argsTemplate ?? {}, null, 0);
+    lines.push(`[tool:${s.name}]${args}`);
+    const metas = s.argsMeta || {};
+    const legendParts = Object.entries(metas).map(([k, m]) => {
+      const desc = m?.description ? ` – ${m.description}` : "";
+      return `${k} (${m?.type || "string"}${desc})`;
+    });
+    if (legendParts.length) {
+      lines.push(`# args: ${legendParts.join("; ")}`);
+    }
+  }
+  lines.push("# If none of the ALLOWED_TOOL_NAMES fits the user's request, respond in natural language instead of calling a tool.");
+  lines.push("# End of examples.");
+  lines.push("</EXAMPLES>");
+  return lines.join("\n");
+}
+
+/***************************************************************
 /* functionSignature: getSystemContent (wo, kiCfg)             *
-/* Composes system prompt with lightweight policy              *
+/* Composes system prompt; pseudo syntax only when enabled     *
 /***************************************************************/
 async function getSystemContent(wo, kiCfg) {
   const base = [
@@ -416,44 +422,41 @@ async function getSystemContent(wo, kiCfg) {
     typeof wo.Instructions === "string" ? wo.Instructions.trim() : ""
   ].filter(Boolean).join("\n\n");
 
-  const toolsList = Array.isArray(wo?.Tools) ? wo.Tools : [];
-  const toolsCSV = toolsList.join(", ");
-
-  const policyLines = [
+  const commonPolicy = [
     "Policy:",
     "- Answer only the latest user request. Previous history and [context] are for reference.",
-    "- Do NOT run tools unless they are necessary to answer the request.",
-    "",
-    "Pseudo Tool Usage (single-line protocol):",
-    `- Available pseudo tools: ${toolsCSV || "(none)"}.`,
-    "- If a tool is needed, output EXACTLY ONE line and NOTHING else:",
-    "  [tool:NAME]{JSON_ARGS}",
-    "- Never chain tools; emit at most one such line.",
-    "- When asked for current time or UTC ISO8601, use getTime and DO NOT answer from memory.",
-    "- With pseudo tools, do not include extra text in the same response."
-  ];
+    "- If tools are available, use them only when necessary.",
+    "- When you emit a tool call, do not include extra prose in the same turn."
+  ].join("\n");
 
-  let pseudoBlock = "";
-  if (kiCfg.usePseudoTools) {
-    const specs = await getPseudoToolSpecs(kiCfg.toolsList, wo);
-    if (specs.length) {
-      const lines = [];
-      lines.push("<PSEUDO_TOOLS>");
-      for (const s of specs) {
-        lines.push(`NAME: ${s.name}`);
-        if (s.description) lines.push(`DESC: ${s.description}`);
-        lines.push("ARGS_JSON_TEMPLATE:");
-        lines.push(JSON.stringify(s.argsTemplate || {}, null, 0));
-        lines.push("---");
-      }
-      lines.push("</PSEUDO_TOOLS>");
-      pseudoBlock = "\n\n" + lines.join("\n");
-    }
+  if (!kiCfg.usePseudoTools) {
+    const parts = [];
+    if (base) parts.push(base);
+    parts.push(commonPolicy);
+    return parts.filter(Boolean).join("\n\n");
   }
 
-  const policy = policyLines.join("\n");
-  const out = [policy, (base || "You are a helpful assistant.") + pseudoBlock].join("\n\n");
-  return out;
+  const toolsList = Array.isArray(wo?.Tools) ? wo.Tools : [];
+  const specs = await getPseudoToolSpecs(toolsList, wo);
+  const examples = getPseudoExamplesFromDefs(specs);
+
+  const pseudoPolicy = [
+    "Pseudo Tool Usage:",
+    "- Output EXACTLY ONE line and NOTHING else when invoking a pseudo tool.",
+    "- STRICT FORMAT (no markdown, no code fences, no commentary):",
+    "  [tool:NAME]{JSON_ARGS}",
+    "- The tool call MUST be the entire message without leading or trailing whitespace.",
+    "- Use only the tools listed under <EXAMPLES> (ALLOWED_TOOL_NAMES). Do NOT invent names.",
+    "- Do not chain multiple tools in one turn.",
+    "- If no listed tool fits the task, answer in natural language."
+  ].join("\n");
+
+  const parts = [];
+  if (base) parts.push(base);
+  parts.push(commonPolicy);
+  parts.push(pseudoPolicy);
+  if (examples) parts.push(examples);
+  return parts.filter(Boolean).join("\n\n");
 }
 
 /***************************************************************
@@ -496,7 +499,7 @@ export default async function getCoreAi(coreData) {
   let userContent = userPromptRaw;
   const runtimeCtx = getRuntimeContextFromLast(wo, kiCfg, lastRecord);
   if (runtimeCtx) {
-    userContent = getAppendedContextBlockToUserContent(userContent, runtimeCtx, kiCfg);
+    userContent = getAppendedContextBlockToUserContent(userContent, runtimeCtx);
   }
 
   let messages = [
