@@ -16,19 +16,19 @@ const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 
 /***************************************************************
-/* functionSignature: toJsonSafe (value)                       *
+/* functionSignature: getJsonSafe (value)                      *
 /* Returns a JSON string or a safe string fallback             *
 /***************************************************************/
-function toJsonSafe(v) {
+function getJsonSafe(v) {
   try { return typeof v === "string" ? v : JSON.stringify(v); }
   catch { return String(v); }
 }
 
 /***************************************************************
-/* functionSignature: preview (str, max)                       *
+/* functionSignature: getPreview (str, max)                    *
 /* Returns a truncated preview of a string                     *
 /***************************************************************/
-function preview(str, max = 400) {
+function getPreview(str, max = 400) {
   const s = String(str ?? "");
   return s.length > max ? s.slice(0, max) + " …[truncated]" : s;
 }
@@ -66,13 +66,31 @@ function getKiCfg(wo) {
   const includeHistoryTools = getBool(wo?.IncludeHistoryTools, false);
   const includeRuntimeContext = getBool(wo?.IncludeRuntimeContext, true);
   const printRuntimeContextBox = getBool(wo?.PrintRuntimeContextBox, true);
-  const toolsList = Array.isArray(wo?.Tools) ? wo.Tools : (Array.isArray(wo?.tools) ? wo.tools : []);
+
+  const toolsList = Array.isArray(wo?.Tools) ? wo.Tools : [];
+  if (Array.isArray(wo?.tools) && !Array.isArray(wo?.Tools)) {
+    wo.logging?.push({
+      timestamp: new Date().toISOString(),
+      severity: "warn",
+      module: MODULE_NAME,
+      exitStatus: "success",
+      message: 'Config key "tools" is ignored. Use "Tools" (capital T).'
+    });
+  }
+
   const exposeTools = toolsList.length > 0;
   const toolChoice = getStr(wo?.ToolChoice, "auto");
   const temperature = getNum(wo?.Temperature, 0.7);
   const maxTokens = getNum(wo?.MaxTokens, 2000);
   const maxLoops = getNum(wo?.MaxLoops, 20);
   const requestTimeoutMs = getNum(wo?.RequestTimeoutMs, 120000);
+
+  const usePseudoTools = getBool(
+    (wo?.UsePseudoTools ?? wo?.UsePseudoToolcalls ?? wo?.UsePseusoTollcalls),
+    false
+  );
+  const pseudoToolMax = 1;
+
   return {
     includeHistory,
     includeHistoryTools,
@@ -84,7 +102,9 @@ function getKiCfg(wo) {
     temperature,
     maxTokens,
     maxLoops,
-    requestTimeoutMs
+    requestTimeoutMs,
+    usePseudoTools,
+    pseudoToolMax
   };
 }
 
@@ -129,7 +149,7 @@ function setPrintContextJson(contextObj) {
 }
 
 /***************************************************************
-/* functionSignature: getRuntimeContextFromLast (wo,cfg,rec)   *
+/* functionSignature: getRuntimeContextFromLast (wo,kiCfg,last)*
 /* Builds runtime context object from the last history record  *
 /***************************************************************/
 function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
@@ -147,7 +167,7 @@ function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
 }
 
 /***************************************************************
-/* functionSignature: getAppendedContextBlockToUserContent (t,c,k)*
+/* functionSignature: getAppendedContextBlockToUserContent (t,c,k) *
 /* Appends a [context] JSON block to user content              *
 /***************************************************************/
 function getAppendedContextBlockToUserContent(baseText, contextObj, kiCfg) {
@@ -158,13 +178,13 @@ function getAppendedContextBlockToUserContent(baseText, contextObj, kiCfg) {
 }
 
 /***************************************************************
-/* functionSignature: getPromptFromSnapshot (rows, cfg)        *
+/* functionSignature: getPromptFromSnapshot (rows, kiCfg, allow) *
 /* Transforms context history into chat messages               *
 /***************************************************************/
-function getPromptFromSnapshot(rows, kiCfg) {
+function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
   if (!kiCfg.includeHistory) return [];
   const out = [];
-  const includeTools = !!kiCfg.includeHistoryTools;
+  const includeTools = !!kiCfg.includeHistoryTools && !!allowToolHistory;
   let lastAssistantToolIds = new Set();
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i] || {};
@@ -195,8 +215,9 @@ function getPromptFromSnapshot(rows, kiCfg) {
       continue;
     }
     if (role === "tool") {
+      if (!includeTools) continue;
       const tcid = r.tool_call_id;
-      if (includeTools && tcid && lastAssistantToolIds.has(tcid)) {
+      if (tcid && lastAssistantToolIds.has(tcid)) {
         out.push({
           role: "tool",
           tool_call_id: tcid,
@@ -275,7 +296,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     details: {
       tool_call_id: toolCall?.id || null,
       tool: name || null,
-      args_preview: preview(toJsonSafe(args), ARG_PREVIEW_MAX)
+      args_preview: getPreview(getJsonSafe(args), ARG_PREVIEW_MAX)
     }
   });
 
@@ -287,10 +308,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       module: MODULE_NAME,
       exitStatus: "failed",
       message: "Tool call failed (not found)",
-      details: {
-        tool_call_id: toolCall?.id || null,
-        tool: name || null
-      }
+      details: { tool_call_id: toolCall?.id || null, tool: name || null }
     });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
@@ -310,7 +328,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
         tool_call_id: toolCall?.id || null,
         tool: name,
         duration_ms: durationMs,
-        result_preview: preview(toJsonSafe(result), RESULT_PREVIEW_MAX)
+        result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX)
       }
     });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
@@ -323,12 +341,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       module: MODULE_NAME,
       exitStatus: "failed",
       message: "Tool call error",
-      details: {
-        tool_call_id: toolCall?.id || null,
-        tool: name,
-        duration_ms: durationMs,
-        error: String(e?.message || e)
-      }
+      details: { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, error: String(e?.message || e) }
     });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
   } finally {
@@ -337,26 +350,115 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
 }
 
 /***************************************************************
-/* functionSignature: getSystemContent (wo)                    *
+/* functionSignature: getMaybePseudoToolCall (text)            *
+/* Parses a pseudo toolcall line from assistant text           *
+/***************************************************************/
+function getMaybePseudoToolCall(text) {
+  if (!text || typeof text !== "string") return null;
+  const m = text.match(/\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*?\})/m);
+  if (!m) return null;
+  const name = m[1];
+  let args = {};
+  try { args = JSON.parse(m[2]); } catch { args = getTryParseJSON(m[2], {}); }
+  return { name, args };
+}
+
+/***************************************************************
+/* functionSignature: getPseudoToolSpecs (names, wo)           *
+/* Extracts minimal specs for pseudo tools                     *
+/***************************************************************/
+async function getPseudoToolSpecs(names, wo) {
+  const specs = [];
+  for (const name of names || []) {
+    try {
+      const mod = await import(`../tools/${name}.js`);
+      const tool = mod?.default ?? mod;
+      const def = tool?.definition?.function;
+      const parameters = def?.parameters || {};
+      const description = def?.description || def?.name || name;
+
+      const flat = {};
+      if (parameters?.properties && typeof parameters.properties === "object") {
+        for (const [k, v] of Object.entries(parameters.properties)) {
+          const t = typeof v?.type === "string" ? v.type : "string";
+          if (Object.prototype.hasOwnProperty.call(v, "default")) {
+            flat[k] = v.default;
+          } else if (t === "number" || t === "integer") {
+            flat[k] = 0;
+          } else if (t === "boolean") {
+            flat[k] = false;
+          } else {
+            flat[k] = "";
+          }
+        }
+      }
+      specs.push({ name, description, argsTemplate: flat });
+    } catch (e) {
+      wo?.logging?.push({
+        timestamp: new Date().toISOString(),
+        severity: "warn",
+        module: MODULE_NAME,
+        exitStatus: "success",
+        message: `Spec load failed for "${name}": ${e?.message || String(e)}`
+      });
+    }
+  }
+  return specs;
+}
+
+/***************************************************************
+/* functionSignature: getSystemContent (wo, kiCfg)             *
 /* Composes system prompt with lightweight policy              *
 /***************************************************************/
-function getSystemContent(wo) {
+async function getSystemContent(wo, kiCfg) {
   const base = [
     typeof wo.SystemPrompt === "string" ? wo.SystemPrompt.trim() : "",
     typeof wo.Instructions === "string" ? wo.Instructions.trim() : ""
   ].filter(Boolean).join("\n\n");
-  const policy = [
+
+  const toolsList = Array.isArray(wo?.Tools) ? wo.Tools : [];
+  const toolsCSV = toolsList.join(", ");
+
+  const policyLines = [
     "Policy:",
-    "- Do NOT run tools unless they are necessary to answer the payload.",
-    "- Only answer the latest request. The history and [context] are just for reference."
-  ].join("\n");
-  const out = [policy, base || "You are a helpful assistant."].join("\n\n");
+    "- Answer only the latest user request. Previous history and [context] are for reference.",
+    "- Do NOT run tools unless they are necessary to answer the request.",
+    "",
+    "Pseudo Tool Usage (single-line protocol):",
+    `- Available pseudo tools: ${toolsCSV || "(none)"}.`,
+    "- If a tool is needed, output EXACTLY ONE line and NOTHING else:",
+    "  [tool:NAME]{JSON_ARGS}",
+    "- Never chain tools; emit at most one such line.",
+    "- When asked for current time or UTC ISO8601, use getTime and DO NOT answer from memory.",
+    "- With pseudo tools, do not include extra text in the same response."
+  ];
+
+  let pseudoBlock = "";
+  if (kiCfg.usePseudoTools) {
+    const specs = await getPseudoToolSpecs(kiCfg.toolsList, wo);
+    if (specs.length) {
+      const lines = [];
+      lines.push("<PSEUDO_TOOLS>");
+      for (const s of specs) {
+        lines.push(`NAME: ${s.name}`);
+        if (s.description) lines.push(`DESC: ${s.description}`);
+        lines.push("ARGS_JSON_TEMPLATE:");
+        lines.push(JSON.stringify(s.argsTemplate || {}, null, 0));
+        lines.push("---");
+      }
+      lines.push("</PSEUDO_TOOLS>");
+      pseudoBlock = "\n\n" + lines.join("\n");
+    }
+  }
+
+  const policy = policyLines.join("\n");
+  const out = [policy, (base || "You are a helpful assistant.") + pseudoBlock].join("\n\n");
   return out;
 }
 
 /***************************************************************
 /* functionSignature: getCoreAi (coreData)                     *
-/* Orchestrates the AI request and persists conversation turns */
+/* Orchestrates the AI request and persists conversation turns *
 /***************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
@@ -370,6 +472,7 @@ export default async function getCoreAi(coreData) {
     exitStatus: "started",
     message: "AI request started"
   });
+
   let snapshot = [];
   try {
     snapshot = await getContext(wo);
@@ -382,23 +485,33 @@ export default async function getCoreAi(coreData) {
       message: `getContext failed; continuing: ${e?.message || String(e)}`
     });
   }
-  const messagesFromHistory = getPromptFromSnapshot(snapshot, kiCfg);
+
+  const systemContent = await getSystemContent(wo, kiCfg);
+
+  const allowToolHistory = !kiCfg.usePseudoTools && !!kiCfg.includeHistoryTools;
+  const messagesFromHistory = getPromptFromSnapshot(snapshot, kiCfg, allowToolHistory);
+
   const lastRecord = Array.isArray(snapshot) && snapshot.length ? snapshot[snapshot.length - 1] : null;
-  const systemContent = getSystemContent(wo);
+
   let userContent = userPromptRaw;
   const runtimeCtx = getRuntimeContextFromLast(wo, kiCfg, lastRecord);
   if (runtimeCtx) {
     userContent = getAppendedContextBlockToUserContent(userContent, runtimeCtx, kiCfg);
   }
+
   let messages = [
     { role: "system", content: systemContent },
     ...messagesFromHistory,
     { role: "user", content: userContent }
   ];
-  const toolModules = kiCfg.exposeTools ? await getToolsByName(kiCfg.toolsList, wo) : [];
-  const toolDefs = kiCfg.exposeTools ? getToolDefs(toolModules) : [];
+
+  const sendRealTools = !kiCfg.usePseudoTools && kiCfg.exposeTools;
+  const toolModules = sendRealTools ? await getToolsByName(kiCfg.toolsList, wo) : [];
+  const toolDefs = sendRealTools ? getToolDefs(toolModules) : [];
+
   const persistQueue = [];
   let finalText = "";
+  let pseudoToolUsed = false;
 
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     const controller = new AbortController();
@@ -454,16 +567,49 @@ export default async function getCoreAi(coreData) {
           module: MODULE_NAME,
           exitStatus: "success",
           message: `Assistant requested tool call(s): ${toolCalls.map(t => t?.function?.name).filter(Boolean).join(", ") || "(unknown)"}`,
-          details: {
-            count: toolCalls.length,
-            ids: toolCalls.map(t => t?.id).filter(Boolean)
-          }
+          details: { count: toolCalls.length, ids: toolCalls.map(t => t?.id).filter(Boolean) }
         });
       }
       messages.push(assistantMsg);
       persistQueue.push(assistantMsg);
 
-      if (toolCalls && toolCalls.length && toolModules.length) {
+      if (kiCfg.usePseudoTools && !pseudoToolUsed) {
+        const pt = getMaybePseudoToolCall(assistantMsg.content || "");
+        if (pt) {
+          if (Array.isArray(kiCfg.toolsList) && kiCfg.toolsList.length && !kiCfg.toolsList.includes(pt.name)) {
+            const errMsg = `[tool_error:${pt.name}] Tool not allowed`;
+            wo.logging.push({
+              timestamp: new Date().toISOString(),
+              severity: "warn",
+              module: MODULE_NAME,
+              exitStatus: "failed",
+              message: `Pseudo tool not allowed: ${pt.name}`
+            });
+            const userErr = { role: "user", content: errMsg };
+            messages.push(userErr);
+            persistQueue.push(userErr);
+            pseudoToolUsed = true;
+            continue;
+          }
+
+          const mods = await getToolsByName([pt.name], wo);
+          const toolMsg = await getExecToolCall(
+            mods,
+            { id: "pseudo_" + pt.name, function: { name: pt.name, arguments: JSON.stringify(pt.args ?? {}) } },
+            coreData
+          );
+
+          const toolResultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? null);
+          const userToolResult = { role: "user", content: `[tool_result:${pt.name}]\n${toolResultText}` };
+          messages.push(userToolResult);
+          persistQueue.push(userToolResult);
+
+          pseudoToolUsed = true;
+          continue;
+        }
+      }
+
+      if (!kiCfg.usePseudoTools && toolCalls && toolCalls.length && toolModules.length) {
         for (const tc of toolCalls) {
           const toolMsg = await getExecToolCall(toolModules, tc, coreData);
           messages.push(toolMsg);
@@ -498,9 +644,8 @@ export default async function getCoreAi(coreData) {
   }
 
   for (const turn of persistQueue) {
-    try {
-      await setContext(wo, turn);
-    } catch (e) {
+    try { await setContext(wo, turn); }
+    catch (e) {
       wo.logging?.push({
         timestamp: new Date().toISOString(),
         severity: "warn",

@@ -1,8 +1,8 @@
 /***************************************************************
 /* filename: "getImage.js"                                     *
 /* Version 1.0                                                 *
-/* Purpose: Generate image(s) via OpenAI Images API, persist   *
-/*          under ./pub/documents, and return link metadata.   *
+/* Purpose: Generate images via OpenAI API and persist to      *
+/*          ./pub/documents                                    *
 /***************************************************************/
 /***************************************************************
 /*                                                             *
@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import fetch from "node-fetch";
 
 const MODULE_NAME = "getImage";
 
@@ -108,10 +109,10 @@ async function getPersistImages(apiImages, publicBaseUrl) {
 }
 
 /***************************************************************
-/* functionSignature: invoke (args, coreData)                  *
-/* Generates images via OpenAI and returns saved file info     *
+/* functionSignature: getInvoke (args, coreData)               *
+/* Generates images via API and returns saved file info        *
 /***************************************************************/
-async function invoke(args, coreData) {
+async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getImage || {};
   const apiKey = typeof toolCfg.apiKey === "string" ? toolCfg.apiKey : null;
@@ -172,5 +173,5 @@ export default {
       }
     }
   },
-  invoke
+  invoke: getInvoke
 };
