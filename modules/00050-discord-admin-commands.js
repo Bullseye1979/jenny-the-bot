@@ -2,10 +2,11 @@
 /* filename: "discord-admin-commands.js"                       *
 /* Version 1.0                                                 *
 /* Purpose: Slash admin commands for the "discord-admin" flow: *
-/*          /purge [count] and /error with flow stop control.  *
+/*          /purge [count] and /error, plus DM-only text       *
+/*          command "!purge [count]" for current DM channel.   *
 /***************************************************************/
 /***************************************************************
-/*                                                             *
+/* Version History                                             *
 /***************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
@@ -68,6 +69,29 @@ async function getResolveChannelById(wo, channelId) {
   } catch {
     return null;
   }
+}
+
+/***************************************************************
+/* functionSignature: getIsDMContext (wo)                      *
+/* Determines whether the current context is a DM              *
+/***************************************************************/
+function getIsDMContext(wo) {
+  return !!(wo?.DM || wo?.isDM || wo?.channelType === 1 ||
+            String(wo?.channelType ?? "").toUpperCase() === "DM" ||
+            (!wo?.guildId && (wo?.userId || wo?.userid)));
+}
+
+/***************************************************************
+/* functionSignature: getParseBangPurgeCount (payload)         *
+/* Parses "!purge [count]" and returns a positive integer      *
+/***************************************************************/
+function getParseBangPurgeCount(payload) {
+  const s = String(payload || "");
+  const m = /^!purge(?:\s+(\d+))?$/i.exec(s.trim());
+  if (!m) return null;
+  const n = m[1] ? Number(m[1]) : NaN;
+  if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  return 100;
 }
 
 /***************************************************************
@@ -134,7 +158,8 @@ async function setPurgeLastN(channel, log, { maxTotal }) {
       const bulkDeleted = res?.size ?? 0;
       totalDeleted += bulkDeleted;
       remaining -= bulkDeleted;
-      log("bulk delete try", "info", { moduleName: MODULE_NAME, ...ctx, requested: remaining + bulkDeleted, deleted: bulkDeleted });
+      const requested = remaining + bulkDeleted;
+      log("bulk delete try", "info", { moduleName: MODULE_NAME, ...ctx, requested, deleted: bulkDeleted });
     } catch (e) {
       log("bulk delete failed (fallback to manual)", "warn", { moduleName: MODULE_NAME, ...ctx, reason: e?.message || String(e) });
     }
@@ -180,12 +205,61 @@ async function setPurgeLastN(channel, log, { maxTotal }) {
 }
 
 /***************************************************************
+/* functionSignature: setPurgeDmBotMessages (wo, payload, log) *
+/* Handles "!purge [count]" in current DM channel              *
+/***************************************************************/
+async function setPurgeDmBotMessages(wo, payload, log) {
+  if (!getIsDMContext(wo)) return false;
+  const count = getParseBangPurgeCount(payload);
+  if (count === null) return false;
+
+  const client = await getResolveClient(wo);
+  const channelId = String(wo?.id || wo?.message?.channelId || "");
+  if (!client || !channelId) return true;
+
+  const channel = wo?.message?.channel || await getResolveChannelById(wo, channelId);
+  if (!channel?.messages?.fetch || !client?.user?.id) return true;
+
+  const ctx = { guildId: null, channelId };
+  let remaining = Math.min(Math.max(1, count), 500);
+  let totalDeleted = 0;
+  let beforeId = undefined;
+
+  while (remaining > 0) {
+    const batch = await channel.messages.fetch({ limit: 100, ...(beforeId ? { before: beforeId } : {}) }).catch(() => null);
+    const items = batch ? Array.from(batch.values()) : [];
+    if (!items.length) break;
+    const mine = items.filter(m => m.author?.id === client.user.id);
+    const slice = mine.slice(0, remaining);
+    const add = await setDeleteMessagesIndividually(slice, log, ctx, { perDeleteDelayMsStart: 120 });
+    totalDeleted += add;
+    remaining -= add;
+    const oldest = items[items.length - 1];
+    beforeId = oldest?.id;
+    if (!beforeId) break;
+  }
+
+  wo.Response = "";
+  wo.stop = true;
+  return true;
+}
+
+/***************************************************************
 /* functionSignature: getDiscordAdminCommands (coreData)       *
-/* Handles /purge and /error in the discord-admin flow         *
+/* Handles /purge and /error; plus DM-only text "!purge"       *
 /***************************************************************/
 export default async function getDiscordAdminCommands(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
+
+  const payload = typeof wo?.payload === "string" ? wo.payload.trim() : "";
+  const flow = String(wo?.flow || "");
+
+  if (flow === "discord" && payload) {
+    const handled = await setPurgeDmBotMessages(wo, payload, log);
+    if (handled) return coreData;
+  }
+
   try {
     if (wo?.flow !== "discord-admin") return coreData;
     const cmd = String(wo?.admin?.command || "").toLowerCase();
