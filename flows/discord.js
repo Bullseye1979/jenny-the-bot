@@ -8,7 +8,7 @@
 /*                                                             *
 /***************************************************************/
 
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, Partials, ChannelType } from "discord.js";
 import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
@@ -21,7 +21,7 @@ const MODULE_NAME = "discord";
 function getIntentsList(intents) {
   const list = Array.isArray(intents)
     ? intents
-    : ["Guilds", "GuildMessages", "MessageContent", "GuildVoiceStates"];
+    : ["Guilds", "GuildMessages", "MessageContent", "GuildVoiceStates", "DirectMessages"];
   return list.map((i) => GatewayIntentBits[i]).filter(Boolean);
 }
 
@@ -53,12 +53,15 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
     return;
   }
 
-  const client = new Client({ intents: getIntentsList(discordConfig.intents) });
+  const client = new Client({
+    intents: getIntentsList(discordConfig.intents),
+    partials: [Partials.Channel]
+  });
 
   {
     const startupCore = createRunCore();
     const log = getPrefixedLogger(startupCore.workingObject, import.meta.url);
-    client.once("clientReady", () => {
+    client.once("ready", () => {
       const tag = client.user?.tag || "unknown";
       log(`Discord connected as ${tag}`, "info", { moduleName: MODULE_NAME });
     });
@@ -89,6 +92,13 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
       (message.member && (message.member.displayName || message.member.nickname)) ||
       message.author?.username ||
       "";
+
+    wo.guildId = message.guildId || "";
+    wo.channelType = message.channel?.type ?? null;
+    wo.isDM = (wo.channelType === ChannelType.DM);
+    if (wo.isDM) {
+      wo.DM = true;
+    }
 
     wo.fileURLs = getAttachmentUrls(message);
 

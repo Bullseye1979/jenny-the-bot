@@ -4,6 +4,7 @@
 /* Purpose: GDPR gate for "discord" (text) and "discord-voice" *
 /*          Sends disclaimer DM exactly once and enforces      *
 /*          consent checks; no auto-reset inside this module.  *
+/*          NOTE: Skips entirely for direct messages (DMs).    *
 /***************************************************************/
 /***************************************************************
 /*                                                             *
@@ -55,9 +56,9 @@ function getSimpleTemplate(str, vars) {
 function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
   const txt = typeof wo?.GDPRDisclaimer === "string" ? wo.GDPRDisclaimer.trim() : "";
   if (!txt) return null;
-  const operatorName    = String(wo?.GdprOperatorName ?? wo?.GDPROperatorName ?? "");
+  const operatorName = String(wo?.GdprOperatorName ?? wo?.GDPROperatorName ?? "");
   const operatorContact = String(wo?.GdprContact ?? wo?.GDPRContact ?? "");
-  const retention       = String(wo?.GdprRetention ?? wo?.GDPRRetention ?? "");
+  const retention = String(wo?.GdprRetention ?? wo?.GDPRRetention ?? "");
   const vars = { userId, channelId, flow, operatorName, operatorContact, retention };
   const desc = getSimpleTemplate(txt, vars);
   const embed = { title: "GDPR Consent Required", description: desc, color: 0x5865F2 };
@@ -115,16 +116,27 @@ async function setEnsureConsentTable(conn, table) {
 /* Enforces GDPR gate, sends DM once, and blocks if not allowed*/
 /***************************************************************/
 export default async function getGdprGate(coreData) {
-  const wo  = coreData?.workingObject || {};
+  const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
 
   const flow = String(wo?.flow || "");
   if (flow !== "discord" && flow !== "discord-voice") return coreData;
 
+  const isDM =
+    wo?.DM === true ||
+    wo?.isDM === true ||
+    String(wo?.channelType ?? "").toUpperCase() === "DM" ||
+    wo?.channelType === 1 ||
+    (!wo?.guildId && !!(wo?.userId ?? wo?.userid));
+  if (isDM) {
+    log("dm detected — skipping gdpr gate", "info", { moduleName: MODULE_NAME, flow });
+    return coreData;
+  }
+
   const dbCfg = getDbConfig(wo);
   const table = getTableName(coreData);
 
-  const userId    = String(wo?.userId ?? wo?.userid ?? "");
+  const userId = String(wo?.userId ?? wo?.userid ?? "");
   const channelId = String(wo?.id ?? wo?.channelId ?? "");
   if (!userId || !channelId) {
     log("gdpr gate missing ids -> blocking", "warn", { moduleName: MODULE_NAME, userId, channelId, flow });
@@ -156,8 +168,8 @@ export default async function getGdprGate(coreData) {
         [userId, channelId]
       );
       if (Array.isArray(rows) && rows.length) {
-        chat       = Number(rows[0].chat) ? 1 : 0;
-        voice      = Number(rows[0].voice) ? 1 : 0;
+        chat = Number(rows[0].chat) ? 1 : 0;
+        voice = Number(rows[0].voice) ? 1 : 0;
         disclaimer = Number(rows[0].disclaimer) ? 1 : 0;
       } else {
         await conn.execute(

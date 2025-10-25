@@ -1,8 +1,8 @@
 /***************************************************************
 /* filename: "discord-text-output.js"                          *
 /* Version 1.0                                                 *
-/* Purpose: Send AI responses to Discord via channel webhook   *
-/*          (creates one named exactly wo.Botname if missing). *
+/* Purpose: In guilds/threads send via webhook; in DMs send    *
+/*          identical EMBEDS directly via the channel.         *
 /***************************************************************/
 /***************************************************************
 /*                                                             *
@@ -15,7 +15,7 @@ const MODULE_NAME = "discord-text-output";
 
 /***************************************************************
 /* functionSignature: getIsLikelyImageUrl (url)                *
-/* Returns true if the URL likely points to an image resource  *
+/* Returns true if the URL likely points to an image           *
 /***************************************************************/
 function getIsLikelyImageUrl(url) {
   const u = String(url).toLowerCase();
@@ -24,7 +24,7 @@ function getIsLikelyImageUrl(url) {
 
 /***************************************************************
 /* functionSignature: getFirstImageUrlFromText (text)          *
-/* Extracts the first image URL from plaintext or markdown     *
+/* Extracts the first image-like URL from a text string        *
 /***************************************************************/
 function getFirstImageUrlFromText(text) {
   if (!text) return null;
@@ -41,8 +41,8 @@ function getFirstImageUrlFromText(text) {
 }
 
 /***************************************************************
-/* functionSignature: getChunkText (str, max = 3500)           *
-/* Splits text into message-sized chunks with soft boundaries  *
+/* functionSignature: getChunkText (str, max)                  *
+/* Splits long text into chunks respecting soft boundaries     *
 /***************************************************************/
 function getChunkText(str, max = 3500) {
   const text = typeof str === "string" ? str : "";
@@ -78,7 +78,7 @@ function getWithCachebuster(url) {
 
 /***************************************************************
 /* functionSignature: getModuleConfigBaseURL (config)          *
-/* Resolves baseURL from config for this module                *
+/* Resolves the module baseURL from config                     *
 /***************************************************************/
 function getModuleConfigBaseURL(config) {
   const a = config?.["discord-text-output"];
@@ -87,24 +87,24 @@ function getModuleConfigBaseURL(config) {
 }
 
 /***************************************************************
-/* functionSignature: getIsThreadChannel (channel)             *
-/* Returns true if the channel is a thread                     *
+/* functionSignature: getIsThreadChannel (ch)                  *
+/* Checks whether a channel is a thread                        *
 /***************************************************************/
 function getIsThreadChannel(ch) {
   return ch?.isThread?.() === true;
 }
 
 /***************************************************************
-/* functionSignature: getIsChannelWebhook (hook)               *
-/* Returns true if the webhook is an incoming channel webhook  *
+/* functionSignature: getIsChannelWebhook (h)                  *
+/* Checks whether a webhook is a channel webhook               *
 /***************************************************************/
 function getIsChannelWebhook(h) {
   return Number(h?.type) === 1 || String(h?.type) === "Incoming";
 }
 
 /***************************************************************
-/* functionSignature: getUrlExists (url, timeoutMs = 3000)     *
-/* Checks if a URL exists within the timeout window            *
+/* functionSignature: getUrlExists (url, timeoutMs)            *
+/* Verifies remote URL availability with HEAD/GET              *
 /***************************************************************/
 async function getUrlExists(url, timeoutMs = 3000) {
   if (typeof fetch !== "function") return true;
@@ -125,8 +125,8 @@ async function getUrlExists(url, timeoutMs = 3000) {
 }
 
 /***************************************************************
-/* functionSignature: setEnsureOwnChannelWebhookClient (client,message,desiredName,wo)*
-/* Ensures a channel-level webhook exists and returns a client *
+/* functionSignature: setEnsureOwnChannelWebhookClient (...)   *
+/* Ensures a usable channel webhook and returns its client     *
 /***************************************************************/
 async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo) {
   const currChannel = message.channel;
@@ -170,8 +170,8 @@ async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo
 }
 
 /***************************************************************
-/* functionSignature: getResolvedIdentity (wo,config,effectiveId,client)*
-/* Resolves webhook username and avatar URL                    *
+/* functionSignature: getResolvedIdentity (wo, config, id, c)  *
+/* Resolves username and avatar URL for webhook identity       *
 /***************************************************************/
 async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, client) {
   const raw = typeof wo?.Botname === "string" ? wo.Botname.trim() : "";
@@ -201,7 +201,7 @@ async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, clien
 }
 
 /***************************************************************
-/* functionSignature: getEmbedPage ({ content, botName, imageUrl })*
+/* functionSignature: getEmbedPage ({ content, botName, img }) *
 /* Builds a single Discord embed page                          *
 /***************************************************************/
 function getEmbedPage({ content, botName, imageUrl }) {
@@ -216,27 +216,28 @@ function getEmbedPage({ content, botName, imageUrl }) {
 
 /***************************************************************
 /* functionSignature: getDiscordTextOutput (coreData)          *
-/* Sends wo.Response via webhook (one embed per message page)  *
+/* Sends text output via webhook in guilds/threads or DM embeds*/
 /***************************************************************/
 export default async function getDiscordTextOutput(coreData) {
   const wo = coreData.workingObject || {};
   const config = coreData.config || {};
   if (!Array.isArray(wo.logging)) wo.logging = [];
 
-  const response = (typeof wo.Response === "string" ? wo.Response : "").trim();
-  if (!response) {
+  const silence = (wo.ModSilence || "[silence]").toString();
+  let response = (typeof wo.Response === "string" ? wo.Response : "").trim();
+  if (!response || response === silence) {
     wo.logging.push({
       timestamp: new Date().toISOString(),
       severity: "warn",
       module: MODULE_NAME,
       exitStatus: "skipped",
-      message: "Missing response – nothing to send."
+      message: !response ? "Missing response – nothing to send." : "Silence token – not sending."
     });
     return coreData;
   }
 
   const clientKey = wo.clientRef || (wo.refs && wo.refs.client);
-  const client = clientKey ? getItem(clientKey) : null;
+  const client = clientKey ? await getItem(clientKey) : null;
   if (!client) {
     wo.logging.push({
       timestamp: new Date().toISOString(),
@@ -260,10 +261,42 @@ export default async function getDiscordTextOutput(coreData) {
     return coreData;
   }
 
+  const isDM =
+    !!(wo.DM || wo.isDM || wo.channelType === 1 ||
+       String(wo.channelType ?? "").toUpperCase() === "DM" ||
+       (!wo.guildId && (wo.userId || wo.userid)));
+
   try {
-    const message = wo.payload?.discord?.message;
-    const baseChannel = message?.channel ?? (await client.channels.fetch(channelId));
+    const baseMessage = wo.message;
+    const baseChannel = baseMessage?.channel ?? (await client.channels.fetch(channelId));
     if (!baseChannel) throw new Error("Channel not found");
+
+    const firstImage = getFirstImageUrlFromText(response);
+    const chunks = getChunkText(response, isDM ? 1900 : 3500);
+
+    if (isDM) {
+      let sent = 0;
+      const botName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
+
+      for (let i = 0; i < chunks.length; i++) {
+        const embed = getEmbedPage({
+          content: chunks[i],
+          botName,
+          imageUrl: i === 0 ? firstImage : null
+        });
+        await baseChannel.send({ embeds: [embed] });
+        sent++;
+      }
+
+      wo.logging.push({
+        timestamp: new Date().toISOString(),
+        severity: "info",
+        module: MODULE_NAME,
+        exitStatus: "success",
+        message: `Sent ${sent} DM embed chunk(s)`
+      });
+      return coreData;
+    }
 
     const desiredName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "";
     if (!desiredName) throw new Error("wo.Botname is required but missing/empty");
@@ -274,10 +307,6 @@ export default async function getDiscordTextOutput(coreData) {
     const effectiveAvatarId = threadId || parentChannelId;
     const identity = await getResolvedIdentity(wo, config, effectiveAvatarId, client);
 
-    const firstImage = getFirstImageUrlFromText(response);
-    const parts = getChunkText(response, 3500);
-    const total = Math.max(1, parts.length);
-
     let sentCount = 0;
 
     async function setSendAndVerify(payload) {
@@ -287,9 +316,9 @@ export default async function getDiscordTextOutput(coreData) {
       return msg;
     }
 
-    for (let i = 0; i < total; i++) {
+    for (let i = 0; i < chunks.length; i++) {
       const embed = getEmbedPage({
-        content: parts[i],
+        content: chunks[i],
         botName: identity.username,
         imageUrl: i === 0 ? firstImage : null
       });
@@ -318,7 +347,7 @@ export default async function getDiscordTextOutput(coreData) {
       severity: "error",
       module: MODULE_NAME,
       exitStatus: "failed",
-      message: `Failed to send Discord webhook embeds: ${err?.message || String(err)}`
+      message: `Failed to send Discord message: ${err?.message || String(err)}`
     });
   }
 
