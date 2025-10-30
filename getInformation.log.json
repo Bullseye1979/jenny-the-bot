@@ -1,0 +1,435 @@
+[
+  {
+    "ts": "2025-10-26T09:32:24.721Z",
+    "label": "run_start",
+    "channel_id": "1229507613788475462",
+    "keywords": [
+      "and i bite the orc"
+    ],
+    "limit": 15,
+    "window": 10,
+    "has_user_prompt": false
+  },
+  {
+    "ts": "2025-10-26T09:32:24.721Z",
+    "label": "candidate_sql_attempt",
+    "sql": "SELECT ts, id, json, text, (((\n  COALESCE(\n    JSON_UNQUOTE(JSON_EXTRACT(json, '$.content')),\n    CAST(json AS CHAR CHARACTER SET utf8mb4),\n    text,\n    ''\n  ) COLLATE utf8mb4_general_ci\n LIKE (? COLLATE utf8mb4_general_ci)))) AS score\n      FROM context\n     WHERE id = ?\n       AND (((\n  COALESCE(\n    JSON_UNQUOTE(JSON_EXTRACT(json, '$.content')),\n    CAST(json AS CHAR CHARACTER SET utf8mb4),\n    text,\n    ''\n  ) COLLATE utf8mb4_general_ci\n LIKE (? COLLATE utf8mb4_general_ci))))\n  ORDER BY ts ASC, id ASC\n     LIMIT 15",
+    "params": [
+      "%and i bite the orc%",
+      "1229507613788475462",
+      "%and i bite the orc%"
+    ]
+  },
+  {
+    "ts": "2025-10-26T09:32:24.775Z",
+    "label": "candidate_sql_result",
+    "count": 4,
+    "items": [
+      {
+        "id": "1229507613788475462",
+        "ts_sql": "2025-09-20 18:58:22",
+        "ts_iso": "2025-09-20T18:58:22.000Z",
+        "sender": "bullseye_lian",
+        "content": "And I bite the orc.",
+        "score": 1
+      },
+      {
+        "id": "1229507613788475462",
+        "ts_sql": "2025-10-26 08:14:00",
+        "ts_iso": "2025-10-26T08:14:00.000Z",
+        "sender": "Bullseye",
+        "content": "Jenny did any player ever say \"And I bite the orc\"",
+        "score": 1
+      },
+      {
+        "id": "1229507613788475462",
+        "ts_sql": "2025-10-26 10:24:22",
+        "ts_iso": "2025-10-26T10:24:22.000Z",
+        "sender": "Bullseye",
+        "content": "Jenny did any player ever say \"And I bite the orc\"",
+        "score": 1
+      },
+      {
+        "id": "1229507613788475462",
+        "ts_sql": "2025-10-26 10:32:16",
+        "ts_iso": "2025-10-26T10:32:16.000Z",
+        "sender": "Bullseye",
+        "content": "Jenny did any player ever say \"And I bite the orc\"?",
+        "score": 1
+      }
+    ]
+  },
+  {
+    "ts": "2025-10-26T09:32:24.788Z",
+    "label": "load_prev",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts < ? ORDER BY ts DESC LIMIT ?",
+    "params": [
+      "1229507613788475462",
+      "2025-09-20 18:58:22",
+      10
+    ],
+    "count": 10
+  },
+  {
+    "ts": "2025-10-26T09:32:24.789Z",
+    "label": "load_center",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts = ? LIMIT 1",
+    "params": [
+      "1229507613788475462",
+      "2025-09-20 18:58:22"
+    ],
+    "found": true
+  },
+  {
+    "ts": "2025-10-26T09:32:24.791Z",
+    "label": "load_next",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts > ? ORDER BY ts ASC LIMIT ?",
+    "params": [
+      "1229507613788475462",
+      "2025-09-20 18:58:22",
+      10
+    ],
+    "count": 10
+  },
+  {
+    "ts": "2025-10-26T09:32:24.795Z",
+    "label": "load_prev",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts < ? ORDER BY ts DESC LIMIT ?",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 08:14:00",
+      10
+    ],
+    "count": 10
+  },
+  {
+    "ts": "2025-10-26T09:32:24.795Z",
+    "label": "load_center",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts = ? LIMIT 1",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 08:14:00"
+    ],
+    "found": true
+  },
+  {
+    "ts": "2025-10-26T09:32:24.797Z",
+    "label": "load_next",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts > ? ORDER BY ts ASC LIMIT ?",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 08:14:00",
+      10
+    ],
+    "count": 2
+  },
+  {
+    "ts": "2025-10-26T09:32:24.800Z",
+    "label": "load_prev",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts < ? ORDER BY ts DESC LIMIT ?",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 10:24:22",
+      10
+    ],
+    "count": 10
+  },
+  {
+    "ts": "2025-10-26T09:32:24.801Z",
+    "label": "load_center",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts = ? LIMIT 1",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 10:24:22"
+    ],
+    "found": true
+  },
+  {
+    "ts": "2025-10-26T09:32:24.801Z",
+    "label": "load_next",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts > ? ORDER BY ts ASC LIMIT ?",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 10:24:22",
+      10
+    ],
+    "count": 1
+  },
+  {
+    "ts": "2025-10-26T09:32:24.804Z",
+    "label": "load_prev",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts < ? ORDER BY ts DESC LIMIT ?",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 10:32:16",
+      10
+    ],
+    "count": 10
+  },
+  {
+    "ts": "2025-10-26T09:32:24.805Z",
+    "label": "load_center",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts = ? LIMIT 1",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 10:32:16"
+    ],
+    "found": true
+  },
+  {
+    "ts": "2025-10-26T09:32:24.805Z",
+    "label": "load_next",
+    "sql": "SELECT ts, id, json, text FROM context WHERE id = ? AND ts > ? ORDER BY ts ASC LIMIT ?",
+    "params": [
+      "1229507613788475462",
+      "2025-10-26 10:32:16",
+      10
+    ],
+    "count": 0
+  },
+  {
+    "ts": "2025-10-26T09:32:24.820Z",
+    "label": "digest_built",
+    "chars": 644373,
+    "approx_tokens": 161094
+  },
+  {
+    "ts": "2025-10-26T09:32:24.820Z",
+    "label": "llm_chunking",
+    "chunks": 81,
+    "chunk_size_chars": 8000,
+    "total_chars": 644373
+  },
+  {
+    "ts": "2025-10-26T09:32:24.820Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:32:30.318Z",
+    "label": "llm_response",
+    "output_snippet": "- Nightstone, a peaceful town, is attacked by giants from a sky castle; boulders rain down, causing destruction.\n- Giants steal the town's obsidian heart, leaving a literal and symbolic hole.\n- Lady Velrosa Nandar calls for help; an adventuring party arrives to find Nightstone in ruins.\n- The party encounters Worgs in the streets, fights them using tactical formation (melee front, spellcasters rear).\n- Murphy (survivor, dark leathers, not a resistance leader) emerges after the battle, joins the ",
+    "output_len": 1003
+  },
+  {
+    "ts": "2025-10-26T09:32:30.318Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:32:34.952Z",
+    "label": "llm_response",
+    "output_snippet": "- Setting: Nightstone, a tranquil town, is devastated when a sky castle appears and giants attack, destroying the town and stealing the obsidian heart from the town square.\n- Lady Velrosa Nandar calls for help; an adventuring party arrives to find Nightstone in ruins and the obsidian heart missing.\n- As the party secures the streets, Worgs attack. The party forms a defensive line (melee up front, spellcasters in back) and defeats the beasts.\n- Murphy (determined, dark leathers, lone survivor) em",
+    "output_len": 1077
+  },
+  {
+    "ts": "2025-10-26T09:32:34.953Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:32:39.094Z",
+    "label": "llm_response",
+    "output_snippet": "- Nightstone, a tranquil town, is attacked when a giant castle appears in the sky; giants bombard the settlement, causing destruction.\n- Lady Velrosa Nandar calls for help; an adventuring party arrives to find the town in ruins and the obsidian heart stolen, leaving a gaping hole in the square.\n- As the party secures the streets, Worgs attack. The party forms a defensive line (steel up front, spells in back) and defeats them.\n- Murphy (determined, dark leathers, survivor) emerges from a ruined b",
+    "output_len": 1138
+  },
+  {
+    "ts": "2025-10-26T09:32:39.095Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:32:43.780Z",
+    "label": "llm_response",
+    "output_snippet": "- Giants attack Nightstone from a sky castle, hurling boulders and causing destruction. They steal the town's obsidian heart, leaving a literal and symbolic void.\n- Lady Velrosa Nandar calls for help; an adventuring party arrives to find Nightstone in ruins and the heart stolen.\n- As the party secures the streets, Worgs attack. The party forms a defensive line (melee front, spellcasters rear) and defeats them.\n- Murphy (determined, dark leathers) emerges from hiding, joins the fight, and survive",
+    "output_len": 1220
+  },
+  {
+    "ts": "2025-10-26T09:32:43.781Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:32:51.635Z",
+    "label": "llm_response",
+    "output_snippet": "- Nightstone, a tranquil town, is attacked when a giant castle appears in the sky; giants bombard the town and steal its obsidian heart, leaving devastation.\n- Lady Velrosa Nandar calls for help; an adventuring party arrives to find the town in ruins and the heart missing.\n- As the party secures the streets, Worgs attack; the party forms a defensive line (melee front, spellcasters rear) and defeats them.\n- Murphy (dark leathers, lone survivor) emerges, joins the party, and shares her account: gi",
+    "output_len": 1127
+  },
+  {
+    "ts": "2025-10-26T09:32:51.635Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:32:55.431Z",
+    "label": "llm_response",
+    "output_snippet": "- Nightstone, a tranquil town, is attacked by giants from a sky castle; boulders rain down, causing destruction and the obsidian heart is stolen, leaving a literal and symbolic hole.\n- Lady Velrosa Nandar calls for help; an adventuring party arrives to find the town in ruins.\n- As the party secures the streets, Worgs attack; the adventurers use a tactical formation (melee front, spellcasters rear) to defeat them.\n- Murphy (determined, dark leathers, survivor) emerges from a battered building, jo",
+    "output_len": 1130
+  },
+  {
+    "ts": "2025-10-26T09:32:55.431Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:32:59.700Z",
+    "label": "llm_response",
+    "output_snippet": "- A missed attack occurs; aw_neb_ula comments, \"I only have 12 AC hats.\" Ryan: \"Oh, Jesus. Okay. That's rough.\"\n- Bullseye_Lian moves: \"I walk over here. 15, 20, 25. Over here.\"\n- Erik_Intermediate_DM: \"going to move there. It's going to move out here. Barely see Earl. and it's going to try to shoot you.\"\n- Players discuss missing hit points: scott_lorien (1 missing), aw_neb_ula (4 missing), ryan (10 missing).\n- scott_lorien: \"I'll try to get that giraffe on. So I peek around the corner.\"\n- Erik",
+    "output_len": 1208
+  },
+  {
+    "ts": "2025-10-26T09:32:59.701Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:33:04.492Z",
+    "label": "llm_response",
+    "output_snippet": "- bullseye_lian asks to \"Try to get the names of the party members from the text.\"\n- tomas__erebus inquires about building contents, referencing a local character.\n- aw_neb_ula states: \"You're a vampire.\"\n- bullseye_lian: \"I was hiding in the rubble and...\" and later, \"And I'm not a vampire. It's daylight.\"\n- aw_neb_ula: \"Okay, but what's in a vampire?\" and later, \"Okay, I'm good.\" and \"Thank you.\"\n- erik_intermediate_dm clarifies: \"The only buildings you have actually... is this one, right here",
+    "output_len": 1556
+  },
+  {
+    "ts": "2025-10-26T09:33:04.492Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:33:06.426Z",
+    "label": "llm_response",
+    "output_snippet": "- Jenny_the_Bot instructs: \"Let's go with the perception check you mentioned earlier! Please roll a d20 and add your character's Wisdom modifier. If you have proficiency in Perception, don't forget to add your proficiency bonus as well. This roll will help determine what Bullseye, playing Murphy, can discern at the partially opened door.\"\n- Bullseye_Lian is playing Murphy.\n- Erik_Intermediate_DM prompts Thomas to continue, but Thomas clarifies he was just going to tell Scott something.\n- Erik_In",
+    "output_len": 774
+  },
+  {
+    "ts": "2025-10-26T09:33:06.427Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:33:15.596Z",
+    "label": "llm_response",
+    "output_snippet": "- Erik (DM) rules: \"he also gets a three or a half cover.\" Ryan agrees. Erik: \"That is a miss.\" Ryan: \"Yeah, and two.\" Ryan: \"Very good. Then I get out of here.\" Erik: \"or they are murdered.\"\n- Discussion shifts to Murphy's nature:\n    - Bullseye_Lian: \"Is Murphy a Vampire?\"\n    - Tomas_Erebus: \"That doesn't add up.\"\n    - Erik (DM): \"The- the only logical conclusion that, like...\"\n    - Banter about conspiracy theories (moon landing, birds, vaccines).\n    - Jenny_the_Bot provides D&D 5e context",
+    "output_len": 916
+  },
+  {
+    "ts": "2025-10-26T09:33:15.596Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:33:22.109Z",
+    "label": "llm_response",
+    "output_snippet": "- Erik (DM) introduces a scenario about denying the moon landing despite evidence. Tomas__erebus responds: \"I don't know where you got the information that the moon landing was real.\" Ryan and aw_neb_ula comment on the scandalous nature of the accusation.\n- Jenny_the_bot explains D&D 5e rules and lore regarding vampires entering consecrated ground (e.g., churches), noting it's not strictly defined in rules and is up to DM discretion. Possible explanations include magical artifacts, campaign-spec",
+    "output_len": 1190
+  },
+  {
+    "ts": "2025-10-26T09:33:22.109Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:33:29.203Z",
+    "label": "llm_response",
+    "output_snippet": "- Erik (DM) announces: \"We take a quick 10 minute or five minute break.\"\n- Players (Ryan, Bullseye_Lian, Erik) confirm break: \"Be right back.\"\n- Bullseye_Lian asks: \"What happened today in the dnd story?\"\n- Jenny_the_bot recaps:\n  - Murphy was stabilized after being in danger.\n  - Windmill collapsed dramatically, with sensory details (smell).\n  - Murphy expressed gratitude; Scott_Lorien showed relief or dismissal; Ryan prepared to continue (mounted horse).\n  - Session included player breaks.\n- B",
+    "output_len": 1743
+  },
+  {
+    "ts": "2025-10-26T09:33:29.203Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:33:38.520Z",
+    "label": "llm_response",
+    "output_snippet": "- Characters: \n  - aw_neb_ula, ryan, tomas__erebus, bullseye_lian (players)\n  - erik_intermediate_dm (DM)\n  - jenny_the_bot (rules reference bot)\n\n- Locations/Places:\n  - Village Bailey\n  - Mott (Motte) – castle area\n  - Broken bridge (70-foot gap between Village Bailey and Motte)\n\n- Timeline/Events:\n  - Players discuss recent progress and victories (\"You have finally gotten good.\" \"Finally!\" \"Finally, he got him.\")\n  - aw_neb_ula mentions recouping resources after a \"major win.\"\n  - Group decid",
+    "output_len": 1297
+  },
+  {
+    "ts": "2025-10-26T09:33:38.521Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:33:44.138Z",
+    "label": "llm_response",
+    "output_snippet": "- Erik (DM) reminds: \"Don't ask for somebody to identify themselves unless you're going to do the same thing first.\"\n- aw_neb_ula attempts to introduce self: \"Um, my name my name's... who has gazed upon the abyss, you can call me.\"\n- Erik: \"Yeah, that's too long. Short name, short name.\"\n- Erik: \"We're here to.\" (sentence cut off)\n- aw_neb_ula: \"Has to be his name if I've ever heard him.\"\n- Erik: \"Shoot. Send for some mercenaries.\"\n- Erik: \"A few hours ago, we managed to get here.\"\n- tomas__ereb",
+    "output_len": 1793
+  },
+  {
+    "ts": "2025-10-26T09:33:44.139Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:33:58.932Z",
+    "label": "llm_response",
+    "output_snippet": "- aw_neb_ula asks if the majority would classify Tomas__Erebus a certain way; Tomas__Erebus says \"Yeah.\" erik_intermediate_dm disagrees: \"No, not really.\"\n- bullseye_lian asks, \"What would your co-workers say?\"\n- aw_neb_ula: \"Do you kill innocent people regularly?\" Tomas__Erebus: \"OK.\"\n- aw_neb_ula: \"Do you kill people regularly?\" erik_intermediate_dm: \"Not particularly.\"\n- erik_intermediate_dm: \"What are you trying to imply here? You're just asking a bunch of questions.\"\n- tomas__erebus asks to",
+    "output_len": 1077
+  },
+  {
+    "ts": "2025-10-26T09:33:58.933Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  },
+  {
+    "ts": "2025-10-26T09:34:08.136Z",
+    "label": "llm_response",
+    "output_snippet": "- 2025-09-06: Scott Lorien says, \"I'll see you in a bit.\" Ryan states, \"This is referred to as now.\" Scott replies, \"Well, yeah.\" Erik (DM) and others (aw_neb_ula, bullseye_lian) say goodbye.\n- 2025-09-12: Bullseye_Lian requests a detailed, in-world summary of the D&D campaign, listing all events and characters, ignoring out-of-game chatter.\n- 2025-09-12: Bullseye_Lian asks, \"Is Murphy a vampire?\" Jenny_the_bot explains:\n  - Murphy, survivor of Nightstone, is called \"The Vampire\" by some.\n  - Wh",
+    "output_len": 1674
+  },
+  {
+    "ts": "2025-10-26T09:34:08.137Z",
+    "label": "llm_request",
+    "model": "gpt-4.1",
+    "max_tokens": 1200,
+    "temperature": 0.2,
+    "input_approx_tokens": 2179
+  }
+]

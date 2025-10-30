@@ -1,0 +1,118 @@
+{
+  "workingObject": {
+    "SystemPrompt": "You are a helpful assistant.",
+    "Persona": "Default AI Assistant",
+    "Instructions": "Answer concisely.",
+    "Model": "gpt-4o-mini",
+    "Endpoint": "https://api.openai.com/v1/chat/completions",
+    "APIKey": "YOUR_OPENAI_API_KEY",
+    "Response": "",
+    "payload": "",
+    "Temperature": 0.2,
+    "MaxTokens": 2000,
+    "requestTimeoutMs": 20000,
+    "toolChoice": "auto",
+    "tools": ["getImage", "getImageDescription"],
+    "fileURLs": [],
+    "logging": [],
+    "contextSize": 20,
+    "includeHistory": true,
+    "includeHistoryTools": true,
+    "includeRuntimeContext": true,
+    "printRuntimeContext": true,
+    "maxLoops": 20,
+
+    "trigger": "jenny",
+
+    "db": {
+      "host": "localhost",
+      "user": "discord_bot",
+      "password": "CHANGE_ME",
+      "database": "discord_ai"
+    },
+
+    "useVoiceChannel": 0,
+
+    "TTSModel": "gpt-4o-mini-tts",
+    "TTSVoice": "nova",
+    "TTSEndpoint": "https://api.openai.com/v1/audio/speech",
+    "TTSAPIKey": "YOUR_OPENAI_API_KEY",
+
+    "whisperApiKey": "YOUR_OPENAI_API_KEY",
+    "whisperModel": "whisper-1",
+    "whisperLanguage": "",
+    "whisperEndpoint": "https://api.openai.com",
+
+    "toolsconfig": {
+      "getImage": {
+        "apiKey": "YOUR_OPENAI_API_KEY",
+        "model": "dall-e-3",
+        "size": "1024x1024",
+        "n": 1,
+        "public_base_url": "https://example.com"
+      },
+      "getImageDescription": {
+        "apiKey": "YOUR_OPENAI_API_KEY",
+        "model": "gpt-4o-mini",
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "temperature": 0.2,
+        "max_tokens": 1000,
+        "timeout_ms": 60000
+      }
+    }
+  },
+  "config": {
+    "discord": {
+      "flowName": "discord",
+      "token": "YOUR_DISCORD_BOT_TOKEN",
+      "intents": ["Guilds", "GuildMessages", "MessageContent", "GuildVoiceStates", "GuildMembers"]
+    },
+    "webpage": {
+      "flowName": "webpage"
+    },
+    "discord-voice": {
+      "flowName": "discord-voice"
+    },
+    "core-ai": { "flow": ["all"] },
+    "discord-voice-tts": { "flow": ["discord-voice"] },
+    "discord-voice-transcribe": {
+      "flow": ["discord-voice"],
+      "pollMs": 1000,
+      "silenceMs": 1500,
+      "maxCaptureMs": 25000,
+      "minVoicedMs": 1200,
+      "snrDbThreshold": 3.5,
+      "frameMs": 20,
+      "startDebounceMs": 600
+    },
+    "core-output": { "flow": ["all"] },
+    "discord-text-output": { "flow": ["all"] },
+    "discord-add-context": { "flow": ["discord", "discord-voice"] },
+    "discord-channel-gate": { "flow": ["discord", "discord-voice"] },
+    "discord-trigger-gate": { "flow": ["discord", "discord-voice"] },
+    "discord-reaction-start": { "flow": ["discord"] },
+    "discord-reaction-finish": { "flow": ["discord"] },
+    "discord-join": { "flow": ["discord"] },
+    "discord-channel-config": {
+      "flow": ["discord", "discord-voice"],
+      "channels": {
+        "CHANNEL_ID_1": [
+          {
+            "userIds": ["USER_ID_1"],
+            "overrides": {
+              "Instructions": "Respond exclusively in rhymes. Keep answers short (2–4 lines), clear, and relevant to the user's prompt. Use natural English, no emojis, and no meta explanations outside the rhyme."
+            }
+          }
+        ],
+        "CHANNEL_ID_2": [
+          {
+            "userIds": ["USER_ID_1"],
+            "overrides": {
+              "Instructions": "Answer as operetta-like as possible, with elaborate words and phrases."
+            }
+          }
+        ]
+      }
+    }
+  }
+}
