@@ -80,11 +80,16 @@ async function getEnsurePool(workingObject) {
       text      TEXT          NULL,
       role      VARCHAR(32)   NOT NULL DEFAULT 'user',
       turn_id   CHAR(26)      NULL,
+      frozen    TINYINT(1)    NOT NULL DEFAULT 0,
       KEY idx_id_ts         (id, ts),
       KEY idx_role          (role),
       KEY idx_turn          (turn_id),
       KEY idx_id_turn       (id, turn_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+  await pool.query(`
+    ALTER TABLE context
+      ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ${TIMELINE_TABLE} (
@@ -97,10 +102,15 @@ async function getEnsurePool(workingObject) {
       summary TEXT NOT NULL,
       model VARCHAR(64) NOT NULL,
       checksum CHAR(64) NOT NULL,
+      frozen TINYINT(1) NOT NULL DEFAULT 0,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY ux_timeline (channel_id, start_idx, end_idx)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  await pool.query(`
+    ALTER TABLE ${TIMELINE_TABLE}
+      ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
   `);
   sharedPool = pool;
   sharedDsn = dsnKey;
@@ -569,8 +579,8 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   await pool.query(
     `
       INSERT INTO ${TIMELINE_TABLE}
-        (channel_id, start_idx, end_idx, start_ts, end_ts, summary, model, checksum)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (channel_id, start_idx, end_idx, start_ts, end_ts, summary, model, checksum, frozen)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
       ON DUPLICATE KEY UPDATE
         summary = VALUES(summary),
         start_ts = VALUES(start_ts),
@@ -602,7 +612,7 @@ export async function setContext(workingObject, record) {
         ? normalized.turn_id
         : null);
   await pool.execute(
-    "INSERT INTO context (id, json, text, role, turn_id) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO context (id, json, text, role, turn_id, frozen) VALUES (?, ?, ?, ?, ?, 0)",
     [id, json, text, role, turnId]
   );
   try {
@@ -678,14 +688,40 @@ export async function getContext(workingObject) {
 
 /***************************************************************
 /* functionSignature: setPurgeContext (workingObject)          *
-/* Deletes all context rows for the given workingObject id.    *
+/* Deletes context and timeline rows for id where frozen=0.    *
 /***************************************************************/
 export async function setPurgeContext(workingObject) {
   const id = String(workingObject?.id || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
-  const [res] = await pool.execute("DELETE FROM context WHERE id = ?", [id]);
-  return Number(res?.affectedRows || 0);
+  const [res1] = await pool.execute(
+    "DELETE FROM context WHERE id = ? AND COALESCE(frozen, 0) = 0",
+    [id]
+  );
+  const [res2] = await pool.execute(
+    `DELETE FROM ${TIMELINE_TABLE} WHERE channel_id = ? AND COALESCE(frozen, 0) = 0`,
+    [id]
+  );
+  return Number(res1?.affectedRows || 0) + Number(res2?.affectedRows || 0);
+}
+
+/***************************************************************
+/* functionSignature: setFreezeContext (workingObject)         *
+/* Sets frozen=1 for all rows of id in context and timeline.   *
+/***************************************************************/
+export async function setFreezeContext(workingObject) {
+  const id = String(workingObject?.id || "");
+  if (!id) throw new Error("[context] missing id");
+  const pool = await getEnsurePool(workingObject);
+  const [r1] = await pool.execute(
+    "UPDATE context SET frozen = 1 WHERE id = ?",
+    [id]
+  );
+  const [r2] = await pool.execute(
+    `UPDATE ${TIMELINE_TABLE} SET frozen = 1 WHERE channel_id = ?`,
+    [id]
+  );
+  return Number(r1?.affectedRows || 0) + Number(r2?.affectedRows || 0);
 }
 
 /***************************************************************
@@ -693,7 +729,7 @@ export async function setPurgeContext(workingObject) {
 /* Exposes the public API: setContext, getContext, purge.      *
 /***************************************************************/
 function getDefaultExport() {
-  return { setContext, getContext, setPurgeContext };
+  return { setContext, getContext, setPurgeContext, setFreezeContext };
 }
 
 export default getDefaultExport();

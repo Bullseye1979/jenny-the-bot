@@ -2,8 +2,8 @@
 /* filename: "discord-admin-commands.js"                       *
 /* Version 1.0                                                 *
 /* Purpose: Slash admin commands for the "discord-admin" flow: *
-/*          /purge [count] and /error, plus DM-only text       *
-/*          command "!purge [count]" for current DM channel.   *
+/*          /purge [count], /error, /purgedb, /freeze, plus    *
+/*          DM-only text command "!purge [count]" for DM.      *
 /***************************************************************/
 /***************************************************************
 /* Version History                                             *
@@ -11,6 +11,7 @@
 
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
+import { setPurgeContext, setFreezeContext } from "../core/context.js";
 
 const MODULE_NAME = "discord-admin-commands";
 
@@ -246,7 +247,7 @@ async function setPurgeDmBotMessages(wo, payload, log) {
 
 /***************************************************************
 /* functionSignature: getDiscordAdminCommands (coreData)       *
-/* Handles /purge and /error; plus DM-only text "!purge"       *
+/* Handles /purge, /error, /purgedb, /freeze; DM-only "!purge" *
 /***************************************************************/
 export default async function getDiscordAdminCommands(coreData) {
   const wo  = coreData?.workingObject || {};
@@ -263,11 +264,41 @@ export default async function getDiscordAdminCommands(coreData) {
   try {
     if (wo?.flow !== "discord-admin") return coreData;
     const cmd = String(wo?.admin?.command || "").toLowerCase();
-    if (cmd !== "purge" && cmd !== "error") {
+    if (cmd !== "purge" && cmd !== "error" && cmd !== "purgedb" && cmd !== "freeze") {
       return coreData;
     }
     if (cmd === "error") {
       throw new Error("Simulated error via /error");
+    }
+    if (cmd === "purgedb") {
+      const targetChannelId = String(wo?.admin?.channelId || wo?.id || "");
+      if (!targetChannelId) {
+        log("db purge failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
+        wo.Response = "";
+        wo.stop = true;
+        return coreData;
+      }
+      const purgeWO = { ...wo, id: targetChannelId };
+      const deleted = await setPurgeContext(purgeWO);
+      log("db purge done", "info", { moduleName: MODULE_NAME, channelId: targetChannelId, deleted });
+      wo.Response = "";
+      wo.stop = true;
+      return coreData;
+    }
+    if (cmd === "freeze") {
+      const targetChannelId = String(wo?.admin?.channelId || wo?.id || "");
+      if (!targetChannelId) {
+        log("freeze failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
+        wo.Response = "";
+        wo.stop = true;
+        return coreData;
+      }
+      const freezeWO = { ...wo, id: targetChannelId };
+      const updated = await setFreezeContext(freezeWO);
+      log("freeze done", "info", { moduleName: MODULE_NAME, channelId: targetChannelId, updated });
+      wo.Response = "";
+      wo.stop = true;
+      return coreData;
     }
     const channelId = String(wo?.admin?.channelId || wo?.id || "");
     const channel = await getResolveChannelById(wo, channelId);
