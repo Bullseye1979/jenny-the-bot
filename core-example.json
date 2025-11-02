@@ -1,117 +1,622 @@
 {
   "workingObject": {
+    "Botname": "Jenny the Bot",
     "SystemPrompt": "You are a helpful assistant.",
     "Persona": "Default AI Assistant",
     "Instructions": "Answer concisely.",
     "Model": "gpt-4o-mini",
     "Endpoint": "https://api.openai.com/v1/chat/completions",
-    "APIKey": "YOUR_OPENAI_API_KEY",
+    "APIKey": "<OPENAI_API_KEY>",
     "Response": "",
     "payload": "",
     "Temperature": 0.2,
     "MaxTokens": 2000,
-    "requestTimeoutMs": 20000,
-    "toolChoice": "auto",
-    "tools": ["getImage", "getImageDescription"],
+    "UsePseudoTools": false,
+    "RequestTimeoutMs": 1000000,
+    "ToolChoice": "auto",
+    "Tools": [
+      "getAnimatedPicture",
+      "getConfluence",
+      "getYoutube",
+      "getDiscordAvatar",
+      "getGoogle",
+      "getHistory",
+      "getImage",
+      "getText",
+      "getImageDescription",
+      "getInformation",
+      "getJira",
+      "getLocation",
+      "getPDF",
+      "getTime",
+      "getTimeline",
+      "getToken",
+      "getVideoFromText",
+      "getWebpage"
+    ],
+    "IncludeHistory": true,
+    "IncludeHistoryTools": false,
+    "IncludeRuntimeContext": true,
+    "MaxLoops": 15,
+    "contextTokenBudget": 60000,
+    "GDPRDisclaimer": "GDPR Notice & Consent (Private Operator – Germany)\n\nApplicability & Framework\n- This bot is operated privately (non-commercial) by \"<CONTROLLER_NAME>\" in Germany. While purely personal/household activities can be outside the scope of the GDPR (Art. 2(2)(c) GDPR), GDPR-style controls and German BDSG safeguards are applied. If the operation goes beyond purely private use, the GDPR (Regulation (EU) 2016/679) and the BDSG (Bundesdatenschutzgesetz) will fully apply.\n\nController (Private Operator)\n- Name/Handle: <CONTROLLER_CONTACT>\n- Contact: <CONTACT_METHOD>\n- Jurisdiction: Germany (EU)\n\nWhat is processed\n- Identifiers: Discord user ID, channel ID\n- Content: Your text messages (if “text” consented) and/or voice audio, transcripts & derived text (if “voice” consented)\n- Technical metadata: timestamps, event references, minimal operational logs (strictly necessary)\n\nPurposes\n- Provide bot features (chat responses, voice transcription/assistant functions)\n- Service integrity, abuse prevention, troubleshooting (minimal logs)\n\nLegal Basis (GDPR/BDSG)\n- Art. 6(1)(a) GDPR — Consent: Text and/or voice processing occurs only if you explicitly enable it per channel.\n- Art. 6(1)(f) GDPR — Legitimate interests: Strictly necessary security and operational logging without profiling.\n\nYour Choices (In-Channel Commands)\n- Enable/Disable text processing: /gdpr text 1 / /gdpr text 0\n- Enable/Disable voice processing: /gdpr voice 1 / /gdpr voice 0\n- You can revoke consent at any time with the “0” commands. Revocation applies to future processing.\n\nStorage & Retention\n- Stored: per-user+channel consent flags and a one-time “disclaimer-seen” marker.\n- Content/transcripts: only if the corresponding consent is enabled.\n- Retention: kept only as long as needed for the stated purposes or until revocation; technical logs use short rolling retention.\n\nRecipients / Transfers\n- Processing occurs on the bot’s infrastructure. If third-party AI or speech services are configured, your content may be sent to those processors strictly to fulfill your request, according to current configuration.\n\nYour Rights (if/when GDPR fully applies)\n- Access, rectification, erasure, restriction, objection, portability.\n- To exercise rights, contact the controller listed above.\n\nNotes\n- This is a community tool run by a private operator who chooses to observe GDPR/BDSG principles.\n- Consent is granular per channel and feature (text vs. voice).\n\nEffective date: 2025-10-25",
+    "AvatarApiKey": "<OPENAI_API_KEY_FOR_IMAGES>",
+    "AvatarEndpoint": "https://api.openai.com/v1/images/generations",
+    "AvatarModel": "dall-e-3",
+    "AvatarSize": "1024x1024",
+    "AvatarPrompt": "",
+    "ModAdmin": "<DISCORD_ADMIN_USER_ID>",
+    "ModSilence": "[silence]",
+    "discord-admin": {
+      "slash": {
+        "silent": true,
+        "ephemeral": false,
+        "definitions": [
+          {
+            "name": "avatar",
+            "description": "Set or generate the bot's channel avatar",
+            "dm_permission": false,
+            "options": [
+              {
+                "type": 1,
+                "name": "url",
+                "Admin": [
+                  "<DISCORD_ADMIN_USER_ID>"
+                ],
+                "description": "Download image from a URL and set as avatar",
+                "options": [
+                  {
+                    "type": 3,
+                    "name": "url",
+                    "description": "Direct image URL",
+                    "required": true
+                  }
+                ]
+              },
+              {
+                "type": 1,
+                "name": "prompt",
+                "description": "Append text to the avatar prompt and regenerate",
+                "Admin": [
+                  "<DISCORD_ADMIN_USER_ID>"
+                ],
+                "options": [
+                  {
+                    "type": 3,
+                    "name": "text",
+                    "description": "Prompt text to append",
+                    "required": true
+                  }
+                ]
+              },
+              {
+                "type": 1,
+                "name": "regen",
+                "Admin": [
+                  "<DISCORD_ADMIN_USER_ID>"
+                ],
+                "description": "Regenerate avatar using current prompt"
+              }
+            ]
+          },
+          {
+            "name": "purge",
+            "description": "Delete recent messages (hybrid)",
+            "dm_permission": false,
+            "Admin": [
+              "<DISCORD_ADMIN_USER_ID>"
+            ],
+            "options": [
+              {
+                "type": 4,
+                "name": "count",
+                "description": "How many (max 5000)",
+                "required": false
+              }
+            ]
+          },
+          {
+            "name": "purgedb",
+            "description": "Delete the database entries for this channel",
+            "dm_permission": false,
+            "Admin": [
+              "<DISCORD_ADMIN_USER_ID>"
+            ]
+          },
+          {
+            "name": "freeze",
+            "description": "Mark DB rows for this channel as frozen",
+            "Admin": [
+              "<DISCORD_ADMIN_USER_ID>"
+            ],
+            "dm_permission": false
+          },
+          {
+            "name": "gdpr",
+            "description": "Set GDPR consent flags",
+            "dm_permission": false,
+            "options": [
+              {
+                "type": 1,
+                "name": "text",
+                "description": "Enable/disable text chat consent",
+                "options": [
+                  {
+                    "type": 4,
+                    "name": "value",
+                    "description": "0 or 1",
+                    "required": true
+                  }
+                ]
+              },
+              {
+                "type": 1,
+                "name": "voice",
+                "description": "Enable/disable voice consent",
+                "options": [
+                  {
+                    "type": 4,
+                    "name": "value",
+                    "description": "0 or 1",
+                    "required": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "join",
+            "description": "Join my current voice channel",
+            "dm_permission": false
+          },
+          {
+            "name": "error",
+            "description": "Simulate an internal error for testing",
+            "dm_permission": false
+          },
+          {
+            "name": "leave",
+            "description": "Leave the current voice channel",
+            "dm_permission": false
+          }
+        ]
+      }
+    },
+    "ShowReactions": true,
     "fileURLs": [],
     "logging": [],
     "contextSize": 20,
-    "includeHistory": true,
-    "includeHistoryTools": true,
-    "includeRuntimeContext": true,
-    "printRuntimeContext": true,
-    "maxLoops": 20,
-
+    "videoApiToken": "<REPLICATE_OR_VIDEO_API_TOKEN>",
+    "videoBaseUrl": "https://api.replicate.com/v1",
+    "videoModel": "google/veo-3-fast",
+    "videoPollIntervalMs": 5000,
+    "videoTimeoutMs": 600000,
+    "videoPublicBaseUrl": "https://your-public-file-host.example.com",
     "trigger": "jenny",
-
     "db": {
       "host": "localhost",
       "user": "discord_bot",
-      "password": "CHANGE_ME",
+      "password": "<DB_PASSWORD>",
       "database": "discord_ai"
     },
-
     "useVoiceChannel": 0,
-
     "TTSModel": "gpt-4o-mini-tts",
     "TTSVoice": "nova",
     "TTSEndpoint": "https://api.openai.com/v1/audio/speech",
-    "TTSAPIKey": "YOUR_OPENAI_API_KEY",
-
-    "whisperApiKey": "YOUR_OPENAI_API_KEY",
+    "TTSAPIKey": "<OPENAI_API_KEY_FOR_TTS>",
+    "whisperApiKey": "<OPENAI_API_KEY_FOR_WHISPER>",
     "whisperModel": "whisper-1",
     "whisperLanguage": "",
     "whisperEndpoint": "https://api.openai.com",
-
     "toolsconfig": {
       "getImage": {
-        "apiKey": "YOUR_OPENAI_API_KEY",
+        "apiKey": "<OPENAI_API_KEY>",
         "model": "dall-e-3",
         "size": "1024x1024",
         "n": 1,
-        "public_base_url": "https://example.com"
+        "public_base_url": "https://your-public-file-host.example.com/"
+      },
+      "getConfluence": {
+        "baseUrl": "https://<your-domain>.atlassian.net/wiki",
+        "email": "<YOUR_CONFLUENCE_EMAIL>",
+        "token": "<ATLASSIAN_API_TOKEN>",
+        "project": "ST",
+        "mainPageId": "119046402",
+        "useV2": true
+      },
+      "getPDF": {
+        "publicBaseUrl": "https://your-public-file-host.example.com",
+        "headless": "new",
+        "chromeArgs": [
+          "--no-sandbox"
+        ],
+        "waitUntil": "networkidle0",
+        "timeoutMs": 120000,
+        "format": "A4",
+        "printBackground": true
+      },
+      "getJira": {
+        "baseUrl": "https://<your-domain>.atlassian.net",
+        "email": "<YOUR_JIRA_EMAIL>",
+        "token": "<ATLASSIAN_API_TOKEN>",
+        "projectKey": "ST",
+        "defaultIssueType": "Task",
+        "defaultAssignee": "",
+        "defaultPriority": "Medium",
+        "timeoutMs": 60000,
+        "defaults": {
+          "fields": {
+            "summary": "",
+            "description": "",
+            "priority": {
+              "name": "Medium"
+            }
+          }
+        },
+        "customFields": {
+          "epicLink": "customfield_10014",
+          "storyPoints": "customfield_10016"
+        },
+        "search": {
+          "maxResults": 50
+        },
+        "transitions": {
+          "open": "",
+          "inProgress": "",
+          "done": ""
+        }
+      },
+      "getToken": {
+        "public_base_url": "https://your-public-file-host.example.com",
+        "magickPath": "convert",
+        "size": 512,
+        "border_px": 10,
+        "ffmpegPath": "ffmpeg",
+        "maxMb": 4,
+        "fpsList": [12, 10, 8],
+        "scaleList": [512, 384, 320],
+        "maxColorsList": [128, 96, 64, 48, 32],
+        "ditherList": [
+          "bayer:bayer_scale=3:diff_mode=rectangle",
+          "bayer:bayer_scale=5:diff_mode=rectangle",
+          "none"
+        ],
+        "useGifsicleLossy": true,
+        "gifsiclePath": "gifsicle",
+        "gifsicleLossyLevels": [80, 100, 120]
       },
       "getImageDescription": {
-        "apiKey": "YOUR_OPENAI_API_KEY",
+        "apiKey": "<OPENAI_API_KEY>",
         "model": "gpt-4o-mini",
         "endpoint": "https://api.openai.com/v1/chat/completions",
         "temperature": 0.2,
         "max_tokens": 1000,
         "timeout_ms": 60000
+      },
+      "getHistory": {
+        "pagesize": 1000,
+        "max_rows": 5000,
+        "threshold": 2000,
+        "model": "gpt-4.1",
+        "temperature": 0,
+        "max_tokens": 8000,
+        "aiTimeoutMs": 45000,
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "apiKey": "<OPENAI_API_KEY>"
+      },
+      "getInformation": {
+        "cluster_rows": 200,
+        "pad_rows": 20,
+        "token_window": 5,
+        "max_log_chars": 6000,
+        "max_output_lines": 1000,
+        "min_coverage": 1,
+        "event_gap_minutes": 45,
+        "max_timeline_periods": 30,
+        "strip_code": false
+      },
+      "getGoogle": {
+        "apiKey": "<GOOGLE_CUSTOM_SEARCH_API_KEY>",
+        "cseId": "<GOOGLE_CUSTOM_SEARCH_ENGINE_ID>",
+        "num": 10,
+        "safe": "off",
+        "hl": "de",
+        "lr": "lang_de",
+        "cr": "countryDE",
+        "gl": "de",
+        "timeoutMs": 20000
+      },
+      "getWebpage": {
+        "user_agent": "Mozilla/5.0",
+        "timeoutMs": 30000,
+        "maxInputChars": 240000,
+        "model": "gpt-4.1",
+        "temperature": 0.2,
+        "max_tokens": 18000,
+        "aiTimeoutMs": 45000,
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "apiKey": "<OPENAI_API_KEY>"
+      },
+      "getImageSD": {
+        "base_url": "http://127.0.0.1:7860",
+        "public_base_url": "https://your-public-file-host.example.com",
+        "size": "384x384",
+        "n": 1,
+        "steps": 15,
+        "cfg_scale": 6.0,
+        "sampler": "Euler a",
+        "seed": -1,
+        "negative_extra": "",
+        "model": "",
+        "timeoutMs": 120000,
+        "networkTimeoutMs": 1800000,
+        "headers": {}
+      },
+      "getLocation": {
+        "googleApiKey": "<GOOGLE_MAPS_API_KEY>",
+        "publicBaseUrl": "https://your-public-file-host.example.com",
+        "street_size": "800x600",
+        "street_fov": 90,
+        "timeoutMs": 20000
+      },
+      "getYoutube": {
+        "googleApiKey": "<YOUTUBE_DATA_API_KEY>",
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "apiKey": "<OPENAI_API_KEY>",
+        "model": "gpt-4.1",
+        "temperature": 0.2,
+        "max_tokens": 8000,
+        "dump_threshold_chars": 20000,
+        "transcriptLangs": ["de", "en"],
+        "regionCode": "DE",
+        "relevanceLanguage": "de",
+        "searchMaxResults": 5,
+        "aiTimeoutMs": 300000
       }
-    }
-  },
-  "config": {
-    "discord": {
-      "flowName": "discord",
-      "token": "YOUR_DISCORD_BOT_TOKEN",
-      "intents": ["Guilds", "GuildMessages", "MessageContent", "GuildVoiceStates", "GuildMembers"]
     },
-    "webpage": {
-      "flowName": "webpage"
-    },
-    "discord-voice": {
-      "flowName": "discord-voice"
-    },
-    "core-ai": { "flow": ["all"] },
-    "discord-voice-tts": { "flow": ["discord-voice"] },
-    "discord-voice-transcribe": {
-      "flow": ["discord-voice"],
-      "pollMs": 1000,
-      "silenceMs": 1500,
-      "maxCaptureMs": 25000,
-      "minVoicedMs": 1200,
-      "snrDbThreshold": 3.5,
-      "frameMs": 20,
-      "startDebounceMs": 600
-    },
-    "core-output": { "flow": ["all"] },
-    "discord-text-output": { "flow": ["all"] },
-    "discord-add-context": { "flow": ["discord", "discord-voice"] },
-    "discord-channel-gate": { "flow": ["discord", "discord-voice"] },
-    "discord-trigger-gate": { "flow": ["discord", "discord-voice"] },
-    "discord-reaction-start": { "flow": ["discord"] },
-    "discord-reaction-finish": { "flow": ["discord"] },
-    "discord-join": { "flow": ["discord"] },
-    "discord-channel-config": {
-      "flow": ["discord", "discord-voice"],
-      "channels": {
-        "CHANNEL_ID_1": [
-          {
-            "userIds": ["USER_ID_1"],
-            "overrides": {
-              "Instructions": "Respond exclusively in rhymes. Keep answers short (2–4 lines), clear, and relevant to the user's prompt. Use natural English, no emojis, and no meta explanations outside the rhyme."
-            }
-          }
-        ],
-        "CHANNEL_ID_2": [
-          {
-            "userIds": ["USER_ID_1"],
-            "overrides": {
-              "Instructions": "Answer as operetta-like as possible, with elaborate words and phrases."
-            }
-          }
+    "config": {
+      "discord": {
+        "flowName": "discord",
+        "token": "<DISCORD_BOT_TOKEN>",
+        "intents": [
+          "Guilds",
+          "GuildMessages",
+          "MessageContent",
+          "GuildVoiceStates",
+          "GuildMembers",
+          "DirectMessages"
         ]
+      },
+      "context": {
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "model": "gpt-4o-mini",
+        "apiKey": "<OPENAI_API_KEY>",
+        "periodSize": 600
+      },
+      "webpage": {
+        "flowName": "webpage"
+      },
+      "discord-admin": {
+        "flowName": "discord-admin"
+      },
+      "discord-status": {
+        "flowName": "discord-status",
+        "pollMs": 300,
+        "status": "online",
+        "mapping": {
+          "getImage": "Summoning pixels …",
+          "getImageSD": "Brewing diffusion potions …",
+          "getImageDescription": "Staring at pixels thoughtfully …",
+          "getAnimatedPicture": "Teaching pictures to wiggle …",
+          "getVideoFromText": "Directing tiny actors …",
+          "getTime": "Asking the space-time continuum …",
+          "getToken": "Minting shiny tokens …",
+          "getInformation": "Rummaging through the chat attic …",
+          "getHistory": "Dusting off the archives …",
+          "getGoogle": "Consulting the all-knowing oracle …",
+          "getWebpage": "Skimming the page like a pro …",
+          "getLocation": "Unfolding the maps …",
+          "getTimeline": "Starting the Flux Capacitor …",
+          "getPDF": "Scribbeling the words …",
+          "getJira": "Sorting the tasks …",
+          "getConfluence": "Filling the chronicles …",
+          "getText": "Writing the ancient letters …",
+          "getYoutube": "Gazing in the abyss …"
+        },
+        "randomEnabled": true,
+        "randomIntervalMs": 600000,
+        "randomJitterPct": 0.25,
+        "randomLines": [
+          "Shall we play a game?",
+          "Resistance is futile.",
+          "EX-TER-MI-NATE!",
+          "You will be upgraded.",
+          "I'll be back."
+        ]
+      },
+      "discord-voice": {
+        "flowName": "discord-voice"
+      },
+      "core-ai": {
+        "flow": [
+          "discord",
+          "discord-voice"
+        ]
+      },
+      "discord-voice-tts": {
+        "flow": [
+          "discord-voice"
+        ]
+      },
+      "discord-voice-transcribe": {
+        "flow": [
+          "discord-voice"
+        ],
+        "pollMs": 1000,
+        "silenceMs": 1300,
+        "maxCaptureMs": 25000,
+        "minVoicedMs": 800,
+        "snrDbThreshold": 3.5,
+        "frameMs": 20,
+        "startDebounceMs": 600
+      },
+      "core-output": {
+        "flow": [
+          "all"
+        ]
+      },
+      "moderation-output": {
+        "flow": [
+          "discord"
+        ]
+      },
+      "discord-text-output": {
+        "flow": [
+          "all"
+        ],
+        "baseURL": "https://your-public-file-host.example.com"
+      },
+      "discord-add-context": {
+        "flow": [
+          "discord",
+          "discord-voice",
+          "discord-admin"
+        ]
+      },
+      "discord-admin-commands": {
+        "flow": [
+          "discord-admin",
+          "discord"
+        ]
+      },
+      "discord-channel-gate": {
+        "flow": [
+          "discord",
+          "discord-voice",
+          "discord-admin"
+        ]
+      },
+      "discord-trigger-gate": {
+        "flow": [
+          "discord",
+          "discord-voice"
+        ]
+      },
+      "discord-reaction-start": {
+        "flow": [
+          "discord"
+        ]
+      },
+      "discord-reaction-finish": {
+        "flow": [
+          "discord"
+        ]
+      },
+      "discord-admin-join": {
+        "flow": [
+          "discord-admin"
+        ]
+      },
+      "discord-gdpr-gate": {
+        "flow": [
+          "discord",
+          "discord-voice",
+          "discord-admin"
+        ],
+        "table": "gdpr"
+      },
+      "discord-admin-gdpr": {
+        "flow": [
+          "discord-admin"
+        ],
+        "table": "gdpr"
+      },
+      "discord-admin-avatar": {
+        "flow": [
+          "discord-admin"
+        ]
+      },
+      "discord-channel-config": {
+        "flow": [
+          "discord",
+          "discord-voice",
+          "discord-admin"
+        ],
+        "channels": {
+          "CHANNEL_ID_1": [
+            {
+              "userIds": [
+                "<DISCORD_ADMIN_USER_ID>"
+              ],
+              "flows": [
+                "discord"
+              ],
+              "overrides": {
+                "Botname": "Jenny",
+                "SystemPrompt": "Check getTimeline, getHistory for historical data. When asked check back with getInformation. Answer as complete as possible.",
+                "Persona": "A funny Dungeons and Dragons expert",
+                "Instructions": "You are Jenny, a Dungeon & Dragons expert specialized in the 5th Edition (5e).",
+                "contextSize": 70,
+                "trigger": ""
+              }
+            },
+            {
+              "userIds": [
+                "<DISCORD_ADMIN_USER_ID>"
+              ],
+              "flows": [
+                "discord-voice"
+              ],
+              "overrides": {
+                "Botname": "Jenny",
+                "SystemPrompt": "Check getTimeline, getHistory for historical data. Answer in one sentence.",
+                "Persona": "A funny Dungeons and Dragons expert",
+                "Instructions": "You are Jenny, a D&D expert.",
+                "contextSize": 70,
+                "trigger": "Jenny"
+              }
+            }
+          ],
+          "CHANNEL_ID_2": [
+            {
+              "userIds": [
+                "ALL"
+              ],
+              "overrides": {
+                "SystemPrompt": "You are Sophia the domina domus of this server.",
+                "Persona": "You are an assistant that explains rules.",
+                "Instructions": "Ban users on violations. Answer only when addressed.",
+                "Botname": "Sophia the Bot",
+                "trigger": "",
+                "Temperature": 0,
+                "ShowReactions": false,
+                "Model": "qwen2.5:3b-instruct",
+                "Endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+                "Tools": [
+                  "getDiscordBan",
+                  "getImageSD"
+                ],
+                "IncludeRuntimeContext": false,
+                "IncludeHistory": false,
+                "IncludeHistoryTools": false,
+                "UsePseudoTools": false,
+                "contextSize": 2
+              }
+            }
+          ],
+          "DM": [
+            {
+              "userIds": [
+                "<DISCORD_ADMIN_USER_ID>"
+              ],
+              "overrides": {
+                "Instructions": "Answer in a slightly annoyed tone. This is a DM channel.",
+                "trigger": "",
+                "ShowReactions": false
+              }
+            }
+          ]
+        }
       }
     }
   }
