@@ -1,35 +1,33 @@
 /********************************************************************************
-/* filename: "getWebpage.js"                                                    *
-/* Version 1.0                                                                  *
-/* Purpose: Fetch a webpage, extract readable text, and answer a user_prompt    *
-/*          via OpenAI (tool: "getWebpage").                                    *
+/* filename: "getWebpage.js"                                                     *
+/* Version 1.0                                                                   *
+/* Purpose: Fetch webpages; dump cleaned text or summarize via OpenAI if long.   *
 /********************************************************************************/
-/*                                                                              */
+/********************************************************************************
+/*                                                                              *
 /********************************************************************************/
-
-import fetch from "node-fetch";
 
 const MODULE_NAME = "getWebpage";
 
 /********************************************************************************
-/* functionSignature: getStr (value, fallback)                                  *
-/* Returns a non-empty string or the provided default                           *
+/* functionSignature: getStr (value, fallback)                                   *
+/* Returns a string if valid, otherwise the fallback.                            *
 /********************************************************************************/
 function getStr(value, fallback) {
   return typeof value === "string" && value.length ? value : fallback;
 }
 
 /********************************************************************************
-/* functionSignature: getNum (value, fallback)                                  *
-/* Returns a finite number or the provided default                              *
+/* functionSignature: getNum (value, fallback)                                   *
+/* Returns a finite number or the fallback.                                      *
 /********************************************************************************/
 function getNum(value, fallback) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
 /********************************************************************************
-/* functionSignature: getClamp (n, min, max)                                    *
-/* Clamps a number into [min, max]                                              *
+/* functionSignature: getClamp (n, min, max)                                     *
+/* Clamps a numeric value into [min, max].                                       *
 /********************************************************************************/
 function getClamp(n, min, max) {
   const x = Number.isFinite(n) ? n : min;
@@ -37,8 +35,8 @@ function getClamp(n, min, max) {
 }
 
 /********************************************************************************
-/* functionSignature: getHttpGet (url, headers, timeoutMs)                      *
-/* Performs a GET request and returns { ok, status, text, ct }                  *
+/* functionSignature: getHttpGet (url, headers, timeoutMs)                       *
+/* Executes an HTTP GET with timeout; returns { ok, status, text, ct }.          *
 /********************************************************************************/
 async function getHttpGet(url, headers = {}, timeoutMs = 20000) {
   const controller = new AbortController();
@@ -55,8 +53,8 @@ async function getHttpGet(url, headers = {}, timeoutMs = 20000) {
 }
 
 /********************************************************************************
-/* functionSignature: getStripBlocks (html)                                     *
-/* Removes script/style/noscript/etc. blocks from HTML                          *
+/* functionSignature: getStripBlocks (html)                                      *
+/* Removes non-content HTML blocks to reduce noise.                              *
 /********************************************************************************/
 function getStripBlocks(html) {
   const h = String(html || "");
@@ -72,8 +70,8 @@ function getStripBlocks(html) {
 }
 
 /********************************************************************************
-/* functionSignature: getExtractTitle (html)                                    *
-/* Extracts the <title> content if present                                      *
+/* functionSignature: getExtractTitle (html)                                     *
+/* Extracts the <title> text from HTML.                                          *
 /********************************************************************************/
 function getExtractTitle(html) {
   const m = String(html || "").match(/<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -81,8 +79,8 @@ function getExtractTitle(html) {
 }
 
 /********************************************************************************
-/* functionSignature: getHtmlToText (html)                                      *
-/* Linearizes HTML into plain text with basic block handling                    *
+/* functionSignature: getHtmlToText (html)                                       *
+/* Converts HTML to readable plaintext with basic structure.                     *
 /********************************************************************************/
 function getHtmlToText(html) {
   let h = getStripBlocks(html);
@@ -99,24 +97,50 @@ function getHtmlToText(html) {
 }
 
 /********************************************************************************
-/* functionSignature: getBuildMessages (userPrompt, title, url, text)           *
-/* Builds OpenAI chat messages for grounded answering                           *
+/* functionSignature: getWordCount (text)                                        *
+/* Counts words in plaintext.                                                    *
 /********************************************************************************/
-function getBuildMessages(userPrompt, title, url, text) {
-  const pageHeader = [
-    title ? `Title: ${title}` : "",
-    url ? `URL: ${url}` : ""
-  ].filter(Boolean).join("\n");
-  return [
-    { role: "system", content: "You are a precise web analyst. Answer strictly from the provided page text. If the answer isn't present, say so clearly." },
-    { role: "user", content: `User request: "${userPrompt}"` },
-    { role: "user", content: pageHeader ? pageHeader + "\n\n" + text : text }
-  ];
+function getWordCount(text) {
+  const s = String(text || "").trim();
+  if (!s) return 0;
+  return s.split(/\s+/g).length;
 }
 
 /********************************************************************************
-/* functionSignature: getInvoke (args, coreData)                                *
-/* Fetches URL, extracts text, and summarizes with OpenAI                       *
+/* functionSignature: getBuildMessages (userPrompt, title, url, text, extra)     *
+/* Builds chat messages payload for summarization.                               *
+/********************************************************************************/
+function getBuildMessages(userPrompt, title, url, text, extraPrompt) {
+  const baseSystem = {
+    role: "system",
+    content:
+      "You are a precise web analyst. Answer strictly from the provided page text. " +
+      "If the answer isn't present, say so clearly. Keep chronology and avoid speculation."
+  };
+  const extraSystem =
+    extraPrompt && extraPrompt.trim()
+      ? {
+          role: "system",
+          content:
+            "ADDITIONAL INSTRUCTIONS (bias the summary; do not override facts):\n" +
+            extraPrompt.trim()
+        }
+      : null;
+
+  const pageHeader = [title ? `Title: ${title}` : "", url ? `URL: ${url}` : ""]
+    .filter(Boolean)
+    .join("\n");
+
+  const msgs = [baseSystem];
+  if (extraSystem) msgs.push(extraSystem);
+  msgs.push({ role: "user", content: `User request: "${userPrompt}"` });
+  msgs.push({ role: "user", content: pageHeader ? pageHeader + "\n\n" + text : text });
+  return msgs;
+}
+
+/********************************************************************************
+/* functionSignature: getInvoke (args, coreData)                                 *
+/* Main entry: fetch page, dump or summarize based on word threshold.            *
 /********************************************************************************/
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
@@ -124,6 +148,8 @@ async function getInvoke(args, coreData) {
 
   const url = getStr(args?.url, "").trim();
   const user_prompt = getStr(args?.user_prompt, "").trim();
+  const prompt = getStr(args?.prompt, "");
+
   if (!url) return { ok: false, error: "Missing url" };
   if (!user_prompt) return { ok: false, error: "Missing user_prompt" };
 
@@ -135,37 +161,57 @@ async function getInvoke(args, coreData) {
 
   const { ok, status, text: html, ct } = await getHttpGet(
     url,
-    { "User-Agent": ua, "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" },
+    { "User-Agent": ua, Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" },
     timeoutMs
   );
   if (!ok) return { ok: false, error: `HTTP ${status || 0} while fetching URL`, url };
 
   const title = getExtractTitle(html);
   let pageText = ct.includes("html") ? getHtmlToText(html) : String(html || "");
-  const maxChars = getClamp(getNum(toolCfg.maxInputChars, 240000), 1000, 800000);
-  if (pageText.length > maxChars) pageText = pageText.slice(0, maxChars);
+
+  const hardMaxChars = getClamp(getNum(toolCfg.maxInputChars, 240000), 1000, 800000);
+  if (pageText.length > hardMaxChars) pageText = pageText.slice(0, hardMaxChars);
 
   if (!pageText || pageText.length < 30) {
     return { ok: false, error: "No meaningful text extracted from page", url, title };
   }
 
-  const endpoint = getStr(wo.Endpoint, "https://api.openai.com/v1/chat/completions");
-  const apiKey = getStr(wo.APIKey, "");
-  if (!apiKey) return { ok: false, error: "Missing OpenAI API key in workingObject.APIKey" };
+  const wordThreshold = Math.max(1, getNum(toolCfg.wordThreshold, 1200));
+  const wordCount = getWordCount(pageText);
 
-  const model = getStr(toolCfg.model, getStr(wo.Model, "gpt-4o-mini"));
+  if (wordCount <= wordThreshold) {
+    return {
+      ok: true,
+      mode: "dump",
+      url,
+      title,
+      contentType: ct,
+      words: wordCount,
+      characters: pageText.length,
+      text: pageText
+    };
+  }
+
+  const endpoint = getStr(toolCfg.endpoint, "");
+  const apiKey = getStr(toolCfg.apiKey, "");
+  const model = getStr(toolCfg.model, "");
+  if (!endpoint) return { ok: false, error: "Missing toolsconfig.getWebpage.endpoint" };
+  if (!apiKey) return { ok: false, error: "Missing toolsconfig.getWebpage.apiKey" };
+  if (!model) return { ok: false, error: "Missing toolsconfig.getWebpage.model" };
+
   const temperature = getNum(toolCfg.temperature, 0.1);
   const max_tokens = getClamp(getNum(toolCfg.max_tokens, 1400), 100, 4096);
+  const aiTimeoutMs = getNum(toolCfg.aiTimeoutMs, 45000);
 
-  const messages = getBuildMessages(user_prompt, title, url, pageText);
+  const messages = getBuildMessages(user_prompt, title, url, pageText, prompt);
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), getNum(toolCfg.aiTimeoutMs, 45000));
+  const timer = setTimeout(() => controller.abort(), aiTimeoutMs);
   let res, raw, data;
   try {
     res = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, messages, temperature, max_tokens }),
       signal: controller.signal
     });
@@ -178,20 +224,24 @@ async function getInvoke(args, coreData) {
   clearTimeout(timer);
 
   if (!res.ok) {
-    return { ok: false, error: `OpenAI HTTP ${res.status} ${res.statusText}`, details: (data && data.error && data.error.message) || null };
+    return {
+      ok: false,
+      error: `OpenAI HTTP ${res.status} ${res.statusText}`,
+      details: (data && data.error && data.error.message) || null
+    };
   }
 
   const answer = (data?.choices?.[0]?.message?.content || "").trim();
-  if (!answer) {
-    return { ok: false, error: "Empty answer from model", model };
-  }
+  if (!answer) return { ok: false, error: "Empty answer from model", model };
 
   return {
     ok: true,
+    mode: "summary",
     url,
     title,
     contentType: ct,
     model,
+    words: wordCount,
     characters: pageText.length,
     answer
   };
@@ -203,12 +253,18 @@ export default {
     type: "function",
     function: {
       name: MODULE_NAME,
-      description: "Fetch a webpage, extract readable text, and answer user_prompt strictly from that page.",
+      description:
+        "Fetch a webpage, extract readable text, and either dump the cleaned text or summarize it based on a word threshold. An optional 'prompt' biases the summary (like getHistory). AI settings must be provided in toolsconfig.getWebpage.",
       parameters: {
         type: "object",
         properties: {
           url: { type: "string", description: "Absolute URL to fetch (http/https)." },
-          user_prompt: { type: "string", description: "Question/instruction to execute against the page text." }
+          user_prompt: { type: "string", description: "User question/instruction to execute against the page text (main task)." },
+          prompt: {
+            type: "string",
+            description:
+              "OPTIONAL: extra system instructions to bias the summary (e.g., 'focus on statements by user X', 'include quotes from Y'). Used only in summary mode; ignored in dump mode."
+          }
         },
         required: ["url", "user_prompt"],
         additionalProperties: false
