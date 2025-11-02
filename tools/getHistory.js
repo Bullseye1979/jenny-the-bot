@@ -1,13 +1,11 @@
 /***************************************************************
 /* filename: "getHistory.js"                                   *
 /* Version 1.0                                                 *
-/* Purpose: Build a chronological timeline from DB rows via    *
-/*          GPT using toolsconfig.gethistory with STRICT       *
-/*          channel isolation via wo.channelID only.           *
+/* Purpose: Return raw context rows for a required timeframe;  *
+/* capped by max_rows; no truncation hints; returns requested_ *
+/* and actual_ timestamps; no reload prompts.                  *
 /***************************************************************/
-
-/***************************************************************
-/*                                                             *
+/***************************************************************/
 /***************************************************************/
 
 import mysql from "mysql2/promise";
@@ -17,8 +15,8 @@ const POOLS = new Map();
 
 /***************************************************************
 /* functionSignature: getPool (wo)                             *
-/* Returns or creates a MySQL pool keyed by DSN parts.         *
-/**************************************************************/
+/* Create or reuse a MySQL pool based on workingObject db cfg. *
+/***************************************************************/
 async function getPool(wo) {
   const key = JSON.stringify({ h: wo?.db?.host, u: wo?.db?.user, d: wo?.db?.database });
   if (POOLS.has(key)) return POOLS.get(key);
@@ -37,199 +35,199 @@ async function getPool(wo) {
 }
 
 /***************************************************************
-/* functionSignature: getToISO (ts)                            *
-/* Converts SQL DATETIME/string to ISO 8601 string.            *
-/**************************************************************/
-function getToISO(ts) {
-  return ts ? new Date(String(ts).replace(" ", "T") + "Z").toISOString() : "";
-}
+/* functionSignature: getPadString (n)                         *
+/* Left-pad a number to two digits as a string.                *
+/***************************************************************/
+function getPadString(n) { return String(n).padStart(2, "0"); }
 
 /***************************************************************
-/* functionSignature: getParseRow (row)                        *
-/* Extracts sender, timestamp (ISO), and content from a row.   *
-/**************************************************************/
-function getParseRow(row) {
-  let sender = "";
-  let content = "";
-  try {
-    const j = typeof row.json === "string" ? JSON.parse(row.json) : (row.json || {});
-    sender = String(j.authorName || j.role || j.userId || "unknown").trim();
-    content = String(j.content || row.text || "").trim();
-  } catch {
-    sender = "unknown";
-    content = String(row.text || "").trim();
+/* functionSignature: getParsedHumanDate (input, isEnd)        *
+/* Parse various human timestamps to "YYYY-MM-DD HH:MM:SS".    *
+/***************************************************************/
+function getParsedHumanDate(input, isEnd = false) {
+  if (!input) return null;
+  const raw = String(input).trim();
+
+  const mDe = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (mDe) {
+    const day = Number(mDe[1]);
+    const month = Number(mDe[2]);
+    const year = Number(mDe[3]);
+    let hh = Number(mDe[4] ?? (isEnd ? 23 : 0));
+    let mm = Number(mDe[5] ?? (isEnd ? 59 : 0));
+    let ss = Number(mDe[6] ?? (isEnd ? 59 : 0));
+    return `${year}-${getPadString(month)}-${getPadString(day)} ${getPadString(hh)}:${getPadString(mm)}:${getPadString(ss)}`;
   }
-  return { sender, timestamp: getToISO(row.ts), content };
-}
 
-/***************************************************************
-/* functionSignature: getCheapCompressRows (rows)              *
-/* Produces a compact, readable digest of rows.                *
-/**************************************************************/
-function getCheapCompressRows(rows) {
-  const out = [];
-  let lastSender = null;
-  const isNoise = (c) => {
-    const s = c.trim().toLowerCase();
-    return s.length === 0 || s.length <= 2 || s === "ok" || s === "kk" || s === "thx" || s === "thanks" || s === "lol" || s === "+1";
-  };
-  for (const r of rows) {
-    let c = String(r.content || "").trim();
-    if (isNoise(c)) continue;
-    c = c.replace(/```[\s\S]*?```/g, (m) => {
-      const lines = m.split("\n").length;
-      return lines > 30 ? `«code ${lines} lines»` : m;
-    });
-    c = c.replace(/\bhttps?:\/\/[^\s)]+/g, (u) => {
-      try {
-        const { host, pathname } = new URL(u);
-        return `${host}${pathname}`.replace(/\/+$/, "");
-      } catch { return u; }
-    });
-    const sender = String(r.sender || "unknown").trim();
-    const ts = r.timestamp ? r.timestamp.slice(5, 16).replace("T", " ") : "";
-    const segment = `[${ts}] ${sender}: ${c}`;
-    if (sender === lastSender && out.length) {
-      out[out.length - 1] += `; ${c}`;
-    } else {
-      out.push(segment);
-      lastSender = sender;
-    }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return isEnd ? `${raw} 23:59:59` : `${raw} 00:00:00`;
   }
-  return out.join("\n");
+
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${getPadString(d.getMonth() + 1)}-${getPadString(d.getDate())} ${getPadString(d.getHours())}:${getPadString(d.getMinutes())}:${getPadString(d.getSeconds())}`;
+  }
+
+  const stripped = raw.replace("T", " ").replace("Z", "").split(".")[0];
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(stripped)) return stripped;
+
+  return null;
 }
 
 /***************************************************************
-/* functionSignature: getApproxTokensFromChars (n)             *
-/* Approximates token count from character length.             *
-/**************************************************************/
-function getApproxTokensFromChars(n) {
-  return Math.ceil(n / 4);
+/* functionSignature: getISO (ts)                              *
+/* Convert "YYYY-MM-DD HH:MM:SS" to ISO string if possible.    *
+/***************************************************************/
+function getISO(ts) {
+  if (!ts) return "";
+  const d = new Date(ts.replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return ts;
+  return d.toISOString();
 }
 
 /***************************************************************
-/* functionSignature: getLoadRowsFromDB (pool, channelId, start, end) *
-/* Loads rows for a channel within an optional timeframe.      *
-/**************************************************************/
-async function getLoadRowsFromDB(pool, channelId, start, end) {
+/* functionSignature: getRowsByTime (pool, channelId, params)  *
+/* Load rows for channel and timeframe with optional ctx start.*/
+/***************************************************************/
+async function getRowsByTime(pool, channelId, { startTs, endTs, startCtxId, limit }) {
   const where = ["id = ?"];
   const vals = [channelId];
-  if (start) { where.push("ts >= ?"); vals.push(start); }
-  if (end)   { where.push("ts <= ?"); vals.push(end); }
-  const sql =
-    `SELECT ts, id, json, text
-       FROM context
-      WHERE ${where.join(" AND ")}
-   ORDER BY ts ASC`;
-  const [rows] = await pool.execute(sql, vals);
-  return (rows || []).map(getParseRow);
-}
 
-/***************************************************************
-/* functionSignature: getOpenAICompletion (cfg, systemText, userPrompt, digest, maxTokens) *
-/* Calls the LLM and returns trimmed text output.              *
-/**************************************************************/
-async function getOpenAICompletion(cfg, systemText, userPrompt, digest, maxTokens) {
-  const endpoint = String(cfg?.endpoint || "").trim();
-  const apiKey = String(cfg?.apikey || "").trim();
-  const model = String(cfg?.model || "").trim();
-  const tokenLimit = Number.isFinite(Number(cfg?.tokenlimit)) ? Number(cfg.tokenlimit) : 128000;
-  const temperature = 0.2;
-  const timeoutMs = 180000;
+  where.push("ts >= ?");
+  vals.push(startTs);
 
-  if (!endpoint || !apiKey || !model) return "ERROR: toolsconfig.gethistory missing endpoint/apikey/model";
+  where.push("ts <= ?");
+  vals.push(endTs);
 
-  const approxInputTokens = getApproxTokensFromChars((systemText + userPrompt + digest).length);
-  const safetyMaxTokens = Math.max(256, Math.min(maxTokens || tokenLimit / 4, tokenLimit - approxInputTokens - 512));
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  const messages = [
-    { role: "system", content: systemText },
-    { role: "user", content: userPrompt },
-    { role: "user", content: digest }
-  ];
-
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: safetyMaxTokens
-      }),
-      signal: controller.signal
-    });
-    const raw = await res.text();
-    if (!res.ok) return `ERROR: HTTP ${res.status} ${res.statusText} ${raw.slice(0, 300)}`;
-    const data = JSON.parse(raw);
-    const text = data?.choices?.[0]?.message?.content ?? "";
-    return String(text || "").trim() || "No answer possible.";
-  } catch (e) {
-    return `ERROR: ${e?.message || String(e)}`;
-  } finally {
-    clearTimeout(timer);
+  if (Number.isFinite(startCtxId) && startCtxId > 0) {
+    where.push("ctx_id > ?");
+    vals.push(startCtxId);
   }
+
+  const sql = `
+    SELECT ctx_id, ts, id, json, text
+      FROM context
+     WHERE ${where.join(" AND ")}
+  ORDER BY ctx_id ASC, ts ASC
+     LIMIT ?
+  `;
+  vals.push(limit);
+
+  const [rows] = await pool.execute(sql, vals);
+  return rows || [];
 }
 
 /***************************************************************
 /* functionSignature: getHistoryInvoke (args, coreData)        *
-/* Tool entry: builds a timeline for the current channel only. *
-/**************************************************************/
+/* Validate input, query DB, and return raw chronological data.*/
+/***************************************************************/
 async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const channelId = String(wo?.channelID || "");
-  if (!channelId) return "ERROR: channel_id missing (wo.channelID)";
-
-  const start = args?.start ? String(args.start).trim() : null;
-  const end = args?.end ? String(args.end).trim() : null;
-  const userPrompt = String(
-    args?.user_prompt ||
-    "Create a detailed chronological timeline of the events strictly in order. For each step, include timestamp, sender, and a concise paraphrase of the content. Do not group by themes; keep the original order. Include concrete numbers, URLs, message ids if present, and mark action items. Do not invent facts."
-  ).trim();
-
-  if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) return "ERROR: workingObject.db incomplete";
-  const gh = wo?.toolsconfig?.gethistory || {};
-  if (!gh?.endpoint || !gh?.apikey || !gh?.model) return "ERROR: workingObject.toolsconfig.gethistory incomplete";
-
-  const pool = await getPool(wo);
-  const rows = await getLoadRowsFromDB(pool, channelId, start, end);
-  if (!rows.length) return "No data in timeframe.";
-
-  const digest = getCheapCompressRows(rows);
-  const tokenLimit = Number.isFinite(Number(gh?.tokenlimit)) ? Number(gh.tokenlimit) : 128000;
-  const hardCap = Math.max(10000, tokenLimit * 4);
-
-  let finalDigest = digest;
-  if (finalDigest.length > hardCap) {
-    finalDigest = finalDigest.slice(0, hardCap) + "\n…(truncated)…";
+  if (!channelId) {
+    return { ok: false, error: "channel_id missing (wo.channelID)" };
+  }
+  if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
+    return { ok: false, error: "workingObject.db incomplete" };
   }
 
-  const systemText = [
-    "You receive compressed logs from a single channel within a specified timeframe.",
-    "Return a DETAILED CHRONOLOGICAL TIMELINE only. Do not cluster by themes.",
-    "Format as a numbered list in ascending time. Each item: [ISO time] sender — concise paraphrase; include concrete facts, numbers, and URLs if present.",
-    "Flag action items or decisions inline with (ACTION) or (DECISION). Do not invent content."
-  ].join(" ");
+  const startRaw = args?.start ? String(args.start).trim() : null;
+  if (!startRaw) {
+    return {
+      ok: false,
+      error: "timeframe_required",
+      hint: "Pass at least {\"start\":\"2025-10-25\"}. End is optional; if omitted → 23:59:59 of same day."
+    };
+  }
 
-  const out = await getOpenAICompletion(
-    { endpoint: gh.endpoint, apikey: gh.apikey, model: gh.model, tokenlimit: gh.tokenlimit },
-    systemText,
-    userPrompt,
-    finalDigest,
-    gh.max_output_tokens
-  );
+  let startTs = getParsedHumanDate(startRaw, false);
+  if (!startTs) {
+    return {
+      ok: false,
+      error: "invalid_start",
+      hint: `Use YYYY-MM-DD or DD.MM.YYYY (got start="${startRaw}")`
+    };
+  }
 
-  return out;
+  const endRaw = args?.end ? String(args.end).trim() : null;
+  let endTs;
+  if (!endRaw) {
+    endTs = startTs.slice(0, 10) + " 23:59:59";
+  } else {
+    endTs = getParsedHumanDate(endRaw, true);
+    if (!endTs) {
+      return {
+        ok: false,
+        error: "invalid_end",
+        hint: `Use YYYY-MM-DD or DD.MM.YYYY (got end="${endRaw}")`
+      };
+    }
+  }
+
+  const startCtxIdRaw = args?.start_ctx_id ?? args?.start_ctx ?? null;
+  const startCtxId = startCtxIdRaw != null ? Number(startCtxIdRaw) : null;
+
+  const cfg = wo?.toolsconfig?.gethistory || {};
+  const MAX_ROWS_CFG = Number.isFinite(Number(cfg?.max_rows)) ? Number(cfg.max_rows) : 500;
+  const REQ_LIMIT = Number.isFinite(Number(args?.limit)) ? Number(args.limit) : MAX_ROWS_CFG;
+  const LIMIT = Math.max(1, Math.min(REQ_LIMIT, MAX_ROWS_CFG));
+
+  const pool = await getPool(wo);
+  const rows = await getRowsByTime(pool, channelId, {
+    startTs,
+    endTs,
+    startCtxId: (Number.isFinite(startCtxId) && startCtxId > 0) ? startCtxId : null,
+    limit: LIMIT
+  });
+
+  if (!rows.length) {
+    return {
+      ok: true,
+      channel: channelId,
+      requested_start: startTs,
+      requested_end: endTs,
+      actual_start: null,
+      actual_end: null,
+      rows: [],
+      count: 0,
+      max_rows: LIMIT
+    };
+  }
+
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  const actualStartIso = getISO(first.ts);
+  const actualEndIso = getISO(last.ts);
+
+  const outRows = rows.map(r => ({
+    ctx_id: r.ctx_id,
+    ts: getISO(r.ts),
+    id: r.id,
+    json: r.json,
+    text: r.text
+  }));
+
+  return {
+    ok: true,
+    channel: channelId,
+    requested_start: startTs,
+    requested_end: endTs,
+    actual_start: actualStartIso,
+    actual_end: actualEndIso,
+    rows: outRows,
+    count: outRows.length,
+    max_rows: LIMIT
+  };
 }
 
 /***************************************************************
 /* functionSignature: getDefaultExport ()                      *
-/* Provides the default export object for the tool.            *
-/**************************************************************/
+/* Build the tool definition and bind the invoke function.     *
+/***************************************************************/
 function getDefaultExport() {
   return {
     name: MODULE_NAME,
@@ -238,18 +236,16 @@ function getDefaultExport() {
       function: {
         name: MODULE_NAME,
         description:
-          "Build a chronological timeline **for the current channel only** from messages within a **known timeframe**. " +
-          "ALWAYS call this tool when the user provides or requests a specific timeframe for the channel history " +
-          "(e.g., 'from 2025-10-01 to 2025-10-15', 'yesterday 10:00–12:00'). " +
-          "NEVER use this when the timeframe is unknown—use a keyword search tool instead.",
+          "Return **raw** chronological messages for the CURRENT channel (wo.channelID) for a **REQUIRED** timeframe. If only start is given, the whole day is used. Returns also requested_start/requested_end and the actual_start/actual_end that were found. This tool does NOT tell you when the result was capped.",
         parameters: {
           type: "object",
           properties: {
-            start: { type: "string", description: "Start timestamp (ISO or SQL DATETIME)" },
-            end: { type: "string", description: "End timestamp (ISO or SQL DATETIME)" },
-            user_prompt: { type: "string", description: "Optional instruction to steer the timeline" }
+            start:        { type: "string", description: "REQUIRED: start timestamp (YYYY-MM-DD, DD.MM.YYYY, or ISO). If only a date → 00:00." },
+            end:          { type: "string", description: "OPTIONAL: end timestamp. If omitted → 23:59:59 of same day." },
+            start_ctx_id: { type: "number", description: "OPTIONAL: continue from this ctx_id (manual pagination only)." },
+            limit:        { type: "number", description: "OPTIONAL: row limit (≤ toolsconfig.gethistory.max_rows, default from config)" }
           },
-          required: ["start", "end"],
+          required: ["start"],
           additionalProperties: false
         }
       }

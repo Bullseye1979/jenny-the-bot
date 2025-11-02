@@ -1,11 +1,9 @@
 /***************************************************************
 /* filename: "context.js"                                      *
 /* Version 1.0                                                 *
-/* Purpose: Minimal MySQL context store + rolling timeline      *
-/*          summaries                                           *
+/* Purpose: Minimal MySQL context store with monotonic ctx_id, *
+/*          rolling timeline summaries, and user-block capping.*
 /***************************************************************/
-/***************************************************************
-/*                                                             *
 /***************************************************************/
 
 import mysql from "mysql2/promise";
@@ -18,7 +16,7 @@ const TIMELINE_TABLE = "timeline_periods";
 
 /***************************************************************
 /* functionSignature: getContextConfig (workingObject)         *
-/* Resolves endpoint, model, apiKey, and periodSize settings.  *
+/* Resolve endpoint, model, apiKey, and timeline period size.  *
 /***************************************************************/
 function getContextConfig(workingObject) {
   const ctxCfg = workingObject?.config?.context || {};
@@ -42,7 +40,7 @@ function getContextConfig(workingObject) {
 
 /***************************************************************
 /* functionSignature: getDsnKey (db)                           *
-/* Creates a stable key for the DB connection configuration.   *
+/* Build a stable DSN key string for pool reuse.               *
 /***************************************************************/
 function getDsnKey(db) {
   const host = db?.host || "";
@@ -55,13 +53,14 @@ function getDsnKey(db) {
 
 /***************************************************************
 /* functionSignature: getEnsurePool (workingObject)            *
-/* Ensures a pooled MySQL connection and required tables.      *
+/* Ensure pool exists and schema with ctx_id AI PK is present. *
 /***************************************************************/
 async function getEnsurePool(workingObject) {
   const db = workingObject?.db;
   if (!db) throw new Error("[context] missing db configuration");
   const dsnKey = getDsnKey(db);
   if (sharedPool && sharedDsn === dsnKey) return sharedPool;
+
   const pool = mysql.createPool({
     host: db.host,
     port: db.port ?? 3306,
@@ -72,8 +71,10 @@ async function getEnsurePool(workingObject) {
     connectionLimit: 4,
     decimalNumbers: true
   });
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS context (
+      ctx_id    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       ts        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
       id        VARCHAR(128)  NOT NULL,
       json      LONGTEXT      NOT NULL,
@@ -81,16 +82,39 @@ async function getEnsurePool(workingObject) {
       role      VARCHAR(32)   NOT NULL DEFAULT 'user',
       turn_id   CHAR(26)      NULL,
       frozen    TINYINT(1)    NOT NULL DEFAULT 0,
-      KEY idx_id_ts         (id, ts),
-      KEY idx_role          (role),
-      KEY idx_turn          (turn_id),
-      KEY idx_id_turn       (id, turn_id)
+      PRIMARY KEY (ctx_id),
+      KEY idx_id_ctx (id, ctx_id),
+      KEY idx_role   (role),
+      KEY idx_turn   (turn_id),
+      KEY idx_id_turn (id, turn_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
-  await pool.query(`
-    ALTER TABLE context
-      ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
-  `);
+
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD COLUMN IF NOT EXISTS ctx_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT FIRST;
+    `);
+  } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD PRIMARY KEY (ctx_id);
+    `);
+  } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD INDEX IF NOT EXISTS idx_id_ctx (id, ctx_id);
+    `);
+  } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
+    `);
+  } catch {}
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ${TIMELINE_TABLE} (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -108,10 +132,13 @@ async function getEnsurePool(workingObject) {
       UNIQUE KEY ux_timeline (channel_id, start_idx, end_idx)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
-  await pool.query(`
-    ALTER TABLE ${TIMELINE_TABLE}
-      ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
-  `);
+  try {
+    await pool.query(`
+      ALTER TABLE ${TIMELINE_TABLE}
+        ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
+    `);
+  } catch {}
+
   sharedPool = pool;
   sharedDsn = dsnKey;
   return pool;
@@ -119,7 +146,7 @@ async function getEnsurePool(workingObject) {
 
 /***************************************************************
 /* functionSignature: getDeepSanitize (value)                  *
-/* Produces JSON-safe values while preserving key structure.   *
+/* Sanitize nested values to safe JSON-ready structures.       *
 /***************************************************************/
 function getDeepSanitize(value) {
   const t = typeof value;
@@ -152,7 +179,7 @@ function getDeepSanitize(value) {
 
 /***************************************************************
 /* functionSignature: getNormalizeToolCalls (toolCalls)        *
-/* Normalizes assistant tool_calls shape for storage.          *
+/* Normalize assistant tool call entries to a standard shape.  *
 /***************************************************************/
 function getNormalizeToolCalls(toolCalls) {
   if (!Array.isArray(toolCalls)) return undefined;
@@ -170,7 +197,7 @@ function getNormalizeToolCalls(toolCalls) {
 
 /***************************************************************
 /* functionSignature: getNormalizeRecord (record)              *
-/* Produces a sanitized record suitable for DB insertion.      *
+/* Normalize a context record and sanitize nested values.      *
 /***************************************************************/
 function getNormalizeRecord(record) {
   const obj = typeof record === "object" && record !== null ? { ...record } : {};
@@ -186,7 +213,7 @@ function getNormalizeRecord(record) {
 
 /***************************************************************
 /* functionSignature: getDeriveIndexText (rec)                 *
-/* Derives a short index text for LIKE/search acceleration.    *
+/* Derive a short indexable text snippet from a record.        *
 /***************************************************************/
 function getDeriveIndexText(rec) {
   if (typeof rec?.content === "string" && rec.content) return rec.content.slice(0, 500);
@@ -199,342 +226,104 @@ function getDeriveIndexText(rec) {
 }
 
 /***************************************************************
-/* functionSignature: getApproxTokensFromMessage (msg)         *
-/* Approximates token usage for a single message.              *
+/* functionSignature: setContext (workingObject, record)       *
+/* Insert a normalized record; update rolling timeline.        *
 /***************************************************************/
-function getApproxTokensFromMessage(msg) {
-  function str(x) { return typeof x === "string" ? x : (x ? JSON.stringify(x) : ""); }
-  let s = "";
-  s += str(msg.role);
-  s += str(msg.name);
-  s += str(msg.content);
-  if (msg.tool_call_id) s += str(msg.tool_call_id);
-  if (Array.isArray(msg.tool_calls)) {
-    for (const tc of msg.tool_calls) {
-      s += str(tc?.type);
-      s += str(tc?.function?.name);
-      s += str(tc?.function?.arguments);
-    }
+export async function setContext(workingObject, record) {
+  const id = String(workingObject?.id || "");
+  if (!id) throw new Error("[context] missing id");
+  const pool = await getEnsurePool(workingObject);
+  const normalized = getNormalizeRecord(record);
+  const json = JSON.stringify(normalized);
+  const text = getDeriveIndexText(normalized);
+  const role = String(normalized?.role || workingObject?.role || "user");
+  const turnId = (typeof workingObject?.turn_id === "string" && workingObject.turn_id.length > 0)
+    ? workingObject.turn_id
+    : (typeof normalized?.turn_id === "string" && normalized.turn_id.length > 0
+        ? normalized.turn_id
+        : null);
+  await pool.execute(
+    "INSERT INTO context (id, json, text, role, turn_id, frozen) VALUES (?, ?, ?, ?, ?, 0)",
+    [id, json, text, role, turnId]
+  );
+  try {
+    await setMaybeCreateTimelinePeriod(pool, workingObject, id);
+  } catch (e) {
+    console.error("[context] timeline update failed:", e?.message || e);
   }
-  return Math.ceil(s.length / 4);
+  return true;
 }
 
 /***************************************************************
-/* functionSignature: getTokensForString (s)                   *
-/* Approximates token count for a raw string.                  *
+/* functionSignature: getContext (workingObject)               *
+/* Return capped messages based on user-block token budgeting. *
 /***************************************************************/
-function getTokensForString(s) {
-  return Math.ceil(String(s ?? "").length / 4);
+export async function getContext(workingObject) {
+  const id = String(workingObject?.id || "");
+  if (!id) throw new Error("[context] missing id");
+  const pool = await getEnsurePool(workingObject);
+  const nRaw = Number(workingObject?.contextSize ?? 10);
+  const nUsers = Number.isFinite(nRaw) ? Math.max(1, Math.floor(nRaw)) : 10;
+
+  const [thresholdRows] = await pool.query(
+    `
+      SELECT MIN(ctx_id) AS min_ctx_id
+        FROM (
+          SELECT ctx_id
+            FROM context
+           WHERE id = ?
+             AND role = 'user'
+             AND JSON_VALID(json) = 1
+             AND COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(json, '$.content')), ''), NULL) IS NOT NULL
+           ORDER BY ctx_id DESC
+           LIMIT ?
+        ) AS last_users
+    `,
+    [id, nUsers]
+  );
+  const minCtxId = thresholdRows?.[0]?.min_ctx_id || null;
+
+  let rows;
+  if (minCtxId) {
+    [rows] = await pool.query(
+      `
+        SELECT ctx_id, ts, json
+          FROM context
+         WHERE id = ? AND ctx_id >= ?
+           AND JSON_VALID(json) = 1
+         ORDER BY ctx_id ASC
+      `,
+      [id, minCtxId]
+    );
+  } else {
+    [rows] = await pool.query(
+      `
+        SELECT ctx_id, ts, json
+          FROM context
+         WHERE id = ?
+           AND JSON_VALID(json) = 1
+         ORDER BY ctx_id ASC
+      `,
+      [id]
+    );
+  }
+
+  const messages = [];
+  for (const row of (rows || [])) {
+    try {
+      const obj = JSON.parse(row.json);
+      messages.push({ ...obj, ts: new Date(row.ts).toISOString(), ctx_id: row.ctx_id });
+    } catch {}
+  }
+
+  const tokenBudget = workingObject?.contextTokenBudget;
+  const capped = getCapByTokenBudgetUserBlocks(messages, tokenBudget);
+  return capped;
 }
 
 /***************************************************************
-/* functionSignature: getCloneForTrim (obj)                    *
-/* Deep clones an object for safe trimming operations.         *
-/***************************************************************/
-function getCloneForTrim(obj) {
-  return JSON.parse(JSON.stringify(obj ?? {}));
-}
-
-/***************************************************************
-/* functionSignature: getTrimStringByTokens (s, maxTokens)     *
-/* Trims a string to a token budget with ellipsis.             *
-/***************************************************************/
-function getTrimStringByTokens(s, maxTokens) {
-  if (!Number.isFinite(maxTokens) || maxTokens <= 0) return "";
-  const str = String(s ?? "");
-  const approxChars = Math.max(0, Math.floor(maxTokens * 4) - 1);
-  if (str.length <= approxChars) return str;
-  let lo = 0, hi = str.length, best = "";
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const cand = str.slice(0, Math.max(0, mid - 1)) + "…";
-    const t = getTokensForString(cand);
-    if (t <= maxTokens) { best = cand; lo = mid + 1; } else { hi = mid - 1; }
-  }
-  return best || "…";
-}
-
-/***************************************************************
-/* functionSignature: getTrimMessageToBudget (msg, budget)     *
-/* Trims a message structure to fit a token budget.            *
-/***************************************************************/
-function getTrimMessageToBudget(msg, budget) {
-  const out = getCloneForTrim(msg);
-  const base = { role: out.role, name: out.name, tool_call_id: out.tool_call_id };
-  let minTokens = getApproxTokensFromMessage({ ...base, content: "", tool_calls: [] });
-  if (minTokens > budget) {
-    return { role: out.role, content: "…" };
-  }
-  let remain = budget - minTokens;
-  if (typeof out.content === "string" && out.content.length) {
-    const tContent = getTokensForString(out.content);
-    if (tContent <= remain) {
-      minTokens += tContent;
-      remain -= tContent;
-    } else {
-      out.content = getTrimStringByTokens(out.content, remain);
-      return out;
-    }
-  }
-  if (Array.isArray(out.tool_calls) && out.tool_calls.length && remain > 0) {
-    const trimmedTC = [];
-    for (const tc of out.tool_calls) {
-      const safe = getCloneForTrim(tc);
-      const headerTokens = getTokensForString(safe?.function?.name ?? "") + 3;
-      if (headerTokens > remain) break;
-      remain -= headerTokens;
-      let arg = String(safe?.function?.arguments ?? "");
-      const argTokens = getTokensForString(arg);
-      if (argTokens <= remain) {
-        trimmedTC.push(safe);
-        remain -= argTokens;
-      } else {
-        safe.function.arguments = getTrimStringByTokens(arg, remain);
-        trimmedTC.push(safe);
-        remain = 0;
-        break;
-      }
-    }
-    out.tool_calls = trimmedTC;
-  }
-  return out;
-}
-
-/***************************************************************
-/* functionSignature: getBundleToolTransactions (block)        *
-/* Groups assistant tool calls with their tool responses.      *
-/***************************************************************/
-function getBundleToolTransactions(block) {
-  const units = [];
-  for (let i = 0; i < block.length; i++) {
-    const msg = block[i];
-    if (msg?.role === "assistant" && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
-      const callIds = new Set(
-        msg.tool_calls.map(tc => (tc?.id || tc?.tool_call_id || "").toString()).filter(Boolean)
-      );
-      const unit = [msg];
-      let j = i + 1;
-      while (j < block.length) {
-        const next = block[j];
-        if (next?.role === "tool" && callIds.has(String(next?.tool_call_id || ""))) {
-          unit.push(next);
-          j++;
-          continue;
-        }
-        break;
-      }
-      units.push(unit);
-      i = j - 1;
-      continue;
-    }
-    units.push([msg]);
-  }
-  return units;
-}
-
-/***************************************************************
-/* functionSignature: getApproxTokensFromUnit (unit)           *
-/* Sums approximate tokens for a grouped unit.                 *
-/***************************************************************/
-function getApproxTokensFromUnit(unit) {
-  return unit.reduce((acc, m) => acc + getApproxTokensFromMessage(m), 0);
-}
-
-/***************************************************************
-/* functionSignature: getTrimUnitToBudget (unit, budget)       *
-/* Trims a unit to match a token budget from the end.          *
-/***************************************************************/
-function getTrimUnitToBudget(unit, budget) {
-  const kept = [];
-  let used = 0;
-  for (let i = unit.length - 1; i >= 0; i--) {
-    const msg = unit[i];
-    const t = getApproxTokensFromMessage(msg);
-    if (used + t <= budget) {
-      kept.push(msg);
-      used += t;
-    } else {
-      const remain = budget - used;
-      if (remain <= 0) break;
-      const trimmed = getTrimMessageToBudget(msg, remain);
-      if (getApproxTokensFromMessage(trimmed) <= remain) {
-        kept.push(trimmed);
-        used = budget;
-      }
-      break;
-    }
-  }
-  kept.reverse();
-  return kept;
-}
-
-/***************************************************************
-/* functionSignature: getCapSingleBlockToBudgetUnits (block,   *
-/*                     budget)                                 *
-/* Applies token capping across a contiguous message block.    *
-/***************************************************************/
-function getCapSingleBlockToBudgetUnits(block, budget) {
-  const units = getBundleToolTransactions(block);
-  const keptUnits = [];
-  let used = 0;
-  for (let u = units.length - 1; u >= 0; u--) {
-    const unit = units[u];
-    const tUnit = getApproxTokensFromUnit(unit);
-    if (used + tUnit <= budget) {
-      keptUnits.push(unit);
-      used += tUnit;
-      continue;
-    }
-    const remain = budget - used;
-    if (remain > 0) {
-      const trimmedUnit = getTrimUnitToBudget(unit, remain);
-      if (trimmedUnit.length) keptUnits.push(trimmedUnit);
-      used = budget;
-    }
-    break;
-  }
-  keptUnits.reverse();
-  const flat = [];
-  for (const unit of keptUnits) for (const m of unit) flat.push(m);
-  return flat;
-}
-
-/***************************************************************
-/* functionSignature: getSegmentIntoUserBlocks (messages)      *
-/* Splits history into blocks starting at user messages.       *
-/***************************************************************/
-function getSegmentIntoUserBlocks(messages) {
-  const idxs = [];
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i] || {};
-    if (m.role === "user" && typeof m.content === "string" && m.content.trim()) {
-      idxs.push(i);
-    }
-  }
-  if (idxs.length === 0) return [];
-  const blocks = [];
-  for (let b = 0; b < idxs.length; b++) {
-    const start = idxs[b];
-    const end = b + 1 < idxs.length ? idxs[b + 1] : messages.length;
-    blocks.push(messages.slice(start, end));
-  }
-  return blocks;
-}
-
-/***************************************************************
-/* functionSignature: getCapByTokenBudgetUserBlocks (messages, *
-/*                     tokenBudget)                            *
-/* Caps history by token budget respecting user blocks.        *
-/***************************************************************/
-function getCapByTokenBudgetUserBlocks(messages, tokenBudget) {
-  if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) return messages;
-  const blocks = getSegmentIntoUserBlocks(messages);
-  if (blocks.length === 0) {
-    return getCapSingleBlockToBudgetUnits(messages, tokenBudget);
-  }
-  const keptBlocks = [];
-  let total = 0;
-  for (let b = blocks.length - 1; b >= 0; b--) {
-    const block = blocks[b];
-    const blockTokens = block.reduce((acc, m) => acc + getApproxTokensFromMessage(m), 0);
-    if (total + blockTokens <= tokenBudget) {
-      keptBlocks.push(block);
-      total += blockTokens;
-      continue;
-    }
-    const remain = tokenBudget - total;
-    if (remain > 0) {
-      const trimmed = getCapSingleBlockToBudgetUnits(block, remain);
-      if (trimmed.length) keptBlocks.push(trimmed);
-      total = tokenBudget;
-    }
-    break;
-  }
-  keptBlocks.reverse();
-  const flat = [];
-  for (const bl of keptBlocks) for (const m of bl) flat.push(m);
-  return flat;
-}
-
-/***************************************************************
-/* functionSignature: getBuildSummaryPromptFromRows (rows,     *
-/*                     meta)                                   *
-/* Builds a concise summarization prompt from context rows.    *
-/***************************************************************/
-function getBuildSummaryPromptFromRows(rows, { startIdx, endIdx, channelId }) {
-  const lines = rows.map((r, i) => {
-    const j = startIdx + i;
-    const ts = r.ts instanceof Date ? r.ts.toISOString() : r.ts;
-    const author = r.json?.authorName || r.json?.sender || r.json?.role || "";
-    const content = typeof r.json?.content === "string" ? r.json.content : "";
-    const clipped = content.length > 160 ? content.slice(0, 160) + "…" : content;
-    return `${j}. [${ts}] ${author}: ${clipped}`;
-  }).join("\n");
-  return [
-    {
-      role: "system",
-      content: "You are a very concise chronology condenser. Summarize chat/transcript excerpts in 1-3 sentences. No speculation. Mention characters, places, and events if they are clear. Always respond in English, even if the input is in German."
-    },
-    {
-      role: "user",
-      content:
-        `Context window for channel ${channelId}, records ${startIdx}-${endIdx}:\n` +
-        lines +
-        "\n\nReturn ONLY the 1-3 sentences in English."
-    }
-  ];
-}
-
-/***************************************************************
-/* functionSignature: getChecksumBatchFromContextRows (rows)   *
-/* Computes a stable checksum over a batch of context rows.    *
-/***************************************************************/
-function getChecksumBatchFromContextRows(rows) {
-  const h = crypto.createHash("sha256");
-  for (const r of rows) {
-    h.update(String(r.ts));
-    h.update("|");
-    h.update(String(r.json?.content ?? ""));
-    h.update("\n");
-  }
-  return h.digest("hex");
-}
-
-/***************************************************************
-/* functionSignature: getSummarizeContextBatch (workingObject, *
-/*                     rows, meta)                              *
-/* Calls the LLM to summarize a batch into 1–3 sentences.      *
-/***************************************************************/
-async function getSummarizeContextBatch(workingObject, rows, meta) {
-  const { endpoint, apiKey, model } = getContextConfig(workingObject);
-  if (!apiKey) throw new Error("[context] missing OpenAI API key for timeline summary");
-  const messages = getBuildSummaryPromptFromRows(rows, meta);
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.2,
-      max_tokens: 180
-    })
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`[context] OpenAI error ${res.status}: ${txt}`);
-  }
-  const data = await res.json();
-  const summary = data?.choices?.[0]?.message?.content?.trim() || "";
-  return { summary, model };
-}
-
-/***************************************************************
-/* functionSignature: setMaybeCreateTimelinePeriod (pool,      *
-/*                     workingObject, channelId)               *
-/* Creates a timeline period when a full block is available.   *
+/* functionSignature: setMaybeCreateTimelinePeriod (pool, wo,  *
+/* channelId) Create a summary row when period size reached.   *
 /***************************************************************/
 async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   const { periodSize } = getContextConfig(workingObject);
@@ -545,19 +334,22 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   const total = Number(cntRows?.[0]?.c || 0);
   if (!total) return;
   if (total % periodSize !== 0) return;
+
   const endIdx = total;
   const startIdx = total - periodSize + 1;
+
   const [exists] = await pool.query(
     `SELECT id FROM ${TIMELINE_TABLE} WHERE channel_id = ? AND start_idx = ? AND end_idx = ? LIMIT 1`,
     [channelId, startIdx, endIdx]
   );
   if (exists.length) return;
+
   const [ctxRowsDesc] = await pool.query(
     `
       SELECT ts, json
         FROM context
        WHERE id = ?
-       ORDER BY ts DESC
+       ORDER BY ctx_id DESC
        LIMIT ?
     `,
     [channelId, periodSize]
@@ -595,100 +387,8 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
 }
 
 /***************************************************************
-/* functionSignature: setContext (workingObject, record)       *
-/* Inserts a record and updates rolling timeline if needed.    *
-/***************************************************************/
-export async function setContext(workingObject, record) {
-  const id = String(workingObject?.id || "");
-  if (!id) throw new Error("[context] missing id");
-  const pool = await getEnsurePool(workingObject);
-  const normalized = getNormalizeRecord(record);
-  const json = JSON.stringify(normalized);
-  const text = getDeriveIndexText(normalized);
-  const role = String(normalized?.role || workingObject?.role || "user");
-  const turnId = (typeof workingObject?.turn_id === "string" && workingObject.turn_id.length > 0)
-    ? workingObject.turn_id
-    : (typeof normalized?.turn_id === "string" && normalized.turn_id.length > 0
-        ? normalized.turn_id
-        : null);
-  await pool.execute(
-    "INSERT INTO context (id, json, text, role, turn_id, frozen) VALUES (?, ?, ?, ?, ?, 0)",
-    [id, json, text, role, turnId]
-  );
-  try {
-    await setMaybeCreateTimelinePeriod(pool, workingObject, id);
-  } catch (e) {
-    console.error("[context] timeline update failed:", e?.message || e);
-  }
-  return true;
-}
-
-/***************************************************************
-/* functionSignature: getContext (workingObject)               *
-/* Returns recent context capped by token budget.              *
-/***************************************************************/
-export async function getContext(workingObject) {
-  const id = String(workingObject?.id || "");
-  if (!id) throw new Error("[context] missing id");
-  const pool = await getEnsurePool(workingObject);
-  const nRaw = Number(workingObject?.contextSize ?? 10);
-  const nUsers = Number.isFinite(nRaw) ? Math.max(1, Math.floor(nRaw)) : 10;
-  const [thresholdRows] = await pool.query(
-    `
-      SELECT MIN(ts) AS min_ts
-        FROM (
-          SELECT ts
-            FROM context
-           WHERE id = ?
-             AND role = 'user'
-             AND JSON_VALID(json) = 1
-             AND COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(json, '$.content')), ''), NULL) IS NOT NULL
-           ORDER BY ts DESC
-           LIMIT ?
-        ) AS last_users
-    `,
-    [id, nUsers]
-  );
-  const minTs = thresholdRows?.[0]?.min_ts || null;
-  let rows;
-  if (minTs) {
-    [rows] = await pool.query(
-      `
-        SELECT ts, json
-          FROM context
-         WHERE id = ? AND ts >= ?
-           AND JSON_VALID(json) = 1
-         ORDER BY ts ASC
-      `,
-      [id, minTs]
-    );
-  } else {
-    [rows] = await pool.query(
-      `
-        SELECT ts, json
-          FROM context
-         WHERE id = ?
-           AND JSON_VALID(json) = 1
-         ORDER BY ts ASC
-      `,
-      [id]
-    );
-  }
-  const messages = [];
-  for (const row of (rows || [])) {
-    try {
-      const obj = JSON.parse(row.json);
-      messages.push({ ...obj, ts: new Date(row.ts).toISOString() });
-    } catch {}
-  }
-  const tokenBudget = workingObject?.contextTokenBudget;
-  const capped = getCapByTokenBudgetUserBlocks(messages, tokenBudget);
-  return capped;
-}
-
-/***************************************************************
 /* functionSignature: setPurgeContext (workingObject)          *
-/* Deletes context and timeline rows for id where frozen=0.    *
+/* Delete non-frozen context and timeline rows for a channel.  *
 /***************************************************************/
 export async function setPurgeContext(workingObject) {
   const id = String(workingObject?.id || "");
@@ -707,7 +407,7 @@ export async function setPurgeContext(workingObject) {
 
 /***************************************************************
 /* functionSignature: setFreezeContext (workingObject)         *
-/* Sets frozen=1 for all rows of id in context and timeline.   *
+/* Mark context and timeline rows as frozen for a channel.     *
 /***************************************************************/
 export async function setFreezeContext(workingObject) {
   const id = String(workingObject?.id || "");
@@ -725,8 +425,112 @@ export async function setFreezeContext(workingObject) {
 }
 
 /***************************************************************
+/* functionSignature: getEstimatedTokensFromMessage (msg)      *
+/* Roughly estimate tokens for budgeting decisions.            *
+/***************************************************************/
+function getEstimatedTokensFromMessage(msg) {
+  if (!msg) return 0;
+  const parts = [];
+  if (typeof msg.content === "string") parts.push(msg.content);
+  if (msg.role) parts.push(msg.role);
+  if (msg.name) parts.push(msg.name);
+  const s = parts.join(" ");
+  return Math.ceil(s.length / 4);
+}
+
+/***************************************************************
+/* functionSignature: getCapByTokenBudgetUserBlocks (messages, *
+/* budget) Cap messages by walking user-anchored blocks.       *
+/***************************************************************/
+function getCapByTokenBudgetUserBlocks(messages, budget) {
+  if (!Array.isArray(messages) || !messages.length) return [];
+  const maxTokens = Number(budget);
+  if (!Number.isFinite(maxTokens) || maxTokens <= 0) return messages;
+
+  const blocks = [];
+  let currentBlock = [];
+  let total = 0;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    currentBlock.unshift(m);
+    const isUser = m.role === "user";
+    const isFirst = i === 0;
+    if (isUser || isFirst) {
+      let blockTokens = 0;
+      for (const x of currentBlock) blockTokens += getEstimatedTokensFromMessage(x);
+      if (total + blockTokens > maxTokens && blocks.length > 0) break;
+      total += blockTokens;
+      blocks.unshift(...currentBlock);
+      currentBlock = [];
+    }
+  }
+  if (currentBlock.length) blocks.unshift(...currentBlock);
+  return blocks;
+}
+
+/***************************************************************
+/* functionSignature: getChecksumBatchFromContextRows (rows)   *
+/* Compute a SHA-256 checksum for a batch of context rows.     *
+/***************************************************************/
+function getChecksumBatchFromContextRows(rows) {
+  const h = crypto.createHash("sha256");
+  for (const r of rows || []) {
+    h.update(String(r.ts || ""));
+    h.update("|");
+    h.update(JSON.stringify(r.json || {}));
+    h.update("\n");
+  }
+  return h.digest("hex");
+}
+
+/***************************************************************
+/* functionSignature: getSummarizeContextBatch (workingObject, *
+/* rows, meta) Summarize a batch via the configured endpoint.  *
+/***************************************************************/
+async function getSummarizeContextBatch(workingObject, rows, meta) {
+  const { endpoint, model, apiKey } = getContextConfig(workingObject);
+  const clipped = (rows || []).slice(-50);
+  const prompt = [
+    "Summarize the following recent conversation segment concisely.",
+    `Channel: ${meta?.channelId ?? ""}`,
+    `Range: ${meta?.startIdx ?? ""}-${meta?.endIdx ?? ""}`,
+    "Return 1-3 sentences with key actions, decisions, and open questions.",
+  ].join(" ");
+  const messages = [{ role: "system", content: prompt }];
+  for (const r of clipped) {
+    const role = typeof r?.json?.role === "string" ? r.json.role : "user";
+    const content = typeof r?.json?.content === "string" ? r.json.content : JSON.stringify(r.json || {});
+    messages.push({ role, content });
+  }
+  if (!apiKey) {
+    return { summary: "[no-api-key] summary unavailable", model: model || "" };
+  }
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.2,
+        max_tokens: 256
+      })
+    });
+    const data = await res.json();
+    const summary = data?.choices?.[0]?.message?.content || "[summary unavailable]";
+    return { summary, model };
+  } catch {
+    return { summary: "[summarization failed]", model };
+  }
+}
+
+/***************************************************************
 /* functionSignature: getDefaultExport ()                      *
-/* Exposes the public API: setContext, getContext, purge.      *
+/* Provide named exports and default export object.            *
 /***************************************************************/
 function getDefaultExport() {
   return { setContext, getContext, setPurgeContext, setFreezeContext };

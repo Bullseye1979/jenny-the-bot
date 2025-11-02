@@ -116,7 +116,7 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
   {
     const startupCore = createRunCore();
     const log = getPrefixedLogger(startupCore.workingObject, import.meta.url);
-    client.once("ready", () => {
+    client.once("clientReady", () => {
       const tag = client.user?.tag || "unknown";
       log(`Discord connected as ${tag}`, "info", { moduleName: MODULE_NAME });
     });
