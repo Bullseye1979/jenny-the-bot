@@ -1,11 +1,12 @@
 /**************************************************************
 /* filename: "discord-voice-tts.js"                            *
 /* Version 1.0                                                *
-/* Purpose: speak wo.Response once per guild; later TTS is    *
-/*          skipped while pipeline persists; events always    *
-/*          use the current run                               *
+/* Purpose: Speak wo.Response once per guild; later TTS is     *
+/*          skipped while pipeline persists; events always     *
+/*          use the current run                                *
 /**************************************************************/
 /**************************************************************
+/*                                                            *
 /**************************************************************/
 
 import { getItem, putItem, deleteItem } from "../core/registry.js";
@@ -103,6 +104,31 @@ async function getIsStillOwner(lockKey, owner) {
 }
 
 /**************************************************************
+/* functionSignature: getSanitizedTTSText (text)              *
+/* Strips link targets so TTS reads only the visible text     *
+/**************************************************************/
+function getSanitizedTTSText(text) {
+  if (!text) return "";
+
+  let s = String(text);
+  s = s.replace(/!\[([^\]]*)\]\(\s*https?:\/\/[^\s)]+?\s*\)/gi, (_, alt) => {
+    return (alt || "").trim();
+  });
+  s = s.replace(/\[([^\]]+)\]\(\s*https?:\/\/[^\s)]+?\s*\)/gi, (_, alt) => {
+    return (alt || "").trim();
+  });
+  s = s.replace(/<\s*https?:\/\/[^>]+>/gi, "");
+  s = s.replace(/\bhttps?:\/\/[^\s)>\]}]+/gi, "");
+  s = s.replace(/[ \t]{2,}/g, " ");
+  s = s.replace(/\s*\n\s*\n\s*\n+/g, "\n\n");
+  s = s.replace(/\s+([,.;:!?])/g, "$1");
+  s = s.replace(/\(\s*\)/g, "");
+  s = s.replace(/\[\s*\]/g, "");
+  s = s.replace(/\{\s*\}/g, "");
+  return s.trim();
+}
+
+/**************************************************************
 /* functionSignature: getDiscordVoiceTTS (coreData)           *
 /* Speaks wo.Response through a single TTS stream per guild   *
 /**************************************************************/
@@ -112,11 +138,18 @@ export default async function getDiscordVoiceTTS(coreData) {
     setLog(wo, "Silent mode enabled -> skip TTS", "info");
     return coreData;
   }
-  const text = (typeof wo.Response === "string" ? wo.Response.trim() : "");
-  if (!text) {
+  const raw = (typeof wo.Response === "string" ? wo.Response.trim() : "");
+  if (!raw) {
     setLog(wo, "No Response to speak", "warn");
     return coreData;
   }
+
+  const text = getSanitizedTTSText(raw);
+  if (!text) {
+    setLog(wo, "Response only contained links -> nothing to speak after sanitizing", "info");
+    return coreData;
+  }
+
   const sessionKey = wo.voiceSessionRef;
   if (!sessionKey) {
     setLog(wo, "Missing voiceSessionRef", "error");
