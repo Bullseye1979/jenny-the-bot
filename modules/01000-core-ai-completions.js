@@ -1,5 +1,5 @@
 /***************************************************************
-/* filename: "core-ai.js"                                      *
+/* filename: "core-ai-completions.js"                          *
 /* Version 1.0                                                 *
 /* Purpose: Platform-agnostic AI runner that builds prompts    *
 /* from context, executes tools (real or pseudo), persists     *
@@ -11,9 +11,18 @@
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 
-const MODULE_NAME = "core-ai";
+const MODULE_NAME = "core-ai-completions";
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
+
+/***************************************************************
+/* functionSignature: shouldRunForThisModule (wo)              *
+/* Gate: Dieses Modul läuft nur bei useAIModule="completions". *
+/***************************************************************/
+function shouldRunForThisModule(wo) {
+  const v = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
+  return v === "completions";
+}
 
 /***************************************************************
 /* functionSignature: getJsonSafe (v)                          *
@@ -429,9 +438,22 @@ async function getSystemContent(wo, kiCfg) {
 /***************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
+  if (!Array.isArray(wo.logging)) wo.logging = [];
+
+  // Gate: Nur aktiv, wenn useAIModule === "completions"
+  if (!shouldRunForThisModule(wo)) {
+    wo.logging.push({
+      timestamp: new Date().toISOString(),
+      severity: "info",
+      module: MODULE_NAME,
+      exitStatus: "skipped",
+      message: `Skipped: useAIModule="${String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim()}" != "completions"`
+    });
+    return coreData; // NICHT wo.Response überschreiben
+  }
+
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
-  if (!Array.isArray(wo.logging)) wo.logging = [];
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "AI request started" });
 
   let snapshot = [];
@@ -599,7 +621,7 @@ export default async function getCoreAi(coreData) {
   for (const turn of persistQueue) {
     try { await setContext(wo, turn); }
     catch (e) {
-      wo.logging?.push({
+      wo.logging.push({
         timestamp: new Date().toISOString(),
         severity: "warn",
         module: MODULE_NAME,
