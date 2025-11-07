@@ -5,48 +5,111 @@
 /**************************************************************/
 /**************************************************************/
 
+/**************************************************************
+/*                                                          *
+/**************************************************************/
+
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 
+/**************************************************************
+/* functionSignature: getToString (v)                         *
+/* Returns a safe string representation.                      *
+/**************************************************************/
 const getToString = (v) => (typeof v === "string" ? v : (v == null ? "" : String(v)));
+
+/**************************************************************
+/* functionSignature: getStr (v, d)                           *
+/* Returns v if non-empty string; otherwise default d.        *
+/**************************************************************/
 const getStr = (v, d) => (typeof v === "string" && v.length ? v : d);
+
+/**************************************************************
+/* functionSignature: getNum (v, d)                           *
+/* Returns finite numeric v; otherwise default d.             *
+/**************************************************************/
 const getNum = (v, d) => (Number.isFinite(v) ? Number(v) : d);
+
+/**************************************************************
+/* functionSignature: getJSON (t, f)                          *
+/* Parses JSON text t; returns fallback f on failure.         *
+/**************************************************************/
 const getJSON = (t, f = null) => { try { return JSON.parse(t); } catch { return f; } };
+
+/**************************************************************
+/* functionSignature: getWithTurnId (rec, wo)                 *
+/* Adds turn_id from working object if present.               *
+/**************************************************************/
+function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; return t ? { ...rec, turn_id: t } : rec; }
+
+/**************************************************************
+/* functionSignature: getPreview (s, n)                       *
+/* Returns a truncated preview with ellipsis marker.          *
+/**************************************************************/
+function getPreview(s, n=400){ const t=getToString(s); return t.length>n? t.slice(0,n)+" …[truncated]" : t; }
+
+/**************************************************************
+/* functionSignature: getLooksBase64 (s)                      *
+/* Heuristically checks if s looks like base64 content.       *
+/**************************************************************/
+const getLooksBase64 = (s) => typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s);
+
+/**************************************************************
+/* functionSignature: setEnsureDebugDir ()                    *
+/* Ensures the debug directory exists.                        *
+/**************************************************************/
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 const MODULE_NAME = "core-ai-responses";
-function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; return t ? { ...rec, turn_id: t } : rec; }
-function getPreview(s, n=400){ const t=getToString(s); return t.length>n? t.slice(0,n)+" …[truncated]" : t; }
-const getLooksBase64 = (s) => typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s);
-
 const DEBUG_DIR = path.resolve("./pub/debug");
 function setEnsureDebugDir(){ if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive:true }); }
+
+/**************************************************************
+/* functionSignature: getSafeJSONStringify (obj)              *
+/* Safe JSON stringify with fallback.                         *
+/**************************************************************/
 function getSafeJSONStringify(obj){
   try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
 }
+
+/**************************************************************
+/* functionSignature: setRedactSecrets (s)                    *
+/* Redacts common secret patterns from text.                  *
+/**************************************************************/
 function setRedactSecrets(s){
-  if (typeof s !== "string") s = String(s);
-  s = s.replace(/(Authorization"\s*:\s*")Bearer\s+[^"]+(")/gi, '$1Bearer ***REDACTED***$2');
-  s = s.replace(/(Authorization:\s*)Bearer\s+\S+/gi, '$1Bearer ***REDACTED***');
-  s = s.replace(/(["']?(api[-_ ]?key|token|secret)["']?\s*:\s*")([^"]+)(")/gi, '$1***REDACTED***$4');
+  s = (typeof s === "string") ? s : String(s);
+  s = s.replace(/(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+\-\/=]+/gi, '$1***REDACTED***');
+  s = s.replace(/("Authorization"\s*:\s*")Bearer\s+[^"]+(")/gi, '$1Bearer ***REDACTED***$2');
+  s = s.replace(/(["']?(?:api[-_\s]?key|token|secret)["']?\s*:\s*")([^"]+)(")/gi, '$1***REDACTED***$3');
   return s;
 }
 
+/**************************************************************
+/* functionSignature: getApproxBase64Bytes (b64)              *
+/* Approximates decoded byte length of base64 text.           *
+/**************************************************************/
 function getApproxBase64Bytes(b64) {
   const len = (b64 || "").length;
   const pads = (b64?.endsWith("==") ? 2 : (b64?.endsWith("=") ? 1 : 0));
   return Math.max(0, Math.floor(len * 0.75) - pads);
 }
+
+/**************************************************************
+/* functionSignature: getSha256OfBase64 (b64)                 *
+/* Computes SHA-256 of base64-decoded data.                   *
+/**************************************************************/
 function getSha256OfBase64(b64) {
   try { return createHash("sha256").update(Buffer.from(b64, "base64")).digest("hex"); }
   catch { return "n/a"; }
 }
-function getIsDataImageUrl(s){
-  return typeof s === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(s);
-}
+
+/**************************************************************
+/* functionSignature: getSanitizedForLog (obj)                *
+/* Produces log-friendly sanitized clone.                     *
+/**************************************************************/
 function getSanitizedForLog(obj) {
   const seen = new WeakSet();
   const MAX_STRING = 2000;
@@ -64,7 +127,7 @@ function getSanitizedForLog(obj) {
             o[k] = `[[base64 ${bytes} bytes sha256=${hash}]]`;
             continue;
           }
-          if (getIsDataImageUrl(v)) {
+          if (/^data:image\//i.test(v)) {
             const b64 = v.split(",")[1] || "";
             const bytes = getApproxBase64Bytes(b64);
             const hash  = getSha256OfBase64(b64);
@@ -84,6 +147,11 @@ function getSanitizedForLog(obj) {
   }
   return walk(obj);
 }
+
+/**************************************************************
+/* functionSignature: getImageSummaryForLog (images)          *
+/* Summarizes image artifacts for logs.                       *
+/**************************************************************/
 function getImageSummaryForLog(images){
   return (images||[]).map(im=>{
     if (im.kind === "b64") {
@@ -100,6 +168,11 @@ function getImageSummaryForLog(images){
     return im;
   });
 }
+
+/**************************************************************
+/* functionSignature: setLogBig (label, data, options)        *
+/* Writes large sanitized debug logs (optional to file).      *
+/**************************************************************/
 function setLogBig(label, data, {toFile=false} = {}){
   const ts = new Date().toISOString().replace(/[:.]/g,"-");
   const sanitized = getSanitizedForLog(data);
@@ -115,98 +188,41 @@ function setLogBig(label, data, {toFile=false} = {}){
 }
 
 /**************************************************************
-/* functionSignature: getSystemContent (wo)                   *
-/* Builds the exact system content block.                     *
+/* functionSignature: dedupeText (s)                          *
+/* Removes simple duplicate concatenation artifacts.          *
 /**************************************************************/
-function getSystemContent(wo) {
-  const now = new Date();
-  const tz = getStr(wo?.timezone, "Europe/Berlin");
-  const nowIso = now.toISOString();
-  const base = [
-    typeof wo.SystemPrompt === "string" ? wo.SystemPrompt.trim() : "",
-    typeof wo.Instructions === "string" ? wo.Instructions.trim() : ""
-  ].filter(Boolean).join("\n\n");
-  const runtimeInfo = [
-    "Runtime info:",
-    `- current_time_iso: ${nowIso}`,
-    `- timezone_hint: ${tz}`,
-    "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
-    "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
-  ].join("\n");
-  const policy = [
-    "Policy:",
-    "- NEVER ANSWER TO OLDER USER REQUESTS",
-    "- Use tools only when necessary.",
-    "- When you emit a tool call, do not include extra prose in the same turn."
-  ].join("\n");
-  const parts = [];
-  if (base) parts.push(base);
-  parts.push(runtimeInfo);
-  parts.push(policy);
-  return parts.filter(Boolean).join("\n\n");
-}
-
-/**************************************************************
-/* functionSignature: getPayload (row)                        *
-/* Picks the most relevant payload field from a row.          *
-/**************************************************************/
-function getPayload(row){
-  if (typeof row?.json === "string" && row.json.length) return row.json;
-  if (typeof row?.content === "string" && row.content.length) return row.content;
-  if (typeof row?.text === "string" && row.text.length) return row.text;
-  return "";
-}
-
-/**************************************************************
-/* functionSignature: getSnapshotMappedToChat (rows)          *
-/* Maps DB snapshot rows to chat message format.              *
-/**************************************************************/
-function getSnapshotMappedToChat(rows){
-  const out = [];
-  for (const r of rows || []) {
-    const role = r?.role;
-    const payload = getPayload(r);
-    if (role === "system")    out.push({ role: "system",    content: payload });
-    else if (role === "user") out.push({ role: "user",      content: payload });
-    else if (role === "assistant") out.push({ role: "assistant", content: payload });
-    else if (role === "tool") out.push({ role: "assistant", content: payload });
-  }
-  return out;
-}
-
-/**************************************************************
-/* functionSignature: getResponsesInputFromMessages (messages)*
-/* Converts chat messages to Responses API input format.       *
-/**************************************************************/
-function getResponsesInputFromMessages(messages) {
-  return messages.map(m => {
-    const role = (m.role === "tool") ? "assistant" : m.role;
-    const type = (role === "assistant") ? "output_text" : "input_text";
-    const text = getToString(m.content ?? "");
-    return { role, content: [{ type, text }] };
-  });
-}
-
-/* ---------- DEDUPE HOTFIX (minimal & safe) ---------- */
-/** Wenn der komplette Text exakt doppelt vorkommt (A+B == A+B),
- *  gib nur die erste Hälfte zurück. Sonst unverändert.
- *  Greift genau den beobachteten Fall ab (Duplikate bei ToolCalls),
- *  ohne Parser/Flows umzubauen.
- */
 function dedupeText(s) {
   const t = (s || "").trim();
   if (!t) return t;
-  // exakter Doppel-String? (A+B A+B)
   const m = t.match(/^([\s\S]+)\1$/);
   if (m && m[1]) return m[1].trim();
-  // sonst unverändert
   return t;
 }
-/* ---------- /DEDUPER ---------- */
+
+/**************************************************************
+/* functionSignature: getIdemp (wo)                           *
+/* Returns idempotence-tracking object on working object.     *
+/**************************************************************/
+function getIdemp(wo){
+  if (!wo.__idemp) wo.__idemp = { tools:new Set(), messages:new Set(), images:new Set() };
+  return wo.__idemp;
+}
+
+/**************************************************************
+/* functionSignature: hashStr (s)                             *
+/* Computes SHA-256 hex of a string.                          *
+/**************************************************************/
+function hashStr(s){ return createHash('sha256').update(getToString(s)).digest('hex'); }
+
+/**************************************************************
+/* functionSignature: msgHash (msg)                           *
+/* Hashes a chat message for idempotence.                     *
+/**************************************************************/
+function msgHash(msg){ return hashStr(`${msg.role}|${getToString(msg.content)}`); }
 
 /**************************************************************
 /* functionSignature: getNormalizedToolDefs (toolsLike)       *
-/* Normalizes function tool definitions.                      *
+/* Normalizes tool definitions to Responses format.           *
 /**************************************************************/
 function getNormalizedToolDefs(toolsLike){
   if (!Array.isArray(toolsLike)) return [];
@@ -228,7 +244,7 @@ function getNormalizedToolDefs(toolsLike){
 
 /**************************************************************
 /* functionSignature: getNormalizedToolChoice (tc)            *
-/* Normalizes tool choice to allowed shapes.                  *
+/* Normalizes tool_choice to accepted structures.             *
 /**************************************************************/
 function getNormalizedToolChoice(tc){
   if (!tc || tc === "auto" || tc === "none") return tc || "auto";
@@ -239,7 +255,7 @@ function getNormalizedToolChoice(tc){
 
 /**************************************************************
 /* functionSignature: getToolsByName (names, wo)              *
-/* Dynamically loads generic tools by name.                   *
+/* Dynamically imports tools by name; validates invoke func.  *
 /**************************************************************/
 async function getToolsByName(names, wo) {
   const loaded = [];
@@ -259,37 +275,56 @@ async function getToolsByName(names, wo) {
 /**************************************************************
 /* functionSignature: setExecGenericTool (toolModules, call,  *
 /* coreData)                                                  *
-/* Executes a generic tool and returns its result.            *
+/* Executes a generic tool with idempotence and mapping.      *
 /**************************************************************/
 async function setExecGenericTool(toolModules, call, coreData){
   const wo = coreData?.workingObject ?? {};
+  const idemp = getIdemp(wo);
   const name = call?.function?.name || call?.name;
   const argsRaw = call?.function?.arguments ?? call?.arguments ?? "{}";
   const args = typeof argsRaw === "string" ? getJSON(argsRaw, {}) : (argsRaw || {});
   const tool = toolModules.find(t => (t.definition?.function?.name || t.definition?.name || t.name) === name);
+  const callId = call?.id || call?.call_id || `${name}:${hashStr(JSON.stringify(args))}`;
+
+  if (idemp.tools.has(callId)) {
+    return { ok:true, name, content: JSON.stringify({ type:"tool_result", tool:name, call_id:callId, ok:true, skipped:"idempotent-skip" }) };
+  }
+  idemp.tools.add(callId);
+
   wo.logging?.push({ timestamp:new Date().toISOString(), severity:"info", module:MODULE_NAME, exitStatus:"started",
-    message:"Tool call start", details:{ tool:name, args_preview:getPreview(args, ARG_PREVIEW_MAX) } });
+    message:"Tool call start", details:{ tool:name, call_id:callId, args_preview:getPreview(args, ARG_PREVIEW_MAX) } });
   if (!tool) {
-    const err = { error:`Tool "${name}" not found` };
+    const err = { type:"tool_result", tool:name, call_id:callId, ok:false, error:`Tool "${name}" not found` };
     return { ok:false, name, content: JSON.stringify(err) };
   }
   try {
     try { await putItem(name, "status:tool"); } catch {}
     const res = await tool.invoke(args, coreData);
-    const content = typeof res === "string" ? res : JSON.stringify(res ?? null);
-    wo.logging?.push({ timestamp:new Date().toISOString(), severity:"info", module:MODULE_NAME, exitStatus:"success", message:"Tool call success", details:{ tool:name, result_preview:getPreview(content, RESULT_PREVIEW_MAX) } });
+    const mapped = { type:"tool_result", tool:name, call_id:callId, ok:true, data: (typeof res === "string" ? getJSON(res, res) : res) };
+    const content = JSON.stringify(mapped);
+    wo.logging?.push({ timestamp:new Date().toISOString(), severity:"info", module:MODULE_NAME, exitStatus:"success", message:"Tool call success", details:{ tool:name, call_id:callId, result_preview:getPreview(content, RESULT_PREVIEW_MAX) } });
     return { ok:true, name, content };
   } catch(e){
-    wo.logging.push({ timestamp:new Date().toISOString(), severity:"error", module:MODULE_NAME, exitStatus:"failed", message:"Tool call error", details:{ tool:name, error:String(e?.message||e) }});
-    return { ok:false, name, content: JSON.stringify({ error: e?.message || String(e) }) };
+    const mappedErr = { type:"tool_result", tool:name, call_id:callId, ok:false, error: e?.message || String(e) };
+    wo.logging.push({ timestamp:new Date().toISOString(), severity:"error", module:MODULE_NAME, exitStatus:"failed", message:"Tool call error", details:{ tool:name, call_id:callId, error:String(e?.message||e) }});
+    return { ok:false, name, content: JSON.stringify(mappedErr) };
   } finally {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs) ? Number(coreData.workingObject.StatusToolClearDelayMs) : 800;
     setTimeout(()=>{ try{ putItem("", "status:tool"); }catch{} }, Math.max(0, delayMs));
   }
 }
 
+/**************************************************************
+/* functionSignature: setEnsureDocDir ()                      *
+/* Ensures the public documents directory exists.             *
+/**************************************************************/
 const DOC_DIR = path.resolve("./pub/documents");
 function setEnsureDocDir(){ if (!fs.existsSync(DOC_DIR)) fs.mkdirSync(DOC_DIR, { recursive:true }); }
+
+/**************************************************************
+/* functionSignature: getExtFromMime (m)                      *
+/* Returns file extension from MIME type.                     *
+/**************************************************************/
 function getExtFromMime(m) {
   const mime = (m||"").toLowerCase();
   if (mime.includes("png")) return ".png";
@@ -300,17 +335,26 @@ function getExtFromMime(m) {
   if (mime.includes("svg")) return ".svg";
   return ".png";
 }
+
+/**************************************************************
+/* functionSignature: getBuildUrl (filename, baseUrl)         *
+/* Builds a public URL for a persisted document.              *
+/**************************************************************/
 function getBuildUrl(filename, baseUrl){
   const clean = (baseUrl||"").replace(/\/+$/,"");
   return clean ? `${clean}/documents/${filename}` : `/documents/${filename}`;
 }
 
 /**************************************************************
-/* functionSignature: setSaveB64 (b64, mime, baseUrl)         *
-/* Saves base64 image and returns hosted URL.                 *
+/* functionSignature: setSaveB64 (b64, mime, baseUrl, wo)     *
+/* Persists base64 image and returns hosted URL.              *
 /**************************************************************/
-async function setSaveB64(b64, mime, baseUrl){
+async function setSaveB64(b64, mime, baseUrl, wo){
   setEnsureDocDir();
+  const idemp = getIdemp(wo);
+  const hash = getSha256OfBase64(b64||"");
+  if (idemp.images.has(hash)) return getBuildUrl(`DUP-${hash}.png`, baseUrl);
+  idemp.images.add(hash);
   const ext = getExtFromMime(mime||"image/png");
   const filename = `${Date.now()}-${randomUUID()}${ext}`;
   const filePath = path.join(DOC_DIR, filename);
@@ -319,11 +363,15 @@ async function setSaveB64(b64, mime, baseUrl){
 }
 
 /**************************************************************
-/* functionSignature: setMirrorURL (url, baseUrl)             *
-/* Downloads and mirrors a remote image to local storage.     *
+/* functionSignature: setMirrorURL (url, baseUrl, wo)         *
+/* Downloads remote image and mirrors it locally.             *
 /**************************************************************/
-async function setMirrorURL(url, baseUrl){
+async function setMirrorURL(url, baseUrl, wo){
   setEnsureDocDir();
+  const idemp = getIdemp(wo);
+  const key = `url:${hashStr(url||"")}`;
+  if (idemp.images.has(key)) return getBuildUrl(`DUP-${hashStr(url)}.png`, baseUrl);
+  idemp.images.add(key);
   const f = globalThis.fetch ?? (await import('node-fetch')).default;
   const res = await f(url, { headers: { "User-Agent": "core-ai-responses/1.0" } });
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
@@ -337,11 +385,15 @@ async function setMirrorURL(url, baseUrl){
 }
 
 /**************************************************************
-/* functionSignature: setSaveFromFileId (fileId, options)     *
-/* Fetches a file via file_id and stores it locally.          *
+/* functionSignature: setSaveFromFileId (fileId, opts, wo)    *
+/* Downloads image via fileId from provider and persists it.  *
 /**************************************************************/
-async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }){
+async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }, wo){
   setEnsureDocDir();
+  const idemp = getIdemp(wo);
+  const key = `file:${fileId}`;
+  if (idemp.images.has(key)) return getBuildUrl(`DUP-${hashStr(fileId)}.png`, baseUrl);
+  idemp.images.add(key);
   let url = "";
   if (endpointFilesContentTemplate && endpointFilesContentTemplate.includes("{id}")) {
     url = endpointFilesContentTemplate.replace("{id}", encodeURIComponent(fileId));
@@ -363,29 +415,20 @@ async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, e
 
 /**************************************************************
 /* functionSignature: getParsedResponsesOutput (raw)          *
-/* Parses Responses API output into text, tools, and images.  *
+/* Extracts text, images, and tool calls from Responses JSON. *
 /**************************************************************/
 function getParsedResponsesOutput(raw){
   const out = { text:"", toolCalls:[], images:[] };
   const isHttpUrl = (u) => (typeof u === "string" && /^https?:\/\//i.test(u));
   const isDataUrl = (u) => (typeof u === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(u));
   const b64FromDataUrl = (u) => (typeof u === "string" ? (u.split(",")[1] || "") : "");
-  function pushImageUrl(u, mime){
-    if (isHttpUrl(u)) out.images.push({ kind:"url", url:u, mime:mime||undefined });
-    else if (isDataUrl(u)) out.images.push({ kind:"b64", b64: b64FromDataUrl(u), mime: mime || "image/png" });
-  }
-  function pushImageB64(b64, mime){
-    if (typeof b64 === "string" && b64.length) out.images.push({ kind:"b64", b64, mime: mime || "image/png" });
-  }
-  function pushFileId(id, mime){
-    if (typeof id === "string" && id.length) out.images.push({ kind:"file_id", file_id:id, mime: mime || "image/png" });
-  }
+  function pushImageUrl(u, mime){ if (isHttpUrl(u)) out.images.push({ kind:"url", url:u, mime:mime||undefined }); else if (isDataUrl(u)) out.images.push({ kind:"b64", b64: b64FromDataUrl(u), mime: mime || "image/png" }); }
+  function pushImageB64(b64, mime){ if (typeof b64 === "string" && b64.length) out.images.push({ kind:"b64", b64, mime: mime || "image/png" }); }
+  function pushFileId(id, mime){ if (typeof id === "string" && id.length) out.images.push({ kind:"file_id", file_id:id, mime: mime || "image/png" }); }
   function crawl(node){
     if (!node || typeof node !== "object") return;
     const t = node.type;
-    if (t === "output_text" && typeof node.text === "string") {
-      out.text += node.text;
-    }
+    if (t === "output_text" && typeof node.text === "string") out.text += node.text;
     if (t === "image" || t === "image_url" || t === "output_image") {
       const u   = node?.image_url?.url || node?.image_url || node?.url;
       const b   = node?.b64_json || node?.data?.b64_json || node?.base64;
@@ -396,9 +439,7 @@ function getParsedResponsesOutput(raw){
       if (fid) pushFileId(fid, mime);
     }
     if (t === "image_generation_call") {
-      const mime = (node?.output_format && typeof node.output_format === "string")
-        ? `image/${node.output_format.toLowerCase()}`
-        : "image/png";
+      const mime = (node?.output_format && typeof node.output_format === "string") ? `image/${node.output_format.toLowerCase()}` : "image/png";
       if (typeof node?.result === "string") {
         if (isDataUrl(node.result)) pushImageB64(b64FromDataUrl(node.result), mime);
         else if (getLooksBase64(node.result)) pushImageB64(node.result, mime);
@@ -408,24 +449,12 @@ function getParsedResponsesOutput(raw){
       if (node?.file_id) pushFileId(node.file_id, mime);
     }
     if (t === "tool_call" || t === "function_call") {
-      out.toolCalls.push({
-        id: node?.id || node?.call_id,
-        type: t,
-        name: node?.name || node?.function?.name,
-        arguments: typeof node?.arguments === "string"
-          ? node.arguments
-          : (node?.function?.arguments ?? JSON.stringify(node?.function?.arguments ?? {}))
-      });
+      out.toolCalls.push({ id: node?.id || node?.call_id, type: t, name: node?.name || node?.function?.name, arguments: typeof node?.arguments === "string" ? node.arguments : (node?.function?.arguments ?? JSON.stringify(node?.function?.arguments ?? {})) });
     }
     if (t === "tool_use" || t === "tool_result") {
       const name = node?.name || node?.tool_name;
       const args = node?.input ?? node?.arguments ?? {};
-      out.toolCalls.push({
-        id: node?.id || node?.call_id,
-        type: t,
-        name,
-        arguments: typeof args === "string" ? args : JSON.stringify(args ?? {})
-      });
+      out.toolCalls.push({ id: node?.id || node?.call_id, type: t, name, arguments: typeof args === "string" ? args : JSON.stringify(args ?? {}) });
       if (Array.isArray(node?.output)) node.output.forEach(crawl);
     }
     if (Array.isArray(node.content)) node.content.forEach(crawl);
@@ -437,30 +466,15 @@ function getParsedResponsesOutput(raw){
       else if (getLooksBase64(node.result)) pushImageB64(node.result, node?.mime || "image/png");
       else if (isHttpUrl(node.result)) pushImageUrl(node.result, node?.mime);
     }
-    const possibleFileIds = [
-      node?.file_id,
-      node?.image_file?.file_id,
-      node?.data?.file_id,
-      node?.asset_pointer?.file_id,
-      node?.image?.file_id,
-      Array.isArray(node?.images) && node.images[0]?.file_id
-    ].filter(Boolean);
+    const possibleFileIds = [ node?.file_id, node?.image_file?.file_id, node?.data?.file_id, node?.asset_pointer?.file_id, node?.image?.file_id, Array.isArray(node?.images) && node.images[0]?.file_id ].filter(Boolean);
     for (const fid of possibleFileIds) pushFileId(fid, node?.mime || node?.mime_type);
     if (Array.isArray(node?.images)) {
       for (const im of node.images) {
-        const iu = im?.url || im?.image_url;
-        const ib64 = im?.b64_json || im?.base64;
-        const ifid = im?.file_id || im?.image_file?.file_id || im?.asset_pointer?.file_id;
-        const mime = im?.mime || im?.mime_type || "image/png";
-        if (iu) pushImageUrl(iu, mime);
-        if (ib64) pushImageB64(ib64, mime);
-        if (ifid) pushFileId(ifid, mime);
+        const iu = im?.url || im?.image_url; const ib64 = im?.b64_json || im?.base64; const ifid = im?.file_id || im?.image_file?.file_id || im?.asset_pointer?.file_id; const mime = im?.mime || im?.mime_type || "image/png";
+        if (iu) pushImageUrl(iu, mime); if (ib64) pushImageB64(ib64, mime); if (ifid) pushFileId(ifid, mime);
       }
     }
-    Object.values(node).forEach(v=>{
-      if (Array.isArray(v)) v.forEach(crawl);
-      else if (v && typeof v === "object") crawl(v);
-    });
+    Object.values(node).forEach(v=>{ if (Array.isArray(v)) v.forEach(crawl); else if (v && typeof v === "object") crawl(v); });
   }
   const arr = Array.isArray(raw?.output) ? raw.output : (raw ? [raw] : []);
   arr.forEach(crawl);
@@ -469,19 +483,17 @@ function getParsedResponsesOutput(raw){
 }
 
 /**************************************************************
-/* functionSignature: getWasTruncatedOutput (data, parsed)    *
-/* Detects whether the model output was truncated.            *
+/* functionSignature: getWasTruncatedOutput (data)            *
+/* Detects whether model output was truncated.                *
 /**************************************************************/
-function getWasTruncatedOutput(data, parsed){
+function getWasTruncatedOutput(data){
   if (data?.incomplete_details) return true;
   if (data?.status && String(data.status).toLowerCase() === "incomplete") return true;
   try {
     const outputs = Array.isArray(data?.output) ? data.output : [];
     for (const m of outputs) {
       const content = Array.isArray(m?.content) ? m.content : [];
-      for (const c of content) {
-        if (c?.finish_reason && String(c.finish_reason).toLowerCase() === "length") return true;
-      }
+      for (const c of content) { if (c?.finish_reason && String(c.finish_reason).toLowerCase() === "length") return true; }
     }
   } catch {}
   return false;
@@ -489,8 +501,7 @@ function getWasTruncatedOutput(data, parsed){
 
 /**************************************************************
 /* functionSignature: getCoreAi (coreData)                    *
-/* Main runner: orchestrates context, calls Responses, saves  *
-/* images, executes tools, persists conversation, returns text*/
+/* Runs the Responses workflow with tools and persistence.    *
 /**************************************************************/
 export default async function getCoreAi(coreData){
   const wo = coreData?.workingObject ?? {};
@@ -519,14 +530,26 @@ export default async function getCoreAi(coreData){
   let snapshot = [];
   try { snapshot = await getContext(wo); }
   catch(e){ wo.logging.push({ timestamp:new Date().toISOString(), severity:"warn", module:MODULE_NAME, exitStatus:"success", message:`getContext failed; continuing: ${e?.message || String(e)}` }); }
+
+  function getSystemContent(wo) {
+    const now = new Date();
+    const tz = getStr(wo?.timezone, "Europe/Berlin");
+    const nowIso = now.toISOString();
+    const base = [ typeof wo.SystemPrompt === "string" ? wo.SystemPrompt.trim() : "", typeof wo.Instructions === "string" ? wo.Instructions.trim() : "" ].filter(Boolean).join("\n\n");
+    const runtimeInfo = [ "Runtime info:", `- current_time_iso: ${nowIso}`, `- timezone_hint: ${tz}`, "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.", "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user." ].join("\n");
+    const policy = [ "Policy:", "- NEVER ANSWER TO OLDER USER REQUESTS", "- Use tools only when necessary.", "- When you emit a tool call, do not include extra prose in the same turn." ].join("\n");
+    const parts = []; if (base) parts.push(base); parts.push(runtimeInfo); parts.push(policy); return parts.filter(Boolean).join("\n\n");
+  }
+
+  function getPayload(row){ if (typeof row?.json === "string" && row.json.length) return row.json; if (typeof row?.content === "string" && row.content.length) return row.content; if (typeof row?.text === "string" && row.text.length) return row.text; return ""; }
+  function getSnapshotMappedToChat(rows){ const out = []; for (const r of rows || []) { const role = r?.role; const payload = getPayload(r); if (role === "system") out.push({ role: "system", content: payload }); else if (role === "user") out.push({ role: "user", content: payload }); else if (role === "assistant") out.push({ role: "assistant", content: payload }); else if (role === "tool") out.push({ role: "assistant", content: payload }); } return out; }
+  function getResponsesInputFromMessages(messages) { return messages.map(m => { const role = (m.role === "tool") ? "assistant" : m.role; const type = (role === "assistant") ? "output_text" : "input_text"; const text = getToString(m.content ?? ""); return { role, content: [{ type, text }] }; }); }
+
   const sys = getSystemContent(wo);
   const fromDb = getSnapshotMappedToChat(Array.isArray(snapshot)? snapshot : []);
   const userPayloadRaw = getToString(wo?.payload ?? "");
-  let messages = [
-    { role:"system", content: sys },
-    ...fromDb,
-    ...(userPayloadRaw ? [{ role:"user", content:userPayloadRaw }] : [])
-  ];
+  let messages = [ { role:"system", content: sys }, ...fromDb, ...(userPayloadRaw ? [{ role:"user", content:userPayloadRaw }] : []) ];
+
   const toolNames = Array.isArray(wo?.Tools) ? wo.Tools : [];
   const genericTools = await getToolsByName(toolNames, wo);
   const toolDefs = getNormalizedToolDefs(genericTools.map(t => t.definition).filter(Boolean));
@@ -535,61 +558,52 @@ export default async function getCoreAi(coreData){
   const persistQueue = [];
   let finalText = "";
   let totalToolCalls = 0;
+
+  let attempts = 0;
+  const maxAttempts = Math.max(1, getNum(wo?.MaxAttempts, Math.min(3, maxLoops)));
+
   for (let iter = 0; iter < maxLoops; iter++){
+    attempts++;
+
     const controller = new AbortController();
     const timer = setTimeout(()=>controller.abort(), timeoutMs);
     try {
-      const body = {
-        model,
-        input: getResponsesInputFromMessages(messages),
-        instructions: sys,
-        tools: toolsForResponses,
-        tool_choice: toolChoiceInitial,
-        ...(maxTokens ? { max_output_tokens: maxTokens } : {})
-      };
+      const body = { model, input: getResponsesInputFromMessages(messages), instructions: sys, tools: toolsForResponses, tool_choice: toolChoiceInitial, ...(maxTokens ? { max_output_tokens: maxTokens } : {}) };
       setLogBig("responses-request-body", { endpoint, model, tool_choice: body.tool_choice, tools: body.tools, input: body.input, instructions: body.instructions }, { toFile: debugOn });
-      const res = await (globalThis.fetch ?? (await import('node-fetch')).default)(endpoint, {
-        method:"POST",
-        headers: { "Content-Type":"application/json", "Authorization":`Bearer ${apiKey}` },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
+      const res = await (globalThis.fetch ?? (await import('node-fetch')).default)(endpoint, { method:"POST", headers: { "Content-Type":"application/json", "Authorization":`Bearer ${apiKey}` }, body: JSON.stringify(body), signal: controller.signal });
       clearTimeout(timer);
       const rawText = await res.text();
       const hdr = {}; try { res.headers?.forEach?.((v,k)=>{ hdr[k]=v; }); } catch {}
       const RAW_MAX = 8000;
       setLogBig("responses-status", { status: res.status, statusText: res.statusText }, { toFile: debugOn });
       setLogBig("responses-headers", hdr, { toFile: debugOn });
-      setLogBig("responses-payload-raw",
-        rawText.length > RAW_MAX ? rawText.slice(0, RAW_MAX) + ` …[+${rawText.length-RAW_MAX} chars truncated]` : rawText,
-        { toFile: debugOn }
-      );
+      setLogBig("responses-payload-raw", rawText.length > RAW_MAX ? rawText.slice(0, RAW_MAX) + ` …[+${rawText.length-RAW_MAX} chars truncated]` : rawText, { toFile: debugOn });
+
       if (!res.ok) {
+        const retryable = (res.status >= 500 && res.status <= 599) || res.status === 429;
+        if (retryable && attempts < maxAttempts) {
+          wo.logging.push({ timestamp:new Date().toISOString(), severity:"warn", module:MODULE_NAME, exitStatus:"retry", message:`Retrying due to HTTP ${res.status}` });
+          continue;
+        }
         wo.Response = "[Empty AI response]";
         wo.logging.push({ timestamp:new Date().toISOString(), severity:"warn", module:MODULE_NAME, exitStatus:"failed", message:`HTTP ${res.status} ${res.statusText} ${rawText.slice(0,300)}` });
         return coreData;
       }
+
       const data = getJSON(rawText, {});
       setLogBig("responses-payload-json", data, { toFile: debugOn });
       const parsed = getParsedResponsesOutput(data);
       const hostedLinks = [];
+
       if (parsed.images.length) {
         for (const it of parsed.images) {
           try {
             if (it.kind === "b64") {
-              hostedLinks.push(await setSaveB64(it.b64, it.mime || "image/png", baseUrl));
+              hostedLinks.push(await setSaveB64(it.b64, it.mime || "image/png", baseUrl, wo));
             } else if (it.kind === "url") {
-              hostedLinks.push(await setMirrorURL(it.url, baseUrl));
+              hostedLinks.push(await setMirrorURL(it.url, baseUrl, wo));
             } else if (it.kind === "file_id") {
-              hostedLinks.push(await setSaveFromFileId(
-                it.file_id,
-                {
-                  baseUrl,
-                  apiKey,
-                  endpointResponses: endpoint,
-                  endpointFilesContentTemplate
-                }
-              ));
+              hostedLinks.push(await setSaveFromFileId(it.file_id, { baseUrl, apiKey, endpointResponses: endpoint, endpointFilesContentTemplate }, wo));
             }
           } catch(e){
             const placeholder = getBuildUrl(`FAILED-${Date.now()}-${randomUUID()}.txt`, baseUrl);
@@ -600,36 +614,35 @@ export default async function getCoreAi(coreData){
       } else {
         wo.logging.push({ timestamp:new Date().toISOString(), severity:"info", module:MODULE_NAME, exitStatus:"success", message:`No images parsed from response.` });
       }
-      setLogBig("responses-parsed-summary", {
-        textPreview: getPreview(parsed.text, 300),
-        images: getImageSummaryForLog(parsed.images),
-        toolCalls: parsed.toolCalls
-      }, { toFile: debugOn });
+
+      setLogBig("responses-parsed-summary", { textPreview: getPreview(parsed.text, 300), images: getImageSummaryForLog(parsed.images), toolCalls: parsed.toolCalls }, { toFile: debugOn });
       setLogBig("responses-hosted-links", hostedLinks, { toFile: debugOn });
+
       const toolCalls = Array.isArray(parsed.toolCalls) ? parsed.toolCalls : [];
       const hasToolCalls = toolCalls.length > 0;
 
-      // HOTFIX applied here: entdoppeln bevor wir persistieren
       const assistantTextClean = dedupeText((parsed.text || "").trim());
 
-      const assistantMsg = { role:"assistant", content: assistantTextClean };
-      if (assistantMsg.content) {
-        messages.push(assistantMsg);
-        persistQueue.push(getWithTurnId(assistantMsg, wo));
+      const maybePersist = (msg) => {
+        const key = msgHash(msg);
+        const idemp = getIdemp(wo);
+        if (idemp.messages.has(key)) return;
+        idemp.messages.add(key);
+        messages.push(msg);
+        persistQueue.push(getWithTurnId(msg, wo));
+      };
+
+      if (assistantTextClean) {
+        maybePersist({ role:"assistant", content: assistantTextClean });
       }
       if (hostedLinks.length) {
         const linkBlock = `${hostedLinks.map(u=>`- ${u}`).join("\n")}`;
-        const imgMsg = { role:"assistant", content: linkBlock };
-        messages.push(imgMsg);
-        persistQueue.push(getWithTurnId(imgMsg, wo));
-        const backchannel = { role:"assistant", content:`Image assets available: ${hostedLinks.join(" ")}` };
-        messages.push(backchannel);
-        persistQueue.push(getWithTurnId(backchannel, wo));
+        maybePersist({ role:"assistant", content: linkBlock });
+        maybePersist({ role:"assistant", content:`Image assets available: ${hostedLinks.join(" ")}` });
       } else if (parsed.images.length && !hostedLinks.length) {
-        const msg = { role:"assistant", content:`(no links generated – check write permissions for ./pub/documents and fetch availability)` };
-        messages.push(msg);
-        persistQueue.push(getWithTurnId(msg, wo));
+        maybePersist({ role:"assistant", content:`(no links generated – check write permissions for ./pub/documents and fetch availability)` });
       }
+
       let ranAnyTool = false;
       if (hasToolCalls && genericTools.length && totalToolCalls < maxToolCalls) {
         for (const tc of toolCalls) {
@@ -642,31 +655,28 @@ export default async function getCoreAi(coreData){
           totalToolCalls++;
           ranAnyTool = true;
           const contentStr = getToString(result?.content ?? "");
-          const toolResultMsg = { role:"assistant", content: contentStr };
-          messages.push(toolResultMsg);
-          persistQueue.push(getWithTurnId(toolResultMsg, wo));
+          maybePersist({ role:"assistant", content: contentStr });
         }
         if (ranAnyTool) {
           continue;
         }
       }
-      const truncated = getWasTruncatedOutput(data, parsed);
+
+      const truncated = getWasTruncatedOutput(data);
       if (truncated) {
-        const cont = { role:"user", content:"continue" };
-        messages.push(cont);
-        persistQueue.push(getWithTurnId(cont, wo));
+        maybePersist({ role:"user", content:"continue" });
         continue;
       }
 
-      // HOTFIX applied also when assembling finalText
-      finalText = [
-        assistantTextClean,
-        (hostedLinks.length ? `${hostedLinks.map(u=>`- ${u}`).join("\n")}` : "")
-      ].filter(Boolean).join("\n\n");
+      finalText = [ assistantTextClean, (hostedLinks.length ? `${hostedLinks.map(u=>`- ${u}`).join("\n")}` : "") ].filter(Boolean).join("\n\n");
       break;
     } catch(err){
       clearTimeout(timer);
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
+      if ((isAbort) && attempts < maxAttempts) {
+        wo.logging.push({ timestamp:new Date().toISOString(), severity:"warn", module:MODULE_NAME, exitStatus:"retry", message:`Retrying due to timeout after ${timeoutMs}ms` });
+        continue;
+      }
       wo.Response = "[Empty AI response]";
       wo.logging.push({ timestamp:new Date().toISOString(), severity:isAbort?"warn":"error", module:MODULE_NAME, exitStatus:"failed",
         message: isAbort ? `AI request timed out after ${timeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}` });
@@ -674,6 +684,7 @@ export default async function getCoreAi(coreData){
       return coreData;
     }
   }
+
   for (const turn of persistQueue) {
     try { await setContext(wo, turn); }
     catch(e){ wo.logging.push({ timestamp:new Date().toISOString(), severity:"warn", module:MODULE_NAME, exitStatus:"success", message:`Persist failed (role=${turn.role}): ${e?.message || String(e)}` }); }
