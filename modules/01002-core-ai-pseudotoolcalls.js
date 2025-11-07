@@ -1,27 +1,29 @@
 /**************************************************************
-/* filename: "core-ai-completions.js"                         *
+/* filename: "core-ai-pseudotoolcalls.js"                     *
 /* Version 1.0                                                *
-/* Purpose: Platform-agnostic AI runner for chat completions  *
-/*           with real tool calls only.                       *
+/* Purpose: AI runner that uses ONLY pseudo tool calls. It    *
+/*          generates strict, per-tool examples from JSON     *
+/*          schemas, normalizes common arg aliases (e.g.      *
+/*          getToken: color1→ring_color, image/src→url),      *
+/*          executes one parsed pseudo call per loop,         *
+/*          persists turns, and returns final assistant text. *
 /**************************************************************/
-/**************************************************************
-/*                                                            *
 /**************************************************************/
 
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 
-const MODULE_NAME = "core-ai-completions";
+const MODULE_NAME = "core-ai-pseudotoolcalls";
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 
 /**************************************************************
 /* functionSignature: getShouldRunForThisModule (wo)          *
-/* Returns true when useAIModule equals "completions".        *
+/* Returns true when useAIModule equals "pseudotoolcalls".    *
 /**************************************************************/
 function getShouldRunForThisModule(wo) {
   const v = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
-  return v === "completions";
+  return v === "pseudotoolcalls";
 }
 
 /**************************************************************
@@ -71,11 +73,10 @@ function getWithTurnId(rec, wo) {
 
 /**************************************************************
 /* functionSignature: getKiCfg (wo)                           *
-/* Builds runtime configuration for completions.              *
+/* Builds runtime configuration for pseudo tool calls.        *
 /**************************************************************/
 function getKiCfg(wo) {
   const includeHistory = getBool(wo?.IncludeHistory, true);
-  const includeHistoryTools = getBool(wo?.IncludeHistoryTools, false);
   const includeRuntimeContext = getBool(wo?.IncludeRuntimeContext, false);
   const toolsList = Array.isArray(wo?.Tools) ? wo.Tools : [];
   if (Array.isArray(wo?.tools) && !Array.isArray(wo?.Tools)) {
@@ -89,11 +90,8 @@ function getKiCfg(wo) {
   }
   return {
     includeHistory,
-    includeHistoryTools,
     includeRuntimeContext,
-    exposeTools: toolsList.length > 0,
     toolsList,
-    toolChoice: getStr(wo?.ToolChoice, "auto"),
     temperature: getNum(wo?.Temperature, 0.7),
     maxTokens: getNum(wo?.MaxTokens, 2000),
     maxLoops: getNum(wo?.MaxLoops, 20),
@@ -123,53 +121,21 @@ function getAppendedContextBlockToUserContent(baseText, contextObj) {
 }
 
 /**************************************************************
-/* functionSignature: getPromptFromSnapshot (rows, kiCfg,     *
-/* allowToolHistory) Converts rows to chat messages.          *
+/* functionSignature: getPromptFromSnapshot (rows, kiCfg)     *
+/* Converts stored rows to chat messages without tools.       *
 /**************************************************************/
-function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
+function getPromptFromSnapshot(rows, kiCfg) {
   if (!kiCfg.includeHistory) return [];
   const out = [];
-  const includeTools = !!kiCfg.includeHistoryTools && !!allowToolHistory;
-  let lastAssistantToolIds = new Set();
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i] || {};
     const role = r.role;
     if (role === "user") {
       out.push({ role: "user", content: r.content ?? "" });
-      lastAssistantToolIds = new Set();
       continue;
     }
     if (role === "assistant") {
-      const msg = { role: "assistant", content: r.content ?? "" };
-      if (includeTools && Array.isArray(r.tool_calls) && r.tool_calls.length) {
-        msg.tool_calls = r.tool_calls.map(tc => ({
-          id: tc?.id,
-          type: "function",
-          function: {
-            name: tc?.function?.name,
-            arguments: typeof tc?.function?.arguments === "string"
-              ? tc.function.arguments
-              : (tc?.function?.arguments ? JSON.stringify(tc.function.arguments) : "{}")
-          }
-        }));
-        lastAssistantToolIds = new Set(msg.tool_calls.map(tc => tc.id).filter(Boolean));
-      } else {
-        lastAssistantToolIds = new Set();
-      }
-      out.push(msg);
-      continue;
-    }
-    if (role === "tool") {
-      if (!includeTools) continue;
-      const tcid = r.tool_call_id;
-      if (tcid && lastAssistantToolIds.has(tcid)) {
-        out.push({
-          role: "tool",
-          tool_call_id: tcid,
-          name: r.name,
-          content: typeof r.content === "string" ? r.content : JSON.stringify(r.content ?? "")
-        });
-      }
+      out.push({ role: "assistant", content: r.content ?? "" });
       continue;
     }
   }
@@ -211,16 +177,6 @@ async function getToolsByName(names, wo) {
 }
 
 /**************************************************************
-/* functionSignature: getToolDefs (toolModules)               *
-/* Extracts JSON schema function definitions.                 *
-/**************************************************************/
-function getToolDefs(toolModules) {
-  return toolModules
-    .map(t => t.definition)
-    .filter(d => d && d.type === "function" && d.function?.name);
-}
-
-/**************************************************************
 /* functionSignature: getExecToolCall (toolModules, toolCall, *
 /* coreData) Executes a tool call and returns tool message.   *
 /**************************************************************/
@@ -257,7 +213,8 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   }
   try {
     try { await putItem(name, "status:tool"); } catch {}
-    const result = await tool.invoke(args, coreData);
+    const normalizedArgs = getNormalizedArgsForTool(name, args);
+    const result = await tool.invoke(normalizedArgs, coreData);
     const durationMs = Date.now() - startTs;
     wo.logging?.push({
       timestamp: new Date().toISOString(),
@@ -294,8 +251,154 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
 }
 
 /**************************************************************
+/* functionSignature: getMaybePseudoToolCall (text)           *
+/* Parses a single pseudo-tool call from assistant text.      *
+/**************************************************************/
+function getMaybePseudoToolCall(text) {
+  if (!text || typeof text !== "string") return null;
+  const m = text.match(/^\s*\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*\})\s*$/m);
+  if (!m) return null;
+  const name = m[1];
+  let args = {};
+  try { args = JSON.parse(m[2]); } catch { args = getTryParseJSON(m[2], {}); }
+  return { name, args };
+}
+
+/**************************************************************
+/* functionSignature: getPseudoToolSpecs (names, wo)          *
+/* Loads tool parameter specs for pseudo guidance.            *
+/**************************************************************/
+async function getPseudoToolSpecs(names, wo) {
+  const specs = [];
+  for (const name of names || []) {
+    try {
+      const mod = await import(`../tools/${name}.js`);
+      const tool = mod?.default ?? mod;
+      const def = tool?.definition?.function;
+      const parameters = def?.parameters || {};
+      const description = def?.description || def?.name || name;
+      const required = Array.isArray(parameters?.required) ? parameters.required : [];
+      const flat = {};
+      const meta = {};
+      if (parameters?.properties && typeof parameters.properties === "object") {
+        for (const [k, v] of Object.entries(parameters.properties)) {
+          const t = typeof v?.type === "string" ? v.type : "string";
+          meta[k] = {
+            type: t,
+            description: typeof v?.description === "string" ? v.description.trim() : "",
+            required: required.includes(k),
+            enum: Array.isArray(v?.enum) ? v.enum : undefined,
+            minimum: Number.isFinite(v?.minimum) ? v.minimum : undefined,
+            maximum: Number.isFinite(v?.maximum) ? v.maximum : undefined,
+            default: Object.prototype.hasOwnProperty.call(v ?? {}, "default") ? v.default : undefined
+          };
+          if (Object.prototype.hasOwnProperty.call(v ?? {}, "default")) flat[k] = v.default;
+          else if (t === "number" || t === "integer") flat[k] = 0;
+          else if (t === "boolean") flat[k] = false;
+          else if (t === "array") flat[k] = [];
+          else if (t === "object") flat[k] = {};
+          else flat[k] = meta[k].required ? `<${meta[k].description || k}>` : "";
+        }
+      }
+      specs.push({ name, description, argsTemplate: flat, argsMeta: meta, required });
+    } catch (e) {
+      wo?.logging?.push({
+        timestamp: new Date().toISOString(),
+        severity: "warn",
+        module: MODULE_NAME,
+        exitStatus: "success",
+        message: `Spec load failed for "${name}": ${e?.message || String(e)}`
+      });
+    }
+  }
+  return specs;
+}
+
+/**************************************************************
+/* functionSignature: getPseudoExamplesFromDefs (specs)       *
+/* Renders strict, per-tool examples and rules.               *
+/**************************************************************/
+function getPseudoExamplesFromDefs(specs) {
+  if (!Array.isArray(specs) || !specs.length) return "";
+  const names = specs.map(s => s.name).join(", ");
+  const lines = [];
+  lines.push("<EXAMPLES_STRICT>");
+  lines.push("ALLOWED_TOOL_NAMES=" + names);
+  for (const s of specs) {
+    const args = { ...(s.argsTemplate ?? {}) };
+    if (s.name === "getToken") {
+      if (typeof args.url === "string") args.url = "<https://host/path/to/image.png>";
+      if ("ring_color" in args || "color" in args) args.ring_color = "#00b3ff";
+      if (Number.isFinite(args.size)) args.size = 512;
+    }
+    const prettyArgs = JSON.stringify(args);
+    lines.push(`[tool:${s.name}]${prettyArgs}`);
+    const legendParts = [];
+    const metas = s.argsMeta || {};
+    Object.keys(metas).forEach(k => {
+      const m = metas[k] || {};
+      const req = m.required ? "required" : "optional";
+      const rng = (Number.isFinite(m.minimum) || Number.isFinite(m.maximum)) ? ` range=${m.minimum ?? "-"}..${m.maximum ?? "-"}` : "";
+      const en = Array.isArray(m.enum) ? ` enum=${m.enum.join("|")}` : "";
+      const def = Object.prototype.hasOwnProperty.call(m, "default") ? ` default=${JSON.stringify(m.default)}` : "";
+      legendParts.push(`${k} (${m.type} – ${req}${rng}${en}${def}${m.description ? ` – ${m.description}` : ""})`);
+    });
+    if (legendParts.length) lines.push(`# args: ${legendParts.join("; ")}`);
+    if (s.name === "getToken") {
+      lines.push(`# note: Use "ring_color" (hex like "#00b3ff"), not "color1" or "ringColor".`);
+      lines.push(`# note: Use "url" for the image source, not "image", "img" or "src".`);
+    }
+  }
+  lines.push("</EXAMPLES_STRICT>");
+  lines.push("<INCORRECT_EXAMPLES>");
+  lines.push('[tool:getToken]{"image":"https://...", "color1":"#00b3ff"}');
+  lines.push('[tool:getToken]{url:"https://..."}');
+  lines.push("some text then [tool:getToken]{\"url\":\"https://...\"}");
+  lines.push("```[tool:getToken]{\"url\":\"https://...\"}```");
+  lines.push("</INCORRECT_EXAMPLES>");
+  lines.push("<RULES>");
+  lines.push("1) If any ALLOWED_TOOL_NAMES fits, you MUST call exactly one pseudo tool.");
+  lines.push("2) The tool call MUST be the entire message, one line, no markdown, no commentary.");
+  lines.push("3) Use valid JSON with double quotes only. No trailing commas.");
+  lines.push("4) Match exact parameter names from the examples. Do not invent keys.");
+  lines.push("5) If none fits, answer in natural language.");
+  lines.push("</RULES>");
+  return lines.join("\n");
+}
+
+/**************************************************************
+/* functionSignature: getNormalizedArgsForTool (name, args)   *
+/* Normalizes common alias keys and values per tool.          *
+/**************************************************************/
+function getNormalizedArgsForTool(name, args) {
+  const a = typeof args === "object" && args ? { ...args } : {};
+  if (name === "getToken") {
+    if (typeof a.image === "string" && !a.url) a.url = a.image;
+    if (typeof a.img === "string" && !a.url) a.url = a.img;
+    if (typeof a.src === "string" && !a.url) a.url = a.src;
+    if (typeof a.ringColor === "string" && !a.ring_color) a.ring_color = a.ringColor;
+    if (typeof a.color1 === "string" && !a.ring_color) a.ring_color = a.color1;
+    if (typeof a.color === "string" && !a.ring_color) a.ring_color = a.color;
+    if (typeof a.ring_color === "string") {
+      let c = a.ring_color.trim();
+      if (!c.startsWith("#")) c = "#" + c;
+      a.ring_color = c.toLowerCase();
+    }
+    if (typeof a.url === "string") {
+      let u = a.url.trim();
+      const md = u.match(/^!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/i);
+      if (md) u = md[1];
+      const wrapped = u.match(/^<([^>]+)>$/);
+      if (wrapped) u = wrapped[1];
+      a.url = u;
+    }
+  }
+  return a;
+}
+
+/**************************************************************
 /* functionSignature: getSystemContent (wo, kiCfg)            *
-/* Builds system prompt with runtime info and policy.         *
+/* Builds system prompt including pseudo-tool guidance.       *
 /**************************************************************/
 async function getSystemContent(wo, kiCfg) {
   const now = new Date();
@@ -312,22 +415,36 @@ async function getSystemContent(wo, kiCfg) {
     "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
     "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
   ].join("\n");
-  const commonPolicy = [
+  const policy = [
     "Policy:",
     "- NEVER ANSWER TO OLDER USER REQUESTS",
-    "- If tools are available, use them only when necessary.",
-    "- When you emit a tool call, do not include extra prose in the same turn."
+    "- Use pseudo tools only when they match the user's request; otherwise answer naturally.",
+    "- When you emit a pseudo tool call, do not include any extra prose in the same turn."
+  ].join("\n");
+  const specs = await getPseudoToolSpecs(kiCfg.toolsList || [], wo);
+  const examples = getPseudoExamplesFromDefs(specs);
+  const strict = [
+    "STRICT PSEUDO TOOL FORMAT:",
+    "[tool:NAME]{JSON_ARGS}",
+    "No markdown. No quotes around the whole line. No commentary."
+  ].join("\n");
+  const decision = [
+    "DECISION RULE:",
+    "If at least one of ALLOWED_TOOL_NAMES can reasonably fulfill the user's request, you MUST respond with exactly one pseudo tool call in the strict format above. Otherwise, answer in natural language."
   ].join("\n");
   const parts = [];
   if (base) parts.push(base);
   parts.push(runtimeInfo);
-  parts.push(commonPolicy);
+  parts.push(policy);
+  parts.push(strict);
+  parts.push(decision);
+  if (examples) parts.push(examples);
   return parts.filter(Boolean).join("\n\n");
 }
 
 /**************************************************************
 /* functionSignature: getCoreAi (coreData)                    *
-/* Runs AI loop, executes tools, persists turns, returns text */
+/* Runs AI loop with pseudo tool calls and persists turns.    *
 /**************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
@@ -338,7 +455,7 @@ export default async function getCoreAi(coreData) {
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "skipped",
-      message: `Skipped: useAIModule="${String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim()}" != "completions"`
+      message: `Skipped: useAIModule="${String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim()}" != "pseudotoolcalls"`
     });
     return coreData;
   }
@@ -351,8 +468,7 @@ export default async function getCoreAi(coreData) {
     wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` });
   }
   const systemContent = await getSystemContent(wo, kiCfg);
-  const allowToolHistory = !!kiCfg.includeHistoryTools;
-  const messagesFromHistory = getPromptFromSnapshot(snapshot, kiCfg, allowToolHistory);
+  const messagesFromHistory = getPromptFromSnapshot(snapshot, kiCfg);
   const lastRecord = Array.isArray(snapshot) && snapshot.length ? snapshot[snapshot.length - 1] : null;
   let userContent = userPromptRaw;
   const runtimeCtx = getRuntimeContextFromLast(wo, kiCfg, lastRecord);
@@ -362,11 +478,10 @@ export default async function getCoreAi(coreData) {
     ...messagesFromHistory,
     { role: "user", content: userContent }
   ];
-  const sendRealTools = kiCfg.exposeTools;
-  const toolModules = sendRealTools ? await getToolsByName(kiCfg.toolsList, wo) : [];
-  const toolDefs = sendRealTools ? getToolDefs(toolModules) : [];
+  const toolModules = await getToolsByName(kiCfg.toolsList, wo);
   const persistQueue = [];
   let finalText = "";
+  let pseudoToolUsed = false;
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
@@ -375,9 +490,7 @@ export default async function getCoreAi(coreData) {
         model: wo.Model,
         messages,
         temperature: kiCfg.temperature,
-        max_tokens: kiCfg.maxTokens,
-        tools: toolDefs.length ? toolDefs : undefined,
-        tool_choice: toolDefs.length ? kiCfg.toolChoice : undefined
+        max_tokens: kiCfg.maxTokens
       };
       const res = await fetch(wo.Endpoint, {
         method: "POST",
@@ -401,37 +514,41 @@ export default async function getCoreAi(coreData) {
       const choice = data?.choices?.[0];
       const finish = choice?.finish_reason;
       const msg = choice?.message || {};
-      const toolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
       const assistantMsg = { role: "assistant", content: typeof msg.content === "string" ? msg.content : "" };
-      if (toolCalls && toolCalls.length) {
-        assistantMsg.tool_calls = toolCalls.map(tc => ({
-          id: tc?.id,
-          type: "function",
-          function: {
-            name: tc?.function?.name,
-            arguments: typeof tc?.function?.arguments === "string"
-              ? tc.function.arguments
-              : (tc?.function?.arguments ? JSON.stringify(tc.function.arguments) : "{}")
-          }
-        }));
-        wo.logging.push({
-          timestamp: new Date().toISOString(),
-          severity: "info",
-          module: MODULE_NAME,
-          exitStatus: "success",
-          message: `Assistant requested tool call(s): ${toolCalls.map(t => t?.function?.name).filter(Boolean).join(", ") || "(unknown)"}`,
-          details: { count: toolCalls.length, ids: toolCalls.map(t => t?.id).filter(Boolean) }
-        });
-      }
       messages.push(assistantMsg);
       persistQueue.push(getWithTurnId(assistantMsg, wo));
-      if (toolCalls && toolCalls.length && toolModules.length) {
-        for (const tc of toolCalls) {
-          const toolMsg = await getExecToolCall(toolModules, tc, coreData);
-          messages.push(toolMsg);
+      if (!pseudoToolUsed) {
+        const pt = getMaybePseudoToolCall(assistantMsg.content || "");
+        if (pt) {
+          if (Array.isArray(kiCfg.toolsList) && kiCfg.toolsList.length && !kiCfg.toolsList.includes(pt.name)) {
+            const errMsg = `[tool_error:${pt.name}] Tool not allowed`;
+            wo.logging.push({
+              timestamp: new Date().toISOString(),
+              severity: "warn",
+              module: MODULE_NAME,
+              exitStatus: "failed",
+              message: `Pseudo tool not allowed: ${pt.name}`
+            });
+            const userErr = { role: "user", content: errMsg };
+            messages.push(userErr);
+            persistQueue.push(getWithTurnId(userErr, wo));
+            pseudoToolUsed = true;
+            continue;
+          }
+          const toolsForExec = toolModules.filter(t => (t.definition?.function?.name || t.name) === pt.name);
+          const toolMsg = await getExecToolCall(
+            toolsForExec,
+            { id: "pseudo_" + pt.name, function: { name: pt.name, arguments: JSON.stringify(pt.args ?? {}) } },
+            coreData
+          );
           persistQueue.push(getWithTurnId(toolMsg, wo));
+          const toolResultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? null);
+          const userToolResult = { role: "user", content: `[tool_result:${pt.name}]\n${toolResultText}` };
+          messages.push(userToolResult);
+          persistQueue.push(getWithTurnId(userToolResult, wo));
+          pseudoToolUsed = true;
+          continue;
         }
-        continue;
       }
       if (finish === "length") {
         const cont = { role: "user", content: "continue" };

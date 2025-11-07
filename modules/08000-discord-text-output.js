@@ -1,15 +1,13 @@
 /**************************************************************
-/* filename: "discord-text-output.js"                          *
+/* filename: "discord-text-output.js"                         *
 /* Version 1.0                                                *
-/* Purpose: In guilds/threads send via webhook; in DMs send    *
-/*          identical EMBEDS directly via the channel.         *
-/*          Shows original question ABOVE the answer,          *
-/*          question less prominent; includes asker if known.  *
+/* Purpose: In guilds/threads send via webhook; in DMs send   *
+/*          identical EMBEDS directly via the channel.        *
+/*          Shows original question ABOVE the answer,         *
+/*          question less prominent; includes asker if known. *
 /**************************************************************/
-/**************************************************************
-/*                                                            *
 /**************************************************************/
-
+ 
 import { EmbedBuilder, PermissionFlagsBits, WebhookClient } from "discord.js";
 import { getItem } from "../core/registry.js";
 
@@ -265,19 +263,32 @@ function getQuestionAsQuotedItalic(q, askerDisplay) {
 }
 
 /**************************************************************
-/* functionSignature: getEmbedPage (params)                   *
-/* Builds an embed with question above answer                 *
+/* functionSignature: getLocalTimeString (date, tz)           *
+/* Formats a local time string for the given timezone         *
 /**************************************************************/
-function getEmbedPage({ answer, botName, imageUrl, showQuestion, qStr, askerDisplay }) {
+function getLocalTimeString(date, tz) {
+  try {
+    return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: tz || "Europe/Berlin" }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
+  }
+}
+
+/**************************************************************
+/* functionSignature: getEmbedPage (params)                   *
+/* Builds an embed with question above answer and rich footer *
+/**************************************************************/
+function getEmbedPage({ answer, botName, model, useAIModule, timeStr, imageUrl, showQuestion, qStr, askerDisplay }) {
   const qBlock = (showQuestion && qStr) ? getQuestionAsQuotedItalic(qStr, askerDisplay) : "";
   let descParts = [];
   if (qBlock) descParts.push(qBlock);
   if (answer) descParts.push(answer);
   let desc = descParts.join("\n\n").slice(0, 4096) || "\u200b";
+  const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
   const e = new EmbedBuilder()
     .setColor(0x2F3136)
     .setDescription(desc)
-    .setFooter({ text: botName })
+    .setFooter({ text: footerText })
     .setTimestamp(new Date());
   if (imageUrl) e.setImage(getWithCachebuster(imageUrl));
   return e;
@@ -346,6 +357,10 @@ export default async function getDiscordTextOutput(coreData) {
     const question = getLikelyQuestion(wo);
     const askerDisplay = getAskerDisplay(wo, baseMessage);
 
+    const model = String(wo.Model || wo.model || "");
+    const useAIModule = String(wo.useAIModule || wo.UseAIModule || "");
+    const timeStr = getLocalTimeString(new Date(), wo.timezone || "Europe/Berlin");
+
     if (isDM) {
       let sent = 0;
       const botName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
@@ -353,6 +368,9 @@ export default async function getDiscordTextOutput(coreData) {
         const embed = getEmbedPage({
           answer: chunks[i],
           botName,
+          model,
+          useAIModule,
+          timeStr,
           imageUrl: i === 0 ? firstImage : null,
           showQuestion: i === 0 && !!question,
           qStr: question,
@@ -393,6 +411,9 @@ export default async function getDiscordTextOutput(coreData) {
       const embed = getEmbedPage({
         answer: chunks[i],
         botName: identity.username,
+        model,
+        useAIModule,
+        timeStr,
         imageUrl: i === 0 ? firstImage : null,
         showQuestion: i === 0 && !!question,
         qStr: question,
