@@ -145,7 +145,7 @@ export default {
     type: "function",
     function: {
       name: MODULE_NAME,
-      description: "Search the web using Google. Always use this toolcall when asked for current news, situations, events or information.",
+      description: "Search the web using Google. Always use this toolcall when asked for current news, situations, events or information. A query has to be provided.",
       parameters: {
         type: "object",
         properties: {
