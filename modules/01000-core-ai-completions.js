@@ -316,7 +316,8 @@ async function getSystemContent(wo, kiCfg) {
     "- NEVER ANSWER TO OLDER USER REQUESTS",
     "- If tools are available, use them only when necessary.",
     "- When you emit a tool call, do not include extra prose in the same turn.",
-    "- DO NOT answer with JSON, unless you are explicitly asked to."
+    "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
+    "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"
   ].join("\n");
   const parts = [];
   if (base) parts.push(base);

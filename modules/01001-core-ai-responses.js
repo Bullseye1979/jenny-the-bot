@@ -546,7 +546,13 @@ export default async function getCoreAi(coreData){
     const nowIso = now.toISOString();
     const base = [ typeof wo.SystemPrompt === "string" ? wo.SystemPrompt.trim() : "", typeof wo.Instructions === "string" ? wo.Instructions.trim() : "" ].filter(Boolean).join("\n\n");
     const runtimeInfo = [ "Runtime info:", `- current_time_iso: ${nowIso}`, `- timezone_hint: ${tz}`, "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.", "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user." ].join("\n");
-    const policy = [ "Policy:", "- NEVER ANSWER TO OLDER USER REQUESTS", "- Use tools only when necessary.", "- When you emit a tool call, do not include extra prose in the same turn." ].join("\n");
+    const policy = [ "Policy:", 
+      "- NEVER ANSWER TO OLDER USER REQUESTS", 
+      "- Use tools only when necessary.",
+      "- When you emit a tool call, do not include extra prose in the same turn.",
+      "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
+      "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"
+    ].join("\n");
     const parts = []; if (base) parts.push(base); parts.push(runtimeInfo); parts.push(policy); return parts.filter(Boolean).join("\n\n");
   }
 
