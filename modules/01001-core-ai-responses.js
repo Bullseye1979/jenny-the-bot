@@ -1,13 +1,12 @@
-/**************************************************************
-/* filename: "core-ai-responses.js"                           *
-/* Version 1.0                                                *
-/* Purpose: Responses Runner (GPT-5) with context translator  *
-/**************************************************************/
-/**************************************************************/
-
-/**************************************************************
-/*                                                          *
-/**************************************************************/
+/***************************************************************************************
+/* filename: "core-ai-responses.js"                                                     *
+/* Version 1.0                                                                          *
+/* Purpose: Responses runner (GPT-5) with context translation, real tool handling,      *
+/*          image persistence, and robust logging (file-based only, no console output). *
+/***************************************************************************************/
+/***************************************************************************************
+/*                                                                                     *
+/***************************************************************************************/
 
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
@@ -15,70 +14,70 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 
-/**************************************************************
-/* functionSignature: getToString (v)                         *
-/* Returns a safe string representation.                      *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getToString (v)                                                   *
+/* Returns a safe string representation.                                                *
+/***************************************************************************************/
 const getToString = (v) => (typeof v === "string" ? v : (v == null ? "" : String(v)));
 
-/**************************************************************
-/* functionSignature: getStr (v, d)                           *
-/* Returns v if non-empty string; otherwise default d.        *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getStr (v, d)                                                     *
+/* Returns v if non-empty string; otherwise default d.                                  *
+/***************************************************************************************/
 const getStr = (v, d) => (typeof v === "string" && v.length ? v : d);
 
-/**************************************************************
-/* functionSignature: getNum (v, d)                           *
-/* Returns finite numeric v; otherwise default d.             *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getNum (v, d)                                                     *
+/* Returns finite numeric v; otherwise default d.                                       *
+/***************************************************************************************/
 const getNum = (v, d) => (Number.isFinite(v) ? Number(v) : d);
 
-/**************************************************************
-/* functionSignature: getJSON (t, f)                          *
-/* Parses JSON text t; returns fallback f on failure.         *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getJSON (t, f)                                                    *
+/* Parses JSON text t; returns fallback f on failure.                                   *
+/***************************************************************************************/
 const getJSON = (t, f = null) => { try { return JSON.parse(t); } catch { return f; } };
 
-/**************************************************************
-/* functionSignature: getWithTurnId (rec, wo)                 *
-/* Adds turn_id from working object if present.               *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getWithTurnId (rec, wo)                                           *
+/* Adds turn_id from working object if present.                                         *
+/***************************************************************************************/
 function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; return t ? { ...rec, turn_id: t } : rec; }
 
-/**************************************************************
-/* functionSignature: getPreview (s, n)                       *
-/* Returns a truncated preview with ellipsis marker.          *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getPreview (s, n)                                                 *
+/* Returns a truncated preview with ellipsis marker.                                    *
+/***************************************************************************************/
 function getPreview(s, n=400){ const t=getToString(s); return t.length>n? t.slice(0,n)+" …[truncated]" : t; }
 
-/**************************************************************
-/* functionSignature: getLooksBase64 (s)                      *
-/* Heuristically checks if s looks like base64 content.       *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getLooksBase64 (s)                                                *
+/* Heuristically checks if s looks like base64 content.                                 *
+/***************************************************************************************/
 const getLooksBase64 = (s) => typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s);
 
-/**************************************************************
-/* functionSignature: setEnsureDebugDir ()                    *
-/* Ensures the debug directory exists.                        *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: setEnsureDebugDir ()                                              *
+/* Ensures the debug directory exists.                                                  *
+/***************************************************************************************/
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 const MODULE_NAME = "core-ai-responses";
 const DEBUG_DIR = path.resolve("./pub/debug");
 function setEnsureDebugDir(){ if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive:true }); }
 
-/**************************************************************
-/* functionSignature: getSafeJSONStringify (obj)              *
-/* Safe JSON stringify with fallback.                         *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getSafeJSONStringify (obj)                                        *
+/* Safe JSON stringify with fallback.                                                   *
+/***************************************************************************************/
 function getSafeJSONStringify(obj){
   try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
 }
 
-/**************************************************************
-/* functionSignature: setRedactSecrets (s)                    *
-/* Redacts common secret patterns from text.                  *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: setRedactSecrets (s)                                              *
+/* Redacts common secret patterns from text.                                            *
+/***************************************************************************************/
 function setRedactSecrets(s){
   s = (typeof s === "string") ? s : String(s);
   s = s.replace(/(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+\-\/=]+/gi, '$1***REDACTED***');
@@ -87,29 +86,29 @@ function setRedactSecrets(s){
   return s;
 }
 
-/**************************************************************
-/* functionSignature: getApproxBase64Bytes (b64)              *
-/* Approximates decoded byte length of base64 text.           *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getApproxBase64Bytes (b64)                                        *
+/* Approximates decoded byte length of base64 text.                                     *
+/***************************************************************************************/
 function getApproxBase64Bytes(b64) {
   const len = (b64 || "").length;
   const pads = (b64?.endsWith("==") ? 2 : (b64?.endsWith("=") ? 1 : 0));
   return Math.max(0, Math.floor(len * 0.75) - pads);
 }
 
-/**************************************************************
-/* functionSignature: getSha256OfBase64 (b64)                 *
-/* Computes SHA-256 of base64-decoded data.                   *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getSha256OfBase64 (b64)                                           *
+/* Computes SHA-256 of base64-decoded data.                                             *
+/***************************************************************************************/
 function getSha256OfBase64(b64) {
   try { return createHash("sha256").update(Buffer.from(b64, "base64")).digest("hex"); }
   catch { return "n/a"; }
 }
 
-/**************************************************************
-/* functionSignature: getSanitizedForLog (obj)                *
-/* Produces log-friendly sanitized clone.                     *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getSanitizedForLog (obj)                                          *
+/* Produces log-friendly sanitized clone.                                               *
+/***************************************************************************************/
 function getSanitizedForLog(obj) {
   const seen = new WeakSet();
   const MAX_STRING = 2000;
@@ -148,10 +147,10 @@ function getSanitizedForLog(obj) {
   return walk(obj);
 }
 
-/**************************************************************
-/* functionSignature: getImageSummaryForLog (images)          *
-/* Summarizes image artifacts for logs.                       *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getImageSummaryForLog (images)                                     *
+/* Summarizes image artifacts for logs.                                                 *
+/***************************************************************************************/
 function getImageSummaryForLog(images){
   return (images||[]).map(im=>{
     if (im.kind === "b64") {
@@ -169,10 +168,10 @@ function getImageSummaryForLog(images){
   });
 }
 
-/**************************************************************
-/* functionSignature: setLogBig (label, data, options)        *
-/* Writes large sanitized debug logs (optional to file).      *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: setLogBig (label, data, options)                                   *
+/* Writes large sanitized debug logs (optional to file).                                *
+/***************************************************************************************/
 function setLogBig(label, data, {toFile=false} = {}){
   const ts = new Date().toISOString().replace(/[:.]/g,"-");
   const sanitized = getSanitizedForLog(data);
@@ -187,43 +186,25 @@ function setLogBig(label, data, {toFile=false} = {}){
   }
 }
 
-/**************************************************************
-/* functionSignature: dedupeText (s)                          *
-/* Removes simple duplicate concatenation artifacts.          *
-/**************************************************************/
-function dedupeText(s) {
-  const t = (s || "").trim();
-  if (!t) return t;
-  const m = t.match(/^([\s\S]+)\1$/);
-  if (m && m[1]) return m[1].trim();
-  return t;
-}
+/***************************************************************************************
+/* functionSignature: logConsole (label, data)                                          *
+/* No-op console logger (console output removed by policy).                              *
+/***************************************************************************************/
+function logConsole(_label, _data){}
 
-/**************************************************************
-/* functionSignature: getIdemp (wo)                           *
-/* Returns idempotence-tracking object on working object.     *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getIdemp (wo)                                                     *
+/* Returns idempotence-tracking object on working object.                               *
+/***************************************************************************************/
 function getIdemp(wo){
-  if (!wo.__idemp) wo.__idemp = { tools:new Set(), messages:new Set(), images:new Set() };
+  if (!wo.__idemp) wo.__idemp = { tools:new Set(), images:new Set() };
   return wo.__idemp;
 }
 
-/**************************************************************
-/* functionSignature: hashStr (s)                             *
-/* Computes SHA-256 hex of a string.                          *
-/**************************************************************/
-function hashStr(s){ return createHash('sha256').update(getToString(s)).digest('hex'); }
-
-/**************************************************************
-/* functionSignature: msgHash (msg)                           *
-/* Hashes a chat message for idempotence.                     *
-/**************************************************************/
-function msgHash(msg){ return hashStr(`${msg.role}|${getToString(msg.content)}`); }
-
-/**************************************************************
-/* functionSignature: getNormalizedToolDefs (toolsLike)       *
-/* Normalizes tool definitions to Responses format.           *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getNormalizedToolDefs (toolsLike)                                  *
+/* Normalizes tool definitions to Responses format.                                     *
+/***************************************************************************************/
 function getNormalizedToolDefs(toolsLike){
   if (!Array.isArray(toolsLike)) return [];
   const out = [];
@@ -242,10 +223,10 @@ function getNormalizedToolDefs(toolsLike){
   return out;
 }
 
-/**************************************************************
-/* functionSignature: getNormalizedToolChoice (tc)            *
-/* Normalizes tool_choice to accepted structures.             *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getNormalizedToolChoice (tc)                                       *
+/* Normalizes tool_choice to accepted structures.                                       *
+/***************************************************************************************/
 function getNormalizedToolChoice(tc){
   if (!tc || tc === "auto" || tc === "none") return tc || "auto";
   if (tc?.type === "function" && tc?.name) return tc;
@@ -253,10 +234,39 @@ function getNormalizedToolChoice(tc){
   return "auto";
 }
 
-/**************************************************************
-/* functionSignature: getToolsByName (names, wo)              *
-/* Dynamically imports tools by name; validates invoke func.  *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getRuntimeContextFromLast (wo, snapshot)                           *
+/* Builds optional runtime context from last history record.                             *
+/***************************************************************************************/
+function getRuntimeContextFromLast(wo, snapshot){
+  if (wo?.IncludeRuntimeContext !== true) return null;
+  const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
+  if (last && "content" in last) delete last.content;
+  const metadata = {
+    id: String(wo?.id ?? ""),
+    flow: String(wo?.flow ?? ""),
+    clientRef: String(wo?.clientRef ?? ""),
+    model: String(wo?.Model ?? ""),
+    tool_choice: (wo?.ToolChoice ?? "auto"),
+    timezone: String(wo?.timezone ?? "Europe/Berlin")
+  };
+  return { metadata, last };
+}
+
+/***************************************************************************************
+/* functionSignature: appendRuntimeContextToUserContent (baseText, ctx)                  *
+/* Appends runtime context JSON block to user text.                                     *
+/***************************************************************************************/
+function appendRuntimeContextToUserContent(baseText, ctx){
+  if (!ctx) return baseText ?? "";
+  const jsonBlock = "```json\n" + JSON.stringify(ctx) + "\n```";
+  return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
+}
+
+/***************************************************************************************
+/* functionSignature: getToolsByName (names, wo)                                        *
+/* Dynamically imports tools by name; validates invoke function.                        *
+/***************************************************************************************/
 async function getToolsByName(names, wo) {
   const loaded = [];
   for (const name of names || []) {
@@ -272,11 +282,10 @@ async function getToolsByName(names, wo) {
   return loaded;
 }
 
-/**************************************************************
-/* functionSignature: setExecGenericTool (toolModules, call,  *
-/* coreData)                                                  *
-/* Executes a generic tool with idempotence and mapping.      *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: setExecGenericTool (toolModules, call, coreData)                   *
+/* Executes a generic tool with idempotence and message mapping.                        *
+/***************************************************************************************/
 async function setExecGenericTool(toolModules, call, coreData){
   const wo = coreData?.workingObject ?? {};
   const idemp = getIdemp(wo);
@@ -284,7 +293,7 @@ async function setExecGenericTool(toolModules, call, coreData){
   const argsRaw = call?.function?.arguments ?? call?.arguments ?? "{}";
   const args = typeof argsRaw === "string" ? getJSON(argsRaw, {}) : (argsRaw || {});
   const tool = toolModules.find(t => (t.definition?.function?.name || t.definition?.name || t.name) === name);
-  const callId = call?.id || call?.call_id || `${name}:${hashStr(JSON.stringify(args))}`;
+  const callId = call?.id || call?.call_id || `${name}:${createHash('sha256').update(JSON.stringify(args)).digest('hex')}`;
 
   if (idemp.tools.has(callId)) {
     return { ok:true, name, content: JSON.stringify({ type:"tool_result", tool:name, call_id:callId, ok:true, skipped:"idempotent-skip" }) };
@@ -314,17 +323,17 @@ async function setExecGenericTool(toolModules, call, coreData){
   }
 }
 
-/**************************************************************
-/* functionSignature: setEnsureDocDir ()                      *
-/* Ensures the public documents directory exists.             *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: setEnsureDocDir ()                                                *
+/* Ensures the public documents directory exists.                                       *
+/***************************************************************************************/
 const DOC_DIR = path.resolve("./pub/documents");
 function setEnsureDocDir(){ if (!fs.existsSync(DOC_DIR)) fs.mkdirSync(DOC_DIR, { recursive:true }); }
 
-/**************************************************************
-/* functionSignature: getExtFromMime (m)                      *
-/* Returns file extension from MIME type.                     *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getExtFromMime (m)                                                *
+/* Returns a file extension based on MIME type.                                         *
+/***************************************************************************************/
 function getExtFromMime(m) {
   const mime = (m||"").toLowerCase();
   if (mime.includes("png")) return ".png";
@@ -336,19 +345,19 @@ function getExtFromMime(m) {
   return ".png";
 }
 
-/**************************************************************
-/* functionSignature: getBuildUrl (filename, baseUrl)         *
-/* Builds a public URL for a persisted document.              *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getBuildUrl (filename, baseUrl)                                    *
+/* Builds a public URL for a persisted document.                                        *
+/***************************************************************************************/
 function getBuildUrl(filename, baseUrl){
   const clean = (baseUrl||"").replace(/\/+$/,"");
   return clean ? `${clean}/documents/${filename}` : `/documents/${filename}`;
 }
 
-/**************************************************************
-/* functionSignature: setSaveB64 (b64, mime, baseUrl, wo)     *
-/* Persists base64 image and returns hosted URL.              *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: setSaveB64 (b64, mime, baseUrl, wo)                                *
+/* Persists base64 image and returns hosted URL.                                        *
+/***************************************************************************************/
 async function setSaveB64(b64, mime, baseUrl, wo){
   setEnsureDocDir();
   const idemp = getIdemp(wo);
@@ -362,15 +371,15 @@ async function setSaveB64(b64, mime, baseUrl, wo){
   return getBuildUrl(filename, baseUrl);
 }
 
-/**************************************************************
-/* functionSignature: setMirrorURL (url, baseUrl, wo)         *
-/* Downloads remote image and mirrors it locally.             *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: setMirrorURL (url, baseUrl, wo)                                    *
+/* Downloads a remote image and mirrors it locally.                                      *
+/***************************************************************************************/
 async function setMirrorURL(url, baseUrl, wo){
   setEnsureDocDir();
   const idemp = getIdemp(wo);
-  const key = `url:${hashStr(url||"")}`;
-  if (idemp.images.has(key)) return getBuildUrl(`DUP-${hashStr(url)}.png`, baseUrl);
+  const key = `url:${createHash('sha256').update(url||"").digest('hex')}`;
+  if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash('sha256').update(url).digest('hex')}.png`, baseUrl);
   idemp.images.add(key);
   const f = globalThis.fetch ?? (await import('node-fetch')).default;
   const res = await f(url, { headers: { "User-Agent": "core-ai-responses/1.0" } });
@@ -384,15 +393,15 @@ async function setMirrorURL(url, baseUrl, wo){
   return getBuildUrl(filename, baseUrl);
 }
 
-/**************************************************************
-/* functionSignature: setSaveFromFileId (fileId, opts, wo)    *
-/* Downloads image via fileId from provider and persists it.  *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: setSaveFromFileId (fileId, opts, wo)                               *
+/* Downloads an image via provider fileId and persists it.                              *
+/***************************************************************************************/
 async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }, wo){
   setEnsureDocDir();
   const idemp = getIdemp(wo);
   const key = `file:${fileId}`;
-  if (idemp.images.has(key)) return getBuildUrl(`DUP-${hashStr(fileId)}.png`, baseUrl);
+  if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash('sha256').update(fileId).digest('hex')}.png`, baseUrl);
   idemp.images.add(key);
   let url = "";
   if (endpointFilesContentTemplate && endpointFilesContentTemplate.includes("{id}")) {
@@ -413,10 +422,10 @@ async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, e
   return getBuildUrl(filename, baseUrl);
 }
 
-/**************************************************************
-/* functionSignature: getParsedResponsesOutput (raw)          *
-/* Extracts text, images, and tool calls from Responses JSON. *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getParsedResponsesOutput (raw)                                     *
+/* Extracts text, images, and tool calls from Responses JSON.                           *
+/***************************************************************************************/
 function getParsedResponsesOutput(raw){
   const out = { text:"", toolCalls:[], images:[] };
   const isHttpUrl = (u) => (typeof u === "string" && /^https?:\/\//i.test(u));
@@ -482,10 +491,10 @@ function getParsedResponsesOutput(raw){
   return out;
 }
 
-/**************************************************************
-/* functionSignature: getWasTruncatedOutput (data)            *
-/* Detects whether model output was truncated.                *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getWasTruncatedOutput (data)                                       *
+/* Detects whether model output was truncated.                                          *
+/***************************************************************************************/
 function getWasTruncatedOutput(data){
   if (data?.incomplete_details) return true;
   if (data?.status && String(data.status).toLowerCase() === "incomplete") return true;
@@ -499,10 +508,10 @@ function getWasTruncatedOutput(data){
   return false;
 }
 
-/**************************************************************
-/* functionSignature: getCoreAi (coreData)                    *
-/* Runs the Responses workflow with tools and persistence.    *
-/**************************************************************/
+/***************************************************************************************
+/* functionSignature: getCoreAi (coreData)                                              *
+/* Runs the Responses workflow with tools, persistence, and asset handling.             *
+/***************************************************************************************/
 export default async function getCoreAi(coreData){
   const wo = coreData?.workingObject ?? {};
   if (!Array.isArray(wo.logging)) wo.logging = [];
@@ -548,7 +557,17 @@ export default async function getCoreAi(coreData){
   const sys = getSystemContent(wo);
   const fromDb = getSnapshotMappedToChat(Array.isArray(snapshot)? snapshot : []);
   const userPayloadRaw = getToString(wo?.payload ?? "");
-  let messages = [ { role:"system", content: sys }, ...fromDb, ...(userPayloadRaw ? [{ role:"user", content:userPayloadRaw }] : []) ];
+  const runtimeCtx = getRuntimeContextFromLast(wo, snapshot);
+  const userContent = appendRuntimeContextToUserContent(userPayloadRaw, runtimeCtx);
+
+  let messages = [
+    { role:"system", content: sys },
+    ...fromDb,
+    ...(userPayloadRaw ? [{ role:"user", content:userContent }] : [])
+  ];
+
+  logConsole("request-messages-initial", { count: messages.length, messages });
+  if (runtimeCtx) logConsole("runtime-context", runtimeCtx);
 
   const toolNames = Array.isArray(wo?.Tools) ? wo.Tools : [];
   const genericTools = await getToolsByName(toolNames, wo);
@@ -564,10 +583,10 @@ export default async function getCoreAi(coreData){
 
   for (let iter = 0; iter < maxLoops; iter++){
     attempts++;
-
     const controller = new AbortController();
     const timer = setTimeout(()=>controller.abort(), timeoutMs);
     try {
+      logConsole(`iteration-${iter+1}-messages-before-request`, { count: messages.length, messages });
       const body = { model, input: getResponsesInputFromMessages(messages), instructions: sys, tools: toolsForResponses, tool_choice: toolChoiceInitial, ...(maxTokens ? { max_output_tokens: maxTokens } : {}) };
       setLogBig("responses-request-body", { endpoint, model, tool_choice: body.tool_choice, tools: body.tools, input: body.input, instructions: body.instructions }, { toFile: debugOn });
       const res = await (globalThis.fetch ?? (await import('node-fetch')).default)(endpoint, { method:"POST", headers: { "Content-Type":"application/json", "Authorization":`Bearer ${apiKey}` }, body: JSON.stringify(body), signal: controller.signal });
@@ -620,27 +639,25 @@ export default async function getCoreAi(coreData){
 
       const toolCalls = Array.isArray(parsed.toolCalls) ? parsed.toolCalls : [];
       const hasToolCalls = toolCalls.length > 0;
+      const assistantText = (parsed.text || "").trim();
 
-      const assistantTextClean = dedupeText((parsed.text || "").trim());
-
-      const maybePersist = (msg) => {
-        const key = msgHash(msg);
-        const idemp = getIdemp(wo);
-        if (idemp.messages.has(key)) return;
-        idemp.messages.add(key);
+      if (assistantText) {
+        const msg = { role:"assistant", content: assistantText };
         messages.push(msg);
         persistQueue.push(getWithTurnId(msg, wo));
-      };
-
-      if (assistantTextClean) {
-        maybePersist({ role:"assistant", content: assistantTextClean });
       }
       if (hostedLinks.length) {
         const linkBlock = `${hostedLinks.map(u=>`- ${u}`).join("\n")}`;
-        maybePersist({ role:"assistant", content: linkBlock });
-        maybePersist({ role:"assistant", content:`Image assets available: ${hostedLinks.join(" ")}` });
+        const m1 = { role:"assistant", content: linkBlock };
+        messages.push(m1);
+        persistQueue.push(getWithTurnId(m1, wo));
+        const m2 = { role:"assistant", content:`Image assets available: ${hostedLinks.join(" ")}` };
+        messages.push(m2);
+        persistQueue.push(getWithTurnId(m2, wo));
       } else if (parsed.images.length && !hostedLinks.length) {
-        maybePersist({ role:"assistant", content:`(no links generated – check write permissions for ./pub/documents and fetch availability)` });
+        const m3 = { role:"assistant", content:`(no links generated – check write permissions for ./pub/documents and fetch availability)` };
+        messages.push(m3);
+        persistQueue.push(getWithTurnId(m3, wo));
       }
 
       let ranAnyTool = false;
@@ -655,7 +672,9 @@ export default async function getCoreAi(coreData){
           totalToolCalls++;
           ranAnyTool = true;
           const contentStr = getToString(result?.content ?? "");
-          maybePersist({ role:"assistant", content: contentStr });
+          const tm = { role:"assistant", content: contentStr };
+          messages.push(tm);
+          persistQueue.push(getWithTurnId(tm, wo));
         }
         if (ranAnyTool) {
           continue;
@@ -664,11 +683,13 @@ export default async function getCoreAi(coreData){
 
       const truncated = getWasTruncatedOutput(data);
       if (truncated) {
-        maybePersist({ role:"user", content:"continue" });
+        const cont = { role:"user", content:"continue" };
+        messages.push(cont);
+        persistQueue.push(getWithTurnId(cont, wo));
         continue;
       }
 
-      finalText = [ assistantTextClean, (hostedLinks.length ? `${hostedLinks.map(u=>`- ${u}`).join("\n")}` : "") ].filter(Boolean).join("\n\n");
+      finalText = [ assistantText, (hostedLinks.length ? `${hostedLinks.map(u=>`- ${u}`).join("\n")}` : "") ].filter(Boolean).join("\n\n");
       break;
     } catch(err){
       clearTimeout(timer);

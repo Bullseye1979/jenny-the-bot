@@ -1,10 +1,12 @@
-/***************************************************************
-/* filename: "context.js"                                      *
-/* Version 1.0                                                 *
-/* Purpose: Minimal MySQL context store with monotonic ctx_id, *
-/*          rolling timeline summaries, and user-block capping.*
-/***************************************************************/
-/***************************************************************/
+/**************************************************************
+/* filename: "context.js"                                    *
+/* Version 1.0                                                *
+/* Purpose: Minimal MySQL context store with monotonic IDs,   *
+/*          rolling timeline summaries, and user-block capping*
+/**************************************************************/
+/**************************************************************
+/*                                                          *
+/**************************************************************/
 
 import mysql from "mysql2/promise";
 import crypto from "crypto";
@@ -14,10 +16,10 @@ let sharedDsn = "";
 
 const TIMELINE_TABLE = "timeline_periods";
 
-/***************************************************************
-/* functionSignature: getContextConfig (workingObject)         *
-/* Resolve endpoint, model, apiKey, and timeline period size.  *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getContextConfig (workingObject)        *
+/* Resolves endpoint, model, apiKey, and timeline period size.*
+/**************************************************************/
 function getContextConfig(workingObject) {
   const ctxCfg = workingObject?.config?.context || {};
   const endpoint = ctxCfg.endpoint
@@ -38,10 +40,10 @@ function getContextConfig(workingObject) {
   return { endpoint, model, apiKey, periodSize };
 }
 
-/***************************************************************
-/* functionSignature: getDsnKey (db)                           *
-/* Build a stable DSN key string for pool reuse.               *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDsnKey (db)                          *
+/* Builds a stable DSN key string for pool reuse.             *
+/**************************************************************/
 function getDsnKey(db) {
   const host = db?.host || "";
   const port = db?.port ?? 3306;
@@ -51,10 +53,10 @@ function getDsnKey(db) {
   return `${host}|${port}|${user}|${database}|${charset}`;
 }
 
-/***************************************************************
-/* functionSignature: getEnsurePool (workingObject)            *
-/* Ensure pool exists and schema with ctx_id AI PK is present. *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getEnsurePool (workingObject)           *
+/* Ensures pool exists and schema with ctx_id AI PK is ready. *
+/**************************************************************/
 async function getEnsurePool(workingObject) {
   const db = workingObject?.db;
   if (!db) throw new Error("[context] missing db configuration");
@@ -144,10 +146,10 @@ async function getEnsurePool(workingObject) {
   return pool;
 }
 
-/***************************************************************
-/* functionSignature: getDeepSanitize (value)                  *
-/* Sanitize nested values to safe JSON-ready structures.       *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDeepSanitize (value)                 *
+/* Sanitizes nested values to JSON-safe structures.           *
+/**************************************************************/
 function getDeepSanitize(value) {
   const t = typeof value;
   if (value === null) return null;
@@ -177,10 +179,10 @@ function getDeepSanitize(value) {
   try { return JSON.parse(JSON.stringify(value)); } catch { return String(value); }
 }
 
-/***************************************************************
-/* functionSignature: getNormalizeToolCalls (toolCalls)        *
-/* Normalize assistant tool call entries to a standard shape.  *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getNormalizeToolCalls (toolCalls)       *
+/* Normalizes assistant tool calls to a standard shape.       *
+/**************************************************************/
 function getNormalizeToolCalls(toolCalls) {
   if (!Array.isArray(toolCalls)) return undefined;
   return toolCalls.map(tc => ({
@@ -195,13 +197,13 @@ function getNormalizeToolCalls(toolCalls) {
   }));
 }
 
-/***************************************************************
-/* functionSignature: getNormalizeRecord (record)              *
-/* Normalize a context record and sanitize nested values.      *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getNormalizeRecord (record)             *
+/* Normalizes a context record and sanitizes nested values.   *
+/**************************************************************/
 function getNormalizeRecord(record) {
   const obj = typeof record === "object" && record !== null ? { ...record } : {};
-  obj.role = typeof obj.role === "string" ? obj.role : "";
+  obj.role = typeof obj.role === "string" ? obj.role.toLowerCase() : "";
   obj.content = typeof obj.content === "string" ? obj.content : "";
   if (obj.role === "assistant" && Array.isArray(obj.tool_calls)) obj.tool_calls = getNormalizeToolCalls(obj.tool_calls);
   if (obj.role === "tool") {
@@ -211,10 +213,10 @@ function getNormalizeRecord(record) {
   return getDeepSanitize(obj);
 }
 
-/***************************************************************
-/* functionSignature: getDeriveIndexText (rec)                 *
-/* Derive a short indexable text snippet from a record.        *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDeriveIndexText (rec)                *
+/* Derives a short indexable text snippet from a record.      *
+/**************************************************************/
 function getDeriveIndexText(rec) {
   if (typeof rec?.content === "string" && rec.content) return rec.content.slice(0, 500);
   const bits = [];
@@ -225,10 +227,10 @@ function getDeriveIndexText(rec) {
   return bits.join(" ").slice(0, 500) || null;
 }
 
-/***************************************************************
-/* functionSignature: setContext (workingObject, record)       *
-/* Insert a normalized record; update rolling timeline.        *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setContext (workingObject, record)      *
+/* Inserts a normalized record and updates the timeline.      *
+/**************************************************************/
 export async function setContext(workingObject, record) {
   const id = String(workingObject?.id || "");
   if (!id) throw new Error("[context] missing id");
@@ -248,44 +250,50 @@ export async function setContext(workingObject, record) {
   );
   try {
     await setMaybeCreateTimelinePeriod(pool, workingObject, id);
-  } catch (e) {
-    console.error("[context] timeline update failed:", e?.message || e);
-  }
+  } catch {}
   return true;
 }
 
-/***************************************************************
-/* functionSignature: getContext (workingObject)               *
-/* Return capped messages based on user-block token budgeting. *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getContext (workingObject)              *
+/* Returns capped messages based on user-block token budget.  *
+/**************************************************************/
 export async function getContext(workingObject) {
   const id = String(workingObject?.id || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
   const nRaw = Number(workingObject?.contextSize ?? 10);
   const nUsers = Number.isFinite(nRaw) ? Math.max(1, Math.floor(nRaw)) : 10;
+  const detailed = workingObject?.getDetailedContext === true;
 
-  const [thresholdRows] = await pool.query(
-    `
-      SELECT MIN(ctx_id) AS min_ctx_id
-        FROM (
-          SELECT ctx_id
-            FROM context
-           WHERE id = ?
-             AND role = 'user'
-             AND JSON_VALID(json) = 1
-             AND COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(json, '$.content')), ''), NULL) IS NOT NULL
-           ORDER BY ctx_id DESC
-           LIMIT ?
-        ) AS last_users
-    `,
-    [id, nUsers]
-  );
+  const cutoffSql = `
+    SELECT MIN(ctx_id) AS min_ctx_id
+    FROM (
+      SELECT ctx_id
+      FROM context
+      WHERE id = ?
+        AND JSON_VALID(json) = 1
+        AND LOWER(COALESCE(
+              NULLIF(JSON_UNQUOTE(JSON_EXTRACT(json,'$.role')), ''),
+              role
+            )) = 'user'
+        ${detailed ? "" : `
+        AND COALESCE(
+              NULLIF(JSON_UNQUOTE(JSON_EXTRACT(json,'$.content')),''),
+              NULLIF(JSON_UNQUOTE(JSON_EXTRACT(json,'$.text')),'')
+            ) IS NOT NULL
+        `}
+      ORDER BY ctx_id DESC
+      LIMIT ?
+    ) AS last_users
+  `;
+  const [thresholdRows] = await pool.query(cutoffSql, [id, nUsers]);
   const minCtxId = thresholdRows?.[0]?.min_ctx_id || null;
 
-  let rows;
+  let rows = [];
+
   if (minCtxId) {
-    [rows] = await pool.query(
+    const [mainRows] = await pool.query(
       `
         SELECT ctx_id, ts, json
           FROM context
@@ -295,25 +303,68 @@ export async function getContext(workingObject) {
       `,
       [id, minCtxId]
     );
-  } else {
-    [rows] = await pool.query(
+
+    const [prevRows] = await pool.query(
       `
         SELECT ctx_id, ts, json
           FROM context
-         WHERE id = ?
+         WHERE id = ? AND ctx_id < ?
            AND JSON_VALID(json) = 1
-         ORDER BY ctx_id ASC
+         ORDER BY ctx_id DESC
+         LIMIT 1
       `,
-      [id]
+      [id, minCtxId]
     );
+
+    if (prevRows.length) {
+      try {
+        const prv = JSON.parse(prevRows[0].json);
+        const roleLc = String(prv?.role || "").toLowerCase();
+        if (roleLc === "assistant") rows.unshift(prevRows[0]);
+      } catch {}
+    }
+
+    rows.push(...mainRows);
+  } else {
+    const limitRows = Math.max(1, nUsers * 4);
+    const [descRows] = await pool.query(
+      `
+        SELECT ctx_id, ts, json
+          FROM context
+         WHERE id = ? AND JSON_VALID(json) = 1
+         ORDER BY ctx_id DESC
+         LIMIT ?
+      `,
+      [id, limitRows]
+    );
+    rows = descRows.slice().reverse();
   }
 
   const messages = [];
   for (const row of (rows || [])) {
     try {
       const obj = JSON.parse(row.json);
-      messages.push({ ...obj, ts: new Date(row.ts).toISOString(), ctx_id: row.ctx_id });
+      const roleLc = String(obj?.role || "").toLowerCase();
+      const contentStr = detailed
+        ? JSON.stringify(obj)
+        : ((typeof obj?.content === "string" && obj.content.length)
+            ? obj.content
+            : (typeof obj?.text === "string" ? obj.text : ""));
+      messages.push({
+        ...obj,
+        role: roleLc || obj?.role || "",
+        content: contentStr,
+        ts: new Date(row.ts).toISOString(),
+        ctx_id: row.ctx_id
+      });
     } catch {}
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (String(messages[i]?.role || "").toLowerCase() === "user") {
+      messages.splice(i, 1);
+      break;
+    }
   }
 
   const tokenBudget = workingObject?.contextTokenBudget;
@@ -321,10 +372,10 @@ export async function getContext(workingObject) {
   return capped;
 }
 
-/***************************************************************
-/* functionSignature: setMaybeCreateTimelinePeriod (pool, wo,  *
-/* channelId) Create a summary row when period size reached.   *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setMaybeCreateTimelinePeriod (pool, wo, *
+/* channelId) Creates a summary row when period size is met.  *
+/**************************************************************/
 async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   const { periodSize } = getContextConfig(workingObject);
   const [cntRows] = await pool.query(
@@ -381,15 +432,14 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
         checksum = VALUES(checksum),
         updated_at = CURRENT_TIMESTAMP
     `,
-    [channelId, startIdx, endIdx, startTs, endTs, summary, model, checksum]
+    [channelId, startIdx, endIdx, summary ? startTs : startTs, summary ? endTs : endTs, summary, model, checksum]
   );
-  console.log(`[context] timeline period created: ${channelId} ${startIdx}-${endIdx}`);
 }
 
-/***************************************************************
-/* functionSignature: setPurgeContext (workingObject)          *
-/* Delete non-frozen context and timeline rows for a channel.  *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setPurgeContext (workingObject)         *
+/* Deletes non-frozen context and timeline rows for channel.  *
+/**************************************************************/
 export async function setPurgeContext(workingObject) {
   const id = String(workingObject?.id || "");
   if (!id) throw new Error("[context] missing id");
@@ -405,10 +455,10 @@ export async function setPurgeContext(workingObject) {
   return Number(res1?.affectedRows || 0) + Number(res2?.affectedRows || 0);
 }
 
-/***************************************************************
-/* functionSignature: setFreezeContext (workingObject)         *
-/* Mark context and timeline rows as frozen for a channel.     *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setFreezeContext (workingObject)        *
+/* Marks context and timeline rows as frozen for channel.     *
+/**************************************************************/
 export async function setFreezeContext(workingObject) {
   const id = String(workingObject?.id || "");
   if (!id) throw new Error("[context] missing id");
@@ -424,10 +474,10 @@ export async function setFreezeContext(workingObject) {
   return Number(r1?.affectedRows || 0) + Number(r2?.affectedRows || 0);
 }
 
-/***************************************************************
-/* functionSignature: getEstimatedTokensFromMessage (msg)      *
-/* Roughly estimate tokens for budgeting decisions.            *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getEstimatedTokensFromMessage (msg)     *
+/* Roughly estimates tokens for budgeting decisions.          *
+/**************************************************************/
 function getEstimatedTokensFromMessage(msg) {
   if (!msg) return 0;
   const parts = [];
@@ -438,10 +488,10 @@ function getEstimatedTokensFromMessage(msg) {
   return Math.ceil(s.length / 4);
 }
 
-/***************************************************************
-/* functionSignature: getCapByTokenBudgetUserBlocks (messages, *
-/* budget) Cap messages by walking user-anchored blocks.       *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getCapByTokenBudgetUserBlocks (msgs,    *
+/* budget) Caps messages by user-anchored blocks and budget.  *
+/**************************************************************/
 function getCapByTokenBudgetUserBlocks(messages, budget) {
   if (!Array.isArray(messages) || !messages.length) return [];
   const maxTokens = Number(budget);
@@ -454,7 +504,7 @@ function getCapByTokenBudgetUserBlocks(messages, budget) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     currentBlock.unshift(m);
-    const isUser = m.role === "user";
+    const isUser = String(m.role || "").toLowerCase() === "user";
     const isFirst = i === 0;
     if (isUser || isFirst) {
       let blockTokens = 0;
@@ -469,10 +519,10 @@ function getCapByTokenBudgetUserBlocks(messages, budget) {
   return blocks;
 }
 
-/***************************************************************
-/* functionSignature: getChecksumBatchFromContextRows (rows)   *
-/* Compute a SHA-256 checksum for a batch of context rows.     *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getChecksumBatchFromContextRows (rows)  *
+/* Computes a SHA-256 checksum for a batch of rows.           *
+/**************************************************************/
 function getChecksumBatchFromContextRows(rows) {
   const h = crypto.createHash("sha256");
   for (const r of rows || []) {
@@ -484,10 +534,10 @@ function getChecksumBatchFromContextRows(rows) {
   return h.digest("hex");
 }
 
-/***************************************************************
-/* functionSignature: getSummarizeContextBatch (workingObject, *
-/* rows, meta) Summarize a batch via the configured endpoint.  *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getSummarizeContextBatch (wo, rows,     *
+/* meta) Summarizes a batch via the configured endpoint.      *
+/**************************************************************/
 async function getSummarizeContextBatch(workingObject, rows, meta) {
   const { endpoint, model, apiKey } = getContextConfig(workingObject);
   const clipped = (rows || []).slice(-50);
@@ -495,7 +545,7 @@ async function getSummarizeContextBatch(workingObject, rows, meta) {
     "Summarize the following recent conversation segment concisely.",
     `Channel: ${meta?.channelId ?? ""}`,
     `Range: ${meta?.startIdx ?? ""}-${meta?.endIdx ?? ""}`,
-    "Return 1-3 sentences with key actions, decisions, and open questions.",
+    "Return 1-3 sentences with key actions, decisions, and open questions."
   ].join(" ");
   const messages = [{ role: "system", content: prompt }];
   for (const r of clipped) {
@@ -528,10 +578,10 @@ async function getSummarizeContextBatch(workingObject, rows, meta) {
   }
 }
 
-/***************************************************************
-/* functionSignature: getDefaultExport ()                      *
-/* Provide named exports and default export object.            *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDefaultExport ()                     *
+/* Provides named functions via a default export object.      *
+/**************************************************************/
 function getDefaultExport() {
   return { setContext, getContext, setPurgeContext, setFreezeContext };
 }
