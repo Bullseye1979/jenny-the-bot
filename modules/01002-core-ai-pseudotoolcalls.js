@@ -4,6 +4,8 @@
 /* Purpose: Pseudo tool runner; ultra-compact prompt: per tool only 2 lines (purpose + *
 /*          required example)                                                           *
 /***************************************************************************************/
+/***************************************************************************************
+/*                                                                                     *
 /***************************************************************************************/
 
 import { getContext, setContext } from "../core/context.js";
@@ -461,7 +463,8 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
 
 /*******************************************************
 /* functionSignature: getSystemContentBase (wo)       *
-/* Builds compact base system content string.          *
+/* Builds system content: base, runtime, policies,     *
+/* and generalized tool-call contract line.            *
 /*******************************************************/
 function getSystemContentBase(wo) {
   const now = new Date();
@@ -471,11 +474,28 @@ function getSystemContentBase(wo) {
     typeof wo.SystemPrompt === "string" ? wo.SystemPrompt.trim() : "",
     typeof wo.Instructions === "string" ? wo.Instructions.trim() : ""
   ].filter(Boolean).join("\n\n");
-  const rule1 = "If a tool fits, output EXACTLY ONE line [tool:NAME]{JSON}; set ALL required fields; replace <USER_TEXT> with the user's latest message, <URL> with a valid URL (from message if present), <LANG> with a code like \"en\"; no markdown, no extra text.";
+
+  const runtimeInfo = [
+    "Runtime info:",
+    `- current_time_iso: ${nowIso}`,
+    `- timezone_hint: ${tz}`,
+    "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
+    "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
+  ].join("\n");
+
+  const policy = [
+    "Policy:",
+    "- NEVER ANSWER TO OLDER USER REQUESTS",
+
+  ].join("\n");
+
+  const toolContract = "Tool call contract: Emit EXACTLY ONE line '[tool:NAME]{JSON}'; valid json example: '{\"parameter1\":\"value1\",\"parameter2\":\"value2\"}' ; ensure that the JSON is a valid json; do not add additional text; set ALL required fields; replace placeholders in angle brackets with best-known values (e.g., <USER_TEXT>, <URL>, <LANG>, <CHANNEL_ID>, …) using the latest user message, provided context, or sensible defaults; keep explicit mappings: <USER_TEXT>=latest user text, <URL>=valid URL from message if present, <LANG>=language code like \"en\"; if a required placeholder cannot be resolved, do not emit a tool call (optional fields may be omitted); otherwise, write a normal response; no markdown, no extra text.";
+
   const parts = [];
   if (base) parts.push(base);
-  parts.push(`time_iso=${nowIso} tz=${tz}`);
-  parts.push(rule1);
+  parts.push(runtimeInfo);
+  parts.push(policy);
+  parts.push(toolContract);
   return parts;
 }
 
@@ -487,7 +507,7 @@ async function getSystemContent(wo, specs) {
   const parts = getSystemContentBase(wo);
   const catalog = getRenderPseudoCatalog(specs || []);
   if (catalog) parts.push(catalog);
-  return parts.filter(Boolean).join("\n");
+  return parts.filter(Boolean).join("\n\n");
 }
 
 /*******************************************************
