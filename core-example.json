@@ -1,71 +1,63 @@
+// IMPORTANT: REMOVE ALL COMMENTS WHEN YOU WANT TO USE THIS FILE AS A TEMPLATE
+
 {
   "workingObject": {
-    "Botname": "Jenny the Bot",
-    "SystemPrompt": "You are a helpful assistant.",
-    "Persona": "Default AI Assistant",
-    "Instructions": "Answer concisely.",
-    "Model": "gpt-4o-mini",
-    "Endpoint": "https://api.openai.com/v1/chat/completions",
-    "APIKey": "<OPENAI_API_KEY>",
-    "Response": "",
-    "EndpointResponses": "https://api.openai.com/v1/responses",
-    "useAIModule": "completions",
-    "payload": "",
-    "timezone": "Europe/Berlin",
-    "Temperature": 0.2,
-    "MaxTokens": 2000,
-    "BaseURL": "https://<YOUR_DOMAIN>",
-    "AllowArtifactGeneration": true,
-    "RequestTimeoutMs": 1000000,
-    "ToolChoice": "auto",
+    "Botname": "Jenny", // Display name in Discord
+    "SystemPrompt": "You are a helpful assistant.", // Base system behavior
+    "Persona": "Default AI Assistant", // High-level persona/tone
+    "Instructions": "Answer concisely.", // Extra guidance for style
+    "Model": "gpt-4o-mini", // Default LLM model
+    "Endpoint": "https://api.openai.com/v1/chat/completions", // LLM endpoint
+    "APIKey": "sk-example-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // Example API key placeholder
+    "Response": "", // Runtime field to store last response
+    "EndpointResponses": "https://api.openai.com/v1/responses", // Responses API
+    "useAIModule": "completions", // completions | responses | pseudotoolcalls
+    "payload": "", // Optional custom payload template
+    "timezone": "Europe/Berlin", // IANA timezone
+    "Temperature": 0.2, // Model creativity (0.0 - 1.0+)
+    "MaxTokens": 2000, // Max tokens per response
+    "BaseURL": "https://example.com", // Public base URL for assets
+    "AllowArtifactGeneration": true, // Allow files/images/videos from tools
+    "RequestTimeoutMs": 120000, // Global request timeout (ms)
+    "ToolChoice": "auto", // Tool routing mode
     "Tools": [
-      "getGoogle",
-      "getWebpage",
-      "getAnimatedPicture",
-      "getConfluence",
-      "getYoutube",
-      "getImage",
-      "getImageDescription",
-      "getHistory",
-      "getText",
-      "getInformation",
-      "getJira",
-      "getLocation",
-      "getPDF",
-      "getTime",
-      "getTimeline",
-      "getToken",
-      "getVideoFromText"
-    ],
-    "IncludeHistory": true,
-    "IncludeHistoryTools": false,
-    "IncludeRuntimeContext": true,
-    "getDetailedContext": true,
-    "MaxLoops": 15,
-    "MaxToolCalls": 4,
-    "contextTokenBudget": 60000,
-    "GDPRDisclaimer": "GDPR Notice & Consent (Private Operator – Germany)\\n\\nApplicability & Framework\\n- This bot is operated privately (non-commercial) in Germany. ...\\n\\nEffective date: 2025-10-25",
-    "AvatarApiKey": "<OPENAI_API_KEY>",
-    "AvatarEndpoint": "https://api.openai.com/v1/images/generations",
-    "AvatarModel": "dall-e-3",
-    "AvatarSize": "1024x1024",
-    "AvatarPrompt": "",
-    "ModAdmin": "<YOUR_DISCORD_USER_ID>",
-    "ModSilence": "[silence]",
+      "getGoogle","getWebpage","getAnimatedPicture","getConfluence","getYoutube",
+      "getImage","getImageDescription","getHistory","getText","getInformation",
+      "getJira","getLocation","getPDF","getTime","getTimeline","getToken","getVideoFromText"
+    ], // Allowed tools
+    "IncludeHistory": true, // Include message history in prompts
+    "IncludeHistoryTools": false, // Include tool-call history
+    "IncludeRuntimeContext": true, // Add runtime meta/context
+    "getDetailedContext": true, // More verbose context packaging
+    "MaxLoops": 15, // Safety cap for tool-use loops
+    "MaxToolCalls": 4, // Max tool calls per request
+    "contextTokenBudget": 60000, // Tokens reserved for history/context
+
+    "GDPRDisclaimer": "GDPR/BDSG notice text shown to users", // Full notice text
+
+    "AvatarApiKey": "sk-example-img-xxxxxxxxxxxxxxxxxxxx", // Example image API key placeholder
+    "AvatarEndpoint": "https://api.openai.com/v1/images/generations", // Image API
+    "AvatarModel": "dall-e-3", // Image model
+    "AvatarSize": "1024x1024", // Avatar size
+    "AvatarPrompt": "", // Current avatar prompt accumulator
+
+    "ModAdmin": "999999999999999999", // Example Discord user ID of primary admin
+    "ModSilence": "[silence]", // Token to suppress replies
+
     "discord-admin": {
       "slash": {
-        "silent": true,
-        "ephemeral": false,
+        "silent": true, // Reduce extra chatter in slash replies
+        "ephemeral": false, // Ephemeral by default?
         "definitions": [
           {
-            "name": "avatar",
+            "name": "avatar", // Command group: avatar mgmt
             "description": "Set or generate the bot's channel avatar",
             "dm_permission": false,
             "options": [
               {
                 "type": 1,
                 "name": "url",
-                "Admin": ["<YOUR_DISCORD_USER_ID>"],
+                "Admin": ["999999999999999999"], // Example admin user IDs
                 "description": "Download image from a URL and set as avatar",
                 "options": [
                   { "type": 3, "name": "url", "description": "Direct image URL", "required": true }
@@ -75,7 +67,7 @@
                 "type": 1,
                 "name": "prompt",
                 "description": "Append text to the avatar prompt and regenerate",
-                "Admin": ["<YOUR_DISCORD_USER_ID>"],
+                "Admin": ["999999999999999999"],
                 "options": [
                   { "type": 3, "name": "text", "description": "Prompt text to append", "required": true }
                 ]
@@ -83,7 +75,7 @@
               {
                 "type": 1,
                 "name": "regen",
-                "Admin": ["<YOUR_DISCORD_USER_ID>"],
+                "Admin": ["999999999999999999"],
                 "description": "Regenerate avatar using current prompt"
               }
             ]
@@ -92,30 +84,18 @@
             "name": "purge",
             "description": "Delete recent messages (hybrid)",
             "dm_permission": false,
-            "Admin": ["<YOUR_DISCORD_USER_ID>"],
-            "options": [
-              { "type": 4, "name": "count", "description": "How many (max 5000)", "required": false }
-            ]
+            "Admin": ["999999999999999999"],
+            "options": [{ "type": 4, "name": "count", "description": "How many (max 5000)", "required": false }]
           },
-          { "name": "purgedb", "description": "Delete the database entries for this channel", "dm_permission": false, "Admin": ["<YOUR_DISCORD_USER_ID>"] },
-          { "name": "freeze", "description": "Mark DB rows for this channel as frozen", "dm_permission": false, "Admin": ["<YOUR_DISCORD_USER_ID>"] },
+          { "name": "purgedb", "description": "Delete the database entries for this channel", "dm_permission": false, "Admin": ["999999999999999999"] },
+          { "name": "freeze", "description": "Mark DB rows for this channel as frozen", "Admin": ["999999999999999999"], "dm_permission": false },
           {
             "name": "gdpr",
             "description": "Set GDPR consent flags",
             "dm_permission": false,
             "options": [
-              {
-                "type": 1,
-                "name": "text",
-                "description": "Enable/disable text chat consent",
-                "options": [{ "type": 4, "name": "value", "description": "0 or 1", "required": true }]
-              },
-              {
-                "type": 1,
-                "name": "voice",
-                "description": "Enable/disable voice consent",
-                "options": [{ "type": 4, "name": "value", "description": "0 or 1", "required": true }]
-              }
+              { "type": 1, "name": "text", "description": "Enable/disable text chat consent", "options": [{ "type": 4, "name": "value", "description": "0 or 1", "required": true }] },
+              { "type": 1, "name": "voice", "description": "Enable/disable voice consent", "options": [{ "type": 4, "name": "value", "description": "0 or 1", "required": true }] }
             ]
           },
           { "name": "join", "description": "Join my current voice channel", "dm_permission": false },
@@ -124,336 +104,456 @@
         ]
       }
     },
-    "ShowReactions": true,
-    "fileURLs": [],
-    "logging": [],
-    "contextSize": 20,
-    "trigger": "jenny",
+
+    "ShowReactions": true, // Add emoji reactions during processing
+    "fileURLs": [], // Runtime file URLs
+    "logging": [], // Runtime logs/snapshots
+    "contextSize": 20, // Prior messages to include
+    "trigger": "jenny", // Wake word ("" to disable)
+
     "db": {
-      "host": "localhost",
-      "user": "discord_bot",
-      "password": "<DB_PASSWORD>",
-      "database": "discord_ai"
+      "host": "localhost", // DB host
+      "user": "discord_bot", // DB user
+      "password": "change_me", // Example DB password placeholder
+      "database": "discord_ai" // DB/schema name
     },
-    "useVoiceChannel": 0,
-    "TTSModel": "gpt-4o-mini-tts",
-    "TTSVoice": "nova",
-    "TTSEndpoint": "https://api.openai.com/v1/audio/speech",
-    "TTSAPIKey": "<OPENAI_API_KEY>",
-    "whisperApiKey": "<OPENAI_API_KEY>",
-    "whisperModel": "whisper-1",
-    "whisperLanguage": "",
-    "whisperEndpoint": "https://api.openai.com",
+
+    "useVoiceChannel": 0, // 0=off, 1=on
+
+    "TTSModel": "gpt-4o-mini-tts", // TTS model
+    "TTSVoice": "nova", // TTS voice
+    "TTSEndpoint": "https://api.openai.com/v1/audio/speech", // TTS endpoint
+    "TTSAPIKey": "sk-example-tts-xxxxxxxxxxxxxxxx", // Example TTS key placeholder
+
+    "whisperApiKey": "sk-example-stt-xxxxxxxxxxxxxxxx", // Example STT key placeholder
+    "whisperModel": "whisper-1", // STT model
+    "whisperLanguage": "", // "" = auto-detect
+    "whisperEndpoint": "https://api.openai.com", // STT endpoint
+
     "toolsconfig": {
       "getImage": {
-        "apiKey": "<OPENAI_API_KEY>",
-        "endpoint": "https://api.openai.com/v1/images/generations",
-        "model": "dall-e-3",
-        "size": "1024x1024",
-        "n": 1,
-        "public_base_url": "https://<YOUR_DOMAIN>/",
-        "targetLongEdge": 1152,
-        "aspect": "",
-        "enhancerEndpoint": "https://api.openai.com/v1/chat/completions",
-        "enhancerApiKey": "<OPENAI_API_KEY>",
-        "enhancerModel": "gpt-4o-mini",
-        "enhancerTemperature": 0.2,
-        "enhancerMaxTokens": 350,
-        "enhancerTimeoutMs": 60000
+        "apiKey": "sk-example-img-xxxxxxxxxxxxxxxx", // Example key for image gen
+        "endpoint": "https://api.openai.com/v1/images/generations", // Image API
+        "model": "dall-e-3", // Image model
+        "size": "1024x1024", // Output size
+        "n": 1, // Number of images
+        "public_base_url": "https://example.com/", // Public host for outputs
+        "targetLongEdge": 1152, // Optional resize
+        "aspect": "", // Aspect ratio hint
+        "enhancerEndpoint": "https://api.openai.com/v1/chat/completions", // Prompt enhancer LLM
+        "enhancerApiKey": "sk-example-enh-xxxxxxxxxxxxxxxx", // Example enhancer key
+        "enhancerModel": "gpt-4o-mini", // Enhancer model
+        "enhancerTemperature": 0.2, // Enhancer creativity
+        "enhancerMaxTokens": 350, // Token cap
+        "enhancerTimeoutMs": 60000 // Timeout
       },
+
       "getConfluence": {
-        "baseUrl": "https://<YOUR_ATLASSIAN_SUBDOMAIN>.atlassian.net/wiki",
-        "email": "<YOUR_EMAIL>",
-        "token": "<ATLASSIAN_API_TOKEN>",
-        "project": "ST",
-        "mainPageId": "<CONFLUENCE_PAGE_ID>",
-        "useV2": true
+        "baseUrl": "https://example.atlassian.net/wiki", // Confluence site base URL (example)
+        "email": "bot@example.com", // Account email for API
+        "token": "atlassian-api-token-example-xxxxxxxx", // Example API token
+        "project": "ST", // Space key or scope
+        "mainPageId": "123456789", // Root page ID (example)
+        "useV2": true // Use v2 API if available
       },
+
       "getPDF": {
-        "publicBaseUrl": "https://<YOUR_DOMAIN>",
-        "headless": "new",
-        "chromeArgs": ["--no-sandbox"],
-        "waitUntil": "networkidle0",
-        "timeoutMs": 120000,
-        "format": "A4",
-        "printBackground": true
+        "publicBaseUrl": "https://example.com", // Host PDFs
+        "headless": "new", // Headless mode
+        "chromeArgs": ["--no-sandbox"], // Chromium flags
+        "waitUntil": "networkidle0", // Render ready state
+        "timeoutMs": 120000, // Generation timeout
+        "format": "A4", // Paper size
+        "printBackground": true // Print background
       },
+
       "getText": {
-        "publicBaseUrl": "https://<YOUR_DOMAIN>"
+        "publicBaseUrl": "https://example.com" // Host text artifacts
       },
+
       "getAnimatedPicture": {
-        "videoApiToken": "<REPLICATE_API_TOKEN>",
-        "videoBaseUrl": "https://api.replicate.com/v1",
-        "videoModel": "google/veo-3",
-        "videoPollIntervalMs": 5000,
-        "videoTimeoutMs": 600000,
-        "videoPublicBaseUrl": "https://<YOUR_DOMAIN>"
+        "videoApiToken": "replicate-token-example-xxxxxxxx", // Example video API token
+        "videoBaseUrl": "https://api.replicate.com/v1", // Video API base
+        "videoModel": "google/veo-3", // Video model
+        "videoPollIntervalMs": 5000, // Poll interval
+        "videoTimeoutMs": 600000, // Max wait
+        "videoPublicBaseUrl": "https://example.com" // Host videos
       },
+
       "getVideoFromText": {
-        "videoApiToken": "<REPLICATE_API_TOKEN>",
+        "videoApiToken": "replicate-token-example-xxxxxxxx", // Example token
         "videoBaseUrl": "https://api.replicate.com/v1",
         "videoModel": "google/veo-3",
         "videoPollIntervalMs": 5000,
         "videoTimeoutMs": 600000,
-        "videoPublicBaseUrl": "https://<YOUR_DOMAIN>"
+        "videoPublicBaseUrl": "https://example.com"
       },
+
       "getJira": {
-        "baseUrl": "https://<YOUR_ATLASSIAN_SUBDOMAIN>.atlassian.net",
-        "email": "<YOUR_EMAIL>",
-        "token": "<ATLASSIAN_API_TOKEN>",
-        "projectKey": "ST",
-        "defaultIssueType": "Task",
-        "defaultAssignee": "",
-        "defaultPriority": "Medium",
-        "timeoutMs": 60000,
+        "baseUrl": "https://example.atlassian.net", // Jira base URL (example)
+        "email": "bot@example.com", // Jira account email
+        "token": "atlassian-api-token-example-xxxxxxxx", // Example Jira API token
+        "projectKey": "ST", // Default project key
+        "defaultIssueType": "Task", // Default issue type
+        "defaultAssignee": "", // Default assignee
+        "defaultPriority": "Medium", // Default priority
+        "timeoutMs": 60000, // API timeout
         "defaults": {
           "fields": {
-            "summary": "",
-            "description": "",
-            "priority": { "name": "Medium" }
+            "summary": "", // Default summary template
+            "description": "", // Default description
+            "priority": { "name": "Medium" } // Default priority object
           }
         },
         "customFields": {
-          "epicLink": "customfield_10014",
-          "storyPoints": "customfield_10016"
+          "epicLink": "customfield_10014", // Epic Link field id (example)
+          "storyPoints": "customfield_10016" // Story Points field id (example)
         },
-        "search": { "maxResults": 50 },
-        "transitions": { "open": "", "inProgress": "", "done": "" }
+        "search": {
+          "maxResults": 50 // Search page size
+        },
+        "transitions": {
+          "open": "", // Transition ID: Open
+          "inProgress": "", // Transition ID: In Progress
+          "done": "" // Transition ID: Done
+        }
       },
+
       "getToken": {
-        "public_base_url": "https://<YOUR_DOMAIN>",
-        "magickPath": "convert",
-        "size": 512,
-        "border_px": 10,
-        "ffmpegPath": "ffmpeg",
-        "maxMb": 4,
-        "fpsList": [12, 10, 8],
-        "scaleList": [512, 384, 320],
-        "maxColorsList": [128, 96, 64, 48, 32],
+        "public_base_url": "https://example.com", // Host tokens/GIFs
+        "magickPath": "convert", // ImageMagick path
+        "size": 512, // Output size px
+        "border_px": 10, // Border thickness
+        "ffmpegPath": "ffmpeg", // ffmpeg path
+        "maxMb": 4, // Max input MB
+        "fpsList": [12, 10, 8], // FPS fallbacks
+        "scaleList": [512, 384, 320], // Scale fallbacks
+        "maxColorsList": [128, 96, 64, 48, 32], // Color limits
         "ditherList": [
           "bayer:bayer_scale=3:diff_mode=rectangle",
           "bayer:bayer_scale=5:diff_mode=rectangle",
           "none"
-        ],
-        "useGifsicleLossy": true,
-        "gifsiclePath": "gifsicle",
-        "gifsicleLossyLevels": [80, 100, 120]
+        ], // Dither options
+        "useGifsicleLossy": true, // Use gifsicle lossy
+        "gifsiclePath": "gifsicle", // gifsicle path
+        "gifsicleLossyLevels": [80, 100, 120] // Lossy levels
       },
+
       "getImageDescription": {
-        "apiKey": "<OPENAI_API_KEY>",
-        "model": "gpt-4o-mini",
-        "endpoint": "https://api.openai.com/v1/chat/completions",
-        "temperature": 0.2,
-        "max_tokens": 1000,
-        "timeout_ms": 60000
+        "apiKey": "sk-example-desc-xxxxxxxxxxxxxxxx", // Example LLM key
+        "model": "gpt-4o-mini", // Descriptor model
+        "endpoint": "https://api.openai.com/v1/chat/completions", // LLM endpoint
+        "temperature": 0.2, // Creativity
+        "max_tokens": 1000, // Token cap
+        "timeout_ms": 60000 // Timeout
       },
+
       "getHistory": {
-        "pagesize": 1000,
-        "max_rows": 5000,
-        "threshold": 2000,
-        "model": "gpt-4.1",
-        "temperature": 0,
-        "max_tokens": 8000,
-        "aiTimeoutMs": 45000,
-        "endpoint": "https://api.openai.com/v1/chat/completions",
-        "apiKey": "<OPENAI_API_KEY>"
+        "pagesize": 1000, // DB page size
+        "max_rows": 5000, // Row cap
+        "threshold": 2000, // Summarize above this
+        "model": "gpt-4.1", // Summarizer model
+        "temperature": 0, // Deterministic
+        "max_tokens": 8000, // Token cap
+        "aiTimeoutMs": 45000, // LLM timeout
+        "endpoint": "https://api.openai.com/v1/chat/completions", // LLM endpoint
+        "apiKey": "sk-example-hist-xxxxxxxxxxxxxxxx" // Example key
       },
+
       "getInformation": {
-        "cluster_rows": 200,
-        "pad_rows": 20,
-        "token_window": 5,
-        "max_log_chars": 6000,
-        "max_output_lines": 1000,
-        "min_coverage": 1,
-        "event_gap_minutes": 45,
-        "max_timeline_periods": 30,
-        "strip_code": false
+        "cluster_rows": 200, // Rows per cluster
+        "pad_rows": 20, // Context padding rows
+        "token_window": 5, // Sliding token window
+        "max_log_chars": 6000, // Log truncation
+        "max_output_lines": 1000, // Output line cap
+        "min_coverage": 1, // Min coverage threshold
+        "event_gap_minutes": 45, // Period gap minutes
+        "max_timeline_periods": 30, // Max periods
+        "strip_code": false // Remove code blocks?
       },
+
       "getGoogle": {
-        "apiKey": "<GOOGLE_API_KEY>",
-        "cseId": "<GOOGLE_CSE_ID>",
-        "num": 10,
-        "safe": "off",
-        "hl": "de",
-        "lr": "lang_de",
-        "cr": "countryDE",
-        "gl": "de",
-        "timeoutMs": 20000
+        "apiKey": "google-cse-key-example-xxxxxxxx", // Example Google CSE key
+        "cseId": "cse-id-example-xxxxxx", // Example CSE ID
+        "num": 10, // Results per query
+        "safe": "off", // Safe search mode
+        "hl": "de", // Host language
+        "lr": "lang_de", // Language restrict
+        "cr": "countryDE", // Country restrict
+        "gl": "de", // Geo location
+        "timeoutMs": 20000 // Timeout
       },
+
       "getWebpage": {
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "timeoutMs": 30000,
-        "maxInputChars": 240000,
-        "model": "gpt-4.1",
-        "temperature": 0.2,
-        "max_tokens": 18000,
-        "aiTimeoutMs": 45000,
-        "endpoint": "https://api.openai.com/v1/chat/completions",
-        "apiKey": "<OPENAI_API_KEY>",
-        "wordThreshold": 2000
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", // UA
+        "timeoutMs": 30000, // Fetch timeout
+        "maxInputChars": 240000, // Max chars to LLM
+        "model": "gpt-4.1", // Summarizer model
+        "temperature": 0.2, // Creativity
+        "max_tokens": 18000, // Token cap
+        "aiTimeoutMs": 45000, // LLM timeout
+        "wordThreshold": 2000, // Min words before summary
+        "endpoint": "https://api.openai.com/v1/chat/completions", // LLM endpoint
+        "apiKey": "sk-example-web-xxxxxxxxxxxxxxxx" // Example key
       },
+
       "getImageSD": {
-        "base_url": "http://127.0.0.1:7860",
-        "public_base_url": "https://<YOUR_DOMAIN>",
-        "size": "384x384",
-        "n": 1,
-        "steps": 10,
-        "cfg_scale": 6.5,
-        "sampler": "Euler a",
-        "seed": -1,
-        "model": "realisticVisionV60B1_v51HyperVAE.safetensors",
-        "negative_extra": "overprocessed, muddy colors",
-        "timeoutMs": 900000,
-        "networkTimeoutMs": 7200000
+        "base_url": "http://127.0.0.1:7860", // SD WebUI/API URL
+        "public_base_url": "https://example.com", // Host SD images
+        "size": "512x512", // Output size
+        "n": 1, // Images to generate
+        "steps": 20, // Inference steps
+        "cfg_scale": 7, // Guidance scale
+        "sampler": "DPM++ 2M Karras", // Sampler
+        "seed": -1, // -1 random
+        "model": "realisticVisionV60B1_v51HyperVAE.safetensors", // Checkpoint (example)
+        "negative_extra": "overprocessed, muddy colors", // Extra negatives
+        "timeoutMs": 1400000, // Local gen timeout
+        "networkTimeoutMs": 14400000 // Network timeout
       },
+
       "getLocation": {
-        "googleApiKey": "<GOOGLE_API_KEY>",
-        "publicBaseUrl": "https://<YOUR_DOMAIN>",
-        "street_size": "800x600",
-        "street_fov": 90,
-        "timeoutMs": 20000
+        "googleApiKey": "google-maps-key-example-xxxxxxxx", // Example Google key
+        "publicBaseUrl": "https://example.com", // Host map assets
+        "street_size": "800x600", // Street view size
+        "street_fov": 90, // Field of view
+        "timeoutMs": 20000 // Timeout
       },
+
       "getYoutube": {
-        "googleApiKey": "<GOOGLE_API_KEY>",
-        "endpoint": "https://api.openai.com/v1/chat/completions",
-        "apiKey": "<OPENAI_API_KEY>",
-        "model": "gpt-4.1",
-        "temperature": 0.2,
-        "max_tokens": 8000,
-        "dump_threshold_chars": 20000,
-        "transcriptLangs": ["de", "en"],
-        "regionCode": "DE",
-        "relevanceLanguage": "de",
-        "searchMaxResults": 5,
-        "aiTimeoutMs": 300000
+        "googleApiKey": "youtube-data-key-example-xxxxxxxx", // Example YouTube Data key
+        "endpoint": "https://api.openai.com/v1/chat/completions", // LLM endpoint
+        "apiKey": "sk-example-yt-xxxxxxxxxxxxxxxx", // Example LLM key
+        "model": "gpt-4.1", // Transcript analyzer
+        "temperature": 0.2, // Creativity
+        "max_tokens": 8000, // Token cap
+        "dump_threshold_chars": 20000, // Dump mode cutoff
+        "transcriptLangs": ["de", "en"], // Preferred langs
+        "regionCode": "DE", // Search region
+        "relevanceLanguage": "de", // Relevance language
+        "searchMaxResults": 5, // Search page size
+        "aiTimeoutMs": 300000 // LLM timeout
       }
     }
   },
+
   "config": {
     "discord": {
-      "flowName": "discord",
-      "token": "<DISCORD_BOT_TOKEN>",
-      "intents": ["Guilds", "GuildMessages", "MessageContent", "GuildVoiceStates", "GuildMembers", "DirectMessages"]
+      "flowName": "discord", // Primary Discord flow name
+      "token": "DISCORD_BOT_TOKEN_EXAMPLE", // Example Discord bot token placeholder
+      "intents": [
+        "Guilds","GuildMessages","MessageContent","GuildVoiceStates","GuildMembers","DirectMessages"
+      ] // Gateway intents
     },
+
     "context": {
-      "endpoint": "https://api.openai.com/v1/chat/completions",
-      "model": "gpt-4o-mini",
-      "apiKey": "<OPENAI_API_KEY>",
-      "periodSize": 600
+      "endpoint": "https://api.openai.com/v1/chat/completions", // LLM context endpoint
+      "model": "gpt-4o-mini", // Context LLM
+      "apiKey": "sk-example-ctx-xxxxxxxxxxxxxxxx", // Example context LLM key
+      "periodSize": 600 // Seconds per timeline bucket
     },
-    "webpage": { "flowName": "webpage" },
-    "discord-admin": { "flowName": "discord-admin" },
+
+    "webpage": { "flowName": "webpage" }, // Flow for webpage tasks
+    "discord-admin": { "flowName": "discord-admin" }, // Admin command flow
+
     "discord-status": {
-      "flowName": "discord-status",
-      "pollMs": 300,
-      "status": "online",
+      "flowName": "discord-status", // Presence updater flow
+      "pollMs": 300, // Poll interval
+      "status": "online", // Base presence state
       "mapping": {
-        "getImage": "Summoning pixels …",
-        "getImageSD": "Brewing diffusion potions …",
-        "getImageDescription": "Staring at pixels thoughtfully …",
-        "getAnimatedPicture": "Teaching pictures to wiggle …",
-        "getVideoFromText": "Directing tiny actors …",
-        "getTime": "Asking the space-time continuum …",
-        "getToken": "Minting shiny tokens …",
-        "getInformation": "Rummaging through the chat attic …",
-        "getHistory": "Dusting off the archives …",
-        "getGoogle": "Consulting the all-knowing oracle …",
-        "getWebpage": "Skimming the page like a pro …",
-        "getLocation": "Unfolding the maps …",
-        "getTimeline": "Starting the Flux Capacitor …",
-        "getPDF": "Scribbling the words …",
-        "getJira": "Sorting the tasks …",
-        "getConfluence": "Filling the chronicles …",
-        "getText": "Writing the ancient letters …",
-        "getYoutube": "Gazing in the abyss …"
+        "getImage": "⏳Generating an image … ",
+        "getImageSD": "⏳Generating an image with SD … ",
+        "getImageDescription": "⏳ Describing a picture …",
+        "getAnimatedPicture": "⏳ Animate a picture …",
+        "getVideoFromText": "⏳ Generating a video …",
+        "getTime": "⏳ Checking for the time …",
+        "getToken": "⏳ Generating a token …",
+        "getInformation": "⏳ Searching for information …",
+        "getHistory": "⏳ Checking the history …",
+        "getGoogle": "⏳ Searching with google …",
+        "getWebpage": "⏳ Scraping a webpage …",
+        "getLocation": "⏳ Determine a location …",
+        "getTimeline": "⏳ Checking the timeline …",
+        "getPDF": "⏳ Gernerating PDF …",
+        "getJira": "⏳ Working with JIRA …",
+        "getConfluence": "⏳ Working with Confluence …",
+        "getText": "⏳ Generate a file …",
+        "getYoutube": "⏳ Checking YouTube …"
       },
-      "randomEnabled": true,
-      "randomIntervalMs": 600000,
-      "randomJitterPct": 0.25,
-      "randomLines": [
-        "Shall we play a game?",
-        "Resistance is futile.",
-        "End of line."
-      ]
+      "randomEnabled": true, // Periodic idle statuses
+      "randomIntervalMs": 600000, // Idle interval
+      "placeholderEnabled": true, // Show placeholder during long ops
+      "placeholderText": " // example.com // ", // Placeholder text
+      "minUpdateGapMs": 800, // Debounce presence updates
+      "randomJitterPct": 0.25, // Randomize intervals
+      "aiGenerator": {
+        "model": "qwen3-4b-instruct-cpu-12k", // Tiny LLM for status lines
+        "endpoint": "http://127.0.0.1:11434/v1/chat/completions", // Local LLM
+        "apiKey": "local-no-key-required", // Example local key placeholder
+        "tokenLimit": 12, // Very small budget
+        "maxChars": 40, // Hard character cap
+        "limit": 20, // Internal candidate cap
+        "contextID": "status-context-example", // Example context key
+        "system": "You craft ultra-short, non-repetitive Discord presence lines (≤ limit), no emojis/hashtags.", // System prompt
+        "template": "From the recent snippets, write ONE activity-style status (never create a text longer than {MAX} chars). Do not use names, nicknames or locations. Keep it general. Avoid repeating: \"{LAST}\".\nSnippets:\n{SNIPS}" // Generation template
+      }
     },
-    "discord-voice": { "flowName": "discord-voice" },
-    "core-ai-completions": { "flow": ["discord", "discord-voice"] },
-    "core-ai-responses": { "flow": ["discord", "discord-voice"] },
-    "core-ai-pseudotoolcalls": { "flow": ["discord", "discord-voice"] },
-    "discord-voice-tts": { "flow": ["discord-voice"] },
+
+    "discord-voice": { "flowName": "discord-voice" }, // Voice processing flow
+
+    "core-ai-completions": { "flow": ["discord", "discord-voice"] }, // Completions runner
+    "core-ai-responses": { "flow": ["discord", "discord-voice"] }, // Responses runner
+    "core-ai-pseudotoolcalls": { "flow": ["discord", "discord-voice"] }, // Pseudo tools
+
+    "discord-voice-tts": { "flow": ["discord-voice"] }, // TTS output flow
     "discord-voice-transcribe": {
-      "flow": ["discord-voice"],
-      "pollMs": 1000,
-      "silenceMs": 1300,
-      "maxCaptureMs": 25000,
-      "minVoicedMs": 800,
-      "snrDbThreshold": 3.5,
-      "frameMs": 20,
-      "startDebounceMs": 600
+      "flow": ["discord-voice"], // STT input flow
+      "pollMs": 1000, // Polling interval
+      "silenceMs": 1300, // End-of-utterance silence
+      "maxCaptureMs": 25000, // Max utterance length
+      "minVoicedMs": 800, // Min voiced time
+      "snrDbThreshold": 3.5, // SNR threshold
+      "frameMs": 20, // VAD frame size
+      "startDebounceMs": 600 // Start debounce
     },
-    "core-output": { "flow": ["all"] },
-    "moderation-output": { "flow": ["discord"] },
-    "discord-text-output": { "flow": ["all"], "baseURL": "https://<YOUR_DOMAIN>" },
-    "discord-add-context": { "flow": ["discord", "discord-voice"] },
-    "discord-admin-commands": { "flow": ["discord-admin", "discord"] },
-    "discord-channel-gate": { "flow": ["discord", "discord-voice", "discord-admin"] },
-    "discord-trigger-gate": { "flow": ["discord", "discord-voice"] },
-    "discord-reaction-start": { "flow": ["discord"] },
-    "discord-reaction-finish": { "flow": ["discord"] },
-    "discord-admin-join": { "flow": ["discord-admin"] },
-    "discord-gdpr-gate": { "flow": ["discord", "discord-voice", "discord-admin"], "table": "gdpr" },
-    "discord-admin-gdpr": { "flow": ["discord-admin"], "table": "gdpr" },
-    "discord-admin-avatar": { "flow": ["discord-admin"] },
+
+    "core-output": { "flow": ["all"] }, // Output aggregator
+    "moderation-output": { "flow": ["discord"] }, // Moderation events
+    "discord-text-output": {
+      "flow": ["all"],
+      "baseURL": "https://example.com" // Resolve asset links in messages
+    },
+    "discord-add-context": { "flow": ["discord", "discord-voice"] }, // Context enricher
+    "discord-admin-commands": { "flow": ["discord-admin", "discord"] }, // Admin cmds
+    "discord-channel-gate": { "flow": ["discord", "discord-voice", "discord-admin"] }, // Channel rules
+    "discord-trigger-gate": { "flow": ["discord", "discord-voice"] }, // Trigger guard
+    "discord-reaction-start": { "flow": ["discord"] }, // Start reactions
+    "discord-reaction-finish": { "flow": ["discord"] }, // Finish reactions
+    "discord-admin-join": { "flow": ["discord-admin"] }, // Voice admin
+    "discord-gdpr-gate": { "flow": ["discord", "discord-voice", "discord-admin"], "table": "gdpr" }, // GDPR enforcement
+    "discord-admin-gdpr": { "flow": ["discord-admin"], "table": "gdpr" }, // GDPR admin
+    "discord-admin-avatar": { "flow": ["discord-admin"] }, // Avatar admin
+
     "discord-channel-config": {
-      "flow": ["discord", "discord-voice", "discord-admin"],
+      "flowName": "discord-channel-config", // Flow name for channel overrides
+      "flow": ["discord", "discord-voice", "discord-admin"], // Affected flows
       "channels": {
-        "<CHANNEL_ID_A>": [
+        // Example text+voice D&D helper channel
+        "111111111111111111": [
           {
-            "userIds": ["<YOUR_DISCORD_USER_ID>"],
-            "flows": ["discord"],
+            "userIds": ["999999999999999999"], // Allowed user IDs (or ["ALL"])
+            "flows": ["discord"], // Flows in this channel
             "overrides": {
               "Botname": "Jenny",
               "SystemPrompt": "Check getTimeline, getHistory for historical data. When asked check back with getInformation. Answer as complete as possible.",
               "Persona": "A funny Dungeons and Dragons expert",
-              "Instructions": "You are Jenny, a Dungeon & Dragons expert specialized in the 5th Edition (5e).",
+              "Instructions": "You are Jenny, a D&D 5e expert specialized in rules and mechanics.",
               "contextSize": 70,
               "trigger": ""
             }
           },
           {
-            "userIds": ["<YOUR_DISCORD_USER_ID>"],
+            "userIds": ["999999999999999999"],
             "flows": ["discord-voice"],
             "overrides": {
               "Botname": "Jenny",
               "SystemPrompt": "Check getTimeline, getHistory for historical data. When asked check back with getInformation. Answer in one sentence. As short as possible.",
-              "Persona": "A funny Dungeons and Dragons expert",
-              "Instructions": "You are Jenny, a Dungeon & Dragons expert specialized in the 5th Edition (5e).",
+              "Persona": "A funny D&D expert",
+              "Instructions": "You are Jenny, a D&D 5e expert specialized in rules and mechanics.",
               "contextSize": 70,
               "trigger": "Jenny"
             }
           }
         ],
-        "<CHANNEL_ID_B>": [
+
+        // Example public helper channel
+        "222222222222222222": [
           {
             "userIds": ["ALL"],
             "flows": ["discord"],
             "overrides": {
               "Botname": "Jenny",
-              "SystemPrompt": "Check getTimeline, getHistory for historical data. Answer as complete as possible.",
+              "SystemPrompt": "Check getTimeline, getHistory for historical data. When asked check back with getInformation. Answer as complete as possible.",
               "Persona": "A funny Dungeons and Dragons expert",
-              "Instructions": "You are Jenny, a D&D 5e expert.",
+              "Instructions": "You are Jenny, a D&D 5e expert specialized in rules and mechanics.",
               "contextSize": 70,
               "trigger": ""
             }
+          },
+          {
+            "userIds": ["ALL"],
+            "flows": ["discord-voice"],
+            "overrides": {
+              "Botname": "Jenny",
+              "SystemPrompt": "Check getTimeline, getHistory for historical data. When asked check back with getInformation. Answer in one sentence. As short as possible.",
+              "Persona": "A funny D&D expert",
+              "Instructions": "You are Jenny, a D&D 5e expert specialized in rules and mechanics.",
+              "contextSize": 70,
+              "trigger": "Jenny"
+            }
           }
         ],
+
+        // Example “Sophia” rules channel
+        "333333333333333333": [
+          {
+            "userIds": ["ALL"],
+            "overrides": {
+              "SystemPrompt": "You are Sophia the domina domus of this server. You are a helpful AI chatbot on this Discord server. Your purpose is to explain the rules and the usability of the server.",
+              "Persona": "You are an assistant that answers to all questions of the user.",
+              "Instructions": "Answer as short as possible",
+              "Botname": "Sophia",
+              "trigger": "",
+              "Temperature": 0,
+              "ShowReactions": true,
+              "useAIModule": "pseudotoolcalls",
+              "Model": "qwen3-4b-instruct-cpu-12k",
+              "Endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+              "Tools": ["getImageSD", "getGoogle", "getToken"],
+              "IncludeRuntimeContext": true,
+              "IncludeHistory": true,
+              "IncludeHistoryTools": false,
+              "getDetailedContext": false,
+              "contextSize": 6
+            }
+          }
+        ],
+
+        // Example DM persona
         "DM": [
           {
-            "userIds": ["<YOUR_DISCORD_USER_ID>"],
+            "userIds": ["999999999999999999"], // Example admin/user allowed for DM persona
             "overrides": {
-              "Instructions": "Answer like a pissed dominatrix. (Example persona for DM only.)",
+              "Instructions": "Answer like a pissed dominatrix. Adults only. Use strong direct language, be brief, and send [silence] if boundaries are unclear.",
               "trigger": "",
               "ShowReactions": false
+            }
+          }
+        ],
+
+        // Example general channel with no overrides (only access control)
+        "444444444444444444": { "userIds": ["ALL"] },
+
+        // Example “moderation rules” channel with strict silence policy
+        "555555555555555555": [
+          {
+            "userIds": ["ALL"],
+            "overrides": {
+              "SystemPrompt": "You are Sophia the domina domus of this server. Explain rules and be silent unless directly addressed.",
+              "Persona": "Assistant answering server questions.",
+              "Instructions": "Ban on rule violation: no sexism, no homophobia, no hate, no racism, no swear words, no harassment, no violent behaviour/speech. Answer only if addressed by name. ALWAYS send [silence] otherwise or when unsure.",
+              "Botname": "Sophia",
+              "trigger": "",
+              "Temperature": 0,
+              "ShowReactions": false,
+              "useAIModule": "pseudotoolcalls",
+              "Model": "qwen2.5:3b-instruct",
+              "Endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+              "Tools": ["getBan", "getImageSD"],
+              "IncludeRuntimeContext": false,
+              "IncludeHistory": false,
+              "IncludeHistoryTools": false,
+              "contextSize": 2
             }
           }
         ]
