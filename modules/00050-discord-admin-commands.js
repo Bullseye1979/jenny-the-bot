@@ -1,13 +1,14 @@
-/***************************************************************
-/* filename: "discord-admin-commands.js"                       *
-/* Version 1.0                                                 *
-/* Purpose: Slash admin commands for the "discord-admin" flow: *
-/*          /purge [count], /error, /purgedb, /freeze, plus    *
-/*          DM-only text command "!purge [count]" for DM.      *
-/***************************************************************/
-/***************************************************************
-/* Version History                                             *
-/***************************************************************/
+/**************************************************************
+/* filename: "discord-admin-commands.js"                      *
+/* Version 1.0                                                *
+/* Purpose: Slash admin commands for the "discord-admin" flow:*
+/*          /purge [count], /error, /purgedb, /freeze, plus   *
+/*          DM-only text commands: "!purge [count]" and       *
+/*          "!purgedb" (delete DB context for this DM).       *
+/**************************************************************/
+/**************************************************************
+/* Version History                                            *
+/**************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
@@ -15,26 +16,26 @@ import { setPurgeContext, setFreezeContext } from "../core/context.js";
 
 const MODULE_NAME = "discord-admin-commands";
 
-/***************************************************************
-/* functionSignature: getSleep (ms)                            *
-/* Returns a promise that resolves after ms milliseconds       *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getSleep (ms)                           *
+/* Returns a promise that resolves after ms milliseconds      *
+/**************************************************************/
 function getSleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-/***************************************************************
-/* functionSignature: getJitter (ms)                           *
-/* Applies a ±10% jitter and floors to an integer              *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getJitter (ms)                          *
+/* Applies a ±10% jitter and floors to an integer             *
+/**************************************************************/
 function getJitter(ms) {
   return Math.max(0, Math.floor(ms * (0.9 + Math.random() * 0.2)));
 }
 
-/***************************************************************
-/* functionSignature: getIsRateLimit (e)                       *
-/* True if error indicates a Discord rate limit                *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getIsRateLimit (e)                      *
+/* True if error indicates a Discord rate limit               *
+/**************************************************************/
 function getIsRateLimit(e) {
   return (
     e?.status === 429 ||
@@ -44,10 +45,10 @@ function getIsRateLimit(e) {
   );
 }
 
-/***************************************************************
-/* functionSignature: getResolveClient (wo)                    *
-/* Resolves the Discord client from the registry               *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getResolveClient (wo)                   *
+/* Resolves the Discord client from the registry              *
+/**************************************************************/
 async function getResolveClient(wo) {
   const ref = wo?.clientRef || wo?.refs?.client || "discord:client";
   try {
@@ -58,10 +59,10 @@ async function getResolveClient(wo) {
   }
 }
 
-/***************************************************************
-/* functionSignature: getResolveChannelById (wo, channelId)    *
-/* Resolves a channel by id using the client registry          *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getResolveChannelById (wo, channelId)   *
+/* Resolves a channel by id using the client registry         *
+/**************************************************************/
 async function getResolveChannelById(wo, channelId) {
   const client = await getResolveClient(wo);
   if (!client?.channels?.fetch) return null;
@@ -72,20 +73,20 @@ async function getResolveChannelById(wo, channelId) {
   }
 }
 
-/***************************************************************
-/* functionSignature: getIsDMContext (wo)                      *
-/* Determines whether the current context is a DM              *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getIsDMContext (wo)                     *
+/* Determines whether the current context is a DM             *
+/**************************************************************/
 function getIsDMContext(wo) {
   return !!(wo?.DM || wo?.isDM || wo?.channelType === 1 ||
             String(wo?.channelType ?? "").toUpperCase() === "DM" ||
             (!wo?.guildId && (wo?.userId || wo?.userid)));
 }
 
-/***************************************************************
-/* functionSignature: getParseBangPurgeCount (payload)         *
-/* Parses "!purge [count]" and returns a positive integer      *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getParseBangPurgeCount (payload)        *
+/* Parses "!purge [count]" and returns a positive integer     *
+/**************************************************************/
 function getParseBangPurgeCount(payload) {
   const s = String(payload || "");
   const m = /^!purge(?:\s+(\d+))?$/i.exec(s.trim());
@@ -95,10 +96,19 @@ function getParseBangPurgeCount(payload) {
   return 100;
 }
 
-/***************************************************************
+/**************************************************************
+/* functionSignature: getIsBangPurgeDb (payload)              *
+/* True if payload is exactly "!purgedb"                      *
+/**************************************************************/
+function getIsBangPurgeDb(payload) {
+  const s = String(payload || "").trim();
+  return /^!purgedb$/i.test(s);
+}
+
+/**************************************************************
 /* functionSignature: setDeleteMessagesIndividually (items,log,ctx,opts) *
-/* Deletes messages one-by-one with adaptive backoff           *
-/***************************************************************/
+/* Deletes messages one-by-one with adaptive backoff          *
+/**************************************************************/
 async function setDeleteMessagesIndividually(items, log, ctx, opts = {}) {
   const {
     perDeleteDelayMsStart = 150,
@@ -144,10 +154,10 @@ async function setDeleteMessagesIndividually(items, log, ctx, opts = {}) {
   return total;
 }
 
-/***************************************************************
-/* functionSignature: setPurgeLastN (channel, log, o)          *
-/* Deletes exactly the last N messages, newest first           *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setPurgeLastN (channel, log, o)         *
+/* Deletes exactly the last N messages, newest first          *
+/**************************************************************/
 async function setPurgeLastN(channel, log, { maxTotal }) {
   const ctx = { guildId: channel?.guild?.id || null, channelId: channel?.id || null };
   let remaining = Number.isFinite(maxTotal) && maxTotal > 0 ? Math.floor(maxTotal) : Infinity;
@@ -205,20 +215,41 @@ async function setPurgeLastN(channel, log, { maxTotal }) {
   return totalDeleted;
 }
 
-/***************************************************************
-/* functionSignature: setPurgeDmBotMessages (wo, payload, log) *
-/* Handles "!purge [count]" in current DM channel              *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setPurgeDmDb (wo, payload, log)         *
+/* Handles "!purgedb" in current DM channel                   *
+/**************************************************************/
+async function setPurgeDmDb(wo, payload, log) {
+  if (!getIsDMContext(wo)) return false;
+  if (!getIsBangPurgeDb(payload)) return false;
+
+  const channelId = String(wo?.channelID || wo?.id || wo?.message?.channelId || "");
+  if (!channelId) return true;
+
+  const deleted = await setPurgeContext({ ...wo, id: channelId });
+  log("db purge done (DM)", "info", { moduleName: MODULE_NAME, channelId, deleted });
+
+  wo.Response = "";
+  wo.stop = true;
+  return true;
+}
+
+/**************************************************************
+/* functionSignature: setPurgeDmBotMessages (wo, payload, log)*
+/* Handles "!purge [count]" in current DM channel             *
+/**************************************************************/
 async function setPurgeDmBotMessages(wo, payload, log) {
   if (!getIsDMContext(wo)) return false;
   const count = getParseBangPurgeCount(payload);
   if (count === null) return false;
 
   const client = await getResolveClient(wo);
-  const channelId = String(wo?.id || wo?.message?.channelId || "");
+  const channelId = String(wo?.channelID || wo?.id || wo?.message?.channelId || "");
   if (!client || !channelId) return true;
 
-  const channel = wo?.message?.channel || await getResolveChannelById(wo, channelId);
+  const channel = (wo?.message?.channel && wo?.message?.channel?.messages?.fetch)
+    ? wo.message.channel
+    : await getResolveChannelById(wo, channelId);
   if (!channel?.messages?.fetch || !client?.user?.id) return true;
 
   const ctx = { guildId: null, channelId };
@@ -240,15 +271,16 @@ async function setPurgeDmBotMessages(wo, payload, log) {
     if (!beforeId) break;
   }
 
+  log("dm purge done", "info", { moduleName: MODULE_NAME, ...ctx, deleted: totalDeleted });
   wo.Response = "";
   wo.stop = true;
   return true;
 }
 
-/***************************************************************
-/* functionSignature: getDiscordAdminCommands (coreData)       *
-/* Handles /purge, /error, /purgedb, /freeze; DM-only "!purge" *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDiscordAdminCommands (coreData)      *
+/* Handles /purge, /error, /purgedb, /freeze and DM text cmds *
+/**************************************************************/
 export default async function getDiscordAdminCommands(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
@@ -257,8 +289,8 @@ export default async function getDiscordAdminCommands(coreData) {
   const flow = String(wo?.flow || "");
 
   if (flow === "discord" && payload) {
-    const handled = await setPurgeDmBotMessages(wo, payload, log);
-    if (handled) return coreData;
+    if (await setPurgeDmDb(wo, payload, log)) return coreData;
+    if (await setPurgeDmBotMessages(wo, payload, log)) return coreData;
   }
 
   try {
@@ -267,11 +299,13 @@ export default async function getDiscordAdminCommands(coreData) {
     if (cmd !== "purge" && cmd !== "error" && cmd !== "purgedb" && cmd !== "freeze") {
       return coreData;
     }
+
     if (cmd === "error") {
       throw new Error("Simulated error via /error");
     }
+
     if (cmd === "purgedb") {
-      const targetChannelId = String(wo?.admin?.channelId || wo?.id || "");
+      const targetChannelId = String(wo?.admin?.channelId || wo?.channelID || wo?.id || "");
       if (!targetChannelId) {
         log("db purge failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
         wo.Response = "";
@@ -285,8 +319,9 @@ export default async function getDiscordAdminCommands(coreData) {
       wo.stop = true;
       return coreData;
     }
+
     if (cmd === "freeze") {
-      const targetChannelId = String(wo?.admin?.channelId || wo?.id || "");
+      const targetChannelId = String(wo?.admin?.channelId || wo?.channelID || wo?.id || "");
       if (!targetChannelId) {
         log("freeze failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
         wo.Response = "";
@@ -300,7 +335,8 @@ export default async function getDiscordAdminCommands(coreData) {
       wo.stop = true;
       return coreData;
     }
-    const channelId = String(wo?.admin?.channelId || wo?.id || "");
+
+    const channelId = String(wo?.admin?.channelId || wo?.channelID || wo?.id || "");
     const channel = await getResolveChannelById(wo, channelId);
     if (!channel) {
       log("slash admin command failed", "error", { moduleName: MODULE_NAME, reason: "could not resolve channel" });
@@ -308,6 +344,7 @@ export default async function getDiscordAdminCommands(coreData) {
       wo.stop = true;
       return coreData;
     }
+
     const countOpt = wo?.admin?.options?.count;
     const parsed   = Number(countOpt);
     const maxTotal = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : Infinity;
@@ -316,9 +353,11 @@ export default async function getDiscordAdminCommands(coreData) {
     } else {
       await setPurgeLastN(channel, log, { maxTotal: 100 });
     }
+
     wo.Response = "";
     wo.stop = true;
     return coreData;
+
   } catch (e) {
     log("slash admin command failed", "error", { moduleName: MODULE_NAME, reason: e?.message || String(e) });
     wo.Response = "";
