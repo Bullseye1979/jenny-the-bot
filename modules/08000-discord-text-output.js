@@ -252,15 +252,34 @@ function getLikelyQuestion(wo) {
 /**************************************************************/
 function getQuestionAsQuotedItalic(q, askerDisplay) {
   if (!q) return "";
+
   const max = 1500;
   const trimmed = q.length > max ? q.slice(0, max - 1) + "…" : q;
-  const lines = trimmed.split("\n");
+
+  // Am ersten Leerabsatz trennen:
+  // [0] = Frageblock, Rest = alles dahinter (z.B. URLs)
+  const parts = trimmed.split(/\n\s*\n/);
+  const questionBlock = parts.shift() || "";
+  const rest = parts.join("\n\n"); // wieder zusammenfügen, falls mehrere Absätze
+
+  const lines = questionBlock.split("\n");
   const first = lines.shift() || "";
   const header = askerDisplay ? `${askerDisplay}: ` : "";
+
   const out = [`> *${header}${first}*`];
-  for (const line of lines) out.push(`> *${line}*`);
-  return out.join("\n");
+  for (const line of lines) {
+    out.push(`> *${line}*`);
+  }
+
+  const quoted = out.join("\n");
+
+  // Rest (z.B. URLs) unverändert anhängen
+  if (rest.trim()) {
+    return quoted + "\n\n" + rest;
+  }
+  return quoted;
 }
+
 
 /**************************************************************
 /* functionSignature: getLocalTimeString (date, tz)           *
