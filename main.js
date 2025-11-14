@@ -214,7 +214,7 @@ function getRenderAllDashboards() {
 /* functionSignature: setRenderThrottled (_, force)           *
 /* Renders dashboard at most once per second                  *
 /***************************************************************/
-function setRenderThrottled(_ignored, force = false) {
+function setRenderThrottled(_ignored, force = true) {
   const now = Date.now();
   if (!force && now - __lastRenderAt < CLEAR_MIN_INTERVAL_MS) return;
   __lastRenderAt = now;
