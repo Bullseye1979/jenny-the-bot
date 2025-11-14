@@ -1,12 +1,12 @@
-/***************************************************************
-/* filename: "discord-voice-transcribe.js"                     *
-/* Version 1.0                                                 *
-/* Purpose: Capture, filter, and transcribe Discord voice;     *
-/*          write transcription into workingObject.payload      *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
+/**************************************************************
+/* filename: "discord-voice-transcribe.js"                   *
+/* Version 1.0                                               *
+/* Purpose: Capture, filter, and transcribe Discord voice;   *
+/*          write transcription into workingObject.payload   *
+/**************************************************************/
+/**************************************************************
+/*                                                          *
+/**************************************************************/
 
 import fs from "node:fs";
 import os from "node:os";
@@ -19,25 +19,24 @@ import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-voice-transcribe";
-
 const prism = prismImport?.default || prismImport;
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || "/usr/bin/ffmpeg");
 
-/***************************************************************
-/* functionSignature: getTmpFile (ext)                         *
-/* Creates a unique temporary WAV or other audio file path.    *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getTmpFile (ext)                       *
+/* Creates a unique temporary WAV or other audio file path.  *
+/**************************************************************/
 function getTmpFile(ext = ".wav") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dvoice-"));
   const rnd = Math.random().toString(36).slice(2, 8);
   return { dir, file: path.join(dir, `${Date.now()}-${rnd}${ext}`) };
 }
 
-/***************************************************************
-/* functionSignature: getPcmToWav (pcmReadable, options)       *
-/* Converts raw PCM stream to a WAV file with ffmpeg.          *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getPcmToWav (pcmReadable, options)     *
+/* Converts raw PCM stream to a WAV file with ffmpeg.        *
+/**************************************************************/
 function getPcmToWav(pcmReadable, { rate = 48000, channels = 1 } = {}) {
   return new Promise((resolve, reject) => {
     try {
@@ -56,10 +55,10 @@ function getPcmToWav(pcmReadable, { rate = 48000, channels = 1 } = {}) {
   });
 }
 
-/***************************************************************
-/* functionSignature: getBufferPcmToWav (pcmBuffer, options)   *
-/* Writes a PCM buffer into a WAV file via a PassThrough.      *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getBufferPcmToWav (pcmBuffer, options) *
+/* Writes a PCM buffer into a WAV file via a PassThrough.    *
+/**************************************************************/
 async function getBufferPcmToWav(pcmBuffer, { rate = 48000, channels = 1 } = {}) {
   const pass = new PassThrough();
   const wavPromise = getPcmToWav(pass, { rate, channels });
@@ -67,11 +66,11 @@ async function getBufferPcmToWav(pcmBuffer, { rate = 48000, channels = 1 } = {})
   return wavPromise;
 }
 
-/***************************************************************
-/* functionSignature: getAnalyzePcmInt16 (samples,             *
-/*                     frameSamples)                           *
-/* Computes RMS, ZCR, SNR, and voiced frame mask.              *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getAnalyzePcmInt16 (samples,           *
+/*                     frameSamples)                         *
+/* Computes RMS, ZCR, SNR, and voiced frame mask.            *
+/**************************************************************/
 function getAnalyzePcmInt16(samples, frameSamples) {
   const totalFrames = Math.floor(samples.length / frameSamples);
   if (totalFrames <= 0) {
@@ -112,10 +111,10 @@ function getAnalyzePcmInt16(samples, frameSamples) {
   return { totalFrames, snrDb, voicedRatio: voiced / totalFrames, voicedFrames: voiced, usefulMs, mask };
 }
 
-/***************************************************************
-/* functionSignature: getAnalyzeWav (filePath, frameSamples)   *
-/* Analyzes a WAV file and returns voiced frame statistics.    *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getAnalyzeWav (filePath, frameSamples)  *
+/* Analyzes a WAV file and returns voiced frame statistics.   *
+/**************************************************************/
 async function getAnalyzeWav(filePath, frameSamples) {
   const buf = await fs.promises.readFile(filePath);
   if (!buf || buf.length <= 44) {
@@ -126,11 +125,11 @@ async function getAnalyzeWav(filePath, frameSamples) {
   return getAnalyzePcmInt16(samples, frameSamples);
 }
 
-/***************************************************************
-/* functionSignature: getVoicedOnlyWavFromFile (filePath,      *
-/*                     mask, frameSamples, options)            *
-/* Extracts voiced frames and writes a compact WAV file.       *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getVoicedOnlyWavFromFile (filePath,     *
+/*                     mask, frameSamples, options)           *
+/* Extracts voiced frames and writes a compact WAV file.      *
+/**************************************************************/
 async function getVoicedOnlyWavFromFile(filePath, mask, frameSamples, { rate = 48000, channels = 1 } = {}) {
   const buf = await fs.promises.readFile(filePath);
   const pcm = buf.subarray(44);
@@ -159,10 +158,10 @@ try {
   if (mod?.transcribeWithWhisper) transcribeWithWhisper = mod.transcribeWithWhisper;
 } catch {}
 
-/***************************************************************
-/* functionSignature: getTranscribeUrl (whisperEndpoint)       *
-/* Normalizes a Whisper transcription endpoint URL.            *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getTranscribeUrl (whisperEndpoint)      *
+/* Normalizes a Whisper transcription endpoint URL.           *
+/**************************************************************/
 function getTranscribeUrl(whisperEndpoint) {
   const ep = (whisperEndpoint || "").trim().replace(/\/+$/, "");
   if (ep) {
@@ -173,10 +172,10 @@ function getTranscribeUrl(whisperEndpoint) {
   return base ? `${base}/v1/audio/transcriptions` : "https://api.openai.com/v1/audio/transcriptions";
 }
 
-/***************************************************************
-/* functionSignature: getTranscribeOpenAI (filePath, options)  *
-/* Sends a WAV file to OpenAI Whisper and returns text.        *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getTranscribeOpenAI (filePath, options) *
+/* Sends a WAV file to OpenAI Whisper and returns text.       *
+/**************************************************************/
 async function getTranscribeOpenAI(filePath, { model, language, apiKey, endpoint }) {
   let _fetch = globalThis.fetch, _FormData = globalThis.FormData, _Blob = globalThis.Blob;
   if (!_fetch || !_FormData || !_Blob) {
@@ -197,11 +196,11 @@ async function getTranscribeOpenAI(filePath, { model, language, apiKey, endpoint
   return data?.text || "";
 }
 
-/***************************************************************
-/* functionSignature: getCaptureOneSegment (receiver, userId,  *
-/*                     options)                                *
-/* Captures one voiced segment and stores it as WAV.           *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getCaptureOneSegment (receiver, userId, *
+/*                     options)                               *
+/* Captures one voiced segment and stores it as WAV.          *
+/**************************************************************/
 async function getCaptureOneSegment(receiver, userId, { silenceMs = 2000, maxMs = 25000, frameSamples = 960 }) {
   let opus = null, pcm = null, pass = null, killTimer = null, wavDir = null, wavFile = null, endedBy = "silence";
   try {
@@ -229,10 +228,10 @@ async function getCaptureOneSegment(receiver, userId, { silenceMs = 2000, maxMs 
   }
 }
 
-/***************************************************************
-/* functionSignature: getDiscordVoiceTranscribe (coreData)     *
-/* Captures, filters, and transcribes voice into payload.      *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDiscordVoiceTranscribe (coreData)    *
+/* Captures, filters, and transcribes voice into payload.     *
+/**************************************************************/
 export default async function getDiscordVoiceTranscribe(coreData) {
   const wo = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);
@@ -240,6 +239,8 @@ export default async function getDiscordVoiceTranscribe(coreData) {
   if (!(wo?.voiceIntent && wo.voiceIntent.action === "describe_and_transcribe" && wo.voiceIntent.userId)) {
     return coreData;
   }
+
+  wo.voiceTranscribed = false;
 
   const cfg = coreData?.config?.["discord-voice"] || {};
   const SILENCE_MS = Number.isFinite(wo.silenceMs) ? Number(wo.silenceMs) : Number.isFinite(cfg.silenceMs) ? Number(cfg.silenceMs) : 2000;
@@ -267,6 +268,7 @@ export default async function getDiscordVoiceTranscribe(coreData) {
   if (!receiver) {
     log("No receiver on session", "error", { moduleName: MODULE_NAME, sessionKey });
     wo.transcribeSkipped = "no_receiver";
+    wo.stop = true;
     return coreData;
   }
 
@@ -281,6 +283,7 @@ export default async function getDiscordVoiceTranscribe(coreData) {
     if (!st1 || st1.size < MIN_WAV_BYTES) {
       if (!KEEP_WAV) try { await fs.promises.rm(seg1.dir, { recursive: true, force: true }); } catch {}
       wo.transcribeSkipped = "too_small";
+      wo.stop = true;
       return coreData;
     }
 
@@ -312,6 +315,7 @@ export default async function getDiscordVoiceTranscribe(coreData) {
 
     if (filteredWavs.length === 0) {
       wo.transcribeSkipped = "no_voiced_frames";
+      wo.stop = true;
       return coreData;
     }
 
@@ -320,6 +324,7 @@ export default async function getDiscordVoiceTranscribe(coreData) {
         if (!KEEP_WAV) { try { await fs.promises.rm(w.dir, { recursive: true, force: true }); } catch {} }
       }
       wo.transcribeSkipped = "no_api_key";
+      wo.stop = true;
       return coreData;
     }
 
@@ -338,6 +343,7 @@ export default async function getDiscordVoiceTranscribe(coreData) {
 
     if (parts.length === 0) {
       wo.transcribeSkipped = "empty_result";
+      wo.stop = true;
       return coreData;
     }
 
@@ -345,6 +351,14 @@ export default async function getDiscordVoiceTranscribe(coreData) {
     if (finalText) {
       wo.payload = finalText;
       wo.voiceTranscribed = true;
+    }
+
+    if (!wo.payload) {
+      if (!wo.transcribeSkipped) {
+        wo.transcribeSkipped = "empty_result";
+      }
+      wo.stop = true;
+      return coreData;
     }
 
     try {
@@ -366,6 +380,8 @@ export default async function getDiscordVoiceTranscribe(coreData) {
     } catch {}
   } catch (e) {
     log("Voice transcribe error", "error", { moduleName: MODULE_NAME, error: e?.message });
+    wo.transcribeSkipped = wo.transcribeSkipped || "error";
+    wo.stop = true;
   } finally {
     try { await deleteItem(activeKey); } catch {}
   }
