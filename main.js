@@ -1,16 +1,17 @@
 /***************************************************************
 /* filename: "main.js"                                        *
 /* Version 1.0                                                *
-/* Purpose: Core with hot-reload and live dashboard (1/s);     *
-/*          single-screen UI; telemetry and jump ≥9000         *
+/* Purpose: Core with hot-reload and live multi-flow progress *
+/*          dashboard (1/s); single-screen UI; telemetry      *
 /***************************************************************/
 /***************************************************************
-/*                                                             *
+/*                                                           *
 /***************************************************************/
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { performance } from "node:perf_hooks";
 
 const MODULE_NAME = "main";
 
@@ -49,8 +50,16 @@ const CLEAR_MIN_INTERVAL_MS = 1000;
 let __lastRenderAt = 0;
 
 /***************************************************************
+/*                                                           *
+/***************************************************************/
+const FLOW_STATES = new Map();
+let FLOW_RUN_SEQ = 0;
+const FLOW_NAME_COUNTS = new Map();
+const MAX_FINISHED_FLOWS = 10;
+
+/***************************************************************
 /* functionSignature: getPad (s, n)                           *
-/* Returns string padded to length n                          *
+/* Pads string s to length n                                  *
 /***************************************************************/
 function getPad(s, n) {
   return String(s).padEnd(n, " ");
@@ -58,7 +67,7 @@ function getPad(s, n) {
 
 /***************************************************************
 /* functionSignature: getTrunc (s, n)                         *
-/* Returns string truncated to length n with ellipsis         *
+/* Truncates s to n chars with ellipsis                       *
 /***************************************************************/
 function getTrunc(s, n) {
   const str = String(s);
@@ -91,7 +100,7 @@ function getNowISO() {
 
 /***************************************************************
 /* functionSignature: getFmtMem (bytes)                       *
-/* Formats bytes into human-readable memory size              *
+/* Formats bytes as human-readable memory size                *
 /***************************************************************/
 function getFmtMem(bytes) {
   const KB = 1024, MB = KB * 1024, GB = MB * 1024;
@@ -112,22 +121,106 @@ function getClearScreenHard() {
 
 /***************************************************************
 /* functionSignature: setRenderWrite (s)                      *
-/* Writes string to stdout                                    *
+/* Writes string s to stdout                                  *
 /***************************************************************/
 function setRenderWrite(s) {
   process.stdout.write(s);
 }
 
 /***************************************************************
-/* functionSignature: setRenderThrottled (s, force)           *
-/* Renders with throttling at most once per second            *
+/* functionSignature: getSep (ch)                             *
+/* Returns a gray separator line                              *
 /***************************************************************/
-function setRenderThrottled(s, force = false) {
+function getSep(ch = "─") {
+  return `${C.gray}${ch.repeat(60)}${C.reset}`;
+}
+
+/***************************************************************
+/* functionSignature: getProgressBar (pct, width, color)      *
+/* Builds a textual progress bar                              *
+/***************************************************************/
+function getProgressBar(pct, width = 28, color = C.green) {
+  const p = Math.max(0, Math.min(1, pct || 0));
+  const filled = Math.round(width * p);
+  const empty = width - filled;
+  return `${color}${"█".repeat(filled)}${C.gray}${"░".repeat(empty)}${C.reset} ${Math.round(p * 100)}%`;
+}
+
+/***************************************************************
+/* functionSignature: getRenderFlowLine (state)               *
+/* Renders one flow line with progress                        *
+/***************************************************************/
+function getRenderFlowLine(state) {
+  const { flowName, startedAt, ok, fail, skip, total, current, stopped, phase, lastModule, lastError, runIndex } = state;
+  const tNow = performance.now();
+  const elapsedMs = tNow - startedAt;
+  const progPct = total > 0 ? (ok + fail + skip) / total : 0;
+  const isError = fail > 0;
+  const isStopped = stopped && !isError;
+  const isDoneOk = phase === "done" && !isError && !isStopped;
+  const isRunning = !isError && !isStopped && !isDoneOk;
+  let color;
+  if (isError) color = C.red;
+  else if (isStopped) color = C.yellow;
+  else if (isDoneOk) color = C.green;
+  else color = C.blue;
+  const bar = getProgressBar(progPct, 28, color);
+  let statusIcon = SYM.play;
+  if (isError) statusIcon = SYM.fail;
+  else if (isStopped) statusIcon = SYM.stop;
+  else if (isDoneOk) statusIcon = SYM.ok;
+  const instanceLabel = runIndex && runIndex > 1 ? ` #${runIndex}` : "";
+  const flowLabelRaw = `${flowName}${instanceLabel}`;
+  const flowLabel = getPad(getTrunc(flowLabelRaw, 18), 18);
+  let extra = `${C.gray}${getFmtSec(elapsedMs / 1000)}${C.reset}`;
+  if (isError || isStopped) {
+    let msg = "";
+    if (lastModule) msg += ` at ${lastModule}`;
+    if (lastError) msg += ` - ${getTrunc(lastError, 80)}`;
+    if (msg) extra += `  ${C.red}${msg}${C.reset}`;
+  } else if (!isDoneOk) {
+    if (current) extra += `  ${C.gray}current:${C.reset} ${getTrunc(current, 40)}`;
+  } else {
+    extra += `  ${C.gray}done ${ok}/${total}${C.reset}`;
+  }
+  return `${color}${statusIcon}${C.reset} ${C.bold}${flowLabel}${C.reset} ${bar}  ${extra}`;
+}
+
+/***************************************************************
+/* functionSignature: getRenderAllDashboards ()               *
+/* Renders telemetry and all flow lines                       *
+/***************************************************************/
+function getRenderAllDashboards() {
+  const list = Array.from(FLOW_STATES.values());
+  const nowISO = getNowISO();
+  const mem = process.memoryUsage?.();
+  const rss = mem?.rss ? getFmtMem(mem.rss) : "n/a";
+  const heap = mem?.heapUsed ? getFmtMem(mem.heapUsed) : "n/a";
+  const headerLines = [
+    getSep(),
+    `${C.bold}${C.cyan}Core Dashboard${C.reset}  ${C.gray}${nowISO}${C.reset}`,
+    `${C.gray}${SYM.dot} flows:${C.reset} ${list.length}  ${C.gray}rss=${rss}, heap=${heap}${C.reset}`,
+    getSep()
+  ];
+  if (!list.length) {
+    return headerLines.join("\n") + "\n" + `${C.gray}(no flows yet)${C.reset}\n` + getSep() + "\n";
+  }
+  const sorted = list.slice().sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+  const lines = sorted.map(getRenderFlowLine);
+  return headerLines.join("\n") + "\n" + lines.join("\n") + "\n" + getSep() + "\n";
+}
+
+/***************************************************************
+/* functionSignature: setRenderThrottled (_, force)           *
+/* Renders dashboard at most once per second                  *
+/***************************************************************/
+function setRenderThrottled(_ignored, force = false) {
   const now = Date.now();
   if (!force && now - __lastRenderAt < CLEAR_MIN_INTERVAL_MS) return;
   __lastRenderAt = now;
   getClearScreenHard();
-  setRenderWrite(s);
+  const out = getRenderAllDashboards();
+  setRenderWrite(out);
 }
 
 /***************************************************************
@@ -183,8 +276,16 @@ function getStartHotReload() {
     }
   };
   const reload = getDebounce(doReload, 250);
-  try { fs.watch(CORE_PATH, { persistent: true }, () => reload()); } catch (err) { console.error(`${C.red}[${MODULE_NAME}] fs.watch not available:${C.reset} ${err.message}`); }
-  try { fs.watchFile(CORE_PATH, { interval: 500 }, () => reload()); } catch (err) { console.error(`${C.red}[${MODULE_NAME}] fs.watchFile not available:${C.reset} ${err.message}`); }
+  try {
+    fs.watch(CORE_PATH, { persistent: true }, () => reload());
+  } catch (err) {
+    console.error(`${C.red}[${MODULE_NAME}] fs.watch not available:${C.reset} ${err.message}`);
+  }
+  try {
+    fs.watchFile(CORE_PATH, { interval: 500 }, () => reload());
+  } catch (err) {
+    console.error(`${C.red}[${MODULE_NAME}] fs.watchFile not available:${C.reset} ${err.message}`);
+  }
 }
 getStartHotReload();
 
@@ -208,76 +309,25 @@ function getCreateRunCore() {
 }
 
 /***************************************************************
-/* functionSignature: getProgressBar (pct, width)             *
-/* Builds a textual progress bar                              *
+/* functionSignature: setPruneFinishedFlows (max)             *
+/* Keeps only the last max finished flows in registry         *
 /***************************************************************/
-function getProgressBar(pct, width = 28) {
-  const p = Math.max(0, Math.min(1, pct || 0));
-  const filled = Math.round(width * p);
-  const empty = width - filled;
-  return `${C.green}${"█".repeat(filled)}${C.gray}${"░".repeat(empty)}${C.reset} ${Math.round(p * 100)}%`;
+function setPruneFinishedFlows(max = MAX_FINISHED_FLOWS) {
+  const all = Array.from(FLOW_STATES.values());
+  const finished = all.filter(s => s.finishedAt);
+  if (finished.length <= max) return;
+  const sorted = finished.slice().sort((a, b) => (a.finishedAt || 0) - (b.finishedAt || 0));
+  const toRemove = sorted.slice(0, finished.length - max);
+  for (const s of toRemove) {
+    if (s.runId) {
+      FLOW_STATES.delete(s.runId);
+    }
+  }
 }
 
 /***************************************************************
-/* functionSignature: getSep (ch)                             *
-/* Returns a separator line                                   *
-/***************************************************************/
-function getSep(ch = "─") {
-  return `${C.gray}${ch.repeat(60)}${C.reset}`;
-}
-
-/***************************************************************
-/* functionSignature: getRenderDashboard (state)              *
-/* Renders the live dashboard string                          *
-/***************************************************************/
-function getRenderDashboard(state) {
-  const { flowName, startedAt, ok, fail, skip, total, current, perModule, stopped, phase, jumpActive } = state;
-  const tNow = performance.now?.() ?? Date.now();
-  const elapsedMs = tNow - startedAt;
-  const mem = process.memoryUsage?.();
-  const rss = mem?.rss ? getFmtMem(mem.rss) : "n/a";
-  const heap = mem?.heapUsed ? getFmtMem(mem.heapUsed) : "n/a";
-  const useVoice = state.useVoice ? `${C.green}on${C.reset}` : `${C.gray}off${C.reset}`;
-  const header =
-    `${C.bold}${C.cyan}Flow${C.reset} ${C.bold}${flowName}${C.reset}  ${C.gray}${getNowISO()}${C.reset}\n` +
-    `${C.gray}${SYM.dot} useVoiceChannel:${C.reset} ${useVoice}\n`;
-  const progPct = total > 0 ? (ok + fail + skip) / total : 0;
-  const prog = getProgressBar(progPct);
-  const statusColor = fail ? C.red : (stopped ? C.yellow : C.green);
-  const statusText = fail ? "FAIL" : (stopped ? "STOP" : (phase === "done" ? "DONE" : "RUN"));
-  const phaseText = jumpActive ? "jump≥9000" : phase;
-  const summary =
-    `${statusColor}${C.bold}${statusText}${C.reset}  ` +
-    `${C.gray}(${ok} ok, ${fail} fail, ${skip} skip / ${total})  ` +
-    `${getFmtSec(elapsedMs / 1000)}  ${C.gray}rss=${rss}, heap=${heap}${C.reset}\n`;
-  const currentLine =
-    `${C.blue}${SYM.play}${C.reset} ${C.bold}${getTrunc(current || (phaseText === "done" ? "—" : "…"), 38)}${C.reset}  ` +
-    `${C.gray}${prog}${C.reset}\n`;
-  const last = perModule.slice(-8).reverse();
-  const rows = last.map(m => {
-    const icon = m.ok === true ? `${C.green}${SYM.ok}${C.reset}` : (m.ok === false ? `${C.red}${SYM.fail}${C.reset}` : `${C.gray}${SYM.skip}${C.reset}`);
-    const name = getPad(getTrunc(m.name, 28), 28);
-    const kind = m.kind === "jump" ? `${C.magenta}${SYM.jump}${C.reset}` : " ";
-    const ms = getFmtMs(m.ms || 0);
-    const err = m.err ? `  ${C.red}${getTrunc(m.err, 40)}${C.reset}` : "";
-    return ` ${icon} ${name} ${C.gray}${ms}${C.reset} ${kind}${err}`;
-  }).join("\n");
-  return [
-    getSep(),
-    header,
-    getSep(),
-    currentLine,
-    summary,
-    getSep("·"),
-    `${C.yellow}Recent modules:${C.reset}`,
-    rows || `${C.gray}(none yet)${C.reset}`,
-    getSep()
-  ].join("\n") + "\n";
-}
-
-/***************************************************************
-/* functionSignature: getRunFlow (flowName, coreDataForRun)    *
-/* Executes modules with a live dashboard                      *
+/* functionSignature: getRunFlow (flowName, coreDataForRun)   *
+/* Executes modules with live multi-flow dashboard             *
 /***************************************************************/
 async function getRunFlow(flowName, coreDataForRun) {
   const coreData = coreDataForRun || getCreateRunCore();
@@ -304,19 +354,31 @@ async function getRunFlow(flowName, coreDataForRun) {
     const flows = Array.isArray(flowCfg.flow) ? flowCfg.flow : [flowCfg.flow];
     return flows.includes(flowName) || flows.includes("all");
   });
+  FLOW_RUN_SEQ += 1;
+  const globalRunId = FLOW_RUN_SEQ;
+  const prevCount = FLOW_NAME_COUNTS.get(flowName) || 0;
+  const runIndex = prevCount + 1;
+  FLOW_NAME_COUNTS.set(flowName, runIndex);
   const state = {
     flowName,
-    startedAt: performance.now?.() ?? Date.now(),
-    ok: 0, fail: 0, skip: 0,
+    runId: `${flowName}#${globalRunId}`,
+    runIndex,
+    startedAt: performance.now(),
+    ok: 0,
+    fail: 0,
+    skip: 0,
     total: normalList.length,
     current: "",
-    perModule: [],
     stopped: false,
     phase: "run",
     jumpActive: false,
     useVoice: !!coreData?.workingObject?.useVoiceChannel,
+    lastModule: "",
+    lastError: "",
+    finishedAt: null
   };
-  setRenderThrottled(getRenderDashboard(state), true);
+  FLOW_STATES.set(state.runId, state);
+  setRenderThrottled(null, true);
 
   /*************************************************************
   /* functionSignature: getRunModule (s, kind)                *
@@ -325,23 +387,27 @@ async function getRunFlow(flowName, coreDataForRun) {
   async function getRunModule(s, kind = "normal") {
     const cleanName = s.file.replace(".js", "").replace(/^\d+-/, "");
     state.current = cleanName;
-    setRenderThrottled(getRenderDashboard(state));
-    const t0 = performance.now?.() ?? Date.now();
+    setRenderThrottled();
+    const t0 = performance.now();
     try {
       const { default: fn } = await import(`./modules/${s.file}`);
       await fn(coreData);
-      const dt = (performance.now?.() ?? Date.now()) - t0;
-      state.perModule.push({ name: cleanName, kind, ok: true, ms: dt });
-      if (kind === "normal") state.ok++;
+      const dt = performance.now() - t0;
+      state.ok += (kind === "normal") ? 1 : 0;
+      state.lastModule = cleanName;
+      state.lastError = "";
     } catch (e) {
-      const dt = (performance.now?.() ?? Date.now()) - t0;
-      state.perModule.push({ name: cleanName, kind, ok: false, ms: dt, err: e?.message || String(e) });
+      const dt = performance.now() - t0;
       if (kind === "normal") state.fail++;
+      state.lastModule = cleanName;
+      state.lastError = e?.message || String(e);
+      state.stopped = false;
     }
-    setRenderThrottled(getRenderDashboard(state));
+    setRenderThrottled();
   }
 
   for (const s of normalList) {
+    if (state.stopped) break;
     await getRunModule(s, "normal");
     if (coreData?.workingObject?.stop === true) {
       state.stopped = true;
@@ -349,18 +415,23 @@ async function getRunFlow(flowName, coreDataForRun) {
     }
   }
 
-  if (jumpList.length) {
+  if (!state.stopped && jumpList.length) {
     state.phase = "jump";
     state.jumpActive = true;
-    setRenderThrottled(getRenderDashboard(state));
+    setRenderThrottled();
     for (const s of jumpList) {
       await getRunModule(s, "jump");
     }
   }
 
-  state.phase = "done";
+  if (!state.stopped && state.fail === 0) {
+    state.phase = "done";
+  }
   state.current = "";
-  setRenderThrottled(getRenderDashboard(state), true);
+  state.finishedAt = Date.now();
+  setRenderThrottled(null, true);
+  setPruneFinishedFlows(MAX_FINISHED_FLOWS);
+  setRenderThrottled(null, true);
   return coreData;
 }
 
