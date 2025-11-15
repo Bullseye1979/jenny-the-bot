@@ -490,6 +490,7 @@ async function getStartFlows() {
   }
 }
 
+console.clean();
 const runFlow = getRunFlow;
 const createRunCore = getCreateRunCore;
 export { runFlow, createRunCore };
