@@ -1,11 +1,11 @@
-/***************************************************************
+/***************************************************************/
 /* filename: "core-output.js"                                  *
 /* Version 1.0                                                 *
 /* Purpose: Safely dumps coreData with redaction, rolling logs,*
 /*          and error mirroring without mutating workingObject.*
 /***************************************************************/
 
-/***************************************************************
+/***************************************************************/
 /*                                                             *
 /***************************************************************/
 
@@ -25,10 +25,10 @@ const FILE_RE = /^objects-(\d+)\.log$/;
 
 let WRITE_CHAIN = Promise.resolve();
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: setLog (wo, message, level, extra)       *
 /* Appends a structured entry to wo.logging                    *
-/**************************************************************/
+/***************************************************************/
 function setLog(wo, message, level = "info", extra = {}) {
   (wo.logging ||= []).push({
     timestamp: new Date().toISOString(),
@@ -40,10 +40,10 @@ function setLog(wo, message, level = "info", extra = {}) {
   });
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getRedact (value, keyPath)               *
 /* Redacts secrets and truncates large strings                 *
-/**************************************************************/
+/***************************************************************/
 function getRedact(value, keyPath) {
   if (typeof value !== "string") return value;
   const lowerPath = String(keyPath || "").toLowerCase();
@@ -61,10 +61,10 @@ function getRedact(value, keyPath) {
   return value;
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getMessageSnapshot (m)                   *
 /* Produces a lightweight, safe snapshot of a message object   *
-/**************************************************************/
+/***************************************************************/
 function getMessageSnapshot(m) {
   if (!m) return m;
   const isPlain = m && typeof m === "object" && m.constructor?.name === "Object";
@@ -81,10 +81,10 @@ function getMessageSnapshot(m) {
   };
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getSafeReplacerFactory ()                *
 /* Creates a JSON replacer that redacts and handles cycles     *
-/**************************************************************/
+/***************************************************************/
 function getSafeReplacerFactory() {
   const seen = new WeakSet();
   return function safeReplacer(key, value) {
@@ -128,10 +128,10 @@ function getSafeReplacerFactory() {
   };
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getWithKeyPath (obj, keyPath)            *
 /* Wraps objects to carry a dotted key path for redaction      *
-/**************************************************************/
+/***************************************************************/
 function getWithKeyPath(obj, keyPath = "") {
   if (obj && typeof obj === "object") {
     const proxy = Array.isArray(obj) ? [] : Object.create(Object.getPrototypeOf(obj));
@@ -145,19 +145,19 @@ function getWithKeyPath(obj, keyPath = "") {
   return obj;
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getVerifyWritable (dir)                  *
 /* Verifies directory is writable; throws on failure           *
-/**************************************************************/
+/***************************************************************/
 async function getVerifyWritable(dir) {
   await fsp.access(dir);
   await fsp.access(dir, fsp.constants ? fsp.constants.W_OK : 2);
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: setEnsureDirs ()                         *
 /* Ensures log directories exist                               *
-/**************************************************************/
+/***************************************************************/
 async function setEnsureDirs() {
   await fsp.mkdir(LOG_DIR, { recursive: true });
   await fsp.mkdir(OBJECTS_DIR, { recursive: true });
@@ -165,18 +165,18 @@ async function setEnsureDirs() {
   await getVerifyWritable(OBJECTS_DIR);
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getBuildObjectsPath (index)              *
 /* Builds a full path for objects-N.log                        *
-/**************************************************************/
+/***************************************************************/
 function getBuildObjectsPath(index) {
   return path.join(OBJECTS_DIR, `${FILE_BASENAME}-${index}${FILE_EXT}`);
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getListLogFiles ()                       *
 /* Lists existing rolling object log files                     *
-/**************************************************************/
+/***************************************************************/
 async function getListLogFiles() {
   await setEnsureDirs();
   const out = [];
@@ -193,19 +193,19 @@ async function getListLogFiles() {
   return out;
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getFileSize (p)                          *
 /* Returns file size in bytes or 0 if not found                *
-/**************************************************************/
+/***************************************************************/
 async function getFileSize(p) {
   const st = await fsp.stat(p).catch(() => null);
   return st?.size || 0;
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: setAppendRolling (text)                  *
 /* Appends to rolling objects-N.log, keeping only last two     *
-/**************************************************************/
+/***************************************************************/
 async function setAppendRolling(text) {
   await setEnsureDirs();
   const files = await getListLogFiles();
@@ -232,19 +232,19 @@ async function setAppendRolling(text) {
   return currentPath;
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: setEnqueueWrite (fn)                     *
 /* Serializes file writes to avoid race conditions             *
-/**************************************************************/
+/***************************************************************/
 function setEnqueueWrite(fn) {
   WRITE_CHAIN = WRITE_CHAIN.then(fn, fn);
   return WRITE_CHAIN;
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getNormalizeWOLogItem (x)                *
 /* Normalizes a wo.logging entry for error mirroring           *
-/**************************************************************/
+/***************************************************************/
 function getNormalizeWOLogItem(x) {
   const sev = (x?.severity ?? x?.level ?? "").toString().toLowerCase();
   return {
@@ -257,10 +257,10 @@ function getNormalizeWOLogItem(x) {
   };
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getToOneLineError (e)                    *
 /* Formats a normalized error entry into a one-line string     *
-/**************************************************************/
+/***************************************************************/
 function getToOneLineError(e) {
   const ts = e.timestamp || new Date().toISOString();
   const mod = e.module || MODULE_NAME;
@@ -274,10 +274,10 @@ function getToOneLineError(e) {
   return `[${ts}] [ERROR] ${mod}:${prefix} ${msg}${reason}${ctx}`;
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: setMirrorErrorsToConsoleAndFile (wo, rec)*
 /* Mirrors errors to stderr and rewrites logs/objects/error.log*/
-/**************************************************************/
+/***************************************************************/
 async function setMirrorErrorsToConsoleAndFile(wo, fullRecordForErrorFile) {
   const arr = Array.isArray(wo?.logging) ? wo.logging : [];
   const normalized = arr.map(getNormalizeWOLogItem);
@@ -303,10 +303,10 @@ async function setMirrorErrorsToConsoleAndFile(wo, fullRecordForErrorFile) {
   await setEnqueueWrite(() => fsp.writeFile(ERROR_FILE, payload, "utf8"));
 }
 
-/***************************************************************
+/***************************************************************/
 /* functionSignature: getCoreOutput (coreData)                 *
 /* Appends a safe coreData dump to rolling log and mirrors errs*/
-/**************************************************************/
+/***************************************************************/
 export default async function getCoreOutput(coreData) {
   const wo = coreData.workingObject || {};
   const forLog = {

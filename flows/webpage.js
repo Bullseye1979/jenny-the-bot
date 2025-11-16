@@ -1,66 +1,91 @@
-/***************************************************************
-/* filename: "webpage.js"                                      *
-/* Version 1.0                                                 *
-/* Purpose: Serve /documents/* from ./pub with correct         *
-/*          MIME types and HTTP Range (206) for media.         *
-/*          Return JSON 404 for /api/*                         *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
+/**************************************************************
+/* filename: "webpage.js"                                     *
+/* Version 1.0                                                *
+/* Purpose:                                                   *
+/*  HTTP server trigger that captures requests into           *
+/*  workingObject.http and starts the 'webpage' flow without  *
+/*  sending a direct response (response handled elsewhere).   *
+/**************************************************************/
+/**************************************************************
+/*                                                          *
+/**************************************************************/
 
 import http from "node:http";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { putItem } from "../core/registry.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "webpage";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/***************************************************************
-/* functionSignature: getContentType (filePath)                *
-/* Returns a MIME type for a given file path                   *
-/***************************************************************/
-function getContentType(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  switch (ext) {
-    case ".html": return "text/html; charset=utf-8";
-    case ".htm":  return "text/html; charset=utf-8";
-    case ".css":  return "text/css; charset=utf-8";
-    case ".js":
-    case ".mjs":  return "application/javascript; charset=utf-8";
-    case ".json": return "application/json; charset=utf-8";
-    case ".svg":  return "image/svg+xml";
-    case ".png":  return "image/png";
-    case ".jpg":
-    case ".jpeg": return "image/jpeg";
-    case ".gif":  return "image/gif";
-    case ".webp": return "image/webp";
-    case ".ico":  return "image/x-icon";
-    case ".txt":  return "text/plain; charset=utf-8";
-    case ".mp4":
-    case ".m4v":  return "video/mp4";
-    case ".webm": return "video/webm";
-    case ".mov":  return "video/quicktime";
-    case ".mkv":  return "video/x-matroska";
-    case ".mpg":
-    case ".mpeg": return "video/mpeg";
-    case ".mp3":  return "audio/mpeg";
-    case ".m4a":  return "audio/mp4";
-    case ".aac":  return "audio/aac";
-    case ".wav":  return "audio/wav";
-    case ".ogg":  return "audio/ogg";
-    default:      return "application/octet-stream";
-  }
+const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+let __ulid_lastTime = 0;
+let __ulid_lastRand = new Uint8Array(10).fill(0);
+
+/**************************************************************
+/* functionSignature: getUlidEncodeTime (ms)                 *
+/* Encode a millisecond timestamp to a 10-char Crockford base32. *
+/**************************************************************/
+function getUlidEncodeTime(ms) {
+  let x = BigInt(ms);
+  const out = Array(10);
+  for (let i = 9; i >= 0; i--) { out[i] = CROCK[Number(x % 32n)]; x = x / 32n; }
+  return out.join("");
 }
 
-/***************************************************************
-/* functionSignature: setSendResponse (res, status, body, hdr) *
-/* Sends an HTTP response with minimal headers                 *
-/***************************************************************/
-function setSendResponse(res, status, body, headers = {}) {
+/**************************************************************
+/* functionSignature: getUlidEncodeRandom80ToBase32 (rand)   *
+/* Encode 80 random bits to a 16-char Crockford base32 string. *
+/**************************************************************/
+function getUlidEncodeRandom80ToBase32(rand) {
+  const out = [];
+  let acc = 0, bits = 0, i = 0;
+  while (i < rand.length || bits > 0) {
+    if (bits < 5 && i < rand.length) { acc = (acc << 8) | rand[i++]; bits += 8; }
+    else { const v = (acc >> (bits - 5)) & 31; bits -= 5; out.push(CROCK[v]); }
+  }
+  return out.slice(0, 16).join("");
+}
+
+/**************************************************************
+/* functionSignature: getUlidRandom80 ()                     *
+/* Generate 80 bits of randomness as a 10-byte Uint8Array.   *
+/**************************************************************/
+function getUlidRandom80() {
+  const arr = new Uint8Array(10);
+  for (let i = 0; i < 10; i++) arr[i] = Math.floor(Math.random() * 256);
+  return arr;
+}
+
+/**************************************************************
+/* functionSignature: getNewUlid ()                          *
+/* Generate a monotonic ULID (26 chars).                     *
+/**************************************************************/
+function getNewUlid() {
+  const now = Date.now();
+  let rand = getUlidRandom80();
+  if (now === __ulid_lastTime) {
+    for (let i = 9; i >= 0; i--) {
+      if (__ulid_lastRand[i] === 255) { __ulid_lastRand[i] = 0; continue; }
+      __ulid_lastRand[i]++; break;
+    }
+    rand = __ulid_lastRand;
+  } else {
+    __ulid_lastTime = now;
+    __ulid_lastRand = rand;
+  }
+  return getUlidEncodeTime(now) + getUlidEncodeRandom80ToBase32(rand);
+}
+
+/**************************************************************
+/* functionSignature: setSendResponse (res, status, body, headers) *
+/* Send a fallback HTTP response if nothing else has responded. *
+/**************************************************************/
+function setSendResponse(res, status, body = "", headers = {}) {
+  if (res.writableEnded) return;
   res.writeHead(status, {
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
@@ -70,145 +95,168 @@ function setSendResponse(res, status, body, headers = {}) {
   else res.end();
 }
 
-/***************************************************************
-/* functionSignature: getSafeJoin (root, reqPath)              *
-/* Resolves a safe absolute path within a root directory       *
-/***************************************************************/
-function getSafeJoin(root, reqPath) {
-  const clean = decodeURIComponent(String(reqPath || "/").split("?")[0].split("#")[0]);
-  const normalized = path.normalize(clean.startsWith("/") ? clean : `/${clean}`);
-  const resolved = path.normalize(path.join(root, normalized));
-  if (!resolved.startsWith(root)) return null;
-  return resolved;
-}
-
-/***************************************************************
-/* functionSignature: getServeFileWithRange (req,res,p,stat)   *
-/* Sends a file with headers and Range (206) support           *
-/***************************************************************/
-function getServeFileWithRange(req, res, absPath, stat) {
-  const total = stat.size;
-  const ctype = getContentType(absPath);
-  const filename = path.basename(absPath);
-
-  if (req.method === "HEAD" && !req.headers.range) {
-    res.writeHead(200, {
-      "Content-Type": ctype,
-      "Content-Length": total,
-      "Accept-Ranges": "bytes",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff"
+/**************************************************************
+/* functionSignature: getReadBody (req, maxBytes)            *
+/* Read and return the request body as a UTF-8 string.       *
+/**************************************************************/
+function getReadBody(req, maxBytes = 1e6) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    let size = 0;
+    const chunks = [];
+    function fail(err) {
+      if (done) return;
+      done = true;
+      reject(err);
+      try { req.destroy(); } catch {}
+    }
+    req.on("data", (chunk) => {
+      if (done) return;
+      size += chunk.length;
+      if (size > maxBytes) return fail(new Error("BODY_TOO_LARGE"));
+      chunks.push(chunk);
     });
-    return res.end();
-  }
-
-  const range = req.headers.range;
-  if (!range) {
-    res.writeHead(200, {
-      "Content-Type": ctype,
-      "Content-Length": total,
-      "Accept-Ranges": "bytes",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff"
+    req.on("end", () => {
+      if (done) return;
+      done = true;
+      if (!chunks.length) return resolve("");
+      resolve(Buffer.concat(chunks).toString("utf8"));
     });
-    if (req.method === "HEAD") return res.end();
-    const stream = fs.createReadStream(absPath);
-    stream.on("error", () => setSendResponse(res, 500, "Internal Server Error"));
-    return stream.pipe(res);
-  }
-
-  const m = /^bytes=(\d*)-(\d*)$/.exec(range);
-  if (!m) {
-    res.writeHead(416, {
-      "Content-Range": `bytes */${total}`,
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff"
+    req.on("error", (err) => fail(err));
+    req.on("close", () => {
+      if (!done && !chunks.length) {
+        done = true;
+        resolve("");
+      }
     });
-    return res.end();
-  }
-
-  let start = m[1] ? parseInt(m[1], 10) : 0;
-  let end   = m[2] ? parseInt(m[2], 10) : total - 1;
-
-  if (isNaN(start) || isNaN(end) || start > end || start >= total) {
-    res.writeHead(416, { "Content-Range": `bytes */${total}` });
-    return res.end();
-  }
-
-  end = Math.min(end, total - 1);
-  const chunkSize = (end - start) + 1;
-
-  res.writeHead(206, {
-    "Content-Type": ctype,
-    "Content-Length": chunkSize,
-    "Content-Range": `bytes ${start}-${end}/${total}`,
-    "Accept-Ranges": "bytes",
-    "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-    "Cache-Control": "no-store",
-    "X-Content-Type-Options": "nosniff"
   });
-
-  if (req.method === "HEAD") return res.end();
-
-  const stream = fs.createReadStream(absPath, { start, end });
-  stream.on("error", () => setSendResponse(res, 500, "Internal Server Error"));
-  stream.pipe(res);
 }
 
-/***************************************************************
-/* functionSignature: getWebpageFlow (baseCore, runFlow, make) *
-/* Starts a minimal server for /documents/* and /api/* routes  *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getNewRequestKey ()                    *
+/* Create a unique registry key for storing req/res.         *
+/**************************************************************/
+function getNewRequestKey() {
+  return `web:${getNewUlid()}`;
+}
+
+/**************************************************************
+/* functionSignature: getWebpageFlow (baseCore, runFlow, createRunCore) *
+/* Start the HTTP server and trigger the 'webpage' flow per request. *
+/**************************************************************/
 export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
   const cfg = baseCore?.config?.webpage || {};
+  const flowName = String(cfg.flowName || "webpage");
   const port = Number(cfg.port) || 3000;
 
   const pubRoot = path.join(__dirname, "..", "pub");
   const documentsRoot = path.join(pubRoot, "documents");
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     try {
       if (!req?.url) return setSendResponse(res, 400, "Bad Request");
-      if (!["GET", "HEAD", "POST"].includes(req.method)) {
-        return setSendResponse(res, 405, "Method Not Allowed", { "Allow": "GET, HEAD, POST" });
-      }
 
+      const method = String(req.method || "GET").toUpperCase();
       const urlPath = String(req.url.split("?")[0].split("#")[0] || "/");
 
-      if (urlPath.startsWith("/documents/")) {
-        if (urlPath === "/documents/" || urlPath === "/documents") {
-          return setSendResponse(res, 404, "Not Found");
-        }
-        const target = getSafeJoin(documentsRoot, urlPath.replace("/documents", ""));
-        if (!target) return setSendResponse(res, 400, "Bad Request");
+      const runCore = createRunCore();
+      const wo = runCore.workingObject;
+      const log = getPrefixedLogger(wo, import.meta.url);
 
-        fs.stat(target, (err, stat) => {
-          if (err) return setSendResponse(res, 404, "Not Found");
-          if (!stat.isFile()) return setSendResponse(res, 404, "Not Found");
-          return getServeFileWithRange(req, res, target, stat);
-        });
-        return;
-      }
+      const requestKey = getNewRequestKey();
+      putItem({ req, res }, requestKey);
+
+      wo.flow = flowName;
+      wo.turn_id = getNewUlid();
+      wo.source = "http";
+
+      wo.http = wo.http || {};
+      wo.http.requestKey = requestKey;
+      wo.http.method = method;
+      wo.http.url = req.url;
+      wo.http.path = urlPath;
+      wo.http.headers = req.headers || {};
+      wo.http.remoteAddress = req.socket?.remoteAddress || req.connection?.remoteAddress || null;
+      wo.http.host = req.headers?.host || null;
 
       if (urlPath.startsWith("/api/")) {
-        if (req.method === "POST") {
-          let body = "";
-          req.on("data", (chunk) => { body += chunk; if (body.length > 1e6) req.destroy(); });
-          req.on("end", () => {
-            setSendResponse(res, 404, JSON.stringify({ ok: false, error: "Endpoint not implemented" }), {
-              "Content-Type": "application/json; charset=utf-8"
-            });
-          });
-          return;
-        }
-        return setSendResponse(res, 404, JSON.stringify({ ok: false, error: "Not Found" }), {
-          "Content-Type": "application/json; charset=utf-8"
-        });
+        wo.http.kind = "api";
+      } else if (urlPath.startsWith("/documents/")) {
+        wo.http.kind = "document";
+      } else {
+        wo.http.kind = "other";
       }
 
-      return setSendResponse(res, 404, "Not Found");
+      wo.http.pubRoot = pubRoot;
+      wo.http.documentsRoot = documentsRoot;
+
+      try {
+        const urlObj = new URL(req.url, `http://localhost:${port}`);
+        wo.http.query = Object.fromEntries(urlObj.searchParams.entries());
+      } catch {
+        wo.http.query = {};
+      }
+
+      if (["POST", "PUT", "PATCH"].includes(method)) {
+        try {
+          const raw = await getReadBody(req, 1e6);
+          wo.http.rawBody = raw;
+          try {
+            const json = raw ? JSON.parse(raw) : null;
+            if (json && typeof json === "object") wo.http.json = json;
+          } catch {}
+        } catch (err) {
+          const reason = err?.message || String(err);
+          log("Request body error", "error", { moduleName: MODULE_NAME, reason, path: urlPath });
+          if (reason === "BODY_TOO_LARGE") {
+            return setSendResponse(
+              res,
+              413,
+              JSON.stringify({ ok: false, error: "Payload Too Large" }),
+              { "Content-Type": "application/json; charset=utf-8" }
+            );
+          }
+          return setSendResponse(
+            res,
+            400,
+            JSON.stringify({ ok: false, error: "Invalid request body" }),
+            { "Content-Type": "application/json; charset=utf-8" }
+          );
+        }
+      }
+
+      wo.http.response = wo.http.response || {
+        status: 404,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ ok: false, error: "Not Found" })
+      };
+
+      log("webpage flow trigger", "info", {
+        moduleName: MODULE_NAME,
+        path: urlPath,
+        method,
+        kind: wo.http.kind,
+        requestKey
+      });
+
+      try {
+        await runFlow(flowName, runCore);
+      } catch (e) {
+        const reason = e?.message || String(e);
+        log("webpage flow execution failed", "error", {
+          moduleName: MODULE_NAME,
+          path: urlPath,
+          reason
+        });
+        if (!res.writableEnded) {
+          return setSendResponse(
+            res,
+            500,
+            JSON.stringify({ ok: false, error: "Internal Server Error" }),
+            { "Content-Type": "application/json; charset=utf-8" }
+          );
+        }
+      }
     } catch {
       setSendResponse(res, 500, "Internal Server Error");
     }
