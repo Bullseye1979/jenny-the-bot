@@ -82,7 +82,8 @@ function setTickLoop() {}
 /* Sets up the cron scheduler and starts the periodic loop     *
 /***************************************************************/
 export default async function getCronFlow(baseCore, runFlow, createRunCore) {
-  const log = getPrefixedLogger(baseCore?.workingObject || {}, import.meta.url);
+  const cronCore = createRunCore();
+  const log = getPrefixedLogger(cronCore?.workingObject || {}, import.meta.url);
   const cfg = baseCore?.config?.[MODULE_NAME] || baseCore?.config?.cron || {};
 
   const tickMs = Math.max(5000, getNum(cfg.tickMs, 15000));
