@@ -1,12 +1,12 @@
 /***************************************************************/
 /* filename: "core-output.js"                                  *
 /* Version 1.0                                                 *
-/* Purpose: Safely dumps coreData with redaction, rolling logs,*
-/*          and error mirroring without mutating workingObject.*
+/* Purpose: Safely dumps coreData with redaction, rolling logs,*/
+/*          and error mirroring without mutating workingObject.*/
 /***************************************************************/
 
 /***************************************************************/
-/*                                                             *
+/*                                                             */
 /***************************************************************/
 
 import fsp from "node:fs/promises";
@@ -18,10 +18,12 @@ const MAX_FILE_BYTES = 3 * 1024 * 1024;
 const DIRNAME = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(DIRNAME, "..", "logs");
 const OBJECTS_DIR = path.join(LOG_DIR, "objects");
-const ERROR_FILE = path.join(OBJECTS_DIR, "error.log");
 const FILE_BASENAME = "objects";
 const FILE_EXT = ".log";
 const FILE_RE = /^objects-(\d+)\.log$/;
+const EVENT_BASENAME = "events";
+const EVENT_EXT = ".log";
+const EVENT_RE = /^events-(\d+)\.log$/;
 
 let WRITE_CHAIN = Promise.resolve();
 
@@ -243,7 +245,7 @@ function setEnqueueWrite(fn) {
 
 /***************************************************************/
 /* functionSignature: getNormalizeWOLogItem (x)                *
-/* Normalizes a wo.logging entry for error mirroring           *
+/* Normalizes entries from wo.logging for readable log         *
 /***************************************************************/
 function getNormalizeWOLogItem(x) {
   const sev = (x?.severity ?? x?.level ?? "").toString().toLowerCase();
@@ -258,54 +260,102 @@ function getNormalizeWOLogItem(x) {
 }
 
 /***************************************************************/
-/* functionSignature: getToOneLineError (e)                    *
-/* Formats a normalized error entry into a one-line string     *
+/* functionSignature: getToOneLineLog (e)                      *
+/* Formats a normalized log entry into a one-line string       *
 /***************************************************************/
-function getToOneLineError(e) {
+function getToOneLineLog(e) {
   const ts = e.timestamp || new Date().toISOString();
+  const level = (e.severity || "info").toUpperCase();
   const mod = e.module || MODULE_NAME;
   const msg = (e.message || "").replace(/\s+/g, " ").trim();
-  const reason = typeof e.context?.reason === "string" ? ` reason="${e.context.reason.replace(/\s+/g, " ").trim()}"` : "";
+  const reason = typeof e.context?.reason === "string" ? ` reason="${getRedact(e.context.reason, "context.reason")}"` : "";
   const ctxBits = [];
   if (e.context?.guildId) ctxBits.push(`guildId=${e.context.guildId}`);
   if (e.context?.channelId) ctxBits.push(`channelId=${e.context.channelId}`);
   const prefix = e.prefix ? ` ${e.prefix}` : "";
   const ctx = ctxBits.length ? ` ctx={${ctxBits.join(",")}}` : "";
-  return `[${ts}] [ERROR] ${mod}:${prefix} ${msg}${reason}${ctx}`;
+  return `[${ts}] [${level}] ${mod}:${prefix} ${getRedact(msg, "message")}${reason}${ctx}`;
 }
 
 /***************************************************************/
-/* functionSignature: setMirrorErrorsToConsoleAndFile (wo, rec)*
-/* Mirrors errors to stderr and rewrites logs/objects/error.log*/
+/* functionSignature: getReadableLogBlock (wo)                 *
+/* Builds a readable log block from wo.logging                 *
 /***************************************************************/
-async function setMirrorErrorsToConsoleAndFile(wo, fullRecordForErrorFile) {
+function getReadableLogBlock(wo) {
   const arr = Array.isArray(wo?.logging) ? wo.logging : [];
+  if (!arr.length) return "";
   const normalized = arr.map(getNormalizeWOLogItem);
-  const errors = normalized.filter(e => e.severity === "error");
-  if (!errors.length) return;
-
-  for (const e of errors) {
-    console.error(getToOneLineError(e));
-  }
-
-  await setEnsureDirs();
-
+  const lines = normalized.map(getToOneLineLog).join("\n");
   const header =
-    "================ ERROR SNAPSHOT ================\n" +
+    "================ READABLE LOG ================\n" +
     `timestamp=${new Date().toISOString()}\n` +
-    "===============================================\n";
-  const lines = errors.map(getToOneLineError).join("\n") + "\n";
-  const payload = header + lines +
-    "================ LAST CORE DUMP ================\n" +
-    fullRecordForErrorFile +
-    "================================================\n";
+    "==============================================\n";
+  const footer =
+    "\n==============================================\n";
+  return header + lines + footer;
+}
 
-  await setEnqueueWrite(() => fsp.writeFile(ERROR_FILE, payload, "utf8"));
+/***************************************************************/
+/* functionSignature: getBuildEventsPath (index)               *
+/* Builds a full path for events-N.log in logs/                *
+/***************************************************************/
+function getBuildEventsPath(index) {
+  return path.join(LOG_DIR, `${EVENT_BASENAME}-${index}${EVENT_EXT}`);
+}
+
+/***************************************************************/
+/* functionSignature: getListEventFiles ()                     *
+/* Lists existing rolling events log files in logs/            *
+/***************************************************************/
+async function getListEventFiles() {
+  await setEnsureDirs();
+  const out = [];
+  const entries = await fsp.readdir(LOG_DIR, { withFileTypes: true });
+  for (const ent of entries) {
+    if (!ent.isFile()) continue;
+    const m = ent.name.match(EVENT_RE);
+    if (!m) continue;
+    const idx = Number(m[1]);
+    if (!Number.isFinite(idx)) continue;
+    out.push({ name: ent.name, index: idx, full: path.join(LOG_DIR, ent.name) });
+  }
+  out.sort((a, b) => a.index - b.index);
+  return out;
+}
+
+/***************************************************************/
+/* functionSignature: setAppendReadableLog (text)              *
+/* Appends to rolling events-N.log in logs/, keep last two     *
+/***************************************************************/
+async function setAppendReadableLog(text) {
+  await setEnsureDirs();
+  const files = await getListEventFiles();
+  let currentIdx = files.length ? files[files.length - 1].index : 1;
+  let currentPath = getBuildEventsPath(currentIdx);
+  const payload = Buffer.from(text, "utf8");
+  const needed = payload.length;
+  let size = await getFileSize(currentPath);
+  if (size === 0 && files.length === 0) {
+    await fsp.writeFile(currentPath, "");
+  }
+  if (size + needed > MAX_FILE_BYTES) {
+    currentIdx = currentIdx + 1;
+    currentPath = getBuildEventsPath(currentIdx);
+    await fsp.writeFile(currentPath, "");
+    const updated = await getListEventFiles();
+    const toKeep = updated.slice(-2).map(f => f.index);
+    const toDelete = updated.filter(f => !toKeep.includes(f.index));
+    for (const f of toDelete) {
+      await fsp.rm(f.full, { force: true }).catch(() => {});
+    }
+  }
+  await fsp.appendFile(currentPath, payload);
+  return currentPath;
 }
 
 /***************************************************************/
 /* functionSignature: getCoreOutput (coreData)                 *
-/* Appends a safe coreData dump to rolling log and mirrors errs*/
+/* Appends a safe coreData dump to rolling log and readable log*/
 /***************************************************************/
 export default async function getCoreOutput(coreData) {
   const wo = coreData.workingObject || {};
@@ -337,12 +387,19 @@ export default async function getCoreOutput(coreData) {
     });
   } catch (e) {
     setLog(wo, "Failed to append core data to rolling log.", "error", { reason: String(e?.message || e) });
-    console.error(`[core-output] write failed: ${String(e?.message || e)}`);
   }
-  try {
-    await setMirrorErrorsToConsoleAndFile(wo, record);
-  } catch (e) {
-    setLog(wo, "Failed to mirror errors to console/file.", "error", { reason: String(e?.message || e) });
+  const readable = getReadableLogBlock(wo);
+  if (readable) {
+    try {
+      const pathReadable = await setEnqueueWrite(() => setAppendReadableLog(readable));
+      setLog(wo, "Readable log appended to events file.", "info", {
+        path: pathReadable,
+        maxFileBytes: MAX_FILE_BYTES,
+        policy: "2-file rolling, oldest removed on third"
+      });
+    } catch (e) {
+      setLog(wo, "Failed to append readable log.", "error", { reason: String(e?.message || e) });
+    }
   }
   return coreData;
 }
