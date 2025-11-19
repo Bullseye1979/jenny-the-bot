@@ -1,48 +1,49 @@
-/***************************************************************
+/**************************************************************
 /* filename: "getJira.js"                                     *
-/* Version 1.0                                                 *
-/* Purpose: Jira Cloud proxy with baseUrl enforcement,         *
-/*          project placeholder replacement, early JSON        *
-/*          parse/repair, JQL normalization, ADF coercion,     *
-/*          auto-transition by status (incl. status string),   *
-/*          direct name→ID fix, optional resolution/fields,    *
-/*          and post-transition verification.                  *
-/***************************************************************/
-/***************************************************************/
+/* Version 1.0                                                *
+/* Purpose: Jira Cloud proxy with baseUrl enforcement, project *
+/* placeholder replacement, early JSON parse/repair, JQL       *
+/* normalization, ADF coercion, auto-transition by status      *
+/* (incl. status string), direct name→ID fix, optional         *
+/* resolution/fields, post-transition verification, and        *
+/* enriched search results (always includes key + summary      *
+/* metadata).                                                 *
+/**************************************************************/
+/**************************************************************/
 
 const MODULE_NAME = "getJira";
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getStr (v, f)                            *
 /* Return string v if non-empty, else fallback f.              *
-/***************************************************************/
+/**************************************************************/
 function getStr(v, f){ return (typeof v==="string" && v.length)? v : f; }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getNum (v, f)                            *
 /* Return finite numeric value or fallback.                    *
-/***************************************************************/
+/**************************************************************/
 function getNum(v, f){ return Number.isFinite(v)? Number(v) : f; }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getDebug (label, obj)                    *
 /* Optional debug hook; no output in production.               *
-/***************************************************************/
+/**************************************************************/
 function getDebug(label, obj){}
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getAuthHeader (email, token)             *
 /* Build Basic auth header from email and token.               *
-/***************************************************************/
+/**************************************************************/
 function getAuthHeader(email, token){
   const b64 = Buffer.from(`${email}:${token}`).toString("base64");
   return { Authorization: `Basic ${b64}` };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getBuildUrl (baseUrl, path, query)       *
 /* Build absolute URL from base URL, path, and query.          *
-/***************************************************************/
+/**************************************************************/
 function getBuildUrl(baseUrl, path, query){
   const root = String(baseUrl||"").replace(/\/+$/,"");
   const p0 = String(path||"").trim().replace(/\/+$/,"");
@@ -56,13 +57,13 @@ function getBuildUrl(baseUrl, path, query){
     }
   }
   const q = qs.toString();
-  return q? `${root}${rel}?${q}` : `${root}${rel}`;
+  return q? `${root${""}}${rel}?${q}` : `${root}${rel}`;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getPathFromUrl (url, baseUrl)            *
 /* Extract path when url shares origin with baseUrl.           *
-/***************************************************************/
+/**************************************************************/
 function getPathFromUrl(url, baseUrl){
   try{
     const u = new URL(String(url||""));
@@ -72,18 +73,18 @@ function getPathFromUrl(url, baseUrl){
   }catch{ return ""; }
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getPathnameAny (url)                     *
 /* Extract pathname from any absolute URL.                     *
-/***************************************************************/
+/**************************************************************/
 function getPathnameAny(url){
   try{ return new URL(String(url||"")).pathname.replace(/\/+$/,""); }catch{ return ""; }
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getEnforcedBaseUrl (req, baseUrl)        *
 /* Map any request to the configured baseUrl.                  *
-/***************************************************************/
+/**************************************************************/
 function getEnforcedBaseUrl(req, baseUrl){
   if (req.path && String(req.path).trim()){
     return getBuildUrl(baseUrl, String(req.path).trim(), req.query || {});
@@ -104,10 +105,10 @@ function getEnforcedBaseUrl(req, baseUrl){
   return getBuildUrl(baseUrl, "/", req.query || {});
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getFetchJson (url, opts, timeoutMs)      *
 /* Fetch JSON or text with timeout; return structured result.  *
-/***************************************************************/
+/**************************************************************/
 async function getFetchJson(url, opts={}, timeoutMs=60000){
   const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), Math.max(1, timeoutMs));
   try{
@@ -124,10 +125,10 @@ async function getFetchJson(url, opts={}, timeoutMs=60000){
   }finally{ clearTimeout(t); }
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getFetchBuffer (url, timeoutMs)          *
 /* Fetch as binary buffer with content type.                   *
-/***************************************************************/
+/**************************************************************/
 async function getFetchBuffer(url, timeoutMs=60000){
   const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), Math.max(1, timeoutMs));
   try{
@@ -139,10 +140,10 @@ async function getFetchBuffer(url, timeoutMs=60000){
   }finally{ clearTimeout(t); }
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getStatusArgFromReq (req)                *
 /* Extract status string from request meta/fields.             *
-/***************************************************************/
+/**************************************************************/
 function getStatusArgFromReq(req){
   const fromMeta = getStr(req?.meta?.status, "");
   if (fromMeta) return fromMeta;
@@ -153,10 +154,10 @@ function getStatusArgFromReq(req){
   return "";
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getRepairJsonString (s)                  *
 /* Repair truncated JSON by closing strings/braces/brackets.   *
-/***************************************************************/
+/**************************************************************/
 function getRepairJsonString(s){
   const str = String(s||"");
   let inStr=false, esc=false, braces=0, brackets=0;
@@ -181,10 +182,10 @@ function getRepairJsonString(s){
   return repaired;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getStableJsonBuffer (body)               *
 /* Normalize body to Buffer and preview; attempt repairs.      *
-/***************************************************************/
+/**************************************************************/
 function getStableJsonBuffer(body){
   if (body === undefined || body === null) return { buf: undefined, len: 0, preview: "[empty]", repaired:false, parsed:false };
   if (typeof body === "string"){
@@ -221,10 +222,10 @@ function getStableJsonBuffer(body){
   return { buf, len: buf.byteLength, preview: prev, repaired:false, parsed:false };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getSplitJqlOrderBy (jql)                 *
 /* Split JQL into core and ORDER BY segment.                   *
-/***************************************************************/
+/**************************************************************/
 function getSplitJqlOrderBy(jql){
   const src = String(jql||"");
   const m = src.match(/\border\s+by\b/i);
@@ -235,10 +236,10 @@ function getSplitJqlOrderBy(jql){
   return { core, orderBy };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getSanitizedJqlPlaceholders (jql, key)   *
 /* Replace project placeholders with configured key.           *
-/***************************************************************/
+/**************************************************************/
 function getSanitizedJqlPlaceholders(jql, projectKey){
   let s = String(jql||"").trim();
   if (!s) return s;
@@ -252,10 +253,10 @@ function getSanitizedJqlPlaceholders(jql, projectKey){
   return s;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getEnsuredProjectRestriction (jql, key,  *
 /* allowCross) Ensure project restriction unless allowed.      *
-/***************************************************************/
+/**************************************************************/
 function getEnsuredProjectRestriction(jql, projectKey, allowCross){
   if (!projectKey || allowCross) return String(jql||"").trim();
   const { core, orderBy } = getSplitJqlOrderBy(jql);
@@ -268,10 +269,41 @@ function getEnsuredProjectRestriction(jql, projectKey, allowCross){
   return [withProj, orderBy].filter(Boolean).join(" ").trim();
 }
 
-/***************************************************************
+/**************************************************************
+/* functionSignature: getEnsuredSearchFields (fields, mode)    *
+/* Ensure search results always include key metadata fields.   *
+/* mode: "array" (for POST body) or "string" (for GET query).  *
+/* Core fields: key, summary, status, assignee, issuetype,     *
+/*              priority.                                      *
+/**************************************************************/
+function getEnsuredSearchFields(fields, mode){
+  const core = ["key","summary","status","assignee","issuetype","priority"];
+  if (fields === undefined || fields === null){
+    return undefined;
+  }
+  if (Array.isArray(fields)){
+    const set = new Set(fields.map(f => String(f).trim()).filter(Boolean));
+    core.forEach(f => set.add(f));
+    const arr = Array.from(set);
+    return mode === "array" ? arr : arr.join(",");
+  }
+  const s = String(fields).trim();
+  if (!s){
+    return undefined;
+  }
+  const parts = s.split(",").map(f => f.trim()).filter(Boolean);
+  const set = new Set(parts);
+  core.forEach(f => set.add(f));
+  const arr = Array.from(set);
+  return mode === "array" ? arr : arr.join(",");
+}
+
+/**************************************************************
 /* functionSignature: getNormalizedSearchShape (req, key)      *
 /* Normalize search requests and JQL for project enforcement.  *
-/***************************************************************/
+/* Also ensures key metadata fields (key, summary, status,     *
+/* assignee, issuetype, priority) are always included.         *
+/**************************************************************/
 function getNormalizedSearchShape(reqIn, defaultProjectKey){
   const isSearch = (p)=> /^https?:\/\/[^/]+\/rest\/api\/3\/search(?:\/jql)?\/?$|^\/rest\/api\/3\/search(?:\/jql)?\/?$/i.test(String(p||""));
   const p = reqIn.path || reqIn.url || "";
@@ -288,25 +320,35 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   getDebug("Effective JQL", { jql });
   if (method === "GET"){
     const query = { ...q, jql };
+    if (Object.prototype.hasOwnProperty.call(query, "fields")){
+      const ensured = getEnsuredSearchFields(query.fields, "string");
+      if (ensured === undefined) delete query.fields;
+      else query.fields = ensured;
+    }
     return { ...reqIn, method:"GET", path:"/rest/api/3/search/jql", url: undefined, query };
   }
   const body = { ...bodyIn, jql };
+  if (Object.prototype.hasOwnProperty.call(body, "fields")){
+    const ensured = getEnsuredSearchFields(body.fields, "array");
+    if (ensured === undefined) delete body.fields;
+    else body.fields = ensured;
+  }
   return { ...reqIn, method:"POST", path:"/rest/api/3/search/jql", url: undefined, query:{}, body };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getADFParagraphDoc (text)                *
 /* Build a minimal ADF paragraph document from text.           *
-/***************************************************************/
+/**************************************************************/
 function getADFParagraphDoc(text){
   const s = String(text||"");
   return { type: "doc", version: 1, content: [{ type:"paragraph", content: s ? [{ type:"text", text:s }] : [] }] };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getIsProjectPlaceholderKey (k)           *
 /* Detect placeholder-like project keys.                       *
-/***************************************************************/
+/**************************************************************/
 function getIsProjectPlaceholderKey(k){
   const up = String(k||"").trim().toUpperCase();
   if (!up) return true;
@@ -314,10 +356,10 @@ function getIsProjectPlaceholderKey(k){
   return bad.includes(up);
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: setEarlyParseBody (req)                  *
 /* Parse string body to JSON early; attempt repairs.           *
-/***************************************************************/
+/**************************************************************/
 function setEarlyParseBody(req){
   if (!req || typeof req!=="object") return { req, parsed:false };
   if (typeof req.body === "string"){
@@ -331,24 +373,21 @@ function setEarlyParseBody(req){
   return { req, parsed:false };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getNormalizedIssueBodyADFAndProject (req,*
 /* key) Coerce strings to ADF and enforce project key.         *
-/***************************************************************/
+/**************************************************************/
 function getNormalizedIssueBodyADFAndProject(req, defaultProjectKey){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
   const isCreate = /\/rest\/api\/3\/issue\/?$/i.test(path) && m==="POST";
   const isUpdate = /\/rest\/api\/3\/issue\/[^/]+\/?$/i.test(path) && (m==="PUT" || m==="PATCH");
   if (!(isCreate || isUpdate)) return req;
-
   const body = (req.body && typeof req.body === "object") ? { ...req.body } : {};
   const fields = (body.fields && typeof body.fields === "object") ? { ...body.fields } : {};
   let changed = false;
-
   if (typeof fields.description === "string"){ fields.description = getADFParagraphDoc(fields.description); changed = true; }
   if (typeof fields.environment === "string"){ fields.environment = getADFParagraphDoc(fields.environment); changed = true; }
-
   if (isCreate){
     const hasProjectObj = !!(fields.project && typeof fields.project === "object");
     const projectKeyInBody = hasProjectObj ? getStr(fields.project.key, "") : "";
@@ -368,17 +407,16 @@ function getNormalizedIssueBodyADFAndProject(req, defaultProjectKey){
       }
     }
   }
-
   if (changed){
     req.body = { ...body, fields };
   }
   return req;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getNormalizedCommentADF (req)            *
 /* Coerce comment string body to ADF.                          *
-/***************************************************************/
+/**************************************************************/
 function getNormalizedCommentADF(req){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -392,19 +430,19 @@ function getNormalizedCommentADF(req){
   return req;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getFetchTransitions (baseUrl, issue,     *
 /* headers) Fetch available transitions for an issue.          *
-/***************************************************************/
+/**************************************************************/
 async function getFetchTransitions(baseUrl, issueIdOrKey, headers){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}/transitions?expand=transitions.fields`;
   return await getFetchJson(url, { method:"GET", headers }, 30000);
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getPickTransitionId (transitions, want)  *
 /* Choose transition id by id/name/target status properties.   *
-/***************************************************************/
+/**************************************************************/
 function getPickTransitionId(transitions, desired){
   if (!Array.isArray(transitions)) return null;
   const norm = (s)=> String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
@@ -438,10 +476,10 @@ function getPickTransitionId(transitions, desired){
   return null;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getPickByStatusString (transitions, s)   *
 /* Choose transition id by matching status-like string.        *
-/***************************************************************/
+/**************************************************************/
 function getPickByStatusString(transitions, statusStr){
   if (!Array.isArray(transitions) || !statusStr) return null;
   const norm = (s)=> String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
@@ -455,10 +493,10 @@ function getPickByStatusString(transitions, statusStr){
   return null;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getFindTransitionId (baseUrl, issue,     *
 /* headers, target, statusStr) Resolve transition id.          *
-/***************************************************************/
+/**************************************************************/
 async function getFindTransitionId(baseUrl, issueIdOrKey, headers, target, statusStr){
   const r = await getFetchTransitions(baseUrl, issueIdOrKey, headers);
   const list = r.data;
@@ -472,10 +510,10 @@ async function getFindTransitionId(baseUrl, issueIdOrKey, headers, target, statu
   return { id, list };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getPerformTransition (baseUrl, issue,    *
 /* headers, body) Perform a workflow transition.               *
-/***************************************************************/
+/**************************************************************/
 async function getPerformTransition(baseUrl, issueIdOrKey, headers, body){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}/transitions`;
   const payload = JSON.stringify(body||{});
@@ -483,10 +521,10 @@ async function getPerformTransition(baseUrl, issueIdOrKey, headers, body){
   return await getFetchJson(url, { method:"POST", headers: h, body: Buffer.from(payload,"utf8") }, 30000);
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getBuildTransitionPayload (id, meta)     *
 /* Build transition payload with optional fields/resolution.   *
-/***************************************************************/
+/**************************************************************/
 function getBuildTransitionPayload(transitionId, meta){
   const fields = (meta && typeof meta === "object" && meta.transitionFields && typeof meta.transitionFields === "object")
     ? { ...meta.transitionFields } : {};
@@ -498,10 +536,10 @@ function getBuildTransitionPayload(transitionId, meta){
   return payload;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getFetchIssueStatus (baseUrl, issue,     *
 /* headers) Fetch issue status and resolution for verification.*/
-/***************************************************************/
+/**************************************************************/
 async function getFetchIssueStatus(baseUrl, issueIdOrKey, headers){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}?fields=status,resolution`;
   const r = await getFetchJson(url, { method:"GET", headers }, 30000);
@@ -510,10 +548,10 @@ async function getFetchIssueStatus(baseUrl, issueIdOrKey, headers){
   return { ok: r.ok, statusObj: status, resolutionObj: resolution, raw: r.data };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getMaybeAutoTransition (req, cfg,        *
 /* headers) Auto-transition for PUT/PATCH issue updates.       *
-/***************************************************************/
+/**************************************************************/
 async function getMaybeAutoTransition(req, cfg, headers){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -559,10 +597,10 @@ async function getMaybeAutoTransition(req, cfg, headers){
   return { req: null, transitionResult: trxRes, verify: { issueKey } };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: setFixDirectTransition (req, cfg,        *
 /* headers) Resolve direct transition by name/status.          *
-/***************************************************************/
+/**************************************************************/
 async function setFixDirectTransition(req, cfg, headers){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -632,10 +670,10 @@ async function setFixDirectTransition(req, cfg, headers){
   return { req: next, fixed:true };
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getInvoke (args, coreData)               *
 /* Main entry: enforce baseUrl and normalize request shape.    *
-/***************************************************************/
+/**************************************************************/
 async function getInvoke(args, coreData){
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
@@ -646,45 +684,36 @@ async function getInvoke(args, coreData){
   const defaultProjectKey = getStr(cfg?.projectKey, "");
   if (!baseUrl || !email || !token){
     getDebug("Config Error", { hasBaseUrl: !!baseUrl, hasEmail: !!email, hasToken: !!token });
-    return { ok:false, error:"JIRA_CONFIG — missing wo.toolsconfig.getJira { baseUrl, email, token }" };
+    return { ok:false, error:"JIRA_CONFIG — missing Jira baseUrl/email/token in server configuration" };
   }
-
   const reqIn = args?.json || args || {};
   if (!reqIn || typeof reqIn!=="object" || !reqIn.method){
     getDebug("Bad Tool Args", reqIn);
     return { ok:false, error:"BAD_TOOL_ARGS", hint:"requires {json:{method:'GET|POST|PUT|DELETE|PATCH', path:'/rest/api/...'}}" };
   }
-
   let req = { ...reqIn };
   const early = setEarlyParseBody(req);
-
   req = getNormalizedSearchShape(req, defaultProjectKey);
   req = getNormalizedIssueBodyADFAndProject(req, defaultProjectKey);
   req = getNormalizedCommentADF(req);
-
   const method = String(req.method||"GET").toUpperCase();
   const timeoutMs = getNum(req.timeoutMs, getNum(cfg.timeoutMs, 60000));
   const responseType = req.responseType==="arraybuffer" ? "arraybuffer" : "json";
-
   const url = getEnforcedBaseUrl(req, baseUrl);
   const headers = { Accept:"application/json", ...(req.headers||{}), ...getAuthHeader(email, token) };
-
   const maybeTrx = await getMaybeAutoTransition(req, { baseUrl }, headers);
   const postTransitionOnly = maybeTrx.req === null && maybeTrx.transitionResult !== null;
   let afterTrxReq = maybeTrx.req || req;
   const transitionInfo = maybeTrx.transitionResult;
   let verifyIssueKey = maybeTrx.verify?.issueKey || null;
-
   const fixDirect = await setFixDirectTransition(afterTrxReq, { baseUrl }, headers);
   afterTrxReq = fixDirect.req;
-
   let bodyBuf = undefined;
   let bodyForm = undefined;
   let contentLength = 0;
   let bodyPreview = "[empty]";
   let repaired = false;
   let parsed = false;
-
   if (afterTrxReq?.__abort){
   } else if (afterTrxReq.multipart === true){
     const form = new FormData();
@@ -715,7 +744,6 @@ async function getInvoke(args, coreData){
     if (!headers["Content-Type"]) headers["Content-Type"]="application/json; charset=utf-8";
     if (bodyBuf) headers["Content-Length"] = String(contentLength);
   }
-
   let res = null;
   if (postTransitionOnly){
     res = transitionInfo;
@@ -740,7 +768,6 @@ async function getInvoke(args, coreData){
       }
     }
   }
-
   let verify = null;
   if ((transitionInfo && transitionInfo.ok) || (fixDirect.fixed && res && res.ok)){
     if (verifyIssueKey){
@@ -752,7 +779,6 @@ async function getInvoke(args, coreData){
       };
     }
   }
-
   const hdrSubset = {};
   if (res?.headers && typeof res.headers.get==="function"){
     for (const k of ["x-arequestid","content-type","content-length","location","x-ratelimit-remaining","retry-after"]){
@@ -760,7 +786,6 @@ async function getInvoke(args, coreData){
       if (v) hdrSubset[k]=v;
     }
   }
-
   const out = {
     ok: !!res?.ok,
     status: res?.status||0,
@@ -774,14 +799,13 @@ async function getInvoke(args, coreData){
     verify,
     took_ms: Date.now()-startedAt
   };
-
   return out;
 }
 
-/***************************************************************
+/**************************************************************
 /* functionSignature: getDefaultExport ()                      *
 /* Build the tool definition and bind the invoke function.     *
-/***************************************************************/
+/**************************************************************/
 function getDefaultExport(){
   return {
     name: MODULE_NAME,
@@ -790,58 +814,110 @@ function getDefaultExport(){
       function: {
         name: MODULE_NAME,
         description:
-          "Jira Cloud proxy for all requests. Enforces the configured baseUrl from wo.toolsconfig.getJira and ignores AI-supplied hostnames. Early parses JSON bodies, repairs truncated JSON, sets Content-Length, and logs. Normalizes JQL (maps KEY/PROJ/YOUR_PROJECT_KEY → toolsconfig.getJira.projectKey and prefixes project=… unless meta.allowCrossProject=true). Coerces string description/comment to ADF. Auto-transitions issues when a status change is requested (fields.status, meta.transition, or status string at top-level/meta/body.transition). Replaces placeholder project keys in issue create/update with the configured projectKey.",
+          "Jira Cloud proxy for all REST API requests. Uses a preconfigured Jira Cloud base URL, project key, and credentials from the server configuration and ignores any hostnames passed in tool arguments. Early-parses JSON bodies, repairs truncated JSON, sets Content-Length, and normalizes JQL for search (including mapping KEY/PROJ/YOUR_PROJECT_KEY placeholders to the configured project key and auto-prefixing project=… unless meta.allowCrossProject=true). For search requests it always ensures that key issue metadata (key, summary, status, assignee, issuetype, priority) is returned, even if the caller restricts fields. Coerces string description/comment to ADF, and supports workflow transitions when a status change is requested (fields.status, meta.transition, or a status string on top-level/meta/body.transition).",
         parameters: {
           type: "object",
           additionalProperties: false,
           properties: {
             json: {
               type: "object",
+              description:
+                "Low-level Jira request definition. The tool enforces the Jira Cloud base URL and project key, normalizes search JQL, and enriches search results so that issue key + summary and core metadata are always available.",
               additionalProperties: false,
               properties: {
-                method: { type: "string", enum: ["GET","POST","PUT","DELETE","PATCH"] },
-                path: { type: "string" },
-                url: { type: "string" },
-                query: { type: "object" },
-                headers: { type: "object" },
-                body: { oneOf: [ { type: "object" }, { type: "string" } ] },
-                multipart: { type: "boolean" },
-                form: { type: "object" },
+                method: {
+                  type: "string",
+                  enum: ["GET","POST","PUT","DELETE","PATCH"],
+                  description: "HTTP method to use for the Jira REST API call."
+                },
+                path: {
+                  type: "string",
+                  description: "Path under the Jira base URL, e.g. '/rest/api/3/search' or '/rest/api/3/issue/KEY-123'."
+                },
+                url: {
+                  type: "string",
+                  description: "Optional full Jira URL. The proxy will strip the host and enforce the configured Jira base URL."
+                },
+                query: {
+                  type: "object",
+                  description: "Query parameters for the request. For search, 'jql' may be provided here; 'fields' will be enriched so key+summary+metadata are always included."
+                },
+                headers: {
+                  type: "object",
+                  description: "Additional HTTP headers to send. Authorization will be injected by the proxy."
+                },
+                body: {
+                  oneOf: [ { type: "object" }, { type: "string" } ],
+                  description: "Optional request body. For search POST requests, 'jql' and 'fields' can be specified; fields will be enriched with key/summary/status/assignee/issuetype/priority."
+                },
+                multipart: {
+                  type: "boolean",
+                  description: "If true, the request will be sent as multipart/form-data using 'form' and 'files'."
+                },
+                form: {
+                  type: "object",
+                  description: "Key/value pairs for multipart/form-data when 'multipart' is true."
+                },
                 files: {
                   type: "array",
+                  description: "Files to attach in multipart requests. Each item must at least contain a 'url' from which the proxy will download the file.",
                   items: {
                     type: "object",
                     additionalProperties: false,
                     properties: {
-                      url: { type: "string" },
-                      name: { type: "string" },
-                      filename: { type: "string" }
+                      url: { type: "string", description: "Publicly reachable URL to download the file content from." },
+                      name: { type: "string", description: "Form field name for this file. Defaults to 'file'." },
+                      filename: { type: "string", description: "Filename to send to Jira. Defaults to the last path segment of the URL." }
                     },
                     required: ["url"]
                   }
                 },
-                timeoutMs: { type: "number" },
-                responseType: { type: "string", enum: ["json","arraybuffer"] },
-                status: { type: "string" },
+                timeoutMs: {
+                  type: "number",
+                  description: "Optional per-request timeout in milliseconds. Falls back to a reasonable default if omitted."
+                },
+                responseType: {
+                  type: "string",
+                  enum: ["json","arraybuffer"],
+                  description: "Expected response type. 'json' returns parsed JSON, 'arraybuffer' returns binary data."
+                },
+                status: {
+                  type: "string",
+                  description: "Optional status string used for automatic workflow transitions, e.g. 'Done' or 'In Progress'."
+                },
                 meta: {
                   type: "object",
                   additionalProperties: false,
+                  description: "Additional proxy-level options such as allowCrossProject and transition details for workflow changes.",
                   properties: {
-                    allowCrossProject: { type: "boolean" },
-                    status: { type: "string" },
+                    allowCrossProject: {
+                      type: "boolean",
+                      description: "If true, the proxy will not automatically restrict search JQL to the configured project key."
+                    },
+                    status: {
+                      type: "string",
+                      description: "Alternative place for a status string used for auto-transition resolution."
+                    },
                     transition: {
                       type: "object",
                       additionalProperties: false,
+                      description: "Explicit workflow transition selector if you want to target a specific transition or status.",
                       properties: {
-                        id: { type: "string" },
-                        name: { type: "string" },
-                        toStatus: { type: "string" },
-                        toStatusId: { type: "string" },
-                        toStatusCategory: { type: "string" }
+                        id: { type: "string", description: "Transition id to perform." },
+                        name: { type: "string", description: "Transition name to match against available transitions." },
+                        toStatus: { type: "string", description: "Target status name (e.g. 'Done')." },
+                        toStatusId: { type: "string", description: "Target status id." },
+                        toStatusCategory: { type: "string", description: "Target status category name (e.g. 'Done', 'In Progress')." }
                       }
                     },
-                    transitionFields: { type: "object" },
-                    resolutionName: { type: "string" }
+                    transitionFields: {
+                      type: "object",
+                      description: "Optional fields object merged into the transition payload (e.g. resolution, custom fields)."
+                    },
+                    resolutionName: {
+                      type: "string",
+                      description: "Optional resolution name to set during a transition (e.g. 'Done', 'Won't Fix')."
+                    }
                   }
                 }
               },
