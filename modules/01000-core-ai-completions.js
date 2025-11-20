@@ -1,10 +1,8 @@
 /***************************************************************************************
 /* filename: "core-ai-completions.js"                                                  *
-/* Version 1.0                                                                          *
-/* Purpose: Platform-agnostic AI runner for chat completions with real tool calls only. *
+/* Version 1.0                                                                         *
+/* Purpose: Platform-agnostic AI runner for chat completions with real tool calls only.*
 /***************************************************************************************/
-/***************************************************************************************
-/*                                                                                     *
 /***************************************************************************************/
 
 import { getContext, setContext } from "../core/context.js";
@@ -346,27 +344,35 @@ export default async function getCoreAi(coreData) {
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "AI request started" });
+
   let snapshot = [];
   try { snapshot = await getContext(wo); }
   catch (e) {
     wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` });
   }
+
   const systemContent = await getSystemContent(wo, kiCfg);
   const allowToolHistory = !!kiCfg.includeHistoryTools;
   const messagesFromHistory = getPromptFromSnapshot(snapshot, kiCfg, allowToolHistory);
   const lastRecord = Array.isArray(snapshot) && snapshot.length ? snapshot[snapshot.length - 1] : null;
+
   let userContent = userPromptRaw;
   const runtimeCtx = getRuntimeContextFromLast(wo, kiCfg, lastRecord);
   if (runtimeCtx) userContent = getAppendedContextBlockToUserContent(userContent, runtimeCtx);
+
   let messages = [
     { role: "system", content: systemContent },
-    ...messagesFromHistory,{ role: "user", content: userContent }
+    ...messagesFromHistory,
+    { role: "user", content: userContent }
   ];
+
   const sendRealTools = kiCfg.exposeTools;
   const toolModules = sendRealTools ? await getToolsByName(kiCfg.toolsList, wo) : [];
   const toolDefs = sendRealTools ? getToolDefs(toolModules) : [];
   const persistQueue = [];
-  let finalText = "";
+
+  let accumulatedText = "";
+
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
@@ -397,12 +403,18 @@ export default async function getCoreAi(coreData) {
         });
         return coreData;
       }
+
       const data = getTryParseJSON(raw, null);
       const choice = data?.choices?.[0];
       const finish = choice?.finish_reason;
       const msg = choice?.message || {};
       const toolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
-      const assistantMsg = { role: "assistant", content: typeof msg.content === "string" ? msg.content : "" };
+
+      const assistantMsg = {
+        role: "assistant",
+        content: typeof msg.content === "string" ? msg.content : ""
+      };
+
       if (toolCalls && toolCalls.length) {
         assistantMsg.tool_calls = toolCalls.map(tc => ({
           id: tc?.id,
@@ -422,9 +434,16 @@ export default async function getCoreAi(coreData) {
           message: `Assistant requested tool call(s): ${toolCalls.map(t => t?.function?.name).filter(Boolean).join(", ") || "(unknown)"}`,
           details: { count: toolCalls.length, ids: toolCalls.map(t => t?.id).filter(Boolean) }
         });
+      } else {
+        const chunkText = typeof msg.content === "string" ? msg.content : "";
+        if (chunkText) {
+          accumulatedText += (accumulatedText ? "\n" : "") + chunkText;
+        }
       }
+
       messages.push(assistantMsg);
       persistQueue.push(getWithTurnId(assistantMsg, wo));
+
       if (toolCalls && toolCalls.length && toolModules.length) {
         for (const tc of toolCalls) {
           const toolMsg = await getExecToolCall(toolModules, tc, coreData);
@@ -433,13 +452,14 @@ export default async function getCoreAi(coreData) {
         }
         continue;
       }
+
       if (finish === "length") {
         const cont = { role: "user", content: "continue" };
         messages.push(cont);
         persistQueue.push(getWithTurnId(cont, wo));
         continue;
       }
-      finalText = typeof msg.content === "string" ? msg.content.trim() : "";
+
       break;
     } catch (err) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
@@ -454,8 +474,11 @@ export default async function getCoreAi(coreData) {
           : `AI request failed: ${err?.message || String(err)}`
       });
       return coreData;
+    } finally {
+      clearTimeout(timer);
     }
   }
+
   for (const turn of persistQueue) {
     try { await setContext(wo, turn); }
     catch (e) {
@@ -468,7 +491,9 @@ export default async function getCoreAi(coreData) {
       });
     }
   }
-  wo.Response = finalText || "[Empty AI response]";
+
+  wo.Response = accumulatedText.trim() || "[Empty AI response]";
+
   wo.logging.push({
     timestamp: new Date().toISOString(),
     severity: "info",

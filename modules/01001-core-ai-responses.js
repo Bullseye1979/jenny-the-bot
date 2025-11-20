@@ -4,8 +4,8 @@
 /* Purpose: Responses runner (GPT-5) with context translation, real tool handling,      *
 /*          image persistence, and robust logging (file-based only, no console output). *
 /***************************************************************************************/
-/***************************************************************************************
-/*                                                                                     *
+/***************************************************************************************/
+/*                                                                                     */
 /***************************************************************************************/
 
 import { getContext, setContext } from "../core/context.js";
@@ -581,9 +581,12 @@ export default async function getCoreAi(coreData){
   const toolsForResponses = [{ type:"image_generation" }, ...toolDefs];
   const toolChoiceInitial = getNormalizedToolChoice(wo?.ToolChoice) || "auto";
   const persistQueue = [];
-  let finalText = "";
-  let totalToolCalls = 0;
 
+  let finalText = "";
+  let accumulatedText = "";
+  let allHostedLinks = [];
+
+  let totalToolCalls = 0;
   let attempts = 0;
   const maxAttempts = Math.max(1, getNum(wo?.MaxAttempts, Math.min(3, maxLoops)));
 
@@ -640,6 +643,10 @@ export default async function getCoreAi(coreData){
         wo.logging.push({ timestamp:new Date().toISOString(), severity:"info", module:MODULE_NAME, exitStatus:"success", message:`No images parsed from response.` });
       }
 
+      if (hostedLinks.length) {
+        allHostedLinks.push(...hostedLinks);
+      }
+
       setLogBig("responses-parsed-summary", { textPreview: getPreview(parsed.text, 300), images: getImageSummaryForLog(parsed.images), toolCalls: parsed.toolCalls }, { toFile: debugOn });
       setLogBig("responses-hosted-links", hostedLinks, { toFile: debugOn });
 
@@ -651,7 +658,9 @@ export default async function getCoreAi(coreData){
         const msg = { role:"assistant", content: assistantText };
         messages.push(msg);
         persistQueue.push(getWithTurnId(msg, wo));
+        accumulatedText += (accumulatedText ? "\n" : "") + assistantText;
       }
+
       if (hostedLinks.length) {
         const linkBlock = `${hostedLinks.map(u=>`- ${u}`).join("\n")}`;
         const m1 = { role:"assistant", content: linkBlock };
@@ -695,7 +704,12 @@ export default async function getCoreAi(coreData){
         continue;
       }
 
-      finalText = [ assistantText, (hostedLinks.length ? `${hostedLinks.map(u=>`- ${u}`).join("\n")}` : "") ].filter(Boolean).join("\n\n");
+      const primaryText = accumulatedText || assistantText || "";
+      const linkText = allHostedLinks.length
+        ? allHostedLinks.map(u => `- ${u}`).join("\n")
+        : "";
+
+      finalText = [primaryText, linkText].filter(Boolean).join("\n\n");
       break;
     } catch(err){
       clearTimeout(timer);

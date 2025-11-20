@@ -561,6 +561,9 @@ export default async function getCoreAi(coreData) {
 
   const persistQueue = [];
   let finalText = "";
+
+  let accumulatedText = "";
+
   let pseudoToolUsed = false;
 
   for (let i = 0; i < kiCfg.maxLoops; i++) {
@@ -596,10 +599,20 @@ export default async function getCoreAi(coreData) {
       const choice = data?.choices?.[0];
       const finish = choice?.finish_reason;
       const msg = choice?.message || {};
-      const assistantMsg = { role: "assistant", content: typeof msg.content === "string" ? msg.content : "" };
+      const msgText = typeof msg.content === "string" ? msg.content : "";
+      const assistantMsg = { role: "assistant", content: msgText };
+
+      const looksLikePseudoTool = !pseudoToolUsed && !!getMaybePseudoToolCall(msgText);
 
       messages.push(assistantMsg);
       persistQueue.push(getWithTurnId(assistantMsg, wo));
+
+      if (!looksLikePseudoTool && msgText) {
+        const chunk = msgText.trim();
+        if (chunk) {
+          accumulatedText += (accumulatedText ? "\n" : "") + chunk;
+        }
+      }
 
       if (!pseudoToolUsed) {
         const pt = getMaybePseudoToolCall(assistantMsg.content || "");
@@ -646,7 +659,7 @@ export default async function getCoreAi(coreData) {
         continue;
       }
 
-      finalText = typeof msg.content === "string" ? msg.content.trim() : "";
+      finalText = accumulatedText || msgText.trim() || "";
       break;
     } catch (err) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";

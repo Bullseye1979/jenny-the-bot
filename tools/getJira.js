@@ -1,49 +1,43 @@
-/**************************************************************
-/* filename: "getJira.js"                                     *
-/* Version 1.0                                                *
-/* Purpose: Jira Cloud proxy with baseUrl enforcement, project *
-/* placeholder replacement, early JSON parse/repair, JQL       *
-/* normalization, ADF coercion, auto-transition by status      *
-/* (incl. status string), direct name→ID fix, optional         *
-/* resolution/fields, post-transition verification, and        *
-/* enriched search results (always includes key + summary      *
-/* metadata).                                                 *
-/**************************************************************/
-/**************************************************************/
+/************************************************************************************************************************************************
+/* filename: "getJira.js"                                                                                                                                                           *
+/* Version 1.0                                                                                                                                                                      *
+/* Purpose: Jira Cloud proxy enforcing baseUrl + project key, repairing/normalizing requests (JQL, ADF, status→transition), multipart uploads, and enriched search fields.         *
+/************************************************************************************************************************************************/
+/************************************************************************************************************************************************/
 
 const MODULE_NAME = "getJira";
 
-/**************************************************************
-/* functionSignature: getStr (v, f)                            *
-/* Return string v if non-empty, else fallback f.              *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getStr (v, f)                                                                                                                                                  *
+/* Return string v if non-empty, else fallback f.                                                                                                                                    *
+/************************************************************************************************************************************************/
 function getStr(v, f){ return (typeof v==="string" && v.length)? v : f; }
 
-/**************************************************************
-/* functionSignature: getNum (v, f)                            *
-/* Return finite numeric value or fallback.                    *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getNum (v, f)                                                                                                                                                  *
+/* Return finite numeric value or fallback.                                                                                                                                          *
+/************************************************************************************************************************************************/
 function getNum(v, f){ return Number.isFinite(v)? Number(v) : f; }
 
-/**************************************************************
-/* functionSignature: getDebug (label, obj)                    *
-/* Optional debug hook; no output in production.               *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getDebug (label, obj)                                                                                                                                          *
+/* Optional debug hook; no output in production.                                                                                                                                     *
+/************************************************************************************************************************************************/
 function getDebug(label, obj){}
 
-/**************************************************************
-/* functionSignature: getAuthHeader (email, token)             *
-/* Build Basic auth header from email and token.               *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getAuthHeader (email, token)                                                                                                                                    *
+/* Build Basic auth header from email and token.                                                                                                                                     *
+/************************************************************************************************************************************************/
 function getAuthHeader(email, token){
   const b64 = Buffer.from(`${email}:${token}`).toString("base64");
   return { Authorization: `Basic ${b64}` };
 }
 
-/**************************************************************
-/* functionSignature: getBuildUrl (baseUrl, path, query)       *
-/* Build absolute URL from base URL, path, and query.          *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getBuildUrl (baseUrl, path, query)                                                                                                                             *
+/* Build absolute URL from base URL, path, and query.                                                                                                                                *
+/************************************************************************************************************************************************/
 function getBuildUrl(baseUrl, path, query){
   const root = String(baseUrl||"").replace(/\/+$/,"");
   const p0 = String(path||"").trim().replace(/\/+$/,"");
@@ -57,13 +51,13 @@ function getBuildUrl(baseUrl, path, query){
     }
   }
   const q = qs.toString();
-  return q? `${root${""}}${rel}?${q}` : `${root}${rel}`;
+  return q? `${root}${rel}?${q}` : `${root}${rel}`;
 }
 
-/**************************************************************
-/* functionSignature: getPathFromUrl (url, baseUrl)            *
-/* Extract path when url shares origin with baseUrl.           *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getPathFromUrl (url, baseUrl)                                                                                                                                   *
+/* Extract path when url shares origin with baseUrl.                                                                                                                                 *
+/************************************************************************************************************************************************/
 function getPathFromUrl(url, baseUrl){
   try{
     const u = new URL(String(url||""));
@@ -73,18 +67,18 @@ function getPathFromUrl(url, baseUrl){
   }catch{ return ""; }
 }
 
-/**************************************************************
-/* functionSignature: getPathnameAny (url)                     *
-/* Extract pathname from any absolute URL.                     *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getPathnameAny (url)                                                                                                                                            *
+/* Extract pathname from any absolute URL.                                                                                                                                            *
+/************************************************************************************************************************************************/
 function getPathnameAny(url){
   try{ return new URL(String(url||"")).pathname.replace(/\/+$/,""); }catch{ return ""; }
 }
 
-/**************************************************************
-/* functionSignature: getEnforcedBaseUrl (req, baseUrl)        *
-/* Map any request to the configured baseUrl.                  *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getEnforcedBaseUrl (req, baseUrl)                                                                                                                               *
+/* Map any request to the configured baseUrl.                                                                                                                                         *
+/************************************************************************************************************************************************/
 function getEnforcedBaseUrl(req, baseUrl){
   if (req.path && String(req.path).trim()){
     return getBuildUrl(baseUrl, String(req.path).trim(), req.query || {});
@@ -105,10 +99,10 @@ function getEnforcedBaseUrl(req, baseUrl){
   return getBuildUrl(baseUrl, "/", req.query || {});
 }
 
-/**************************************************************
-/* functionSignature: getFetchJson (url, opts, timeoutMs)      *
-/* Fetch JSON or text with timeout; return structured result.  *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getFetchJson (url, opts, timeoutMs)                                                                                                                             *
+/* Fetch JSON or text with timeout; return structured result.                                                                                                                        *
+/************************************************************************************************************************************************/
 async function getFetchJson(url, opts={}, timeoutMs=60000){
   const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), Math.max(1, timeoutMs));
   try{
@@ -125,10 +119,10 @@ async function getFetchJson(url, opts={}, timeoutMs=60000){
   }finally{ clearTimeout(t); }
 }
 
-/**************************************************************
-/* functionSignature: getFetchBuffer (url, timeoutMs)          *
-/* Fetch as binary buffer with content type.                   *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getFetchBuffer (url, timeoutMs)                                                                                                                                 *
+/* Fetch as binary buffer with content type.                                                                                                                                          *
+/************************************************************************************************************************************************/
 async function getFetchBuffer(url, timeoutMs=60000){
   const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), Math.max(1, timeoutMs));
   try{
@@ -140,10 +134,10 @@ async function getFetchBuffer(url, timeoutMs=60000){
   }finally{ clearTimeout(t); }
 }
 
-/**************************************************************
-/* functionSignature: getStatusArgFromReq (req)                *
-/* Extract status string from request meta/fields.             *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getStatusArgFromReq (req)                                                                                                                                       *
+/* Extract status string from request meta/fields.                                                                                                                                    *
+/************************************************************************************************************************************************/
 function getStatusArgFromReq(req){
   const fromMeta = getStr(req?.meta?.status, "");
   if (fromMeta) return fromMeta;
@@ -154,10 +148,10 @@ function getStatusArgFromReq(req){
   return "";
 }
 
-/**************************************************************
-/* functionSignature: getRepairJsonString (s)                  *
-/* Repair truncated JSON by closing strings/braces/brackets.   *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getRepairJsonString (s)                                                                                                                                         *
+/* Repair truncated JSON by closing strings/braces/brackets.                                                                                                                          *
+/************************************************************************************************************************************************/
 function getRepairJsonString(s){
   const str = String(s||"");
   let inStr=false, esc=false, braces=0, brackets=0;
@@ -182,10 +176,10 @@ function getRepairJsonString(s){
   return repaired;
 }
 
-/**************************************************************
-/* functionSignature: getStableJsonBuffer (body)               *
-/* Normalize body to Buffer and preview; attempt repairs.      *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getStableJsonBuffer (body)                                                                                                                                      *
+/* Normalize body to Buffer and preview; attempt repairs.                                                                                                                             *
+/************************************************************************************************************************************************/
 function getStableJsonBuffer(body){
   if (body === undefined || body === null) return { buf: undefined, len: 0, preview: "[empty]", repaired:false, parsed:false };
   if (typeof body === "string"){
@@ -222,10 +216,10 @@ function getStableJsonBuffer(body){
   return { buf, len: buf.byteLength, preview: prev, repaired:false, parsed:false };
 }
 
-/**************************************************************
-/* functionSignature: getSplitJqlOrderBy (jql)                 *
-/* Split JQL into core and ORDER BY segment.                   *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getSplitJqlOrderBy (jql)                                                                                                                                       *
+/* Split JQL into core and ORDER BY segment.                                                                                                                                         *
+/************************************************************************************************************************************************/
 function getSplitJqlOrderBy(jql){
   const src = String(jql||"");
   const m = src.match(/\border\s+by\b/i);
@@ -236,10 +230,10 @@ function getSplitJqlOrderBy(jql){
   return { core, orderBy };
 }
 
-/**************************************************************
-/* functionSignature: getSanitizedJqlPlaceholders (jql, key)   *
-/* Replace project placeholders with configured key.           *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getSanitizedJqlPlaceholders (jql, key)                                                                                                                         *
+/* Replace project placeholders with configured key.                                                                                                                                 *
+/************************************************************************************************************************************************/
 function getSanitizedJqlPlaceholders(jql, projectKey){
   let s = String(jql||"").trim();
   if (!s) return s;
@@ -253,10 +247,10 @@ function getSanitizedJqlPlaceholders(jql, projectKey){
   return s;
 }
 
-/**************************************************************
-/* functionSignature: getEnsuredProjectRestriction (jql, key,  *
-/* allowCross) Ensure project restriction unless allowed.      *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getEnsuredProjectRestriction (jql, key, allowCross)                                                                                                            *
+/* Ensure project restriction unless allowed.                                                                                                                                        *
+/************************************************************************************************************************************************/
 function getEnsuredProjectRestriction(jql, projectKey, allowCross){
   if (!projectKey || allowCross) return String(jql||"").trim();
   const { core, orderBy } = getSplitJqlOrderBy(jql);
@@ -269,13 +263,10 @@ function getEnsuredProjectRestriction(jql, projectKey, allowCross){
   return [withProj, orderBy].filter(Boolean).join(" ").trim();
 }
 
-/**************************************************************
-/* functionSignature: getEnsuredSearchFields (fields, mode)    *
-/* Ensure search results always include key metadata fields.   *
-/* mode: "array" (for POST body) or "string" (for GET query).  *
-/* Core fields: key, summary, status, assignee, issuetype,     *
-/*              priority.                                      *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getEnsuredSearchFields (fields, mode)                                                                                                                          *
+/* Ensure search results always include key metadata fields. Mode: "array" or "string".                                                                                              *
+/************************************************************************************************************************************************/
 function getEnsuredSearchFields(fields, mode){
   const core = ["key","summary","status","assignee","issuetype","priority"];
   if (fields === undefined || fields === null){
@@ -298,12 +289,10 @@ function getEnsuredSearchFields(fields, mode){
   return mode === "array" ? arr : arr.join(",");
 }
 
-/**************************************************************
-/* functionSignature: getNormalizedSearchShape (req, key)      *
-/* Normalize search requests and JQL for project enforcement.  *
-/* Also ensures key metadata fields (key, summary, status,     *
-/* assignee, issuetype, priority) are always included.         *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getNormalizedSearchShape (req, key)                                                                                                                            *
+/* Normalize search requests and JQL for project enforcement; ensure key metadata fields are included.                                                                               *
+/************************************************************************************************************************************************/
 function getNormalizedSearchShape(reqIn, defaultProjectKey){
   const isSearch = (p)=> /^https?:\/\/[^/]+\/rest\/api\/3\/search(?:\/jql)?\/?$|^\/rest\/api\/3\/search(?:\/jql)?\/?$/i.test(String(p||""));
   const p = reqIn.path || reqIn.url || "";
@@ -336,19 +325,19 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   return { ...reqIn, method:"POST", path:"/rest/api/3/search/jql", url: undefined, query:{}, body };
 }
 
-/**************************************************************
-/* functionSignature: getADFParagraphDoc (text)                *
-/* Build a minimal ADF paragraph document from text.           *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getADFParagraphDoc (text)                                                                                                                                      *
+/* Build a minimal ADF paragraph document from text.                                                                                                                                *
+/************************************************************************************************************************************************/
 function getADFParagraphDoc(text){
   const s = String(text||"");
   return { type: "doc", version: 1, content: [{ type:"paragraph", content: s ? [{ type:"text", text:s }] : [] }] };
 }
 
-/**************************************************************
-/* functionSignature: getIsProjectPlaceholderKey (k)           *
-/* Detect placeholder-like project keys.                       *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getIsProjectPlaceholderKey (k)                                                                                                                                *
+/* Detect placeholder-like project keys.                                                                                                                                             *
+/************************************************************************************************************************************************/
 function getIsProjectPlaceholderKey(k){
   const up = String(k||"").trim().toUpperCase();
   if (!up) return true;
@@ -356,10 +345,10 @@ function getIsProjectPlaceholderKey(k){
   return bad.includes(up);
 }
 
-/**************************************************************
-/* functionSignature: setEarlyParseBody (req)                  *
-/* Parse string body to JSON early; attempt repairs.           *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: setEarlyParseBody (req)                                                                                                                                       *
+/* Parse string body to JSON early; attempt repairs.                                                                                                                                 *
+/************************************************************************************************************************************************/
 function setEarlyParseBody(req){
   if (!req || typeof req!=="object") return { req, parsed:false };
   if (typeof req.body === "string"){
@@ -373,10 +362,10 @@ function setEarlyParseBody(req){
   return { req, parsed:false };
 }
 
-/**************************************************************
-/* functionSignature: getNormalizedIssueBodyADFAndProject (req,*
-/* key) Coerce strings to ADF and enforce project key.         *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getNormalizedIssueBodyADFAndProject (req, key)                                                                                                                *
+/* Coerce strings to ADF and enforce project key.                                                                                                                                    *
+/************************************************************************************************************************************************/
 function getNormalizedIssueBodyADFAndProject(req, defaultProjectKey){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -413,10 +402,10 @@ function getNormalizedIssueBodyADFAndProject(req, defaultProjectKey){
   return req;
 }
 
-/**************************************************************
-/* functionSignature: getNormalizedCommentADF (req)            *
-/* Coerce comment string body to ADF.                          *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getNormalizedCommentADF (req)                                                                                                                                  *
+/* Coerce comment string body to ADF.                                                                                                                                                *
+/************************************************************************************************************************************************/
 function getNormalizedCommentADF(req){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -430,19 +419,19 @@ function getNormalizedCommentADF(req){
   return req;
 }
 
-/**************************************************************
-/* functionSignature: getFetchTransitions (baseUrl, issue,     *
-/* headers) Fetch available transitions for an issue.          *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getFetchTransitions (baseUrl, issue, headers)                                                                                                                 *
+/* Fetch available transitions for an issue.                                                                                                                                         *
+/************************************************************************************************************************************************/
 async function getFetchTransitions(baseUrl, issueIdOrKey, headers){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}/transitions?expand=transitions.fields`;
   return await getFetchJson(url, { method:"GET", headers }, 30000);
 }
 
-/**************************************************************
-/* functionSignature: getPickTransitionId (transitions, want)  *
-/* Choose transition id by id/name/target status properties.   *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getPickTransitionId (transitions, want)                                                                                                                        *
+/* Choose transition id by id/name/target status properties.                                                                                                                         *
+/************************************************************************************************************************************************/
 function getPickTransitionId(transitions, desired){
   if (!Array.isArray(transitions)) return null;
   const norm = (s)=> String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
@@ -476,10 +465,10 @@ function getPickTransitionId(transitions, desired){
   return null;
 }
 
-/**************************************************************
-/* functionSignature: getPickByStatusString (transitions, s)   *
-/* Choose transition id by matching status-like string.        *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getPickByStatusString (transitions, s)                                                                                                                         *
+/* Choose transition id by matching status-like string.                                                                                                                              *
+/************************************************************************************************************************************************/
 function getPickByStatusString(transitions, statusStr){
   if (!Array.isArray(transitions) || !statusStr) return null;
   const norm = (s)=> String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
@@ -493,10 +482,10 @@ function getPickByStatusString(transitions, statusStr){
   return null;
 }
 
-/**************************************************************
-/* functionSignature: getFindTransitionId (baseUrl, issue,     *
-/* headers, target, statusStr) Resolve transition id.          *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getFindTransitionId (baseUrl, issue, headers, target, statusStr)                                                                                               *
+/* Resolve transition id from target hints and/or status string.                                                                                                                     *
+/************************************************************************************************************************************************/
 async function getFindTransitionId(baseUrl, issueIdOrKey, headers, target, statusStr){
   const r = await getFetchTransitions(baseUrl, issueIdOrKey, headers);
   const list = r.data;
@@ -510,10 +499,10 @@ async function getFindTransitionId(baseUrl, issueIdOrKey, headers, target, statu
   return { id, list };
 }
 
-/**************************************************************
-/* functionSignature: getPerformTransition (baseUrl, issue,    *
-/* headers, body) Perform a workflow transition.               *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getPerformTransition (baseUrl, issue, headers, body)                                                                                                          *
+/* Perform a workflow transition.                                                                                                                                                    *
+/************************************************************************************************************************************************/
 async function getPerformTransition(baseUrl, issueIdOrKey, headers, body){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}/transitions`;
   const payload = JSON.stringify(body||{});
@@ -521,10 +510,10 @@ async function getPerformTransition(baseUrl, issueIdOrKey, headers, body){
   return await getFetchJson(url, { method:"POST", headers: h, body: Buffer.from(payload,"utf8") }, 30000);
 }
 
-/**************************************************************
-/* functionSignature: getBuildTransitionPayload (id, meta)     *
-/* Build transition payload with optional fields/resolution.   *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getBuildTransitionPayload (id, meta)                                                                                                                           *
+/* Build transition payload with optional fields/resolution.                                                                                                                         *
+/************************************************************************************************************************************************/
 function getBuildTransitionPayload(transitionId, meta){
   const fields = (meta && typeof meta === "object" && meta.transitionFields && typeof meta.transitionFields === "object")
     ? { ...meta.transitionFields } : {};
@@ -536,10 +525,10 @@ function getBuildTransitionPayload(transitionId, meta){
   return payload;
 }
 
-/**************************************************************
-/* functionSignature: getFetchIssueStatus (baseUrl, issue,     *
-/* headers) Fetch issue status and resolution for verification.*/
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getFetchIssueStatus (baseUrl, issue, headers)                                                                                                                 *
+/* Fetch issue status and resolution for verification.                                                                                                                               *
+/************************************************************************************************************************************************/
 async function getFetchIssueStatus(baseUrl, issueIdOrKey, headers){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}?fields=status,resolution`;
   const r = await getFetchJson(url, { method:"GET", headers }, 30000);
@@ -548,10 +537,10 @@ async function getFetchIssueStatus(baseUrl, issueIdOrKey, headers){
   return { ok: r.ok, statusObj: status, resolutionObj: resolution, raw: r.data };
 }
 
-/**************************************************************
-/* functionSignature: getMaybeAutoTransition (req, cfg,        *
-/* headers) Auto-transition for PUT/PATCH issue updates.       *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getMaybeAutoTransition (req, cfg, headers)                                                                                                                     *
+/* Auto-transition for PUT/PATCH issue updates when status hint is present.                                                                                                          *
+/************************************************************************************************************************************************/
 async function getMaybeAutoTransition(req, cfg, headers){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -597,10 +586,10 @@ async function getMaybeAutoTransition(req, cfg, headers){
   return { req: null, transitionResult: trxRes, verify: { issueKey } };
 }
 
-/**************************************************************
-/* functionSignature: setFixDirectTransition (req, cfg,        *
-/* headers) Resolve direct transition by name/status.          *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: setFixDirectTransition (req, cfg, headers)                                                                                                                     *
+/* Resolve direct transition by name/status when id invalid or missing.                                                                                                              *
+/************************************************************************************************************************************************/
 async function setFixDirectTransition(req, cfg, headers){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -670,10 +659,10 @@ async function setFixDirectTransition(req, cfg, headers){
   return { req: next, fixed:true };
 }
 
-/**************************************************************
-/* functionSignature: getInvoke (args, coreData)               *
-/* Main entry: enforce baseUrl and normalize request shape.    *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getInvoke (args, coreData)                                                                                                                                    *
+/* Main entry: enforce baseUrl and normalize request shape.                                                                                                                          *
+/************************************************************************************************************************************************/
 async function getInvoke(args, coreData){
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
@@ -802,10 +791,10 @@ async function getInvoke(args, coreData){
   return out;
 }
 
-/**************************************************************
-/* functionSignature: getDefaultExport ()                      *
-/* Build the tool definition and bind the invoke function.     *
-/**************************************************************/
+/************************************************************************************************************************************************
+/* functionSignature: getDefaultExport ()                                                                                                                                            *
+/* Build the tool definition and bind the invoke function.                                                                                                                           *
+/************************************************************************************************************************************************/
 function getDefaultExport(){
   return {
     name: MODULE_NAME,
