@@ -3,7 +3,7 @@
 /* Version 1.0                                                 *
 /* Purpose: Global watcher for tool calls; polls registry and  *
 /*          triggers the "toolcall" flow when tool presence    *
-/*          changes.                                           *
+/*          OR identity changes.                               *
 /***************************************************************/
 
 /***************************************************************/
@@ -47,6 +47,28 @@ function getHasToolValue(val) {
 }
 
 /***************************************************************/
+/* functionSignature: getToolIdentity (val)                    *
+/* Returns a stable identity string for the current tool value *
+/***************************************************************/
+function getToolIdentity(val) {
+  if (!val) return "";
+  if (typeof val === "string") return val.trim();
+
+  if (typeof val === "object") {
+    if (typeof val.name === "string" && val.name.trim()) return val.name.trim();
+    if (typeof val.tool === "string" && val.tool.trim()) return val.tool.trim();
+    // Fallback: stabilize on JSON, falls mal mehr Infos drin sind
+    try {
+      return JSON.stringify(val);
+    } catch {
+      return "[object tool]";
+    }
+  }
+
+  return String(val);
+}
+
+/***************************************************************/
 /* functionSignature: setTick (args)                           *
 /* Poll loop body that detects changes and triggers the flow   *
 /***************************************************************/
@@ -54,18 +76,31 @@ async function setTick({ pollMs, registryKey, createRunCore, runFlow, log, lastS
   try {
     const val = await getItem(registryKey);
     const hasTool = getHasToolValue(val);
-    if (hasTool !== lastStateRef.value) {
-      log(`toolcall state changed → hasTool=${hasTool}`, "info", { moduleName: MODULE_NAME });
+    const identity = hasTool ? getToolIdentity(val) : "";
+
+    // Reagieren, wenn:
+    //  - Präsenz sich ändert (false <-> true) ODER
+    //  - Tool weiterhin vorhanden, aber Identität (Name) anders ist
+    if (hasTool !== lastStateRef.hasTool || identity !== lastStateRef.identity) {
+      log(
+        `toolcall state changed → hasTool=${hasTool}, identity="${identity}"`,
+        "info",
+        { moduleName: MODULE_NAME }
+      );
       const rc = createRunCore();
       rc.workingObject.updateStatus = true;
-      rc.workingObject.toolcallState = { hasTool, value: val };
+      rc.workingObject.toolcallState = { hasTool, value: val, identity };
       await runFlow(MODULE_NAME, rc);
-      lastStateRef.value = hasTool;
+      lastStateRef.hasTool = hasTool;
+      lastStateRef.identity = identity;
     }
   } catch (e) {
     log(`toolcall watcher error: ${e?.message || String(e)}`, "error", { moduleName: MODULE_NAME });
   } finally {
-    setTimeout(() => setTick({ pollMs, registryKey, createRunCore, runFlow, log, lastStateRef }), pollMs);
+    setTimeout(
+      () => setTick({ pollMs, registryKey, createRunCore, runFlow, log, lastStateRef }),
+      pollMs
+    );
   }
 }
 
@@ -79,6 +114,12 @@ export default async function getToolcallFlow(baseCore, runFlow, createRunCore) 
   const pollMs = Math.max(100, getNum(cfg.pollMs, 400));
   const registryKey = getStr(cfg.registryKey, "status:tool");
   const initialDelayMs = getNum(cfg.initialDelayMs, 500);
-  const lastStateRef = { value: false };
-  setTimeout(() => setTick({ pollMs, registryKey, createRunCore, runFlow, log, lastStateRef }), initialDelayMs);
+
+  // lastStateRef hält nun Präsenz UND Identität
+  const lastStateRef = { hasTool: false, identity: "" };
+
+  setTimeout(
+    () => setTick({ pollMs, registryKey, createRunCore, runFlow, log, lastStateRef }),
+    initialDelayMs
+  );
 }

@@ -106,15 +106,27 @@ function resolveToolConfig(wo = {}, args = {}) {
 /* Starts a prediction and returns its id                                       *
 /********************************************************************************/
 async function getCreatePrediction(cfg, input, model) {
-  const [owner, name] = String(model).split("/");
-  const url = `${cfg.baseUrl}/models/${owner}/${name}/predictions`;
+  // cfg.baseUrl z.B. "https://api.replicate.com/v1"
+  const url = `${cfg.baseUrl}/predictions`;
+  const payload = {
+    version: String(model),
+    input
+  };
+
   const res = await fetch(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${cfg.apiToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ input })
+    headers: {
+      Authorization: `Bearer ${cfg.apiToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
   });
+
   const raw = await res.text();
-  if (!res.ok) throw new Error(`start failed: ${res.status} ${res.statusText} ${raw.slice(0,200)}`);
+  if (!res.ok) {
+    throw new Error(`start failed: ${res.status} ${res.statusText} ${raw.slice(0, 200)}`);
+  }
+
   const data = JSON.parse(raw);
   const id = data?.id || data?.prediction?.id || null;
   if (!id) throw new Error("start failed: missing prediction id");
