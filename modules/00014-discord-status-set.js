@@ -1,12 +1,11 @@
-/***************************************************************/
-/* filename: "discord-status-set.js"                           *
-/* Version 1.0                                                 *
-/* Purpose: Discord presence updater                           *
-/***************************************************************/
-
-/***************************************************************/
-/*                                                             *
-/***************************************************************/
+/**********************************************************************************************************************
+/* filename: "discord-status-set.js"                                                                                 *
+/* Version 1.0                                                                                                       *
+/* Purpose: Discord presence updater                                                                                 *
+/**********************************************************************************************************************/
+/**********************************************************************************************************************
+/*                                                                                                                    *
+/**********************************************************************************************************************/
 
 import * as registry from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -20,45 +19,45 @@ const CLIENT_REF = "discord:client";
 const getItem = registry.getItem;
 const setItem = typeof registry.setItem === "function" ? registry.setItem : null;
 
-/***************************************************************/
-/* functionSignature: getNum (v, d)                            *
-/* Parses a number or returns default                          *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getNum (v, d)                                                                                   *
+/* Parses a number or returns default                                                                                 *
+/**********************************************************************************************************************/
 function getNum(v, d) {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
 }
 
-/***************************************************************/
-/* functionSignature: getStr (v, d)                            *
-/* Returns a non-empty string or default                       *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getStr (v, d)                                                                                   *
+/* Returns a non-empty string or default                                                                              *
+/**********************************************************************************************************************/
 function getStr(v, d) {
   return typeof v === "string" && v.length ? v : d;
 }
 
-/***************************************************************/
-/* functionSignature: getBool (v, d)                           *
-/* Returns a boolean or default                                *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getBool (v, d)                                                                                  *
+/* Returns a boolean or default                                                                                       *
+/**********************************************************************************************************************/
 function getBool(v, d) {
   return typeof v === "boolean" ? v : d;
 }
 
-/***************************************************************/
-/* functionSignature: getHardTrimmed (s, maxChars)             *
-/* Collapses whitespace and hard-limits to max characters      *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getHardTrimmed (s, maxChars)                                                                     *
+/* Collapses whitespace and hard-limits to max characters                                                              *
+/**********************************************************************************************************************/
 function getHardTrimmed(s, maxChars) {
   const t = String(s || "").replace(/\s+/g, " ").trim();
   if (!maxChars || maxChars <= 0) return t;
   return t.length <= maxChars ? t : t.slice(0, maxChars).trim();
 }
 
-/***************************************************************/
-/* functionSignature: getFillTemplate (tpl, vars)              *
-/* Replaces {KEY} placeholders with provided values            *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getFillTemplate (tpl, vars)                                                                      *
+/* Replaces {KEY} placeholders with provided values                                                                    *
+/**********************************************************************************************************************/
 function getFillTemplate(tpl, vars) {
   if (!tpl) return "";
   return tpl.replace(/\{(\w+)\}/g, (_, key) =>
@@ -66,10 +65,10 @@ function getFillTemplate(tpl, vars) {
   );
 }
 
-/***************************************************************/
-/* functionSignature: getAllowedChannels (cfg)                 *
-/* Resolves allowed channel IDs for DB context selection       *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getAllowedChannels (cfg)                                                                         *
+/* Resolves allowed channel IDs for DB context selection                                                               *
+/**********************************************************************************************************************/
 function getAllowedChannels(cfg) {
   if (cfg?.aiGenerator && "allowedChannels" in cfg.aiGenerator) {
     return cfg.aiGenerator.allowedChannels;
@@ -77,10 +76,10 @@ function getAllowedChannels(cfg) {
   return cfg?.allowedChannels;
 }
 
-/***************************************************************/
-/* functionSignature: getIsPlaceholderOnlyMode (cfg, log)      *
-/* True if allowedChannels = [] → placeholder-only mode        *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getIsPlaceholderOnlyMode (cfg, log)                                                              *
+/* True if allowedChannels = [] → placeholder-only mode                                                                *
+/**********************************************************************************************************************/
 function getIsPlaceholderOnlyMode(cfg, log) {
   const raw = getAllowedChannels(cfg);
   if (raw === undefined) return false;
@@ -95,10 +94,10 @@ function getIsPlaceholderOnlyMode(cfg, log) {
   return false;
 }
 
-/***************************************************************/
-/* functionSignature: getDsnString (db)                        *
-/* Builds a compact DSN-like string for pool identity          *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getDsnString (db)                                                                                *
+/* Builds a compact DSN-like string for pool identity                                                                  *
+/**********************************************************************************************************************/
 function getDsnString(db) {
   const h = db?.host || "localhost";
   const u = db?.user || "";
@@ -106,10 +105,10 @@ function getDsnString(db) {
   return `${u}@${h}/${n}`;
 }
 
-/***************************************************************/
-/* functionSignature: getDbPool (workingDb)                    *
-/* Returns a shared MySQL pool for the given DB config         *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getDbPool (workingDb)                                                                            *
+/* Returns a shared MySQL pool for the given DB config                                                                 *
+/**********************************************************************************************************************/
 let sharedPool = null;
 let sharedDsn = "";
 async function getDbPool(workingDb) {
@@ -133,10 +132,10 @@ async function getDbPool(workingDb) {
   return sharedPool;
 }
 
-/***************************************************************/
-/* functionSignature: getRecentContextRows (workingDb, opts)   *
-/* Fetches recent context rows; filters by allowed channels    *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getRecentContextRows (workingDb, opts)                                                           *
+/* Fetches recent context rows; filters by allowed channels                                                            *
+/**********************************************************************************************************************/
 async function getRecentContextRows(workingDb, { limit = 20, allowedChannels } = {}) {
   const pool = await getDbPool(workingDb);
   const L = Math.max(1, getNum(limit, 20));
@@ -159,10 +158,10 @@ async function getRecentContextRows(workingDb, { limit = 20, allowedChannels } =
   return Array.isArray(rows) ? rows : [];
 }
 
-/***************************************************************/
-/* functionSignature: getSummarizedRows (rows, maxCharsPerLine)*
-/* Builds compact U:/A:/S: snippets from context rows          *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getSummarizedRows (rows, maxCharsPerLine)                                                        *
+/* Builds compact U:/A:/S: snippets from context rows                                                                  *
+/**********************************************************************************************************************/
 function getSummarizedRows(rows, maxCharsPerLine = 160) {
   const parts = [];
   for (const r of rows) {
@@ -176,10 +175,10 @@ function getSummarizedRows(rows, maxCharsPerLine = 160) {
   return parts.reverse().join("\n");
 }
 
-/***************************************************************/
-/* functionSignature: getToolStatusFromRegistry ()             *
-/* Reads current tool status from registry                     *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getToolStatusFromRegistry ()                                                                      *
+/* Reads current tool status from registry                                                                             *
+/**********************************************************************************************************************/
 async function getToolStatusFromRegistry() {
   if (typeof getItem !== "function") {
     return { hasTool: false, toolName: "" };
@@ -194,10 +193,10 @@ async function getToolStatusFromRegistry() {
   }
 }
 
-/***************************************************************/
-/* functionSignature: getPresenceTextForTool (toolName, map)   *
-/* Maps tool name to presence text or builds a default         *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getPresenceTextForTool (toolName, mapping)                                                        *
+/* Maps tool name to presence text or builds a default                                                                  *
+/**********************************************************************************************************************/
 function getPresenceTextForTool(toolName, mapping) {
   const name = String(toolName || "").trim();
   if (!name) return "";
@@ -207,10 +206,10 @@ function getPresenceTextForTool(toolName, mapping) {
   return `Working: ${name}`;
 }
 
-/***************************************************************/
-/* functionSignature: setDiscordPresence (text, status, log)   *
-/* Sets Discord user presence via client from registry         *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: setDiscordPresence (text, status, log)                                                            *
+/* Sets Discord user presence via client from registry                                                                  *
+/**********************************************************************************************************************/
 let lastPresenceText = "";
 async function setDiscordPresence(text, status, log) {
   if (typeof getItem !== "function") {
@@ -250,10 +249,10 @@ async function setDiscordPresence(text, status, log) {
   }
 }
 
-/***************************************************************/
-/* functionSignature: getGeneratedAIStatus (cfg, log, last, db)*
-/* Calls AI endpoint to craft a short presence line            *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getGeneratedAIStatus (cfg, log, lastKnownText, workingDb)                                         *
+/* Calls AI endpoint to craft a short presence line                                                                     *
+/**********************************************************************************************************************/
 async function getGeneratedAIStatus(cfg, log, lastKnownText, workingDb) {
   const ai = cfg.aiGenerator || {};
   const endpoint = getStr(ai.endpoint, "");
@@ -351,10 +350,10 @@ async function getGeneratedAIStatus(cfg, log, lastKnownText, workingDb) {
   return finalText;
 }
 
-/***************************************************************/
-/* functionSignature: getDiscordStatusSetFlow (baseCore)       *
-/* Flow entry: decides and updates Discord presence            *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getDiscordStatusSetFlow (baseCore)                                                                *
+/* Flow entry: decides and updates Discord presence                                                                     *
+/**********************************************************************************************************************/
 let lastUpdateAt = 0;
 let lastAiStatusInMemory = "";
 export default async function getDiscordStatusSetFlow(baseCore) {
@@ -363,43 +362,49 @@ export default async function getDiscordStatusSetFlow(baseCore) {
     baseCore?.config?.[MODULE_NAME] ||
     baseCore?.config?.["cron-discord-status"] ||
     {};
-  const cronIdCfg = getStr(cfg.cronID || cfg.cronId, "");
-  const currentCronId = getStr(
-    baseCore?.workingObject?.CronID ?? baseCore?.workingObject?.cronID,
-    ""
-  );
-  const updateStatusFlag = String(baseCore?.workingObject?.updateStatus || "").toLowerCase() === "true";
-  if (!updateStatusFlag && cronIdCfg && currentCronId && cronIdCfg !== currentCronId) {
-    return;
-  }
+
+  const updateStatusFlag =
+    String(baseCore?.workingObject?.updateStatus || "").toLowerCase() === "true";
+
   const now = Date.now();
   const placeholderEnabled = getBool(cfg.placeholderEnabled, true);
   const placeholderText = getStr(cfg.placeholderText, " // xbullseyegaming.de // ");
   const status = getStr(cfg.status, "online");
   const mapping = cfg.mapping || {};
   const minUpdateGapMs = getNum(cfg.minUpdateGapMs, 30000);
+
   if (!updateStatusFlag && now - lastUpdateAt < minUpdateGapMs) {
-    log(`skip presence update (minUpdateGapMs=${minUpdateGapMs} not reached)`, "debug", { moduleName: MODULE_NAME });
+    log(
+      `skip presence update (minUpdateGapMs=${minUpdateGapMs} not reached)`,
+      "debug",
+      { moduleName: MODULE_NAME }
+    );
     return;
   }
+
   const workingDb = baseCore?.workingObject?.db || baseCore?.db || null;
   const { hasTool, toolName } = await getToolStatusFromRegistry();
+
   if (hasTool) {
     const mappedText = getPresenceTextForTool(toolName, mapping);
     await setDiscordPresence(mappedText, status, log);
     lastUpdateAt = now;
     return;
   }
+
   const placeholderOnly = getIsPlaceholderOnlyMode(cfg, log);
   if (placeholderOnly) {
     if (placeholderEnabled) {
       await setDiscordPresence(placeholderText, status, log);
       lastUpdateAt = now;
     } else {
-      log("placeholder-only mode but placeholderEnabled=false → nothing to set", "debug", { moduleName: MODULE_NAME });
+      log("placeholder-only mode but placeholderEnabled=false → nothing to set", "debug", {
+        moduleName: MODULE_NAME
+      });
     }
     return;
   }
+
   let lastAi = lastAiStatusInMemory;
   if (typeof getItem === "function") {
     try {
@@ -408,12 +413,15 @@ export default async function getDiscordStatusSetFlow(baseCore) {
         lastAi = getStr(regVal, lastAi);
       }
     } catch {}
+
   }
+
   if (lastAi) {
     await setDiscordPresence(lastAi, status, log);
   } else if (placeholderEnabled) {
     await setDiscordPresence(placeholderText, status, log);
   }
+
   const newAiStatus = await getGeneratedAIStatus(cfg, log, lastAi, workingDb);
   if (newAiStatus) {
     lastAiStatusInMemory = newAiStatus;

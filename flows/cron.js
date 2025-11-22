@@ -1,47 +1,45 @@
-/***************************************************************/
-/* filename: "cron.js"                                         *
-/* Version 1.0                                                 *
-/* Purpose: Global cron scheduler that triggers the "cron" flow *
-/*          with cronID using minimal cron parsing.            *
-/***************************************************************/
-
-/***************************************************************/
-/*                                                             *
-/***************************************************************/
+/************************************************************************************************************************
+/* filename: "cron.js"                                                                                                  *
+/* Version 1.0                                                                                                          *
+/* Purpose: Global cron scheduler that triggers flows whose names equal the job id and injects channelID into context.  *
+/************************************************************************************************************************/
+/************************************************************************************************************************
+/*                                                                                                                      *
+/************************************************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "cron";
 
-/***************************************************************/
-/* functionSignature: getNum (v, d)                            *
-/* Parses a number or falls back to default                    *
-/***************************************************************/
+/************************************************************************************************************************
+/* functionSignature: getNum (v, d)                                                                                     *
+/* Parses a number or falls back to default                                                                             *
+/************************************************************************************************************************/
 function getNum(v, d) {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
 }
 
-/***************************************************************/
-/* functionSignature: getStr (v, d)                            *
-/* Returns a non-empty string or a default                     *
-/***************************************************************/
+/************************************************************************************************************************
+/* functionSignature: getStr (v, d)                                                                                     *
+/* Returns a non-empty string or a default                                                                              *
+/************************************************************************************************************************/
 function getStr(v, d) {
   return typeof v === "string" && v.length ? v : d;
 }
 
-/***************************************************************/
-/* functionSignature: getBool (v, d)                           *
-/* Returns a boolean or a default                              *
-/***************************************************************/
+/************************************************************************************************************************
+/* functionSignature: getBool (v, d)                                                                                    *
+/* Returns a boolean or a default                                                                                       *
+/************************************************************************************************************************/
 function getBool(v, d) {
   return typeof v === "boolean" ? v : d;
 }
 
-/***************************************************************/
-/* functionSignature: getParseEveryMinutes (expr)              *
-/* Parses "* * * * *" or "* slash N * * * *" into minutes      *
-/***************************************************************/
+/************************************************************************************************************************
+/* functionSignature: getParseEveryMinutes (expr)                                                                       *
+/* Parses "* * * * *" or "/N * * * *" into minutes                                                                      *
+/************************************************************************************************************************/
 function getParseEveryMinutes(expr) {
   const trimmed = expr.trim();
   if (trimmed === "* * * * *") return 1;
@@ -52,10 +50,10 @@ function getParseEveryMinutes(expr) {
   return step;
 }
 
-/***************************************************************/
-/* functionSignature: getNextDue (job, log)                    *
-/* Computes the next due timestamp from the cron expression    *
-/***************************************************************/
+/************************************************************************************************************************
+/* functionSignature: getNextDue (job, log)                                                                              *
+/* Computes the next due timestamp from the cron expression                                                              *
+/************************************************************************************************************************/
 function getNextDue(job, log) {
   const stepMinutes = getParseEveryMinutes(job.expr);
   if (!stepMinutes) {
@@ -71,16 +69,10 @@ function getNextDue(job, log) {
   return next;
 }
 
-/***************************************************************/
-/* functionSignature: setTickLoop ()                           *
-/* Internal scheduler loop that evaluates and triggers jobs    *
-/***************************************************************/
-function setTickLoop() {}
-
-/***************************************************************/
-/* functionSignature: getCronFlow (baseCore, runFlow, createRunCore) *
-/* Sets up the cron scheduler and starts the periodic loop     *
-/***************************************************************/
+/************************************************************************************************************************
+/* functionSignature: getCronFlow (baseCore, runFlow, createRunCore)                                                     *
+/* Sets up the cron scheduler and starts the periodic loop                                                               *
+/************************************************************************************************************************/
 export default async function getCronFlow(baseCore, runFlow, createRunCore) {
   const cronCore = createRunCore();
   const log = getPrefixedLogger(cronCore?.workingObject || {}, import.meta.url);
@@ -92,6 +84,11 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
     getStr(baseCore?.workingObject?.timezone, "") ||
     "Europe/Berlin";
 
+  const defaultChannelID = getStr(
+    cfg.channelID || cfg.channelId || cfg.channel,
+    "cron"
+  );
+
   const jobsCfg = Array.isArray(cfg.jobs) ? cfg.jobs : [];
   if (!jobsCfg.length) {
     log("no cron jobs configured; cron flow idle", "info", { moduleName: MODULE_NAME });
@@ -100,15 +97,27 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
 
   const jobs = jobsCfg
     .map((j, idx) => {
-      const id = getStr(j.id || j.cronId, `job-${idx + 1}`);
+      const id = getStr(j.id || j.cronId || j.cronID, `job-${idx + 1}`);
       const expr = getStr(j.cron || j.schedule, "");
       const enabled = getBool(j.enabled, true);
       const timezone = getStr(j.timezone || j.tz, defaultTz);
+      const channelID = getStr(
+        j.channelID || j.channelId || j.channel,
+        defaultChannelID
+      );
       if (!expr || !enabled) return null;
+      const flowName = id;
+      log(
+        `register cron job "${id}" expr="${expr}" → flow="${flowName}", channelID="${channelID}"`,
+        "info",
+        { moduleName: MODULE_NAME }
+      );
       return {
         id,
         expr,
         timezone,
+        flowName,
+        channelID,
         enabled: true,
         nextDueAt: 0,
         running: false
@@ -125,6 +134,10 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
     job.nextDueAt = getNextDue(job, log);
   }
 
+  /**********************************************************************************************************************
+  /* functionSignature: setTickLoop ()                                                                                  *
+  /* Internal scheduler loop that evaluates and triggers jobs                                                            *
+  /**********************************************************************************************************************/
   async function setTickLoop() {
     const now = Date.now();
 
@@ -134,7 +147,9 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
 
       if (now + 500 >= job.nextDueAt) {
         job.running = true;
+
         const rc = createRunCore();
+
         rc.workingObject.cronID = job.id;
         rc.workingObject.CronMeta = {
           id: job.id,
@@ -142,10 +157,22 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
           timezone: job.timezone
         };
 
-        log(`trigger cron job "${job.id}"`, "info", { moduleName: MODULE_NAME });
+        const targetFlow = job.flowName;
+        const channelID = job.channelID || defaultChannelID;
+
+        rc.workingObject.flow = targetFlow;
+        rc.workingObject.channelID = channelID;
+        if (!rc.workingObject.channelId) rc.workingObject.channelId = channelID;
+        if (!rc.workingObject.id) rc.workingObject.id = channelID;
+
+        log(
+          `trigger cron job "${job.id}" → flow="${targetFlow}", channelID="${channelID}"`,
+          "info",
+          { moduleName: MODULE_NAME }
+        );
 
         try {
-          await runFlow(MODULE_NAME, rc);
+          await runFlow(targetFlow, rc);
         } catch (e) {
           log(
             `cron job "${job.id}" failed: ${e?.message || String(e)}`,
@@ -164,3 +191,7 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
 
   setTimeout(setTickLoop, 1000);
 }
+
+/************************************************************************************************************************
+/*                                                                                                                      *
+/************************************************************************************************************************/
