@@ -1,45 +1,47 @@
-/************************************************************************************************************************
-/* filename: "cron.js"                                                                                                  *
-/* Version 1.0                                                                                                          *
-/* Purpose: Global cron scheduler that triggers flows whose names equal the job id and injects channelID into context.  *
-/************************************************************************************************************************/
-/************************************************************************************************************************
-/*                                                                                                                      *
-/************************************************************************************************************************/
+/**************************************************************
+/* filename: "cron.js"                                       *
+/* Version 1.0                                               *
+/* Purpose: Global cron scheduler that triggers flows whose  *
+/*          names equal the job id and injects channelID     *
+/*          into context.                                    *
+/**************************************************************/
+/**************************************************************
+/*                                                          *
+/**************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "cron";
 
-/************************************************************************************************************************
-/* functionSignature: getNum (v, d)                                                                                     *
-/* Parses a number or falls back to default                                                                             *
-/************************************************************************************************************************/
+/**************************************************************
+/* functionSignature: getNum (v, d)                          *
+/* Parses a number or falls back to default                  *
+/**************************************************************/
 function getNum(v, d) {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
 }
 
-/************************************************************************************************************************
-/* functionSignature: getStr (v, d)                                                                                     *
-/* Returns a non-empty string or a default                                                                              *
-/************************************************************************************************************************/
+/**************************************************************
+/* functionSignature: getStr (v, d)                          *
+/* Returns a non-empty string or a default                   *
+/**************************************************************/
 function getStr(v, d) {
   return typeof v === "string" && v.length ? v : d;
 }
 
-/************************************************************************************************************************
-/* functionSignature: getBool (v, d)                                                                                    *
-/* Returns a boolean or a default                                                                                       *
-/************************************************************************************************************************/
+/**************************************************************
+/* functionSignature: getBool (v, d)                         *
+/* Returns a boolean or a default                            *
+/**************************************************************/
 function getBool(v, d) {
   return typeof v === "boolean" ? v : d;
 }
 
-/************************************************************************************************************************
-/* functionSignature: getParseEveryMinutes (expr)                                                                       *
-/* Parses "* * * * *" or "/N * * * *" into minutes                                                                      *
-/************************************************************************************************************************/
+/**************************************************************
+/* functionSignature: getParseEveryMinutes (expr)            *
+/* Parses "* * * * *" or "/N * * * *" into minutes           *
+/**************************************************************/
 function getParseEveryMinutes(expr) {
   const trimmed = expr.trim();
   if (trimmed === "* * * * *") return 1;
@@ -50,10 +52,10 @@ function getParseEveryMinutes(expr) {
   return step;
 }
 
-/************************************************************************************************************************
-/* functionSignature: getNextDue (job, log)                                                                              *
-/* Computes the next due timestamp from the cron expression                                                              *
-/************************************************************************************************************************/
+/**************************************************************
+/* functionSignature: getNextDue (job, log)                  *
+/* Computes the next due timestamp from the cron expression  *
+/**************************************************************/
 function getNextDue(job, log) {
   const stepMinutes = getParseEveryMinutes(job.expr);
   if (!stepMinutes) {
@@ -69,10 +71,11 @@ function getNextDue(job, log) {
   return next;
 }
 
-/************************************************************************************************************************
-/* functionSignature: getCronFlow (baseCore, runFlow, createRunCore)                                                     *
-/* Sets up the cron scheduler and starts the periodic loop                                                               *
-/************************************************************************************************************************/
+/**************************************************************
+/* functionSignature: getCronFlow (baseCore, runFlow,        *
+/*                     createRunCore)                        *
+/* Sets up the cron scheduler and starts the periodic loop   *
+/**************************************************************/
 export default async function getCronFlow(baseCore, runFlow, createRunCore) {
   const cronCore = createRunCore();
   const log = getPrefixedLogger(cronCore?.workingObject || {}, import.meta.url);
@@ -134,10 +137,10 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
     job.nextDueAt = getNextDue(job, log);
   }
 
-  /**********************************************************************************************************************
-  /* functionSignature: setTickLoop ()                                                                                  *
-  /* Internal scheduler loop that evaluates and triggers jobs                                                            *
-  /**********************************************************************************************************************/
+  /************************************************************
+  /* functionSignature: setTickLoop ()                        *
+  /* Internal scheduler loop that evaluates and triggers jobs *
+  /************************************************************/
   async function setTickLoop() {
     const now = Date.now();
 
@@ -156,6 +159,8 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
           cron: job.expr,
           timezone: job.timezone
         };
+
+        rc.workingObject.timestamp = new Date().toISOString();
 
         const targetFlow = job.flowName;
         const channelID = job.channelID || defaultChannelID;
@@ -186,12 +191,8 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
       }
     }
 
-    setTimeout(setTickLoop, tickMs);
+    setTimeout(setTickLoop, Math.max(1, tickMs));
   }
 
   setTimeout(setTickLoop, 1000);
 }
-
-/************************************************************************************************************************
-/*                                                                                                                      *
-/************************************************************************************************************************/

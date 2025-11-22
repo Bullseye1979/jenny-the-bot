@@ -1,10 +1,10 @@
 /**************************************************************
-/* filename: "webpage.js"                                     *
-/* Version 1.0                                                *
-/* Purpose:                                                   *
-/*  HTTP server trigger that captures requests into           *
-/*  workingObject.http and starts the 'webpage' flow without  *
-/*  sending a direct response (response handled elsewhere).   *
+/* filename: "webpage.js"                                    *
+/* Version 1.0                                               *
+/* Purpose:                                                  *
+/*  HTTP server trigger that captures requests into          *
+/*  workingObject.http and starts the 'webpage' flow without *
+/*  sending a direct response (response handled elsewhere).  *
 /**************************************************************/
 /**************************************************************
 /*                                                          *
@@ -27,25 +27,37 @@ let __ulid_lastRand = new Uint8Array(10).fill(0);
 
 /**************************************************************
 /* functionSignature: getUlidEncodeTime (ms)                 *
-/* Encode a millisecond timestamp to a 10-char Crockford base32. *
+/* Encode a millisecond timestamp to a 10-char Crockford     *
+/* base32.                                                   *
 /**************************************************************/
 function getUlidEncodeTime(ms) {
   let x = BigInt(ms);
   const out = Array(10);
-  for (let i = 9; i >= 0; i--) { out[i] = CROCK[Number(x % 32n)]; x = x / 32n; }
+  for (let i = 9; i >= 0; i--) {
+    out[i] = CROCK[Number(x % 32n)];
+    x = x / 32n;
+  }
   return out.join("");
 }
 
 /**************************************************************
 /* functionSignature: getUlidEncodeRandom80ToBase32 (rand)   *
-/* Encode 80 random bits to a 16-char Crockford base32 string. *
+/* Encode 80 random bits to a 16-char Crockford base32 string*
 /**************************************************************/
 function getUlidEncodeRandom80ToBase32(rand) {
   const out = [];
-  let acc = 0, bits = 0, i = 0;
+  let acc = 0;
+  let bits = 0;
+  let i = 0;
   while (i < rand.length || bits > 0) {
-    if (bits < 5 && i < rand.length) { acc = (acc << 8) | rand[i++]; bits += 8; }
-    else { const v = (acc >> (bits - 5)) & 31; bits -= 5; out.push(CROCK[v]); }
+    if (bits < 5 && i < rand.length) {
+      acc = (acc << 8) | rand[i++];
+      bits += 8;
+    } else {
+      const v = (acc >> (bits - 5)) & 31;
+      bits -= 5;
+      out.push(CROCK[v]);
+    }
   }
   return out.slice(0, 16).join("");
 }
@@ -69,8 +81,12 @@ function getNewUlid() {
   let rand = getUlidRandom80();
   if (now === __ulid_lastTime) {
     for (let i = 9; i >= 0; i--) {
-      if (__ulid_lastRand[i] === 255) { __ulid_lastRand[i] = 0; continue; }
-      __ulid_lastRand[i]++; break;
+      if (__ulid_lastRand[i] === 255) {
+        __ulid_lastRand[i] = 0;
+        continue;
+      }
+      __ulid_lastRand[i]++;
+      break;
     }
     rand = __ulid_lastRand;
   } else {
@@ -81,8 +97,10 @@ function getNewUlid() {
 }
 
 /**************************************************************
-/* functionSignature: setSendResponse (res, status, body, headers) *
-/* Send a fallback HTTP response if nothing else has responded. *
+/* functionSignature: setSendResponse (res, status, body,    *
+/*                                    headers)               *
+/* Send a fallback HTTP response if nothing else has         *
+/* responded.                                                *
 /**************************************************************/
 function setSendResponse(res, status, body = "", headers = {}) {
   if (res.writableEnded) return;
@@ -104,25 +122,30 @@ function getReadBody(req, maxBytes = 1e6) {
     let done = false;
     let size = 0;
     const chunks = [];
+
     function fail(err) {
       if (done) return;
       done = true;
       reject(err);
       try { req.destroy(); } catch {}
     }
+
     req.on("data", (chunk) => {
       if (done) return;
       size += chunk.length;
       if (size > maxBytes) return fail(new Error("BODY_TOO_LARGE"));
       chunks.push(chunk);
     });
+
     req.on("end", () => {
       if (done) return;
       done = true;
       if (!chunks.length) return resolve("");
       resolve(Buffer.concat(chunks).toString("utf8"));
     });
+
     req.on("error", (err) => fail(err));
+
     req.on("close", () => {
       if (!done && !chunks.length) {
         done = true;
@@ -141,8 +164,10 @@ function getNewRequestKey() {
 }
 
 /**************************************************************
-/* functionSignature: getWebpageFlow (baseCore, runFlow, createRunCore) *
-/* Start the HTTP server and trigger the 'webpage' flow per request. *
+/* functionSignature: getWebpageFlow (baseCore, runFlow,     *
+/*                                    createRunCore)         *
+/* Start the HTTP server and trigger the 'webpage' flow      *
+/* per request.                                              *
 /**************************************************************/
 export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
   const cfg = baseCore?.config?.webpage || {};
@@ -166,9 +191,12 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
       const requestKey = getNewRequestKey();
       putItem({ req, res }, requestKey);
 
+      const nowIso = new Date().toISOString();
+
       wo.flow = flowName;
       wo.turn_id = getNewUlid();
       wo.source = "http";
+      wo.timestamp = nowIso;
 
       wo.http = wo.http || {};
       wo.http.requestKey = requestKey;
@@ -178,6 +206,7 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
       wo.http.headers = req.headers || {};
       wo.http.remoteAddress = req.socket?.remoteAddress || req.connection?.remoteAddress || null;
       wo.http.host = req.headers?.host || null;
+      wo.http.receivedAt = nowIso;
 
       if (urlPath.startsWith("/api/")) {
         wo.http.kind = "api";
@@ -207,7 +236,9 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
           } catch {}
         } catch (err) {
           const reason = err?.message || String(err);
-          log("Request body error", "error", { moduleName: MODULE_NAME, reason, path: urlPath });
+          const log2 = getPrefixedLogger(wo, import.meta.url);
+          log2("Request body error", "error", { moduleName: MODULE_NAME, reason, path: urlPath });
+
           if (reason === "BODY_TOO_LARGE") {
             return setSendResponse(
               res,
@@ -216,6 +247,7 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
               { "Content-Type": "application/json; charset=utf-8" }
             );
           }
+
           return setSendResponse(
             res,
             400,
@@ -225,13 +257,16 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
         }
       }
 
-      wo.http.response = wo.http.response || {
-        status: 404,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ ok: false, error: "Not Found" })
-      };
+      wo.http.response =
+        wo.http.response ||
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ ok: false, error: "Not Found" })
+        };
 
-      log("webpage flow trigger", "info", {
+      const log3 = getPrefixedLogger(wo, import.meta.url);
+      log3("webpage flow trigger", "info", {
         moduleName: MODULE_NAME,
         path: urlPath,
         method,
@@ -243,7 +278,8 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
         await runFlow(flowName, runCore);
       } catch (e) {
         const reason = e?.message || String(e);
-        log("webpage flow execution failed", "error", {
+        const log4 = getPrefixedLogger(wo, import.meta.url);
+        log4("webpage flow execution failed", "error", {
           moduleName: MODULE_NAME,
           path: urlPath,
           reason

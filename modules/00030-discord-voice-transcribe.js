@@ -1,6 +1,6 @@
 /**************************************************************
 /* filename: "discord-voice-transcribe.js"                   *
-/* Version 1.0                                               *
+/* Version: 1.0                                              *
 /* Purpose: Capture, filter, and transcribe Discord voice;   *
 /*          write transcription into workingObject.payload   *
 /**************************************************************/
@@ -112,8 +112,8 @@ function getAnalyzePcmInt16(samples, frameSamples) {
 }
 
 /**************************************************************
-/* functionSignature: getAnalyzeWav (filePath, frameSamples)  *
-/* Analyzes a WAV file and returns voiced frame statistics.   *
+/* functionSignature: getAnalyzeWav (filePath, frameSamples) *
+/* Analyzes a WAV file and returns voiced frame statistics.  *
 /**************************************************************/
 async function getAnalyzeWav(filePath, frameSamples) {
   const buf = await fs.promises.readFile(filePath);
@@ -126,9 +126,9 @@ async function getAnalyzeWav(filePath, frameSamples) {
 }
 
 /**************************************************************
-/* functionSignature: getVoicedOnlyWavFromFile (filePath,     *
-/*                     mask, frameSamples, options)           *
-/* Extracts voiced frames and writes a compact WAV file.      *
+/* functionSignature: getVoicedOnlyWavFromFile (filePath,    *
+/*                     mask, frameSamples, options)          *
+/* Extracts voiced frames and writes a compact WAV file.     *
 /**************************************************************/
 async function getVoicedOnlyWavFromFile(filePath, mask, frameSamples, { rate = 48000, channels = 1 } = {}) {
   const buf = await fs.promises.readFile(filePath);
@@ -159,8 +159,8 @@ try {
 } catch {}
 
 /**************************************************************
-/* functionSignature: getTranscribeUrl (whisperEndpoint)      *
-/* Normalizes a Whisper transcription endpoint URL.           *
+/* functionSignature: getTranscribeUrl (whisperEndpoint)     *
+/* Normalizes a Whisper transcription endpoint URL.          *
 /**************************************************************/
 function getTranscribeUrl(whisperEndpoint) {
   const ep = (whisperEndpoint || "").trim().replace(/\/+$/, "");
@@ -173,8 +173,8 @@ function getTranscribeUrl(whisperEndpoint) {
 }
 
 /**************************************************************
-/* functionSignature: getTranscribeOpenAI (filePath, options) *
-/* Sends a WAV file to OpenAI Whisper and returns text.       *
+/* functionSignature: getTranscribeOpenAI (filePath, options)*
+/* Sends a WAV file to OpenAI Whisper and returns text.      *
 /**************************************************************/
 async function getTranscribeOpenAI(filePath, { model, language, apiKey, endpoint }) {
   let _fetch = globalThis.fetch, _FormData = globalThis.FormData, _Blob = globalThis.Blob;
@@ -197,9 +197,9 @@ async function getTranscribeOpenAI(filePath, { model, language, apiKey, endpoint
 }
 
 /**************************************************************
-/* functionSignature: getCaptureOneSegment (receiver, userId, *
-/*                     options)                               *
-/* Captures one voiced segment and stores it as WAV.          *
+/* functionSignature: getCaptureOneSegment (receiver, userId,*
+/*                     options)                              *
+/* Captures one voiced segment and stores it as WAV.         *
 /**************************************************************/
 async function getCaptureOneSegment(receiver, userId, { silenceMs = 2000, maxMs = 25000, frameSamples = 960 }) {
   let opus = null, pcm = null, pass = null, killTimer = null, wavDir = null, wavFile = null, endedBy = "silence";
@@ -215,11 +215,20 @@ async function getCaptureOneSegment(receiver, userId, { silenceMs = 2000, maxMs 
       try { opus.destroy(); } catch {}
     }, maxMs);
     await new Promise((res) => {
-      const finish = () => { try { clearTimeout(killTimer); } catch {} try { pass.end(); } catch {} res(null); };
-      opus.once("end", finish); opus.once("close", finish); opus.once("error", finish);
-      pcm.once("end", finish); pcm.once("error", finish);
+      const finish = () => {
+        try { clearTimeout(killTimer); } catch {}
+        try { pass.end(); } catch {}
+        res(null);
+      };
+      opus.once("end", finish);
+      opus.once("close", finish);
+      opus.once("error", finish);
+      pcm.once("end", finish);
+      pcm.once("error", finish);
     });
-    const wf = await wavPromise; wavDir = wf.dir; wavFile = wf.file;
+    const wf = await wavPromise;
+    wavDir = wf.dir;
+    wavFile = wf.file;
     return { dir: wavDir, file: wavFile, endedBy };
   } catch (e) {
     try { pass?.end(); } catch {}
@@ -229,8 +238,8 @@ async function getCaptureOneSegment(receiver, userId, { silenceMs = 2000, maxMs 
 }
 
 /**************************************************************
-/* functionSignature: getDiscordVoiceTranscribe (coreData)    *
-/* Captures, filters, and transcribes voice into payload.     *
+/* functionSignature: getDiscordVoiceTranscribe (coreData)   *
+/* Captures, filters, and transcribes voice into payload.    *
 /**************************************************************/
 export default async function getDiscordVoiceTranscribe(coreData) {
   const wo = coreData?.workingObject || (coreData.workingObject = {});
@@ -251,10 +260,13 @@ export default async function getDiscordVoiceTranscribe(coreData) {
   const FRAME_MS = Number.isFinite(wo.frameMs) ? Math.max(10, Number(wo.frameMs)) : Number.isFinite(cfg.frameMs) ? Math.max(10, Number(cfg.frameMs)) : 20;
   const FRAME_SAMPLES = Math.round(48000 * (FRAME_MS / 1000));
   const KEEP_WAV = typeof wo.keepWav === "boolean" ? wo.keepWav : Boolean(cfg.keepWav);
+
   const WHISPER_KEY = (wo.whisperApiKey || cfg.whisperApiKey || process.env.OPENAI_API_KEY || "").trim();
   const WHISPER_MODEL = (wo.whisperModel || cfg.whisperModel || "whisper-1").trim();
   const WHISPER_LANG = (wo.whisperLanguage || cfg.whisperLanguage || "auto").trim();
   const WHISPER_ENDPOINT = (wo.whisperEndpoint || cfg.whisperEndpoint || "").trim();
+
+  const MAX_SEGMENTS_PER_RUN = Number.isFinite(cfg.maxSegmentsPerRun) ? Number(cfg.maxSegmentsPerRun) : 32;
 
   const sessionKey = wo.voiceSessionRef;
   const userId = String(wo.voiceIntent.userId || "");
@@ -273,43 +285,58 @@ export default async function getDiscordVoiceTranscribe(coreData) {
   }
 
   const activeKey = `discord-voice:active:${sessionKey}:${userId}`;
-  let seg1 = null, seg2 = null;
 
   try { await putItem({ ts: Date.now(), sessionKey, userId }, activeKey); } catch {}
 
   try {
-    seg1 = await getCaptureOneSegment(receiver, userId, { silenceMs: SILENCE_MS, maxMs: MAX_SEGMENT_MS, frameSamples: FRAME_SAMPLES });
-    const st1 = await fs.promises.stat(seg1.file).catch(() => null);
-    if (!st1 || st1.size < MIN_WAV_BYTES) {
-      if (!KEEP_WAV) try { await fs.promises.rm(seg1.dir, { recursive: true, force: true }); } catch {}
-      wo.transcribeSkipped = "too_small";
+    const segments = [];
+
+    while (segments.length < MAX_SEGMENTS_PER_RUN) {
+      const seg = await getCaptureOneSegment(receiver, userId, {
+        silenceMs: SILENCE_MS,
+        maxMs: MAX_SEGMENT_MS,
+        frameSamples: FRAME_SAMPLES
+      });
+
+      const st = await fs.promises.stat(seg.file).catch(() => null);
+      if (!st || st.size < MIN_WAV_BYTES) {
+        if (!KEEP_WAV) {
+          try { await fs.promises.rm(seg.dir, { recursive: true, force: true }); } catch {}
+        }
+        if (segments.length === 0) {
+          wo.transcribeSkipped = "too_small";
+          wo.stop = true;
+          return coreData;
+        }
+        break;
+      }
+
+      segments.push(seg);
+
+      if (seg.endedBy !== "time") {
+        break;
+      }
+    }
+
+    if (segments.length === 0) {
+      wo.transcribeSkipped = "no_segments";
       wo.stop = true;
       return coreData;
     }
 
-    if (seg1.endedBy === "time") {
-      seg2 = await getCaptureOneSegment(receiver, userId, { silenceMs: SILENCE_MS, maxMs: MAX_SEGMENT_MS, frameSamples: FRAME_SAMPLES });
-      const st2 = await fs.promises.stat(seg2.file).catch(() => null);
-      if (!st2 || st2.size < MIN_WAV_BYTES) {
-        if (!KEEP_WAV) try { await fs.promises.rm(seg2.dir, { recursive: true, force: true }); } catch {}
-        seg2 = null;
-      }
-    }
-
-    const segments = [seg1, seg2].filter(Boolean);
     const filteredWavs = [];
     for (const seg of segments) {
       const { snrDb, usefulMs, mask } = await getAnalyzeWav(seg.file, FRAME_SAMPLES);
       if (usefulMs < MIN_VOICED_MS || snrDb < SNR_DB_MIN) {
-        if (!KEEP_WAV) try { await fs.promises.rm(seg.dir, { recursive: true, force: true }); } catch {}
+        if (!KEEP_WAV) { try { await fs.promises.rm(seg.dir, { recursive: true, force: true }); } catch {} }
         continue;
       }
       const voicedWav = await getVoicedOnlyWavFromFile(seg.file, mask, FRAME_SAMPLES, { rate: 48000, channels: 1 });
       if (!voicedWav) {
-        if (!KEEP_WAV) try { await fs.promises.rm(seg.dir, { recursive: true, force: true }); } catch {}
+        if (!KEEP_WAV) { try { await fs.promises.rm(seg.dir, { recursive: true, force: true }); } catch {} }
         continue;
       }
-      if (!KEEP_WAV) try { await fs.promises.rm(seg.dir, { recursive: true, force: true }); } catch {}
+      if (!KEEP_WAV) { try { await fs.promises.rm(seg.dir, { recursive: true, force: true }); } catch {} }
       filteredWavs.push(voicedWav);
     }
 
@@ -333,7 +360,12 @@ export default async function getDiscordVoiceTranscribe(coreData) {
       try {
         const text = transcribeWithWhisper
           ? await transcribeWithWhisper(w.file, WHISPER_MODEL, WHISPER_LANG, WHISPER_KEY)
-          : await getTranscribeOpenAI(w.file, { model: WHISPER_MODEL, language: WHISPER_LANG, apiKey: WHISPER_KEY, endpoint: WHISPER_ENDPOINT });
+          : await getTranscribeOpenAI(w.file, {
+              model: WHISPER_MODEL,
+              language: WHISPER_LANG,
+              apiKey: WHISPER_KEY,
+              endpoint: WHISPER_ENDPOINT
+            });
         const cleaned = String(text || "").trim();
         if (cleaned) parts.push(cleaned);
       } finally {
