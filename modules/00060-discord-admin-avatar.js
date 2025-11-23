@@ -95,11 +95,19 @@ function getComposePrompt(wo) {
   if (instructions) parts.push(instructions);
   if (botname) parts.push(`Bot name: ${botname}`);
   if (avatarPrompt) parts.push(avatarPrompt);
-  let text = parts.join("\n").trim();
-  if (!text) {
-    text = "portrait, no text, vibrant colors, cinematic, action";
+  const suffix = "portrait, no text, vibrant colors, cinematic, action";
+  let base = parts.join("\n").trim();
+  if (!base) {
+    return suffix.slice(0, 4000);
   }
-  return text.slice(0, 4000);
+  const maxBase = 4000 - (suffix.length + 1);
+  if (maxBase <= 0) {
+    return suffix.slice(0, 4000);
+  }
+  if (base.length > maxBase) {
+    base = base.slice(0, maxBase);
+  }
+  return `${base}\n${suffix}`;
 }
 
 /***************************************************************
