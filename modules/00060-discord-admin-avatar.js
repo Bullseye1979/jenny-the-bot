@@ -95,7 +95,7 @@ function getComposePrompt(wo) {
   if (instructions) parts.push(instructions);
   if (botname) parts.push(`Bot name: ${botname}`);
   if (avatarPrompt) parts.push(avatarPrompt);
-  const suffix = "portrait, no text, no letters, no symbols, vibrant colors, cinematic, action, digital painting";
+  const suffix = "portrait, no text, no letters, no symbols, vibrant colors, cinematic, action, digital painting, no writings, ignore text";
   let base = parts.join("\n").trim();
   if (!base) {
     return suffix.slice(0, 4000);
