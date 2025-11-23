@@ -1,28 +1,26 @@
-/***************************************************************
-/* filename: "discord-channel-config.js"                       *
-/* Version 1.0                                                 *
-/* Purpose: Per-channel overrides; determine channelallowed     *
-/*          solely from workingObject.id (no message access).  *
-/*          DM uses SAME format as other channels via id "DM". *
-/*          Flow is REQUIRED; DMs default flow to "discord".   *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
+/**********************************************************************************************************************
+/* filename: "core-channel-config.js"                                                                                 *
+/* Version 1.0                                                                                                        *
+/* Purpose: Per-channel overrides; compute channelallowed from workingObject.id; DM uses id "DM"; flow required; DMs  *
+/*          default to "discord".                                                                                     *
+/**********************************************************************************************************************/
+/**********************************************************************************************************************
+/*                                                                                                                    *
+/**********************************************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
 
-const MODULE_NAME = "discord-channel-config";
+const MODULE_NAME = "core-channel-config";
 
-/***************************************************************
-/* functionSignature: getChannelConfig (coreData)              *
-/* Applies per-channel overrides onto coreData.workingObject   *
-/***************************************************************/
+/**********************************************************************************************************************
+/* functionSignature: getChannelConfig (coreData)                                                                     *
+/* Applies per-channel overrides onto coreData.workingObject                                                          *
+/**********************************************************************************************************************/
 export default async function getChannelConfig(coreData) {
   const workingObject = coreData?.workingObject || {};
   const log = getPrefixedLogger(workingObject, import.meta.url);
 
-  const cfg = coreData?.config?.["discord-channel-config"];
+  const cfg = coreData?.config?.["core-channel-config"];
   if (!cfg || typeof cfg !== "object") return coreData;
 
   const channels = cfg.channels;
@@ -46,6 +44,7 @@ export default async function getChannelConfig(coreData) {
     workingObject.flow = flow;
     log("Flow was empty for DM — defaulted to 'discord'", "info", { moduleName: MODULE_NAME });
   }
+
   if (!flow) {
     workingObject.channelallowed = false;
     log("Missing flow context — channelallowed=false", "warn", { moduleName: MODULE_NAME });
@@ -103,7 +102,13 @@ export default async function getChannelConfig(coreData) {
   log(
     applied > 0 ? "Applied overrides — channelallowed=true" : "No matching rules — channelallowed=true (baseline)",
     applied > 0 ? "info" : "warn",
-    { moduleName: MODULE_NAME, channelId: effectiveChannelId, userId: userId || "unknown", flow, applied }
+    {
+      moduleName: MODULE_NAME,
+      channelId: effectiveChannelId,
+      userId: userId || "unknown",
+      flow,
+      applied
+    }
   );
 
   return coreData;
