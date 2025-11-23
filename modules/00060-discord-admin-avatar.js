@@ -97,7 +97,7 @@ function getComposePrompt(wo) {
   if (avatarPrompt) parts.push(avatarPrompt);
   let text = parts.join("\n").trim();
   if (!text) {
-    text = "Friendly, modern Discord bot avatar, clean vector mascot, rounded shapes, soft lighting, high contrast, simple background";
+    text = "portrait, no text, vibrant colors, cinematic, action";
   }
   return text.slice(0, 4000);
 }
