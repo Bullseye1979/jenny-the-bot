@@ -1,21 +1,22 @@
-/**********************************************************************************************************************
-/* filename: "core-channel-config.js"                                                                                 *
-/* Version 1.0                                                                                                        *
-/* Purpose: Per-channel overrides; compute channelallowed from workingObject.id; DM uses id "DM"; flow required; DMs  *
-/*          default to "discord".                                                                                     *
-/**********************************************************************************************************************/
-/**********************************************************************************************************************
-/*                                                                                                                    *
-/**********************************************************************************************************************/
+/************************************************************************************
+/* filename: "core-channel-config.js"                                              *
+/* Version 1.0                                                                     *
+/* Purpose: Per-channel overrides; compute channelallowed from workingObject.id;   *
+/*          DM uses id "DM"; flow required; DMs default to "discord". Empty        *
+/*          strings ("") are treated as intentional overrides (no fallback).       *
+/************************************************************************************/
+/************************************************************************************
+/*                                                                                  *
+/************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-channel-config";
 
-/**********************************************************************************************************************
-/* functionSignature: getChannelConfig (coreData)                                                                     *
-/* Applies per-channel overrides onto coreData.workingObject                                                          *
-/**********************************************************************************************************************/
+/************************************************************************************
+/* functionSignature: getChannelConfig (coreData)                                   *
+/* Applies per-channel overrides onto coreData.workingObject                        *
+/************************************************************************************/
 export default async function getChannelConfig(coreData) {
   const workingObject = coreData?.workingObject || {};
   const log = getPrefixedLogger(workingObject, import.meta.url);
@@ -91,8 +92,11 @@ export default async function getChannelConfig(coreData) {
     const flowMatch = !flows || flows.length === 0 || flows.includes(flow);
 
     if (userMatch && flowMatch && entry.overrides && typeof entry.overrides === "object") {
-      const { channelallowed: _c, allow: _a, ...safeOverrides } = entry.overrides;
-      Object.assign(workingObject, safeOverrides);
+      const { channelallowed: _c, allow: _a, ...rawOverrides } = entry.overrides;
+      for (const [k, v] of Object.entries(rawOverrides)) {
+        if (v === undefined || v === null) continue;
+        workingObject[k] = v;
+      }
       applied++;
     }
   }
