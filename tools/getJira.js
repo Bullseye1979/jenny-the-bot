@@ -935,7 +935,7 @@ function getDefaultExport(){
       function: {
         name: MODULE_NAME,
         description:
-          "Jira Cloud proxy + high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE). Enforces configured base URL, project key and credentials; normalizes JQL; repairs/normalizes JSON; supports multipart uploads; coerces string fields to ADF; auto-transitions on update; can directly perform transitions. LIST returns {key,summary,status}.",
+          "Always use this to access Jira. Jira Cloud proxy + high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE). Enforces configured base URL, project key and credentials; normalizes JQL; repairs/normalizes JSON; supports multipart uploads; coerces string fields to ADF; auto-transitions on update; can directly perform transitions. LIST returns {key,summary,status}.",
         parameters: {
           type: "object",
           additionalProperties: false,
