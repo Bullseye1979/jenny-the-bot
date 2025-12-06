@@ -1,10 +1,8 @@
 /**************************************************************
 /* filename: "getJira.js"                                    *
 /* Version 1.0                                               *
-/* Purpose: Jira Cloud proxy enforcing baseUrl + project     *
-/*          key, repairing/normalizing requests (JQL, ADF,   *
-/*          status→transition), multipart uploads, and       *
-/*          enriched search fields.                          *
+/* Purpose: Jira Cloud proxy with high-level ops and         *
+/*          normalization/repair for requests and payloads.  *
 /**************************************************************/
 /**************************************************************
 /*                                                          *
@@ -14,25 +12,25 @@ const MODULE_NAME = "getJira";
 
 /**************************************************************
 /* functionSignature: getStr (v, f)                          *
-/* Return string v if non-empty, else fallback f.            *
+/* Brief: Returns v if it is a non-empty string, otherwise f. *
 /**************************************************************/
 function getStr(v, f){ return (typeof v==="string" && v.length)? v : f; }
 
 /**************************************************************
 /* functionSignature: getNum (v, f)                          *
-/* Return finite numeric value or fallback.                  *
+/* Brief: Returns a finite number from v, otherwise f.        *
 /**************************************************************/
 function getNum(v, f){ return Number.isFinite(v)? Number(v) : f; }
 
 /**************************************************************
 /* functionSignature: getDebug (label, obj)                  *
-/* Optional debug hook; no output in production.             *
+/* Brief: No-op debug hook placeholder.                       *
 /**************************************************************/
 function getDebug(label, obj){}
 
 /**************************************************************
 /* functionSignature: getAuthHeader (email, token)           *
-/* Build Basic auth header from email and token.             *
+/* Brief: Builds Basic auth header for Jira.                  *
 /**************************************************************/
 function getAuthHeader(email, token){
   const b64 = Buffer.from(`${email}:${token}`).toString("base64");
@@ -41,7 +39,7 @@ function getAuthHeader(email, token){
 
 /**************************************************************
 /* functionSignature: getBuildUrl (baseUrl, path, query)     *
-/* Build absolute URL from base URL, path, and query.        *
+/* Brief: Builds absolute URL with optional query params.     *
 /**************************************************************/
 function getBuildUrl(baseUrl, path, query){
   const root = String(baseUrl||"").replace(/\/+$/,"");
@@ -56,12 +54,12 @@ function getBuildUrl(baseUrl, path, query){
     }
   }
   const q = qs.toString();
-  return q? `${root}${rel}?${q}` : `${root}${rel}`;
+  return q ? `${root}${rel}?${q}` : `${root}${rel}`;
 }
 
 /**************************************************************
 /* functionSignature: getPathFromUrl (url, baseUrl)          *
-/* Extract path when url shares origin with baseUrl.         *
+/* Brief: Returns pathname if url shares origin with baseUrl. *
 /**************************************************************/
 function getPathFromUrl(url, baseUrl){
   try{
@@ -74,7 +72,7 @@ function getPathFromUrl(url, baseUrl){
 
 /**************************************************************
 /* functionSignature: getPathnameAny (url)                   *
-/* Extract pathname from any absolute URL.                   *
+/* Brief: Safely extracts pathname from any absolute URL.     *
 /**************************************************************/
 function getPathnameAny(url){
   try{ return new URL(String(url||"")).pathname.replace(/\/+$/,""); }catch{ return ""; }
@@ -82,7 +80,7 @@ function getPathnameAny(url){
 
 /**************************************************************
 /* functionSignature: getEnforcedBaseUrl (req, baseUrl)      *
-/* Map any request to the configured baseUrl.                *
+/* Brief: Ensures all requests target configured baseUrl.     *
 /**************************************************************/
 function getEnforcedBaseUrl(req, baseUrl){
   if (req.path && String(req.path).trim()){
@@ -106,7 +104,7 @@ function getEnforcedBaseUrl(req, baseUrl){
 
 /**************************************************************
 /* functionSignature: getFetchJson (url, opts, timeoutMs)    *
-/* Fetch JSON or text with timeout; return structured result */
+/* Brief: Fetches URL and returns JSON or text payload.       *
 /**************************************************************/
 async function getFetchJson(url, opts={}, timeoutMs=60000){
   const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), Math.max(1, timeoutMs));
@@ -126,7 +124,7 @@ async function getFetchJson(url, opts={}, timeoutMs=60000){
 
 /**************************************************************
 /* functionSignature: getFetchBuffer (url, timeoutMs)        *
-/* Fetch as binary buffer with content type.                 *
+/* Brief: Fetches URL and returns Buffer plus content type.   *
 /**************************************************************/
 async function getFetchBuffer(url, timeoutMs=60000){
   const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), Math.max(1, timeoutMs));
@@ -141,7 +139,7 @@ async function getFetchBuffer(url, timeoutMs=60000){
 
 /**************************************************************
 /* functionSignature: getStatusArgFromReq (req)              *
-/* Extract status string from request meta/fields.           *
+/* Brief: Extracts target status from request forms.          *
 /**************************************************************/
 function getStatusArgFromReq(req){
   const fromMeta = getStr(req?.meta?.status, "");
@@ -155,7 +153,7 @@ function getStatusArgFromReq(req){
 
 /**************************************************************
 /* functionSignature: getRepairJsonString (s)                *
-/* Repair truncated JSON by closing strings/braces/brackets. */
+/* Brief: Attempts to repair truncated JSON strings.          *
 /**************************************************************/
 function getRepairJsonString(s){
   const str = String(s||"");
@@ -183,7 +181,7 @@ function getRepairJsonString(s){
 
 /**************************************************************
 /* functionSignature: getStableJsonBuffer (body)             *
-/* Normalize body to Buffer and preview; attempt repairs.    *
+/* Brief: Stabilizes body to Buffer with preview metadata.    *
 /**************************************************************/
 function getStableJsonBuffer(body){
   if (body === undefined || body === null) return { buf: undefined, len: 0, preview: "[empty]", repaired:false, parsed:false };
@@ -205,7 +203,7 @@ function getStableJsonBuffer(body){
       }catch{
         const rawBuf = Buffer.from(body, "utf8");
         const prevRaw = `${body.slice(0,120)} ... ${body.slice(-80)}`;
-        return { buf: rawBuf, len: rawBuf.byteLength, preview: prevRaw, repaired:false, parsed:false };
+        return { buf: rawBuf, len: buf.byteLength, preview: prevRaw, repaired:false, parsed:false };
       }
     }
   }
@@ -223,7 +221,7 @@ function getStableJsonBuffer(body){
 
 /**************************************************************
 /* functionSignature: getSplitJqlOrderBy (jql)               *
-/* Split JQL into core and ORDER BY segment.                 *
+/* Brief: Splits JQL into core and ORDER BY tail.             *
 /**************************************************************/
 function getSplitJqlOrderBy(jql){
   const src = String(jql||"");
@@ -236,9 +234,8 @@ function getSplitJqlOrderBy(jql){
 }
 
 /**************************************************************
-/* functionSignature: getSanitizedJqlPlaceholders            *
-/*   (jql, key)                                             *
-/* Replace project placeholders with configured key.         *
+/* functionSignature: getSanitizedJqlPlaceholders (jql, k)   *
+/* Brief: Replaces project key placeholders in JQL.           *
 /**************************************************************/
 function getSanitizedJqlPlaceholders(jql, projectKey){
   let s = String(jql||"").trim();
@@ -254,9 +251,8 @@ function getSanitizedJqlPlaceholders(jql, projectKey){
 }
 
 /**************************************************************
-/* functionSignature: getEnsuredProjectRestriction           *
-/*   (jql, key, allowCross)                                  *
-/* Ensure project restriction unless allowed.                *
+/* functionSignature: getEnsuredProjectRestriction (jql,k,a) *
+/* Brief: Ensures JQL is scoped to project unless allowed.    *
 /**************************************************************/
 function getEnsuredProjectRestriction(jql, projectKey, allowCross){
   if (!projectKey || allowCross) return String(jql||"").trim();
@@ -271,35 +267,36 @@ function getEnsuredProjectRestriction(jql, projectKey, allowCross){
 }
 
 /**************************************************************
-/* functionSignature: getEnsuredSearchFields (fields, mode)  *
-/* Ensure search results include key metadata fields.        *
+/* functionSignature: getEnsuredSearchFields (fields, mode,  *
+/* opts)                                                     *
+/* Brief: Ensures core search fields unless noEnrich is set.  *
 /**************************************************************/
-function getEnsuredSearchFields(fields, mode){
-  const core = ["key","summary","status","assignee","issuetype","priority"];
+function getEnsuredSearchFields(fields, mode, opts){
+  const disableEnrich = !!(opts && opts.noEnrich === true);
   if (fields === undefined || fields === null){
     return undefined;
   }
+  const ensureCore = (arr)=>{
+    if (disableEnrich) return arr;
+    const core = ["key","summary","status","assignee","issuetype","priority"];
+    const set = new Set(arr.map(f=>String(f).trim()).filter(Boolean));
+    core.forEach(f=>set.add(f));
+    return Array.from(set);
+  };
   if (Array.isArray(fields)){
-    const set = new Set(fields.map(f => String(f).trim()).filter(Boolean));
-    core.forEach(f => set.add(f));
-    const arr = Array.from(set);
+    const arr = ensureCore(fields);
     return mode === "array" ? arr : arr.join(",");
   }
   const s = String(fields).trim();
-  if (!s){
-    return undefined;
-  }
-  const parts = s.split(",").map(f => f.trim()).filter(Boolean);
-  const set = new Set(parts);
-  core.forEach(f => set.add(f));
-  const arr = Array.from(set);
+  if (!s) return undefined;
+  const parts = s.split(",").map(f=>f.trim()).filter(Boolean);
+  const arr = ensureCore(parts);
   return mode === "array" ? arr : arr.join(",");
 }
 
 /**************************************************************
-/* functionSignature: getNormalizedSearchShape               *
-/*   (req, key)                                              *
-/* Normalize search requests and JQL for project enforcement */
+/* functionSignature: getNormalizedSearchShape (reqIn, k)    *
+/* Brief: Normalizes /search calls, JQL, and fields.          *
 /**************************************************************/
 function getNormalizedSearchShape(reqIn, defaultProjectKey){
   const isSearch = (p)=> /^https?:\/\/[^/]+\/rest\/api\/3\/search(?:\/jql)?\/?$|^\/rest\/api\/3\/search(?:\/jql)?\/?$/i.test(String(p||""));
@@ -310,6 +307,15 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   const bodyIn = (reqIn.body && typeof reqIn.body === "object") ? { ...reqIn.body } : {};
   const meta = (reqIn.meta && typeof reqIn.meta === "object") ? reqIn.meta : {};
   const allowCross = meta.allowCrossProject === true;
+  const onlyKeySummary = meta.onlyKeySummary === true;
+  if (onlyKeySummary){
+    if (method === "GET"){
+      reqIn.query = { ...(reqIn.query||{}), fields: "key,summary" };
+    } else {
+      reqIn.body = { ...(reqIn.body||{}), fields: ["key","summary"] };
+    }
+    reqIn.meta = { ...(reqIn.meta||{}), noEnrichFields: true };
+  }
   let jql = (bodyIn.jql ?? q.jql ?? "").toString();
   jql = getSanitizedJqlPlaceholders(jql, defaultProjectKey);
   if (!jql) jql = "ORDER BY created DESC";
@@ -318,7 +324,7 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   if (method === "GET"){
     const query = { ...q, jql };
     if (Object.prototype.hasOwnProperty.call(query, "fields")){
-      const ensured = getEnsuredSearchFields(query.fields, "string");
+      const ensured = getEnsuredSearchFields(query.fields, "string", { noEnrich: !!meta.noEnrichFields });
       if (ensured === undefined) delete query.fields;
       else query.fields = ensured;
     }
@@ -326,7 +332,7 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   }
   const body = { ...bodyIn, jql };
   if (Object.prototype.hasOwnProperty.call(body, "fields")){
-    const ensured = getEnsuredSearchFields(body.fields, "array");
+    const ensured = getEnsuredSearchFields(body.fields, "array", { noEnrich: !!meta.noEnrichFields });
     if (ensured === undefined) delete body.fields;
     else body.fields = ensured;
   }
@@ -335,7 +341,7 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
 
 /**************************************************************
 /* functionSignature: getADFParagraphDoc (text)              *
-/* Build a minimal ADF paragraph document from text.         *
+/* Brief: Wraps plain text into minimal ADF paragraph doc.    *
 /**************************************************************/
 function getADFParagraphDoc(text){
   const s = String(text||"");
@@ -344,7 +350,7 @@ function getADFParagraphDoc(text){
 
 /**************************************************************
 /* functionSignature: getIsProjectPlaceholderKey (k)         *
-/* Detect placeholder-like project keys.                     *
+/* Brief: Detects common placeholder project keys.            *
 /**************************************************************/
 function getIsProjectPlaceholderKey(k){
   const up = String(k||"").trim().toUpperCase();
@@ -355,7 +361,7 @@ function getIsProjectPlaceholderKey(k){
 
 /**************************************************************
 /* functionSignature: setEarlyParseBody (req)                *
-/* Parse string body to JSON early; attempt repairs.         *
+/* Brief: Parses stringified JSON body early if possible.     *
 /**************************************************************/
 function setEarlyParseBody(req){
   if (!req || typeof req!=="object") return { req, parsed:false };
@@ -372,8 +378,8 @@ function setEarlyParseBody(req){
 
 /**************************************************************
 /* functionSignature: getNormalizedIssueBodyADFAndProject    *
-/*   (req, key)                                              *
-/* Coerce strings to ADF and enforce project key.            *
+/* (req, defaultProjectKey)                                  *
+/* Brief: Coerces string fields to ADF and ensures project.   *
 /**************************************************************/
 function getNormalizedIssueBodyADFAndProject(req, defaultProjectKey){
   const path = String(req.path || req.url || "");
@@ -413,7 +419,7 @@ function getNormalizedIssueBodyADFAndProject(req, defaultProjectKey){
 
 /**************************************************************
 /* functionSignature: getNormalizedCommentADF (req)          *
-/* Coerce comment string body to ADF.                        *
+/* Brief: Coerces comment body strings to ADF.                *
 /**************************************************************/
 function getNormalizedCommentADF(req){
   const path = String(req.path || req.url || "");
@@ -429,9 +435,9 @@ function getNormalizedCommentADF(req){
 }
 
 /**************************************************************
-/* functionSignature: getFetchTransitions (baseUrl, issue,   *
-/*   headers)                                                *
-/* Fetch available transitions for an issue.                 *
+/* functionSignature: getFetchTransitions (baseUrl, idOrKey, *
+/* headers)                                                  *
+/* Brief: Retrieves available transitions for an issue.       *
 /**************************************************************/
 async function getFetchTransitions(baseUrl, issueIdOrKey, headers){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}/transitions?expand=transitions.fields`;
@@ -439,8 +445,8 @@ async function getFetchTransitions(baseUrl, issueIdOrKey, headers){
 }
 
 /**************************************************************
-/* functionSignature: getPickTransitionId (transitions, want)*
-/* Choose transition id by id/name/target status properties. *
+/* functionSignature: getPickTransitionId (transitions, des) *
+/* Brief: Chooses a transition id based on desired target.    *
 /**************************************************************/
 function getPickTransitionId(transitions, desired){
   if (!Array.isArray(transitions)) return null;
@@ -477,7 +483,7 @@ function getPickTransitionId(transitions, desired){
 
 /**************************************************************
 /* functionSignature: getPickByStatusString (transitions, s) *
-/* Choose transition id by matching status-like string.      *
+/* Brief: Maps a status-like string to a transition id.       *
 /**************************************************************/
 function getPickByStatusString(transitions, statusStr){
   if (!Array.isArray(transitions) || !statusStr) return null;
@@ -493,9 +499,9 @@ function getPickByStatusString(transitions, statusStr){
 }
 
 /**************************************************************
-/* functionSignature: getFindTransitionId (baseUrl, issue,   *
-/*   headers, target, statusStr)                             *
-/* Resolve transition id from target hints and/or status     *
+/* functionSignature: getFindTransitionId (baseUrl, key,     *
+/* headers, target, statusStr)                               *
+/* Brief: Fetches transitions and resolves desired id.        *
 /**************************************************************/
 async function getFindTransitionId(baseUrl, issueIdOrKey, headers, target, statusStr){
   const r = await getFetchTransitions(baseUrl, issueIdOrKey, headers);
@@ -511,9 +517,9 @@ async function getFindTransitionId(baseUrl, issueIdOrKey, headers, target, statu
 }
 
 /**************************************************************
-/* functionSignature: getPerformTransition (baseUrl, issue,  *
-/*   headers, body)                                          *
-/* Perform a workflow transition.                            *
+/* functionSignature: getPerformTransition (baseUrl, key,    *
+/* headers, body)                                            *
+/* Brief: Posts a transition payload to Jira.                 *
 /**************************************************************/
 async function getPerformTransition(baseUrl, issueIdOrKey, headers, body){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}/transitions`;
@@ -524,7 +530,7 @@ async function getPerformTransition(baseUrl, issueIdOrKey, headers, body){
 
 /**************************************************************
 /* functionSignature: getBuildTransitionPayload (id, meta)   *
-/* Build transition payload with optional fields/resolution. *
+/* Brief: Builds a Jira transition request payload.           *
 /**************************************************************/
 function getBuildTransitionPayload(transitionId, meta){
   const fields = (meta && typeof meta === "object" && meta.transitionFields && typeof meta.transitionFields === "object")
@@ -538,9 +544,9 @@ function getBuildTransitionPayload(transitionId, meta){
 }
 
 /**************************************************************
-/* functionSignature: getFetchIssueStatus (baseUrl, issue,   *
-/*   headers)                                                *
-/* Fetch issue status and resolution for verification.       *
+/* functionSignature: getFetchIssueStatus (baseUrl, key,     *
+/* headers)                                                  *
+/* Brief: Retrieves status and resolution for an issue.       *
 /**************************************************************/
 async function getFetchIssueStatus(baseUrl, issueIdOrKey, headers){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}?fields=status,resolution`;
@@ -552,9 +558,8 @@ async function getFetchIssueStatus(baseUrl, issueIdOrKey, headers){
 
 /**************************************************************
 /* functionSignature: getMaybeAutoTransition (req, cfg,      *
-/*   headers)                                                *
-/* Auto-transition for PUT/PATCH updates when status hint    *
-/* present (single-step only, no language mapping).          *
+/* headers)                                                  *
+/* Brief: Applies auto-transition on issue update if needed.  *
 /**************************************************************/
 async function getMaybeAutoTransition(req, cfg, headers){
   const path = String(req.path || req.url || "");
@@ -603,8 +608,8 @@ async function getMaybeAutoTransition(req, cfg, headers){
 
 /**************************************************************
 /* functionSignature: setFixDirectTransition (req, cfg,      *
-/*   headers)                                                *
-/* Resolve direct transition by name/status when id invalid. *
+/* headers)                                                  *
+/* Brief: Normalizes direct POST /transitions requests.       *
 /**************************************************************/
 async function setFixDirectTransition(req, cfg, headers){
   const path = String(req.path || req.url || "");
@@ -676,8 +681,83 @@ async function setFixDirectTransition(req, cfg, headers){
 }
 
 /**************************************************************
+/* functionSignature: getBuildOpRequest (op, args)           *
+/* Brief: Builds high-level operation requests.               *
+/**************************************************************/
+function getBuildOpRequest(op, args){
+  const OP = String(op||"").toUpperCase();
+  switch (OP){
+    case "LIST": {
+      return {
+        method: "POST",
+        path: "/rest/api/3/search",
+        meta: { onlyKeySummary: true, noEnrichFields: true },
+        body: {
+          jql: getStr(args?.jql, ""),
+          fields: ["key","summary","status"],
+          maxResults: getNum(args?.maxResults, 50)
+        }
+      };
+    }
+    case "TASK": {
+      const key = String(args?.key||"").trim();
+      return {
+        method: "GET",
+        path: `/rest/api/3/issue/${encodeURIComponent(key)}`
+      };
+    }
+    case "STATUS": {
+      const key = String(args?.key||"").trim();
+      const status = getStr(args?.status,"");
+      const meta = { ...(args?.meta||{}) };
+      if (status) meta.status = status;
+      if (args?.resolutionName) meta.resolutionName = args.resolutionName;
+      return {
+        method: "POST",
+        path: `/rest/api/3/issue/${encodeURIComponent(key)}/transitions`,
+        meta
+      };
+    }
+    case "CREATE": {
+      const fields = (args?.fields && typeof args.fields==="object") ? args.fields : {};
+      return {
+        method: "POST",
+        path: "/rest/api/3/issue",
+        body: { fields }
+      };
+    }
+    case "UPDATE": {
+      const key = String(args?.key||"").trim();
+      const fields = (args?.fields && typeof args.fields==="object") ? args.fields : {};
+      const req = {
+        method: "PUT",
+        path: `/rest/api/3/issue/${encodeURIComponent(key)}`,
+        body: { fields }
+      };
+      if (args?.status) req.status = String(args.status);
+      if (args?.meta) req.meta = { ...(args.meta) };
+      return req;
+    }
+    case "DELETE": {
+      const key = String(args?.key||"").trim();
+      const force = !!args?.forceDelete;
+      if (force){
+        return { method: "DELETE", path: `/rest/api/3/issue/${encodeURIComponent(key)}` };
+      }
+      return {
+        method: "POST",
+        path: `/rest/api/3/issue/${encodeURIComponent(key)}/transitions`,
+        meta: { status: getStr(args?.status, "Done"), resolutionName: getStr(args?.resolutionName,"") || undefined }
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/**************************************************************
 /* functionSignature: getInvoke (args, coreData)             *
-/* Main entry: enforce baseUrl and normalize request shape.  *
+/* Brief: Main tool entry: shapes, enforces, fetches, maps.   *
 /**************************************************************/
 async function getInvoke(args, coreData){
   const startedAt = Date.now();
@@ -691,7 +771,16 @@ async function getInvoke(args, coreData){
     getDebug("Config Error", { hasBaseUrl: !!baseUrl, hasEmail: !!email, hasToken: !!token });
     return { ok:false, error:"JIRA_CONFIG — missing Jira baseUrl/email/token in server configuration" };
   }
-  const reqIn = args?.json || args || {};
+  const op = String(args?.op || (args?.json?.op)||"").toUpperCase();
+  let reqIn = args?.json || args || {};
+  if (op){
+    const built = getBuildOpRequest(op, reqIn);
+    if (!built){
+      return { ok:false, error:`BAD_OP — unsupported op "${op}"` };
+    }
+    reqIn = built;
+    reqIn.__op = op;
+  }
   if (!reqIn || typeof reqIn!=="object" || !reqIn.method){
     getDebug("Bad Tool Args", reqIn);
     return { ok:false, error:"BAD_TOOL_ARGS", hint:"requires {json:{method:'GET|POST|PUT|DELETE|PATCH', path:'/rest/api/...'}}" };
@@ -791,12 +880,38 @@ async function getInvoke(args, coreData){
       if (v) hdrSubset[k]=v;
     }
   }
+  let dataOut = responseType==="json" ? res?.data : (typeof res?.data==="string" ? { text: res.data } : res?.data);
+  const opUsed = afterTrxReq?.__op || null;
+  if (opUsed === "LIST"){
+    const issues = Array.isArray(dataOut?.issues) ? dataOut.issues : [];
+    dataOut = issues.map(it => {
+      const st = it?.fields?.status;
+      return {
+        key: it?.key,
+        summary: it?.fields?.summary,
+        status: st ? { id: st.id, name: st.name, statusCategory: st?.statusCategory?.name || null } : null
+      };
+    }).filter(x => x.key && typeof x.summary === "string");
+  } else if (opUsed === "CREATE"){
+    dataOut = { key: dataOut?.key, id: dataOut?.id, self: dataOut?.self };
+  } else if (opUsed === "STATUS"){
+    dataOut = {
+      ok: !!res?.ok,
+      status: res?.status||0,
+      verify
+    };
+  } else if (opUsed === "DELETE"){
+    dataOut = {
+      ok: !!res?.ok,
+      status: res?.status||0
+    };
+  }
   const out = {
     ok: !!res?.ok,
     status: res?.status||0,
     url: afterTrxReq?.__abort ? null : url,
     headers: hdrSubset,
-    data: responseType==="json" ? res?.data : (typeof res?.data==="string" ? { text: res.data } : res?.data),
+    data: dataOut,
     transition: afterTrxReq?.__abort
       ? false
       : (transitionInfo ? { status: transitionInfo.status, ok: transitionInfo.ok }
@@ -810,7 +925,7 @@ async function getInvoke(args, coreData){
 
 /**************************************************************
 /* functionSignature: getDefaultExport ()                    *
-/* Build the tool definition and bind the invoke function.   *
+/* Brief: Exposes the tool definition and invoke entry.       *
 /**************************************************************/
 function getDefaultExport(){
   return {
@@ -820,110 +935,94 @@ function getDefaultExport(){
       function: {
         name: MODULE_NAME,
         description:
-          "Jira Cloud proxy for all REST API requests. Uses a preconfigured Jira Cloud base URL, project key, and credentials from the server configuration and ignores any hostnames passed in tool arguments. Early-parses JSON bodies, repairs truncated JSON, sets Content-Length, and normalizes JQL for search (including mapping KEY/PROJ/YOUR_PROJECT_KEY placeholders to the configured project key and auto-prefixing project=… unless meta.allowCrossProject=true). For search requests it always ensures that key issue metadata (key, summary, status, assignee, issuetype, priority) is returned, even if the caller restricts fields. Coerces string description/comment to ADF, and supports workflow transitions when a status change is requested (fields.status, meta.transition, or a status string on top-level/meta/body.transition).",
+          "Jira Cloud proxy + high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE). Enforces configured base URL, project key and credentials; normalizes JQL; repairs/normalizes JSON; supports multipart uploads; coerces string fields to ADF; auto-transitions on update; can directly perform transitions. LIST returns {key,summary,status}.",
         parameters: {
           type: "object",
           additionalProperties: false,
           properties: {
+            op: {
+              type: "string",
+              enum: ["LIST","TASK","STATUS","CREATE","DELETE","UPDATE"],
+              description: "Optional high-level operation. If omitted, raw request-mode is used."
+            },
+            jql: {
+              type: "string",
+              description: "For LIST: optional JQL filter. Project scoping is auto-enforced unless meta.allowCrossProject=true."
+            },
+            key: {
+              type: "string",
+              description: "Issue key for TASK/STATUS/UPDATE/DELETE."
+            },
+            status: {
+              type: "string",
+              description: "Target status for STATUS/UPDATE (auto transition)."
+            },
+            resolutionName: {
+              type: "string",
+              description: "Optional resolution to set during STATUS (e.g. 'Done', 'Won't Fix')."
+            },
+            forceDelete: {
+              type: "boolean",
+              description: "For DELETE: true to perform hard delete; otherwise a transition to 'Done' is attempted."
+            },
+            maxResults: {
+              type: "number",
+              description: "For LIST: max results (default 50)."
+            },
+            fields: {
+              type: "object",
+              description: "For CREATE/UPDATE: fields payload as in Jira REST (summary, issuetype, etc.)."
+            },
             json: {
               type: "object",
               description:
-                "Low-level Jira request definition. The tool enforces the Jira Cloud base URL and project key, normalizes search JQL, and enriches search results so that issue key + summary and core metadata are always available.",
+                "Raw low-level Jira request (alternative to op-mode). The proxy enforces base URL & project key, normalizes JQL, etc.",
               additionalProperties: false,
               properties: {
-                method: {
-                  type: "string",
-                  enum: ["GET","POST","PUT","DELETE","PATCH"],
-                  description: "HTTP method to use for the Jira REST API call."
-                },
-                path: {
-                  type: "string",
-                  description: "Path under the Jira base URL, e.g. '/rest/api/3/search' or '/rest/api/3/issue/KEY-123'."
-                },
-                url: {
-                  type: "string",
-                  description: "Optional full Jira URL. The proxy will strip the host and enforce the configured Jira base URL."
-                },
-                query: {
-                  type: "object",
-                  description: "Query parameters for the request. For search, 'jql' may be provided here; 'fields' will be enriched so key+summary+metadata are always included."
-                },
-                headers: {
-                  type: "object",
-                  description: "Additional HTTP headers to send. Authorization will be injected by the proxy."
-                },
-                body: {
-                  oneOf: [ { type: "object" }, { type: "string" } ],
-                  description: "Optional request body. For search POST requests, 'jql' and 'fields' can be specified; fields will be enriched with key/summary/status/assignee/issuetype/priority."
-                },
-                multipart: {
-                  type: "boolean",
-                  description: "If true, the request will be sent as multipart/form-data using 'form' and 'files'."
-                },
-                form: {
-                  type: "object",
-                  description: "Key/value pairs for multipart/form-data when 'multipart' is true."
-                },
-                files: {
-                  type: "array",
-                  description: "Files to attach in multipart requests. Each item must at least contain a 'url' from which the proxy will download the file.",
+                method: { type: "string", enum: ["GET","POST","PUT","DELETE","PATCH"] },
+                path:   { type: "string" },
+                url:    { type: "string" },
+                query:  { type: "object" },
+                headers:{ type: "object" },
+                body:   { oneOf: [ { type: "object" }, { type: "string" } ] },
+                multipart: { type: "boolean" },
+                form:     { type: "object" },
+                files:    { type: "array",
                   items: {
                     type: "object",
                     additionalProperties: false,
                     properties: {
-                      url: { type: "string", description: "Publicly reachable URL to download the file content from." },
-                      name: { type: "string", description: "Form field name for this file. Defaults to 'file'." },
-                      filename: { type: "string", description: "Filename to send to Jira. Defaults to the last path segment of the URL." }
+                      url: { type: "string" },
+                      name: { type: "string" },
+                      filename: { type: "string" }
                     },
                     required: ["url"]
                   }
                 },
-                timeoutMs: {
-                  type: "number",
-                  description: "Optional per-request timeout in milliseconds. Falls back to a reasonable default if omitted."
-                },
-                responseType: {
-                  type: "string",
-                  enum: ["json","arraybuffer"],
-                  description: "Expected response type. 'json' returns parsed JSON, 'arraybuffer' returns binary data."
-                },
-                status: {
-                  type: "string",
-                  description: "Optional status string used for automatic workflow transitions, e.g., 'Done' or 'In Progress'. No language mapping is performed; values are matched against Jira-provided transition fields."
-                },
+                timeoutMs: { type: "number" },
+                responseType: { type: "string", enum: ["json","arraybuffer"] },
+                status: { type: "string" },
                 meta: {
                   type: "object",
                   additionalProperties: false,
-                  description: "Additional proxy-level options such as allowCrossProject and transition details for workflow changes.",
                   properties: {
-                    allowCrossProject: {
-                      type: "boolean",
-                      description: "If true, the proxy will not automatically restrict search JQL to the configured project key."
-                    },
-                    status: {
-                      type: "string",
-                      description: "Alternative place for a status string used for auto-transition resolution."
-                    },
+                    allowCrossProject: { type: "boolean" },
+                    status: { type: "string" },
                     transition: {
                       type: "object",
                       additionalProperties: false,
-                      description: "Explicit workflow transition selector if you want to target a specific transition or status.",
                       properties: {
-                        id: { type: "string", description: "Transition id to perform." },
-                        name: { type: "string", description: "Transition name to match against available transitions." },
-                        toStatus: { type: "string", description: "Target status name (as Jira returns it)." },
-                        toStatusId: { type: "string", description: "Target status id." },
-                        toStatusCategory: { type: "string", description: "Target status category name (as Jira returns it)." }
+                        id: { type: "string" },
+                        name: { type: "string" },
+                        toStatus: { type: "string" },
+                        toStatusId: { type: "string" },
+                        toStatusCategory: { type: "string" }
                       }
                     },
-                    transitionFields: {
-                      type: "object",
-                      description: "Optional fields object merged into the transition payload (e.g. resolution, custom fields)."
-                    },
-                    resolutionName: {
-                      type: "string",
-                      description: "Optional resolution name to set during a transition (e.g. 'Done', 'Won't Fix')."
-                    }
+                    transitionFields: { type: "object" },
+                    resolutionName: { type: "string" },
+                    onlyKeySummary: { type: "boolean" },
+                    noEnrichFields: { type: "boolean" }
                   }
                 }
               },
