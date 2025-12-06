@@ -297,6 +297,8 @@ function getEnsuredSearchFields(fields, mode, opts){
 /**************************************************************
 /* functionSignature: getNormalizedSearchShape (reqIn, k)    *
 /* Brief: Normalizes /search calls, JQL, and fields.          *
+/* NOTE: 'onlyKeySummary' setzt nur Felder, wenn KEINE        *
+/*       Felder explizit angegeben wurden.                    *
 /**************************************************************/
 function getNormalizedSearchShape(reqIn, defaultProjectKey){
   const isSearch = (p)=> /^https?:\/\/[^/]+\/rest\/api\/3\/search(?:\/jql)?\/?$|^\/rest\/api\/3\/search(?:\/jql)?\/?$/i.test(String(p||""));
@@ -308,19 +310,28 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   const meta = (reqIn.meta && typeof reqIn.meta === "object") ? reqIn.meta : {};
   const allowCross = meta.allowCrossProject === true;
   const onlyKeySummary = meta.onlyKeySummary === true;
+
+  // WICHTIG: nur setzen, wenn keine Felder vorhanden sind
   if (onlyKeySummary){
-    if (method === "GET"){
-      reqIn.query = { ...(reqIn.query||{}), fields: "key,summary" };
-    } else {
-      reqIn.body = { ...(reqIn.body||{}), fields: ["key","summary"] };
+    const hasFields =
+      (method === "GET"  && Object.prototype.hasOwnProperty.call(q, "fields")) ||
+      (method !== "GET"  && Object.prototype.hasOwnProperty.call(bodyIn, "fields"));
+    if (!hasFields){
+      if (method === "GET"){
+        reqIn.query = { ...(reqIn.query||{}), fields: "key,summary" };
+      } else {
+        reqIn.body = { ...(reqIn.body||{}), fields: ["key","summary"] };
+      }
     }
     reqIn.meta = { ...(reqIn.meta||{}), noEnrichFields: true };
   }
+
   let jql = (bodyIn.jql ?? q.jql ?? "").toString();
   jql = getSanitizedJqlPlaceholders(jql, defaultProjectKey);
   if (!jql) jql = "ORDER BY created DESC";
   jql = getEnsuredProjectRestriction(jql, defaultProjectKey, allowCross);
   getDebug("Effective JQL", { jql });
+
   if (method === "GET"){
     const query = { ...q, jql };
     if (Object.prototype.hasOwnProperty.call(query, "fields")){
@@ -691,6 +702,7 @@ function getBuildOpRequest(op, args){
       return {
         method: "POST",
         path: "/rest/api/3/search",
+        // onlyKeySummary bleibt an, überschreibt aber nicht mehr explizite Felder
         meta: { onlyKeySummary: true, noEnrichFields: true },
         body: {
           jql: getStr(args?.jql, ""),
