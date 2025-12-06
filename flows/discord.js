@@ -15,6 +15,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord";
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const MACRO_TAG = "#Macro#";
 let __ulid_lastTime = 0;
 let __ulid_lastRand = new Uint8Array(10).fill(0);
 
@@ -112,6 +113,19 @@ function getAttachmentUrls(message) {
 }
 
 /**************************************************************
+/* functionSignature: getStripMacroTag (content)             *
+/* Removes leading "#Macro#" and returns { isMacro, payload }*
+/**************************************************************/
+function getStripMacroTag(content) {
+  if (typeof content !== "string") return { isMacro: false, payload: "" };
+  if (!content.startsWith(MACRO_TAG)) {
+    return { isMacro: false, payload: content };
+  }
+  const withoutTag = content.replace(/^#Macro#\s*/, "");
+  return { isMacro: true, payload: withoutTag };
+}
+
+/**************************************************************
 /* functionSignature: getDiscordFlow (baseCore, runFlow,     *
 /*                     createRunCore)                        *
 /* Boots Discord client and forwards messages into the flow  *
@@ -148,15 +162,28 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
   putItem(client, clientRegistryId);
 
   client.on("messageCreate", async (message) => {
-    if (message.author?.bot) return;
+    const rawContent = typeof message.content === "string" ? message.content : "";
+    const { isMacro, payload } = getStripMacroTag(rawContent);
+
+    if (message.author?.bot && !isMacro) return;
 
     const runCore = createRunCore();
     const wo = (runCore.workingObject ||= {});
+    const log = getPrefixedLogger(wo, import.meta.url);
 
-    const content = typeof message.content === "string" ? message.content : "";
+    if (isMacro) {
+      const newContent = String(payload || "").trim();
+      if (newContent && newContent !== rawContent) {
+        try {
+          await message.edit(newContent);
+        } catch (e) {
+          log("Failed to edit macro message (strip tag)", "warn", { moduleName: MODULE_NAME, channelId: message.channelId, reason: e?.message || String(e) });
+        }
+      }
+    }
 
     wo.turn_id = getNewUlid();
-    wo.payload = content.trim();
+    wo.payload = String(payload || "").trim();
     wo.flow = flowName;
     wo.id = message.channelId;
     wo.message = message;
@@ -164,27 +191,19 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
     wo.timestamp = new Date(message.createdTimestamp || Date.now()).toISOString();
     wo.channelID = message.channelId;
     wo.userid = message.author?.id || "";
-    wo.authorDisplayname =
-      (message.member && (message.member.displayName || message.member.nickname)) ||
-      message.author?.username ||
-      "";
+    wo.authorDisplayname = (message.member && (message.member.displayName || message.member.nickname)) || message.author?.username || "";
     wo.guildId = message.guildId || "";
     wo.channelType = message.channel?.type ?? null;
     wo.isDM = wo.channelType === ChannelType.DM;
     if (wo.isDM) wo.DM = true;
     wo.fileURLs = getAttachmentUrls(message);
-
-    const log = getPrefixedLogger(wo, import.meta.url);
+    if (isMacro) wo.isMacro = true;
 
     try {
       await runFlow(flowName, runCore);
     } catch (err) {
       const reason = err?.message || String(err);
-      log("Discord flow execution failed", "error", {
-        moduleName: MODULE_NAME,
-        channelId: message.channelId,
-        reason
-      });
+      log("Discord flow execution failed", "error", { moduleName: MODULE_NAME, channelId: message.channelId, reason });
     }
   });
 }

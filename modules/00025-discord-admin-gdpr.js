@@ -1,22 +1,22 @@
-/***************************************************************
-/* filename: "discord-admin-gdpr.js"                           *
-/* Version 1.0                                                 *
-/* Purpose: /gdpr (text|voice) (0|1); ensure table; update;    *
-/*          if both chat & voice == 0 then set disclaimer = 0. *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
+/**************************************************************
+/* filename: "discord-admin-gdpr.js"                         *
+/* Version 1.0                                               *
+/* Purpose: /gdpr (text|voice) (0|1); ensure table; update;  *
+/*          if both chat & voice == 0 then set disclaimer=0. *
+/**************************************************************/
+/**************************************************************
+/*                                                          *
+/**************************************************************/
 
 import mysql from "mysql2/promise";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-admin-gdpr";
 
-/***************************************************************
-/* functionSignature: getTableName (coreData)                  *
-/* Resolves the consent table name from configuration          *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getTableName (coreData)                *
+/* Resolves the consent table name from configuration        *
+/**************************************************************/
 function getTableName(coreData) {
   const t1 = coreData?.config?.["discord-gdpr-gate"]?.table;
   if (typeof t1 === "string" && t1.trim()) return t1.trim();
@@ -27,10 +27,10 @@ function getTableName(coreData) {
   return "gdpr_consent";
 }
 
-/***************************************************************
-/* functionSignature: getDbConfig (wo)                         *
-/* Reads DB connection configuration from workingObject        *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDbConfig (wo)                       *
+/* Reads DB connection configuration from workingObject      *
+/**************************************************************/
 function getDbConfig(wo) {
   const db = wo?.db || {};
   const { host, user, password, database } = db;
@@ -38,10 +38,10 @@ function getDbConfig(wo) {
   return { host, user, password, database, charset: "utf8mb4" };
 }
 
-/***************************************************************
-/* functionSignature: getParseValue (x)                        *
-/* Parses a numeric-like value into 0 or 1                     *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getParseValue (x)                      *
+/* Parses a numeric-like value into 0 or 1                   *
+/**************************************************************/
 function getParseValue(x) {
   const n = Number(x);
   return n === 1 ? 1 : 0;
@@ -49,10 +49,10 @@ function getParseValue(x) {
 
 const CREATED = new Set();
 
-/***************************************************************
-/* functionSignature: setEnsureTable (conn, table)             *
-/* Ensures the consent table exists                            *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setEnsureTable (conn, table)           *
+/* Ensures the consent table exists                          *
+/**************************************************************/
 async function setEnsureTable(conn, table) {
   if (CREATED.has(table)) return;
   const ddl = `
@@ -71,10 +71,10 @@ async function setEnsureTable(conn, table) {
   CREATED.add(table);
 }
 
-/***************************************************************
-/* functionSignature: getDiscordAdminGdpr (coreData)           *
-/* Updates GDPR flags via /gdpr and resets disclaimer if needed*/
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDiscordAdminGdpr (coreData)         *
+/* Updates GDPR flags via /gdpr and resets disclaimer if req */
+/**************************************************************/
 export default async function getDiscordAdminGdpr(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
@@ -97,7 +97,6 @@ export default async function getDiscordAdminGdpr(coreData) {
   if (!dbCfg || !targetUserId || !channelId || !sub || (sub !== "text" && sub !== "voice")) {
     log("gdpr admin missing/invalid data", "error", { moduleName: MODULE_NAME, hasDb: !!dbCfg, targetUserId, channelId, sub });
     wo.Response = "";
-    wo.stop = true;
     return coreData;
   }
 
@@ -140,7 +139,6 @@ export default async function getDiscordAdminGdpr(coreData) {
     log("gdpr updated", "info", { moduleName: MODULE_NAME, targetUserId, channelId, set: sub, value });
 
     wo.Response = "";
-    wo.stop = true;
     await conn.end().catch(() => {});
     return coreData;
 
@@ -148,7 +146,6 @@ export default async function getDiscordAdminGdpr(coreData) {
     if (conn) try { await conn.end(); } catch {}
     log("gdpr update failed", "error", { moduleName: MODULE_NAME, reason: e?.message });
     wo.Response = "";
-    wo.stop = true;
     return coreData;
   }
 }

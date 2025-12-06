@@ -1,13 +1,13 @@
 /**************************************************************
-/* filename: "discord-admin-commands.js"                      *
-/* Version 1.0                                                *
-/* Purpose: Slash admin commands for the "discord-admin" flow:*
-/*          /purge [count], /error, /purgedb, /freeze, plus   *
-/*          DM-only text commands: "!purge [count]" and       *
-/*          "!purgedb" (delete DB context for this DM).       *
+/* filename: "discord-admin-commands.js"                     *
+/* Version 1.0                                               *
+/* Purpose: Slash admin commands for the "discord-admin"     *
+/*          flow: /purge [count], /error, /purgedb, /freeze; *
+/*          plus DM-only text commands "!purge [count]" and  *
+/*          "!purgedb" to delete DB context for this DM.     *
 /**************************************************************/
 /**************************************************************
-/* Version History                                            *
+/*                                                          *
 /**************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
@@ -17,24 +17,24 @@ import { setPurgeContext, setFreezeContext } from "../core/context.js";
 const MODULE_NAME = "discord-admin-commands";
 
 /**************************************************************
-/* functionSignature: getSleep (ms)                           *
-/* Returns a promise that resolves after ms milliseconds      *
+/* functionSignature: getSleep (ms)                          *
+/* Returns a promise that resolves after ms milliseconds     *
 /**************************************************************/
 function getSleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
 /**************************************************************
-/* functionSignature: getJitter (ms)                          *
-/* Applies a ±10% jitter and floors to an integer             *
+/* functionSignature: getJitter (ms)                         *
+/* Applies a ±10% jitter and floors to an integer            *
 /**************************************************************/
 function getJitter(ms) {
   return Math.max(0, Math.floor(ms * (0.9 + Math.random() * 0.2)));
 }
 
 /**************************************************************
-/* functionSignature: getIsRateLimit (e)                      *
-/* True if error indicates a Discord rate limit               *
+/* functionSignature: getIsRateLimit (e)                     *
+/* True if error indicates a Discord rate limit              *
 /**************************************************************/
 function getIsRateLimit(e) {
   return (
@@ -46,8 +46,8 @@ function getIsRateLimit(e) {
 }
 
 /**************************************************************
-/* functionSignature: getResolveClient (wo)                   *
-/* Resolves the Discord client from the registry              *
+/* functionSignature: getResolveClient (wo)                  *
+/* Resolves the Discord client from the registry             *
 /**************************************************************/
 async function getResolveClient(wo) {
   const ref = wo?.clientRef || wo?.refs?.client || "discord:client";
@@ -60,8 +60,8 @@ async function getResolveClient(wo) {
 }
 
 /**************************************************************
-/* functionSignature: getResolveChannelById (wo, channelId)   *
-/* Resolves a channel by id using the client registry         *
+/* functionSignature: getResolveChannelById (wo, channelId)  *
+/* Resolves a channel by id using the client registry        *
 /**************************************************************/
 async function getResolveChannelById(wo, channelId) {
   const client = await getResolveClient(wo);
@@ -74,8 +74,8 @@ async function getResolveChannelById(wo, channelId) {
 }
 
 /**************************************************************
-/* functionSignature: getIsDMContext (wo)                     *
-/* Determines whether the current context is a DM             *
+/* functionSignature: getIsDMContext (wo)                    *
+/* Determines whether the current context is a DM            *
 /**************************************************************/
 function getIsDMContext(wo) {
   return !!(wo?.DM || wo?.isDM || wo?.channelType === 1 ||
@@ -84,8 +84,8 @@ function getIsDMContext(wo) {
 }
 
 /**************************************************************
-/* functionSignature: getParseBangPurgeCount (payload)        *
-/* Parses "!purge [count]" and returns a positive integer     *
+/* functionSignature: getParseBangPurgeCount (payload)       *
+/* Parses "!purge [count]" and returns a positive integer    *
 /**************************************************************/
 function getParseBangPurgeCount(payload) {
   const s = String(payload || "");
@@ -97,8 +97,8 @@ function getParseBangPurgeCount(payload) {
 }
 
 /**************************************************************
-/* functionSignature: getIsBangPurgeDb (payload)              *
-/* True if payload is exactly "!purgedb"                      *
+/* functionSignature: getIsBangPurgeDb (payload)             *
+/* True if payload is exactly "!purgedb"                     *
 /**************************************************************/
 function getIsBangPurgeDb(payload) {
   const s = String(payload || "").trim();
@@ -106,8 +106,8 @@ function getIsBangPurgeDb(payload) {
 }
 
 /**************************************************************
-/* functionSignature: setDeleteMessagesIndividually (items,log,ctx,opts) *
-/* Deletes messages one-by-one with adaptive backoff          *
+/* functionSignature: setDeleteMessagesIndividually (items, log, ctx, opts) *
+/* Deletes messages one-by-one with adaptive backoff         *
 /**************************************************************/
 async function setDeleteMessagesIndividually(items, log, ctx, opts = {}) {
   const {
@@ -155,14 +155,16 @@ async function setDeleteMessagesIndividually(items, log, ctx, opts = {}) {
 }
 
 /**************************************************************
-/* functionSignature: setPurgeLastN (channel, log, o)         *
-/* Deletes exactly the last N messages, newest first          *
+/* functionSignature: setPurgeLastN (channel, log, o)        *
+/* Deletes exactly the last N messages, newest first         *
 /**************************************************************/
 async function setPurgeLastN(channel, log, { maxTotal }) {
   const ctx = { guildId: channel?.guild?.id || null, channelId: channel?.id || null };
   let remaining = Number.isFinite(maxTotal) && maxTotal > 0 ? Math.floor(maxTotal) : Infinity;
   let totalDeleted = 0;
+
   if (!channel?.messages?.fetch) throw new Error("Channel does not support messages.fetch()");
+
   if (Number.isFinite(remaining) && remaining > 0 && remaining <= 100) {
     try {
       const res = await channel.bulkDelete(remaining, true);
@@ -175,34 +177,41 @@ async function setPurgeLastN(channel, log, { maxTotal }) {
       log("bulk delete failed (fallback to manual)", "warn", { moduleName: MODULE_NAME, ...ctx, reason: e?.message || String(e) });
     }
   }
+
   let beforeId = undefined;
   const fetchBatch = 100;
   const perDeleteDelayMsStart = 150;
   const maxRounds = 1000;
   const startedAt = Date.now();
   const maxMillis = 10 * 60 * 1000;
+
   for (let round = 0; remaining > 0 && round < maxRounds; round++) {
     if (Date.now() - startedAt > maxMillis) {
       log("purge watchdog timeout", "warn", { moduleName: MODULE_NAME, ...ctx, totalDeletedSoFar: totalDeleted, remaining });
       break;
     }
+
     const batch = await channel.messages
       .fetch({ limit: fetchBatch, ...(beforeId ? { before: beforeId } : {}) })
       .catch(e => {
         log("fetch failed", "error", { moduleName: MODULE_NAME, ...ctx, reason: e?.message || String(e) });
         return null;
       });
+
     const items = batch ? Array.from(batch.values()) : [];
     if (!items.length) {
       log("no more messages", "info", { moduleName: MODULE_NAME, ...ctx, totalDeleted, remaining });
       break;
     }
+
     const candidates = items
       .filter(m => !m.pinned)
       .slice(0, Number.isFinite(remaining) ? remaining : undefined);
+
     const add = await setDeleteMessagesIndividually(candidates, log, ctx, { perDeleteDelayMsStart });
     totalDeleted += add;
     if (Number.isFinite(remaining)) remaining -= add;
+
     const oldest = items[items.length - 1];
     const prev = beforeId;
     beforeId = oldest?.id;
@@ -211,13 +220,14 @@ async function setPurgeLastN(channel, log, { maxTotal }) {
       break;
     }
   }
+
   log("purge done (last N)", "info", { moduleName: MODULE_NAME, ...ctx, requested: maxTotal, deleted: totalDeleted, remaining: Math.max(0, remaining) });
   return totalDeleted;
 }
 
 /**************************************************************
-/* functionSignature: setPurgeDmDb (wo, payload, log)         *
-/* Handles "!purgedb" in current DM channel                   *
+/* functionSignature: setPurgeDmDb (wo, payload, log)        *
+/* Handles "!purgedb" in current DM channel                  *
 /**************************************************************/
 async function setPurgeDmDb(wo, payload, log) {
   if (!getIsDMContext(wo)) return false;
@@ -230,13 +240,12 @@ async function setPurgeDmDb(wo, payload, log) {
   log("db purge done (DM)", "info", { moduleName: MODULE_NAME, channelId, deleted });
 
   wo.Response = "";
-  wo.stop = true;
   return true;
 }
 
 /**************************************************************
-/* functionSignature: setPurgeDmBotMessages (wo, payload, log)*
-/* Handles "!purge [count]" in current DM channel             *
+/* functionSignature: setPurgeDmBotMessages (wo, payload, log) *
+/* Handles "!purge [count]" in current DM channel            *
 /**************************************************************/
 async function setPurgeDmBotMessages(wo, payload, log) {
   if (!getIsDMContext(wo)) return false;
@@ -250,6 +259,7 @@ async function setPurgeDmBotMessages(wo, payload, log) {
   const channel = (wo?.message?.channel && wo?.message?.channel?.messages?.fetch)
     ? wo.message.channel
     : await getResolveChannelById(wo, channelId);
+
   if (!channel?.messages?.fetch || !client?.user?.id) return true;
 
   const ctx = { guildId: null, channelId };
@@ -261,11 +271,14 @@ async function setPurgeDmBotMessages(wo, payload, log) {
     const batch = await channel.messages.fetch({ limit: 100, ...(beforeId ? { before: beforeId } : {}) }).catch(() => null);
     const items = batch ? Array.from(batch.values()) : [];
     if (!items.length) break;
+
     const mine = items.filter(m => m.author?.id === client.user.id);
     const slice = mine.slice(0, remaining);
+
     const add = await setDeleteMessagesIndividually(slice, log, ctx, { perDeleteDelayMsStart: 120 });
     totalDeleted += add;
     remaining -= add;
+
     const oldest = items[items.length - 1];
     beforeId = oldest?.id;
     if (!beforeId) break;
@@ -273,13 +286,12 @@ async function setPurgeDmBotMessages(wo, payload, log) {
 
   log("dm purge done", "info", { moduleName: MODULE_NAME, ...ctx, deleted: totalDeleted });
   wo.Response = "";
-  wo.stop = true;
   return true;
 }
 
 /**************************************************************
-/* functionSignature: getDiscordAdminCommands (coreData)      *
-/* Handles /purge, /error, /purgedb, /freeze and DM text cmds *
+/* functionSignature: getDiscordAdminCommands (coreData)     *
+/* Handles /purge, /error, /purgedb, /freeze and DM text cmds*
 /**************************************************************/
 export default async function getDiscordAdminCommands(coreData) {
   const wo  = coreData?.workingObject || {};
@@ -295,6 +307,7 @@ export default async function getDiscordAdminCommands(coreData) {
 
   try {
     if (wo?.flow !== "discord-admin") return coreData;
+
     const cmd = String(wo?.admin?.command || "").toLowerCase();
     if (cmd !== "purge" && cmd !== "error" && cmd !== "purgedb" && cmd !== "freeze") {
       return coreData;
@@ -309,14 +322,13 @@ export default async function getDiscordAdminCommands(coreData) {
       if (!targetChannelId) {
         log("db purge failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
         wo.Response = "";
-        wo.stop = true;
         return coreData;
       }
+
       const purgeWO = { ...wo, id: targetChannelId };
       const deleted = await setPurgeContext(purgeWO);
       log("db purge done", "info", { moduleName: MODULE_NAME, channelId: targetChannelId, deleted });
       wo.Response = "";
-      wo.stop = true;
       return coreData;
     }
 
@@ -325,14 +337,13 @@ export default async function getDiscordAdminCommands(coreData) {
       if (!targetChannelId) {
         log("freeze failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
         wo.Response = "";
-        wo.stop = true;
         return coreData;
       }
+
       const freezeWO = { ...wo, id: targetChannelId };
       const updated = await setFreezeContext(freezeWO);
       log("freeze done", "info", { moduleName: MODULE_NAME, channelId: targetChannelId, updated });
       wo.Response = "";
-      wo.stop = true;
       return coreData;
     }
 
@@ -341,13 +352,13 @@ export default async function getDiscordAdminCommands(coreData) {
     if (!channel) {
       log("slash admin command failed", "error", { moduleName: MODULE_NAME, reason: "could not resolve channel" });
       wo.Response = "";
-      wo.stop = true;
       return coreData;
     }
 
     const countOpt = wo?.admin?.options?.count;
     const parsed   = Number(countOpt);
     const maxTotal = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : Infinity;
+
     if (Number.isFinite(maxTotal)) {
       await setPurgeLastN(channel, log, { maxTotal });
     } else {
@@ -355,13 +366,11 @@ export default async function getDiscordAdminCommands(coreData) {
     }
 
     wo.Response = "";
-    wo.stop = true;
     return coreData;
 
   } catch (e) {
     log("slash admin command failed", "error", { moduleName: MODULE_NAME, reason: e?.message || String(e) });
     wo.Response = "";
-    wo.stop = true;
     return coreData;
   }
 }
