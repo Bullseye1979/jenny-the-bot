@@ -1,12 +1,12 @@
-/**********************************************************************************************************************
-/* filename: "core-ai-responses.js"                                                                                    *
-/* Version 1.0                                                                                                         *
-/* Purpose: Responses runner (GPT-5) with context translation, real tool handling, image persistence, and file-based   *
-/*          logging (no console output).                                                                               *
-/**********************************************************************************************************************/
-/**********************************************************************************************************************
-/*                                                                                                                    *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* filename: "core-ai-responses.js"                                            *
+/* Version 1.0                                                                 *
+/* Purpose: Responses runner (GPT-5) with context translation, real tool       *
+/*          handling, image persistence, and file-based logging (no console).  *
+/********************************************************************************/
+/********************************************************************************
+/*                                                                              *
+/********************************************************************************/
 
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
@@ -20,64 +20,64 @@ const MODULE_NAME = "core-ai-responses";
 const DEBUG_DIR = path.resolve("./pub/debug");
 const DOC_DIR = path.resolve("./pub/documents");
 
-/**********************************************************************************************************************
-/* functionSignature: getToString (v)                                                                                  *
-/* Returns a safe string representation.                                                                               *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getToString (v)                                          *
+/* Returns a safe string representation.                                       *
+/********************************************************************************/
 function getToString(v) { return typeof v === "string" ? v : (v == null ? "" : String(v)); }
 
-/**********************************************************************************************************************
-/* functionSignature: getStr (v, d)                                                                                    *
-/* Returns v if non-empty string; otherwise default d.                                                                 *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getStr (v, d)                                            *
+/* Returns v if non-empty string; otherwise default d.                         *
+/********************************************************************************/
 function getStr(v, d) { return (typeof v === "string" && v.length) ? v : d; }
 
-/**********************************************************************************************************************
-/* functionSignature: getNum (v, d)                                                                                    *
-/* Returns finite numeric v; otherwise default d.                                                                      *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getNum (v, d)                                            *
+/* Returns finite numeric v; otherwise default d.                              *
+/********************************************************************************/
 function getNum(v, d) { return Number.isFinite(v) ? Number(v) : d; }
 
-/**********************************************************************************************************************
-/* functionSignature: getJSON (t, f)                                                                                   *
-/* Parses JSON text t; returns fallback f on failure.                                                                  *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getJSON (t, f)                                           *
+/* Parses JSON text t; returns fallback f on failure.                          *
+/********************************************************************************/
 function getJSON(t, f = null) { try { return JSON.parse(t); } catch { return f; } }
 
-/**********************************************************************************************************************
-/* functionSignature: getWithTurnId (rec, wo)                                                                          *
-/* Adds turn_id from working object if present.                                                                        *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getWithTurnId (rec, wo)                                  *
+/* Adds turn_id from working object if present.                                *
+/********************************************************************************/
 function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; return t ? { ...rec, turn_id: t } : rec; }
 
-/**********************************************************************************************************************
-/* functionSignature: getPreview (s, n)                                                                                *
-/* Returns a truncated preview with ellipsis marker.                                                                   *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getPreview (s, n)                                        *
+/* Returns a truncated preview with ellipsis marker.                           *
+/********************************************************************************/
 function getPreview(s, n = 400) { const t = getToString(s); return t.length > n ? t.slice(0, n) + " …[truncated]" : t; }
 
-/**********************************************************************************************************************
-/* functionSignature: getLooksBase64 (s)                                                                               *
-/* Heuristically checks if s looks like base64 content.                                                                *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getLooksBase64 (s)                                       *
+/* Heuristically checks if s looks like base64 content.                        *
+/********************************************************************************/
 function getLooksBase64(s) { return typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s); }
 
-/**********************************************************************************************************************
-/* functionSignature: setEnsureDebugDir ()                                                                             *
-/* Ensures the debug directory exists.                                                                                *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setEnsureDebugDir ()                                     *
+/* Ensures the debug directory exists.                                         *
+/********************************************************************************/
 function setEnsureDebugDir() { if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true }); }
 
-/**********************************************************************************************************************
-/* functionSignature: getSafeJSONStringify (obj)                                                                        *
-/* Safe JSON stringify with fallback.                                                                                 *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getSafeJSONStringify (obj)                               *
+/* Safe JSON stringify with fallback.                                          *
+/********************************************************************************/
 function getSafeJSONStringify(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj); } }
 
-/**********************************************************************************************************************
-/* functionSignature: setRedactSecrets (s)                                                                             *
-/* Redacts common secret patterns from text.                                                                           *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setRedactSecrets (s)                                     *
+/* Redacts common secret patterns from text.                                   *
+/********************************************************************************/
 function setRedactSecrets(s) {
   s = (typeof s === "string") ? s : String(s);
   s = s.replace(/(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+\-\/=]+/gi, "$1***REDACTED***");
@@ -86,22 +86,22 @@ function setRedactSecrets(s) {
   return s;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getApproxBase64Bytes (b64)                                                                        *
-/* Approximates decoded byte length of base64 text.                                                                    *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getApproxBase64Bytes (b64)                               *
+/* Approximates decoded byte length of base64 text.                            *
+/********************************************************************************/
 function getApproxBase64Bytes(b64) { const len = (b64 || "").length; const pads = (b64?.endsWith("==") ? 2 : (b64?.endsWith("=") ? 1 : 0)); return Math.max(0, Math.floor(len * 0.75) - pads); }
 
-/**********************************************************************************************************************
-/* functionSignature: getSha256OfBase64 (b64)                                                                           *
-/* Computes SHA-256 of base64-decoded data.                                                                            *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getSha256OfBase64 (b64)                                  *
+/* Computes SHA-256 of base64-decoded data.                                    *
+/********************************************************************************/
 function getSha256OfBase64(b64) { try { return createHash("sha256").update(Buffer.from(b64, "base64")).digest("hex"); } catch { return "n/a"; } }
 
-/**********************************************************************************************************************
-/* functionSignature: getSanitizedForLog (obj)                                                                          *
-/* Produces log-friendly sanitized clone.                                                                              *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getSanitizedForLog (obj)                                 *
+/* Produces log-friendly sanitized clone.                                      *
+/********************************************************************************/
 function getSanitizedForLog(obj) {
   const seen = new WeakSet();
   const MAX_STRING = 2000;
@@ -140,10 +140,10 @@ function getSanitizedForLog(obj) {
   return walk(obj);
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getImageSummaryForLog (images)                                                                     *
-/* Summarizes image artifacts for logs.                                                                                *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getImageSummaryForLog (images)                            *
+/* Summarizes image artifacts for logs.                                        *
+/********************************************************************************/
 function getImageSummaryForLog(images) {
   return (images || []).map(im => {
     if (im.kind === "b64") { const bytes = getApproxBase64Bytes(im.b64 || ""); const hash = getSha256OfBase64(im.b64 || ""); return { kind: "b64", mime: im.mime || "image/png", bytes, sha256: hash }; }
@@ -153,10 +153,10 @@ function getImageSummaryForLog(images) {
   });
 }
 
-/**********************************************************************************************************************
-/* functionSignature: setLogBig (label, data, options)                                                                    *
-/* Writes large sanitized debug logs (optional to file).                                                                *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setLogBig (label, data, options)                          *
+/* Writes large sanitized debug logs (optional to file).                        *
+/********************************************************************************/
 function setLogBig(label, data, { toFile = false } = {}) {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const sanitized = getSanitizedForLog(data);
@@ -171,22 +171,22 @@ function setLogBig(label, data, { toFile = false } = {}) {
   }
 }
 
-/**********************************************************************************************************************
-/* functionSignature: setLogConsole (label, data)                                                                       *
-/* No-op console logger (console output removed by policy).                                                             *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setLogConsole (label, data)                               *
+/* No-op console logger (no console output).                                   *
+/********************************************************************************/
 function setLogConsole(_label, _data) {}
 
-/**********************************************************************************************************************
-/* functionSignature: getIdemp (wo)                                                                                    *
-/* Returns idempotence-tracking object on working object.                                                              *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getIdemp (wo)                                            *
+/* Returns idempotence-tracking store on working object.                        *
+/********************************************************************************/
 function getIdemp(wo) { if (!wo.__idemp) wo.__idemp = { tools: new Set(), images: new Set() }; return wo.__idemp; }
 
-/**********************************************************************************************************************
-/* functionSignature: getNormalizedToolDefs (toolsLike)                                                                  *
-/* Normalizes tool definitions to Responses format.                                                                     *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getNormalizedToolDefs (toolsLike)                         *
+/* Normalizes tool definitions to Responses format.                             *
+/********************************************************************************/
 function getNormalizedToolDefs(toolsLike) {
   if (!Array.isArray(toolsLike)) return [];
   const out = [];
@@ -200,10 +200,10 @@ function getNormalizedToolDefs(toolsLike) {
   return out;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getNormalizedToolChoice (tc)                                                                       *
-/* Normalizes tool_choice to accepted structures.                                                                       *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getNormalizedToolChoice (tc)                              *
+/* Normalizes tool_choice to accepted structures.                               *
+/********************************************************************************/
 function getNormalizedToolChoice(tc) {
   if (!tc || tc === "auto" || tc === "none") return tc || "auto";
   if (tc?.type === "function" && tc?.name) return tc;
@@ -211,10 +211,10 @@ function getNormalizedToolChoice(tc) {
   return "auto";
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getRuntimeContextFromLast (wo, snapshot)                                                           *
-/* Builds optional runtime context from last history record.                                                            *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getRuntimeContextFromLast (wo, snapshot)                  *
+/* Builds optional runtime context from last history record.                    *
+/********************************************************************************/
 function getRuntimeContextFromLast(wo, snapshot) {
   if (wo?.IncludeRuntimeContext !== true) return null;
   const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
@@ -223,16 +223,16 @@ function getRuntimeContextFromLast(wo, snapshot) {
   return { metadata, last };
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getAppendRuntimeContextToUserContent (baseText, ctx)                                               *
-/* Appends runtime context JSON block to user text.                                                                     *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getAppendRuntimeContextToUserContent (baseText, ctx)      *
+/* Appends runtime context JSON block to user text.                             *
+/********************************************************************************/
 function getAppendRuntimeContextToUserContent(baseText, ctx) { if (!ctx) return baseText ?? ""; const jsonBlock = "```json\n" + JSON.stringify(ctx) + "\n```"; return (baseText ?? "") + "\n\n[context]\n" + jsonBlock; }
 
-/**********************************************************************************************************************
-/* functionSignature: getToolsByName (names, wo)                                                                         *
-/* Dynamically imports tools by name; validates invoke function.                                                        *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getToolsByName (names, wo)                                *
+/* Dynamically imports tools and validates invoke function.                     *
+/********************************************************************************/
 async function getToolsByName(names, wo) {
   const loaded = [];
   for (const name of names || []) {
@@ -248,10 +248,10 @@ async function getToolsByName(names, wo) {
   return loaded;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: setExecGenericTool (toolModules, call, coreData)                                                   *
-/* Executes a generic tool with idempotence and message mapping.                                                        *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setExecGenericTool (toolModules, call, coreData)          *
+/* Executes a generic tool with idempotence and message mapping.               *
+/********************************************************************************/
 async function setExecGenericTool(toolModules, call, coreData) {
   const wo = coreData?.workingObject ?? {};
   const idemp = getIdemp(wo);
@@ -281,46 +281,46 @@ async function setExecGenericTool(toolModules, call, coreData) {
   }
 }
 
-/**********************************************************************************************************************
-/* functionSignature: setEnsureDocDir ()                                                                                *
-/* Ensures the public documents directory exists.                                                                       *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setEnsureDocDir ()                                        *
+/* Ensures the public documents directory exists.                               *
+/********************************************************************************/
 function setEnsureDocDir() { if (!fs.existsSync(DOC_DIR)) fs.mkdirSync(DOC_DIR, { recursive: true }); }
 
-/**********************************************************************************************************************
-/* functionSignature: getExtFromMime (m)                                                                                *
-/* Returns a file extension based on MIME type.                                                                         *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getExtFromMime (m)                                        *
+/* Returns a file extension based on MIME type.                                 *
+/********************************************************************************/
 function getExtFromMime(m) { const mime = (m || "").toLowerCase(); if (mime.includes("png")) return ".png"; if (mime.includes("jpeg") || mime.includes("jpg")) return ".jpg"; if (mime.includes("webp")) return ".webp"; if (mime.includes("gif")) return ".gif"; if (mime.includes("bmp")) return ".bmp"; if (mime.includes("svg")) return ".svg"; return ".png"; }
 
-/**********************************************************************************************************************
-/* functionSignature: getBuildUrl (filename, baseUrl)                                                                    *
-/* Builds a public URL for a persisted document.                                                                        *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getBuildUrl (filename, baseUrl)                           *
+/* Builds a public URL for a persisted document.                                *
+/********************************************************************************/
 function getBuildUrl(filename, baseUrl) { const clean = (baseUrl || "").replace(/\/+$/, ""); return clean ? `${clean}/documents/${filename}` : `/documents/${filename}`; }
 
-/**********************************************************************************************************************
-/* functionSignature: setSaveB64 (b64, mime, baseUrl, wo)                                                                *
-/* Persists base64 image and returns hosted URL.                                                                        *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setSaveB64 (b64, mime, baseUrl, wo)                       *
+/* Persists base64 image and returns hosted URL.                                *
+/********************************************************************************/
 async function setSaveB64(b64, mime, baseUrl, wo) { setEnsureDocDir(); const idemp = getIdemp(wo); const hash = getSha256OfBase64(b64 || ""); if (idemp.images.has(hash)) return getBuildUrl(`DUP-${hash}.png`, baseUrl); idemp.images.add(hash); const ext = getExtFromMime(mime || "image/png"); const filename = `${Date.now()}-${randomUUID()}${ext}`; const filePath = path.join(DOC_DIR, filename); fs.writeFileSync(filePath, Buffer.from(b64, "base64")); return getBuildUrl(filename, baseUrl); }
 
-/**********************************************************************************************************************
-/* functionSignature: setMirrorURL (url, baseUrl, wo)                                                                    *
-/* Downloads a remote image and mirrors it locally.                                                                      *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setMirrorURL (url, baseUrl, wo)                           *
+/* Downloads a remote image and mirrors it locally.                             *
+/********************************************************************************/
 async function setMirrorURL(url, baseUrl, wo) { setEnsureDocDir(); const idemp = getIdemp(wo); const key = `url:${createHash("sha256").update(url || "").digest("hex")}`; if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(url).digest("hex")}.png`, baseUrl); idemp.images.add(key); const f = globalThis.fetch ?? (await import("node-fetch")).default; const res = await f(url, { headers: { "User-Agent": "core-ai-responses/1.0" } }); if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`); const mime = res.headers.get("content-type") || "image/png"; const ext = getExtFromMime(mime); const filename = `${Date.now()}-${randomUUID()}${ext}`; const filePath = path.join(DOC_DIR, filename); const buf = Buffer.from(await res.arrayBuffer()); fs.writeFileSync(filePath, buf); return getBuildUrl(filename, baseUrl); }
 
-/**********************************************************************************************************************
-/* functionSignature: setSaveFromFileId (fileId, opts, wo)                                                               *
-/* Downloads an image via provider fileId and persists it.                                                               *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: setSaveFromFileId (fileId, opts, wo)                      *
+/* Downloads an image via provider fileId and persists it.                      *
+/********************************************************************************/
 async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }, wo) { setEnsureDocDir(); const idemp = getIdemp(wo); const key = `file:${fileId}`; if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(fileId).digest("hex")}.png`, baseUrl); idemp.images.add(key); let url = ""; if (endpointFilesContentTemplate && endpointFilesContentTemplate.includes("{id}")) { url = endpointFilesContentTemplate.replace("{id}", encodeURIComponent(fileId)); } else { const base = (endpointResponses || "").replace(/\/responses.*/, "").replace(/\/+$/, ""); url = `${base}/files/${encodeURIComponent(fileId)}/content`; } const f = globalThis.fetch ?? (await import("node-fetch")).default; const res = await f(url, { method: "GET", headers: { "Authorization": `Bearer ${apiKey}`, "User-Agent": "core-ai-responses/1.0" } }); if (!res.ok) throw new Error(`File download failed: ${res.status} ${res.statusText}`); const mime = res.headers.get("content-type") || "image/png"; const ext = getExtFromMime(mime); const filename = `${Date.now()}-${randomUUID()}${ext}`; const filePath = path.join(DOC_DIR, filename); const buf = Buffer.from(await res.arrayBuffer()); fs.writeFileSync(filePath, buf); return getBuildUrl(filename, baseUrl); }
 
-/**********************************************************************************************************************
-/* functionSignature: getParsedResponsesOutput (raw)                                                                      *
-/* Extracts text, images, and tool calls from Responses JSON.                                                            *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getParsedResponsesOutput (raw)                            *
+/* Extracts text, images, and tool calls from Responses JSON.                   *
+/********************************************************************************/
 function getParsedResponsesOutput(raw) {
   const out = { text: "", toolCalls: [], images: [] };
   const isHttpUrl = (u) => (typeof u === "string" && /^https?:\/\//i.test(u));
@@ -386,10 +386,10 @@ function getParsedResponsesOutput(raw) {
   return out;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getWasTruncatedOutput (data)                                                                       *
-/* Detects whether model output was truncated.                                                                           *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getWasTruncatedOutput (data)                              *
+/* Detects whether model output was truncated.                                  *
+/********************************************************************************/
 function getWasTruncatedOutput(data) {
   if (data?.incomplete_details) return true;
   if (data?.status && String(data.status).toLowerCase() === "incomplete") return true;
@@ -403,28 +403,28 @@ function getWasTruncatedOutput(data) {
   return false;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getPayload (row)                                                                                 *
-/* Extracts the text payload from a history row.                                                                        *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getPayload (row)                                          *
+/* Extracts the text payload from a history row.                                *
+/********************************************************************************/
 function getPayload(row) { if (typeof row?.json === "string" && row.json.length) return row.json; if (typeof row?.content === "string" && row.content.length) return row.content; if (typeof row?.text === "string" && row.text.length) return row.text; return ""; }
 
-/**********************************************************************************************************************
-/* functionSignature: getSnapshotMappedToChat (rows)                                                                     *
-/* Maps stored snapshot rows to chat-style messages.                                                                     *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getSnapshotMappedToChat (rows)                            *
+/* Maps stored snapshot rows to chat-style messages.                            *
+/********************************************************************************/
 function getSnapshotMappedToChat(rows) { const out = []; for (const r of rows || []) { const role = r?.role; const payload = getPayload(r); if (role === "system") out.push({ role: "system", content: payload }); else if (role === "user") out.push({ role: "user", content: payload }); else if (role === "assistant") out.push({ role: "assistant", content: payload }); else if (role === "tool") out.push({ role: "assistant", content: payload }); } return out; }
 
-/**********************************************************************************************************************
-/* functionSignature: getResponsesInputFromMessages (messages)                                                           *
-/* Converts chat messages to Responses API input format.                                                                 *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getResponsesInputFromMessages (messages)                  *
+/* Converts chat messages to Responses API input format.                        *
+/********************************************************************************/
 function getResponsesInputFromMessages(messages) { return messages.map(m => { const role = (m.role === "tool") ? "assistant" : m.role; const type = (role === "assistant") ? "output_text" : "input_text"; const text = getToString(m.content ?? ""); return { role, content: [{ type, text }] }; }); }
 
-/**********************************************************************************************************************
-/* functionSignature: getCoreAi (coreData)                                                                              *
-/* Runs the Responses workflow with tools, persistence, and asset handling.                                             *
-/**********************************************************************************************************************/
+/********************************************************************************
+/* functionSignature: getCoreAi (coreData)                                      *
+/* Runs the Responses workflow end-to-end.                                      *
+/********************************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData?.workingObject ?? {};
   if (!Array.isArray(wo.logging)) wo.logging = [];
@@ -453,9 +453,39 @@ export default async function getCoreAi(coreData) {
     const tz = getStr(wo2?.timezone, "Europe/Berlin");
     const nowIso = now.toISOString();
     const base = [typeof wo2.SystemPrompt === "string" ? wo2.SystemPrompt.trim() : "", typeof wo2.Instructions === "string" ? wo2.Instructions.trim() : ""].filter(Boolean).join("\n\n");
-    const runtimeInfo = ["Runtime info:", `- current_time_iso: ${nowIso}`, `- timezone_hint: ${tz}`, "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.", "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."].join("\n");
-    const policy = ["Policy:", "- NEVER ANSWER TO OLDER USER REQUESTS", "- Use tools only when necessary.", "- When you emit a tool call, do not include extra prose in the same turn.", "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format", "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"].join("\n");
-    const parts = []; if (base) parts.push(base); parts.push(runtimeInfo); parts.push(policy); return parts.filter(Boolean).join("\n\n");
+    const runtimeInfo = [
+      "Runtime info:",
+      `- current_time_iso: ${nowIso}`,
+      `- timezone_hint: ${tz}`,
+      "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
+      "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
+    ].join("\n");
+    const policy = [
+      "Policy:",
+      "- NEVER ANSWER TO OLDER USER REQUESTS",
+      "- Use tools only when necessary.",
+      "- When you emit a tool call, do not include extra prose in the same turn.",
+      "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
+      "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"
+    ].join("\n");
+    const multiChannelNote = (() => {
+      const raw = Array.isArray(wo2?.contextIDs) ? wo2.contextIDs : [];
+      const extraIds = raw.map(v => String(v || "").trim()).filter(v => v.length > 0);
+      if (!extraIds.length) return "";
+      const currentId = String(wo2?.id ?? "").trim();
+      const lines = [
+        "Multi-channel context:",
+        "- The context includes messages from multiple channels. Each message may carry a `channelId` field that identifies its source channel."
+      ];
+      if (currentId) lines.push(`- Treat "${currentId}" as your primary (effective) channelId for this conversation.`);
+      return lines.join("\n");
+    })();
+    const parts = [];
+    if (base) parts.push(base);
+    parts.push(runtimeInfo);
+    parts.push(policy);
+    if (multiChannelNote) parts.push(multiChannelNote);
+    return parts.filter(Boolean).join("\n\n");
   }
 
   const sys = getSystemContent(wo);

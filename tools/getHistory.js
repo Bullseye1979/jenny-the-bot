@@ -1,23 +1,22 @@
-/************************************************************************************
-/* filename: "getHistory.js"                                                        *
-/* Version 1.0                                                                      *
-/* Purpose: Retrieve channel history for a timeframe with smart modes:              *
-/*          dump (≤ threshold), single-summary (≤ max_rows), or chunked summaries   *
-/*          (> max_rows). Supports paging, tool-row filtering, and OpenAI summaries.*
-/************************************************************************************/
-/************************************************************************************
-/*                                                                                    *
-/************************************************************************************/
+/********************************************************************************
+/* filename: "getHistory.js"                                                    *
+/* Version 1.0                                                                  *
+/* Purpose: Retrieve channel history with dump/summary/chunk modes, including   *
+/*          paging, filtering, and OpenAI summaries across one or many channels.*
+/********************************************************************************/
+/********************************************************************************
+/*                                                                              *
+/********************************************************************************/
 
 import mysql from "mysql2/promise";
 
 const MODULE_NAME = "getHistory";
 const POOLS = new Map();
 
-/**************************************************************************
-/* functionSignature: getPool (wo)                                        *
-/* Create or reuse a MySQL pool based on workingObject database settings. *
-/**************************************************************************/
+/****************************************************************************
+/* functionSignature: getPool (wo)                                          *
+/* Create or reuse a MySQL pool based on workingObject database settings.   *
+/****************************************************************************/
 async function getPool(wo) {
   const key = JSON.stringify({ h: wo?.db?.host, u: wo?.db?.user, d: wo?.db?.database });
   if (POOLS.has(key)) {
@@ -42,10 +41,10 @@ async function getPool(wo) {
   return pool;
 }
 
-/************************************************************
-/* functionSignature: getPadString (n)                      *
-/* Return a two-digit, zero-padded string representation.   *
-/************************************************************/
+/****************************************************************
+/* functionSignature: getPadString (n)                          *
+/* Return a two-digit, zero-padded string representation.       *
+/****************************************************************/
 function getPadString(n) { return String(n).padStart(2, "0"); }
 
 /********************************************************************************
@@ -65,7 +64,9 @@ function getParsedHumanDate(input, isEnd = false) {
     let ss = Number(mDe[6] ?? (isEnd ? 59 : 0));
     return `${year}-${getPadString(month)}-${getPadString(day)} ${getPadString(hh)}:${getPadString(mm)}:${getPadString(ss)}`;
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return isEnd ? `${raw} 23:59:59` : `${raw} 00:00:00`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return isEnd ? `${raw} 23:59:59` : `${raw} 00:00:00`;
+  }
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
   const d = new Date(raw);
   if (!Number.isNaN(d.getTime())) {
@@ -96,10 +97,10 @@ function getIsDateOnly(raw) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) || /^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s);
 }
 
-/***************************************************************************************
-/* functionSignature: getAddDaysUTC (yyyy_mm_dd, days)                                  *
-/* Add UTC days to a date-only string and return a "YYYY-MM-DD" formatted date string. *
-/***************************************************************************************/
+/****************************************************************************************
+/* functionSignature: getAddDaysUTC (yyyy_mm_dd, days)                                   *
+/* Add UTC days to a date-only string and return a "YYYY-MM-DD" formatted date string.  *
+/****************************************************************************************/
 function getAddDaysUTC(yyyy_mm_dd, days) {
   const d = new Date(yyyy_mm_dd + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + (days | 0));
@@ -109,17 +110,22 @@ function getAddDaysUTC(yyyy_mm_dd, days) {
   return `${y}-${m}-${da}`;
 }
 
-/***********************************************************************************************
-/* functionSignature: getRowsByTime (pool, channelId, opts)                                    *
-/* Retrieve rows from DB within a time range with optional ctx pagination and role filtering.  *
-/***********************************************************************************************/
+/******************************************************************************************************
+/* functionSignature: getRowsByTime (pool, channelIds, opts)                                         *
+/* Retrieve rows from DB within a time range for one or multiple channels with pagination and roles. *
+/******************************************************************************************************/
 async function getRowsByTime(
   pool,
-  channelId,
+  channelIds,
   { startTs, endTs, endExclusive, startCtxId, limit, includeToolRows }
 ) {
-  const where = ["id = ?"];
-  const vals = [channelId];
+  const ids = Array.isArray(channelIds) ? channelIds : [channelIds];
+  if (!ids.length) return [];
+  const where = [];
+  const vals = [];
+  const idPlaceholders = ids.map(() => "?").join(", ");
+  where.push(`id IN (${idPlaceholders})`);
+  vals.push(...ids);
   where.push("ts >= ?");
   vals.push(startTs);
   if (endExclusive) {
@@ -147,13 +153,13 @@ async function getRowsByTime(
   return rows || [];
 }
 
-/*********************************************************************************************************************
-/* functionSignature: getPreloadUpToCap (pool, channelId, opts)                                                     *
-/* Load pages of rows up to a maximum cap or until no more rows exist; propagate includeToolRows to downstream calls. *
-/*********************************************************************************************************************/
+/****************************************************************************************************************
+/* functionSignature: getPreloadUpToCap (pool, channelIds, opts)                                               *
+/* Load pages of rows up to a cap or until none remain; propagate includeToolRows downstream consistently.     *
+/****************************************************************************************************************/
 async function getPreloadUpToCap(
   pool,
-  channelId,
+  channelIds,
   { startTs, endTs, endExclusive, startCtxId, cap, pageSize, includeToolRows }
 ) {
   const out = [];
@@ -162,7 +168,7 @@ async function getPreloadUpToCap(
   const hardCap = Math.max(1, cap || 10000);
   while (out.length < hardCap) {
     const need = Math.min(size, hardCap - out.length);
-    const chunk = await getRowsByTime(pool, channelId, {
+    const chunk = await getRowsByTime(pool, channelIds, {
       startTs,
       endTs,
       endExclusive,
@@ -178,13 +184,16 @@ async function getPreloadUpToCap(
   return out;
 }
 
-/**************************************************************************************************************
-/* functionSignature: getBuildSummaryMessages (meta, lines, extraPrompt)                                     *
-/* Build messages payload for summarization requests with optional operator instructions.                    *
-/**************************************************************************************************************/
+/**********************************************************************************************************
+/* functionSignature: getBuildSummaryMessages (meta, lines, extraPrompt)                                 *
+/* Build messages payload for summarization with optional operator instructions and concise channel info. *
+/**********************************************************************************************************/
 function getBuildSummaryMessages(meta, lines, extraPrompt) {
+  const channelLine = Array.isArray(meta.channels) && meta.channels.length > 1
+    ? `Channels: ${meta.channels.join(", ")}`
+    : `Channel: ${meta.channel}`;
   const head = [
-    `Channel: ${meta.channel}`,
+    channelLine,
     `Requested: ${meta.requested_start} → ${meta.requested_end}`,
     `Actual: ${meta.actual_start || "null"} → ${meta.actual_end || "null"}`,
     `Rows: ${lines.length}`
@@ -193,7 +202,10 @@ function getBuildSummaryMessages(meta, lines, extraPrompt) {
   const baseSystem = {
     role: "system",
     content:
-      "You are a precise analyst. Summarize strictly from the provided raw rows. Cover the whole data; do not omit important events. If something is unclear, say so. Do not invent facts. Summarize in strict chronological order. Do not mix up events."
+      "You are a precise analyst. Summarize strictly from the provided raw rows. " +
+      "Cover the whole data; do not omit important events. If something is unclear, say so. " +
+      "Do not invent facts. Summarize in strict chronological order. Do not mix up events. " +
+      "If multiple channels are present, keep them disambiguated by their channel ids or names where helpful."
   };
   const extraSystem =
     extraPrompt && String(extraPrompt).trim()
@@ -205,10 +217,10 @@ function getBuildSummaryMessages(meta, lines, extraPrompt) {
   return msgs;
 }
 
-/************************************************************************************************************************
-/* functionSignature: getSummarize (wo, meta, rows, cfg, extraPrompt)                                                   *
-/* Perform an OpenAI-compatible summarization call; respects cfg.max_tokens (internally capped to 4096).               *
-/************************************************************************************************************************/
+/********************************************************************************************************************
+/* functionSignature: getSummarize (wo, meta, rows, cfg, extraPrompt)                                               *
+/* Perform an OpenAI-compatible summarization call; respects cfg.max_tokens and returns model and summary or error. *
+/********************************************************************************************************************/
 async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
   const endpoint =
     (typeof cfg?.endpoint === "string" && cfg.endpoint)
@@ -231,7 +243,9 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
     const t = (typeof r?.text === "string" && r.text) ? r.text : "";
     const j = (typeof r?.json === "string" && r.json) ? r.json : "";
     const payload = t ? t : j;
-    return `[${r.ctx_id}] ${r.ts} ${payload}`;
+    const ch = r.channel_id || r.id || "";
+    const tag = ch ? `[${r.ctx_id}|${ch}]` : `[${r.ctx_id}]`;
+    return `${tag} ${r.ts} ${payload}`;
   });
   const messages = getBuildSummaryMessages(meta, lines, extraPrompt);
   const controller = new AbortController();
@@ -268,17 +282,25 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
   return { ok: true, summary: answer, model };
 }
 
-/****************************************************************************************************************************************************************************
-/* functionSignature: getHistoryInvoke (args, coreData)                                                                                                                    *
-/* Execute history retrieval: dump (≤ threshold), single summary (≤ max_rows), or chunked summaries (> max_rows). Honors include_tool_rows, paging, and prompt steering.   *
-/****************************************************************************************************************************************************************************/
+/**************************************************************************************************************************************************************************
+/* functionSignature: getHistoryInvoke (args, coreData)                                                                                                                  *
+/* Execute retrieval: dump (≤ threshold), single summary (≤ max_rows), or chunked summaries (> max_rows) with paging and prompt steering across one or more channels.    *
+/**************************************************************************************************************************************************************************/
 async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const cfgTool = wo?.toolsconfig?.getHistory || {};
-  const channelId = String(wo?.channelID || "");
-  if (!channelId) {
-    return { ok: false, error: "channel_id missing (wo.channelID)" };
+  const primaryChannelId = String(wo?.channelID || wo?.id || "").trim();
+  const extraChannelIds = Array.isArray(wo?.channelIDs)
+    ? wo.channelIDs.map(c => String(c || "").trim()).filter(Boolean)
+    : [];
+  const channelIdSet = new Set();
+  if (primaryChannelId) channelIdSet.add(primaryChannelId);
+  for (const cid of extraChannelIds) channelIdSet.add(cid);
+  const channelIds = [...channelIdSet];
+  if (!channelIds.length) {
+    return { ok: false, error: "channel_id missing (wo.channelID / wo.id / wo.channelIDs)" };
   }
+  const mainChannelId = primaryChannelId || channelIds[0];
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
     return { ok: false, error: "workingObject.db incomplete" };
   }
@@ -318,7 +340,7 @@ async function getHistoryInvoke(args, coreData) {
   const chunkMaxChunks = Math.max(1, Number.isFinite(Number(cfgTool?.chunk_max_chunks)) ? Number(cfgTool.chunk_max_chunks) : 10);
   const includeToolRows = cfgTool.include_tool_rows !== false;
   const pool = await getPool(wo);
-  let rows = await getPreloadUpToCap(pool, channelId, {
+  let rows = await getPreloadUpToCap(pool, channelIds, {
     startTs,
     endTs,
     endExclusive,
@@ -333,7 +355,8 @@ async function getHistoryInvoke(args, coreData) {
     return {
       ok: true,
       mode: "dump",
-      channel: channelId,
+      channel: mainChannelId,
+      channels: channelIds,
       requested_start: startTs,
       requested_end: endTs,
       actual_start: null,
@@ -355,6 +378,7 @@ async function getHistoryInvoke(args, coreData) {
       ctx_id: r.ctx_id,
       ts: r.ts,
       id: r.id,
+      channel_id: r.id,
       json: r.json,
       text: r.text,
       role: r.role ?? null
@@ -362,7 +386,8 @@ async function getHistoryInvoke(args, coreData) {
     outRows.push({
       ctx_id: lastDump.ctx_id,
       ts: lastDump.ts,
-      id: channelId,
+      id: mainChannelId,
+      channel_id: mainChannelId,
       json: null,
       text: `[effective_end_ts]\n${lastDump.ts}`,
       role: null
@@ -371,7 +396,8 @@ async function getHistoryInvoke(args, coreData) {
     return {
       ok: true,
       mode: "dump",
-      channel: channelId,
+      channel: mainChannelId,
+      channels: channelIds,
       requested_start: startTs,
       requested_end: endTs,
       actual_start: actualStartIso,
@@ -393,13 +419,15 @@ async function getHistoryInvoke(args, coreData) {
       ctx_id: r.ctx_id,
       ts: r.ts,
       id: r.id,
+      channel_id: r.id,
       json: r.json,
       text: r.text,
       role: r.role ?? null
     }));
     rows = null;
     const meta = {
-      channel: channelId,
+      channel: mainChannelId,
+      channels: channelIds,
       requested_start: startTs,
       requested_end: endTs,
       actual_start: actualStartIso,
@@ -412,7 +440,8 @@ async function getHistoryInvoke(args, coreData) {
     return {
       ok: true,
       mode: "summary",
-      channel: channelId,
+      channel: mainChannelId,
+      channels: channelIds,
       requested_start: startTs,
       requested_end: endTs,
       actual_start: actualStartIso,
@@ -438,7 +467,8 @@ async function getHistoryInvoke(args, coreData) {
     const chunkFirst = chunkRows[0];
     const chunkLast = chunkRows[chunkRows.length - 1];
     const chunkMeta = {
-      channel: channelId,
+      channel: mainChannelId,
+      channels: channelIds,
       requested_start: startTs,
       requested_end: endTs,
       actual_start: getISO(chunkFirst.ts),
@@ -449,13 +479,19 @@ async function getHistoryInvoke(args, coreData) {
       ctx_id: r.ctx_id,
       ts: r.ts,
       id: r.id,
+      channel_id: r.id,
       json: r.json,
       text: r.text,
       role: r.role ?? null
     }));
     const sumRes = await getSummarize(wo, chunkMeta, chunkInput, chunkCfg, userPrompt);
     if (!sumRes.ok) {
-      return { ok: false, error: sumRes.error || "summary_failed_chunk", details: sumRes.details || null, chunk_index: chunkIndex };
+      return {
+        ok: false,
+        error: sumRes.error || "summary_failed_chunk",
+        details: sumRes.details || null,
+        chunk_index: chunkIndex
+      };
     }
     chunkSummaries.push({
       index: chunkIndex,
@@ -473,7 +509,7 @@ async function getHistoryInvoke(args, coreData) {
     if (chunkRows.length < maxRows) {
       break;
     }
-    const nextRows = await getRowsByTime(pool, channelId, {
+    const nextRows = await getRowsByTime(pool, channelIds, {
       startTs,
       endTs,
       endExclusive,
@@ -496,7 +532,8 @@ async function getHistoryInvoke(args, coreData) {
   return {
     ok: true,
     mode: "summary_chunked",
-    channel: channelId,
+    channel: mainChannelId,
+    channels: channelIds,
     requested_start: startTs,
     requested_end: endTs,
     actual_start: globalActualStartIso,
@@ -514,10 +551,10 @@ async function getHistoryInvoke(args, coreData) {
   };
 }
 
-/********************************************************************************************************
-/* functionSignature: getDefaultExport ()                                                                *
-/* Construct the tool definition and return the default export object.                                   *
-/********************************************************************************************************/
+/************************************************************************************************
+/* functionSignature: getDefaultExport ()                                                       *
+/* Construct the tool definition and return the default export object for function invocation.  *
+/************************************************************************************************/
 function getDefaultExport() {
   return {
     name: MODULE_NAME,
@@ -526,7 +563,11 @@ function getDefaultExport() {
       function: {
         name: MODULE_NAME,
         description:
-          "ALWAYS USE THIS TO RETRIEVE PAST EVENTS, WHEN A TIMEFRAME IS KNOWN. Get the historical records of the channel based on provided timeframes. If rows ≤ threshold → dump, if threshold < rows ≤ max_rows → single summary, if rows > max_rows → multi-chunk summary with short, prompt-focused chunks.",
+          "ALWAYS USE THIS TO RETRIEVE HISTORICAL DATA AND PAST EVENTS, WHEN A TIMEFRAME IS KNOWN. " +
+          "Get the historical records of the channel based on provided timeframes. " +
+          "If rows ≤ threshold → dump, if threshold < rows ≤ max_rows → single summary, " +
+          "if rows > max_rows → multi-chunk summary with short, prompt-focused chunks. " +
+          "History is pulled from workingObject.channelID / workingObject.id plus optional workingObject.channelIDs.",
         parameters: {
           type: "object",
           properties: {
@@ -536,11 +577,13 @@ function getDefaultExport() {
             },
             end: {
               type: "string",
-              description: "OPTIONAL: end timestamp. If omitted → 23:59:59 of same day. If date-only, end is exclusive at next day 00:00:00."
+              description:
+                "OPTIONAL: end timestamp. If omitted → 23:59:59 of same day. " +
+                "If date-only, end is exclusive at next day 00:00:00."
             },
             start_ctx_id: {
               type: "number",
-              description: "OPTIONAL: continue after this ctx_id (manual pagination only)."
+              description: "OPTIONAL: continue after this ctx_id (manual pagination only; applies across all channels)."
             },
             prompt: {
               type: "string",
