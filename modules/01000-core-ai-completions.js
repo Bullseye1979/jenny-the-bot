@@ -1,8 +1,8 @@
 /********************************************************************************
-/* filename: "core-ai-completions.js"                                          *
-/* Version 1.0                                                                 *
-/* Purpose: Platform-agnostic AI runner for chat completions with real         *
-/*          tool calls only                                                    *
+/* filename: "core-ai-completions.js"                                           *
+/* Version 1.0                                                                  *
+/* Purpose: Platform-agnostic AI runner for chat completions with real tool     *
+/*          calls only                                                          *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -16,8 +16,8 @@ const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 
 /********************************************************************************
-/* functionSignature: getShouldRunForThisModule (wo)                            *
-/* Returns true when useAIModule equals "completions".                          *
+/* functionSignature: getShouldRunForThisModule (wo)                             *
+/* Returns true when useAIModule equals "completions".                           *
 /********************************************************************************/
 function getShouldRunForThisModule(wo) {
   const v = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
@@ -25,44 +25,44 @@ function getShouldRunForThisModule(wo) {
 }
 
 /********************************************************************************
-/* functionSignature: getJsonSafe (v)                                           *
-/* Converts a value to a JSON-safe string for logging.                          *
+/* functionSignature: getJsonSafe (v)                                            *
+/* Converts a value to a JSON-safe string for logging.                           *
 /********************************************************************************/
 function getJsonSafe(v) { try { return typeof v === "string" ? v : JSON.stringify(v); } catch { return String(v); } }
 
 /********************************************************************************
-/* functionSignature: getPreview (str, max)                                     *
-/* Truncates a string to max length with a suffix marker.                       *
+/* functionSignature: getPreview (str, max)                                      *
+/* Truncates a string to max length with a suffix marker.                        *
 /********************************************************************************/
 function getPreview(str, max = 400) { const s = String(str ?? ""); return s.length > max ? s.slice(0, max) + " …[truncated]" : s; }
 
 /********************************************************************************
-/* functionSignature: getNum (value, def)                                       *
-/* Returns a finite number or the provided default.                             *
+/* functionSignature: getNum (value, def)                                        *
+/* Returns a finite number or the provided default.                              *
 /********************************************************************************/
 function getNum(value, def) { return Number.isFinite(value) ? Number(value) : def; }
 
 /********************************************************************************
-/* functionSignature: getBool (value, def)                                      *
-/* Returns a boolean value or the provided default.                             *
+/* functionSignature: getBool (value, def)                                       *
+/* Returns a boolean value or the provided default.                              *
 /********************************************************************************/
 function getBool(value, def) { return typeof value === "boolean" ? value : def; }
 
 /********************************************************************************
-/* functionSignature: getStr (value, def)                                       *
-/* Returns a non-empty string or the provided default.                          *
+/* functionSignature: getStr (value, def)                                        *
+/* Returns a non-empty string or the provided default.                           *
 /********************************************************************************/
 function getStr(value, def) { return (typeof value === "string" && value.length) ? value : def; }
 
 /********************************************************************************
-/* functionSignature: getTryParseJSON (text, fallback)                          *
-/* Parses JSON text with a fallback value on failure.                           *
+/* functionSignature: getTryParseJSON (text, fallback)                           *
+/* Parses JSON text with a fallback value on failure.                            *
 /********************************************************************************/
 function getTryParseJSON(text, fallback = {}) { try { return JSON.parse(text); } catch { return fallback; } }
 
 /********************************************************************************
-/* functionSignature: getWithTurnId (rec, wo)                                   *
-/* Injects workingObject.turn_id into a record if present.                      *
+/* functionSignature: getWithTurnId (rec, wo)                                    *
+/* Injects workingObject.turn_id into a record if present.                       *
 /********************************************************************************/
 function getWithTurnId(rec, wo) {
   const t = typeof wo?.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
@@ -70,8 +70,8 @@ function getWithTurnId(rec, wo) {
 }
 
 /********************************************************************************
-/* functionSignature: getKiCfg (wo)                                             *
-/* Builds runtime configuration for the completions runner.                     *
+/* functionSignature: getKiCfg (wo)                                              *
+/* Builds runtime configuration for the completions runner.                      *
 /********************************************************************************/
 function getKiCfg(wo) {
   const includeHistory = getBool(wo?.IncludeHistory, true);
@@ -102,8 +102,8 @@ function getKiCfg(wo) {
 }
 
 /********************************************************************************
-/* functionSignature: getRuntimeContextFromLast (wo, kiCfg, lastRecord)         *
-/* Builds minimal runtime context from the last history turn.                   *
+/* functionSignature: getRuntimeContextFromLast (wo, kiCfg, lastRecord)          *
+/* Builds minimal runtime context from the last history turn.                    *
 /********************************************************************************/
 function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
   if (!kiCfg.includeRuntimeContext || !kiCfg.includeHistory || !lastRecord) return null;
@@ -113,8 +113,8 @@ function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
 }
 
 /********************************************************************************
-/* functionSignature: getAppendedContextBlockToUserContent (baseText, ctxObj)   *
-/* Appends a JSON context block to the user content.                            *
+/* functionSignature: getAppendedContextBlockToUserContent (baseText, ctxObj)    *
+/* Appends a JSON context block to the user content.                             *
 /********************************************************************************/
 function getAppendedContextBlockToUserContent(baseText, contextObj) {
   if (!contextObj || typeof contextObj !== "object") return baseText ?? "";
@@ -123,8 +123,8 @@ function getAppendedContextBlockToUserContent(baseText, contextObj) {
 }
 
 /********************************************************************************
-/* functionSignature: getPromptFromSnapshot (rows, kiCfg, allowToolHistory)     *
-/* Converts stored rows to chat messages including tool turns when allowed.     *
+/* functionSignature: getPromptFromSnapshot (rows, kiCfg, allowToolHistory)      *
+/* Converts stored rows to chat messages including tool turns when allowed.      *
 /********************************************************************************/
 function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
   if (!kiCfg.includeHistory) return [];
@@ -178,7 +178,7 @@ function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
 
 /********************************************************************************
 /* functionSignature: getToolsByName (names, wo)                                 *
-/* Dynamically imports tool modules by name and validates them.                 *
+/* Dynamically imports tool modules by name and validates them.                  *
 /********************************************************************************/
 async function getToolsByName(names, wo) {
   const loaded = [];
@@ -212,7 +212,7 @@ async function getToolsByName(names, wo) {
 
 /********************************************************************************
 /* functionSignature: getToolDefs (toolModules)                                  *
-/* Extracts JSON schema function definitions from tool modules.                 *
+/* Extracts JSON schema function definitions from tool modules.                  *
 /********************************************************************************/
 function getToolDefs(toolModules) {
   return toolModules
@@ -221,16 +221,45 @@ function getToolDefs(toolModules) {
 }
 
 /********************************************************************************
+/* functionSignature: getExpandedToolArgs (args, wo)                             *
+/* Optionally expands short text args to the full assistant text if available.   *
+/********************************************************************************/
+function getExpandedToolArgs(args, wo) {
+  const full = typeof wo?._fullAssistantText === "string" ? wo._fullAssistantText : "";
+  if (!full || !args || typeof args !== "object") return args;
+  const candidateKeys = ["body", "content", "text", "message"];
+  for (const key of candidateKeys) {
+    const v = args[key];
+    if (typeof v === "string" && v.length && full.length > v.length && full.includes(v)) {
+      wo.logging?.push({
+        timestamp: new Date().toISOString(),
+        severity: "info",
+        module: MODULE_NAME,
+        exitStatus: "success",
+        message: `Expanded tool argument "${key}" to full assistant text.`,
+        details: {
+          original_length: v.length,
+          full_length: full.length
+        }
+      });
+      return { ...args, [key]: full };
+    }
+  }
+  return args;
+}
+
+/********************************************************************************
 /* functionSignature: getExecToolCall (toolModules, toolCall, coreData)          *
-/* Executes a single tool call and returns a structured tool message.           *
+/* Executes a single tool call and returns a structured tool message.            *
 /********************************************************************************/
 async function getExecToolCall(toolModules, toolCall, coreData) {
   const wo = coreData?.workingObject || {};
   const name = toolCall?.function?.name || toolCall?.name;
   const argsRaw = toolCall?.function?.arguments ?? toolCall?.arguments ?? "{}";
-  const args = typeof argsRaw === "string" ? getTryParseJSON(argsRaw, {}) : (argsRaw || {});
+  let args = typeof argsRaw === "string" ? getTryParseJSON(argsRaw, {}) : (argsRaw || {});
   const tool = toolModules.find(t => (t.definition?.function?.name || t.name) === name);
   const startTs = Date.now();
+  args = getExpandedToolArgs(args, wo);
   wo.logging?.push({
     timestamp: new Date().toISOString(),
     severity: "info",
@@ -295,7 +324,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
 
 /********************************************************************************
 /* functionSignature: getSystemContent (wo, kiCfg)                               *
-/* Builds the system prompt with runtime info and policy notes.                 *
+/* Builds the system prompt with runtime info and policy notes.                  *
 /********************************************************************************/
 async function getSystemContent(wo, kiCfg) {
   const now = new Date();
@@ -346,7 +375,7 @@ async function getSystemContent(wo, kiCfg) {
 
 /********************************************************************************
 /* functionSignature: getCoreAi (coreData)                                       *
-/* Runs the AI loop, executes tools, persists turns, and returns final text.    *
+/* Runs the AI loop, executes tools, persists turns, and returns final text.     *
 /********************************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
@@ -426,6 +455,10 @@ export default async function getCoreAi(coreData) {
         role: "assistant",
         content: typeof msg.content === "string" ? msg.content : ""
       };
+      const chunkText = typeof msg.content === "string" ? msg.content : "";
+      if (chunkText) {
+        accumulatedText += (accumulatedText ? "\n" : "") + chunkText;
+      }
       if (toolCalls && toolCalls.length) {
         assistantMsg.tool_calls = toolCalls.map(tc => ({
           id: tc?.id,
@@ -445,20 +478,17 @@ export default async function getCoreAi(coreData) {
           message: `Assistant requested tool call(s): ${toolCalls.map(t => t?.function?.name).filter(Boolean).join(", ") || "(unknown)"}`,
           details: { count: toolCalls.length, ids: toolCalls.map(t => t?.id).filter(Boolean) }
         });
-      } else {
-        const chunkText = typeof msg.content === "string" ? msg.content : "";
-        if (chunkText) {
-          accumulatedText += (accumulatedText ? "\n" : "") + chunkText;
-        }
       }
       messages.push(assistantMsg);
       persistQueue.push(getWithTurnId(assistantMsg, wo));
       if (toolCalls && toolCalls.length && toolModules.length) {
+        wo._fullAssistantText = accumulatedText;
         for (const tc of toolCalls) {
           const toolMsg = await getExecToolCall(toolModules, tc, coreData);
           messages.push(toolMsg);
           persistQueue.push(getWithTurnId(toolMsg, wo));
         }
+        wo._fullAssistantText = undefined;
         continue;
       }
       if (finish === "length") {
