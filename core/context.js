@@ -1,8 +1,8 @@
 /********************************************************************************
-/* filename: "context.js"                                                      *
-/* Version 1.0                                                                 *
-/* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline   *
-/*          summaries, and user-block capping                                  *
+/* filename: "context.js"                                                       *
+/* Version 1.0                                                                  *
+/* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline    *
+/* summaries, and user-block capping                                            *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -17,8 +17,8 @@ let sharedDsn = "";
 const TIMELINE_TABLE = "timeline_periods";
 
 /********************************************************************************
-/* functionSignature: getContextConfig (workingObject)                          *
-/* Resolves endpoint, model, apiKey, and timeline size                          *
+/* functionSignature: getContextConfig (workingObject)                           *
+/* Resolves endpoint, model, apiKey, and timeline size                           *
 /********************************************************************************/
 function getContextConfig(workingObject) {
   const ctxCfg = workingObject?.config?.context || {};
@@ -44,8 +44,8 @@ function getContextConfig(workingObject) {
 }
 
 /********************************************************************************
-/* functionSignature: getDsnKey (db)                                            *
-/* Builds a stable DSN key string for pool reuse                                *
+/* functionSignature: getDsnKey (db)                                             *
+/* Builds a stable DSN key string for pool reuse                                 *
 /********************************************************************************/
 function getDsnKey(db) {
   const host = db?.host || "";
@@ -58,7 +58,7 @@ function getDsnKey(db) {
 
 /********************************************************************************
 /* functionSignature: getEnsurePool (workingObject)                              *
-/* Ensures pool exists and schema with ctx_id AI PK is ready                    *
+/* Ensures pool exists and schema with ctx_id AI PK is ready                     *
 /********************************************************************************/
 async function getEnsurePool(workingObject) {
   const db = workingObject?.db;
@@ -150,8 +150,8 @@ async function getEnsurePool(workingObject) {
 }
 
 /********************************************************************************
-/* functionSignature: getDeepSanitize (value)                                   *
-/* Sanitizes nested values to JSON-safe structures                              *
+/* functionSignature: getDeepSanitize (value)                                    *
+/* Sanitizes nested values to JSON-safe structures                               *
 /********************************************************************************/
 function getDeepSanitize(value) {
   const t = typeof value;
@@ -254,7 +254,7 @@ function getDeriveIndexText(rec) {
 }
 
 /********************************************************************************
-/* functionSignature: getResolvedTimestamp (wo, record)                          *
+/* functionSignature: getResolvedTimestamp (workingObject, record)               *
 /* Resolves Date for DB ts column from wo.timestamp/record                       *
 /********************************************************************************/
 function getResolvedTimestamp(workingObject, record) {
@@ -308,7 +308,7 @@ export async function setContext(workingObject, record) {
 }
 
 /********************************************************************************
-/* functionSignature: getContextRowsForId (pool, id, nUsers, detailed)          *
+/* functionSignature: getContextRowsForId (pool, id, nUsers, detailed)           *
 /* Internal helper: fetches context rows for a single id                         *
 /********************************************************************************/
 async function getContextRowsForId(pool, id, nUsers, detailed) {
@@ -376,10 +376,10 @@ async function getContextRowsForId(pool, id, nUsers, detailed) {
     const [descRows] = await pool.query(
       `
         SELECT ctx_id, ts, json, text, role, id
-          FROM context
-         WHERE id = ? AND JSON_VALID(json) = 1
-         ORDER BY ts DESC
-         LIMIT ?
+         FROM context
+        WHERE id = ? AND JSON_VALID(json) = 1
+        ORDER BY ts DESC
+        LIMIT ?
       `,
       [id, limitRows]
     );
@@ -402,6 +402,7 @@ export async function getContext(workingObject) {
   const nRaw = Number(workingObject?.contextSize ?? 10);
   const nUsers = Number.isFinite(nRaw) ? Math.max(1, Math.floor(nRaw)) : 10;
   const detailed = workingObject?.getDetailedContext === true;
+  const simplified = workingObject?.simplifiedContext === true;
 
   const extraIdsRaw = Array.isArray(workingObject?.channelIDs)
     ? workingObject.channelIDs
@@ -434,43 +435,62 @@ export async function getContext(workingObject) {
 
       let contentStr;
 
-      if (roleLc === "assistant") {
-        if (typeof obj?.content === "string" && obj.content.length) {
+      if (simplified) {
+        if (typeof row.text === "string" && row.text.length) {
+          contentStr = row.text;
+        } else if (typeof obj?.content === "string" && obj.content.length) {
           contentStr = obj.content;
         } else if (typeof obj?.text === "string" && obj.text.length) {
           contentStr = obj.text;
-        } else if (typeof row.text === "string" && row.text.length) {
-          contentStr = row.text;
         } else {
           contentStr = "";
         }
-      } else if (detailed) {
-        contentStr = JSON.stringify(obj);
       } else {
-        if (typeof obj?.content === "string" && obj.content.length) {
-          contentStr = obj.content;
-        } else if (typeof obj?.text === "string" && obj.text.length) {
-          contentStr = obj.text;
-        } else if (typeof row.text === "string" && row.text.length) {
-          contentStr = row.text;
+        if (roleLc === "assistant") {
+          if (typeof obj?.content === "string" && obj.content.length) {
+            contentStr = obj.content;
+          } else if (typeof obj?.text === "string" && obj.text.length) {
+            contentStr = obj.text;
+          } else if (typeof row.text === "string" && row.text.length) {
+            contentStr = row.text;
+          } else {
+            contentStr = "";
+          }
+        } else if (detailed) {
+          contentStr = JSON.stringify(obj);
         } else {
-          contentStr = "";
+          if (typeof obj?.content === "string" && obj.content.length) {
+            contentStr = obj.content;
+          } else if (typeof obj?.text === "string" && obj.text.length) {
+            contentStr = obj.text;
+          } else if (typeof row.text === "string" && row.text.length) {
+            contentStr = row.text;
+          } else {
+            contentStr = "";
+          }
         }
       }
 
-      const msg = {
-        ...obj,
-        role: roleLc || obj?.role || "",
-        content: contentStr,
-        ts: new Date(row.ts).toISOString(),
-        ctx_id: row.ctx_id
-      };
+      const baseMsg = simplified
+        ? {
+            role: roleLc || obj?.role || "",
+            content: contentStr,
+            ts: new Date(row.ts).toISOString(),
+            ctx_id: row.ctx_id
+          }
+        : {
+            ...obj,
+            role: roleLc || obj?.role || "",
+            content: contentStr,
+            ts: new Date(row.ts).toISOString(),
+            ctx_id: row.ctx_id
+          };
 
       if (multiChannel) {
-        msg.channelId = row.id || baseId;
+        baseMsg.channelId = row.id || baseId;
       }
 
-      messages.push(msg);
+      messages.push(baseMsg);
     } catch {}
   }
 
@@ -487,7 +507,7 @@ export async function getContext(workingObject) {
 }
 
 /********************************************************************************
-/* functionSignature: setMaybeCreateTimelinePeriod (pool, wo, channelId)        *
+/* functionSignature: setMaybeCreateTimelinePeriod (pool, wo, channelId)         *
 /* Creates a summary row when period size is met                                 *
 /********************************************************************************/
 async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
@@ -553,7 +573,7 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
         checksum = VALUES(checksum),
         updated_at = CURRENT_TIMESTAMP
     `,
-    [channelId, startIdx, endIdx, summary ? startTs : startTs, summary ? endTs : endTs, summary, model, checksum]
+    [channelId, startIdx, endIdx, startTs, endTs, summary, model, checksum]
   );
 }
 

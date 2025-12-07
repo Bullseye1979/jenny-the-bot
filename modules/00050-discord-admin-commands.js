@@ -1,10 +1,8 @@
 /**************************************************************
 /* filename: "discord-admin-commands.js"                     *
 /* Version 1.0                                               *
-/* Purpose: Slash admin commands for the "discord-admin"     *
-/*          flow: /purge [count], /error, /purgedb, /freeze; *
-/*          plus DM-only text commands "!purge [count]" and  *
-/*          "!purgedb" to delete DB context for this DM.     *
+/* Purpose: Slash admin commands for "discord-admin" flow    *
+/*          plus DM-only text commands for purge and DB      *
 /**************************************************************/
 /**************************************************************
 /*                                                          *
@@ -234,12 +232,17 @@ async function setPurgeDmDb(wo, payload, log) {
   if (!getIsBangPurgeDb(payload)) return false;
 
   const channelId = String(wo?.channelID || wo?.id || wo?.message?.channelId || "");
-  if (!channelId) return true;
+  if (!channelId) {
+    wo.Response = "STOP";
+    wo.stop = true;
+    return true;
+  }
 
   const deleted = await setPurgeContext({ ...wo, id: channelId });
   log("db purge done (DM)", "info", { moduleName: MODULE_NAME, channelId, deleted });
 
-  wo.Response = "";
+  wo.Response = "STOP";
+  wo.stop = true;
   return true;
 }
 
@@ -254,13 +257,21 @@ async function setPurgeDmBotMessages(wo, payload, log) {
 
   const client = await getResolveClient(wo);
   const channelId = String(wo?.channelID || wo?.id || wo?.message?.channelId || "");
-  if (!client || !channelId) return true;
+  if (!client || !channelId) {
+    wo.Response = "STOP";
+    wo.stop = true;
+    return true;
+  }
 
   const channel = (wo?.message?.channel && wo?.message?.channel?.messages?.fetch)
     ? wo.message.channel
     : await getResolveChannelById(wo, channelId);
 
-  if (!channel?.messages?.fetch || !client?.user?.id) return true;
+  if (!channel?.messages?.fetch || !client?.user?.id) {
+    wo.Response = "STOP";
+    wo.stop = true;
+    return true;
+  }
 
   const ctx = { guildId: null, channelId };
   let remaining = Math.min(Math.max(1, count), 500);
@@ -285,7 +296,9 @@ async function setPurgeDmBotMessages(wo, payload, log) {
   }
 
   log("dm purge done", "info", { moduleName: MODULE_NAME, ...ctx, deleted: totalDeleted });
-  wo.Response = "";
+
+  wo.Response = "STOP";
+  wo.stop = true;
   return true;
 }
 
