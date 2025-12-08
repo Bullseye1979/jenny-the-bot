@@ -1,11 +1,10 @@
 /***************************************************************/
 /* filename: "discord-text-output.js"                          *
 /* Version 1.0                                                 *
-/* Purpose: Send two-embed replies: a colored quoted question  *
-/*          embed first, then one or more colored answer       *
-/*          embeds (DMs direct; guilds via webhook).           *
+/* Purpose: Send two-embed replies: first a blue quoted        *
+/*          question embed (no footer), then one or more green *
+/*          answer embeds (DMs direct; guilds via webhook).    *
 /***************************************************************/
-
 /***************************************************************/
 /*                                                             */
 /***************************************************************/
@@ -14,8 +13,8 @@ import { EmbedBuilder, PermissionFlagsBits, WebhookClient } from "discord.js";
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "discord-text-output";
-const COLOR_QUESTION = 0x5865F2;
-const COLOR_ANSWER = 0x2F3136;
+const COLOR_QUESTION = 0x3B82F6;
+const COLOR_ANSWER = 0x22C55E;
 
 /***************************************************************/
 /* functionSignature: getIsLikelyImageUrl (url)               *
@@ -286,21 +285,19 @@ function getLocalTimeString(date, tz) {
 
 /***************************************************************/
 /* functionSignature: getEmbedForQuestion (params)            *
-/* Builds the colored question embed                          *
+/* Builds the blue question embed without footer              *
 /***************************************************************/
 function getEmbedForQuestion({ botName, model, useAIModule, timeStr, qStr, askerDisplay }) {
   const desc = (getQuestionAsQuotedItalic(qStr, askerDisplay) || "\u200b").slice(0, 4096);
-  const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
   return new EmbedBuilder()
     .setColor(COLOR_QUESTION)
     .setDescription(desc)
-    .setFooter({ text: footerText })
     .setTimestamp(new Date());
 }
 
 /***************************************************************/
 /* functionSignature: getEmbedForAnswer (params)              *
-/* Builds one colored answer embed (optionally with image)    *
+/* Builds one green answer embed (optionally with image)      *
 /***************************************************************/
 function getEmbedForAnswer({ answer, botName, model, useAIModule, timeStr, imageUrl }) {
   const desc = (String(answer || "").slice(0, 4096)) || "\u200b";
