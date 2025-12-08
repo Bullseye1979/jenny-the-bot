@@ -1,13 +1,14 @@
-/***************************************************************/
-/* filename: "core-output.js"                                  *
-/* Version 1.0                                                 *
-/* Purpose: Safely dumps coreData with redaction, rolling logs,*/
-/*          and error mirroring without mutating workingObject.*/
-/***************************************************************/
+/**************************************************************
+/* filename: "core-output.js"                                 *
+/* Version 1.0                                                *
+/* Purpose: Safely dumps coreData with redaction, rolling logs,*
+/*          per-flow object logs and per-flow last-object file *
+/*          without mutating workingObject.                   *
+/**************************************************************/
 
-/***************************************************************/
-/*                                                             */
-/***************************************************************/
+/**************************************************************
+/*                                                          *
+/**************************************************************/
 
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -24,13 +25,14 @@ const FILE_RE = /^objects-(\d+)\.log$/;
 const EVENT_BASENAME = "events";
 const EVENT_EXT = ".log";
 const EVENT_RE = /^events-(\d+)\.log$/;
+const LAST_OBJECT_NAME = "last-object.json";
 
 let WRITE_CHAIN = Promise.resolve();
 
-/***************************************************************/
-/* functionSignature: setLog (wo, message, level, extra)       *
-/* Appends a structured entry to wo.logging                    *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setLog (wo, message, level, extra)     *
+/* Appends a structured entry to wo.logging                  *
+/**************************************************************/
 function setLog(wo, message, level = "info", extra = {}) {
   (wo.logging ||= []).push({
     timestamp: new Date().toISOString(),
@@ -42,10 +44,10 @@ function setLog(wo, message, level = "info", extra = {}) {
   });
 }
 
-/***************************************************************/
-/* functionSignature: getRedact (value, keyPath)               *
-/* Redacts secrets and truncates large strings                 *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getRedact (value, keyPath)             *
+/* Redacts secrets and truncates large strings               *
+/**************************************************************/
 function getRedact(value, keyPath) {
   if (typeof value !== "string") return value;
   const lowerPath = String(keyPath || "").toLowerCase();
@@ -63,10 +65,10 @@ function getRedact(value, keyPath) {
   return value;
 }
 
-/***************************************************************/
-/* functionSignature: getMessageSnapshot (m)                   *
-/* Produces a lightweight, safe snapshot of a message object   *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getMessageSnapshot (m)                 *
+/* Produces a lightweight, safe snapshot of a message object *
+/**************************************************************/
 function getMessageSnapshot(m) {
   if (!m) return m;
   const isPlain = m && typeof m === "object" && m.constructor?.name === "Object";
@@ -83,10 +85,10 @@ function getMessageSnapshot(m) {
   };
 }
 
-/***************************************************************/
-/* functionSignature: getSafeReplacerFactory ()                *
-/* Creates a JSON replacer that redacts and handles cycles     *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getSafeReplacerFactory ()              *
+/* Creates a JSON replacer that redacts and handles cycles   *
+/**************************************************************/
 function getSafeReplacerFactory() {
   const seen = new WeakSet();
   return function safeReplacer(key, value) {
@@ -130,10 +132,10 @@ function getSafeReplacerFactory() {
   };
 }
 
-/***************************************************************/
-/* functionSignature: getWithKeyPath (obj, keyPath)            *
-/* Wraps objects to carry a dotted key path for redaction      *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getWithKeyPath (obj, keyPath)          *
+/* Wraps objects to carry a dotted key path for redaction     *
+/**************************************************************/
 function getWithKeyPath(obj, keyPath = "") {
   if (obj && typeof obj === "object") {
     const proxy = Array.isArray(obj) ? [] : Object.create(Object.getPrototypeOf(obj));
@@ -147,19 +149,19 @@ function getWithKeyPath(obj, keyPath = "") {
   return obj;
 }
 
-/***************************************************************/
-/* functionSignature: getVerifyWritable (dir)                  *
-/* Verifies directory is writable; throws on failure           *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getVerifyWritable (dir)                *
+/* Verifies directory is writable; throws on failure         *
+/**************************************************************/
 async function getVerifyWritable(dir) {
   await fsp.access(dir);
   await fsp.access(dir, fsp.constants ? fsp.constants.W_OK : 2);
 }
 
-/***************************************************************/
-/* functionSignature: setEnsureDirs ()                         *
-/* Ensures log directories exist                               *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setEnsureDirs ()                       *
+/* Ensures base log directories exist                        *
+/**************************************************************/
 async function setEnsureDirs() {
   await fsp.mkdir(LOG_DIR, { recursive: true });
   await fsp.mkdir(OBJECTS_DIR, { recursive: true });
@@ -167,52 +169,86 @@ async function setEnsureDirs() {
   await getVerifyWritable(OBJECTS_DIR);
 }
 
-/***************************************************************/
-/* functionSignature: getBuildObjectsPath (index)              *
-/* Builds a full path for objects-N.log                        *
-/***************************************************************/
-function getBuildObjectsPath(index) {
-  return path.join(OBJECTS_DIR, `${FILE_BASENAME}-${index}${FILE_EXT}`);
+/**************************************************************
+/* functionSignature: getFlowKey (coreData)                  *
+/* Derives a stable, filesystem-safe flow key                *
+/**************************************************************/
+function getFlowKey(coreData) {
+  const wo = coreData?.workingObject || {};
+  const raw =
+    coreData?.flowKey ||
+    coreData?.flowName ||
+    coreData?.flowId ||
+    wo.flowKey ||
+    wo.flowName ||
+    wo.flowId ||
+    "default";
+  return String(raw)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "default";
 }
 
-/***************************************************************/
-/* functionSignature: getListLogFiles ()                       *
-/* Lists existing rolling object log files                     *
-/***************************************************************/
-async function getListLogFiles() {
+/**************************************************************
+/* functionSignature: getFlowObjectsDir (flowKey)            *
+/* Returns directory for a specific flow's object logs       *
+/**************************************************************/
+function getFlowObjectsDir(flowKey) {
+  return path.join(OBJECTS_DIR, flowKey);
+}
+
+/**************************************************************
+/* functionSignature: getBuildObjectsPath (index, flowKey)   *
+/* Builds a full path for objects-N.log for a given flow     *
+/**************************************************************/
+function getBuildObjectsPath(index, flowKey) {
+  return path.join(getFlowObjectsDir(flowKey), `${FILE_BASENAME}-${index}${FILE_EXT}`);
+}
+
+/**************************************************************
+/* functionSignature: getListLogFiles (flowKey)              *
+/* Lists existing rolling object log files for a flow        *
+/**************************************************************/
+async function getListLogFiles(flowKey) {
   await setEnsureDirs();
+  const flowDir = getFlowObjectsDir(flowKey);
+  await fsp.mkdir(flowDir, { recursive: true });
   const out = [];
-  const entries = await fsp.readdir(OBJECTS_DIR, { withFileTypes: true });
+  const entries = await fsp.readdir(flowDir, { withFileTypes: true });
   for (const ent of entries) {
     if (!ent.isFile()) continue;
     const m = ent.name.match(FILE_RE);
     if (!m) continue;
     const idx = Number(m[1]);
     if (!Number.isFinite(idx)) continue;
-    out.push({ name: ent.name, index: idx, full: path.join(OBJECTS_DIR, ent.name) });
+    out.push({ name: ent.name, index: idx, full: path.join(flowDir, ent.name) });
   }
   out.sort((a, b) => a.index - b.index);
   return out;
 }
 
-/***************************************************************/
-/* functionSignature: getFileSize (p)                          *
-/* Returns file size in bytes or 0 if not found                *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getFileSize (p)                        *
+/* Returns file size in bytes or 0 if not found              *
+/**************************************************************/
 async function getFileSize(p) {
   const st = await fsp.stat(p).catch(() => null);
   return st?.size || 0;
 }
 
-/***************************************************************/
-/* functionSignature: setAppendRolling (text)                  *
-/* Appends to rolling objects-N.log, keeping only last two     *
-/***************************************************************/
-async function setAppendRolling(text) {
+/**************************************************************
+/* functionSignature: setAppendRolling (text, flowKey)       *
+/* Appends to rolling objects-N.log per flow, keep last two  *
+/**************************************************************/
+async function setAppendRolling(text, flowKey) {
   await setEnsureDirs();
-  const files = await getListLogFiles();
+  const flowDir = getFlowObjectsDir(flowKey);
+  await fsp.mkdir(flowDir, { recursive: true });
+  await getVerifyWritable(flowDir);
+  const files = await getListLogFiles(flowKey);
   let currentIdx = files.length ? files[files.length - 1].index : 1;
-  let currentPath = getBuildObjectsPath(currentIdx);
+  let currentPath = getBuildObjectsPath(currentIdx, flowKey);
   const payload = Buffer.from(text, "utf8");
   const needed = payload.length;
   let size = await getFileSize(currentPath);
@@ -221,9 +257,9 @@ async function setAppendRolling(text) {
   }
   if (size + needed > MAX_FILE_BYTES) {
     currentIdx = currentIdx + 1;
-    currentPath = getBuildObjectsPath(currentIdx);
+    currentPath = getBuildObjectsPath(currentIdx, flowKey);
     await fsp.writeFile(currentPath, "");
-    const updated = await getListLogFiles();
+    const updated = await getListLogFiles(flowKey);
     const toKeep = updated.slice(-2).map(f => f.index);
     const toDelete = updated.filter(f => !toKeep.includes(f.index));
     for (const f of toDelete) {
@@ -234,19 +270,33 @@ async function setAppendRolling(text) {
   return currentPath;
 }
 
-/***************************************************************/
-/* functionSignature: setEnqueueWrite (fn)                     *
-/* Serializes file writes to avoid race conditions             *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setWriteLastObject (flowKey, safeJson) *
+/* Writes the last-object.json for a flow                    *
+/**************************************************************/
+async function setWriteLastObject(flowKey, safeJson) {
+  await setEnsureDirs();
+  const flowDir = getFlowObjectsDir(flowKey);
+  await fsp.mkdir(flowDir, { recursive: true });
+  const lastPath = path.join(flowDir, LAST_OBJECT_NAME);
+  const payload = Buffer.from(safeJson + "\n", "utf8");
+  await fsp.writeFile(lastPath, payload);
+  return lastPath;
+}
+
+/**************************************************************
+/* functionSignature: setEnqueueWrite (fn)                   *
+/* Serializes file writes to avoid race conditions           *
+/**************************************************************/
 function setEnqueueWrite(fn) {
   WRITE_CHAIN = WRITE_CHAIN.then(fn, fn);
   return WRITE_CHAIN;
 }
 
-/***************************************************************/
-/* functionSignature: getNormalizeWOLogItem (x)                *
-/* Normalizes entries from wo.logging for readable log         *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getNormalizeWOLogItem (x)              *
+/* Normalizes entries from wo.logging for readable log       *
+/**************************************************************/
 function getNormalizeWOLogItem(x) {
   const sev = (x?.severity ?? x?.level ?? "").toString().toLowerCase();
   return {
@@ -259,16 +309,19 @@ function getNormalizeWOLogItem(x) {
   };
 }
 
-/***************************************************************/
-/* functionSignature: getToOneLineLog (e)                      *
-/* Formats a normalized log entry into a one-line string       *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getToOneLineLog (e)                    *
+/* Formats a normalized log entry into a one-line string     *
+/**************************************************************/
 function getToOneLineLog(e) {
   const ts = e.timestamp || new Date().toISOString();
   const level = (e.severity || "info").toUpperCase();
   const mod = e.module || MODULE_NAME;
   const msg = (e.message || "").replace(/\s+/g, " ").trim();
-  const reason = typeof e.context?.reason === "string" ? ` reason="${getRedact(e.context.reason, "context.reason")}"` : "";
+  const reason =
+    typeof e.context?.reason === "string"
+      ? ` reason="${getRedact(e.context.reason, "context.reason")}"`
+      : "";
   const ctxBits = [];
   if (e.context?.guildId) ctxBits.push(`guildId=${e.context.guildId}`);
   if (e.context?.channelId) ctxBits.push(`channelId=${e.context.channelId}`);
@@ -277,10 +330,10 @@ function getToOneLineLog(e) {
   return `[${ts}] [${level}] ${mod}:${prefix} ${getRedact(msg, "message")}${reason}${ctx}`;
 }
 
-/***************************************************************/
-/* functionSignature: getReadableLogBlock (wo)                 *
-/* Builds a readable log block from wo.logging                 *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getReadableLogBlock (wo)               *
+/* Builds a readable log block from wo.logging               *
+/**************************************************************/
 function getReadableLogBlock(wo) {
   const arr = Array.isArray(wo?.logging) ? wo.logging : [];
   if (!arr.length) return "";
@@ -295,18 +348,18 @@ function getReadableLogBlock(wo) {
   return header + lines + footer;
 }
 
-/***************************************************************/
-/* functionSignature: getBuildEventsPath (index)               *
-/* Builds a full path for events-N.log in logs/                *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getBuildEventsPath (index)             *
+/* Builds a full path for events-N.log in logs/              *
+/**************************************************************/
 function getBuildEventsPath(index) {
   return path.join(LOG_DIR, `${EVENT_BASENAME}-${index}${EVENT_EXT}`);
 }
 
-/***************************************************************/
-/* functionSignature: getListEventFiles ()                     *
-/* Lists existing rolling events log files in logs/            *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getListEventFiles ()                   *
+/* Lists existing rolling events log files in logs/          *
+/**************************************************************/
 async function getListEventFiles() {
   await setEnsureDirs();
   const out = [];
@@ -323,10 +376,10 @@ async function getListEventFiles() {
   return out;
 }
 
-/***************************************************************/
-/* functionSignature: setAppendReadableLog (text)              *
-/* Appends to rolling events-N.log in logs/, keep last two     *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: setAppendReadableLog (text)            *
+/* Appends to rolling events-N.log in logs/, keep last two   *
+/**************************************************************/
 async function setAppendReadableLog(text) {
   await setEnsureDirs();
   const files = await getListEventFiles();
@@ -353,12 +406,14 @@ async function setAppendReadableLog(text) {
   return currentPath;
 }
 
-/***************************************************************/
-/* functionSignature: getCoreOutput (coreData)                 *
-/* Appends a safe coreData dump to rolling log and readable log*/
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getCoreOutput (coreData)               *
+/* Appends a safe coreData dump to per-flow rolling log,     *
+/* writes per-flow last-object.json, and appends readable log*
+/**************************************************************/
 export default async function getCoreOutput(coreData) {
   const wo = coreData.workingObject || {};
+  const flowKey = getFlowKey(coreData);
   const forLog = {
     ...coreData,
     workingObject: {
@@ -371,22 +426,43 @@ export default async function getCoreOutput(coreData) {
   try {
     safeJson = JSON.stringify(proxy, getSafeReplacerFactory(), 2);
   } catch (e) {
-    safeJson = JSON.stringify({ stringifyError: String(e?.message || e), fallback: "[unstringifiable]" });
-    setLog(wo, "Failed to stringify coreData; wrote fallback payload.", "error", { reason: "stringify-failed" });
+    safeJson = JSON.stringify({
+      stringifyError: String(e?.message || e),
+      fallback: "[unstringifiable]"
+    });
+    setLog(wo, "Failed to stringify coreData; wrote fallback payload.", "error", {
+      reason: "stringify-failed"
+    });
   }
   const record =
     "\n================ CORE DATA DUMP ================\n" +
     safeJson +
     "\n================================================\n";
   try {
-    const pathWritten = await setEnqueueWrite(() => setAppendRolling(record));
-    setLog(wo, "Core data appended to rolling log file.", "info", {
+    const pathWritten = await setEnqueueWrite(() => setAppendRolling(record, flowKey));
+    setLog(wo, "Core data appended to per-flow rolling log file.", "info", {
       path: pathWritten,
+      flowKey,
       maxFileBytes: MAX_FILE_BYTES,
-      policy: "2-file rolling, oldest removed on third"
+      policy: "2-file rolling per flow, oldest removed on third"
     });
   } catch (e) {
-    setLog(wo, "Failed to append core data to rolling log.", "error", { reason: String(e?.message || e) });
+    setLog(wo, "Failed to append core data to per-flow rolling log.", "error", {
+      flowKey,
+      reason: String(e?.message || e)
+    });
+  }
+  try {
+    const lastPath = await setEnqueueWrite(() => setWriteLastObject(flowKey, safeJson));
+    setLog(wo, "Last object for flow written.", "info", {
+      path: lastPath,
+      flowKey
+    });
+  } catch (e) {
+    setLog(wo, "Failed to write last object for flow.", "error", {
+      flowKey,
+      reason: String(e?.message || e)
+    });
   }
   const readable = getReadableLogBlock(wo);
   if (readable) {
