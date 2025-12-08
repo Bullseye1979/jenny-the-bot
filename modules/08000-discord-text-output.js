@@ -2,9 +2,9 @@
 /* filename: "discord-text-output.js"                          *
 /* Version 1.0                                                 *
 /* Purpose: Send two-embed replies: first a blue italic        *
-/*          question embed (no footer or timestamp, no quote    *
-/*          bar), then one or more green answer embeds (DMs     *
-/*          direct; guilds via webhook).                        *
+/*          question embed (no footer/timestamp, no quote),    *
+/*          then one or more green answer embeds (DMs direct;  *
+/*          guilds via webhook).                               *
 /***************************************************************/
 /***************************************************************/
 /*                                                             */
@@ -375,7 +375,7 @@ export default async function getDiscordTextOutput(coreData) {
     const askerDisplay = getAskerDisplay(wo, baseMessage);
 
     const model = String(wo.Model || wo.model || "");
-    the const useAIModule = String(wo.useAIModule || wo.UseAIModule || "");
+    const useAIModule = String(wo.useAIModule || wo.UseAIModule || "");
     const timeStr = getLocalTimeString(new Date(), wo.timezone || "Europe/Berlin");
 
     const questionBotName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
