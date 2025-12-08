@@ -1,11 +1,11 @@
 /***************************************************************/
 /* filename: "discord-text-output.js"                          *
 /* Version 1.0                                                 *
-/* Purpose: Send two-embed replies: first a blue italic        *
-/*          question embed (no footer/timestamp, no quote),    *
-/*          then one or more green answer embeds (DMs direct;  *
-/*          guilds via webhook).                               *
+/* Purpose: Single-embed reply: question as Title/Author and   *
+/*          answer in Description (DMs direct; guilds via      *
+/*          webhook). Keeps a consistent box height/layout.    *
 /***************************************************************/
+
 /***************************************************************/
 /*                                                             */
 /***************************************************************/
@@ -14,8 +14,7 @@ import { EmbedBuilder, PermissionFlagsBits, WebhookClient } from "discord.js";
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "discord-text-output";
-const COLOR_QUESTION = 0x3B82F6;
-const COLOR_ANSWER = 0x22C55E;
+const COLOR_PRIMARY = 0x22C55E;
 
 /***************************************************************/
 /* functionSignature: getIsLikelyImageUrl (url)               *
@@ -231,45 +230,18 @@ function getAskerDisplay(wo, baseMessage) {
 
 /***************************************************************/
 /* functionSignature: getLikelyQuestion (wo)                  *
-/* Extracts the original question text from the working obj   *
+/* Returns wo.payload as the question (entire payload)        *
 /***************************************************************/
 function getLikelyQuestion(wo) {
-  const candidates = [
-    "Payload","payload","Prompt","prompt","Question","question",
-    "Request","request","Query","query","Input","input",
-    "UserText","userText","UserMessage","userMessage"
-  ];
-  for (const k of candidates) {
-    const v = wo?.[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
+  const v = wo?.payload;
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  try {
+    const s = String(v);
+    return s.trim();
+  } catch {
+    return "";
   }
-  if (typeof wo?.payload === "object" && wo.payload !== null) {
-    const s = String(wo.payload.text || wo.payload.content || "");
-    if (s.trim()) return s.trim();
-  }
-  return "";
-}
-
-/***************************************************************/
-/* functionSignature: getQuestionAsItalic (q, asker)          *
-/* Formats entire multi-line question as plain italic text     *
-/***************************************************************/
-function getQuestionAsItalic(q, askerDisplay) {
-  if (!q) return "";
-  const normalized = String(q).replace(/\r\n?/g, "\n");
-  const lines = normalized.split("\n");
-  const out = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] || "";
-    if (i === 0 && askerDisplay) {
-      if (line.trim()) out.push(`*${askerDisplay}: ${line}*`);
-      else out.push(`*${askerDisplay}:*`);
-    } else {
-      if (line.trim()) out.push(`*${line}*`);
-      else out.push("\u200b");
-    }
-  }
-  return out.join("\n");
 }
 
 /***************************************************************/
@@ -285,35 +257,40 @@ function getLocalTimeString(date, tz) {
 }
 
 /***************************************************************/
-/* functionSignature: getEmbedForQuestion (params)            *
-/* Builds the blue question embed without footer/timestamp    *
+/* functionSignature: getBuildPrimaryEmbed (params)           *
+/* Builds the main embed: Title/Author for question, answer   *
 /***************************************************************/
-function getEmbedForQuestion({ qStr, askerDisplay }) {
-  const desc = (getQuestionAsItalic(qStr, askerDisplay) || "\u200b").slice(0, 4096);
-  return new EmbedBuilder()
-    .setColor(COLOR_QUESTION)
-    .setDescription(desc);
-}
-
-/***************************************************************/
-/* functionSignature: getEmbedForAnswer (params)              *
-/* Builds one green answer embed (with footer & timestamp)    *
-/***************************************************************/
-function getEmbedForAnswer({ answer, botName, model, useAIModule, timeStr, imageUrl }) {
-  const desc = (String(answer || "").slice(0, 4096)) || "\u200b";
+function getBuildPrimaryEmbed({ questionTitle, askerDisplay, answerChunk, botName, model, useAIModule, timeStr, imageUrl }) {
+  const desc = (String(answerChunk || "").slice(0, 4096)) || "\u200b";
   const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
   const e = new EmbedBuilder()
-    .setColor(COLOR_ANSWER)
+    .setColor(COLOR_PRIMARY)
     .setDescription(desc)
     .setFooter({ text: footerText })
     .setTimestamp(new Date());
+  if (questionTitle) e.setTitle(questionTitle);
+  if (askerDisplay) e.setAuthor({ name: askerDisplay });
   if (imageUrl) e.setImage(getWithCachebuster(imageUrl));
   return e;
 }
 
 /***************************************************************/
+/* functionSignature: getBuildAnswerEmbed (params)            *
+/* Builds additional answer-only embeds for overflow          *
+/***************************************************************/
+function getBuildAnswerEmbed({ answerChunk, botName, model, useAIModule, timeStr }) {
+  const desc = (String(answerChunk || "").slice(0, 4096)) || "\u200b";
+  const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
+  return new EmbedBuilder()
+    .setColor(COLOR_PRIMARY)
+    .setDescription(desc)
+    .setFooter({ text: footerText })
+    .setTimestamp(new Date());
+}
+
+/***************************************************************/
 /* functionSignature: getDiscordTextOutput (coreData)         *
-/* Sends two-embed output: question then answer(s)            *
+/* Sends a single-embed response; overflows as extra embeds   *
 /***************************************************************/
 export default async function getDiscordTextOutput(coreData) {
   const wo = coreData.workingObject || {};
@@ -371,33 +348,34 @@ export default async function getDiscordTextOutput(coreData) {
     const firstImage = getFirstImageUrlFromText(response);
     const chunks = getChunkText(response, isDM ? 1900 : 3500);
 
-    const question = getLikelyQuestion(wo);
+    const questionRaw = getLikelyQuestion(wo);
+    const firstLine = String(questionRaw).replace(/\r\n?/g, "\n").split("\n")[0] || "";
+    const questionTitle = firstLine ? (firstLine.length > 256 ? firstLine.slice(0, 253) + "…" : firstLine) : "";
     const askerDisplay = getAskerDisplay(wo, baseMessage);
 
     const model = String(wo.Model || wo.model || "");
     const useAIModule = String(wo.useAIModule || wo.UseAIModule || "");
     const timeStr = getLocalTimeString(new Date(), wo.timezone || "Europe/Berlin");
 
-    const questionBotName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
-
-    const questionEmbed = getEmbedForQuestion({
-      qStr: question,
-      askerDisplay
-    });
+    const botName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
 
     if (isDM) {
       let sent = 0;
-      await baseChannel.send({ embeds: [questionEmbed] });
-      for (let i = 0; i < chunks.length; i++) {
-        const embed = getEmbedForAnswer({
-          answer: chunks[i],
-          botName: questionBotName,
-          model,
-          useAIModule,
-          timeStr,
-          imageUrl: i === 0 ? firstImage : null
-        });
-        await baseChannel.send({ embeds: [embed] });
+      const primary = getBuildPrimaryEmbed({
+        questionTitle,
+        askerDisplay,
+        answerChunk: chunks[0],
+        botName,
+        model,
+        useAIModule,
+        timeStr,
+        imageUrl: firstImage
+      });
+      await baseChannel.send({ embeds: [primary] });
+      sent++;
+      for (let i = 1; i < chunks.length; i++) {
+        const extra = getBuildAnswerEmbed({ answerChunk: chunks[i], botName, model, useAIModule, timeStr });
+        await baseChannel.send({ embeds: [extra] });
         sent++;
       }
       wo.logging.push({
@@ -405,14 +383,12 @@ export default async function getDiscordTextOutput(coreData) {
         severity: "info",
         module: MODULE_NAME,
         exitStatus: "success",
-        message: `Sent question + ${sent} DM answer embed chunk(s)`
+        message: `Sent ${sent} DM embed message(s)`
       });
       return coreData;
     }
 
-    const desiredName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "";
-    if (!desiredName) throw new Error("wo.Botname is required but missing/empty");
-
+    const desiredName = botName;
     const { webhookClient, threadId, parentChannelId } =
       await setEnsureOwnChannelWebhookClient(client, { channel: baseChannel }, desiredName, wo);
 
@@ -426,28 +402,39 @@ export default async function getDiscordTextOutput(coreData) {
       return msg;
     }
 
+    let sentCount = 0;
+
+    const primary = getBuildPrimaryEmbed({
+      questionTitle,
+      askerDisplay,
+      answerChunk: chunks[0],
+      botName: identity.username,
+      model,
+      useAIModule,
+      timeStr,
+      imageUrl: firstImage
+    });
     await setSendAndVerify({
       username: identity.username,
       avatarURL: identity.avatarURL || undefined,
       threadId: threadId || undefined,
-      embeds: [questionEmbed]
+      embeds: [primary]
     });
+    sentCount++;
 
-    let sentCount = 0;
-    for (let i = 0; i < chunks.length; i++) {
-      const embed = getEmbedForAnswer({
-        answer: chunks[i],
+    for (let i = 1; i < chunks.length; i++) {
+      const extra = getBuildAnswerEmbed({
+        answerChunk: chunks[i],
         botName: identity.username,
         model,
         useAIModule,
-        timeStr,
-        imageUrl: i === 0 ? firstImage : null
+        timeStr
       });
       await setSendAndVerify({
         username: identity.username,
         avatarURL: identity.avatarURL || undefined,
         threadId: threadId || undefined,
-        embeds: [embed]
+        embeds: [extra]
       });
       sentCount++;
     }
@@ -457,7 +444,7 @@ export default async function getDiscordTextOutput(coreData) {
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "success",
-      message: `Sent question + ${sentCount} answer embed(s) to channel ${parentChannelId || channelId} as "${identity.username}".`
+      message: `Sent ${sentCount} embed(s) to channel ${parentChannelId || channelId} as "${identity.username}".`
     });
   } catch (err) {
     wo.logging.push({
