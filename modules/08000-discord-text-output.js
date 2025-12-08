@@ -2,8 +2,9 @@
 /* filename: "discord-text-output.js"                          *
 /* Version 1.0                                                 *
 /* Purpose: Send two-embed replies: first a blue quoted        *
-/*          question embed (no footer), then one or more green *
-/*          answer embeds (DMs direct; guilds via webhook).    *
+/*          question embed (no footer or timestamp), then one  *
+/*          or more green answer embeds (DMs direct; guilds    *
+/*          via webhook).                                      *
 /***************************************************************/
 /***************************************************************/
 /*                                                             */
@@ -285,19 +286,18 @@ function getLocalTimeString(date, tz) {
 
 /***************************************************************/
 /* functionSignature: getEmbedForQuestion (params)            *
-/* Builds the blue question embed without footer              *
+/* Builds the blue question embed without footer/timestamp    *
 /***************************************************************/
-function getEmbedForQuestion({ botName, model, useAIModule, timeStr, qStr, askerDisplay }) {
+function getEmbedForQuestion({ qStr, askerDisplay }) {
   const desc = (getQuestionAsQuotedItalic(qStr, askerDisplay) || "\u200b").slice(0, 4096);
   return new EmbedBuilder()
     .setColor(COLOR_QUESTION)
-    .setDescription(desc)
-    .setTimestamp(new Date());
+    .setDescription(desc);
 }
 
 /***************************************************************/
 /* functionSignature: getEmbedForAnswer (params)              *
-/* Builds one green answer embed (optionally with image)      *
+/* Builds one green answer embed (with footer & timestamp)    *
 /***************************************************************/
 function getEmbedForAnswer({ answer, botName, model, useAIModule, timeStr, imageUrl }) {
   const desc = (String(answer || "").slice(0, 4096)) || "\u200b";
@@ -381,10 +381,6 @@ export default async function getDiscordTextOutput(coreData) {
     const questionBotName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
 
     const questionEmbed = getEmbedForQuestion({
-      botName: questionBotName,
-      model,
-      useAIModule,
-      timeStr,
       qStr: question,
       askerDisplay
     });
