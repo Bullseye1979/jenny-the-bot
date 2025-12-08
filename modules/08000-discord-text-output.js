@@ -1,31 +1,33 @@
-/**************************************************************
-/* filename: "discord-text-output.js"                         *
-/* Version 1.0                                                *
-/* Purpose: In guilds/threads send via webhook; in DMs send   *
-/*          identical EMBEDS directly via the channel.        *
-/*          Shows original question ABOVE the answer,         *
-/*          question less prominent; includes asker if known. *
-/**************************************************************/
-/**************************************************************/
- 
+/***************************************************************/
+/* filename: "discord-text-output.js"                          *
+/* Version 1.0                                                 *
+/* Purpose: In guilds/threads send via webhook; in DMs send    *
+/*          identical EMBEDS directly; show question ABOVE     *
+/*          answer (quoted, multi-line), include asker, and    *
+/*          insert a horizontal rule after the quote.          *
+/***************************************************************/
+/***************************************************************/
+/*                                                             */
+/***************************************************************/
+
 import { EmbedBuilder, PermissionFlagsBits, WebhookClient } from "discord.js";
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "discord-text-output";
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getIsLikelyImageUrl (url)               *
 /* Returns true if the URL likely points to an image          *
-/**************************************************************/
+/***************************************************************/
 function getIsLikelyImageUrl(url) {
   const u = String(url).toLowerCase();
   return /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/.test(u) || /\/documents\//.test(u);
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getFirstImageUrlFromText (text)         *
 /* Extracts the first image-like URL from a text string       *
-/**************************************************************/
+/***************************************************************/
 function getFirstImageUrlFromText(text) {
   if (!text) return null;
   const s = String(text);
@@ -40,10 +42,10 @@ function getFirstImageUrlFromText(text) {
   return null;
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getChunkText (str, max)                 *
 /* Splits long text into chunks respecting soft boundaries    *
-/**************************************************************/
+/***************************************************************/
 function getChunkText(str, max = 3500) {
   const text = typeof str === "string" ? str : "";
   if (!text) return [];
@@ -66,46 +68,46 @@ function getChunkText(str, max = 3500) {
   return chunks.length ? chunks : ["\u200b"];
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getWithCachebuster (url)                *
 /* Appends a cache-busting query parameter to a URL           *
-/**************************************************************/
+/***************************************************************/
 function getWithCachebuster(url) {
   if (!url) return url;
   const cb = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   return `${url}${url.includes("?") ? "&" : "?"}cb=${cb}`;
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getModuleConfigBaseURL (config)         *
 /* Resolves the module baseURL from config                    *
-/**************************************************************/
+/***************************************************************/
 function getModuleConfigBaseURL(config) {
   const a = config?.["discord-text-output"];
   const b = config?.["discord_text-output"];
   return (a && a.baseURL) || (b && b.baseURL) || null;
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getIsThreadChannel (ch)                 *
 /* Checks whether a channel is a thread                       *
-/**************************************************************/
+/***************************************************************/
 function getIsThreadChannel(ch) {
   return ch?.isThread?.() === true;
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getIsChannelWebhook (h)                 *
 /* Checks whether a webhook is a channel webhook              *
-/**************************************************************/
+/***************************************************************/
 function getIsChannelWebhook(h) {
   return Number(h?.type) === 1 || String(h?.type) === "Incoming";
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getUrlExists (url, timeoutMs)           *
 /* Verifies remote URL availability with HEAD/GET             *
-/**************************************************************/
+/***************************************************************/
 async function getUrlExists(url, timeoutMs = 3000) {
   if (typeof fetch !== "function") return true;
   const controller = new AbortController();
@@ -124,10 +126,10 @@ async function getUrlExists(url, timeoutMs = 3000) {
   }
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: setEnsureOwnChannelWebhookClient (...)  *
 /* Ensures a usable channel webhook and returns its client    *
-/**************************************************************/
+/***************************************************************/
 async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo) {
   const currChannel = message.channel;
   const parentChannel = getIsThreadChannel(currChannel) ? currChannel.parent : currChannel;
@@ -141,7 +143,7 @@ async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo
   let hook = [...webhooks.values()].find(h => getIsChannelWebhook(h) && h.name === desiredName) || null;
   if (!hook) {
     hook = await parentChannel.createWebhook({ name: desiredName, reason: `${MODULE_NAME}: auto-create for ${desiredName}` });
-    wo?.logging?.push({
+    (wo.logging ||= []).push({
       timestamp: new Date().toISOString(),
       severity: "info",
       module: MODULE_NAME,
@@ -159,7 +161,7 @@ async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo
     throw new Error(`${MODULE_NAME}: failed to create WebhookClient`);
   }
   const threadId = getIsThreadChannel(currChannel) ? currChannel.id : null;
-  wo?.logging?.push({
+  (wo.logging ||= []).push({
     timestamp: new Date().toISOString(),
     severity: "info",
     module: MODULE_NAME,
@@ -169,10 +171,10 @@ async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo
   return { webhookClient, threadId, parentChannelId: parentChannel.id };
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getResolvedIdentity (wo, config, id, c) *
 /* Resolves username and avatar URL for webhook identity      *
-/**************************************************************/
+/***************************************************************/
 async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, client) {
   const raw = typeof wo?.Botname === "string" ? wo.Botname.trim() : "";
   if (!raw) throw new Error(`${MODULE_NAME}: wo.Botname is required but empty/missing`);
@@ -200,10 +202,10 @@ async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, clien
   return { username, avatarURL };
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getAskerDisplay (wo, baseMessage)       *
 /* Resolves a display string for the original asker           *
-/**************************************************************/
+/***************************************************************/
 function getAskerDisplay(wo, baseMessage) {
   const nameCandidates = [
     "UserDisplayName","userDisplayName","DisplayName","displayName",
@@ -225,10 +227,10 @@ function getAskerDisplay(wo, baseMessage) {
   return name || "";
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getLikelyQuestion (wo)                  *
 /* Extracts the original question text from the working obj   *
-/**************************************************************/
+/***************************************************************/
 function getLikelyQuestion(wo) {
   const candidates = [
     "Payload","payload","Prompt","prompt","Question","question",
@@ -246,45 +248,30 @@ function getLikelyQuestion(wo) {
   return "";
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getQuestionAsQuotedItalic (q, asker)    *
-/* Formats question as quoted italic with optional asker tag  *
-/**************************************************************/
+/* Formats entire multi-line question as italic quote         *
+/***************************************************************/
 function getQuestionAsQuotedItalic(q, askerDisplay) {
   if (!q) return "";
-
-  const max = 1500;
-  const trimmed = q.length > max ? q.slice(0, max - 1) + "…" : q;
-
-  // Am ersten Leerabsatz trennen:
-  // [0] = Frageblock, Rest = alles dahinter (z.B. URLs)
-  const parts = trimmed.split(/\n\s*\n/);
-  const questionBlock = parts.shift() || "";
-  const rest = parts.join("\n\n"); // wieder zusammenfügen, falls mehrere Absätze
-
-  const lines = questionBlock.split("\n");
-  const first = lines.shift() || "";
-  const header = askerDisplay ? `${askerDisplay}: ` : "";
-
-  const out = [`> *${header}${first}*`];
-  for (const line of lines) {
-    out.push(`> *${line}*`);
+  const normalized = String(q).replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] || "";
+    if (i === 0 && askerDisplay) {
+      out.push(`> *${askerDisplay}: ${line}*`);
+    } else {
+      out.push(`> *${line}*`);
+    }
   }
-
-  const quoted = out.join("\n");
-
-  // Rest (z.B. URLs) unverändert anhängen
-  if (rest.trim()) {
-    return quoted + "\n\n" + rest;
-  }
-  return quoted;
+  return out.join("\n");
 }
 
-
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getLocalTimeString (date, tz)           *
 /* Formats a local time string for the given timezone         *
-/**************************************************************/
+/***************************************************************/
 function getLocalTimeString(date, tz) {
   try {
     return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: tz || "Europe/Berlin" }).format(date);
@@ -293,16 +280,24 @@ function getLocalTimeString(date, tz) {
   }
 }
 
-/**************************************************************
+/***************************************************************/
+/* functionSignature: getHr ()                                *
+/* Returns a thin horizontal rule for embed separation        *
+/***************************************************************/
+function getHr() {
+  return "────────────────";
+}
+
+/***************************************************************/
 /* functionSignature: getEmbedPage (params)                   *
 /* Builds an embed with question above answer and rich footer *
-/**************************************************************/
+/***************************************************************/
 function getEmbedPage({ answer, botName, model, useAIModule, timeStr, imageUrl, showQuestion, qStr, askerDisplay }) {
   const qBlock = (showQuestion && qStr) ? getQuestionAsQuotedItalic(qStr, askerDisplay) : "";
-  let descParts = [];
-  if (qBlock) descParts.push(qBlock);
-  if (answer) descParts.push(answer);
-  let desc = descParts.join("\n\n").slice(0, 4096) || "\u200b";
+  const parts = [];
+  if (qBlock) parts.push(qBlock, getHr());
+  if (answer) parts.push(answer);
+  const desc = (parts.join("\n\n").slice(0, 4096)) || "\u200b";
   const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
   const e = new EmbedBuilder()
     .setColor(0x2F3136)
@@ -313,10 +308,10 @@ function getEmbedPage({ answer, botName, model, useAIModule, timeStr, imageUrl, 
   return e;
 }
 
-/**************************************************************
+/***************************************************************/
 /* functionSignature: getDiscordTextOutput (coreData)         *
 /* Sends text via webhook in guilds/threads or DM embeds      *
-/**************************************************************/
+/***************************************************************/
 export default async function getDiscordTextOutput(coreData) {
   const wo = coreData.workingObject || {};
   const config = coreData.config || {};
