@@ -251,27 +251,26 @@ function getLocalTimeString(date, tz) {
 }
 
 /***************************************************************/
-/* functionSignature: getBuildMarkdownBlock (text, label)     *
-/* Builds a fenced Markdown code block for the question       *
+/* functionSignature: getBuildYamlQuestionBlock (name, text)  *
+/* Builds a YAML code block: first line highlights the name   *
 /***************************************************************/
-function getBuildMarkdownBlock(text, label = "") {
+function getBuildYamlQuestionBlock(name, text) {
+  const display = String(name || "").trim();
   const norm = String(text || "").replace(/\r\n?/g, "\n");
-  const header = label && norm ? `${label}\n` : label ? `${label}` : "";
-  const body = `${header}${norm}`;
-  const fence = "```";
-  const full = `${fence}md\n${body}\n${fence}`;
-  return full;
+  const lines = norm.split("\n").map(l => `  ${l || ""}`).join("\n");
+  const header = display ? `${display}: |\n` : "";
+  const body = `${header}${lines}`.trimEnd();
+  return "```yaml\n" + body + "\n```";
 }
 
 /***************************************************************/
 /* functionSignature: getBuildPrimaryEmbed (params)           *
 /* Builds the main embed with question block + answer chunk   *
 /***************************************************************/
-function getBuildPrimaryEmbed({ questionText, askerDisplay, answerChunk, botName, model, useAIModule, timeStr, imageUrl }) {
-  const qLabel = askerDisplay ? `Question by ${askerDisplay}:` : "Question:";
-  const qBlock = getBuildMarkdownBlock(questionText, qLabel);
+function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName, model, useAIModule, timeStr, imageUrl }) {
+  const qBlock = getBuildYamlQuestionBlock(askerDisplay, questionText);
   const joined = [qBlock, String(answerChunk || "")].filter(Boolean).join("\n\n");
-  const desc = (joined.slice(0, 4096)) || "\u200b";
+  const desc = joined.slice(0, 4096) || "\u200b";
   const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
   const e = new EmbedBuilder()
     .setColor(COLOR_PRIMARY)
@@ -287,7 +286,7 @@ function getBuildPrimaryEmbed({ questionText, askerDisplay, answerChunk, botName
 /* Builds additional answer-only embeds for overflow          *
 /***************************************************************/
 function getBuildAnswerEmbed({ answerChunk, botName, model, useAIModule, timeStr }) {
-  const desc = (String(answerChunk || "").slice(0, 4096)) || "\u200b";
+  const desc = String(answerChunk || "").slice(0, 4096) || "\u200b";
   const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
   return new EmbedBuilder()
     .setColor(COLOR_PRIMARY)
@@ -368,8 +367,8 @@ export default async function getDiscordTextOutput(coreData) {
     if (isDM) {
       let sent = 0;
       const primary = getBuildPrimaryEmbed({
-        questionText: questionRaw,
         askerDisplay,
+        questionText: questionRaw,
         answerChunk: chunks[0],
         botName,
         model,
@@ -411,8 +410,8 @@ export default async function getDiscordTextOutput(coreData) {
     let sentCount = 0;
 
     const primary = getBuildPrimaryEmbed({
-      questionText: questionRaw,
       askerDisplay,
+      questionText: questionRaw,
       answerChunk: chunks[0],
       botName: identity.username,
       model,
