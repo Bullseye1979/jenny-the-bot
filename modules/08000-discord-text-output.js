@@ -1,11 +1,11 @@
 /***************************************************************/
 /* filename: "discord-text-output.js"                          *
 /* Version 1.0                                                 *
-/* Purpose: In guilds/threads send via webhook; in DMs send    *
-/*          identical EMBEDS directly; show question ABOVE     *
-/*          answer (quoted, multi-line), include asker, and    *
-/*          insert a horizontal rule after the quote.          *
+/* Purpose: Send two-embed replies: a colored quoted question  *
+/*          embed first, then one or more colored answer       *
+/*          embeds (DMs direct; guilds via webhook).           *
 /***************************************************************/
+
 /***************************************************************/
 /*                                                             */
 /***************************************************************/
@@ -14,6 +14,8 @@ import { EmbedBuilder, PermissionFlagsBits, WebhookClient } from "discord.js";
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "discord-text-output";
+const COLOR_QUESTION = 0x5865F2;
+const COLOR_ANSWER = 0x2F3136;
 
 /***************************************************************/
 /* functionSignature: getIsLikelyImageUrl (url)               *
@@ -260,9 +262,11 @@ function getQuestionAsQuotedItalic(q, askerDisplay) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] || "";
     if (i === 0 && askerDisplay) {
-      out.push(`> *${askerDisplay}: ${line}*`);
+      if (line.trim()) out.push(`> *${askerDisplay}: ${line}*`);
+      else out.push(`> *${askerDisplay}:*`);
     } else {
-      out.push(`> *${line}*`);
+      if (line.trim()) out.push(`> *${line}*`);
+      else out.push(`> \u200b`);
     }
   }
   return out.join("\n");
@@ -281,26 +285,28 @@ function getLocalTimeString(date, tz) {
 }
 
 /***************************************************************/
-/* functionSignature: getHr ()                                *
-/* Returns a thin horizontal rule for embed separation        *
+/* functionSignature: getEmbedForQuestion (params)            *
+/* Builds the colored question embed                          *
 /***************************************************************/
-function getHr() {
-  return "────────────────";
+function getEmbedForQuestion({ botName, model, useAIModule, timeStr, qStr, askerDisplay }) {
+  const desc = (getQuestionAsQuotedItalic(qStr, askerDisplay) || "\u200b").slice(0, 4096);
+  const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
+  return new EmbedBuilder()
+    .setColor(COLOR_QUESTION)
+    .setDescription(desc)
+    .setFooter({ text: footerText })
+    .setTimestamp(new Date());
 }
 
 /***************************************************************/
-/* functionSignature: getEmbedPage (params)                   *
-/* Builds an embed with question above answer and rich footer *
+/* functionSignature: getEmbedForAnswer (params)              *
+/* Builds one colored answer embed (optionally with image)    *
 /***************************************************************/
-function getEmbedPage({ answer, botName, model, useAIModule, timeStr, imageUrl, showQuestion, qStr, askerDisplay }) {
-  const qBlock = (showQuestion && qStr) ? getQuestionAsQuotedItalic(qStr, askerDisplay) : "";
-  const parts = [];
-  if (qBlock) parts.push(qBlock, getHr());
-  if (answer) parts.push(answer);
-  const desc = (parts.join("\n\n").slice(0, 4096)) || "\u200b";
+function getEmbedForAnswer({ answer, botName, model, useAIModule, timeStr, imageUrl }) {
+  const desc = (String(answer || "").slice(0, 4096)) || "\u200b";
   const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
   const e = new EmbedBuilder()
-    .setColor(0x2F3136)
+    .setColor(COLOR_ANSWER)
     .setDescription(desc)
     .setFooter({ text: footerText })
     .setTimestamp(new Date());
@@ -310,7 +316,7 @@ function getEmbedPage({ answer, botName, model, useAIModule, timeStr, imageUrl, 
 
 /***************************************************************/
 /* functionSignature: getDiscordTextOutput (coreData)         *
-/* Sends text via webhook in guilds/threads or DM embeds      *
+/* Sends two-embed output: question then answer(s)            *
 /***************************************************************/
 export default async function getDiscordTextOutput(coreData) {
   const wo = coreData.workingObject || {};
@@ -375,20 +381,28 @@ export default async function getDiscordTextOutput(coreData) {
     const useAIModule = String(wo.useAIModule || wo.UseAIModule || "");
     const timeStr = getLocalTimeString(new Date(), wo.timezone || "Europe/Berlin");
 
+    const questionBotName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
+
+    const questionEmbed = getEmbedForQuestion({
+      botName: questionBotName,
+      model,
+      useAIModule,
+      timeStr,
+      qStr: question,
+      askerDisplay
+    });
+
     if (isDM) {
       let sent = 0;
-      const botName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
+      await baseChannel.send({ embeds: [questionEmbed] });
       for (let i = 0; i < chunks.length; i++) {
-        const embed = getEmbedPage({
+        const embed = getEmbedForAnswer({
           answer: chunks[i],
-          botName,
+          botName: questionBotName,
           model,
           useAIModule,
           timeStr,
-          imageUrl: i === 0 ? firstImage : null,
-          showQuestion: i === 0 && !!question,
-          qStr: question,
-          askerDisplay
+          imageUrl: i === 0 ? firstImage : null
         });
         await baseChannel.send({ embeds: [embed] });
         sent++;
@@ -398,7 +412,7 @@ export default async function getDiscordTextOutput(coreData) {
         severity: "info",
         module: MODULE_NAME,
         exitStatus: "success",
-        message: `Sent ${sent} DM embed chunk(s)`
+        message: `Sent question + ${sent} DM answer embed chunk(s)`
       });
       return coreData;
     }
@@ -412,8 +426,6 @@ export default async function getDiscordTextOutput(coreData) {
     const effectiveAvatarId = threadId || parentChannelId;
     const identity = await getResolvedIdentity(wo, config, effectiveAvatarId, client);
 
-    let sentCount = 0;
-
     async function setSendAndVerify(payload) {
       const msg = await webhookClient.send({ ...payload, wait: true });
       const hasWebhookId = !!msg?.webhookId || !!msg?.webhook_id;
@@ -421,25 +433,29 @@ export default async function getDiscordTextOutput(coreData) {
       return msg;
     }
 
+    await setSendAndVerify({
+      username: identity.username,
+      avatarURL: identity.avatarURL || undefined,
+      threadId: threadId || undefined,
+      embeds: [questionEmbed]
+    });
+
+    let sentCount = 0;
     for (let i = 0; i < chunks.length; i++) {
-      const embed = getEmbedPage({
+      const embed = getEmbedForAnswer({
         answer: chunks[i],
         botName: identity.username,
         model,
         useAIModule,
         timeStr,
-        imageUrl: i === 0 ? firstImage : null,
-        showQuestion: i === 0 && !!question,
-        qStr: question,
-        askerDisplay
+        imageUrl: i === 0 ? firstImage : null
       });
-      const payload = {
+      await setSendAndVerify({
         username: identity.username,
         avatarURL: identity.avatarURL || undefined,
         threadId: threadId || undefined,
         embeds: [embed]
-      };
-      await setSendAndVerify(payload);
+      });
       sentCount++;
     }
 
@@ -448,7 +464,7 @@ export default async function getDiscordTextOutput(coreData) {
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "success",
-      message: `Sent ${sentCount} webhook message(s) to channel ${parentChannelId || channelId} as "${identity.username}".`
+      message: `Sent question + ${sentCount} answer embed(s) to channel ${parentChannelId || channelId} as "${identity.username}".`
     });
   } catch (err) {
     wo.logging.push({
