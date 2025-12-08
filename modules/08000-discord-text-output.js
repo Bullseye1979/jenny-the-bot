@@ -1,9 +1,9 @@
 /***************************************************************/
 /* filename: "discord-text-output.js"                          *
 /* Version 1.0                                                 *
-/* Purpose: Single-embed reply: question as Title/Author and   *
-/*          answer in Description (DMs direct; guilds via      *
-/*          webhook). Keeps a consistent box height/layout.    *
+/* Purpose: Single-embed reply that shows the entire question  *
+/*          as a Markdown code block above the answer. Works   *
+/*          in DMs (direct send) and guilds (via webhook).     *
 /***************************************************************/
 
 /***************************************************************/
@@ -205,27 +205,21 @@ async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, clien
 
 /***************************************************************/
 /* functionSignature: getAskerDisplay (wo, baseMessage)       *
-/* Resolves a display string for the original asker           *
+/* Resolves a human name for the asker without raw IDs        *
 /***************************************************************/
 function getAskerDisplay(wo, baseMessage) {
   const nameCandidates = [
     "UserDisplayName","userDisplayName","DisplayName","displayName",
     "Username","username","UserName","userName","User","user","Author","author"
   ];
-  let name = "";
   for (const k of nameCandidates) {
     const v = wo?.[k];
-    if (typeof v === "string" && v.trim()) { name = v.trim(); break; }
+    if (typeof v === "string" && v.trim()) return v.trim();
   }
   const bmAuthor = baseMessage?.author;
-  const userId = String(wo?.userId || wo?.userid || bmAuthor?.id || "") || "";
-  if (!name && bmAuthor) {
-    name = bmAuthor.tag || bmAuthor.username || "";
-  }
-  if (userId) {
-    return `<@${userId}>`;
-  }
-  return name || "";
+  if (bmAuthor?.globalName) return bmAuthor.globalName;
+  if (bmAuthor?.username) return bmAuthor.username;
+  return "";
 }
 
 /***************************************************************/
@@ -257,19 +251,33 @@ function getLocalTimeString(date, tz) {
 }
 
 /***************************************************************/
-/* functionSignature: getBuildPrimaryEmbed (params)           *
-/* Builds the main embed: Title/Author for question, answer   *
+/* functionSignature: getBuildMarkdownBlock (text, label)     *
+/* Builds a fenced Markdown code block for the question       *
 /***************************************************************/
-function getBuildPrimaryEmbed({ questionTitle, askerDisplay, answerChunk, botName, model, useAIModule, timeStr, imageUrl }) {
-  const desc = (String(answerChunk || "").slice(0, 4096)) || "\u200b";
+function getBuildMarkdownBlock(text, label = "") {
+  const norm = String(text || "").replace(/\r\n?/g, "\n");
+  const header = label && norm ? `${label}\n` : label ? `${label}` : "";
+  const body = `${header}${norm}`;
+  const fence = "```";
+  const full = `${fence}md\n${body}\n${fence}`;
+  return full;
+}
+
+/***************************************************************/
+/* functionSignature: getBuildPrimaryEmbed (params)           *
+/* Builds the main embed with question block + answer chunk   *
+/***************************************************************/
+function getBuildPrimaryEmbed({ questionText, askerDisplay, answerChunk, botName, model, useAIModule, timeStr, imageUrl }) {
+  const qLabel = askerDisplay ? `Question by ${askerDisplay}:` : "Question:";
+  const qBlock = getBuildMarkdownBlock(questionText, qLabel);
+  const joined = [qBlock, String(answerChunk || "")].filter(Boolean).join("\n\n");
+  const desc = (joined.slice(0, 4096)) || "\u200b";
   const footerText = `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
   const e = new EmbedBuilder()
     .setColor(COLOR_PRIMARY)
     .setDescription(desc)
     .setFooter({ text: footerText })
     .setTimestamp(new Date());
-  if (questionTitle) e.setTitle(questionTitle);
-  if (askerDisplay) e.setAuthor({ name: askerDisplay });
   if (imageUrl) e.setImage(getWithCachebuster(imageUrl));
   return e;
 }
@@ -349,8 +357,6 @@ export default async function getDiscordTextOutput(coreData) {
     const chunks = getChunkText(response, isDM ? 1900 : 3500);
 
     const questionRaw = getLikelyQuestion(wo);
-    const firstLine = String(questionRaw).replace(/\r\n?/g, "\n").split("\n")[0] || "";
-    const questionTitle = firstLine ? (firstLine.length > 256 ? firstLine.slice(0, 253) + "…" : firstLine) : "";
     const askerDisplay = getAskerDisplay(wo, baseMessage);
 
     const model = String(wo.Model || wo.model || "");
@@ -362,7 +368,7 @@ export default async function getDiscordTextOutput(coreData) {
     if (isDM) {
       let sent = 0;
       const primary = getBuildPrimaryEmbed({
-        questionTitle,
+        questionText: questionRaw,
         askerDisplay,
         answerChunk: chunks[0],
         botName,
@@ -405,7 +411,7 @@ export default async function getDiscordTextOutput(coreData) {
     let sentCount = 0;
 
     const primary = getBuildPrimaryEmbed({
-      questionTitle,
+      questionText: questionRaw,
       askerDisplay,
       answerChunk: chunks[0],
       botName: identity.username,
