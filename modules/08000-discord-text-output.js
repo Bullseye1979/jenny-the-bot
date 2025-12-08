@@ -1,10 +1,10 @@
 /***************************************************************/
 /* filename: "discord-text-output.js"                          *
 /* Version 1.0                                                 *
-/* Purpose: Send two-embed replies: first a blue quoted        *
-/*          question embed (no footer or timestamp), then one  *
-/*          or more green answer embeds (DMs direct; guilds    *
-/*          via webhook).                                      *
+/* Purpose: Send two-embed replies: first a blue italic        *
+/*          question embed (no footer or timestamp, no quote    *
+/*          bar), then one or more green answer embeds (DMs     *
+/*          direct; guilds via webhook).                        *
 /***************************************************************/
 /***************************************************************/
 /*                                                             */
@@ -251,10 +251,10 @@ function getLikelyQuestion(wo) {
 }
 
 /***************************************************************/
-/* functionSignature: getQuestionAsQuotedItalic (q, asker)    *
-/* Formats entire multi-line question as italic quote         *
+/* functionSignature: getQuestionAsItalic (q, asker)          *
+/* Formats entire multi-line question as plain italic text     *
 /***************************************************************/
-function getQuestionAsQuotedItalic(q, askerDisplay) {
+function getQuestionAsItalic(q, askerDisplay) {
   if (!q) return "";
   const normalized = String(q).replace(/\r\n?/g, "\n");
   const lines = normalized.split("\n");
@@ -262,11 +262,11 @@ function getQuestionAsQuotedItalic(q, askerDisplay) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] || "";
     if (i === 0 && askerDisplay) {
-      if (line.trim()) out.push(`> *${askerDisplay}: ${line}*`);
-      else out.push(`> *${askerDisplay}:*`);
+      if (line.trim()) out.push(`*${askerDisplay}: ${line}*`);
+      else out.push(`*${askerDisplay}:*`);
     } else {
-      if (line.trim()) out.push(`> *${line}*`);
-      else out.push(`> \u200b`);
+      if (line.trim()) out.push(`*${line}*`);
+      else out.push("\u200b");
     }
   }
   return out.join("\n");
@@ -289,7 +289,7 @@ function getLocalTimeString(date, tz) {
 /* Builds the blue question embed without footer/timestamp    *
 /***************************************************************/
 function getEmbedForQuestion({ qStr, askerDisplay }) {
-  const desc = (getQuestionAsQuotedItalic(qStr, askerDisplay) || "\u200b").slice(0, 4096);
+  const desc = (getQuestionAsItalic(qStr, askerDisplay) || "\u200b").slice(0, 4096);
   return new EmbedBuilder()
     .setColor(COLOR_QUESTION)
     .setDescription(desc);
@@ -375,7 +375,7 @@ export default async function getDiscordTextOutput(coreData) {
     const askerDisplay = getAskerDisplay(wo, baseMessage);
 
     const model = String(wo.Model || wo.model || "");
-    const useAIModule = String(wo.useAIModule || wo.UseAIModule || "");
+    the const useAIModule = String(wo.useAIModule || wo.UseAIModule || "");
     const timeStr = getLocalTimeString(new Date(), wo.timezone || "Europe/Berlin");
 
     const questionBotName = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
