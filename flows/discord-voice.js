@@ -1,10 +1,9 @@
 /**************************************************************
 /* filename: "discord-voice.js"                               *
 /* Version 1.0                                                *
-/* Purpose: Listen for discord-voice registry sessions and    *
-/*          attach handlers that debounce speaking-start      *
-/*          events, seed workingObject (incl. turn_id), and   *
-/*          trigger the "discord-voice" flow.                 *
+/* Purpose: Listen for registry sessions, debounce speaking,  *
+/*          seed workingObject (incl. turn_id), and trigger   *
+/*          the configured flowName (default "discord-voice").*
 /**************************************************************/
 /**************************************************************
 /*                                                          *
@@ -213,6 +212,11 @@ async function setAttachToSession(baseCore, sessionKey, session, cfg, runFlow, c
   const clientRef = session.clientRef || "discord:client";
   const client = await getItem(clientRef);
 
+  const cfgFlowName =
+    (typeof cfg?.flowName === "string" && cfg.flowName.trim()) ? cfg.flowName.trim() :
+    (typeof baseCore?.config?.discordVoice?.flowName === "string" && baseCore.config.discordVoice.flowName.trim()) ? baseCore.config.discordVoice.flowName.trim() :
+    MODULE_NAME;
+
   receiver.speaking?.on?.("start", async (uidLike) => {
     try {
       let userId = null;
@@ -272,7 +276,7 @@ async function setAttachToSession(baseCore, sessionKey, session, cfg, runFlow, c
       const nowIso = new Date().toISOString();
 
       wo.turn_id = getNewUlid();
-      wo.flow = "discord-voice";
+      wo.flow = cfgFlowName;
       wo.source = "discord";
       wo.voiceSessionRef = sessionKey;
 
@@ -295,10 +299,11 @@ async function setAttachToSession(baseCore, sessionKey, session, cfg, runFlow, c
         postChannelId: wo.id || null,
         useVoiceChannel: !!wo.useVoiceChannel,
         textChannelId,
-        voiceChannelId
+        voiceChannelId,
+        flowName: cfgFlowName
       });
 
-      await runFlow("discord-voice", rc);
+      await runFlow(cfgFlowName, rc);
     } catch (e) {
       log("start-handler error", "error", { moduleName: MODULE_NAME, error: e?.message });
     }

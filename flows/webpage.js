@@ -1,11 +1,12 @@
 /**************************************************************
 /* filename: "webpage.js"                                    *
 /* Version 1.0                                               *
-/* Purpose:                                                  *
-/*  HTTP server trigger that captures requests into          *
-/*  workingObject.http and starts the 'webpage' flow without *
-/*  sending a direct response (response handled elsewhere).  *
+/* Purpose: HTTP server trigger that captures requests into  *
+/*          workingObject.http and starts the configured     *
+/*          'webpage' flow without sending a direct response *
+/*          (response handled elsewhere).                    *
 /**************************************************************/
+
 /**************************************************************
 /*                                                          *
 /**************************************************************/
@@ -27,8 +28,7 @@ let __ulid_lastRand = new Uint8Array(10).fill(0);
 
 /**************************************************************
 /* functionSignature: getUlidEncodeTime (ms)                 *
-/* Encode a millisecond timestamp to a 10-char Crockford     *
-/* base32.                                                   *
+/* Encode a millisecond timestamp to a 10-char base32        *
 /**************************************************************/
 function getUlidEncodeTime(ms) {
   let x = BigInt(ms);
@@ -42,7 +42,7 @@ function getUlidEncodeTime(ms) {
 
 /**************************************************************
 /* functionSignature: getUlidEncodeRandom80ToBase32 (rand)   *
-/* Encode 80 random bits to a 16-char Crockford base32 string*
+/* Encode 80 random bits into 16 base32 characters           *
 /**************************************************************/
 function getUlidEncodeRandom80ToBase32(rand) {
   const out = [];
@@ -64,7 +64,7 @@ function getUlidEncodeRandom80ToBase32(rand) {
 
 /**************************************************************
 /* functionSignature: getUlidRandom80 ()                     *
-/* Generate 80 bits of randomness as a 10-byte Uint8Array.   *
+/* Generate 80 bits of randomness as Uint8Array(10)          *
 /**************************************************************/
 function getUlidRandom80() {
   const arr = new Uint8Array(10);
@@ -74,7 +74,7 @@ function getUlidRandom80() {
 
 /**************************************************************
 /* functionSignature: getNewUlid ()                          *
-/* Generate a monotonic ULID (26 chars).                     *
+/* Generate a monotonic 26-character ULID                    *
 /**************************************************************/
 function getNewUlid() {
   const now = Date.now();
@@ -99,8 +99,7 @@ function getNewUlid() {
 /**************************************************************
 /* functionSignature: setSendResponse (res, status, body,    *
 /*                                    headers)               *
-/* Send a fallback HTTP response if nothing else has         *
-/* responded.                                                *
+/* Send a fallback HTTP response if nothing else responded   *
 /**************************************************************/
 function setSendResponse(res, status, body = "", headers = {}) {
   if (res.writableEnded) return;
@@ -115,37 +114,32 @@ function setSendResponse(res, status, body = "", headers = {}) {
 
 /**************************************************************
 /* functionSignature: getReadBody (req, maxBytes)            *
-/* Read and return the request body as a UTF-8 string.       *
+/* Read and return the request body as a UTF-8 string        *
 /**************************************************************/
 function getReadBody(req, maxBytes = 1e6) {
   return new Promise((resolve, reject) => {
     let done = false;
     let size = 0;
     const chunks = [];
-
     function fail(err) {
       if (done) return;
       done = true;
       reject(err);
       try { req.destroy(); } catch {}
     }
-
     req.on("data", (chunk) => {
       if (done) return;
       size += chunk.length;
       if (size > maxBytes) return fail(new Error("BODY_TOO_LARGE"));
       chunks.push(chunk);
     });
-
     req.on("end", () => {
       if (done) return;
       done = true;
       if (!chunks.length) return resolve("");
       resolve(Buffer.concat(chunks).toString("utf8"));
     });
-
     req.on("error", (err) => fail(err));
-
     req.on("close", () => {
       if (!done && !chunks.length) {
         done = true;
@@ -157,21 +151,30 @@ function getReadBody(req, maxBytes = 1e6) {
 
 /**************************************************************
 /* functionSignature: getNewRequestKey ()                    *
-/* Create a unique registry key for storing req/res.         *
+/* Create a unique registry key for storing req/res          *
 /**************************************************************/
 function getNewRequestKey() {
   return `web:${getNewUlid()}`;
 }
 
 /**************************************************************
+/* functionSignature: getConfigFlowName (baseCore)           *
+/* Read flowName from config["webpage"] with fallback        *
+/**************************************************************/
+function getConfigFlowName(baseCore) {
+  const name = baseCore?.config?.[MODULE_NAME]?.flowName;
+  const s = typeof name === "string" ? name.trim() : "";
+  return s || MODULE_NAME;
+}
+
+/**************************************************************
 /* functionSignature: getWebpageFlow (baseCore, runFlow,     *
 /*                                    createRunCore)         *
-/* Start the HTTP server and trigger the 'webpage' flow      *
-/* per request.                                              *
+/* Start HTTP server and trigger the configured flow per req *
 /**************************************************************/
 export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
-  const cfg = baseCore?.config?.webpage || {};
-  const flowName = String(cfg.flowName || "webpage");
+  const cfg = baseCore?.config?.[MODULE_NAME] || {};
+  const flowName = getConfigFlowName(baseCore);
   const port = Number(cfg.port) || 3000;
 
   const pubRoot = path.join(__dirname, "..", "pub");
@@ -238,7 +241,6 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
           const reason = err?.message || String(err);
           const log2 = getPrefixedLogger(wo, import.meta.url);
           log2("Request body error", "error", { moduleName: MODULE_NAME, reason, path: urlPath });
-
           if (reason === "BODY_TOO_LARGE") {
             return setSendResponse(
               res,
@@ -247,7 +249,6 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
               { "Content-Type": "application/json; charset=utf-8" }
             );
           }
-
           return setSendResponse(
             res,
             400,

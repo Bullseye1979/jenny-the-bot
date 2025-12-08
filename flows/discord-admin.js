@@ -3,8 +3,9 @@
 /* Version 1.0                                               *
 /* Purpose: Flow trigger for Discord slash commands with     *
 /*          admin gate, snapshots, and silent forwarding to  *
-/*          the "discord-admin" flow.                        *
+/*          the configured flowName from config.             *
 /**************************************************************/
+
 /**************************************************************
 /*                                                          *
 /**************************************************************/
@@ -363,11 +364,8 @@ function getBuildRunCore(createRunCore, interaction, baseWO) {
   if (!wo.clientRef) wo.clientRef = "discord:client";
   if (!wo.refs || typeof wo.refs !== "object") wo.refs = {};
   if (!wo.refs.client) wo.refs.client = "discord:client";
-
   wo.turn_id = getNewUlid();
-
   const snap = getInteractionSnapshot(interaction);
-  wo.flow = "discord-admin";
   wo.id = interaction.channelId || "";
   wo.guildId = interaction.guildId || "";
   wo.payload = { discord: { interaction: snap } };
@@ -380,10 +378,8 @@ function getBuildRunCore(createRunCore, interaction, baseWO) {
     channelId: interaction.channelId || "",
     guildId: interaction.guildId || ""
   };
-
   const createdTs = interaction?.createdTimestamp;
   wo.timestamp = new Date(createdTs || Date.now()).toISOString();
-
   return rc;
 }
 
@@ -398,6 +394,16 @@ function setBindInteractionHandler(client, fn) {
 }
 
 /**************************************************************
+/* functionSignature: getConfigFlowName (baseCore)           *
+/* Reads flowName from config["discord-admin"] or fallback   *
+/**************************************************************/
+function getConfigFlowName(baseCore) {
+  const cfg = baseCore?.config?.["discord-admin"] || baseCore?.config?.discordAdmin || {};
+  const name = typeof cfg.flowName === "string" ? cfg.flowName.trim() : "";
+  return name || MODULE_NAME;
+}
+
+/**************************************************************
 /* functionSignature: setStartWhenClientAvailable (baseCore, *
 /*                     runFlow, createRunCore)               *
 /* Registers commands and routes interactions to the flow    *
@@ -408,8 +414,9 @@ async function setStartWhenClientAvailable(baseCore, runFlow, createRunCore) {
   const baseWO = baseCore?.workingObject || {};
   const root = getWOAdminRoot(baseWO);
   const log = getPrefixedLogger(baseWO, import.meta.url);
+  const flowName = getConfigFlowName(baseCore);
   let ticking = true;
-  async function startOnce() {
+  async function setTryStart() {
     try {
       const clientRef = baseWO.clientRef || "discord:client";
       const client = await getItem(clientRef);
@@ -450,8 +457,9 @@ async function setStartWhenClientAvailable(baseCore, runFlow, createRunCore) {
             }
           } catch {}
           const rc = getBuildRunCore(createRunCore, interaction, baseWO);
+          rc.workingObject.flow = flowName;
           try {
-            await runFlow("discord-admin", rc);
+            await runFlow(flowName, rc);
           } finally {
             if (replied) {
               try { await interaction.deleteReply(); } catch {}
@@ -461,10 +469,10 @@ async function setStartWhenClientAvailable(baseCore, runFlow, createRunCore) {
       });
       await putItem({ at: Date.now() }, INIT_KEY);
       ticking = false;
-      log("discord-admin ready", "info", { moduleName: MODULE_NAME });
+      log("discord-admin ready", "info", { moduleName: MODULE_NAME, flowName });
     } catch {}
   }
-  await startOnce();
+  await setTryStart();
   if (!ticking) return;
   const INTERVAL_KEY = "discord-admin:poller";
   if (await getItem(INTERVAL_KEY)) return;
@@ -473,7 +481,7 @@ async function setStartWhenClientAvailable(baseCore, runFlow, createRunCore) {
       clearInterval(id);
       return;
     }
-    await startOnce();
+    await setTryStart();
     if (!ticking) clearInterval(id);
   }, 1000);
   await putItem({ at: Date.now() }, INTERVAL_KEY);
