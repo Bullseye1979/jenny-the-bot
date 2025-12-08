@@ -45,7 +45,7 @@ function setLog(wo, message, level = "info", extra = {}) {
 
 /**************************************************************
 /* functionSignature: setSessionLight (sessionKey, session)   *
-/* Saves a session without voice-related objects               *
+/* Saves a session without voice-related objects              *
 /**************************************************************/
 async function setSessionLight(sessionKey, session) {
   if (!sessionKey || !session) return;
@@ -134,10 +134,14 @@ function getSanitizedTTSText(text) {
 /**************************************************************/
 export default async function getDiscordVoiceTTS(coreData) {
   const wo = coreData.workingObject || {};
-  if (wo.silentMode) {
-    setLog(wo, "Silent mode enabled -> skip TTS", "info");
+
+  // Hard switch: deactivate TTS entirely before anything else happens
+  if (wo.deactivateSpeech) {
+    setLog(wo, "deactivateSpeech enabled -> skip TTS entirely", "info");
+    wo.ttsSkipped = true; // optional flag for the pipeline
     return coreData;
   }
+
   const raw = (typeof wo.Response === "string" ? wo.Response.trim() : "");
   if (!raw) {
     setLog(wo, "No Response to speak", "warn");
@@ -155,14 +159,17 @@ export default async function getDiscordVoiceTTS(coreData) {
     setLog(wo, "Missing voiceSessionRef", "error");
     return coreData;
   }
+
   let session = null;
   try { session = await getItem(sessionKey); } catch { session = null; }
+
   const connection = session?.connection;
   const guildId = wo.guildId || session?.guildId || null;
   if (!guildId) {
     setLog(wo, "Missing guildId for TTS", "error", { sessionKey });
     return coreData;
   }
+
   const lockKey = getTTSLockKey(guildId);
   const existing = await getItem(lockKey);
   if (getIsLockValid(existing)) {
@@ -173,9 +180,11 @@ export default async function getDiscordVoiceTTS(coreData) {
     wo.ttsSkipped = true;
     return coreData;
   }
+
   const ttlMs = Number(wo.TTSTTL || 60000);
   const owner = `tts:${sessionKey}:${getNow()}:${Math.random().toString(36).slice(2,8)}`;
   await putItem({ owner, since: getNow(), ttlMs, speaking: false }, lockKey);
+
   const failsafe = setTimeout(async () => {
     try {
       const cur = await getItem(lockKey);
@@ -184,9 +193,11 @@ export default async function getDiscordVoiceTTS(coreData) {
       }
     } catch {}
   }, ttlMs + 500);
+
   const PLAY_MAX_MS = Number(wo.TTSPlayMaxMs || 120000);
   let playWatchdog = null;
   let speakPoll = null;
+
   async function setReleaseLock(reason = "unknown") {
     try { clearTimeout(failsafe); } catch {}
     try { if (playWatchdog) clearTimeout(playWatchdog); } catch {}
@@ -199,15 +210,18 @@ export default async function getDiscordVoiceTTS(coreData) {
       }
     } catch {}
   }
+
   const model = wo.TTSModel || "gpt-4o-mini-tts";
   const voice = wo.TTSVoice || "alloy";
   const endpoint = wo.TTSEndpoint || "https://api.openai.com/v1/audio/speech";
   const apiKey = wo.TTSAPIKey || process.env.OPENAI_API_KEY;
+
   if (!apiKey) {
     setLog(wo, "Missing TTS API key", "error");
     await setReleaseLock("no_api_key");
     return coreData;
   }
+
   let oggOpusBuffer;
   try {
     const resp = await fetch(endpoint, {
@@ -232,11 +246,13 @@ export default async function getDiscordVoiceTTS(coreData) {
     await setReleaseLock("request_failed");
     return coreData;
   }
+
   if (!connection) {
     setLog(wo, "No voice connection available", "error", { sessionKey });
     await setReleaseLock("no_connection");
     return coreData;
   }
+
   try {
     await entersState(connection, VoiceConnectionStatus.Ready, 10000);
   } catch {
@@ -244,6 +260,7 @@ export default async function getDiscordVoiceTTS(coreData) {
     await setReleaseLock("not_ready");
     return coreData;
   }
+
   let player = session?.player;
   if (!player) {
     player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
@@ -252,21 +269,25 @@ export default async function getDiscordVoiceTTS(coreData) {
       await setSessionLight(sessionKey, session);
     }
   }
+
   player._ttsRelease = setReleaseLock;
   player._ttsOwner = owner;
   player._ttsLockKey = lockKey;
   player._ttsGuildId = guildId;
+
   if (player.state?.status === AudioPlayerStatus.Playing) {
     setLog(wo, "Player already playing -> release lock & skip TTS", "info");
     await setReleaseLock("player_already_playing");
     return coreData;
   }
+
   if (player && !player._ttsHandlersBound) {
     player.on("error", (e) => {
       const rel = player._ttsRelease;
       try { setLog(wo, `AudioPlayer error: ${e.message}`, "error"); } catch {}
       rel?.("player_error");
     });
+
     player.on(AudioPlayerStatus.Playing, async () => {
       const rel = player._ttsRelease;
       const curOwner = player._ttsOwner;
@@ -279,10 +300,16 @@ export default async function getDiscordVoiceTTS(coreData) {
           await putItem(cur, lk);
         }
       } catch {}
+
       try {
         if (player._ttsPlayWatchdog) clearTimeout(player._ttsPlayWatchdog);
       } catch {}
-      player._ttsPlayWatchdog = setTimeout(() => rel?.("play_watchdog_timeout"), Number(coreData.workingObject?.TTSPlayMaxMs || 120000));
+
+      player._ttsPlayWatchdog = setTimeout(
+        () => rel?.("play_watchdog_timeout"),
+        Number(coreData.workingObject?.TTSPlayMaxMs || 120000)
+      );
+
       player._ttsSpeakPoll = setInterval(() => {
         const st = player.state?.status;
         if (st !== AudioPlayerStatus.Playing) {
@@ -291,16 +318,19 @@ export default async function getDiscordVoiceTTS(coreData) {
         }
       }, 1000);
     });
+
     player.on(AudioPlayerStatus.Idle, () => {
       const rel = player._ttsRelease;
       rel?.("idle");
     });
+
     connection.on?.("stateChange", (_old, newState) => {
       if (newState.status !== VoiceConnectionStatus.Ready) {
         const rel = player._ttsRelease;
         rel?.("conn_state_change");
       }
     });
+
     player._ttsHandlersBound = true;
   } else {
     player._ttsRelease = setReleaseLock;
@@ -308,17 +338,21 @@ export default async function getDiscordVoiceTTS(coreData) {
     player._ttsLockKey = lockKey;
     player._ttsGuildId = guildId;
   }
+
   try {
     const resource = await getResourceFromOggOpusBuffer(oggOpusBuffer);
+
     if (player.state?.status === AudioPlayerStatus.Playing) {
       setLog(wo, "Guard: player already playing -> release lock & skip", "info");
       await setReleaseLock("guard_playing");
       return coreData;
     }
+
     if (!(await getIsStillOwner(lockKey, owner))) {
       setLog(wo, "Guard: lost lock -> skip", "info");
       return coreData;
     }
+
     player.play(resource);
     connection.subscribe(player);
     setLog(wo, "TTS playback started", "info", { bytes: oggOpusBuffer.length, model, voice });
@@ -326,5 +360,6 @@ export default async function getDiscordVoiceTTS(coreData) {
     setLog(wo, "Failed to create or play audio resource", "error", { error: e?.message || String(e) });
     await setReleaseLock("play_failed");
   }
+
   return coreData;
 }
