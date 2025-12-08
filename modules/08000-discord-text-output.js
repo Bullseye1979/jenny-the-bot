@@ -258,7 +258,7 @@ function getBuildYamlQuestionBlock(name, text) {
   const display = String(name || "").trim();
   const norm = String(text || "").replace(/\r\n?/g, "\n");
   const lines = norm.split("\n").map(l => `  ${l || ""}`).join("\n");
-  const header = display ? `${display}: |\n` : "";
+  const header = display ? `<${display}>: \n` : "";
   const body = `${header}${lines}`.trimEnd();
   return "```yaml\n" + body + "\n```";
 }
