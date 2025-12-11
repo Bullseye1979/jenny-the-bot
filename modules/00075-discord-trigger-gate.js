@@ -1,48 +1,84 @@
-/***************************************************************
-/* filename: "discord-trigger-gate.js"                         *
-/* Version 1.0                                                 *
-/* Purpose: Block when user text (wo.payload) does not start   *
-/*          with trigger (wo.trigger); set wo.Response/stop    *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
+/**************************************************************
+/* filename: "discord-trigger-gate.js"                        *
+/* Version 1.0                                                *
+/* Purpose: Block if trigger not in first N words             *
+/**************************************************************/
+/**************************************************************
+/*                                                            *
+/**************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-trigger-gate";
+const DEFAULT_WORD_WINDOW = 1;
 
-/***************************************************************
-/* functionSignature: getDiscordTriggerGate (coreData)         *
-/* Stops flow when payload does not start with configured key  *
-/***************************************************************/
+/**************************************************************
+/* functionSignature: getDiscordTriggerGate (coreData)        *
+/* Stops flow when payload lacks trigger within first N words *
+/**************************************************************/
 export default async function getDiscordTriggerGate(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
 
   const triggerRaw = typeof wo.trigger === "string" ? wo.trigger : "";
   const payloadRaw = typeof wo.payload === "string" ? wo.payload : "";
+  const windowRaw = wo.triggerWordWindow;
 
   if (!triggerRaw.trim()) {
-    log("No trigger set → allow", "info", { moduleName: MODULE_NAME });
+    log("Allowed: no trigger set", "info", { moduleName: MODULE_NAME });
     return coreData;
   }
 
   const trigger = triggerRaw.trim().toLowerCase();
-  const text = payloadRaw.trimStart().toLowerCase();
-  const matches = text.startsWith(trigger);
+  const wordWindow =
+    Number.isInteger(windowRaw) && windowRaw > 0 ? windowRaw : DEFAULT_WORD_WINDOW;
 
-  if (!matches) {
+  const text = payloadRaw.trimStart().toLowerCase();
+
+  if (!text) {
     wo.Response = "STOP";
     wo.stop = true;
-    log("Blocked: payload does not start with trigger", "warn", {
+    log("Blocked: empty payload", "warn", {
       moduleName: MODULE_NAME,
       trigger,
-      sample: payloadRaw.slice(0, 40)
+      wordWindow
     });
     return coreData;
   }
 
-  log("Allowed: payload starts with trigger", "info", { moduleName: MODULE_NAME, trigger });
+  const words = text.split(/\s+/);
+  const limit = Math.min(wordWindow, words.length);
+
+  let matches = false;
+
+  for (let i = 0; i < limit; i++) {
+    const normalizedWord = words[i]
+      .replace(/^[^\p{L}\p{N}]+/gu, "")
+      .replace(/[^\p{L}\p{N}]+$/gu, "");
+
+    if (normalizedWord === trigger) {
+      matches = true;
+      break;
+    }
+  }
+
+  if (!matches) {
+    wo.Response = "STOP";
+    wo.stop = true;
+    log("Blocked: trigger not found in first words", "warn", {
+      moduleName: MODULE_NAME,
+      trigger,
+      wordWindow,
+      sample: payloadRaw.slice(0, 80)
+    });
+    return coreData;
+  }
+
+  log("Allowed: trigger found in first words", "info", {
+    moduleName: MODULE_NAME,
+    trigger,
+    wordWindow
+  });
+
   return coreData;
 }
