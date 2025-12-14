@@ -1,6 +1,6 @@
 /****************************************************************************************************************
 /* filename: "webpage-inpaint.js"                                                                               *
-/* Version 1.0                                                                                                  *
+/* Version 1.1                                                                                                  *
 /* Purpose: Redirects eligible image GET requests under /documents to a configurable inpainting host, sends     *
 /*          the response immediately, and sets jump so normal modules are skipped while jump-modules run.       *
 /****************************************************************************************************************/
@@ -13,17 +13,17 @@ const LOG_PREFIX = `[${MODULE_NAME}]`;
 console.log(LOG_PREFIX, "module loaded");
 
 /****************************************************************************************************************
-/*                                                                                                              *
-/****************************************************************************************************************/
-
-/****************************************************************************************************************
 /* functionSignature: getShouldBypassRedirect (wo, inpaintingHost)                                              *
-/* Determines whether redirect should be bypassed based on user agent and referer including the inpaintingHost  *
+/* Determines whether redirect should be bypassed based on headers (Accept/Sec-Fetch-Dest), user agent and      *
+/* referer including the inpaintingHost.                                                                       *
 /****************************************************************************************************************/
 function getShouldBypassRedirect(wo, inpaintingHost) {
   const headers = wo?.http?.headers || {};
+
   const userAgent = String(headers["user-agent"] || headers["User-Agent"] || "").toLowerCase();
   const referer = String(headers["referer"] || headers["Referer"] || "").toLowerCase();
+  const accept = String(headers["accept"] || headers["Accept"] || "").toLowerCase();
+  const fetchDest = String(headers["sec-fetch-dest"] || headers["Sec-Fetch-Dest"] || "").toLowerCase();
 
   const isDiscord =
     userAgent.includes("discord") ||
@@ -32,9 +32,17 @@ function getShouldBypassRedirect(wo, inpaintingHost) {
     referer.includes("discordcdn") ||
     referer.includes("discord media proxy");
 
-  const isFromInpainting = inpaintingHost ? referer.includes(inpaintingHost.toLowerCase()) : false;
+  const isFromInpainting = inpaintingHost ? referer.includes(String(inpaintingHost).toLowerCase()) : false;
 
-  return isDiscord || isFromInpainting;
+  const acceptsHtml = accept.includes("text/html");
+  const acceptsImage = accept.includes("image/");
+  const acceptsAny = accept.includes("*/*") || accept.trim() === "";
+
+  const likelyWantsBinaryImage = (acceptsImage || acceptsAny) && !acceptsHtml;
+
+  const browserExplicitImageFetch = fetchDest === "image";
+
+  return isDiscord || isFromInpainting || likelyWantsBinaryImage || browserExplicitImageFetch;
 }
 
 /****************************************************************************************************************
@@ -125,7 +133,3 @@ export default async function getWebpageInpaint(coreData) {
 
   return coreData;
 }
-
-/****************************************************************************************************************
-/*                                                                                                              *
-/****************************************************************************************************************/
