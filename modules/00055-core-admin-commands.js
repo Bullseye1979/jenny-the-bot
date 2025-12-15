@@ -87,7 +87,7 @@ export default async function getCoreAdminCommands(coreData) {
       const deletedCount = Number.isFinite(deleted) ? Number(deleted) : 0;
       const countText = String(deletedCount);
 
-      setStop(workingObject, countText, countText);
+      setStop(workingObject, countText, countText+" items removed ");
       return coreData;
     }
 
