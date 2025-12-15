@@ -1,12 +1,13 @@
 /****************************************************************************************************************
-* filename: "webpage-inpaint.js"                                                                               *
-* Version 1.0                                                                                                  *
-* Purpose: Redirects eligible image GET requests under /documents to a configurable inpainting host, sends     *
+* filename: webpage-inpaint.js                                                                                 *
+* version: 1.0                                                                                                 *
+* purpose: Redirects eligible image GET requests under /documents to a configurable inpainting host, sends     *
 *          the response immediately, and sets jump so normal modules are skipped while jump-modules run.       *
+*          Forwards request query param `id` to the redirect target.                                            *
 ****************************************************************************************************************/
 
 /****************************************************************************************************************
-*                                                                                                              *
+* versioning:                                                                                                  *
 ****************************************************************************************************************/
 
 import path from "node:path";
@@ -14,7 +15,7 @@ import { getItem } from "../core/registry.js";
 
 /****************************************************************************************************************
 * functionSignature: getShouldBypassRedirect(wo, inpaintingHost)                                               *
-* Purpose: Determines whether redirect should be bypassed based on headers (Accept/Sec-Fetch-Dest), user agent *
+* purpose: Determines whether redirect should be bypassed based on headers (Accept/Sec-Fetch-Dest), user agent *
 *          and referer including the inpaintingHost.                                                           *
 ****************************************************************************************************************/
 function getShouldBypassRedirect(wo, inpaintingHost) {
@@ -48,7 +49,7 @@ function getShouldBypassRedirect(wo, inpaintingHost) {
 
 /****************************************************************************************************************
 * functionSignature: setSendNow(wo)                                                                            *
-* Purpose: Sends the prepared HTTP response immediately if available.                                          *
+* purpose: Sends the prepared HTTP response immediately if available.                                          *
 ****************************************************************************************************************/
 async function setSendNow(wo) {
   try {
@@ -73,7 +74,7 @@ async function setSendNow(wo) {
 
 /****************************************************************************************************************
 * functionSignature: getWebpageInpaint(coreData)                                                               *
-* Purpose: Applies redirect logic for image documents, writes response, and sets jump.                         *
+* purpose: Applies redirect logic for image documents, writes response, and sets jump.                         *
 ****************************************************************************************************************/
 export default async function getWebpageInpaint(coreData) {
   const wo = coreData?.workingObject || {};
@@ -107,7 +108,16 @@ export default async function getWebpageInpaint(coreData) {
 
   const host = http.host || "xbullseyegaming.de";
   const absoluteUrl = `https://${host}${urlPath}`;
-  const target = `https://${inpaintingHost}/?src=${encodeURIComponent(absoluteUrl)}`;
+
+  const idValue =
+    typeof query.id === "string"
+      ? query.id
+      : Array.isArray(query.id)
+      ? String(query.id[0] ?? "")
+      : "";
+
+  const idPart = idValue ? `&id=${encodeURIComponent(idValue)}` : "";
+  const target = `https://${inpaintingHost}/?src=${encodeURIComponent(absoluteUrl)}${idPart}`;
 
   wo.http.response = {
     status: 303,
