@@ -1,15 +1,15 @@
 /****************************************************************************************************************
-* filename: "api.js"                                                                                           *
-* Version 1.0                                                                                                  *
-* Purpose: HTTP API flow starter (guaranteed JSON response).                                                   *
+* filename: api.js                                                                                               *
+* Version 1.0                                                                                                    *
+* Purpose: HTTP API flow starter (guaranteed JSON response) + polling endpoint for current toolcall registry.    *
+*          Always returns workingObject.Botname (or fallback) so clients can label bot responses.                *
 ****************************************************************************************************************/
-
 /****************************************************************************************************************
 *                                                                                                               *
-*****************************************************************************************************************/
+****************************************************************************************************************/
 
 import http from "node:http";
-import { getPrefixedLogger } from "../core/logging.js";
+import { getItem } from "../core/registry.js";
 
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -17,8 +17,33 @@ let lastTimeMs = 0;
 let lastRandomBytes = new Uint8Array(10).fill(0);
 
 /****************************************************************************************************************
-* functionSignature: getUlid()                                                                                 *
-* Purpose: Creates a monotonic ULID compatible with Discord-style timestamp-first IDs.                         *
+* functionSignature: getStr(value)                                                                               *
+* Purpose: Returns a string; empty string for nullish.                                                           *
+****************************************************************************************************************/
+function getStr(value) {
+  return value == null ? "" : String(value);
+}
+
+/****************************************************************************************************************
+* functionSignature: getBotname(workingObject, baseCore)                                                         *
+* Purpose: Resolves the bot name from workingObject.Botname (preferred) with stable fallbacks.                   *
+****************************************************************************************************************/
+function getBotname(workingObject, baseCore) {
+  const fromWO = getStr(workingObject?.Botname).trim();
+  if (fromWO) return fromWO;
+
+  const fromBase = getStr(baseCore?.workingObject?.Botname).trim();
+  if (fromBase) return fromBase;
+
+  const fromCfg = getStr(baseCore?.config?.botname).trim();
+  if (fromCfg) return fromCfg;
+
+  return "Bot";
+}
+
+/****************************************************************************************************************
+* functionSignature: getUlid()                                                                                   *
+* Purpose: Creates a monotonic ULID compatible with Discord-style timestamp-first IDs.                           *
 ****************************************************************************************************************/
 function getUlid() {
   const nowMs = Date.now();
@@ -65,8 +90,8 @@ function getUlid() {
 }
 
 /****************************************************************************************************************
-* functionSignature: getJson(res, status, body)                                                                *
-* Purpose: Sends a JSON response with standard headers and prevents caching.                                   *
+* functionSignature: getJson(res, status, body)                                                                  *
+* Purpose: Sends a JSON response with standard headers and prevents caching.                                     *
 ****************************************************************************************************************/
 function getJson(res, status, body) {
   res.statusCode = status;
@@ -76,8 +101,8 @@ function getJson(res, status, body) {
 }
 
 /****************************************************************************************************************
-* functionSignature: getReadBody(req, max)                                                                     *
-* Purpose: Reads the request body as UTF-8 up to a maximum size (bytes) and returns a string.                  *
+* functionSignature: getReadBody(req, max)                                                                       *
+* Purpose: Reads the request body as UTF-8 up to a maximum size (bytes) and returns a string.                    *
 ****************************************************************************************************************/
 function getReadBody(req, max = 1024 * 1024) {
   return new Promise((resolve, reject) => {
@@ -111,8 +136,60 @@ function getReadBody(req, max = 1024 * 1024) {
 }
 
 /****************************************************************************************************************
-* functionSignature: getApiFlow(baseCore, runFlow, createRunCore)                                              *
-* Purpose: Starts the HTTP API endpoint, executes the flow per request, and guarantees JSON response.          *
+* functionSignature: getHasToolValue(val)                                                                        *
+* Purpose: True if a registry value effectively contains a tool.                                                 *
+****************************************************************************************************************/
+function getHasToolValue(val) {
+  if (!val) return false;
+  if (typeof val === "string") return val.trim().length > 0;
+  if (typeof val === "object") {
+    if (typeof val.name === "string" && val.name.trim()) return true;
+    if (typeof val.tool === "string" && val.tool.trim()) return true;
+  }
+  return false;
+}
+
+/****************************************************************************************************************
+* functionSignature: getToolIdentity(val)                                                                        *
+* Purpose: Returns a stable identity string for the tool value.                                                  *
+****************************************************************************************************************/
+function getToolIdentity(val) {
+  if (!val) return "";
+  if (typeof val === "string") return val.trim();
+  if (typeof val === "object") {
+    if (typeof val.name === "string" && val.name.trim()) return val.name.trim();
+    if (typeof val.tool === "string" && val.tool.trim()) return val.tool.trim();
+    try {
+      return JSON.stringify(val);
+    } catch {
+      return "[object tool]";
+    }
+  }
+  return String(val);
+}
+
+/****************************************************************************************************************
+* functionSignature: getToolcallSnapshot(registryKey)                                                            *
+* Purpose: Reads the registry and returns a snapshot describing the current toolcall.                            *
+****************************************************************************************************************/
+async function getToolcallSnapshot(registryKey) {
+  const val = await getItem(registryKey);
+  const hasTool = getHasToolValue(val);
+  const identity = hasTool ? getToolIdentity(val) : "";
+
+  return {
+    ok: true,
+    registryKey,
+    hasTool,
+    identity,
+    value: val ?? null,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/****************************************************************************************************************
+* functionSignature: getApiFlow(baseCore, runFlow, createRunCore)                                                *
+* Purpose: Starts the HTTP API endpoint, executes the flow per request, and guarantees JSON response.            *
 ****************************************************************************************************************/
 export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const cfg = baseCore?.config?.api || {};
@@ -120,19 +197,35 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const port = Number(cfg.port || 3400);
   const apiPath = String(cfg.path || "/api");
 
+  const toolcallPath = String(cfg.toolcallPath || "/toolcall");
+  const toolcallRegistryKey = String(cfg.toolcallRegistryKey || "status:tool");
+
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") {
-      return getJson(res, 200, { ok: true });
+      return getJson(res, 200, { ok: true, botname: getBotname(undefined, baseCore) });
+    }
+
+    if (req.method === "GET" && req.url === toolcallPath) {
+      try {
+        const snapshot = await getToolcallSnapshot(toolcallRegistryKey);
+        return getJson(res, 200, { ...snapshot, botname: getBotname(undefined, baseCore) });
+      } catch (e) {
+        return getJson(res, 500, {
+          ok: false,
+          error: "registry_failed",
+          reason: e?.message || String(e),
+          timestamp: new Date().toISOString(),
+          botname: getBotname(undefined, baseCore),
+        });
+      }
     }
 
     if (req.method !== "POST" || req.url !== apiPath) {
-      return getJson(res, 404, { error: "not_found" });
+      return getJson(res, 404, { error: "not_found", botname: getBotname(undefined, baseCore) });
     }
 
     const runCore = createRunCore();
     const workingObject = (runCore.workingObject ||= {});
-    const log = getPrefixedLogger(workingObject, import.meta.url);
-    void log;
 
     workingObject.flow = "api";
     workingObject.turn_id = getUlid();
@@ -141,11 +234,14 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     try {
       parsedBody = JSON.parse(await getReadBody(req));
     } catch {
-      return getJson(res, 400, { error: "invalid_json" });
+      return getJson(res, 400, { error: "invalid_json", botname: getBotname(workingObject, baseCore) });
     }
 
     if (!parsedBody?.id || !parsedBody?.payload) {
-      return getJson(res, 400, { error: "id_and_payload_required" });
+      return getJson(res, 400, {
+        error: "id_and_payload_required",
+        botname: getBotname(workingObject, baseCore),
+      });
     }
 
     workingObject.id = String(parsedBody.id);
@@ -160,7 +256,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       await runFlow("api", runCore);
     } catch {
       if (!res.writableEnded) {
-        return getJson(res, 500, { error: "flow_failed" });
+        return getJson(res, 500, { error: "flow_failed", botname: getBotname(workingObject, baseCore) });
       }
       return;
     }
@@ -177,12 +273,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       turn_id: workingObject.turn_id,
       channelallowed: workingObject.channelallowed,
       response: text && text !== silenceToken ? text : "",
+      botname: getBotname(workingObject, baseCore),
     });
   });
 
-  server.listen(port, host, () => {
-    const c = createRunCore();
-    const startupLog = getPrefixedLogger(c.workingObject, import.meta.url);
-    void startupLog;
-  });
+  server.listen(port, host);
 }
