@@ -2,7 +2,8 @@
 * filename: api.js                                                                                               *
 * Version 1.0                                                                                                    *
 * Purpose: HTTP API flow starter (guaranteed JSON response) + polling endpoint for current toolcall registry.    *
-*          Always returns workingObject.Botname (or fallback) so clients can label bot responses.                *
+*          Toolcall endpoint reads the SAME registry key that toolcall.js watches (config.toolcall.registryKey   *
+*          or default "status:tool"). Always returns workingObject.Botname (or fallback).                        *
 ****************************************************************************************************************/
 /****************************************************************************************************************
 *                                                                                                               *
@@ -39,6 +40,21 @@ function getBotname(workingObject, baseCore) {
   if (fromCfg) return fromCfg;
 
   return "Bot";
+}
+
+/****************************************************************************************************************
+* functionSignature: getToolcallRegistryKey(baseCore, apiCfg)                                                     *
+* Purpose: Uses the SAME registryKey resolution as toolcall.js (config["toolcall"] or config.toolcall).          *
+****************************************************************************************************************/
+function getToolcallRegistryKey(baseCore, apiCfg) {
+  const toolcallCfg = baseCore?.config?.toolcall || baseCore?.config?.toolCall || baseCore?.config?.["toolcall"] || {};
+  const fromToolcall = getStr(toolcallCfg.registryKey).trim();
+  if (fromToolcall) return fromToolcall;
+
+  const fromApi = getStr(apiCfg?.toolcallRegistryKey).trim();
+  if (fromApi) return fromApi;
+
+  return "status:tool";
 }
 
 /****************************************************************************************************************
@@ -198,7 +214,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const apiPath = String(cfg.path || "/api");
 
   const toolcallPath = String(cfg.toolcallPath || "/toolcall");
-  const toolcallRegistryKey = String(cfg.toolcallRegistryKey || "status:tool");
+  const toolcallRegistryKey = getToolcallRegistryKey(baseCore, cfg);
 
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") {
