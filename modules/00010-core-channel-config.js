@@ -1,21 +1,55 @@
-/************************************************************************************
-/* filename: "core-channel-config.js"                                              *
-/* Version 1.0                                                                     *
-/* Purpose: Per-channel overrides; compute channelallowed from workingObject.id;   *
-/*          DM uses id "DM"; flow required; DMs default to "discord". Empty        *
-/*          strings ("") are treated as intentional overrides (no fallback).       *
 /************************************************************************************/
-/************************************************************************************
-/*                                                                                  *
+/* filename: "core-channel-config.js"                                              */
+/* Version 1.0                                                                     */
+/* Purpose: Per-channel overrides; compute channelallowed from workingObject.id;   */
+/*          DM uses id "DM"; flow required; DMs default to "discord". Empty        */
+/*          strings ("") are treated as intentional overrides (no fallback).       */
+/************************************************************************************/
+/************************************************************************************/
+/*                                                                                  */
 /************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-channel-config";
 
-/************************************************************************************
-/* functionSignature: getChannelConfig (coreData)                                   *
-/* Applies per-channel overrides onto coreData.workingObject                        *
+/************************************************************************************/
+/* functionSignature: isPlainObject (v)                                              */
+/* Returns true if v is a plain object                                               */
+/************************************************************************************/
+function isPlainObject(v) {
+  if (!v || typeof v !== "object") return false;
+  if (Array.isArray(v)) return false;
+  return Object.getPrototypeOf(v) === Object.prototype;
+}
+
+/************************************************************************************/
+/* functionSignature: deepMergePlain (target, source)                                */
+/* Deep merges plain objects; arrays are replaced; null/undefined are ignored        */
+/************************************************************************************/
+function deepMergePlain(target, source) {
+  const out = isPlainObject(target) ? { ...target } : {};
+  if (!isPlainObject(source)) return out;
+
+  for (const [k, v] of Object.entries(source)) {
+    if (v === undefined || v === null) continue;
+
+    const cur = out[k];
+
+    if (isPlainObject(cur) && isPlainObject(v)) {
+      out[k] = deepMergePlain(cur, v);
+      continue;
+    }
+
+    out[k] = v;
+  }
+
+  return out;
+}
+
+/************************************************************************************/
+/* functionSignature: getChannelConfig (coreData)                                   */
+/* Applies per-channel overrides onto coreData.workingObject                        */
 /************************************************************************************/
 export default async function getChannelConfig(coreData) {
   const workingObject = coreData?.workingObject || {};
@@ -95,6 +129,12 @@ export default async function getChannelConfig(coreData) {
       const { channelallowed: _c, allow: _a, ...rawOverrides } = entry.overrides;
       for (const [k, v] of Object.entries(rawOverrides)) {
         if (v === undefined || v === null) continue;
+
+        if (k === "toolsconfig" && isPlainObject(v)) {
+          workingObject.toolsconfig = deepMergePlain(workingObject.toolsconfig, v);
+          continue;
+        }
+
         workingObject[k] = v;
       }
       applied++;
