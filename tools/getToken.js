@@ -623,7 +623,7 @@ function getExport() {
           properties: {
             url: { type: "string", description: "Public image or video URL (http/https)." },
             color1: { type: "string", description: "Ring color (CSS/hex). Optional. Default #00b3ff." },
-            pingpong: { type: "boolean", description: "If true: play animation forward then backward (ping-pong) before looping. Increases internal size budget." }
+            pingpong: { type: "boolean", description: "If true: a loopable animation is generated. It generates a gif that plays forward and then backward, so that it can be looped." }
           },
           required: ["url"],
           additionalProperties: false
