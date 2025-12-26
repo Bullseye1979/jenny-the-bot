@@ -1,13 +1,10 @@
-/**************************************************************
-/* filename: "getToken.js"                                    *
-/* Version 1.0                                                *
-/* Purpose: Accept image or video URL, convert videos to GIF, *
-/*  then apply round crop with a single-color ring and return *
-/*  public URLs for all artifacts                             *
 /**************************************************************/
-
-/**************************************************************
-/* Version 1.0:  Standardized format, removed redundancies    *
+/* filename: "getToken.js"                                    */
+/* Version: 1.0                                               */
+/* Purpose: Accept an image or video URL, convert videos to    */
+/*  GIF, apply a circular mask plus a single-color ring, and   */
+/*  return public URLs for all artifacts. Supports ping-pong   */
+/*  playback for animated outputs and enforces final GIF size. */
 /**************************************************************/
 
 import fs from "node:fs";
@@ -15,26 +12,26 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-/**************************************************************
-/* functionSignature: setEnsureDir (absPath)                  *
-/* Ensures a directory exists                                 *
+/**************************************************************/
+/* functionSignature: setEnsureDir (absPath)                  */
+/* Ensures a directory exists                                 */
 /**************************************************************/
 function setEnsureDir(absPath) {
   if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
 }
 
-/**************************************************************
-/* functionSignature: getRandSuffix ()                        *
-/* Returns a short random lowercase base36 suffix              *
+/**************************************************************/
+/* functionSignature: getRandSuffix ()                        */
+/* Returns a short random lowercase base36 suffix              */
 /**************************************************************/
 function getRandSuffix() {
   const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
   return n.slice(-6);
 }
 
-/**************************************************************
-/* functionSignature: getPublicUrl (base, filename)           *
-/* Builds a public URL for a given filename                    *
+/**************************************************************/
+/* functionSignature: getPublicUrl (base, filename)           */
+/* Builds a public URL for a given filename                    */
 /**************************************************************/
 function getPublicUrl(base, filename) {
   if (!base) return `/documents/${filename}`;
@@ -42,9 +39,48 @@ function getPublicUrl(base, filename) {
   return `${trimmed}/documents/${filename}`;
 }
 
-/**************************************************************
-/* functionSignature: getDownloadedBuffer (url)               *
-/* Downloads a URL and returns buffer and content-type         *
+/**************************************************************/
+/* functionSignature: getCleanString (v)                      */
+/* Returns trimmed string or empty string for null/undefined   */
+/**************************************************************/
+function getCleanString(v) {
+  if (typeof v !== "string") return "";
+  const s = v.trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "undefined") return "";
+  if (s.toLowerCase() === "null") return "";
+  return s;
+}
+
+/**************************************************************/
+/* functionSignature: getBool (v)                             */
+/* Parses boolean-ish values safely                            */
+/**************************************************************/
+function getBool(v) {
+  if (v === true) return true;
+  if (v === false) return false;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true" || s === "1" || s === "yes" || s === "y" || s === "on") return true;
+    if (s === "false" || s === "0" || s === "no" || s === "n" || s === "off") return false;
+  }
+  return false;
+}
+
+/**************************************************************/
+/* functionSignature: getIsHttpUrl (s)                        */
+/* Validates basic http/https URL                              */
+/**************************************************************/
+function getIsHttpUrl(s) {
+  if (typeof s !== "string") return false;
+  if (!/^https?:\/\//i.test(s)) return false;
+  return true;
+}
+
+/**************************************************************/
+/* functionSignature: getDownloadedBuffer (url)               */
+/* Downloads a URL and returns buffer and content-type         */
 /**************************************************************/
 async function getDownloadedBuffer(url) {
   const res = await fetch(url, { redirect: "follow" });
@@ -54,9 +90,9 @@ async function getDownloadedBuffer(url) {
   return { buf, ctype };
 }
 
-/**************************************************************
-/* functionSignature: getMediaKind (ctype, url)               *
-/* Guesses whether the media is an image or a video            *
+/**************************************************************/
+/* functionSignature: getMediaKind (ctype, url)               */
+/* Guesses whether the media is an image or a video            */
 /**************************************************************/
 function getMediaKind(ctype, url) {
   const c = String(ctype || "").toLowerCase();
@@ -68,9 +104,9 @@ function getMediaKind(ctype, url) {
   return "unknown";
 }
 
-/**************************************************************
-/* functionSignature: getImageExt (ctype, url)                *
-/* Determines an appropriate image file extension              *
+/**************************************************************/
+/* functionSignature: getImageExt (ctype, url)                */
+/* Determines an appropriate image file extension              */
 /**************************************************************/
 function getImageExt(ctype, url) {
   const c = String(ctype || "").toLowerCase();
@@ -82,9 +118,9 @@ function getImageExt(ctype, url) {
   return ".png";
 }
 
-/**************************************************************
-/* functionSignature: getRun (cmd, args, cwd)                 *
-/* Runs a child process and resolves on success                *
+/**************************************************************/
+/* functionSignature: getRun (cmd, args, cwd)                 */
+/* Runs a child process and resolves on success                */
 /**************************************************************/
 function getRun(cmd, args, cwd) {
   return new Promise((resolve, reject) => {
@@ -96,9 +132,9 @@ function getRun(cmd, args, cwd) {
   });
 }
 
-/**************************************************************
-/* functionSignature: getStrictCfg (wo)                       *
-/* Builds a strict, validated configuration object             *
+/**************************************************************/
+/* functionSignature: getStrictCfg (wo)                       */
+/* Builds a strict, validated configuration object             */
 /**************************************************************/
 function getStrictCfg(wo) {
   const MODULE_NAME = "getToken";
@@ -130,9 +166,9 @@ function getStrictCfg(wo) {
   };
 }
 
-/**************************************************************
-/* functionSignature: getGeometry (size, ringPx)              *
-/* Calculates geometry for circular masking and ring drawing   *
+/**************************************************************/
+/* functionSignature: getGeometry (size, ringPx)              */
+/* Calculates geometry for circular masking and ring drawing   */
 /**************************************************************/
 function getGeometry(size, ringPx) {
   const CX = Math.floor(size / 2);
@@ -143,10 +179,76 @@ function getGeometry(size, ringPx) {
   return { CX, CY, R_MASK, R_OUT, R_DRAW };
 }
 
-/**************************************************************
-/* functionSignature: getGifWithinLimit (cfg, inAbs, outAbs,  *
-/*  maxBytes)                                                 *
-/* Creates a GIF under a byte budget using ffmpeg/gifsicle     *
+/**************************************************************/
+/* functionSignature: getEffectiveMaxBytes (cfg, pingpong)    */
+/* Returns effective byte budget (scaled when pingpong=true)   */
+/**************************************************************/
+function getEffectiveMaxBytes(cfg, pingpong) {
+  const base = cfg.maxMb * 1024 * 1024;
+  return pingpong ? (base * 2) : base;
+}
+
+/**************************************************************/
+/* functionSignature: setOptimizeGifWithinLimit (cfg, inAbs,  */
+/*  outAbs, maxBytes)                                         */
+/* Optimizes (and optionally lossy-compresses) a GIF to fit    */
+/* under maxBytes using gifsicle                               */
+/**************************************************************/
+async function setOptimizeGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
+  try {
+    const st0 = fs.statSync(inAbs);
+    if (st0.size <= maxBytes) {
+      if (inAbs !== outAbs) fs.renameSync(inAbs, outAbs);
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  const dir = path.dirname(outAbs);
+  const base = path.basename(outAbs, ".gif");
+  const optTmp = path.join(dir, `${base}_opt_${getRandSuffix()}.gif`);
+
+  try {
+    await getRun(cfg.gifsiclePath, ["-O3", "-o", optTmp, inAbs], dir);
+    try {
+      const st = fs.statSync(optTmp);
+      if (st.size <= maxBytes) {
+        try { fs.unlinkSync(inAbs); } catch {}
+        fs.renameSync(optTmp, outAbs);
+        return true;
+      }
+    } catch {}
+  } catch {}
+
+  try { fs.unlinkSync(optTmp); } catch {}
+
+  if (cfg.useGifsicleLossy) {
+    for (const q of cfg.gifsicleLossyLevels) {
+      const lossyTmp = path.join(dir, `${base}_lossy${q}_${getRandSuffix()}.gif`);
+      try {
+        await getRun(cfg.gifsiclePath, ["-O3", `--lossy=${q}`, "-o", lossyTmp, inAbs], dir);
+        try {
+          const stL = fs.statSync(lossyTmp);
+          if (stL.size <= maxBytes) {
+            try { fs.unlinkSync(inAbs); } catch {}
+            fs.renameSync(lossyTmp, outAbs);
+            return true;
+          }
+        } catch {}
+      } catch {}
+
+      try { fs.unlinkSync(lossyTmp); } catch {}
+    }
+  }
+
+  return false;
+}
+
+/**************************************************************/
+/* functionSignature: getGifWithinLimit (cfg, inAbs, outAbs,  */
+/*  maxBytes)                                                 */
+/* Creates a GIF under a byte budget using ffmpeg/gifsicle     */
 /**************************************************************/
 async function getGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
   for (const sc of cfg.scaleList) {
@@ -172,14 +274,14 @@ async function getGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
               "-loop", "0",
               tmp
             ], path.dirname(inAbs));
-          } catch (_) {
+          } catch {
             try { fs.unlinkSync(tmp); } catch {}
             try { fs.unlinkSync(palette); } catch {}
             continue;
           }
+
           try { fs.unlinkSync(palette); } catch {}
 
-          let candidate = tmp;
           if (cfg.useGifsicleLossy) {
             for (const q of cfg.gifsicleLossyLevels) {
               const lossyTmp = tmp.replace(/\.gif$/i, `_lossy${q}.gif`);
@@ -199,14 +301,14 @@ async function getGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
           }
 
           try {
-            const st = fs.statSync(candidate);
+            const st = fs.statSync(tmp);
             if (st.size <= maxBytes) {
-              fs.renameSync(candidate, outAbs);
+              fs.renameSync(tmp, outAbs);
               return true;
             }
           } catch {}
 
-          try { fs.unlinkSync(candidate); } catch {}
+          try { fs.unlinkSync(tmp); } catch {}
         }
       }
     }
@@ -214,10 +316,10 @@ async function getGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
   return false;
 }
 
-/**************************************************************
-/* functionSignature: setTokenizeStatic (cfg, inAbs, outAbs,  *
-/*  size, ringColor, ringPx)                                  *
-/* Tokenizes a static image with round mask and ring           *
+/**************************************************************/
+/* functionSignature: setTokenizeStatic (cfg, inAbs, outAbs,  */
+/*  size, ringColor, ringPx)                                  */
+/* Tokenizes a static image with a round mask and ring         */
 /**************************************************************/
 async function setTokenizeStatic(cfg, inAbs, outAbs, size, ringColor, ringPx) {
   const { CX, CY, R_MASK, R_DRAW } = getGeometry(size, ringPx);
@@ -245,12 +347,14 @@ async function setTokenizeStatic(cfg, inAbs, outAbs, size, ringColor, ringPx) {
   await getRun(cfg.magickPath, args, path.dirname(outAbs));
 }
 
-/**************************************************************
-/* functionSignature: setTokenizeAnimated (cfg, inAbs, outAbs,*
-/*  size, ringColor, ringPx)                                  *
-/* Tokenizes an animated image (GIF) with round mask and ring  *
 /**************************************************************/
-async function setTokenizeAnimated(cfg, inAbs, outAbs, size, ringColor, ringPx) {
+/* functionSignature: setTokenizeAnimated (cfg, inAbs, outAbs,*/
+/*  size, ringColor, ringPx, pingpong)                        */
+/* Tokenizes an animated GIF with a round mask and ring. If   */
+/* pingpong=true, appends a reversed copy of frames for        */
+/* forward+reverse playback, then loops.                       */
+/**************************************************************/
+async function setTokenizeAnimated(cfg, inAbs, outAbs, size, ringColor, ringPx, pingpong) {
   const { CX, CY, R_MASK, R_DRAW } = getGeometry(size, ringPx);
   const args = [
     inAbs,
@@ -274,26 +378,45 @@ async function setTokenizeAnimated(cfg, inAbs, outAbs, size, ringColor, ringPx) 
       "-stroke", ringColor, "-strokewidth", String(ringPx), "-fill", "none",
       "-draw", `circle ${CX},${CY} ${CX + R_DRAW},${CY}`,
     ")",
-    "-compose", "Over", "-layers", "Composite",
+    "-compose", "Over", "-layers", "Composite"
+  ];
+
+  if (pingpong) {
+    args.push(
+      "(",
+        "-clone", "0--1",
+        "-reverse",
+      ")"
+    );
+  }
+
+  args.push(
     "-set", "dispose", "previous",
     "-define", "gif:loop=0",
     "-layers", "Optimize",
     outAbs
-  ];
+  );
+
   await getRun(cfg.magickPath, args, path.dirname(outAbs));
 }
 
-/**************************************************************
-/* functionSignature: getInvoke (args, coreData)              *
-/* Main entry: downloads media, converts if needed, tokenizes  *
+/**************************************************************/
+/* functionSignature: getInvoke (args, coreData)              */
+/* Main entry: downloads media, converts if needed, tokenizes  */
 /**************************************************************/
 async function getInvoke(args, coreData) {
   const MODULE_NAME = "getToken";
   const wo = coreData?.workingObject || {};
   const cfg = getStrictCfg(wo);
-  const url = String(args?.url || "").trim();
-  const ringColor = String(args?.color1 || "#00b3ff").trim();
-  if (!url) return { ok: false, error: "Missing 'url'" };
+
+  const url = getCleanString(args?.url);
+  const ringColor = getCleanString(args?.color1) || "#00b3ff";
+  const pingpong = getBool(args?.pingpong);
+
+  if (!url) return { ok: false, error: "Missing 'url'." };
+  if (!getIsHttpUrl(url)) return { ok: false, error: "URL must start with http:// or https://." };
+
+  const effectiveMaxBytes = getEffectiveMaxBytes(cfg, pingpong);
 
   const { buf, ctype } = await getDownloadedBuffer(url);
   const kind = getMediaKind(ctype, url);
@@ -308,15 +431,67 @@ async function getInvoke(args, coreData) {
     const inAbs = path.join(documentsDir, inName);
     fs.writeFileSync(inAbs, buf);
 
-    const gifName = `gif_${Date.now()}_${getRandSuffix()}.gif`;
-    const gifAbs = path.join(documentsDir, gifName);
-    const maxBytes = cfg.maxMb * 1024 * 1024;
-    const okGif = await getGifWithinLimit(cfg, inAbs, gifAbs, maxBytes);
-    if (!okGif) return { ok: false, error: "Could not compress GIF under size limit" };
-
     const tokenName = `token_${Date.now()}_${getRandSuffix()}.gif`;
     const tokenAbs = path.join(documentsDir, tokenName);
-    await setTokenizeAnimated(cfg, gifAbs, tokenAbs, cfg.size, ringColor, cfg.border_px);
+
+    const tryBudgets = [
+      effectiveMaxBytes,
+      Math.floor(effectiveMaxBytes * 0.90),
+      Math.floor(effectiveMaxBytes * 0.80),
+      Math.floor(effectiveMaxBytes * 0.70)
+    ];
+
+    let chosenGifName = null;
+    let chosenGifAbs = null;
+    let okFinal = false;
+
+    for (const budget of tryBudgets) {
+      const gifName = `gif_${Date.now()}_${getRandSuffix()}.gif`;
+      const gifAbs = path.join(documentsDir, gifName);
+
+      const okGif = await getGifWithinLimit(cfg, inAbs, gifAbs, budget);
+      if (!okGif) {
+        try { fs.unlinkSync(gifAbs); } catch {}
+        continue;
+      }
+
+      const tokenTmpName = `token_tmp_${Date.now()}_${getRandSuffix()}.gif`;
+      const tokenTmpAbs = path.join(documentsDir, tokenTmpName);
+
+      try {
+        await setTokenizeAnimated(cfg, gifAbs, tokenTmpAbs, cfg.size, ringColor, cfg.border_px, pingpong);
+      } catch {
+        try { fs.unlinkSync(gifAbs); } catch {}
+        try { fs.unlinkSync(tokenTmpAbs); } catch {}
+        continue;
+      }
+
+      try {
+        const st = fs.statSync(tokenTmpAbs);
+        if (st.size <= effectiveMaxBytes) {
+          fs.renameSync(tokenTmpAbs, tokenAbs);
+          chosenGifName = gifName;
+          chosenGifAbs = gifAbs;
+          okFinal = true;
+          break;
+        }
+      } catch {}
+
+      const okOpt = await setOptimizeGifWithinLimit(cfg, tokenTmpAbs, tokenAbs, effectiveMaxBytes);
+      if (okOpt) {
+        chosenGifName = gifName;
+        chosenGifAbs = gifAbs;
+        okFinal = true;
+        break;
+      }
+
+      try { fs.unlinkSync(gifAbs); } catch {}
+      try { fs.unlinkSync(tokenTmpAbs); } catch {}
+    }
+
+    if (!okFinal) {
+      return { ok: false, error: "Could not create final token GIF under the size limit." };
+    }
 
     return {
       ok: true,
@@ -328,9 +503,9 @@ async function getInvoke(args, coreData) {
         mime: "application/octet-stream"
       },
       intermediate: {
-        filename: gifName,
-        path: gifAbs,
-        url: getPublicUrl(cfg.public_base_url, gifName),
+        filename: chosenGifName,
+        path: chosenGifAbs,
+        url: getPublicUrl(cfg.public_base_url, chosenGifName),
         mime: "image/gif"
       },
       output: {
@@ -338,7 +513,9 @@ async function getInvoke(args, coreData) {
         path: tokenAbs,
         url: getPublicUrl(cfg.public_base_url, tokenName),
         mime: "image/gif",
-        ring_color: ringColor
+        ring_color: ringColor,
+        pingpong,
+        max_bytes_effective: effectiveMaxBytes
       }
     };
   }
@@ -354,7 +531,24 @@ async function getInvoke(args, coreData) {
     if (isGif) {
       const tokenName = `token_${Date.now()}_${getRandSuffix()}.gif`;
       const tokenAbs = path.join(documentsDir, tokenName);
-      await setTokenizeAnimated(cfg, inAbs, tokenAbs, cfg.size, ringColor, cfg.border_px);
+
+      await setTokenizeAnimated(cfg, inAbs, tokenAbs, cfg.size, ringColor, cfg.border_px, pingpong);
+
+      try {
+        const st = fs.statSync(tokenAbs);
+        if (st.size > effectiveMaxBytes) {
+          const tokenTmpName = `token_tmp_${Date.now()}_${getRandSuffix()}.gif`;
+          const tokenTmpAbs = path.join(documentsDir, tokenTmpName);
+          fs.renameSync(tokenAbs, tokenTmpAbs);
+
+          const okOpt = await setOptimizeGifWithinLimit(cfg, tokenTmpAbs, tokenAbs, effectiveMaxBytes);
+          if (!okOpt) {
+            try { fs.unlinkSync(tokenTmpAbs); } catch {}
+            return { ok: false, error: "Final token GIF exceeds size limit." };
+          }
+        }
+      } catch {}
+
       return {
         ok: true,
         kind: "image-animated",
@@ -369,45 +563,51 @@ async function getInvoke(args, coreData) {
           path: tokenAbs,
           url: getPublicUrl(cfg.public_base_url, tokenName),
           mime: "image/gif",
-          ring_color: ringColor
-        }
-      };
-    } else {
-      const tokenName = `token_${Date.now()}_${getRandSuffix()}.png`;
-      const tokenAbs = path.join(documentsDir, tokenName);
-      await setTokenizeStatic(cfg, inAbs, tokenAbs, cfg.size, ringColor, cfg.border_px);
-      const origMime = /\.png$/i.test(inName) ? "image/png" :
-                       /\.jpe?g$/i.test(inName) ? "image/jpeg" :
-                       /\.webp$/i.test(inName) ? "image/webp" :
-                       /\.bmp$/i.test(inName) ? "image/bmp" : "application/octet-stream";
-      return {
-        ok: true,
-        kind: "image-static",
-        original: {
-          filename: inName,
-          path: inAbs,
-          url: getPublicUrl(cfg.public_base_url, inName),
-          mime: origMime
-        },
-        output: {
-          filename: tokenName,
-          path: tokenAbs,
-          url: getPublicUrl(cfg.public_base_url, tokenName),
-          mime: "image/png",
-          ring_color: ringColor
+          ring_color: ringColor,
+          pingpong,
+          max_bytes_effective: effectiveMaxBytes
         }
       };
     }
+
+    const tokenName = `token_${Date.now()}_${getRandSuffix()}.png`;
+    const tokenAbs = path.join(documentsDir, tokenName);
+    await setTokenizeStatic(cfg, inAbs, tokenAbs, cfg.size, ringColor, cfg.border_px);
+
+    const origMime = /\.png$/i.test(inName) ? "image/png" :
+                     /\.jpe?g$/i.test(inName) ? "image/jpeg" :
+                     /\.webp$/i.test(inName) ? "image/webp" :
+                     /\.bmp$/i.test(inName) ? "image/bmp" : "application/octet-stream";
+
+    return {
+      ok: true,
+      kind: "image-static",
+      original: {
+        filename: inName,
+        path: inAbs,
+        url: getPublicUrl(cfg.public_base_url, inName),
+        mime: origMime
+      },
+      output: {
+        filename: tokenName,
+        path: tokenAbs,
+        url: getPublicUrl(cfg.public_base_url, tokenName),
+        mime: "image/png",
+        ring_color: ringColor,
+        pingpong: false,
+        max_bytes_effective: null
+      }
+    };
   }
 
-  return { ok: false, error: "Unsupported media type" };
+  return { ok: false, error: "Unsupported media type." };
 }
 
 const MODULE_NAME = "getToken";
 
-/**************************************************************
-/* functionSignature: getExport ()                            *
-/* Provides the tool export definition                         *
+/**************************************************************/
+/* functionSignature: getExport ()                            */
+/* Provides the tool export definition                         */
 /**************************************************************/
 function getExport() {
   return {
@@ -417,12 +617,13 @@ function getExport() {
       function: {
         name: MODULE_NAME,
         description:
-          "Accept an image or video URL. Videos are converted to an animated GIF (size limited by toolsconfig). Then the media is tokenized: round mask + single-color ring (color1). Returns hosted URLs under /documents.",
+          "Accept an image or video URL (http/https). Videos are converted to an animated GIF under toolsconfig.maxMb, then tokenized with a round mask plus a single-color ring (color1). If pingpong=true, frames are duplicated forward+reverse before looping, and the internal byte budget is scaled (x2). The final GIF output is kept under the effective byte budget using optimization where possible. Returns hosted URLs under /documents.",
         parameters: {
           type: "object",
           properties: {
-            url: { type: "string", description: "Public image or video URL." },
-            color1: { type: "string", description: "Ring color (CSS/hex). Optional. Default #00b3ff." }
+            url: { type: "string", description: "Public image or video URL (http/https)." },
+            color1: { type: "string", description: "Ring color (CSS/hex). Optional. Default #00b3ff." },
+            pingpong: { type: "boolean", description: "If true: play animation forward then backward (ping-pong) before looping. Increases internal size budget." }
           },
           required: ["url"],
           additionalProperties: false
