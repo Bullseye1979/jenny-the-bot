@@ -96,6 +96,8 @@ export default async function getDiscordStatusPrepareFlow(baseCore) {
   workingObject.Tools = [];
   workingObject.doNotWriteToContext = true;
 
+  workingObject.simplifiedContext = true;
+
   log(
     `prepared status prompt (len=${prompt.length}) for randomly chosen channel ${targetChannel} (pool size=${allowedList.length})`,
     "debug",
