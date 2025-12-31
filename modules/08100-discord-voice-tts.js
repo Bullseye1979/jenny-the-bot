@@ -1,12 +1,13 @@
-/**************************************************************
-/* filename: "discord-voice-tts.js"                            *
-/* Version 1.0                                                *
-/* Purpose: Speak wo.Response once per guild; later TTS is     *
-/*          skipped while pipeline persists; events always     *
-/*          use the current run                                *
 /**************************************************************/
-/**************************************************************
-/*                                                            *
+/* filename: "discord-voice-tts.js"                            */
+/* Version: 1.0                                                */
+/* Purpose: Speak wo.Response with optional [Speaker: <voice>]  */
+/*          tags, prerender segments, and play sequentially     */
+/* Notes:                                                      */
+/*  - wo.TTSVoice is only the default voice.                   */
+/*  - [speaker: <name>] is treated as the voice enum to use    */
+/*    from that point on (lowercased).                         */
+/*  - [speaker: default] or unclear/empty uses default voice.  */
 /**************************************************************/
 
 import { getItem, putItem, deleteItem } from "../core/registry.js";
@@ -21,16 +22,18 @@ import {
 } from "@discordjs/voice";
 import { Readable } from "node:stream";
 
-/**************************************************************
-/* functionSignature: getNow ()                               *
-/* Returns the current timestamp in milliseconds              *
 /**************************************************************/
-function getNow() { return Date.now(); }
+/* functionSignature: getNow ()                               */
+/* Returns the current timestamp in milliseconds              */
+/**************************************************************/
+function getNow() {
+  return Date.now();
+}
 
-/**************************************************************
-/* functionSignature: setLog (wo, message, level = "info",    *
-/* extra = {})                                                *
-/* Appends a structured log entry into the working object     *
+/**************************************************************/
+/* functionSignature: setLog (wo, message, level = "info",     */
+/* extra = {})                                                */
+/* Appends a structured log entry into the working object     */
 /**************************************************************/
 function setLog(wo, message, level = "info", extra = {}) {
   (wo.logging ||= []).push({
@@ -43,19 +46,23 @@ function setLog(wo, message, level = "info", extra = {}) {
   });
 }
 
-/**************************************************************
-/* functionSignature: setSessionLight (sessionKey, session)   *
-/* Saves a session without voice-related objects              *
+/**************************************************************/
+/* functionSignature: setSessionLight (sessionKey, session)   */
+/* Saves a session without voice-related objects              */
 /**************************************************************/
 async function setSessionLight(sessionKey, session) {
   if (!sessionKey || !session) return;
+
   const { player, connection, ...rest } = session;
-  try { await putItem(rest, sessionKey); } catch {}
+
+  try {
+    await putItem(rest, sessionKey);
+  } catch {}
 }
 
-/**************************************************************
-/* functionSignature: getBufferToBinaryStream (buf)           *
-/* Converts a Buffer to a one-shot readable stream            *
+/**************************************************************/
+/* functionSignature: getBufferToBinaryStream (buf)           */
+/* Converts a Buffer to a one-shot readable stream            */
 /**************************************************************/
 function getBufferToBinaryStream(buf) {
   return new Readable({
@@ -66,9 +73,9 @@ function getBufferToBinaryStream(buf) {
   });
 }
 
-/**************************************************************
-/* functionSignature: getResourceFromOggOpusBuffer (buf)      *
-/* Probes and builds a Discord audio resource from OGG/Opus   *
+/**************************************************************/
+/* functionSignature: getResourceFromOggOpusBuffer (buf)      */
+/* Probes and builds a Discord audio resource from OGG/Opus   */
 /**************************************************************/
 async function getResourceFromOggOpusBuffer(buf) {
   const bin = getBufferToBinaryStream(buf);
@@ -76,17 +83,17 @@ async function getResourceFromOggOpusBuffer(buf) {
   return createAudioResource(stream, { inputType: type });
 }
 
-/**************************************************************
-/* functionSignature: getTTSLockKey (guildId)                 *
-/* Builds a lock key for a guild-specific TTS mutex           *
+/**************************************************************/
+/* functionSignature: getTTSLockKey (guildId)                 */
+/* Builds a lock key for a guild-specific TTS mutex           */
 /**************************************************************/
 function getTTSLockKey(guildId) {
   return `tts-lock-${guildId}`;
 }
 
-/**************************************************************
-/* functionSignature: getIsLockValid (lock)                   *
-/* Validates whether a stored lock object is still active     *
+/**************************************************************/
+/* functionSignature: getIsLockValid (lock)                   */
+/* Validates whether a stored lock object is still active     */
 /**************************************************************/
 function getIsLockValid(lock) {
   if (!lock || typeof lock !== "object") return false;
@@ -94,29 +101,32 @@ function getIsLockValid(lock) {
   return (getNow() - Number(lock.since || 0)) < ttl;
 }
 
-/**************************************************************
-/* functionSignature: getIsStillOwner (lockKey, owner)        *
-/* Checks if the caller still owns the active lock            *
+/**************************************************************/
+/* functionSignature: getIsStillOwner (lockKey, owner)        */
+/* Checks if the caller still owns the active lock            */
 /**************************************************************/
 async function getIsStillOwner(lockKey, owner) {
   const cur = await getItem(lockKey);
   return !!cur && cur.owner === owner && getIsLockValid(cur);
 }
 
-/**************************************************************
-/* functionSignature: getSanitizedTTSText (text)              *
-/* Strips link targets so TTS reads only the visible text     *
+/**************************************************************/
+/* functionSignature: getSanitizedTTSText (text)              */
+/* Strips link targets so TTS reads only the visible text     */
 /**************************************************************/
 function getSanitizedTTSText(text) {
   if (!text) return "";
 
   let s = String(text);
+
   s = s.replace(/!\[([^\]]*)\]\(\s*https?:\/\/[^\s)]+?\s*\)/gi, (_, alt) => {
     return (alt || "").trim();
   });
+
   s = s.replace(/\[([^\]]+)\]\(\s*https?:\/\/[^\s)]+?\s*\)/gi, (_, alt) => {
     return (alt || "").trim();
   });
+
   s = s.replace(/<\s*https?:\/\/[^>]+>/gi, "");
   s = s.replace(/\bhttps?:\/\/[^\s)>\]}]+/gi, "");
   s = s.replace(/[ \t]{2,}/g, " ");
@@ -125,20 +135,148 @@ function getSanitizedTTSText(text) {
   s = s.replace(/\(\s*\)/g, "");
   s = s.replace(/\[\s*\]/g, "");
   s = s.replace(/\{\s*\}/g, "");
+
   return s.trim();
 }
 
-/**************************************************************
-/* functionSignature: getDiscordVoiceTTS (coreData)           *
-/* Speaks wo.Response through a single TTS stream per guild   *
+/**************************************************************/
+/* functionSignature: getNormalizedTagValue (raw)             */
+/* Normalizes a [speaker: ...] tag value                      */
+/**************************************************************/
+function getNormalizedTagValue(raw) {
+  let s = (raw ?? "");
+  if (typeof s !== "string") s = String(s);
+
+  s = s.trim();
+  s = s.replace(/^<\s*/g, "");
+  s = s.replace(/\s*>$/g, "");
+  s = s.replace(/\s+/g, " ");
+  s = s.toLowerCase();
+
+  return s;
+}
+
+/**************************************************************/
+/* functionSignature: getNormalizedVoiceKey (voiceRaw)        */
+/* Normalizes a voice name into a stable API enum             */
+/**************************************************************/
+function getNormalizedVoiceKey(voiceRaw) {
+  let v = (voiceRaw ?? "");
+  if (typeof v !== "string") v = String(v);
+  return v.trim().toLowerCase();
+}
+
+/**************************************************************/
+/* functionSignature: getTTSSpeakerSegments (rawText)         */
+/* Splits text into voice segments based on [Speaker: <voice>]*/
+/* - Tag value is used as the voice enum                      */
+/* - "default"/empty maps to sentinel "default"               */
+/**************************************************************/
+function getTTSSpeakerSegments(rawText) {
+  const src = (typeof rawText === "string" ? rawText : String(rawText ?? ""));
+  const re = /\[\s*speaker\s*:\s*([^\]]*?)\s*\]/gi;
+
+  const segments = [];
+  let foundTag = false;
+  let current = "default";
+  let lastIndex = 0;
+  let m;
+
+  while ((m = re.exec(src)) !== null) {
+    foundTag = true;
+
+    const chunk = src.slice(lastIndex, m.index);
+    if (chunk) segments.push({ voice: current, text: chunk });
+
+    const tagVal = getNormalizedTagValue(m[1]);
+    if (!tagVal || tagVal === "default") current = "default";
+    else current = tagVal;
+
+    lastIndex = m.index + m[0].length;
+  }
+
+  const tail = src.slice(lastIndex);
+  if (tail) segments.push({ voice: current, text: tail });
+
+  const cleaned = [];
+  for (const seg of segments) {
+    const t = getSanitizedTTSText(seg.text);
+    if (!t) continue;
+
+    const voice = getNormalizedVoiceKey(seg.voice) || "default";
+
+    if (!cleaned.length) {
+      cleaned.push({ voice, text: t });
+      continue;
+    }
+
+    const prev = cleaned[cleaned.length - 1];
+    if (prev.voice === voice) prev.text = `${prev.text}\n\n${t}`.trim();
+    else cleaned.push({ voice, text: t });
+  }
+
+  return { segments: cleaned, foundTag };
+}
+
+/**************************************************************/
+/* functionSignature: getRenderConcurrency (wo, segmentsLen)  */
+/* Picks a safe default concurrency for prerendering          */
+/**************************************************************/
+function getRenderConcurrency(wo, segmentsLen) {
+  const v = Number(wo?.TTSRenderConcurrency);
+  if (Number.isFinite(v) && v > 0) return Math.min(8, Math.max(1, Math.floor(v)));
+  if (segmentsLen <= 1) return 1;
+  return 2;
+}
+
+/**************************************************************/
+/* functionSignature: getPrerenderedSegmentBuffers (items,    */
+/* concurrency, guardFn, refreshFn, renderFn)                 */
+/* Prefetches TTS audio buffers with limited concurrency      */
+/**************************************************************/
+async function getPrerenderedSegmentBuffers(items, concurrency, guardFn, refreshFn, renderFn) {
+  const out = new Array(items.length);
+  let next = 0;
+
+  /**************************************************************/
+  /* functionSignature: worker (workerId)                        */
+  /* Worker loop for prerender queue                             */
+  /**************************************************************/
+  const worker = async (workerId) => {
+    while (true) {
+      const idx = next;
+      next += 1;
+      if (idx >= items.length) return;
+
+      if (!(await guardFn())) throw new Error("Lost lock while prerendering");
+      await refreshFn(`render_segment_${idx + 1}_of_${items.length}_w${workerId}`);
+
+      const it = items[idx];
+      const buf = await renderFn(it.text, it.voice);
+      out[idx] = { ...it, buffer: buf };
+
+      await refreshFn(`rendered_segment_${idx + 1}_of_${items.length}_w${workerId}`);
+    }
+  };
+
+  const workers = [];
+  const n = Math.max(1, Math.min(concurrency, items.length));
+  for (let i = 0; i < n; i++) workers.push(worker(i + 1));
+
+  await Promise.all(workers);
+  return out;
+}
+
+/**************************************************************/
+/* functionSignature: getDiscordVoiceTTS (coreData)           */
+/* Speaks wo.Response through a single TTS stream per guild   */
 /**************************************************************/
 export default async function getDiscordVoiceTTS(coreData) {
   const wo = coreData.workingObject || {};
 
-  // Hard switch: deactivate TTS entirely before anything else happens
   if (wo.deactivateSpeech) {
     setLog(wo, "deactivateSpeech enabled -> skip TTS entirely", "info");
-    wo.ttsSkipped = true; // optional flag for the pipeline
+    wo.ttsSkipped = true;
     return coreData;
   }
 
@@ -148,8 +286,8 @@ export default async function getDiscordVoiceTTS(coreData) {
     return coreData;
   }
 
-  const text = getSanitizedTTSText(raw);
-  if (!text) {
+  const { segments: voiceSegments, foundTag } = getTTSSpeakerSegments(raw);
+  if (!voiceSegments.length) {
     setLog(wo, "Response only contained links -> nothing to speak after sanitizing", "info");
     return coreData;
   }
@@ -161,7 +299,11 @@ export default async function getDiscordVoiceTTS(coreData) {
   }
 
   let session = null;
-  try { session = await getItem(sessionKey); } catch { session = null; }
+  try {
+    session = await getItem(sessionKey);
+  } catch {
+    session = null;
+  }
 
   const connection = session?.connection;
   const guildId = wo.guildId || session?.guildId || null;
@@ -182,26 +324,49 @@ export default async function getDiscordVoiceTTS(coreData) {
   }
 
   const ttlMs = Number(wo.TTSTTL || 60000);
-  const owner = `tts:${sessionKey}:${getNow()}:${Math.random().toString(36).slice(2,8)}`;
+  const owner = `tts:${sessionKey}:${getNow()}:${Math.random().toString(36).slice(2, 8)}`;
   await putItem({ owner, since: getNow(), ttlMs, speaking: false }, lockKey);
 
-  const failsafe = setTimeout(async () => {
+  let failsafe = null;
+
+  /**************************************************************/
+  /* functionSignature: bumpLockFailsafe ()                      */
+  /* Arms/rearms a failsafe timer to release stale locks         */
+  /**************************************************************/
+  function bumpLockFailsafe() {
     try {
-      const cur = await getItem(lockKey);
-      if (cur?.owner === owner) {
-        await deleteItem(lockKey);
+      if (failsafe) clearTimeout(failsafe);
+    } catch {}
+
+    failsafe = setTimeout(async () => {
+      try {
+        const cur = await getItem(lockKey);
+        if (cur?.owner === owner) await deleteItem(lockKey);
+      } catch {}
+    }, ttlMs + 500);
+  }
+
+  bumpLockFailsafe();
+
+  /**************************************************************/
+  /* functionSignature: setReleaseLock (reason = "unknown")      */
+  /* Releases the guild lock for this run (best-effort)          */
+  /**************************************************************/
+  async function setReleaseLock(reason = "unknown") {
+    try {
+      if (failsafe) clearTimeout(failsafe);
+    } catch {}
+
+    try {
+      const player = session?.player;
+      if (player?._ttsPlayWatchdog) clearTimeout(player._ttsPlayWatchdog);
+      if (player?._ttsSpeakPoll) clearInterval(player._ttsSpeakPoll);
+      if (player) {
+        player._ttsPlayWatchdog = null;
+        player._ttsSpeakPoll = null;
       }
     } catch {}
-  }, ttlMs + 500);
 
-  const PLAY_MAX_MS = Number(wo.TTSPlayMaxMs || 120000);
-  let playWatchdog = null;
-  let speakPoll = null;
-
-  async function setReleaseLock(reason = "unknown") {
-    try { clearTimeout(failsafe); } catch {}
-    try { if (playWatchdog) clearTimeout(playWatchdog); } catch {}
-    try { if (speakPoll) clearInterval(speakPoll); } catch {}
     try {
       const cur = await getItem(lockKey);
       if (cur?.owner === owner) {
@@ -212,7 +377,7 @@ export default async function getDiscordVoiceTTS(coreData) {
   }
 
   const model = wo.TTSModel || "gpt-4o-mini-tts";
-  const voice = wo.TTSVoice || "alloy";
+  const defaultVoice = getNormalizedVoiceKey(wo.TTSVoice) || "alloy";
   const endpoint = wo.TTSEndpoint || "https://api.openai.com/v1/audio/speech";
   const apiKey = wo.TTSAPIKey || process.env.OPENAI_API_KEY;
 
@@ -222,29 +387,63 @@ export default async function getDiscordVoiceTTS(coreData) {
     return coreData;
   }
 
-  let oggOpusBuffer;
-  try {
+  /**************************************************************/
+  /* functionSignature: refreshLock (reason = "refresh")         */
+  /* Refreshes lock TTL and re-arms failsafe                     */
+  /**************************************************************/
+  async function refreshLock(reason = "refresh") {
+    try {
+      const cur = await getItem(lockKey);
+      if (cur?.owner !== owner) return false;
+
+      cur.since = getNow();
+      cur.lastRefreshReason = reason;
+
+      await putItem(cur, lockKey);
+      bumpLockFailsafe();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**************************************************************/
+  /* functionSignature: guardOwner ()                            */
+  /* Verifies this execution still owns the active lock          */
+  /**************************************************************/
+  async function guardOwner() {
+    return await getIsStillOwner(lockKey, owner);
+  }
+
+  /**************************************************************/
+  /* functionSignature: getTTSBufferForSegment (input, voice)    */
+  /* Calls the TTS endpoint and returns an Opus buffer           */
+  /**************************************************************/
+  async function getTTSBufferForSegment(input, voice) {
+    const v = getNormalizedVoiceKey(voice) || defaultVoice;
+
     const resp = await fetch(endpoint, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, voice, input: text, format: "opus" })
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        voice: v,
+        input,
+        response_format: "opus"
+      })
     });
+
     if (!resp.ok) {
       const errTxt = await resp.text().catch(() => "");
-      setLog(wo, `TTS HTTP ${resp.status}`, "error", { body: errTxt.slice(0, 400) });
-      await setReleaseLock("http_error");
-      return coreData;
+      throw new Error(`TTS HTTP ${resp.status}: ${errTxt.slice(0, 200)}`);
     }
-    oggOpusBuffer = Buffer.from(await resp.arrayBuffer());
-    if (!oggOpusBuffer?.length) {
-      setLog(wo, "Empty TTS audio buffer", "error");
-      await setReleaseLock("empty_buffer");
-      return coreData;
-    }
-  } catch (e) {
-    setLog(wo, "TTS request failed", "error", { error: e?.message || String(e) });
-    await setReleaseLock("request_failed");
-    return coreData;
+
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (!buf?.length) throw new Error("Empty TTS audio buffer");
+    return buf;
   }
 
   if (!connection) {
@@ -275,6 +474,9 @@ export default async function getDiscordVoiceTTS(coreData) {
   player._ttsLockKey = lockKey;
   player._ttsGuildId = guildId;
 
+  const hasMultiVoice = foundTag && voiceSegments.length > 1;
+  player._ttsAutoRelease = !hasMultiVoice;
+
   if (player.state?.status === AudioPlayerStatus.Playing) {
     setLog(wo, "Player already playing -> release lock & skip TTS", "info");
     await setReleaseLock("player_already_playing");
@@ -284,7 +486,9 @@ export default async function getDiscordVoiceTTS(coreData) {
   if (player && !player._ttsHandlersBound) {
     player.on("error", (e) => {
       const rel = player._ttsRelease;
-      try { setLog(wo, `AudioPlayer error: ${e.message}`, "error"); } catch {}
+      try {
+        setLog(wo, `AudioPlayer error: ${e.message}`, "error");
+      } catch {}
       rel?.("player_error");
     });
 
@@ -292,6 +496,7 @@ export default async function getDiscordVoiceTTS(coreData) {
       const rel = player._ttsRelease;
       const curOwner = player._ttsOwner;
       const lk = player._ttsLockKey;
+
       try {
         const cur = await getItem(lk);
         if (cur?.owner === curOwner) {
@@ -313,15 +518,31 @@ export default async function getDiscordVoiceTTS(coreData) {
       player._ttsSpeakPoll = setInterval(() => {
         const st = player.state?.status;
         if (st !== AudioPlayerStatus.Playing) {
-          const r = player._ttsRelease;
-          r?.("speak_poll_end");
+          try {
+            if (player._ttsSpeakPoll) clearInterval(player._ttsSpeakPoll);
+          } catch {}
+
+          player._ttsSpeakPoll = null;
+
+          if (player._ttsAutoRelease) {
+            const r = player._ttsRelease;
+            r?.("speak_poll_end");
+          }
         }
       }, 1000);
     });
 
     player.on(AudioPlayerStatus.Idle, () => {
-      const rel = player._ttsRelease;
-      rel?.("idle");
+      try {
+        if (player._ttsSpeakPoll) clearInterval(player._ttsSpeakPoll);
+      } catch {}
+
+      player._ttsSpeakPoll = null;
+
+      if (player._ttsAutoRelease) {
+        const rel = player._ttsRelease;
+        rel?.("idle");
+      }
     });
 
     connection.on?.("stateChange", (_old, newState) => {
@@ -339,27 +560,117 @@ export default async function getDiscordVoiceTTS(coreData) {
     player._ttsGuildId = guildId;
   }
 
-  try {
-    const resource = await getResourceFromOggOpusBuffer(oggOpusBuffer);
+  const renderItems = [];
+  for (let i = 0; i < voiceSegments.length; i++) {
+    const seg = voiceSegments[i];
 
-    if (player.state?.status === AudioPlayerStatus.Playing) {
-      setLog(wo, "Guard: player already playing -> release lock & skip", "info");
-      await setReleaseLock("guard_playing");
-      return coreData;
-    }
+    const tagVoice = getNormalizedVoiceKey(seg.voice);
+    const effectiveVoice = (!tagVoice || tagVoice === "default") ? defaultVoice : tagVoice;
 
-    if (!(await getIsStillOwner(lockKey, owner))) {
-      setLog(wo, "Guard: lost lock -> skip", "info");
-      return coreData;
-    }
-
-    player.play(resource);
-    connection.subscribe(player);
-    setLog(wo, "TTS playback started", "info", { bytes: oggOpusBuffer.length, model, voice });
-  } catch (e) {
-    setLog(wo, "Failed to create or play audio resource", "error", { error: e?.message || String(e) });
-    await setReleaseLock("play_failed");
+    renderItems.push({
+      index: i,
+      voice: effectiveVoice,
+      text: seg.text
+    });
   }
 
+  const renderConcurrency = getRenderConcurrency(wo, renderItems.length);
+  let prerendered = null;
+
+  try {
+    if (renderItems.length > 1) {
+      setLog(wo, "TTS prerender started", "info", {
+        segments: renderItems.length,
+        concurrency: renderConcurrency
+      });
+
+      prerendered = await getPrerenderedSegmentBuffers(
+        renderItems,
+        renderConcurrency,
+        guardOwner,
+        refreshLock,
+        getTTSBufferForSegment
+      );
+
+      setLog(wo, "TTS prerender finished", "info", {
+        segments: prerendered.length,
+        bytesTotal: prerendered.reduce((a, x) => a + (x?.buffer?.length || 0), 0)
+      });
+    } else {
+      await refreshLock("render_single_segment");
+
+      const one = renderItems[0];
+      const buf = await getTTSBufferForSegment(one.text, one.voice);
+      prerendered = [{ ...one, buffer: buf }];
+    }
+  } catch (e) {
+    setLog(wo, "Failed during TTS prerender", "error", { error: e?.message || String(e) });
+    await setReleaseLock("prerender_failed");
+    return coreData;
+  }
+
+  const PLAY_MAX_MS = Number(wo.TTSPlayMaxMs || 120000);
+
+  try {
+    for (let i = 0; i < prerendered.length; i++) {
+      const seg = prerendered[i];
+
+      if (player.state?.status === AudioPlayerStatus.Playing) {
+        setLog(wo, "Guard: player already playing -> abort", "info");
+        await setReleaseLock("guard_playing");
+        return coreData;
+      }
+
+      if (!(await guardOwner())) {
+        setLog(wo, "Guard: lost lock -> abort", "info");
+        return coreData;
+      }
+
+      await refreshLock(`play_segment_${i + 1}_of_${prerendered.length}`);
+
+      const resource = await getResourceFromOggOpusBuffer(seg.buffer);
+
+      player.play(resource);
+      connection.subscribe(player);
+
+      setLog(wo, "TTS segment playback started", "info", {
+        segment: i + 1,
+        segments: prerendered.length,
+        voice: seg.voice,
+        bytes: seg.buffer.length,
+        model
+      });
+
+      try {
+        await entersState(player, AudioPlayerStatus.Playing, 15000);
+      } catch {
+        setLog(wo, "TTS segment failed to enter Playing state", "warn", { segment: i + 1 });
+      }
+
+      try {
+        await entersState(player, AudioPlayerStatus.Idle, PLAY_MAX_MS);
+      } catch {
+        setLog(wo, "TTS segment playback timeout", "warn", { segment: i + 1, maxMs: PLAY_MAX_MS });
+        await setReleaseLock("segment_timeout");
+        return coreData;
+      }
+    }
+
+    if (!hasMultiVoice) {
+      setLog(wo, "TTS playback finished", "info", { model, voice: defaultVoice });
+    } else {
+      setLog(wo, "TTS multi-voice playback finished", "info", {
+        model,
+        defaultVoice,
+        usedVoices: Array.from(new Set(prerendered.map(s => s.voice || defaultVoice)))
+      });
+    }
+  } catch (e) {
+    setLog(wo, "Failed during multi-segment playback", "error", { error: e?.message || String(e) });
+    await setReleaseLock("multi_segment_failed");
+    return coreData;
+  }
+
+  await setReleaseLock("end_of_segments");
   return coreData;
 }
