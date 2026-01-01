@@ -407,6 +407,74 @@ function setPruneFinishedFlows(max = MAX_FINISHED_FLOWS) {
 }
 
 /**************************************************************
+/* functionSignature: getModuleAddSet (arr)                  *
+/* Normalizes flowModuleAdd into a Set of module names       *
+/**************************************************************/
+function getModuleAddSet(arr) {
+  const out = new Set();
+  const list = Array.isArray(arr) ? arr : [];
+  for (const item of list) {
+    let v = item;
+    if (typeof item === "object" && item) {
+      if (typeof item.name === "string") v = item.name;
+      else if (typeof item.module === "string") v = item.module;
+      else if (typeof item.id === "string") v = item.id;
+      else v = null;
+    }
+    if (typeof v !== "string") continue;
+    const clean = v.trim().replace(/\.js$/i, "").replace(/^\d+-/, "");
+    if (!clean) continue;
+    out.add(clean);
+  }
+  return out;
+}
+
+/**************************************************************/
+/* functionSignature: getModuleRemoveSet (arr)               *
+/* Normalizes flowModuleRemove into a Set of module names    *
+/**************************************************************/
+function getModuleRemoveSet(arr) {
+  const out = new Set();
+  const list = Array.isArray(arr) ? arr : [];
+  for (const item of list) {
+    let v = item;
+    if (typeof item === "object" && item) {
+      if (typeof item.name === "string") v = item.name;
+      else if (typeof item.module === "string") v = item.module;
+      else if (typeof item.id === "string") v = item.id;
+      else v = null;
+    }
+    if (typeof v !== "string") continue;
+    const clean = v.trim().replace(/\.js$/i, "").replace(/^\d+-/, "");
+    if (!clean) continue;
+    out.add(clean);
+  }
+  return out;
+}
+
+
+/**************************************************************
+/* functionSignature: getIsModuleSubscribed (clean, flowName, *
+/* coreData, moduleAddSet)                                   *
+/* Returns true if module is configured or ad-hoc subscribed  *
+/**************************************************************/
+/**************************************************************/
+/* functionSignature: getIsModuleSubscribed (clean, flowName, *
+/* coreData, moduleAddSet, moduleRemoveSet)                  *
+/* Returns true if module is configured or ad-hoc subscribed  *
+/* and not explicitly removed                                *
+/**************************************************************/
+function getIsModuleSubscribed(clean, flowName, coreData, moduleAddSet, moduleRemoveSet) {
+  if (moduleRemoveSet && moduleRemoveSet.has(clean)) return false;
+  if (moduleAddSet && moduleAddSet.has(clean)) return true;
+  const flowCfg = coreData?.config?.[clean];
+  if (!flowCfg) return false;
+  const flows = Array.isArray(flowCfg.flow) ? flowCfg.flow : [flowCfg.flow];
+  return flows.includes(flowName) || flows.includes("all");
+}
+
+
+/**************************************************************
 /* functionSignature: getRunFlow (flowName, coreDataForRun)  *
 /* Executes modules with live multi-flow dashboard           *
 /**************************************************************/
@@ -423,69 +491,39 @@ async function getRunFlow(flowName, coreDataForRun) {
     .filter(Boolean)
     .sort((a, b) => a.num - b.num);
 
-  
-  /************************************************************
-  /* functionSignature: getCleanModuleName (file)            *
-  /* Normalizes module filename to clean module name         *
+  /**************************************************************/
+  /* functionSignature: getCleanModuleName (file)             *
+  /* Normalizes module filename to clean module name          *
   /************************************************************/
   function getCleanModuleName(file) {
     return file.replace(".js", "").replace(/^\d+-/, "");
   }
 
-  /************************************************************
-  /* functionSignature: getFlowModuleAddSet (x)              *
-  /* Builds normalized Set from workingObject.flowModuleAdd  *
-  /************************************************************/
-  function getFlowModuleAddSet(x) {
-    const set = new Set();
-    if (!Array.isArray(x)) return set;
-
-    for (const entry of x) {
-      let v = null;
-
-      if (typeof entry === "string") {
-        v = entry;
-      } else if (entry && typeof entry === "object") {
-        if (typeof entry.module === "string") v = entry.module;
-        else if (typeof entry.name === "string") v = entry.name;
-        else if (typeof entry.id === "string") v = entry.id;
-      }
-
-      if (!v) continue;
-
-      const clean = getCleanModuleName(String(v).trim().replace(/\.js$/i, ""));
-      if (clean) set.add(clean);
-    }
-
-    return set;
-  }
-
-  /************************************************************
-  /* functionSignature: getIsModuleSubscribed (clean)        *
-  /* Checks if module is subscribed for this run             *
-  /************************************************************/
-  function getIsModuleSubscribed(clean) {
-    const moduleAddSet = getFlowModuleAddSet(coreData?.workingObject?.flowModuleAdd);
-    if (moduleAddSet.has(clean)) return true;
-
-    const flowCfg = coreData.config?.[clean];
-    if (!flowCfg) return false;
-
-    const flows = Array.isArray(flowCfg.flow) ? flowCfg.flow : [flowCfg.flow];
-    return flows.includes(flowName) || flows.includes("all");
-  }
+  const initialModuleAddSet = getModuleAddSet(coreData?.workingObject?.flowModuleAdd);
+  const initialModuleRemoveSet = getModuleRemoveSet(coreData?.workingObject?.flowModuleRemove);
 
   const countedNormal = new Set();
   const initialNormalTotal = slots
     .filter(s => s.num < 9000)
     .filter(s => {
       const clean = getCleanModuleName(s.file);
-      const ok = getIsModuleSubscribed(clean);
+      const ok = getIsModuleSubscribed(clean, flowName, coreData, initialModuleAddSet, initialModuleRemoveSet);
       if (ok) countedNormal.add(clean);
       return ok;
     }).length;
 
-FLOW_RUN_SEQ += 1;
+  /**************************************************************/
+  /* functionSignature: getIsSubscribedNow (s)                *
+  /* Checks module subscription with live workingObject state *
+  /************************************************************/
+  function getIsSubscribedNow(s) {
+    const clean = getCleanModuleName(s.file);
+    const moduleAddSetNow = getModuleAddSet(coreData?.workingObject?.flowModuleAdd);
+    const moduleRemoveSetNow = getModuleRemoveSet(coreData?.workingObject?.flowModuleRemove);
+    return getIsModuleSubscribed(clean, flowName, coreData, moduleAddSetNow, moduleRemoveSetNow);
+  }
+
+  FLOW_RUN_SEQ += 1;
   const globalRunId = FLOW_RUN_SEQ;
   const prevCount = FLOW_NAME_COUNTS.get(flowName) || 0;
   const runIndex = prevCount + 1;
@@ -513,7 +551,7 @@ FLOW_RUN_SEQ += 1;
   FLOW_STATES.set(state.runId, state);
   setRenderThrottled(null, true);
 
-  /************************************************************
+  /**************************************************************/
   /* functionSignature: getRunModule (s, kind)               *
   /* Runs a single module file                               *
   /************************************************************/
@@ -540,19 +578,15 @@ FLOW_RUN_SEQ += 1;
     setRenderThrottled();
   }
 
-  
   for (const s of slots) {
     if (state.stopped) break;
     if (s.num >= 9000) continue;
-
     const clean = getCleanModuleName(s.file);
-    if (!getIsModuleSubscribed(clean)) continue;
-
+    if (!getIsSubscribedNow(s)) continue;
     if (!countedNormal.has(clean)) {
       countedNormal.add(clean);
       state.total += 1;
     }
-
     await getRunModule(s, "normal");
     if (coreData?.workingObject?.stop === true) {
       state.stopped = true;
@@ -560,21 +594,19 @@ FLOW_RUN_SEQ += 1;
     }
   }
 
-
-  const hasJump = !state.stopped && slots.some(s => s.num >= 9000 && getIsModuleSubscribed(getCleanModuleName(s.file)));
+  const hasJump = !state.stopped && slots.some(s => s.num >= 9000 && getIsSubscribedNow(s));
   if (hasJump) {
     state.phase = "jump";
     state.jumpActive = true;
     setRenderThrottled();
     for (const s of slots) {
       if (s.num < 9000) continue;
-      const clean = getCleanModuleName(s.file);
-      if (!getIsModuleSubscribed(clean)) continue;
+      if (!getIsSubscribedNow(s)) continue;
       await getRunModule(s, "jump");
     }
   }
 
-if (!state.stopped && state.fail === 0) {
+  if (!state.stopped && state.fail === 0) {
     state.phase = "done";
   }
 
