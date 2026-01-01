@@ -423,27 +423,69 @@ async function getRunFlow(flowName, coreDataForRun) {
     .filter(Boolean)
     .sort((a, b) => a.num - b.num);
 
-  const normalList = slots
+  
+  /************************************************************
+  /* functionSignature: getCleanModuleName (file)            *
+  /* Normalizes module filename to clean module name         *
+  /************************************************************/
+  function getCleanModuleName(file) {
+    return file.replace(".js", "").replace(/^\d+-/, "");
+  }
+
+  /************************************************************
+  /* functionSignature: getFlowModuleAddSet (x)              *
+  /* Builds normalized Set from workingObject.flowModuleAdd  *
+  /************************************************************/
+  function getFlowModuleAddSet(x) {
+    const set = new Set();
+    if (!Array.isArray(x)) return set;
+
+    for (const entry of x) {
+      let v = null;
+
+      if (typeof entry === "string") {
+        v = entry;
+      } else if (entry && typeof entry === "object") {
+        if (typeof entry.module === "string") v = entry.module;
+        else if (typeof entry.name === "string") v = entry.name;
+        else if (typeof entry.id === "string") v = entry.id;
+      }
+
+      if (!v) continue;
+
+      const clean = getCleanModuleName(String(v).trim().replace(/\.js$/i, ""));
+      if (clean) set.add(clean);
+    }
+
+    return set;
+  }
+
+  /************************************************************
+  /* functionSignature: getIsModuleSubscribed (clean)        *
+  /* Checks if module is subscribed for this run             *
+  /************************************************************/
+  function getIsModuleSubscribed(clean) {
+    const moduleAddSet = getFlowModuleAddSet(coreData?.workingObject?.flowModuleAdd);
+    if (moduleAddSet.has(clean)) return true;
+
+    const flowCfg = coreData.config?.[clean];
+    if (!flowCfg) return false;
+
+    const flows = Array.isArray(flowCfg.flow) ? flowCfg.flow : [flowCfg.flow];
+    return flows.includes(flowName) || flows.includes("all");
+  }
+
+  const countedNormal = new Set();
+  const initialNormalTotal = slots
     .filter(s => s.num < 9000)
     .filter(s => {
-      const clean = s.file.replace(".js", "").replace(/^\d+-/, "");
-      const flowCfg = coreData.config?.[clean];
-      if (!flowCfg) return false;
-      const flows = Array.isArray(flowCfg.flow) ? flowCfg.flow : [flowCfg.flow];
-      return flows.includes(flowName) || flows.includes("all");
-    });
+      const clean = getCleanModuleName(s.file);
+      const ok = getIsModuleSubscribed(clean);
+      if (ok) countedNormal.add(clean);
+      return ok;
+    }).length;
 
-  const jumpList = slots
-    .filter(s => s.num >= 9000)
-    .filter(s => {
-      const clean = s.file.replace(".js", "").replace(/^\d+-/, "");
-      const flowCfg = coreData.config?.[clean];
-      if (!flowCfg) return false;
-      const flows = Array.isArray(flowCfg.flow) ? flowCfg.flow : [flowCfg.flow];
-      return flows.includes(flowName) || flows.includes("all");
-    });
-
-  FLOW_RUN_SEQ += 1;
+FLOW_RUN_SEQ += 1;
   const globalRunId = FLOW_RUN_SEQ;
   const prevCount = FLOW_NAME_COUNTS.get(flowName) || 0;
   const runIndex = prevCount + 1;
@@ -457,7 +499,7 @@ async function getRunFlow(flowName, coreDataForRun) {
     ok: 0,
     fail: 0,
     skip: 0,
-    total: normalList.length,
+    total: initialNormalTotal,
     current: "",
     stopped: false,
     phase: "run",
@@ -498,8 +540,19 @@ async function getRunFlow(flowName, coreDataForRun) {
     setRenderThrottled();
   }
 
-  for (const s of normalList) {
+  
+  for (const s of slots) {
     if (state.stopped) break;
+    if (s.num >= 9000) continue;
+
+    const clean = getCleanModuleName(s.file);
+    if (!getIsModuleSubscribed(clean)) continue;
+
+    if (!countedNormal.has(clean)) {
+      countedNormal.add(clean);
+      state.total += 1;
+    }
+
     await getRunModule(s, "normal");
     if (coreData?.workingObject?.stop === true) {
       state.stopped = true;
@@ -507,16 +560,21 @@ async function getRunFlow(flowName, coreDataForRun) {
     }
   }
 
-  if (!state.stopped && jumpList.length) {
+
+  const hasJump = !state.stopped && slots.some(s => s.num >= 9000 && getIsModuleSubscribed(getCleanModuleName(s.file)));
+  if (hasJump) {
     state.phase = "jump";
     state.jumpActive = true;
     setRenderThrottled();
-    for (const s of jumpList) {
+    for (const s of slots) {
+      if (s.num < 9000) continue;
+      const clean = getCleanModuleName(s.file);
+      if (!getIsModuleSubscribed(clean)) continue;
       await getRunModule(s, "jump");
     }
   }
 
-  if (!state.stopped && state.fail === 0) {
+if (!state.stopped && state.fail === 0) {
     state.phase = "done";
   }
 

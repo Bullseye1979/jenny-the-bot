@@ -167,6 +167,26 @@ function getNormalizedVoiceKey(voiceRaw) {
 }
 
 /**************************************************************/
+/* functionSignature: getIsVoiceSessionRefUsable (ref)        */
+/* Returns true if voiceSessionRef is a usable registry key   */
+/**************************************************************/
+function getIsVoiceSessionRefUsable(ref) {
+  if (ref === null || ref === undefined) return false;
+
+  let s = ref;
+  if (typeof s !== "string") s = String(s);
+  s = s.trim();
+
+  if (!s) return false;
+
+  const lowered = s.toLowerCase();
+  if (lowered === "null") return false;
+  if (lowered === "undefined") return false;
+
+  return true;
+}
+
+/**************************************************************/
 /* functionSignature: getTTSSpeakerSegments (rawText)         */
 /* Splits text into voice segments based on [Speaker: <voice>]*/
 /* - Tag value is used as the voice enum                      */
@@ -293,8 +313,8 @@ export default async function getDiscordVoiceTTS(coreData) {
   }
 
   const sessionKey = wo.voiceSessionRef;
-  if (!sessionKey) {
-    setLog(wo, "Missing voiceSessionRef", "error");
+  if (!getIsVoiceSessionRefUsable(sessionKey)) {
+    wo.ttsSkipped = true;
     return coreData;
   }
 

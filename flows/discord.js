@@ -1,4 +1,4 @@
-/**************************************************************
+/**************************************************************/
 /* filename: "discord.js"                                    *
 /* Version 1.0                                               *
 /* Purpose: Start a Discord client, map messages into        *
@@ -10,7 +10,7 @@
 /**************************************************************/
 
 import { Client, GatewayIntentBits, Partials, ChannelType } from "discord.js";
-import { putItem } from "../core/registry.js";
+import { putItem, getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord";
@@ -19,7 +19,11 @@ const MACRO_TAG = "#Macro#";
 let __ulid_lastTime = 0;
 let __ulid_lastRand = new Uint8Array(10).fill(0);
 
-/**************************************************************
+const VOICE_REGISTRY_KEY = "discord-voice:registry";
+const VOICE_CACHE_TTL_MS = 8000;
+const VOICE_GUILD_CACHE = new Map();
+
+/**************************************************************/
 /* functionSignature: getUlidEncodeTime (ms)                 *
 /* Encodes a millisecond timestamp to Crockford base32       *
 /* (10 chars)                                                *
@@ -34,7 +38,7 @@ function getUlidEncodeTime(ms) {
   return out.join("");
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getUlidEncodeRandom80ToBase32 (rand)   *
 /* Encodes 80 random bits to 16 base32 chars                 *
 /**************************************************************/
@@ -54,7 +58,7 @@ function getUlidEncodeRandom80ToBase32(rand) {
   return out.slice(0, 16).join("");
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getUlidRandom80 ()                     *
 /* Generates 80 random bits as Uint8Array(10)                *
 /**************************************************************/
@@ -64,7 +68,7 @@ function getUlidRandom80() {
   return arr;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getNewUlid ()                          *
 /* Produces a 26-char monotonic ULID string                  *
 /**************************************************************/
@@ -88,7 +92,7 @@ function getNewUlid() {
   return getUlidEncodeTime(now) + getUlidEncodeRandom80ToBase32(rand);
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getIntentsList (intents)               *
 /* Returns GatewayIntentBits for configured intents          *
 /**************************************************************/
@@ -99,7 +103,7 @@ function getIntentsList(intents) {
   return list.map((i) => GatewayIntentBits[i]).filter(Boolean);
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getAttachmentUrls (message)            *
 /* Extracts attachment URLs from a Discord message           *
 /**************************************************************/
@@ -112,7 +116,7 @@ function getAttachmentUrls(message) {
   }
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getStripMacroTag (content)             *
 /* Removes leading "#Macro#" and returns { isMacro, payload }*
 /**************************************************************/
@@ -125,7 +129,56 @@ function getStripMacroTag(content) {
   return { isMacro: true, payload: withoutTag };
 }
 
-/**************************************************************
+/**************************************************************/
+/* functionSignature: getVoiceSessionRefForGuild (guildId)   *
+/* Resolves latest active voice session key for a guild      *
+/* from registry (with a short TTL cache)                    *
+/**************************************************************/
+async function getVoiceSessionRefForGuild(guildId) {
+  const gid = (guildId === null || guildId === undefined) ? "" : String(guildId).trim();
+  if (!gid) return null;
+
+  const now = Date.now();
+  const cached = VOICE_GUILD_CACHE.get(gid) || null;
+  if (cached && cached.ref && (now - cached.ts) < VOICE_CACHE_TTL_MS) {
+    return cached.ref;
+  }
+
+  let reg = null;
+  try {
+    reg = await getItem(VOICE_REGISTRY_KEY);
+  } catch {
+    reg = null;
+  }
+
+  const keys = Array.isArray(reg?.list) ? reg.list : [];
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const sessionKey = keys[i];
+    if (typeof sessionKey !== "string" || !sessionKey.trim()) continue;
+
+    try {
+      const session = await getItem(sessionKey);
+
+      const sgidA = (session?.guildId === null || session?.guildId === undefined) ? "" : String(session.guildId).trim();
+      const sgidB = (session?.workingObject?.guildId === null || session?.workingObject?.guildId === undefined) ? "" : String(session.workingObject.guildId).trim();
+      const sgid = sgidA || sgidB;
+
+      if (!sgid || sgid !== gid) continue;
+
+      const hasReceiver = !!session?.connection?.receiver;
+      const hasConnection = !!session?.connection;
+
+      if (!hasReceiver && !hasConnection) continue;
+
+      VOICE_GUILD_CACHE.set(gid, { ref: sessionKey, ts: now });
+      return sessionKey;
+    } catch {}
+  }
+
+  return null;
+}
+
+/**************************************************************/
 /* functionSignature: getDiscordFlow (baseCore, runFlow,     *
 /*                     createRunCore)                        *
 /* Boots Discord client and forwards messages into the flow  *
@@ -193,6 +246,14 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
     wo.userid = message.author?.id || "";
     wo.authorDisplayname = (message.member && (message.member.displayName || message.member.nickname)) || message.author?.username || "";
     wo.guildId = message.guildId || "";
+
+    if (wo.guildId && !wo.voiceSessionRef) {
+      try {
+        const ref = await getVoiceSessionRefForGuild(wo.guildId);
+        if (ref) wo.voiceSessionRef = ref;
+      } catch {}
+    }
+
     wo.channelType = message.channel?.type ?? null;
     wo.isDM = wo.channelType === ChannelType.DM;
     if (wo.isDM) wo.DM = true;
