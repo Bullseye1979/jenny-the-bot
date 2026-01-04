@@ -118,12 +118,11 @@ function matchFlow(node, flow) {
 
 /************************************************************************************/
 /* functionSignature: matchUser (node, userId)                                      */
-/* Matches userId against node.userMatch; supports "ALL"                            */
+/* Matches userId against node.userMatch                                            */
 /************************************************************************************/
 function matchUser(node, userId) {
   const list = normalizeStrList(node?.userMatch);
   if (list.length === 0) return false;
-  if (includesCI(list, "ALL")) return true;
   return list.includes(normalizeStr(userId));
 }
 
