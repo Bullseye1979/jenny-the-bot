@@ -242,7 +242,7 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
   const lines = rows.map((r) => {
     const t = (typeof r?.text === "string" && r.text) ? r.text : "";
     const j = (typeof r?.json === "string" && r.json) ? r.json : "";
-    const payload = t ? t : j;
+    const payload = j ? j : t;
     const ch = r.channel_id || r.id || "";
     const tag = ch ? `[${r.ctx_id}|${ch}]` : `[${r.ctx_id}]`;
     return `${tag} ${r.ts} ${payload}`;
