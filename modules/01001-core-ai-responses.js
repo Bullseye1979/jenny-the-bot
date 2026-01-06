@@ -1,6 +1,6 @@
 /********************************************************************************
 /* filename: "core-ai-responses.js"                                             *
-/* Version 1.0                                                                  *
+/* Version 1.1                                                                  *
 /* Purpose: Responses runner (GPT-5) with context translation, real tool        *
 /*          handling, image persistence, and file-based logging (no console).   *
 /*          Accumulates reasoning summaries across iterations (incl. tool calls)*
@@ -10,6 +10,10 @@
 /*          with tools disabled (tool_choice="none").                           *
 /*          Built-in Responses tools are controlled via workingObject.ResponseTools*
 /*          (defaults to OFF when missing/empty).                               *
+/*                                                                              *
+/* Fix: Prevent web_search outputs (and any generic "url" fields) from being    *
+/*      misclassified as images by restricting image extraction to explicit     *
+/*      image nodes + likely image URLs/mime only.                              *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -577,6 +581,19 @@ function getParsedResponsesOutput(raw) {
   const isDataUrl = (u) => (typeof u === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(u));
   const b64FromDataUrl = (u) => (typeof u === "string" ? (u.split(",")[1] || "") : "");
 
+  function getIsImageMime(m) {
+    return (typeof m === "string" && m.trim().toLowerCase().startsWith("image/"));
+  }
+
+  function getIsLikelyImageHttpUrl(u) {
+    const s = String(u || "");
+    if (!isHttpUrl(s)) return false;
+    const noHash = s.split("#")[0];
+    const pathPart = noHash.split("?")[0].toLowerCase();
+    if (/\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(pathPart)) return true;
+    return false;
+  }
+
   function pushImage(rec) {
     if (!rec) return;
     const key =
@@ -590,8 +607,15 @@ function getParsedResponsesOutput(raw) {
   }
 
   function pushImageUrl(u, mime) {
-    if (isHttpUrl(u)) pushImage({ kind: "url", url: u, mime: mime || undefined });
-    else if (isDataUrl(u)) pushImage({ kind: "b64", b64: b64FromDataUrl(u), mime: mime || "image/png" });
+    if (isDataUrl(u)) {
+      pushImage({ kind: "b64", b64: b64FromDataUrl(u), mime: mime || "image/png" });
+      return;
+    }
+    if (!isHttpUrl(u)) return;
+
+    if (getIsImageMime(mime) || getIsLikelyImageHttpUrl(u)) {
+      pushImage({ kind: "url", url: u, mime: mime || undefined });
+    }
   }
 
   function pushImageB64(b64, mime) {
@@ -650,7 +674,7 @@ function getParsedResponsesOutput(raw) {
       if (typeof node?.result === "string") {
         if (isDataUrl(node.result)) pushImageB64(b64FromDataUrl(node.result), mime);
         else if (getLooksBase64(node.result)) pushImageB64(node.result, mime);
-        else if (isHttpUrl(node.result)) pushImageUrl(node.result, mime);
+        else pushImageUrl(node.result, mime);
       }
       if (typeof node?.url === "string") pushImageUrl(node.url, mime);
       if (node?.file_id) pushFileId(node.file_id, mime);
@@ -665,30 +689,9 @@ function getParsedResponsesOutput(raw) {
       if (typeof txt === "string" && txt.length && (t === "message" || t === "output" || t === "assistant" || t === "content")) textParts.push(txt);
     }
 
-    if (node.image_url) pushImageUrl(node?.image_url?.url || node?.image_url, node?.mime);
-    if (node.url) pushImageUrl(node.url, node?.mime);
-    if (node.b64_json || node.base64) pushImageB64(node.b64_json || node.base64, node?.mime || "image/png");
-
-    if (typeof node?.result === "string" && !t) {
-      if (isDataUrl(node.result)) pushImageB64(b64FromDataUrl(node.result), node?.mime || "image/png");
-      else if (getLooksBase64(node.result)) pushImageB64(node.result, node?.mime || "image/png");
-      else if (isHttpUrl(node.result)) pushImageUrl(node.result, node?.mime);
-    }
-
-    const possibleFileIds = [
-      node?.file_id,
-      node?.image_file?.file_id,
-      node?.data?.file_id,
-      node?.asset_pointer?.file_id,
-      node?.image?.file_id,
-      Array.isArray(node?.images) && node.images[0]?.file_id
-    ].filter(Boolean);
-
-    for (const fid of possibleFileIds) pushFileId(fid, node?.mime || node?.mime_type);
-
     if (Array.isArray(node?.images)) {
       for (const im of node.images) {
-        const iu = im?.url || im?.image_url;
+        const iu = im?.url || im?.image_url?.url || im?.image_url;
         const ib64 = im?.b64_json || im?.base64;
         const ifid = im?.file_id || im?.image_file?.file_id || im?.asset_pointer?.file_id;
         const mime = im?.mime || im?.mime_type || "image/png";
