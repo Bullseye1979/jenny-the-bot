@@ -8,8 +8,8 @@
 /*          Adds parser fallbacks for Responses text extraction.                *
 /*          When tool-call budget is exhausted, forces a final synthesis run    *
 /*          with tools disabled (tool_choice="none").                           *
-/*          Built-in image_generation tool is opt-in via workingObject and      *
-/*          defaults to OFF.                                                    *
+/*          Built-in Responses tools are controlled via workingObject.ResponseTools*
+/*          (defaults to OFF when missing/empty).                               *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -249,23 +249,52 @@ function getWantReasoningSummary(wo) {
 }
 
 /********************************************************************************
-/* functionSignature: getWantInternalImageTool (wo)                             *
-/* Returns true only when built-in image_generation is explicitly enabled.      *
+/* functionSignature: getResponseToolsRaw (wo)                                  *
+/* Returns raw response-tools array from working object.                        *
 /********************************************************************************/
-function getWantInternalImageTool(wo) {
-  if (wo?.EnableInternalImageTool === true) return true;
-  if (typeof wo?.EnableInternalImageTool === "string" && wo.EnableInternalImageTool.trim().toLowerCase() === "true") return true;
-  return false;
+function getResponseToolsRaw(wo) {
+  if (Array.isArray(wo?.ResponseTools)) return wo.ResponseTools;
+  if (Array.isArray(wo?.responseTools)) return wo.responseTools;
+  return [];
 }
 
 /********************************************************************************
-/* functionSignature: getToolsForResponses (toolDefs, wo, toolsDisabled)        *
-/* Builds tools list; image_generation is opt-in and disabled by default.       *
+/* functionSignature: getNormalizedResponseTools (toolsLike)                    *
+/* Normalizes Responses built-in tools (type-based).                             *
 /********************************************************************************/
-function getToolsForResponses(toolDefs, wo, toolsDisabled) {
+function getNormalizedResponseTools(toolsLike) {
+  const out = [];
+  const seen = new Set();
+
+  for (const t of (Array.isArray(toolsLike) ? toolsLike : [])) {
+    let rec = null;
+
+    if (typeof t === "string" && t.trim().length) {
+      rec = { type: t.trim() };
+    } else if (t && typeof t === "object" && typeof t.type === "string" && t.type.trim().length) {
+      rec = { ...t, type: t.type.trim() };
+    }
+
+    if (!rec) continue;
+    if (rec.type.toLowerCase() === "function") continue;
+
+    const key = getSafeJSONStringify(rec);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(rec);
+  }
+
+  return out;
+}
+
+/********************************************************************************
+/* functionSignature: getToolsForResponses (toolDefs, responseTools, disabled)  *
+/* Builds tools list for Responses API: responseTools first, then function tools.*
+/********************************************************************************/
+function getToolsForResponses(toolDefs, responseTools, toolsDisabled) {
   if (toolsDisabled) return [];
   const out = [];
-  if (getWantInternalImageTool(wo)) out.push({ type: "image_generation" });
+  for (const d of (responseTools || [])) out.push(d);
   for (const d of (toolDefs || [])) out.push(d);
   return out;
 }
@@ -951,7 +980,6 @@ export default async function getCoreAi(coreData) {
   const debugOn = Boolean(wo?.DebugPayload ?? process.env.AI_DEBUG);
 
   const wantReasoningSummary = getWantReasoningSummary(wo);
-  const wantInternalImageTool = getWantInternalImageTool(wo);
 
   if (!endpoint || !apiKey || !model) {
     wo.Response = "[Empty AI response]";
@@ -965,8 +993,11 @@ export default async function getCoreAi(coreData) {
     return coreData;
   }
 
+  const responseToolsNormalized = getNormalizedResponseTools(getResponseToolsRaw(wo));
+  const responseToolsInfo = responseToolsNormalized.length ? responseToolsNormalized.map(x => x?.type).filter(Boolean).join(", ") : "(none)";
+
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Using BaseURL="${baseUrl || "(relative /documents)"}"` });
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Built-in image_generation tool: ${wantInternalImageTool ? "ENABLED" : "DISABLED"} (workingObject.EnableInternalImageTool)` });
+  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Responses built-in tools (workingObject.ResponseTools): ${responseToolsInfo}` });
 
   let snapshot = [];
   try { snapshot = await getContext(wo); }
@@ -1052,7 +1083,7 @@ export default async function getCoreAi(coreData) {
       setLogConsole(`iteration-${iter + 1}-messages-before-request`, { count: messages.length, messages });
 
       const toolsDisabled = getToolsDisabledMode(totalToolCalls, maxToolCalls, wo);
-      const toolsForResponses = getToolsForResponses(toolDefs, wo, toolsDisabled);
+      const toolsForResponses = getToolsForResponses(toolDefs, responseToolsNormalized, toolsDisabled);
 
       const body = {
         model,
@@ -1139,8 +1170,6 @@ export default async function getCoreAi(coreData) {
 
           for (const tc of toolCalls) {
             const isGeneric = toolDefs.some(d => d?.name === tc?.name);
-            const isModelTool = (tc?.name === "image_generation");
-            if (isModelTool) continue;
             if (!isGeneric) continue;
             if (totalToolCalls >= maxToolCalls) break;
 
