@@ -170,6 +170,18 @@ async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo
 }
 
 /********************************************************************************
+/* functionSignature: getAvatarLookupId (baseChannel, threadId, fallbackId)     *
+/* Returns an id to use for avatar lookup (parent channel when in thread).      *
+/********************************************************************************/
+function getAvatarLookupId(baseChannel, threadId, fallbackId) {
+  if (threadId) {
+    const pid = baseChannel?.parentId || baseChannel?.parent?.id || null;
+    return String(pid || baseChannel?.id || fallbackId || "");
+  }
+  return String(baseChannel?.id || fallbackId || "");
+}
+
+/********************************************************************************
 /* functionSignature: getResolvedIdentity (wo, config, channelId, client)       *
 /* Resolves username and avatar URL for webhook identity.                       *
 /********************************************************************************/
@@ -999,8 +1011,8 @@ export default async function getDiscordTextOutput(coreData) {
     const { webhookClient, threadId } =
       await setEnsureOwnChannelWebhookClient(client, { channel: baseChannel }, desiredName, wo);
 
-    const effectiveChannelOrThreadId = threadId || String(baseChannel?.id || "");
-    const identity = await getResolvedIdentity(wo, config, effectiveChannelOrThreadId, client);
+    const avatarLookupId = getAvatarLookupId(baseChannel, threadId, channelId);
+    const identity = await getResolvedIdentity(wo, config, avatarLookupId, client);
 
     const answerEmbeds = setBuildEmbedsForAnswer({
       askerDisplay,

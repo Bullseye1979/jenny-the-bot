@@ -8,6 +8,8 @@
 /*          Adds parser fallbacks for Responses text extraction.                *
 /*          When tool-call budget is exhausted, forces a final synthesis run    *
 /*          with tools disabled (tool_choice="none").                           *
+/*          Built-in image_generation tool is opt-in via workingObject and      *
+/*          defaults to OFF.                                                    *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -244,6 +246,28 @@ function getWantReasoningSummary(wo) {
   if (wo?.reasoning === true) return true;
   if (typeof wo?.reasoning === "string" && wo.reasoning.trim().toLowerCase() === "true") return true;
   return false;
+}
+
+/********************************************************************************
+/* functionSignature: getWantInternalImageTool (wo)                             *
+/* Returns true only when built-in image_generation is explicitly enabled.      *
+/********************************************************************************/
+function getWantInternalImageTool(wo) {
+  if (wo?.EnableInternalImageTool === true) return true;
+  if (typeof wo?.EnableInternalImageTool === "string" && wo.EnableInternalImageTool.trim().toLowerCase() === "true") return true;
+  return false;
+}
+
+/********************************************************************************
+/* functionSignature: getToolsForResponses (toolDefs, wo, toolsDisabled)        *
+/* Builds tools list; image_generation is opt-in and disabled by default.       *
+/********************************************************************************/
+function getToolsForResponses(toolDefs, wo, toolsDisabled) {
+  if (toolsDisabled) return [];
+  const out = [];
+  if (getWantInternalImageTool(wo)) out.push({ type: "image_generation" });
+  for (const d of (toolDefs || [])) out.push(d);
+  return out;
 }
 
 /********************************************************************************
@@ -927,6 +951,7 @@ export default async function getCoreAi(coreData) {
   const debugOn = Boolean(wo?.DebugPayload ?? process.env.AI_DEBUG);
 
   const wantReasoningSummary = getWantReasoningSummary(wo);
+  const wantInternalImageTool = getWantInternalImageTool(wo);
 
   if (!endpoint || !apiKey || !model) {
     wo.Response = "[Empty AI response]";
@@ -941,6 +966,7 @@ export default async function getCoreAi(coreData) {
   }
 
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Using BaseURL="${baseUrl || "(relative /documents)"}"` });
+  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Built-in image_generation tool: ${wantInternalImageTool ? "ENABLED" : "DISABLED"} (workingObject.EnableInternalImageTool)` });
 
   let snapshot = [];
   try { snapshot = await getContext(wo); }
@@ -1003,7 +1029,6 @@ export default async function getCoreAi(coreData) {
   const toolNames = Array.isArray(wo?.Tools) ? wo.Tools : [];
   const genericTools = await getToolsByName(toolNames, wo);
   const toolDefs = getNormalizedToolDefs(genericTools.map(t => t.definition).filter(Boolean));
-  const toolsForResponses = [{ type: "image_generation" }, ...toolDefs];
 
   const toolChoiceInitial = getNormalizedToolChoice(wo?.ToolChoice) || "auto";
   const persistQueue = [];
@@ -1027,12 +1052,13 @@ export default async function getCoreAi(coreData) {
       setLogConsole(`iteration-${iter + 1}-messages-before-request`, { count: messages.length, messages });
 
       const toolsDisabled = getToolsDisabledMode(totalToolCalls, maxToolCalls, wo);
+      const toolsForResponses = getToolsForResponses(toolDefs, wo, toolsDisabled);
 
       const body = {
         model,
         input: getResponsesInputFromMessages(messages),
         instructions: sys,
-        tools: toolsDisabled ? [] : toolsForResponses,
+        tools: toolsForResponses,
         tool_choice: toolsDisabled ? "none" : toolChoiceInitial,
         ...(wantReasoningSummary ? { reasoning: { summary: "auto" } } : {}),
         ...(maxTokens ? { max_output_tokens: maxTokens } : {})
