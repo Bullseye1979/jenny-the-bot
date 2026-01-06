@@ -3,6 +3,11 @@
 /* Version 1.0                                                                  *
 /* Purpose: Responses runner (GPT-5) with context translation, real tool        *
 /*          handling, image persistence, and file-based logging (no console).   *
+/*          Accumulates reasoning summaries across iterations (incl. tool calls)*
+/*          and returns a final combined summary.                               *
+/*          Adds parser fallbacks for Responses text extraction.                *
+/*          When tool-call budget is exhausted, forces a final synthesis run    *
+/*          with tools disabled (tool_choice="none").                           *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -36,7 +41,7 @@ function getStr(v, d) { return (typeof v === "string" && v.length) ? v : d; }
 /* functionSignature: getNum (v, d)                                             *
 /* Returns finite numeric v; otherwise default d.                               *
 /********************************************************************************/
-function getNum(v, d) { return Number.isFinite(v) ? Number(v) : d; }
+function getNum(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; }
 
 /********************************************************************************
 /* functionSignature: getJSON (t, f)                                            *
@@ -69,6 +74,12 @@ function getLooksBase64(s) { return typeof s === "string" && s.length > 32 && /^
 function setEnsureDebugDir() { if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true }); }
 
 /********************************************************************************
+/* functionSignature: setEnsureDocDir ()                                        *
+/* Ensures the public documents directory exists.                               *
+/********************************************************************************/
+function setEnsureDocDir() { if (!fs.existsSync(DOC_DIR)) fs.mkdirSync(DOC_DIR, { recursive: true }); }
+
+/********************************************************************************
 /* functionSignature: getSafeJSONStringify (obj)                                *
 /* Safe JSON stringify with fallback.                                           *
 /********************************************************************************/
@@ -90,13 +101,17 @@ function setRedactSecrets(s) {
 /* functionSignature: getApproxBase64Bytes (b64)                                *
 /* Approximates decoded byte length of base64 text.                             *
 /********************************************************************************/
-function getApproxBase64Bytes(b64) { const len = (b64 || "").length; const pads = (b64?.endsWith("==") ? 2 : (b64?.endsWith("=") ? 1 : 0)); return Math.max(0, Math.floor(len * 0.75) - pads); }
+function getApproxBase64Bytes(b64) {
+  const s = (typeof b64 === "string") ? b64 : "";
+  const pads = s.endsWith("==") ? 2 : (s.endsWith("=") ? 1 : 0);
+  return Math.max(0, Math.floor(s.length * 0.75) - pads);
+}
 
 /********************************************************************************
 /* functionSignature: getSha256OfBase64 (b64)                                   *
 /* Computes SHA-256 of base64-decoded data.                                     *
 /********************************************************************************/
-function getSha256OfBase64(b64) { try { return createHash("sha256").update(Buffer.from(b64, "base64")).digest("hex"); } catch { return "n/a"; } }
+function getSha256OfBase64(b64) { try { return createHash("sha256").update(Buffer.from(b64 || "", "base64")).digest("hex"); } catch { return "n/a"; } }
 
 /********************************************************************************
 /* functionSignature: getSanitizedForLog (obj)                                  *
@@ -105,6 +120,7 @@ function getSha256OfBase64(b64) { try { return createHash("sha256").update(Buffe
 function getSanitizedForLog(obj) {
   const seen = new WeakSet();
   const MAX_STRING = 2000;
+
   function walk(x) {
     if (x && typeof x === "object") {
       if (seen.has(x)) return "[[circular]]";
@@ -137,18 +153,23 @@ function getSanitizedForLog(obj) {
     }
     return x;
   }
+
   return walk(obj);
 }
 
 /********************************************************************************
-/* functionSignature: getImageSummaryForLog (images)                             *
+/* functionSignature: getImageSummaryForLog (images)                            *
 /* Summarizes image artifacts for logs.                                         *
 /********************************************************************************/
 function getImageSummaryForLog(images) {
   return (images || []).map(im => {
-    if (im.kind === "b64") { const bytes = getApproxBase64Bytes(im.b64 || ""); const hash = getSha256OfBase64(im.b64 || ""); return { kind: "b64", mime: im.mime || "image/png", bytes, sha256: hash }; }
-    if (im.kind === "url") { return { kind: "url", mime: im.mime || undefined, url: im.url }; }
-    if (im.kind === "file_id") { return { kind: "file_id", mime: im.mime || "image/png", file_id: im.file_id }; }
+    if (im.kind === "b64") {
+      const bytes = getApproxBase64Bytes(im.b64 || "");
+      const hash = getSha256OfBase64(im.b64 || "");
+      return { kind: "b64", mime: im.mime || "image/png", bytes, sha256: hash };
+    }
+    if (im.kind === "url") return { kind: "url", mime: im.mime || undefined, url: im.url };
+    if (im.kind === "file_id") return { kind: "file_id", mime: im.mime || "image/png", file_id: im.file_id };
     return im;
   });
 }
@@ -162,13 +183,12 @@ function setLogBig(label, data, { toFile = false } = {}) {
   const sanitized = getSanitizedForLog(data);
   const asText = typeof sanitized === "string" ? sanitized : getSafeJSONStringify(sanitized);
   const red = setRedactSecrets(asText);
-  if (toFile) {
-    try {
-      setEnsureDebugDir();
-      const file = path.join(DEBUG_DIR, `${ts}-${label}.log`);
-      fs.writeFileSync(file, red, "utf8");
-    } catch {}
-  }
+  if (!toFile) return;
+  try {
+    setEnsureDebugDir();
+    const file = path.join(DEBUG_DIR, `${ts}-${label}.log`);
+    fs.writeFileSync(file, red, "utf8");
+  } catch {}
 }
 
 /********************************************************************************
@@ -194,7 +214,12 @@ function getNormalizedToolDefs(toolsLike) {
     if (!d) continue;
     if (d.type === "function" && d.name) { out.push(d); continue; }
     if (d.type === "function" && d.function?.name) {
-      out.push({ type: "function", name: d.function.name, description: d.function.description || "", parameters: d.function.parameters || { type: "object", properties: {} } });
+      out.push({
+        type: "function",
+        name: d.function.name,
+        description: d.function.description || "",
+        parameters: d.function.parameters || { type: "object", properties: {} }
+      });
     }
   }
   return out;
@@ -212,6 +237,16 @@ function getNormalizedToolChoice(tc) {
 }
 
 /********************************************************************************
+/* functionSignature: getWantReasoningSummary (wo)                              *
+/* Returns true only when reasoning is explicitly enabled.                      *
+/********************************************************************************/
+function getWantReasoningSummary(wo) {
+  if (wo?.reasoning === true) return true;
+  if (typeof wo?.reasoning === "string" && wo.reasoning.trim().toLowerCase() === "true") return true;
+  return false;
+}
+
+/********************************************************************************
 /* functionSignature: getRuntimeContextFromLast (wo, snapshot)                  *
 /* Builds optional runtime context from last history record.                    *
 /********************************************************************************/
@@ -219,7 +254,14 @@ function getRuntimeContextFromLast(wo, snapshot) {
   if (wo?.IncludeRuntimeContext !== true) return null;
   const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
   if (last && "content" in last) delete last.content;
-  const metadata = { id: String(wo?.id ?? ""), flow: String(wo?.flow ?? ""), clientRef: String(wo?.clientRef ?? ""), model: String(wo?.Model ?? ""), tool_choice: (wo?.ToolChoice ?? "auto"), timezone: String(wo?.timezone ?? "Europe/Berlin") };
+  const metadata = {
+    id: String(wo?.id ?? ""),
+    flow: String(wo?.flow ?? ""),
+    clientRef: String(wo?.clientRef ?? ""),
+    model: String(wo?.Model ?? ""),
+    tool_choice: (wo?.ToolChoice ?? "auto"),
+    timezone: String(wo?.timezone ?? "Europe/Berlin")
+  };
   return { metadata, last };
 }
 
@@ -227,7 +269,11 @@ function getRuntimeContextFromLast(wo, snapshot) {
 /* functionSignature: getAppendRuntimeContextToUserContent (baseText, ctx)      *
 /* Appends runtime context JSON block to user text.                             *
 /********************************************************************************/
-function getAppendRuntimeContextToUserContent(baseText, ctx) { if (!ctx) return baseText ?? ""; const jsonBlock = "```json\n" + JSON.stringify(ctx) + "\n```"; return (baseText ?? "") + "\n\n[context]\n" + jsonBlock; }
+function getAppendRuntimeContextToUserContent(baseText, ctx) {
+  if (!ctx) return baseText ?? "";
+  const jsonBlock = "```json\n" + JSON.stringify(ctx) + "\n```";
+  return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
+}
 
 /********************************************************************************
 /* functionSignature: getToolsByName (names, wo)                                *
@@ -265,10 +311,7 @@ function getExpandedToolArgs(args, wo) {
         module: MODULE_NAME,
         exitStatus: "success",
         message: `Expanded tool argument "${key}" to full assistant text.`,
-        details: {
-          original_length: v.length,
-          full_length: full.length
-        }
+        details: { original_length: v.length, full_length: full.length }
       });
       return { ...args, [key]: full };
     }
@@ -283,27 +326,73 @@ function getExpandedToolArgs(args, wo) {
 async function setExecGenericTool(toolModules, call, coreData) {
   const wo = coreData?.workingObject ?? {};
   const idemp = getIdemp(wo);
+
   const name = call?.function?.name || call?.name;
   const argsRaw = call?.function?.arguments ?? call?.arguments ?? "{}";
   let args = typeof argsRaw === "string" ? getJSON(argsRaw, {}) : (argsRaw || {});
   args = getExpandedToolArgs(args, wo);
+
   const tool = toolModules.find(t => (t.definition?.function?.name || t.definition?.name || t.name) === name);
-  const callId = call?.id || call?.call_id || `${name}:${createHash("sha256").update(JSON.stringify(args)).digest("hex")}`;
-  if (idemp.tools.has(callId)) return { ok: true, name, content: JSON.stringify({ type: "tool_result", tool: name, call_id: callId, ok: true, skipped: "idempotent-skip" }) };
+  const callId = call?.call_id || call?.id || `${name}:${createHash("sha256").update(JSON.stringify(args)).digest("hex")}`;
+
+  if (idemp.tools.has(callId)) {
+    return {
+      ok: true,
+      name,
+      call_id: callId,
+      content: JSON.stringify({ type: "tool_result", tool: name, call_id: callId, ok: true, skipped: "idempotent-skip" })
+    };
+  }
+
   idemp.tools.add(callId);
-  wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "Tool call start", details: { tool: name, call_id: callId, args_preview: getPreview(args, ARG_PREVIEW_MAX) } });
-  if (!tool) return { ok: false, name, content: JSON.stringify({ type: "tool_result", tool: name, call_id: callId, ok: false, error: `Tool "${name}" not found` }) };
+
+  wo.logging?.push({
+    timestamp: new Date().toISOString(),
+    severity: "info",
+    module: MODULE_NAME,
+    exitStatus: "started",
+    message: "Tool call start",
+    details: { tool: name, call_id: callId, args_preview: getPreview(args, ARG_PREVIEW_MAX) }
+  });
+
+  if (!tool) {
+    return {
+      ok: false,
+      name,
+      call_id: callId,
+      content: JSON.stringify({ type: "tool_result", tool: name, call_id: callId, ok: false, error: `Tool "${name}" not found` })
+    };
+  }
+
   try {
     try { await putItem(name, "status:tool"); } catch {}
     const res = await tool.invoke(args, coreData);
     const mapped = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
-    wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "Tool call success", details: { tool: name, call_id: callId, result_preview: getPreview(content, RESULT_PREVIEW_MAX) } });
-    return { ok: true, name, content };
+
+    wo.logging?.push({
+      timestamp: new Date().toISOString(),
+      severity: "info",
+      module: MODULE_NAME,
+      exitStatus: "success",
+      message: "Tool call success",
+      details: { tool: name, call_id: callId, result_preview: getPreview(content, RESULT_PREVIEW_MAX) }
+    });
+
+    return { ok: true, name, call_id: callId, content };
   } catch (e) {
     const mappedErr = { type: "tool_result", tool: name, call_id: callId, ok: false, error: e?.message || String(e) };
-    wo.logging.push({ timestamp: new Date().toISOString(), severity: "error", module: MODULE_NAME, exitStatus: "failed", message: "Tool call error", details: { tool: name, call_id: callId, error: String(e?.message || e) } });
-    return { ok: false, name, content: JSON.stringify(mappedErr) };
+
+    wo.logging?.push({
+      timestamp: new Date().toISOString(),
+      severity: "error",
+      module: MODULE_NAME,
+      exitStatus: "failed",
+      message: "Tool call error",
+      details: { tool: name, call_id: callId, error: String(e?.message || e) }
+    });
+
+    return { ok: false, name, call_id: callId, content: JSON.stringify(mappedErr) };
   } finally {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs) ? Number(coreData.workingObject.StatusToolClearDelayMs) : 800;
     setTimeout(() => { try { putItem("", "status:tool"); } catch {} }, Math.max(0, delayMs));
@@ -311,57 +400,188 @@ async function setExecGenericTool(toolModules, call, coreData) {
 }
 
 /********************************************************************************
-/* functionSignature: setEnsureDocDir ()                                        *
-/* Ensures the public documents directory exists.                               *
-/********************************************************************************/
-function setEnsureDocDir() { if (!fs.existsSync(DOC_DIR)) fs.mkdirSync(DOC_DIR, { recursive: true }); }
-
-/********************************************************************************
 /* functionSignature: getExtFromMime (m)                                        *
 /* Returns a file extension based on MIME type.                                 *
 /********************************************************************************/
-function getExtFromMime(m) { const mime = (m || "").toLowerCase(); if (mime.includes("png")) return ".png"; if (mime.includes("jpeg") || mime.includes("jpg")) return ".jpg"; if (mime.includes("webp")) return ".webp"; if (mime.includes("gif")) return ".gif"; if (mime.includes("bmp")) return ".bmp"; if (mime.includes("svg")) return ".svg"; return ".png"; }
+function getExtFromMime(m) {
+  const mime = (m || "").toLowerCase();
+  if (mime.includes("png")) return ".png";
+  if (mime.includes("jpeg") || mime.includes("jpg")) return ".jpg";
+  if (mime.includes("webp")) return ".webp";
+  if (mime.includes("gif")) return ".gif";
+  if (mime.includes("bmp")) return ".bmp";
+  if (mime.includes("svg")) return ".svg";
+  return ".png";
+}
 
 /********************************************************************************
 /* functionSignature: getBuildUrl (filename, baseUrl)                           *
 /* Builds a public URL for a persisted document.                                *
 /********************************************************************************/
-function getBuildUrl(filename, baseUrl) { const clean = (baseUrl || "").replace(/\/+$/, ""); return clean ? `${clean}/documents/${filename}` : `/documents/${filename}`; }
+function getBuildUrl(filename, baseUrl) {
+  const clean = (baseUrl || "").replace(/\/+$/, "");
+  return clean ? `${clean}/documents/${filename}` : `/documents/${filename}`;
+}
 
 /********************************************************************************
 /* functionSignature: setSaveB64 (b64, mime, baseUrl, wo)                       *
 /* Persists base64 image and returns hosted URL.                                *
 /********************************************************************************/
-async function setSaveB64(b64, mime, baseUrl, wo) { setEnsureDocDir(); const idemp = getIdemp(wo); const hash = getSha256OfBase64(b64 || ""); if (idemp.images.has(hash)) return getBuildUrl(`DUP-${hash}.png`, baseUrl); idemp.images.add(hash); const ext = getExtFromMime(mime || "image/png"); const filename = `${Date.now()}-${randomUUID()}${ext}`; const filePath = path.join(DOC_DIR, filename); fs.writeFileSync(filePath, Buffer.from(b64, "base64")); return getBuildUrl(filename, baseUrl); }
+async function setSaveB64(b64, mime, baseUrl, wo) {
+  setEnsureDocDir();
+  const idemp = getIdemp(wo);
+  const hash = getSha256OfBase64(b64 || "");
+  if (idemp.images.has(hash)) return getBuildUrl(`DUP-${hash}.png`, baseUrl);
+  idemp.images.add(hash);
+
+  const ext = getExtFromMime(mime || "image/png");
+  const filename = `${Date.now()}-${randomUUID()}${ext}`;
+  fs.writeFileSync(path.join(DOC_DIR, filename), Buffer.from(b64, "base64"));
+  return getBuildUrl(filename, baseUrl);
+}
 
 /********************************************************************************
 /* functionSignature: setMirrorURL (url, baseUrl, wo)                           *
 /* Downloads a remote image and mirrors it locally.                             *
 /********************************************************************************/
-async function setMirrorURL(url, baseUrl, wo) { setEnsureDocDir(); const idemp = getIdemp(wo); const key = `url:${createHash("sha256").update(url || "").digest("hex")}`; if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(url).digest("hex")}.png`, baseUrl); idemp.images.add(key); const f = globalThis.fetch ?? (await import("node-fetch")).default; const res = await f(url, { headers: { "User-Agent": "core-ai-responses/1.0" } }); if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`); const mime = res.headers.get("content-type") || "image/png"; const ext = getExtFromMime(mime); const filename = `${Date.now()}-${randomUUID()}${ext}`; const filePath = path.join(DOC_DIR, filename); const buf = Buffer.from(await res.arrayBuffer()); fs.writeFileSync(filePath, buf); return getBuildUrl(filename, baseUrl); }
+async function setMirrorURL(url, baseUrl, wo) {
+  setEnsureDocDir();
+  const idemp = getIdemp(wo);
+  const key = `url:${createHash("sha256").update(url || "").digest("hex")}`;
+  if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(url).digest("hex")}.png`, baseUrl);
+  idemp.images.add(key);
+
+  const f = globalThis.fetch ?? (await import("node-fetch")).default;
+  const res = await f(url, { headers: { "User-Agent": "core-ai-responses/1.0" } });
+  if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
+
+  const mime = res.headers.get("content-type") || "image/png";
+  const ext = getExtFromMime(mime);
+  const filename = `${Date.now()}-${randomUUID()}${ext}`;
+  const buf = Buffer.from(await res.arrayBuffer());
+  fs.writeFileSync(path.join(DOC_DIR, filename), buf);
+  return getBuildUrl(filename, baseUrl);
+}
 
 /********************************************************************************
 /* functionSignature: setSaveFromFileId (fileId, opts, wo)                      *
 /* Downloads an image via provider fileId and persists it.                      *
 /********************************************************************************/
-async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }, wo) { setEnsureDocDir(); const idemp = getIdemp(wo); const key = `file:${fileId}`; if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(fileId).digest("hex")}.png`, baseUrl); idemp.images.add(key); let url = ""; if (endpointFilesContentTemplate && endpointFilesContentTemplate.includes("{id}")) { url = endpointFilesContentTemplate.replace("{id}", encodeURIComponent(fileId)); } else { const base = (endpointResponses || "").replace(/\/responses.*/, "").replace(/\/+$/, ""); url = `${base}/files/${encodeURIComponent(fileId)}/content`; } const f = globalThis.fetch ?? (await import("node-fetch")).default; const res = await f(url, { method: "GET", headers: { "Authorization": `Bearer ${apiKey}`, "User-Agent": "core-ai-responses/1.0" } }); if (!res.ok) throw new Error(`File download failed: ${res.status} ${res.statusText}`); const mime = res.headers.get("content-type") || "image/png"; const ext = getExtFromMime(mime); const filename = `${Date.now()}-${randomUUID()}${ext}`; const filePath = path.join(DOC_DIR, filename); const buf = Buffer.from(await res.arrayBuffer()); fs.writeFileSync(filePath, buf); return getBuildUrl(filename, baseUrl); }
+async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }, wo) {
+  setEnsureDocDir();
+  const idemp = getIdemp(wo);
+  const key = `file:${fileId}`;
+  if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(fileId).digest("hex")}.png`, baseUrl);
+  idemp.images.add(key);
+
+  let url = "";
+  if (endpointFilesContentTemplate && endpointFilesContentTemplate.includes("{id}")) {
+    url = endpointFilesContentTemplate.replace("{id}", encodeURIComponent(fileId));
+  } else {
+    const base = (endpointResponses || "").replace(/\/responses.*/, "").replace(/\/+$/, "");
+    url = `${base}/files/${encodeURIComponent(fileId)}/content`;
+  }
+
+  const f = globalThis.fetch ?? (await import("node-fetch")).default;
+  const res = await f(url, { method: "GET", headers: { "Authorization": `Bearer ${apiKey}`, "User-Agent": "core-ai-responses/1.0" } });
+  if (!res.ok) throw new Error(`File download failed: ${res.status} ${res.statusText}`);
+
+  const mime = res.headers.get("content-type") || "image/png";
+  const ext = getExtFromMime(mime);
+  const filename = `${Date.now()}-${randomUUID()}${ext}`;
+  const buf = Buffer.from(await res.arrayBuffer());
+  fs.writeFileSync(path.join(DOC_DIR, filename), buf);
+  return getBuildUrl(filename, baseUrl);
+}
 
 /********************************************************************************
-/* functionSignature: getParsedResponsesOutput (raw)                             *
+/* functionSignature: getParsedTextFromNode (node)                              *
+/* Extracts text from a response content node (supports multiple shapes).       *
+/********************************************************************************/
+function getParsedTextFromNode(node) {
+  if (!node || typeof node !== "object") return "";
+  if (typeof node.text === "string") return node.text;
+  if (typeof node.text?.value === "string") return node.text.value;
+  if (typeof node.value === "string" && (node.type === "text" || node.type === "output_text")) return node.value;
+  if (typeof node.content === "string" && (node.type === "text" || node.type === "output_text")) return node.content;
+  if (typeof node.output_text === "string") return node.output_text;
+  return "";
+}
+
+/********************************************************************************
+/* functionSignature: getParsedResponsesOutput (raw)                            *
 /* Extracts text, images, and tool calls from Responses JSON.                   *
 /********************************************************************************/
 function getParsedResponsesOutput(raw) {
   const out = { text: "", toolCalls: [], images: [] };
+  const seen = new WeakSet();
+
+  const textParts = [];
+  const toolSeen = new Set();
+  const imageSeen = new Set();
+
   const isHttpUrl = (u) => (typeof u === "string" && /^https?:\/\//i.test(u));
   const isDataUrl = (u) => (typeof u === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(u));
   const b64FromDataUrl = (u) => (typeof u === "string" ? (u.split(",")[1] || "") : "");
-  function pushImageUrl(u, mime) { if (isHttpUrl(u)) out.images.push({ kind: "url", url: u, mime: mime || undefined }); else if (isDataUrl(u)) out.images.push({ kind: "b64", b64: b64FromDataUrl(u), mime: mime || "image/png" }); }
-  function pushImageB64(b64, mime) { if (typeof b64 === "string" && b64.length) out.images.push({ kind: "b64", b64, mime: mime || "image/png" }); }
-  function pushFileId(id, mime) { if (typeof id === "string" && id.length) out.images.push({ kind: "file_id", file_id: id, mime: mime || "image/png" }); }
-  function crawl(node) {
+
+  function pushImage(rec) {
+    if (!rec) return;
+    const key =
+      rec.kind === "url" ? `url:${rec.url}` :
+      rec.kind === "file_id" ? `file:${rec.file_id}` :
+      rec.kind === "b64" ? `b64:${getSha256OfBase64(rec.b64 || "")}` :
+      `other:${getSafeJSONStringify(rec)}`;
+    if (imageSeen.has(key)) return;
+    imageSeen.add(key);
+    out.images.push(rec);
+  }
+
+  function pushImageUrl(u, mime) {
+    if (isHttpUrl(u)) pushImage({ kind: "url", url: u, mime: mime || undefined });
+    else if (isDataUrl(u)) pushImage({ kind: "b64", b64: b64FromDataUrl(u), mime: mime || "image/png" });
+  }
+
+  function pushImageB64(b64, mime) {
+    if (typeof b64 === "string" && b64.length) pushImage({ kind: "b64", b64, mime: mime || "image/png" });
+  }
+
+  function pushFileId(id, mime) {
+    if (typeof id === "string" && id.length) pushImage({ kind: "file_id", file_id: id, mime: mime || "image/png" });
+  }
+
+  function pushToolCall(node, typeHint) {
+    const name = node?.name || node?.function?.name || node?.tool_name;
+    if (!name) return;
+
+    const call_id = node?.call_id || node?.id || node?.tool_call_id || node?.function_call_id || "";
+    const args = node?.arguments ?? node?.function?.arguments ?? node?.input ?? {};
+    const argsStr = (typeof args === "string") ? args : JSON.stringify(args ?? {});
+    const key = `${name}:${call_id}:${argsStr}`;
+    if (toolSeen.has(key)) return;
+    toolSeen.add(key);
+
+    out.toolCalls.push({
+      id: node?.id || call_id,
+      call_id: call_id || node?.id,
+      type: typeHint || node?.type || "function_call",
+      name,
+      arguments: argsStr
+    });
+  }
+
+  function crawl(node, inReasoning = false) {
     if (!node || typeof node !== "object") return;
+    if (seen.has(node)) return;
+    seen.add(node);
+
     const t = node.type;
-    if (t === "output_text" && typeof node.text === "string") out.text += node.text;
+    if (t === "reasoning") inReasoning = true;
+
+    if (!inReasoning && (t === "output_text" || t === "text")) {
+      const txt = getParsedTextFromNode(node);
+      if (typeof txt === "string" && txt.length) textParts.push(txt);
+    }
+
     if (t === "image" || t === "image_url" || t === "output_image") {
       const u = node?.image_url?.url || node?.image_url || node?.url;
       const b = node?.b64_json || node?.data?.b64_json || node?.base64;
@@ -371,6 +591,7 @@ function getParsedResponsesOutput(raw) {
       if (b) pushImageB64(b, mime);
       if (fid) pushFileId(fid, mime);
     }
+
     if (t === "image_generation_call") {
       const mime = (node?.output_format && typeof node.output_format === "string") ? `image/${node.output_format.toLowerCase()}` : "image/png";
       if (typeof node?.result === "string") {
@@ -381,37 +602,64 @@ function getParsedResponsesOutput(raw) {
       if (typeof node?.url === "string") pushImageUrl(node.url, mime);
       if (node?.file_id) pushFileId(node.file_id, mime);
     }
-    if (t === "tool_call" || t === "function_call") {
-      out.toolCalls.push({ id: node?.id || node?.call_id, type: t, name: node?.name || node?.function?.name, arguments: typeof node?.arguments === "string" ? node.arguments : (node?.function?.arguments ?? JSON.stringify(node?.function?.arguments ?? {})) });
+
+    if (t === "tool_call" || t === "function_call" || t === "tool_use") pushToolCall(node, t);
+
+    if (Array.isArray(node.content)) node.content.forEach(x => crawl(x, inReasoning));
+
+    if (!inReasoning) {
+      const txt = getParsedTextFromNode(node);
+      if (typeof txt === "string" && txt.length && (t === "message" || t === "output" || t === "assistant" || t === "content")) textParts.push(txt);
     }
-    if (t === "tool_use" || t === "tool_result") {
-      const name = node?.name || node?.tool_name;
-      const args = node?.input ?? node?.arguments ?? {};
-      out.toolCalls.push({ id: node?.id || node?.call_id, type: t, name, arguments: typeof args === "string" ? args : JSON.stringify(args ?? {}) });
-      if (Array.isArray(node?.output)) node.output.forEach(crawl);
-    }
-    if (Array.isArray(node.content)) node.content.forEach(crawl);
+
     if (node.image_url) pushImageUrl(node?.image_url?.url || node?.image_url, node?.mime);
     if (node.url) pushImageUrl(node.url, node?.mime);
     if (node.b64_json || node.base64) pushImageB64(node.b64_json || node.base64, node?.mime || "image/png");
+
     if (typeof node?.result === "string" && !t) {
       if (isDataUrl(node.result)) pushImageB64(b64FromDataUrl(node.result), node?.mime || "image/png");
       else if (getLooksBase64(node.result)) pushImageB64(node.result, node?.mime || "image/png");
       else if (isHttpUrl(node.result)) pushImageUrl(node.result, node?.mime);
     }
-    const possibleFileIds = [node?.file_id, node?.image_file?.file_id, node?.data?.file_id, node?.asset_pointer?.file_id, node?.image?.file_id, Array.isArray(node?.images) && node.images[0]?.file_id].filter(Boolean);
+
+    const possibleFileIds = [
+      node?.file_id,
+      node?.image_file?.file_id,
+      node?.data?.file_id,
+      node?.asset_pointer?.file_id,
+      node?.image?.file_id,
+      Array.isArray(node?.images) && node.images[0]?.file_id
+    ].filter(Boolean);
+
     for (const fid of possibleFileIds) pushFileId(fid, node?.mime || node?.mime_type);
+
     if (Array.isArray(node?.images)) {
       for (const im of node.images) {
-        const iu = im?.url || im?.image_url; const ib64 = im?.b64_json || im?.base64; const ifid = im?.file_id || im?.image_file?.file_id || im?.asset_pointer?.file_id; const mime = im?.mime || im?.mime_type || "image/png";
-        if (iu) pushImageUrl(iu, mime); if (ib64) pushImageB64(ib64, mime); if (ifid) pushFileId(ifid, mime);
+        const iu = im?.url || im?.image_url;
+        const ib64 = im?.b64_json || im?.base64;
+        const ifid = im?.file_id || im?.image_file?.file_id || im?.asset_pointer?.file_id;
+        const mime = im?.mime || im?.mime_type || "image/png";
+        if (iu) pushImageUrl(iu, mime);
+        if (ib64) pushImageB64(ib64, mime);
+        if (ifid) pushFileId(ifid, mime);
       }
     }
-    Object.values(node).forEach(v => { if (Array.isArray(v)) v.forEach(crawl); else if (v && typeof v === "object") crawl(v); });
+
+    for (const v of Object.values(node)) {
+      if (Array.isArray(v)) v.forEach(x => crawl(x, inReasoning));
+      else if (v && typeof v === "object") crawl(v, inReasoning);
+    }
   }
+
   const arr = Array.isArray(raw?.output) ? raw.output : (raw ? [raw] : []);
-  arr.forEach(crawl);
-  out.text = out.text.trim();
+  arr.forEach(x => crawl(x, false));
+
+  out.text = textParts.join("").trim();
+
+  if (!out.text && typeof raw?.output_text === "string" && raw.output_text.trim().length) out.text = raw.output_text.trim();
+  if (!out.text && typeof raw?.text === "string" && raw.text.trim().length) out.text = raw.text.trim();
+  if (!out.text && Array.isArray(raw?.choices) && raw.choices[0]?.message?.content) out.text = getToString(raw.choices[0].message.content).trim();
+
   return out;
 }
 
@@ -433,22 +681,223 @@ function getWasTruncatedOutput(data) {
 }
 
 /********************************************************************************
-/* functionSignature: getPayload (row)                                          *
-/* Extracts the text payload from a history row.                                *
+/* functionSignature: getSanitizeReasoningText (s)                              *
+/* Removes API meta-lines (rs_ ids / standalone markers) without harming content.*
 /********************************************************************************/
-function getPayload(row) { if (typeof row?.json === "string" && row.json.length) return row.json; if (typeof row?.content === "string" && row.content.length) return row.content; if (typeof row?.text === "string" && row.text.length) return row.text; return ""; }
+function getSanitizeReasoningText(s) {
+  const raw = getToString(s);
+  if (!raw.trim()) return "";
+
+  const isRsId = (x) => /^rs_[a-z0-9]{10,}$/i.test(String(x || "").trim());
+  const isMetaWord = (x, w) => new RegExp(`^${w}$`, "i").test(String(x || "").trim());
+
+  const lines = raw.replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || "");
+    const t = line.trim();
+    if (!t.length) continue;
+
+    const prev = i > 0 ? lines[i - 1] : "";
+    const next = i + 1 < lines.length ? lines[i + 1] : "";
+
+    if (isRsId(t)) continue;
+
+    const looksLikeMetaContext =
+      isRsId(prev) || isRsId(next) ||
+      isMetaWord(prev, "reasoning") || isMetaWord(next, "reasoning") ||
+      isMetaWord(prev, "summary_text") || isMetaWord(next, "summary_text") ||
+      isMetaWord(prev, "summary") || isMetaWord(next, "summary");
+
+    if (looksLikeMetaContext && isMetaWord(t, "reasoning")) continue;
+    if (looksLikeMetaContext && isMetaWord(t, "summary_text")) continue;
+    if (looksLikeMetaContext && isMetaWord(t, "summary")) continue;
+
+    out.push(line);
+  }
+
+  const joined = out.join("\n").trim();
+  return joined.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/********************************************************************************
+/* functionSignature: getReasoningSummaryFromResponse (data)                    *
+/* Extracts reasoning summary text from a Responses payload (robust + dedupe).  *
+/********************************************************************************/
+function getReasoningSummaryFromResponse(data) {
+  const BAD = new Set(["auto", "none", "concise", "detailed", "low", "medium", "high"]);
+  const seenObj = new WeakSet();
+  const seenText = new Set();
+  const out = [];
+
+  function norm(s) {
+    return String(s || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function add(s) {
+    if (typeof s !== "string") return;
+    let t = norm(s);
+    if (!t.length) return;
+    if (BAD.has(t.toLowerCase())) return;
+    t = getSanitizeReasoningText(t);
+    t = norm(t);
+    if (!t.length) return;
+    if (seenText.has(t)) return;
+    seenText.add(t);
+    out.push(t);
+  }
+
+  function isReasonKey(k) {
+    const kk = String(k || "").toLowerCase();
+    return kk.includes("summary") || kk.includes("reason") || kk.includes("explain") || kk === "text";
+  }
+
+  function walk(node, keyHint = "") {
+    if (node == null) return;
+    if (typeof node === "string") {
+      if (isReasonKey(keyHint)) add(node);
+      return;
+    }
+    if (typeof node !== "object") return;
+    if (seenObj.has(node)) return;
+    seenObj.add(node);
+
+    const t = String(node?.type || "").toLowerCase();
+    const isReasonNode = (t === "reasoning");
+
+    if (typeof node.summary_text === "string") add(node.summary_text);
+    if (typeof node.summary === "string") add(node.summary);
+    if (typeof node.explanation === "string") add(node.explanation);
+    if (typeof node.text === "string" && (isReasonNode || isReasonKey(keyHint))) add(node.text);
+
+    if (Array.isArray(node)) {
+      for (const x of node) walk(x, keyHint);
+      return;
+    }
+
+    for (const [k, v] of Object.entries(node)) {
+      if (k === "input") continue;
+      if (k === "instructions") continue;
+      if (!isReasonNode && !isReasonKey(k) && !isReasonKey(keyHint)) continue;
+      walk(v, k);
+    }
+  }
+
+  try {
+    if (data?.reasoning) walk(data.reasoning, "reasoning");
+
+    const output = Array.isArray(data?.output) ? data.output : [];
+    for (const item of output) {
+      if (item && typeof item === "object" && String(item.type || "").toLowerCase() === "reasoning") walk(item, "reasoning");
+      const content = Array.isArray(item?.content) ? item.content : [];
+      for (const c of content) {
+        if (c && typeof c === "object" && String(c.type || "").toLowerCase() === "reasoning") walk(c, "reasoning");
+      }
+    }
+
+    const joined = out.join("\n\n").trim();
+    return joined.length ? joined : null;
+  } catch {
+    return null;
+  }
+}
+
+/********************************************************************************
+/* functionSignature: getPayload (row)                                          *
+/* Extracts the text payload from a history row (prefers parsed message text).  *
+/********************************************************************************/
+function getPayload(row) {
+  const j = (typeof row?.json === "string" && row.json.trim().length) ? row.json.trim() : "";
+  if (j) {
+    const obj = getJSON(j, null);
+    if (obj && typeof obj === "object") {
+      if (typeof obj.content === "string" && obj.content.length) return obj.content;
+      if (typeof obj.text === "string" && obj.text.length) return obj.text;
+      if (obj.object === "response" && Array.isArray(obj.output)) {
+        const parsed = getParsedResponsesOutput(obj);
+        if (typeof parsed?.text === "string" && parsed.text.length) return parsed.text;
+        return "";
+      }
+    }
+    return j;
+  }
+  if (typeof row?.content === "string" && row.content.length) return row.content;
+  if (typeof row?.text === "string" && row.text.length) return row.text;
+  return "";
+}
 
 /********************************************************************************
 /* functionSignature: getSnapshotMappedToChat (rows)                            *
 /* Maps stored snapshot rows to chat-style messages.                            *
 /********************************************************************************/
-function getSnapshotMappedToChat(rows) { const out = []; for (const r of rows || []) { const role = r?.role; const payload = getPayload(r); if (role === "system") out.push({ role: "system", content: payload }); else if (role === "user") out.push({ role: "user", content: payload }); else if (role === "assistant") out.push({ role: "assistant", content: payload }); else if (role === "tool") out.push({ role: "assistant", content: payload }); } return out; }
+function getSnapshotMappedToChat(rows) {
+  const out = [];
+  for (const r of rows || []) {
+    const role = r?.role;
+    const payload = getPayload(r);
+    if (role === "system") out.push({ role: "system", content: payload });
+    else if (role === "user") out.push({ role: "user", content: payload });
+    else if (role === "assistant") out.push({ role: "assistant", content: payload });
+  }
+  return out;
+}
 
 /********************************************************************************
 /* functionSignature: getResponsesInputFromMessages (messages)                  *
 /* Converts chat messages to Responses API input format.                        *
 /********************************************************************************/
-function getResponsesInputFromMessages(messages) { return messages.map(m => { const role = (m.role === "tool") ? "assistant" : m.role; const type = (role === "assistant") ? "output_text" : "input_text"; const text = getToString(m.content ?? ""); return { role, content: [{ type, text }] }; }); }
+function getResponsesInputFromMessages(messages) {
+  const out = [];
+  for (const m of messages || []) {
+    if (m && typeof m === "object" && typeof m.type === "string" && !("role" in m)) { out.push(m); continue; }
+    const role = m.role;
+    const type = (role === "assistant") ? "output_text" : "input_text";
+    const text = getToString(m.content ?? "");
+    out.push({ role, content: [{ type, text }] });
+  }
+  return out;
+}
+
+/********************************************************************************
+/* functionSignature: setAppendReasoningBlock (reasoningParts, iter, rs, tools) *
+/* Appends an iteration reasoning block, with tool names if present.            *
+/********************************************************************************/
+function setAppendReasoningBlock(reasoningParts, iter, rs, toolCalls) {
+  const toolNames = Array.isArray(toolCalls) ? toolCalls.map(t => t?.name).filter(Boolean) : [];
+  const header = `--- Iteration ${iter + 1}${toolNames.length ? ` (tools: ${toolNames.join(", ")})` : ""} ---`;
+  const body = (typeof rs === "string" && rs.trim().length) ? rs.trim() : "";
+  reasoningParts.push(`${header}\n${body}`.trimEnd());
+  return true;
+}
+
+/********************************************************************************
+/* functionSignature: getToolsDisabledMode (totalToolCalls, maxToolCalls, wo)   *
+/* Returns true when the final synthesis run must be executed without tools.    *
+/********************************************************************************/
+function getToolsDisabledMode(totalToolCalls, maxToolCalls, wo) {
+  if (wo?.__forceNoTools === true) return true;
+  if (Number.isFinite(maxToolCalls) && maxToolCalls >= 0 && totalToolCalls >= maxToolCalls) return true;
+  return false;
+}
+
+/********************************************************************************
+/* functionSignature: setEnsureFinalSynthesisPrompt (messages, wo)              *
+/* Ensures a single prompt is injected to force synthesis without tools.        *
+/********************************************************************************/
+function setEnsureFinalSynthesisPrompt(messages, wo) {
+  if (wo?.__didToolBudgetNotice === true) return false;
+  wo.__didToolBudgetNotice = true;
+  messages.push({
+    role: "user",
+    content: "Tool-call budget exhausted. Provide the best possible final answer using only the existing conversation and prior tool outputs. Do not request or call any tools."
+  });
+  return true;
+}
 
 /********************************************************************************
 /* functionSignature: getCoreAi (coreData)                                      *
@@ -457,8 +906,13 @@ function getResponsesInputFromMessages(messages) { return messages.map(m => { co
 export default async function getCoreAi(coreData) {
   const wo = coreData?.workingObject ?? {};
   if (!Array.isArray(wo.logging)) wo.logging = [];
+
   const gate = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
-  if (gate && gate !== "responses") { wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: `Skipped: useAIModule="${gate}" != "responses"` }); return coreData; }
+  if (gate && gate !== "responses") {
+    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: `Skipped: useAIModule="${gate}" != "responses"` });
+    return coreData;
+  }
+
   const skipContextWrites = wo?.doNotWriteToContext === true;
 
   const endpoint = getStr(wo?.EndpointResponses, "");
@@ -471,32 +925,49 @@ export default async function getCoreAi(coreData) {
   const maxToolCalls = getNum(wo?.MaxToolCalls, 8);
   const timeoutMs = getNum(wo?.RequestTimeoutMs, 120000);
   const debugOn = Boolean(wo?.DebugPayload ?? process.env.AI_DEBUG);
-  if (!endpoint || !apiKey || !model) { wo.Response = "[Empty AI response]"; wo.logging.push({ timestamp: new Date().toISOString(), severity: "error", module: MODULE_NAME, exitStatus: "failed", message: `Missing required: ${!endpoint ? "EndpointResponses " : ""}${!apiKey ? "APIKey " : ""}${!model ? "Model" : ""}`.trim() }); return coreData; }
+
+  const wantReasoningSummary = getWantReasoningSummary(wo);
+
+  if (!endpoint || !apiKey || !model) {
+    wo.Response = "[Empty AI response]";
+    wo.logging.push({
+      timestamp: new Date().toISOString(),
+      severity: "error",
+      module: MODULE_NAME,
+      exitStatus: "failed",
+      message: `Missing required: ${!endpoint ? "EndpointResponses " : ""}${!apiKey ? "APIKey " : ""}${!model ? "Model" : ""}`.trim()
+    });
+    return coreData;
+  }
+
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Using BaseURL="${baseUrl || "(relative /documents)"}"` });
 
   let snapshot = [];
-  try { snapshot = await getContext(wo); } catch (e) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` }); }
+  try { snapshot = await getContext(wo); }
+  catch (e) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` }); }
 
   function getSystemContent(wo2) {
-    const now = new Date();
+    const nowIso = new Date().toISOString();
     const tz = getStr(wo2?.timezone, "Europe/Berlin");
-    const nowIso = now.toISOString();
     const base = [typeof wo2.SystemPrompt === "string" ? wo2.SystemPrompt.trim() : "", typeof wo2.Instructions === "string" ? wo2.Instructions.trim() : ""].filter(Boolean).join("\n\n");
+
     const runtimeInfo = [
       "Runtime info:",
       `- current_time_iso: ${nowIso}`,
       `- timezone_hint: ${tz}`,
-      "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
-      "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
+      "- When the user uses relative time terms (e.g., today, tomorrow), interpret them relative to current_time_iso unless another explicit reference time is provided.",
+      "- If you generate calendar-like text, prefer explicit dates (YYYY-MM-DD) when helpful."
     ].join("\n");
+
     const policy = [
       "Policy:",
       "- NEVER ANSWER TO OLDER USER REQUESTS",
       "- Use tools only when necessary.",
       "- When you emit a tool call, do not include extra prose in the same turn.",
-      "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
-      "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"
+      "- ALWAYS answer in human readable plain text, unless explicitly told to use a different format.",
+      "- NEVER answer with JSON unless explicitly asked. Do not imitate JSON-like formats from context."
     ].join("\n");
+
     const multiChannelNote = (() => {
       const raw = Array.isArray(wo2?.contextIDs) ? wo2.contextIDs : [];
       const extraIds = raw.map(v => String(v || "").trim()).filter(v => v.length > 0);
@@ -509,6 +980,7 @@ export default async function getCoreAi(coreData) {
       if (currentId) lines.push(`- Treat "${currentId}" as your primary (effective) channelId for this conversation.`);
       return lines.join("\n");
     })();
+
     const parts = [];
     if (base) parts.push(base);
     parts.push(runtimeInfo);
@@ -532,12 +1004,15 @@ export default async function getCoreAi(coreData) {
   const genericTools = await getToolsByName(toolNames, wo);
   const toolDefs = getNormalizedToolDefs(genericTools.map(t => t.definition).filter(Boolean));
   const toolsForResponses = [{ type: "image_generation" }, ...toolDefs];
+
   const toolChoiceInitial = getNormalizedToolChoice(wo?.ToolChoice) || "auto";
   const persistQueue = [];
 
   let finalText = "";
   let accumulatedText = "";
   let allHostedLinks = [];
+
+  const reasoningParts = [];
 
   let totalToolCalls = 0;
   let attempts = 0;
@@ -547,15 +1022,32 @@ export default async function getCoreAi(coreData) {
     attempts++;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       setLogConsole(`iteration-${iter + 1}-messages-before-request`, { count: messages.length, messages });
-      const body = { model, input: getResponsesInputFromMessages(messages), instructions: sys, tools: toolsForResponses, tool_choice: toolChoiceInitial, ...(maxTokens ? { max_output_tokens: maxTokens } : {}) };
-      setLogBig("responses-request-body", { endpoint, model, tool_choice: body.tool_choice, tools: body.tools, input: body.input, instructions: body.instructions }, { toFile: debugOn });
-      const res = await (globalThis.fetch ?? (await import("node-fetch")).default)(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: controller.signal });
+
+      const toolsDisabled = getToolsDisabledMode(totalToolCalls, maxToolCalls, wo);
+
+      const body = {
+        model,
+        input: getResponsesInputFromMessages(messages),
+        instructions: sys,
+        tools: toolsDisabled ? [] : toolsForResponses,
+        tool_choice: toolsDisabled ? "none" : toolChoiceInitial,
+        ...(wantReasoningSummary ? { reasoning: { summary: "auto" } } : {}),
+        ...(maxTokens ? { max_output_tokens: maxTokens } : {})
+      };
+
+      setLogBig("responses-request-body", { endpoint, model, tool_choice: body.tool_choice, tools: body.tools, input: body.input, instructions: body.instructions, reasoning: body.reasoning }, { toFile: debugOn });
+
+      const f = globalThis.fetch ?? (await import("node-fetch")).default;
+      const res = await f(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: controller.signal });
       clearTimeout(timer);
+
       const rawText = await res.text();
       const hdr = {}; try { res.headers?.forEach?.((v, k) => { hdr[k] = v; }); } catch {}
       const RAW_MAX = 8000;
+
       setLogBig("responses-status", { status: res.status, statusText: res.statusText }, { toFile: debugOn });
       setLogBig("responses-headers", hdr, { toFile: debugOn });
       setLogBig("responses-payload-raw", rawText.length > RAW_MAX ? rawText.slice(0, RAW_MAX) + ` …[+${rawText.length - RAW_MAX} chars truncated]` : rawText, { toFile: debugOn });
@@ -570,7 +1062,15 @@ export default async function getCoreAi(coreData) {
 
       const data = getJSON(rawText, {});
       setLogBig("responses-payload-json", data, { toFile: debugOn });
+
       const parsed = getParsedResponsesOutput(data);
+
+      if (wantReasoningSummary) {
+        const iterReasoningSummary = getReasoningSummaryFromResponse(data);
+        setAppendReasoningBlock(reasoningParts, iter, iterReasoningSummary, parsed?.toolCalls);
+        if (!iterReasoningSummary) wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Reasoning summary requested but none found in iteration ${iter + 1}.` });
+      }
+
       const hostedLinks = [];
 
       if (parsed.images.length) {
@@ -586,7 +1086,7 @@ export default async function getCoreAi(coreData) {
           }
         }
       } else {
-        wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `No images parsed from response.` });
+        wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "No images parsed from response." });
       }
 
       if (hostedLinks.length) allHostedLinks.push(...hostedLinks);
@@ -605,39 +1105,44 @@ export default async function getCoreAi(coreData) {
         accumulatedText += (accumulatedText ? "\n" : "") + assistantText;
       }
 
-      if (hostedLinks.length) {
-        const linkBlock = `${hostedLinks.map(u => `- ${u}`).join("\n")}`;
-        const m1 = { role: "assistant", content: linkBlock };
-        messages.push(m1);
-        persistQueue.push(getWithTurnId(m1, wo));
-        const m2 = { role: "assistant", content: `Image assets available: ${hostedLinks.join(" ")}` };
-        messages.push(m2);
-        persistQueue.push(getWithTurnId(m2, wo));
-      } else if (parsed.images.length && !hostedLinks.length) {
-        const m3 = { role: "assistant", content: `(no links generated – check write permissions for ./pub/documents and fetch availability)` };
-        messages.push(m3);
-        persistQueue.push(getWithTurnId(m3, wo));
+      if (!toolsDisabled) {
+        let ranAnyTool = false;
+
+        if (hasToolCalls && genericTools.length && totalToolCalls < maxToolCalls) {
+          wo._fullAssistantText = accumulatedText || assistantText || "";
+
+          for (const tc of toolCalls) {
+            const isGeneric = toolDefs.some(d => d?.name === tc?.name);
+            const isModelTool = (tc?.name === "image_generation");
+            if (isModelTool) continue;
+            if (!isGeneric) continue;
+            if (totalToolCalls >= maxToolCalls) break;
+
+            const call_id = tc?.call_id || tc?.id || `${tc?.name || "tool"}:${createHash("sha256").update(getToString(tc?.arguments ?? "")).digest("hex")}`;
+            const callArgsStr = (typeof tc?.arguments === "string") ? tc.arguments : JSON.stringify(tc?.arguments ?? {});
+            messages.push({ type: "function_call", call_id, name: tc?.name, arguments: callArgsStr });
+
+            const result = await setExecGenericTool(genericTools, { ...tc, call_id, arguments: callArgsStr }, coreData);
+            totalToolCalls++;
+            ranAnyTool = true;
+
+            const outputStr = getToString(result?.content ?? "");
+            messages.push({ type: "function_call_output", call_id, output: outputStr });
+          }
+
+          wo._fullAssistantText = undefined;
+          if (ranAnyTool) continue;
+        }
+
+        if (hasToolCalls && totalToolCalls >= maxToolCalls) {
+          wo.__forceNoTools = true;
+          setEnsureFinalSynthesisPrompt(messages, wo);
+          continue;
+        }
       }
 
-      let ranAnyTool = false;
-      if (hasToolCalls && genericTools.length && totalToolCalls < maxToolCalls) {
-        wo._fullAssistantText = accumulatedText || assistantText || "";
-        for (const tc of toolCalls) {
-          const isGeneric = toolDefs.some(d => d?.name === tc?.name);
-          const isModelTool = (tc?.name === "image_generation");
-          if (isModelTool) continue;
-          if (!isGeneric) continue;
-          if (totalToolCalls >= maxToolCalls) break;
-          const result = await setExecGenericTool(genericTools, tc, coreData);
-          totalToolCalls++;
-          ranAnyTool = true;
-          const contentStr = getToString(result?.content ?? "");
-          const tm = { role: "assistant", content: contentStr };
-          messages.push(tm);
-          persistQueue.push(getWithTurnId(tm, wo));
-        }
-        wo._fullAssistantText = undefined;
-        if (ranAnyTool) continue;
+      if (toolsDisabled && hasToolCalls) {
+        wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "Tools disabled mode active; ignoring any tool-call requests in output." });
       }
 
       const truncated = getWasTruncatedOutput(data);
@@ -648,7 +1153,7 @@ export default async function getCoreAi(coreData) {
         continue;
       }
 
-      const primaryText = accumulatedText || assistantText || "";
+      const primaryText = [(accumulatedText || assistantText || "")].filter(Boolean).join("\n\n");
       const linkText = allHostedLinks.length ? allHostedLinks.map(u => `- ${u}`).join("\n") : "";
       finalText = [primaryText, linkText].filter(Boolean).join("\n\n");
       break;
@@ -663,6 +1168,13 @@ export default async function getCoreAi(coreData) {
     }
   }
 
+  if (wantReasoningSummary) {
+    const joined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
+    wo.ReasoningSummary = joined.length ? joined : null;
+  } else {
+    wo.ReasoningSummary = undefined;
+  }
+
   if (!skipContextWrites) {
     for (const turn of persistQueue) {
       try { await setContext(wo, turn); }
@@ -672,8 +1184,10 @@ export default async function getCoreAi(coreData) {
     wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `doNotWriteToContext=true → skipped persistence of ${persistQueue.length} turn(s)` });
   }
 
-  setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: persistQueue.length }, { toFile: debugOn });
+  setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: persistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.ReasoningSummary ?? ""), 400) }, { toFile: debugOn });
+
   wo.Response = finalText || "[Empty AI response]";
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });
+
   return coreData;
 }
