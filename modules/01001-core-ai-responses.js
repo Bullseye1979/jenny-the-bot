@@ -1,6 +1,6 @@
 /********************************************************************************
 /* filename: "core-ai-responses.js"                                             *
-/* Version 1.1                                                                  *
+/* Version 1.0                                                                  *
 /* Purpose: Responses runner (GPT-5) with context translation, real tool        *
 /*          handling, image persistence, and file-based logging (no console).   *
 /*          Accumulates reasoning summaries across iterations (incl. tool calls)*
@@ -74,16 +74,26 @@ function getPreview(s, n = 400) { const t = getToString(s); return t.length > n 
 function getLooksBase64(s) { return typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s); }
 
 /********************************************************************************
+/* functionSignature: setEnsureDir (dirPath)                                    *
+/* Ensures a directory exists.                                                  *
+/********************************************************************************/
+function setEnsureDir(dirPath) {
+  const p = getToString(dirPath);
+  if (!p.length) return;
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
+
+/********************************************************************************
 /* functionSignature: setEnsureDebugDir ()                                      *
 /* Ensures the debug directory exists.                                          *
 /********************************************************************************/
-function setEnsureDebugDir() { if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true }); }
+function setEnsureDebugDir() { setEnsureDir(DEBUG_DIR); }
 
 /********************************************************************************
 /* functionSignature: setEnsureDocDir ()                                        *
 /* Ensures the public documents directory exists.                               *
 /********************************************************************************/
-function setEnsureDocDir() { if (!fs.existsSync(DOC_DIR)) fs.mkdirSync(DOC_DIR, { recursive: true }); }
+function setEnsureDocDir() { setEnsureDir(DOC_DIR); }
 
 /********************************************************************************
 /* functionSignature: getSafeJSONStringify (obj)                                *
@@ -121,17 +131,23 @@ function getSha256OfBase64(b64) { try { return createHash("sha256").update(Buffe
 
 /********************************************************************************
 /* functionSignature: getSanitizedForLog (obj)                                  *
-/* Produces log-friendly sanitized clone.                                       *
+/* Produces a log-friendly sanitized clone.                                     *
 /********************************************************************************/
 function getSanitizedForLog(obj) {
   const seen = new WeakSet();
   const MAX_STRING = 2000;
 
+  /********************************************************************************
+  /* functionSignature: walk (x)                                                  *
+  /* Sanitizes objects/arrays/strings for safe logging.                            *
+  /********************************************************************************/
   function walk(x) {
     if (x && typeof x === "object") {
       if (seen.has(x)) return "[[circular]]";
       seen.add(x);
+
       if (Array.isArray(x)) return x.map(walk);
+
       const o = {};
       for (const [k, v] of Object.entries(x)) {
         if (typeof v === "string") {
@@ -141,6 +157,7 @@ function getSanitizedForLog(obj) {
             o[k] = `[[base64 ${bytes} bytes sha256=${hash}]]`;
             continue;
           }
+
           if (/^data:image\//i.test(v)) {
             const b64 = v.split(",")[1] || "";
             const bytes = getApproxBase64Bytes(b64);
@@ -148,6 +165,7 @@ function getSanitizedForLog(obj) {
             o[k] = `[[data-url image base64 ${bytes} bytes sha256=${hash}]]`;
             continue;
           }
+
           if (v.length > MAX_STRING) {
             o[k] = v.slice(0, MAX_STRING) + ` …[+${v.length - MAX_STRING} chars truncated]`;
             continue;
@@ -243,14 +261,36 @@ function getNormalizedToolChoice(tc) {
 }
 
 /********************************************************************************
-/* functionSignature: getWantReasoningSummary (wo)                              *
-/* Returns true only when reasoning is explicitly enabled.                      *
+/* functionSignature: getReasoningEffort (wo)                                   *
+/* Normalizes wo.reasoning into a Responses reasoning.effort value or null.     *
+/* Rules: unset/0/"0"/false/"false"/"none"/"" => disabled; true/"true" => medium.*
 /********************************************************************************/
-function getWantReasoningSummary(wo) {
-  if (wo?.reasoning === true) return true;
-  if (typeof wo?.reasoning === "string" && wo.reasoning.trim().toLowerCase() === "true") return true;
-  return false;
+function getReasoningEffort(wo) {
+  const v = wo?.reasoning;
+
+  if (v == null) return null;
+  if (v === false) return null;
+  if (v === 0) return null;
+
+  if (typeof v === "number") return (Number.isFinite(v) && v > 0) ? "medium" : null;
+
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (!s.length) return null;
+    if (s === "0") return null;
+    if (s === "false") return null;
+    if (s === "none") return null;
+    if (s === "off") return null;
+    if (s === "disabled") return null;
+    if (s === "true") return "medium";
+    return s;
+  }
+
+  if (v === true) return "medium";
+
+  return null;
 }
+
 
 /********************************************************************************
 /* functionSignature: getResponseToolsRaw (wo)                                  *
@@ -498,6 +538,16 @@ async function setSaveB64(b64, mime, baseUrl, wo) {
 }
 
 /********************************************************************************
+/* functionSignature: getFetch ()                                               *
+/* Returns a fetch function (global fetch or node-fetch).                       *
+/********************************************************************************/
+async function getFetch() {
+  if (typeof globalThis.fetch === "function") return globalThis.fetch;
+  const mod = await import("node-fetch");
+  return mod.default;
+}
+
+/********************************************************************************
 /* functionSignature: setMirrorURL (url, baseUrl, wo)                           *
 /* Downloads a remote image and mirrors it locally.                             *
 /********************************************************************************/
@@ -508,7 +558,7 @@ async function setMirrorURL(url, baseUrl, wo) {
   if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(url).digest("hex")}.png`, baseUrl);
   idemp.images.add(key);
 
-  const f = globalThis.fetch ?? (await import("node-fetch")).default;
+  const f = await getFetch();
   const res = await f(url, { headers: { "User-Agent": "core-ai-responses/1.0" } });
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
 
@@ -539,7 +589,7 @@ async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, e
     url = `${base}/files/${encodeURIComponent(fileId)}/content`;
   }
 
-  const f = globalThis.fetch ?? (await import("node-fetch")).default;
+  const f = await getFetch();
   const res = await f(url, { method: "GET", headers: { "Authorization": `Bearer ${apiKey}`, "User-Agent": "core-ai-responses/1.0" } });
   if (!res.ok) throw new Error(`File download failed: ${res.status} ${res.statusText}`);
 
@@ -577,40 +627,72 @@ function getParsedResponsesOutput(raw) {
   const toolSeen = new Set();
   const imageSeen = new Set();
 
-  const isHttpUrl = (u) => (typeof u === "string" && /^https?:\/\//i.test(u));
-  const isDataUrl = (u) => (typeof u === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(u));
-  const b64FromDataUrl = (u) => (typeof u === "string" ? (u.split(",")[1] || "") : "");
+  /********************************************************************************
+  /* functionSignature: isHttpUrl (u)                                             *
+  /* Returns true for http(s) URLs.                                               *
+  /********************************************************************************/
+  function isHttpUrl(u) { return (typeof u === "string" && /^https?:\/\//i.test(u)); }
 
+  /********************************************************************************
+  /* functionSignature: isDataUrl (u)                                             *
+  /* Returns true for base64 image data URLs.                                     *
+  /********************************************************************************/
+  function isDataUrl(u) { return (typeof u === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(u)); }
+
+  /********************************************************************************
+  /* functionSignature: b64FromDataUrl (u)                                        *
+  /* Extracts base64 payload from a data URL.                                     *
+  /********************************************************************************/
+  function b64FromDataUrl(u) { return (typeof u === "string" ? (u.split(",")[1] || "") : ""); }
+
+  /********************************************************************************
+  /* functionSignature: getIsImageMime (m)                                        *
+  /* Returns true if the given MIME looks like an image MIME.                     *
+  /********************************************************************************/
   function getIsImageMime(m) {
     return (typeof m === "string" && m.trim().toLowerCase().startsWith("image/"));
   }
 
+  /********************************************************************************
+  /* functionSignature: getIsLikelyImageHttpUrl (u)                               *
+  /* Heuristic check for image-like HTTP URLs by file extension.                 *
+  /********************************************************************************/
   function getIsLikelyImageHttpUrl(u) {
     const s = String(u || "");
     if (!isHttpUrl(s)) return false;
     const noHash = s.split("#")[0];
     const pathPart = noHash.split("?")[0].toLowerCase();
-    if (/\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(pathPart)) return true;
-    return false;
+    return (/\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(pathPart));
   }
 
+  /********************************************************************************
+  /* functionSignature: pushImage (rec)                                           *
+  /* Adds a normalized image record with dedupe.                                  *
+  /********************************************************************************/
   function pushImage(rec) {
     if (!rec) return;
+
     const key =
       rec.kind === "url" ? `url:${rec.url}` :
       rec.kind === "file_id" ? `file:${rec.file_id}` :
       rec.kind === "b64" ? `b64:${getSha256OfBase64(rec.b64 || "")}` :
       `other:${getSafeJSONStringify(rec)}`;
+
     if (imageSeen.has(key)) return;
     imageSeen.add(key);
     out.images.push(rec);
   }
 
+  /********************************************************************************
+  /* functionSignature: pushImageUrl (u, mime)                                    *
+  /* Pushes an image URL if it is a data URL or looks like an image link.        *
+  /********************************************************************************/
   function pushImageUrl(u, mime) {
     if (isDataUrl(u)) {
       pushImage({ kind: "b64", b64: b64FromDataUrl(u), mime: mime || "image/png" });
       return;
     }
+
     if (!isHttpUrl(u)) return;
 
     if (getIsImageMime(mime) || getIsLikelyImageHttpUrl(u)) {
@@ -618,14 +700,26 @@ function getParsedResponsesOutput(raw) {
     }
   }
 
+  /********************************************************************************
+  /* functionSignature: pushImageB64 (b64, mime)                                  *
+  /* Pushes a base64 image record when present.                                   *
+  /********************************************************************************/
   function pushImageB64(b64, mime) {
     if (typeof b64 === "string" && b64.length) pushImage({ kind: "b64", b64, mime: mime || "image/png" });
   }
 
+  /********************************************************************************
+  /* functionSignature: pushFileId (id, mime)                                     *
+  /* Pushes a file_id image record when present.                                  *
+  /********************************************************************************/
   function pushFileId(id, mime) {
     if (typeof id === "string" && id.length) pushImage({ kind: "file_id", file_id: id, mime: mime || "image/png" });
   }
 
+  /********************************************************************************
+  /* functionSignature: pushToolCall (node, typeHint)                             *
+  /* Normalizes and dedupes tool/function calls from output nodes.                *
+  /********************************************************************************/
   function pushToolCall(node, typeHint) {
     const name = node?.name || node?.function?.name || node?.tool_name;
     if (!name) return;
@@ -646,15 +740,20 @@ function getParsedResponsesOutput(raw) {
     });
   }
 
-  function crawl(node, inReasoning = false) {
+  /********************************************************************************
+  /* functionSignature: crawl (node, inReasoning)                                 *
+  /* Recursively walks output payload to collect text/toolcalls/images.           *
+  /********************************************************************************/
+  function crawl(node, inReasoning) {
     if (!node || typeof node !== "object") return;
     if (seen.has(node)) return;
     seen.add(node);
 
     const t = node.type;
-    if (t === "reasoning") inReasoning = true;
+    let reasoningMode = Boolean(inReasoning);
+    if (t === "reasoning") reasoningMode = true;
 
-    if (!inReasoning && (t === "output_text" || t === "text")) {
+    if (!reasoningMode && (t === "output_text" || t === "text")) {
       const txt = getParsedTextFromNode(node);
       if (typeof txt === "string" && txt.length) textParts.push(txt);
     }
@@ -682,9 +781,9 @@ function getParsedResponsesOutput(raw) {
 
     if (t === "tool_call" || t === "function_call" || t === "tool_use") pushToolCall(node, t);
 
-    if (Array.isArray(node.content)) node.content.forEach(x => crawl(x, inReasoning));
+    if (Array.isArray(node.content)) node.content.forEach(x => crawl(x, reasoningMode));
 
-    if (!inReasoning) {
+    if (!reasoningMode) {
       const txt = getParsedTextFromNode(node);
       if (typeof txt === "string" && txt.length && (t === "message" || t === "output" || t === "assistant" || t === "content")) textParts.push(txt);
     }
@@ -694,16 +793,16 @@ function getParsedResponsesOutput(raw) {
         const iu = im?.url || im?.image_url?.url || im?.image_url;
         const ib64 = im?.b64_json || im?.base64;
         const ifid = im?.file_id || im?.image_file?.file_id || im?.asset_pointer?.file_id;
-        const mime = im?.mime || im?.mime_type || "image/png";
-        if (iu) pushImageUrl(iu, mime);
-        if (ib64) pushImageB64(ib64, mime);
-        if (ifid) pushFileId(ifid, mime);
+        const mm = im?.mime || im?.mime_type || "image/png";
+        if (iu) pushImageUrl(iu, mm);
+        if (ib64) pushImageB64(ib64, mm);
+        if (ifid) pushFileId(ifid, mm);
       }
     }
 
     for (const v of Object.values(node)) {
-      if (Array.isArray(v)) v.forEach(x => crawl(x, inReasoning));
-      else if (v && typeof v === "object") crawl(v, inReasoning);
+      if (Array.isArray(v)) v.forEach(x => crawl(x, reasoningMode));
+      else if (v && typeof v === "object") crawl(v, reasoningMode);
     }
   }
 
@@ -787,6 +886,10 @@ function getReasoningSummaryFromResponse(data) {
   const seenText = new Set();
   const out = [];
 
+  /********************************************************************************
+  /* functionSignature: norm (s)                                                  *
+  /* Normalizes whitespace and line breaks.                                       *
+  /********************************************************************************/
   function norm(s) {
     return String(s || "")
       .replace(/\r\n/g, "\n")
@@ -795,33 +898,56 @@ function getReasoningSummaryFromResponse(data) {
       .trim();
   }
 
+  /********************************************************************************
+  /* functionSignature: add (s)                                                   *
+  /* Adds a candidate reasoning summary chunk if it is valid and new.            *
+  /********************************************************************************/
   function add(s) {
     if (typeof s !== "string") return;
     let t = norm(s);
     if (!t.length) return;
     if (BAD.has(t.toLowerCase())) return;
+
     t = getSanitizeReasoningText(t);
     t = norm(t);
     if (!t.length) return;
+
     if (seenText.has(t)) return;
     seenText.add(t);
     out.push(t);
   }
 
+  /********************************************************************************
+  /* functionSignature: isReasonKey (k)                                           *
+  /* Returns true if a key name looks reasoning-related.                          *
+  /********************************************************************************/
   function isReasonKey(k) {
     const kk = String(k || "").toLowerCase();
     return kk.includes("summary") || kk.includes("reason") || kk.includes("explain") || kk === "text";
   }
 
-  function walk(node, keyHint = "") {
+  /********************************************************************************
+  /* functionSignature: walk (node, keyHint)                                      *
+  /* Walks objects to find reasoning/summary fields while avoiding input echoes. *
+  /********************************************************************************/
+  function walk(node, keyHint) {
+    const hint = getToString(keyHint);
+
     if (node == null) return;
+
     if (typeof node === "string") {
-      if (isReasonKey(keyHint)) add(node);
+      if (isReasonKey(hint)) add(node);
       return;
     }
+
     if (typeof node !== "object") return;
     if (seenObj.has(node)) return;
     seenObj.add(node);
+
+    if (Array.isArray(node)) {
+      for (const x of node) walk(x, hint);
+      return;
+    }
 
     const t = String(node?.type || "").toLowerCase();
     const isReasonNode = (t === "reasoning");
@@ -829,17 +955,12 @@ function getReasoningSummaryFromResponse(data) {
     if (typeof node.summary_text === "string") add(node.summary_text);
     if (typeof node.summary === "string") add(node.summary);
     if (typeof node.explanation === "string") add(node.explanation);
-    if (typeof node.text === "string" && (isReasonNode || isReasonKey(keyHint))) add(node.text);
-
-    if (Array.isArray(node)) {
-      for (const x of node) walk(x, keyHint);
-      return;
-    }
+    if (typeof node.text === "string" && (isReasonNode || isReasonKey(hint))) add(node.text);
 
     for (const [k, v] of Object.entries(node)) {
       if (k === "input") continue;
       if (k === "instructions") continue;
-      if (!isReasonNode && !isReasonKey(k) && !isReasonKey(keyHint)) continue;
+      if (!isReasonNode && !isReasonKey(k) && !isReasonKey(hint)) continue;
       walk(v, k);
     }
   }
@@ -982,7 +1103,8 @@ export default async function getCoreAi(coreData) {
   const timeoutMs = getNum(wo?.RequestTimeoutMs, 120000);
   const debugOn = Boolean(wo?.DebugPayload ?? process.env.AI_DEBUG);
 
-  const wantReasoningSummary = getWantReasoningSummary(wo);
+  const reasoningEffort = getReasoningEffort(wo);
+  const reasoningEnabled = (typeof reasoningEffort === "string" && reasoningEffort.length > 0);
 
   if (!endpoint || !apiKey || !model) {
     wo.Response = "[Empty AI response]";
@@ -1006,6 +1128,10 @@ export default async function getCoreAi(coreData) {
   try { snapshot = await getContext(wo); }
   catch (e) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` }); }
 
+/********************************************************************************
+/* functionSignature: getSystemContent (wo2)                                    *
+/* Builds system prompt content with runtime hints and policy lines.            *
+/********************************************************************************/
   function getSystemContent(wo2) {
     const nowIso = new Date().toISOString();
     const tz = getStr(wo2?.timezone, "Europe/Berlin");
@@ -1094,13 +1220,13 @@ export default async function getCoreAi(coreData) {
         instructions: sys,
         tools: toolsForResponses,
         tool_choice: toolsDisabled ? "none" : toolChoiceInitial,
-        ...(wantReasoningSummary ? { reasoning: { summary: "auto" } } : {}),
+        ...(reasoningEnabled ? { reasoning: { effort: reasoningEffort, summary: "auto" } } : {}),
         ...(maxTokens ? { max_output_tokens: maxTokens } : {})
       };
 
       setLogBig("responses-request-body", { endpoint, model, tool_choice: body.tool_choice, tools: body.tools, input: body.input, instructions: body.instructions, reasoning: body.reasoning }, { toFile: debugOn });
 
-      const f = globalThis.fetch ?? (await import("node-fetch")).default;
+      const f = await getFetch();
       const res = await f(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: controller.signal });
       clearTimeout(timer);
 
@@ -1125,7 +1251,7 @@ export default async function getCoreAi(coreData) {
 
       const parsed = getParsedResponsesOutput(data);
 
-      if (wantReasoningSummary) {
+      if (reasoningEnabled) {
         const iterReasoningSummary = getReasoningSummaryFromResponse(data);
         setAppendReasoningBlock(reasoningParts, iter, iterReasoningSummary, parsed?.toolCalls);
         if (!iterReasoningSummary) wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Reasoning summary requested but none found in iteration ${iter + 1}.` });
@@ -1226,7 +1352,7 @@ export default async function getCoreAi(coreData) {
     }
   }
 
-  if (wantReasoningSummary) {
+  if (reasoningEnabled) {
     const joined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
     wo.ReasoningSummary = joined.length ? joined : null;
   } else {
