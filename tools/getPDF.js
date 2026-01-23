@@ -438,7 +438,7 @@ export default {
     function: {
       name: MODULE_NAME,
       description:
-        "Generate a print-hardened A4 PDF and a matching HTML file from tolerant HTML input. CSS is REQUIRED. Accepts object fields or a raw string (fenced ```json / ```html / ```css, full <html>…</html>, body-only HTML). Saves both to ../pub/documents. Returns { ok, pdf, html, css, text, filename }. IMPORTANT: Elements that are included in the PDF (e.g. images) need to be generated before this tool is called.",
+        "Generate a print-hardened A4 PDF and a matching HTML file from tolerant HTML input. CSS is REQUIRED. Accepts object fields or a raw string (fenced ```json / ```html / ```css, full <html>…</html>, body-only HTML). Saves both to ../pub/documents. Returns { ok, pdf, html, css, text, filename }. Always show the html-URL (html) and the PDF-URL (pdf).  IMPORTANT: Elements that are included in the PDF (e.g. images) need to be generated before this tool is called.",
       parameters: {
         type: "object",
         additionalProperties: false,
