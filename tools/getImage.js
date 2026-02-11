@@ -412,7 +412,7 @@ function getDefaultExport() {
       type: "function",
       function: {
         name: MODULE_NAME,
-        description: "Generate one or more high-quality images from a prompt using the configured Images model; returns local paths/URLs. Model-agnostic; automatically enhances prompts unless strictPrompt=true.",
+        description: "Generate one or more high-quality images from a prompt using the configured Images model; returns local paths/URLs. Model-agnostic; automatically enhances prompts unless strictPrompt=true. Never change set model unless it is explicitly stated.",
         parameters: {
           type: "object",
           properties: {
