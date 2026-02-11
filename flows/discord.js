@@ -227,8 +227,6 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
     const isAllowedBot = !!(message.author?.bot && authorId && botsAllow.includes(authorId));
 
     if (message.author?.bot && !isMacro && !isAllowedBot) return;
-
-    const runCore = createRunCore();
     const wo = (runCore.workingObject ||= {});
     const log = getPrefixedLogger(wo, import.meta.url);
 
