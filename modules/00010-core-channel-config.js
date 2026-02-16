@@ -1,6 +1,6 @@
 /************************************************************************************/
 /* filename: "core-channel-config.js"                                              */
-/* Version: 1                                                                      */
+/* Version: 1                                                                       */
 /* Purpose: Strict hierarchical overrides for workingObject.                        */
 /*          Hierarchy: Channel -> Flow -> User                                      */
 /*          Rules:                                                                  */
@@ -11,6 +11,10 @@
 /*            (last matching user rule wins)                                        */
 /*          - Arrays are ALWAYS replaced; plain objects are deep-merged             */
 /*          - "channelIDs" is NOT used for matching (context/bleeding elsewhere)    */
+/*                                                                                */
+/* ChangeLog v2:                                                                   */
+/*          - Effective channel id now accepts id/channelId/message.channelId       */
+/*          - Channel match is now case-insensitive (like flow match)               */
 /************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
@@ -103,7 +107,7 @@ function deepMergePlain(target, source) {
 function matchChannel(node, channelId) {
   const list = normalizeStrList(node?.channelMatch);
   if (list.length === 0) return false;
-  return list.includes(normalizeStr(channelId));
+  return includesCI(list, channelId);
 }
 
 /************************************************************************************/
@@ -171,7 +175,13 @@ function applyOverrides(workingObject, overrides) {
 /* Returns channel id or "DM"                                                      */
 /************************************************************************************/
 function getEffectiveChannelId(workingObject) {
-  const id = normalizeStr(workingObject?.id);
+  const id = normalizeStr(
+    workingObject?.id ??
+    workingObject?.channelId ??
+    workingObject?.message?.channelId ??
+    workingObject?.message?.channelID ??
+    workingObject?.channelID
+  );
 
   const chType = workingObject?.channelType;
   const isDM =
