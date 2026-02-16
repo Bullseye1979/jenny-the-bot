@@ -178,9 +178,11 @@ function getEffectiveChannelId(workingObject) {
   const id = normalizeStr(
     workingObject?.id ??
     workingObject?.channelId ??
+    workingObject?.channelID ??
     workingObject?.message?.channelId ??
     workingObject?.message?.channelID ??
-    workingObject?.channelID
+    workingObject?.message?.channelID ??
+    workingObject?.message?.channelID
   );
 
   const chType = workingObject?.channelType;

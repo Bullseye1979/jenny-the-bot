@@ -1135,7 +1135,12 @@ export default async function getCoreAi(coreData) {
   function getSystemContent(wo2) {
     const nowIso = new Date().toISOString();
     const tz = getStr(wo2?.timezone, "Europe/Berlin");
-    const base = [typeof wo2.SystemPrompt === "string" ? wo2.SystemPrompt.trim() : "", typeof wo2.Instructions === "string" ? wo2.Instructions.trim() : ""].filter(Boolean).join("\n\n");
+    const base = [
+      typeof wo2.SystemPrompt === "string" ? wo2.SystemPrompt.trim() : "",
+      typeof wo2.Persona === "string" ? wo2.Persona.trim() : "",
+      typeof wo2.Instructions === "string" ? wo2.Instructions.trim() : ""
+    ].filter(Boolean).join("\n\n");
+
 
     const runtimeInfo = [
       "Runtime info:",
