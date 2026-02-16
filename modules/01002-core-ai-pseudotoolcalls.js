@@ -492,9 +492,9 @@ function getSystemContentBase(wo) {
   const tz = getStr(wo?.timezone, "Europe/Berlin");
   const nowIso = now.toISOString();
   const base = [
-    typeof wo2.SystemPrompt === "string" ? wo2.SystemPrompt.trim() : "",
-    typeof wo2.Persona === "string" ? wo2.Persona.trim() : "",
-    typeof wo2.Instructions === "string" ? wo2.Instructions.trim() : ""
+    typeof wo.SystemPrompt === "string" ? wo2.SystemPrompt.trim() : "",
+    typeof wo.Persona === "string" ? wo2.Persona.trim() : "",
+    typeof wo.Instructions === "string" ? wo2.Instructions.trim() : ""
   ].filter(Boolean).join("\n\n");
 
   const runtimeInfo = [
