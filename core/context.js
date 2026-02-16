@@ -393,6 +393,8 @@ async function getContextRowsForId(pool, id, nUsers, detailed) {
 /********************************************************************************
 /* functionSignature: getContext (workingObject)                                 *
 /* Returns capped messages based on user-block budget; supports extra channels   *
+/* - Base channel: full context (all roles)                                      *
+/* - Extra channels: user-only context                                           *
 /********************************************************************************/
 export async function getContext(workingObject) {
   const baseId = String(workingObject?.id || "");
@@ -429,9 +431,20 @@ export async function getContext(workingObject) {
   for (const row of rows || []) {
     try {
       const obj = JSON.parse(row.json);
+
+      const rowChannelId = String(row.id || baseId);
+      const isBaseChannel = rowChannelId === baseId;
+
       const roleRaw =
         typeof obj?.role === "string" && obj.role ? obj.role : row.role || "";
       const roleLc = String(roleRaw || "").toLowerCase();
+
+      /********************************************************************************
+      /* Extra channels are user-only to prevent persona/style leakage                  *
+      /********************************************************************************/
+      if (!isBaseChannel) {
+        if (roleLc !== "user") continue;
+      }
 
       let contentStr;
 
@@ -487,7 +500,7 @@ export async function getContext(workingObject) {
           };
 
       if (multiChannel) {
-        baseMsg.channelId = row.id || baseId;
+        baseMsg.channelId = rowChannelId;
       }
 
       messages.push(baseMsg);
@@ -505,6 +518,7 @@ export async function getContext(workingObject) {
   const capped = getCapByTokenBudgetUserBlocks(messages, tokenBudget);
   return capped;
 }
+
 
 /********************************************************************************
 /* functionSignature: setMaybeCreateTimelinePeriod (pool, wo, channelId)         *
