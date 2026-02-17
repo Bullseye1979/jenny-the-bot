@@ -1,8 +1,9 @@
 /********************************************************************************
 /* filename: "context.js"                                                       *
-/* Version 1.0                                                                  *
+/* Version 1                                                                    *
 /* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline    *
-/* summaries, and user-block capping                                            *
+/* summaries, and user-block capping. Supports extra channels.                  *
+/* Extra-channel behavior: assistant messages are presented as user messages.   *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -393,8 +394,7 @@ async function getContextRowsForId(pool, id, nUsers, detailed) {
 /********************************************************************************
 /* functionSignature: getContext (workingObject)                                 *
 /* Returns capped messages based on user-block budget; supports extra channels   *
-/* - Base channel: full context (all roles)                                      *
-/* - Extra channels: user-only context                                           *
+/* Extra channels: assistant messages are presented as user messages             *
 /********************************************************************************/
 export async function getContext(workingObject) {
   const baseId = String(workingObject?.id || "");
@@ -440,10 +440,23 @@ export async function getContext(workingObject) {
       const roleLc = String(roleRaw || "").toLowerCase();
 
       /********************************************************************************
-      /* Extra channels are user-only to prevent persona/style leakage                  *
+      /* Extra channels: present assistant messages as user messages                   *
+      /* - base channel: unchanged                                                    *
+      /* - extra channels: user stays user, assistant becomes user                    *
+      /* - drop tool/system/other roles from extra channels                           *
       /********************************************************************************/
+      let effectiveRole = roleLc;
+
       if (!isBaseChannel) {
-        if (roleLc !== "user") continue;
+        if (roleLc === "assistant") {
+          effectiveRole = "user";
+          obj.role = "user";
+          if (obj.tool_calls) delete obj.tool_calls;
+          if (obj.tool_call_id) delete obj.tool_call_id;
+          if (obj.name) delete obj.name;
+        } else if (roleLc !== "user") {
+          continue;
+        }
       }
 
       let contentStr;
@@ -459,7 +472,7 @@ export async function getContext(workingObject) {
           contentStr = "";
         }
       } else {
-        if (roleLc === "assistant") {
+        if (effectiveRole === "assistant") {
           if (typeof obj?.content === "string" && obj.content.length) {
             contentStr = obj.content;
           } else if (typeof obj?.text === "string" && obj.text.length) {
@@ -486,14 +499,14 @@ export async function getContext(workingObject) {
 
       const baseMsg = simplified
         ? {
-            role: roleLc || obj?.role || "",
+            role: effectiveRole || obj?.role || "",
             content: contentStr,
             ts: new Date(row.ts).toISOString(),
             ctx_id: row.ctx_id
           }
         : {
             ...obj,
-            role: roleLc || obj?.role || "",
+            role: effectiveRole || obj?.role || "",
             content: contentStr,
             ts: new Date(row.ts).toISOString(),
             ctx_id: row.ctx_id
@@ -518,7 +531,6 @@ export async function getContext(workingObject) {
   const capped = getCapByTokenBudgetUserBlocks(messages, tokenBudget);
   return capped;
 }
-
 
 /********************************************************************************
 /* functionSignature: setMaybeCreateTimelinePeriod (pool, wo, channelId)         *
