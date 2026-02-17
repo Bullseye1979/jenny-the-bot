@@ -1,6 +1,6 @@
 /********************************************************************************
 /* filename: "core-ai-responses.js"                                             *
-/* Version 1.0                                                                  *
+/* Version 1                                                                    *
 /* Purpose: Responses runner (GPT-5) with context translation, real tool        *
 /*          handling, image persistence, and file-based logging (no console).   *
 /*          Accumulates reasoning summaries across iterations (incl. tool calls)*
@@ -10,6 +10,10 @@
 /*          with tools disabled (tool_choice="none").                           *
 /*          Built-in Responses tools are controlled via workingObject.ResponseTools*
 /*          (defaults to OFF when missing/empty).                               *
+/*                                                                              *
+/* Fix v1.1: Persist image-only Responses into context by writing an assistant  *
+/*          turn even when parsed.text is empty. Persisted content includes     *
+/*          hosted image links (and any assistant text).                        *
 /*                                                                              *
 /* Fix: Prevent web_search outputs (and any generic "url" fields) from being    *
 /*      misclassified as images by restricting image extraction to explicit     *
@@ -1289,11 +1293,17 @@ export default async function getCoreAi(coreData) {
       const hasToolCalls = toolCalls.length > 0;
       const assistantText = (parsed.text || "").trim();
 
-      if (assistantText) {
-        const msg = { role: "assistant", content: assistantText };
+      /********************************************************************************
+      /* Fix v1.1: Persist assistant turn even when text is empty but images exist  *
+      /********************************************************************************/
+      const linkBlockThisIter = hostedLinks.length ? hostedLinks.map(u => `- ${u}`).join("\n") : "";
+      const persistAssistantContent = [assistantText, linkBlockThisIter].filter(Boolean).join("\n\n").trim();
+
+      if (persistAssistantContent.length) {
+        const msg = { role: "assistant", content: persistAssistantContent };
         messages.push(msg);
         persistQueue.push(getWithTurnId(msg, wo));
-        accumulatedText += (accumulatedText ? "\n" : "") + assistantText;
+        if (assistantText) accumulatedText += (accumulatedText ? "\n" : "") + assistantText;
       }
 
       if (!toolsDisabled) {
