@@ -1,10 +1,11 @@
 /********************************************************************************
 /* filename: "context.js"                                                       *
-/* Version 1.2                                                                  *
+/* Version 1                                                                    *
 /* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline    *
 /* summaries, and user-block capping. Supports extra channels.                  *
-/* Extra-channel behavior: assistant messages are presented as user messages.   *
-*  Trim behavior: drop only last user message from the base channel context.    *
+/* Extra-channel behavior: assistant messages are presented as user messages     *
+/* with a short quote prefix to reduce instruction/persona leakage.             *
+/* Trim behavior: drop only last user message from the base channel context.    *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -440,20 +441,28 @@ export async function getContext(workingObject) {
       const roleLc = String(roleRaw || "").toLowerCase();
 
       /********************************************************************************
-      /* Extra channels: present assistant messages as user messages                   *
+      /* Extra channels: present assistant messages as user messages (quoted)          *
       /* - base channel: unchanged                                                    *
-      /* - extra channels: user stays user, assistant becomes user                    *
+      /* - extra channels: user stays user, assistant becomes user + short prefix     *
       /* - drop tool/system/other roles from extra channels                           *
       /********************************************************************************/
       let effectiveRole = roleLc;
+      let forcedContent = null;
 
       if (!isBaseChannel) {
         if (roleLc === "assistant") {
           effectiveRole = "user";
           obj.role = "user";
+
           if (obj.tool_calls) delete obj.tool_calls;
           if (obj.tool_call_id) delete obj.tool_call_id;
           if (obj.name) delete obj.name;
+
+          const pfx = `[q:${rowChannelId}] `;
+          const raw = typeof obj?.content === "string" ? obj.content : "";
+          forcedContent = pfx + (raw || "");
+
+          obj.content = forcedContent;
         } else if (roleLc !== "user") {
           continue;
         }
@@ -461,7 +470,9 @@ export async function getContext(workingObject) {
 
       let contentStr;
 
-      if (simplified) {
+      if (forcedContent !== null) {
+        contentStr = forcedContent;
+      } else if (simplified) {
         if (typeof row.text === "string" && row.text.length) {
           contentStr = row.text;
         } else if (typeof obj?.content === "string" && obj.content.length) {
