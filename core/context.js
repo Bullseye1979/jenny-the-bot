@@ -1,9 +1,10 @@
 /********************************************************************************
 /* filename: "context.js"                                                       *
-/* Version 1                                                                    *
+/* Version 1.2                                                                  *
 /* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline    *
 /* summaries, and user-block capping. Supports extra channels.                  *
 /* Extra-channel behavior: assistant messages are presented as user messages.   *
+*  Trim behavior: drop only last user message from the base channel context.    *
 /********************************************************************************/
 /********************************************************************************
 /*                                                                              *
@@ -394,7 +395,6 @@ async function getContextRowsForId(pool, id, nUsers, detailed) {
 /********************************************************************************
 /* functionSignature: getContext (workingObject)                                 *
 /* Returns capped messages based on user-block budget; supports extra channels   *
-/* Extra channels: assistant messages are presented as user messages             *
 /********************************************************************************/
 export async function getContext(workingObject) {
   const baseId = String(workingObject?.id || "");
@@ -520,8 +520,18 @@ export async function getContext(workingObject) {
     } catch {}
   }
 
+  /********************************************************************************
+  /* Drop last user message only from base channel (avoid duplicating request)     *
+  /********************************************************************************/
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (String(messages[i]?.role || "").toLowerCase() === "user") {
+    const roleLc = String(messages[i]?.role || "").toLowerCase();
+    if (roleLc !== "user") continue;
+
+    const msgChannelId = multiChannel
+      ? String(messages[i]?.channelId || "")
+      : baseId;
+
+    if (!multiChannel || msgChannelId === baseId) {
       messages.splice(i, 1);
       break;
     }
