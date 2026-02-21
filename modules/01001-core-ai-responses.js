@@ -36,6 +36,15 @@ const DEBUG_DIR = path.resolve("./pub/debug");
 const DOC_DIR = path.resolve("./pub/documents");
 
 /********************************************************************************
+/* functionSignature: getAssistantAuthorName (wo)                               *
+/* Returns the assistant authorName (Botname).                                  *
+/********************************************************************************/
+function getAssistantAuthorName(wo) {
+  const v = (typeof wo?.Botname === "string" && wo.Botname.trim().length) ? wo.Botname.trim() : "";
+  return v.length ? v : undefined;
+}
+
+/********************************************************************************
 /* functionSignature: getToString (v)                                           *
 /* Returns a safe string representation.                                        *
 /********************************************************************************/
@@ -1300,7 +1309,8 @@ export default async function getCoreAi(coreData) {
       const persistAssistantContent = [assistantText, linkBlockThisIter].filter(Boolean).join("\n\n").trim();
 
       if (persistAssistantContent.length) {
-        const msg = { role: "assistant", content: persistAssistantContent };
+        const msg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: persistAssistantContent };
+        if (msg.authorName == null) delete msg.authorName;
         messages.push(msg);
         persistQueue.push(getWithTurnId(msg, wo));
         if (assistantText) accumulatedText += (accumulatedText ? "\n" : "") + assistantText;

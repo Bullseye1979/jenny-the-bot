@@ -16,6 +16,15 @@ const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 
 /********************************************************************************
+/* functionSignature: getAssistantAuthorName (wo)                               *
+/* Returns the assistant authorName (Botname).                                  *
+/********************************************************************************/
+function getAssistantAuthorName(wo) {
+  const v = (typeof wo?.Botname === "string" && wo.Botname.trim().length) ? wo.Botname.trim() : "";
+  return v.length ? v : undefined;
+}
+
+/********************************************************************************
 /* functionSignature: getShouldRunForThisModule (wo)                             *
 /* Returns true when useAIModule equals "completions".                           *
 /********************************************************************************/
@@ -454,9 +463,11 @@ export default async function getCoreAi(coreData) {
       const msg = choice?.message || {};
       const toolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
       const assistantMsg = {
-        role: "assistant",
+      role: "assistant",
+        authorName: getAssistantAuthorName(wo),
         content: typeof msg.content === "string" ? msg.content : ""
       };
+      if (assistantMsg.authorName == null) delete assistantMsg.authorName;
       const chunkText = typeof msg.content === "string" ? msg.content : "";
       if (chunkText) {
         accumulatedText += (accumulatedText ? "\n" : "") + chunkText;

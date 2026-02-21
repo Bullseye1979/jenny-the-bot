@@ -16,6 +16,15 @@ const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 
 /******************************************************************************* 
+/* functionSignature: getAssistantAuthorName (wo)                              *
+/* Returns the assistant authorName (Botname).                                  *
+/*******************************************************************************/
+function getAssistantAuthorName(wo) {
+  const v = (typeof wo?.Botname === "string" && wo.Botname.trim().length) ? wo.Botname.trim() : "";
+  return v.length ? v : undefined;
+}
+
+/******************************************************************************* 
 /* functionSignature: getJsonSafe (v)                                          *
 /* Returns a compact JSON-safe string for logging.                             *
 /*******************************************************************************/
@@ -641,7 +650,8 @@ export default async function getCoreAi(coreData) {
       const finish = choice?.finish_reason;
       const msg = choice?.message || {};
       const msgText = typeof msg.content === "string" ? msg.content : "";
-      const assistantMsg = { role: "assistant", content: msgText };
+      const assistantMsg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: msgText };
+      if (assistantMsg.authorName == null) delete assistantMsg.authorName;
 
       const looksLikePseudoTool = !pseudoToolUsed && !!getMaybePseudoToolCall(msgText);
 
