@@ -417,9 +417,6 @@ function getDefaultExport() {
           type: "object",
           properties: {
             prompt: { type: "string", description: "Short, clean scene description (no on-image text)." },
-            model: { type: "string", description: "Images model (defaults from toolsconfig.getImage.model). Only set this, when explicitly requested by user" },
-            endpoint: { type: "string", description: "Images endpoint URL (defaults from toolsconfig.getImage.endpoint or OpenAI default)." },
-            apiKey: { type: "string", description: "API key for the images endpoint (overrides toolsconfig/workingObject)." },
             size: { type: "string", description: "Explicit size 'WxH' (e.g., 1152x896). If omitted, derived from 'aspect' and 'targetLongEdge'." },
             aspect: { type: "string", description: "Preferred aspect (e.g., '1:1', '16:9', '9:16', 'portrait', 'landscape')." },
             targetLongEdge: { type: "number", description: "If 'size' is omitted, long edge target in px (default 1024)." },
