@@ -2,7 +2,7 @@
 /* filename: "core-ai-pseudotoolcalls.js"                                      *
 /* Version 1.0                                                                 *
 /* Purpose: Pseudo tool runner that renders a compact tool catalog and         *
-/*          executes single-line pseudo tool invocations with schema checks.   *
+/*          executes pseudo tool invocations with schema checks.               *
 /*******************************************************************************/
 /******************************************************************************* 
 /*                                                                             *
@@ -177,17 +177,28 @@ async function getToolsByName(names, wo) {
 }
 
 /******************************************************************************* 
-/* functionSignature: getMaybePseudoToolCall (text)                            *
-/* Parses a single-line pseudo tool call from text.                            *
+/* functionSignature: getExtractPseudoToolCall (text)                          *
+/* Extracts a pseudo tool call even if other text is present.                  *
+/* Returns { name, args, cleanText, toolLine } or null.                        *
 /*******************************************************************************/
-function getMaybePseudoToolCall(text) {
+function getExtractPseudoToolCall(text) {
   if (!text || typeof text !== "string") return null;
-  const m = text.match(/^\s*\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*\})\s*$/m);
-  if (!m) return null;
-  const name = m[1];
-  let args = {};
-  try { args = JSON.parse(m[2]); } catch { args = getTryParseJSON(m[2], {}); }
-  return { name, args };
+
+  const lines = text.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = String(lines[i] || "").trim();
+    const m = line.match(/^\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*\})\s*$/);
+    if (!m) continue;
+
+    const name = m[1];
+    let args = {};
+    try { args = JSON.parse(m[2]); } catch { args = getTryParseJSON(m[2], {}); }
+
+    const cleanText = lines.slice(0, i).concat(lines.slice(i + 1)).join("\n").trim();
+    return { name, args, cleanText, toolLine: line };
+  }
+
+  return null;
 }
 
 /******************************************************************************* 
@@ -650,61 +661,67 @@ export default async function getCoreAi(coreData) {
       const finish = choice?.finish_reason;
       const msg = choice?.message || {};
       const msgText = typeof msg.content === "string" ? msg.content : "";
+
+      const extracted = (!pseudoToolUsed && msgText) ? getExtractPseudoToolCall(msgText) : null;
+      const looksLikePseudoTool = !!extracted;
+
       const assistantMsg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: msgText };
       if (assistantMsg.authorName == null) delete assistantMsg.authorName;
-
-      const looksLikePseudoTool = !pseudoToolUsed && !!getMaybePseudoToolCall(msgText);
 
       messages.push(assistantMsg);
       persistQueue.push(getWithTurnId(assistantMsg, wo));
 
-      if (!looksLikePseudoTool && msgText) {
-        const chunk = msgText.trim();
-        if (chunk) {
+      if (msgText) {
+        const clean = extracted ? (extracted.cleanText || "") : msgText;
+        const chunk = String(clean || "").trim();
+        if (!looksLikePseudoTool && chunk) {
           accumulatedText += (accumulatedText ? "\n" : "") + chunk;
+        }
+        if (looksLikePseudoTool && extracted?.cleanText) {
+          const chunk2 = String(extracted.cleanText || "").trim();
+          if (chunk2) accumulatedText += (accumulatedText ? "\n" : "") + chunk2;
         }
       }
 
-      if (!pseudoToolUsed) {
-        const pt = getMaybePseudoToolCall(assistantMsg.content || "");
-        if (pt) {
-          wo._fullAssistantText = accumulatedText.trim();
+      if (!pseudoToolUsed && extracted) {
+        const pt = extracted;
 
-          if (Array.isArray(kiCfg.toolsList) && kiCfg.toolsList.length && !kiCfg.toolsList.includes(pt.name)) {
-            const errMsg = `[tool_error:${pt.name}] Tool not allowed`;
-            wo.logging.push({
-              timestamp: new Date().toISOString(),
-              severity: "warn",
-              module: MODULE_NAME,
-              exitStatus: "failed",
-              message: `Pseudo tool not allowed: ${pt.name}`
-            });
-            const userErr = { role: "user", content: errMsg };
-            messages.push(userErr);
-            persistQueue.push(getWithTurnId(userErr, wo));
-            pseudoToolUsed = true;
-            wo._fullAssistantText = undefined;
-            continue;
-          }
+        wo._fullAssistantText = accumulatedText.trim();
 
-          const toolMsg = await getExecToolCall(
-            toolModules,
-            { id: "pseudo_" + pt.name, function: { name: pt.name, arguments: JSON.stringify(pt.args ?? {}) } },
-            coreData,
-            toolSpecsByName
-          );
-
-          persistQueue.push(getWithTurnId(toolMsg, wo));
-
-          const toolResultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? null);
-          const userToolResult = { role: "user", content: `[tool_result:${pt.name}]\n${toolResultText}` };
-          messages.push(userToolResult);
-          persistQueue.push(getWithTurnId(userToolResult, wo));
-
+        if (Array.isArray(kiCfg.toolsList) && kiCfg.toolsList.length && !kiCfg.toolsList.includes(pt.name)) {
+          const errMsg = `[tool_error:${pt.name}] Tool not allowed`;
+          wo.logging.push({
+            timestamp: new Date().toISOString(),
+            severity: "warn",
+            module: MODULE_NAME,
+            exitStatus: "failed",
+            message: `Pseudo tool not allowed: ${pt.name}`
+          });
+          const userErr = { role: "user", content: errMsg };
+          messages.push(userErr);
+          persistQueue.push(getWithTurnId(userErr, wo));
           pseudoToolUsed = true;
           wo._fullAssistantText = undefined;
           continue;
         }
+
+        const toolMsg = await getExecToolCall(
+          toolModules,
+          { id: "pseudo_" + pt.name, function: { name: pt.name, arguments: JSON.stringify(pt.args ?? {}) } },
+          coreData,
+          toolSpecsByName
+        );
+
+        persistQueue.push(getWithTurnId(toolMsg, wo));
+
+        const toolResultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? null);
+        const userToolResult = { role: "user", content: `[tool_result:${pt.name}]\n${toolResultText}` };
+        messages.push(userToolResult);
+        persistQueue.push(getWithTurnId(userToolResult, wo));
+
+        pseudoToolUsed = true;
+        wo._fullAssistantText = undefined;
+        continue;
       }
 
       if (finish === "length") {
