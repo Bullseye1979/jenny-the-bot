@@ -623,7 +623,7 @@ function getSystemContentBase(wo) {
 
   const toolContract = [
     "Tool call contract:",
-    "- If you decide to use a tool, emit the tool call using either:",
+    "- To emit the tool call using either:",
     "  (A) single-line: [tool:NAME]{JSON}",
     "  (B) two-part:    [tool:NAME] then on following lines the JSON object (starting with '{' and ending with '}').",
     "- If a tool call is emitted, it MUST be the LAST thing in your message (no text after it).",
