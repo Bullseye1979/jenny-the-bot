@@ -1,8 +1,12 @@
 /******************************************************************************* 
 /* filename: "core-ai-pseudotoolcalls.js"                                      *
-/* Version 1.0                                                                 *
+/* Version 1.2                                                                 *
 /* Purpose: Pseudo tool runner that renders a compact tool catalog and         *
 /*          executes pseudo tool invocations with schema checks.               *
+/*          Fixes:                                                             *
+/*          - Supports multi-line pseudo tool calls.                           *
+/*          - Extracts URL(s) from tool results and injects plain-text hints   *
+/*            so the follow-up assistant turn reliably appends the link.       *
 /*******************************************************************************/
 /******************************************************************************* 
 /*                                                                             *
@@ -17,7 +21,7 @@ const RESULT_PREVIEW_MAX = 400;
 
 /******************************************************************************* 
 /* functionSignature: getAssistantAuthorName (wo)                              *
-/* Returns the assistant authorName (Botname).                                  *
+/* Returns the assistant authorName (Botname).                                 *
 /*******************************************************************************/
 function getAssistantAuthorName(wo) {
   const v = (typeof wo?.Botname === "string" && wo.Botname.trim().length) ? wo.Botname.trim() : "";
@@ -178,8 +182,11 @@ async function getToolsByName(names, wo) {
 
 /******************************************************************************* 
 /* functionSignature: getExtractPseudoToolCall (text)                          *
-/* Extracts a pseudo tool call even if other text is present.                  *
-/* Returns { name, args, cleanText, toolLine } or null.                        *
+/* Extracts a pseudo tool call even if multi-line JSON is used.                *
+/* Supports:                                                                   *
+/*  - single line: [tool:NAME]{...}                                            *
+/*  - multi line:  [tool:NAME] \n { ... }                                      *
+/* Returns { name, args, cleanText, toolText } or null.                        *
 /*******************************************************************************/
 function getExtractPseudoToolCall(text) {
   if (!text || typeof text !== "string") return null;
@@ -187,15 +194,44 @@ function getExtractPseudoToolCall(text) {
   const lines = text.split(/\r?\n/);
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = String(lines[i] || "").trim();
-    const m = line.match(/^\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*\})\s*$/);
-    if (!m) continue;
 
-    const name = m[1];
-    let args = {};
-    try { args = JSON.parse(m[2]); } catch { args = getTryParseJSON(m[2], {}); }
+    const oneLine = line.match(/^\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*\})\s*$/);
+    if (oneLine) {
+      const name = oneLine[1];
+      let args = {};
+      try { args = JSON.parse(oneLine[2]); } catch { args = getTryParseJSON(oneLine[2], {}); }
+      const cleanText = lines.slice(0, i).concat(lines.slice(i + 1)).join("\n").trim();
+      return { name, args, cleanText, toolText: line };
+    }
 
-    const cleanText = lines.slice(0, i).concat(lines.slice(i + 1)).join("\n").trim();
-    return { name, args, cleanText, toolLine: line };
+    const head = line.match(/^\[tool:([A-Za-z0-9_.\-]+)\]\s*$/);
+    if (!head) continue;
+
+    const name = head[1];
+    const tail = lines.slice(i + 1).join("\n").trim();
+    if (!tail.startsWith("{")) continue;
+
+    let args = null;
+    let cutLen = 0;
+
+    for (let end = 1; end <= tail.length; end++) {
+      const candidate = tail.slice(0, end);
+      if (!candidate.trim().endsWith("}")) continue;
+      try {
+        args = JSON.parse(candidate);
+        cutLen = end;
+        break;
+      } catch {}
+    }
+
+    if (!args || typeof args !== "object") continue;
+
+    const toolText = `[tool:${name}]\n` + JSON.stringify(args);
+    const before = lines.slice(0, i).join("\n").trim();
+    const after = tail.slice(cutLen).trim();
+    const cleanText = [before, after].filter(Boolean).join("\n\n").trim();
+
+    return { name, args, cleanText, toolText };
   }
 
   return null;
@@ -421,8 +457,59 @@ function getExpandedToolArgs(args, wo) {
 }
 
 /******************************************************************************* 
-/* functionSignature: getExecToolCall (toolModules, toolCall, coreData, specs)  *
-/* Executes one tool call with validation and mapping.                          *
+/* functionSignature: getExtractUrlsFromAny (obj)                              *
+/* Extracts URL candidates from a result object (common keys and deep scan).   *
+/*******************************************************************************/
+function getExtractUrlsFromAny(obj) {
+  const out = [];
+  const seen = new Set();
+
+  const add = (u) => {
+    const s = typeof u === "string" ? u.trim() : "";
+    if (!s) return;
+    if (!/^https?:\/\//i.test(s) && !/^data:image\//i.test(s)) return;
+    if (seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  };
+
+  const scan = (v, depth) => {
+    if (depth > 5) return;
+    if (v == null) return;
+    if (typeof v === "string") { add(v); return; }
+    if (Array.isArray(v)) { for (const x of v) scan(x, depth + 1); return; }
+    if (typeof v !== "object") return;
+
+    const directKeys = ["url", "imageUrl", "image_url", "href", "link", "image", "output", "result"];
+    for (const k of directKeys) {
+      if (Object.prototype.hasOwnProperty.call(v, k)) scan(v[k], depth + 1);
+    }
+    for (const [k, val] of Object.entries(v)) {
+      if (typeof k === "string" && /url|link|href|image/i.test(k)) scan(val, depth + 1);
+    }
+  };
+
+  scan(obj, 0);
+  return out;
+}
+
+/******************************************************************************* 
+/* functionSignature: getExtractUrlsFromToolContent (toolContent)              *
+/* Parses tool content and returns extracted URL candidates.                   *
+/*******************************************************************************/
+function getExtractUrlsFromToolContent(toolContent) {
+  const s = String(toolContent ?? "").trim();
+  if (!s) return [];
+  const direct = [];
+  if (/^https?:\/\//i.test(s) || /^data:image\//i.test(s)) direct.push(s);
+  const parsed = getTryParseJSON(s, null);
+  const urls = parsed ? getExtractUrlsFromAny(parsed) : [];
+  return [...new Set([...direct, ...urls])];
+}
+
+/******************************************************************************* 
+/* functionSignature: getExecToolCall (toolModules, toolCall, coreData, specs) *
+/* Executes one tool call with validation and mapping.                         *
 /*******************************************************************************/
 async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName) {
   const wo = coreData?.workingObject || {};
@@ -524,6 +611,7 @@ function getSystemContentBase(wo) {
     "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
     "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
   ].join("\n");
+
   const policy = [
     "Policy:",
     "- Always answer the latest user turn.",
@@ -532,7 +620,18 @@ function getSystemContentBase(wo) {
     "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
     "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"
   ].join("\n");
-  const toolContract = "Tool call contract: Emit EXACTLY ONE line '[tool:NAME]{JSON}'; valid json example: '{\"parameter1\":\"value1\",\"parameter2\":\"value2\"}' ; ensure that the JSON is a valid json; do not add additional text; set ALL required fields; replace placeholders in angle brackets with best-known values (e.g., <USER_TEXT>, <URL>, <LANG>, <CHANNEL_ID>, …) using the latest user message, provided context, or sensible defaults; keep explicit mappings: <USER_TEXT>=latest user text, <URL>=valid URL from message if present, <LANG>=language code like \"en\"; if a required placeholder cannot be resolved, do not emit a tool call (optional fields may be omitted); otherwise, write a normal response; no markdown, no extra text.";
+
+  const toolContract = [
+    "Tool call contract:",
+    "- If you decide to use a tool, emit the tool call using either:",
+    "  (A) single-line: [tool:NAME]{JSON}",
+    "  (B) two-part:    [tool:NAME] then on following lines the JSON object (starting with '{' and ending with '}').",
+    "- If a tool call is emitted, it MUST be the LAST thing in your message (no text after it).",
+    "- JSON must be valid. Set ALL required fields.",
+    "- Replace placeholders in angle brackets with best-known values (e.g., <USER_TEXT>, <URL>, <LANG>, <CHANNEL_ID>, …).",
+    "- If a required placeholder cannot be resolved, do not emit a tool call; write a normal response instead.",
+    "- After receiving [tool_result:NAME], continue your previous answer and append any provided URL(s) at the very end."
+  ].join("\n");
 
   const multiChannelNote = (() => {
     const raw = Array.isArray(wo?.contextIDs) ? wo.contextIDs : [];
@@ -562,7 +661,7 @@ function getSystemContentBase(wo) {
 }
 
 /******************************************************************************* 
-/* functionSignature: getSystemContent (wo, specs)                              *
+/* functionSignature: getSystemContent (wo, specs)                             *
 /* Produces system content including compact catalog.                          *
 /*******************************************************************************/
 async function getSystemContent(wo, specs) {
@@ -574,7 +673,7 @@ async function getSystemContent(wo, specs) {
 
 /******************************************************************************* 
 /* functionSignature: getCoreAi (coreData)                                     *
-/* Orchestrates pseudo tool calls and persistence.                              *
+/* Orchestrates pseudo tool calls and persistence.                             *
 /*******************************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
@@ -643,6 +742,7 @@ export default async function getCoreAi(coreData) {
         body: JSON.stringify(body),
         signal: controller.signal
       });
+
       const raw = await res.text();
       if (!res.ok) {
         wo.Response = "[Empty AI response]";
@@ -663,7 +763,6 @@ export default async function getCoreAi(coreData) {
       const msgText = typeof msg.content === "string" ? msg.content : "";
 
       const extracted = (!pseudoToolUsed && msgText) ? getExtractPseudoToolCall(msgText) : null;
-      const looksLikePseudoTool = !!extracted;
 
       const assistantMsg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: msgText };
       if (assistantMsg.authorName == null) delete assistantMsg.authorName;
@@ -671,16 +770,9 @@ export default async function getCoreAi(coreData) {
       messages.push(assistantMsg);
       persistQueue.push(getWithTurnId(assistantMsg, wo));
 
-      if (msgText) {
-        const clean = extracted ? (extracted.cleanText || "") : msgText;
-        const chunk = String(clean || "").trim();
-        if (!looksLikePseudoTool && chunk) {
-          accumulatedText += (accumulatedText ? "\n" : "") + chunk;
-        }
-        if (looksLikePseudoTool && extracted?.cleanText) {
-          const chunk2 = String(extracted.cleanText || "").trim();
-          if (chunk2) accumulatedText += (accumulatedText ? "\n" : "") + chunk2;
-        }
+      const cleanAssistantText = extracted ? String(extracted.cleanText || "").trim() : String(msgText || "").trim();
+      if (cleanAssistantText) {
+        accumulatedText += (accumulatedText ? "\n" : "") + cleanAssistantText;
       }
 
       if (!pseudoToolUsed && extracted) {
@@ -715,7 +807,18 @@ export default async function getCoreAi(coreData) {
         persistQueue.push(getWithTurnId(toolMsg, wo));
 
         const toolResultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? null);
-        const userToolResult = { role: "user", content: `[tool_result:${pt.name}]\n${toolResultText}` };
+        const urls = getExtractUrlsFromToolContent(toolResultText);
+        const urlsText = urls.length ? urls.join("\n") : "";
+
+        const userToolResult = {
+          role: "user",
+          content:
+            `[tool_result:${pt.name}]\n` +
+            toolResultText +
+            (urlsText ? `\n\nIMAGE_URLS:\n${urlsText}\n` : "\n") +
+            "\nINSTRUCTION: Continue your previous answer. If IMAGE_URLS are present, append the first URL at the VERY END of your final text."
+        };
+
         messages.push(userToolResult);
         persistQueue.push(getWithTurnId(userToolResult, wo));
 
