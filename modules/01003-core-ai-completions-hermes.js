@@ -1,14 +1,13 @@
 /******************************************************************************* 
-/* filename: "core-ai-imagecompose.js"                                         *
-/* Version 1.1                                                                 *
-/* Purpose: Generates ONE text response that may contain ONE image placeholder *
-/*          in curly braces: { ... }.                                          *
-/*          Then ALWAYS calls ONLY the FIRST tool in Tools[] with:             *
-/*          { "prompt": "<placeholder text>" }                                 *
-/*          and replaces the placeholder with the returned URL (plain URL).    *
-/* Notes:                                                                      *
-/*          - No tool selection, no pseudo toolcalls, no multi-step logic.     *
-/*          - Only 1 image supported.                                          *
+/* filename: "core-ai-twopass-image.js"                                        *
+/* Version 1.0                                                                 *
+/* Purpose: Two-pass generation for models that struggle with multi-step.      *
+/*          Pass 1 (LLM): Generate normal text response.                       *
+/*          Pass 2 (LLM): Turn that text into ONE image description/prompt.    *
+/*          Then call ONLY the FIRST tool in Tools[] with {prompt:<imgPrompt>} *
+/*          Parse returned URL (string or JSON) and append it to the END of    *
+/*          the Pass-1 text on its own line.                                   *
+/* Persistence: Only persist the Pass-1 assistant text (NOT the prompt pass). *
 /*******************************************************************************/
 /******************************************************************************* 
 /*                                                                             *
@@ -16,7 +15,7 @@
 
 import { getContext, setContext } from "../core/context.js";
 
-const MODULE_NAME = "core-ai-imagecompose";
+const MODULE_NAME = "core-ai-twopass-image";
 
 /******************************************************************************* 
 /* functionSignature: getAssistantAuthorName (wo)                              *
@@ -40,6 +39,12 @@ function getBool(value, def) { return typeof value === "boolean" ? value : def; 
 function getNum(value, def) { return Number.isFinite(value) ? Number(value) : def; }
 
 /******************************************************************************* 
+/* functionSignature: getStr (value, def)                                      *
+/* Returns a non-empty string or the default.                                  *
+/*******************************************************************************/
+function getStr(value, def) { return (typeof value === "string" && value.trim().length) ? value.trim() : def; }
+
+/******************************************************************************* 
 /* functionSignature: getTryParseJSON (text, fallback)                         *
 /* Safely parses JSON with a fallback value on failure.                        *
 /*******************************************************************************/
@@ -51,7 +56,7 @@ function getTryParseJSON(text, fallback = null) { try { return JSON.parse(text);
 /*******************************************************************************/
 function getShouldRunForThisModule(wo) {
   const v = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
-  return v === "imagecompose" || v === "core-ai-imagecompose";
+  return v === "twopass-image" || v === "core-ai-twopass-image" || v === "twopassimage";
 }
 
 /******************************************************************************* 
@@ -73,7 +78,9 @@ function getKiCfg(wo) {
     temperature: getNum(wo?.Temperature, 0.7),
     maxTokens: getNum(wo?.MaxTokens, 1200),
     requestTimeoutMs: getNum(wo?.RequestTimeoutMs, 120000),
-    toolsList: Array.isArray(wo?.Tools) ? wo.Tools : []
+    toolsList: Array.isArray(wo?.Tools) ? wo.Tools : [],
+    imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 200),
+    imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.4)
   };
 }
 
@@ -123,70 +130,31 @@ async function getToolByName(name, wo) {
 }
 
 /******************************************************************************* 
-/* functionSignature: getExtractFirstBracePrompt (text)                        *
-/* Extracts first { ... } placeholder. Returns { before, prompt, after } or    *
-/* null if not found. Supports escaping \{ and \}.                             *
+/* functionSignature: getExtractFirstUrlFromString (s)                         *
+/* Extracts the first URL from an arbitrary string.                            *
 /*******************************************************************************/
-function getExtractFirstBracePrompt(text) {
-  const s = String(text ?? "");
-  let i = 0;
-  let before = "";
-  while (i < s.length) {
-    const ch = s[i];
-
-    if (ch === "\\" && i + 1 < s.length) {
-      const nx = s[i + 1];
-      if (nx === "{" || nx === "}") {
-        before += nx;
-        i += 2;
-        continue;
-      }
-    }
-
-    if (ch === "{") break;
-    before += ch;
-    i += 1;
-  }
-
-  if (i >= s.length || s[i] !== "{") return null;
-  i += 1;
-
-  let prompt = "";
-  while (i < s.length) {
-    const ch = s[i];
-
-    if (ch === "\\" && i + 1 < s.length) {
-      const nx = s[i + 1];
-      if (nx === "{" || nx === "}") {
-        prompt += nx;
-        i += 2;
-        continue;
-      }
-    }
-
-    if (ch === "}") {
-      const after = s.slice(i + 1);
-      return { before, prompt: prompt.trim(), after };
-    }
-
-    prompt += ch;
-    i += 1;
-  }
-
-  return null;
+function getExtractFirstUrlFromString(s) {
+  const txt = String(s ?? "");
+  const m = txt.match(/\b(https?:\/\/[^\s<>"'`]+|data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+)\b/i);
+  return m ? String(m[1] || "").trim() : "";
 }
 
 /******************************************************************************* 
-/* functionSignature: getExtractUrlFromToolResult (toolResult)                 *
-/* Tries to find a URL inside tool result (string or json).                    *
+/* functionSignature: getExtractUrlFromToolResult (toolResultContent)          *
+/* HARD extraction: regex first, then deep JSON scan.                          *
 /*******************************************************************************/
-function getExtractUrlFromToolResult(toolResult) {
-  const s = typeof toolResult === "string" ? toolResult.trim() : "";
-  if (s && (/^https?:\/\//i.test(s) || /^data:image\//i.test(s))) return s;
+function getExtractUrlFromToolResult(toolResultContent) {
+  const raw = String(toolResultContent ?? "").trim();
+  if (!raw) return "";
 
-  const parsed = (typeof toolResult === "string") ? getTryParseJSON(toolResult, null) : toolResult;
-  const seen = new Set();
+  const direct = getExtractFirstUrlFromString(raw);
+  if (direct) return direct;
+
+  const parsed = getTryParseJSON(raw, null);
+  if (!parsed || typeof parsed !== "object") return "";
+
   let found = "";
+  const seen = new Set();
 
   const add = (u) => {
     const t = typeof u === "string" ? u.trim() : "";
@@ -199,13 +167,27 @@ function getExtractUrlFromToolResult(toolResult) {
 
   const scan = (v, depth) => {
     if (found) return;
-    if (depth > 6) return;
+    if (depth > 8) return;
     if (v == null) return;
-    if (typeof v === "string") { add(v); return; }
-    if (Array.isArray(v)) { for (const x of v) scan(x, depth + 1); return; }
+
+    if (typeof v === "string") {
+      const u = getExtractFirstUrlFromString(v);
+      if (u) add(u);
+      return;
+    }
+
+    if (Array.isArray(v)) {
+      for (const x of v) scan(x, depth + 1);
+      return;
+    }
+
     if (typeof v !== "object") return;
 
-    const directKeys = ["url", "imageUrl", "image_url", "href", "link", "image", "output", "result", "data"];
+    const directKeys = [
+      "url", "imageUrl", "image_url", "href", "link", "image", "output", "result",
+      "data", "file", "path", "uri", "src"
+    ];
+
     for (const k of directKeys) {
       if (Object.prototype.hasOwnProperty.call(v, k)) scan(v[k], depth + 1);
       if (found) return;
@@ -213,39 +195,90 @@ function getExtractUrlFromToolResult(toolResult) {
 
     for (const [k, val] of Object.entries(v)) {
       if (found) return;
-      if (typeof k === "string" && /url|link|href|image/i.test(k)) scan(val, depth + 1);
+      if (typeof k === "string" && /url|link|href|image|uri|src|file|path|output|result/i.test(k)) scan(val, depth + 1);
     }
   };
 
-  if (parsed && typeof parsed === "object") scan(parsed, 0);
+  scan(parsed, 0);
   return found;
 }
 
 /******************************************************************************* 
-/* functionSignature: getSystemContent (wo)                                    *
-/* Produces system content for { ... } placeholders.                           *
+/* functionSignature: getSystemContentTextRun (wo)                             *
+/* System content for pass 1.                                                  *
 /*******************************************************************************/
-function getSystemContent(wo) {
-  const base = [
+function getSystemContentTextRun(wo) {
+  return [
     typeof wo.SystemPrompt === "string" ? wo.SystemPrompt.trim() : "",
     typeof wo.Persona === "string" ? wo.Persona.trim() : "",
     typeof wo.Instructions === "string" ? wo.Instructions.trim() : ""
   ].filter(Boolean).join("\n\n");
+}
 
-  const contract = [
-    "Image placeholder contract:",
-    "- Write normal plain text.",
-    "- If you want an image generated, put the image prompt inside curly braces like {a cat on a skateboard}.",
-    "- Use at most ONE placeholder per response.",
-    "- Do NOT output any tool call syntax or JSON. Curly braces are placeholders only."
+/******************************************************************************* 
+/* functionSignature: getSystemContentImagePromptRun ()                        *
+/* System content for pass 2 (image prompt generator).                         *
+/*******************************************************************************/
+function getSystemContentImagePromptRun() {
+  return [
+    "You convert a story text into ONE concise image generation prompt.",
+    "Rules:",
+    "- Output ONLY the prompt text. No quotes. No markdown. No JSON. No extra lines.",
+    "- Make it descriptive: subject, setting, lighting, mood, camera framing.",
+    "- Do NOT include any URLs.",
+    "- Keep it under 60 words.",
+    "- If the story is abstract, pick a representative scene."
   ].join("\n");
+}
 
-  return [base, contract].filter(Boolean).join("\n\n");
+/******************************************************************************* 
+/* functionSignature: getCallChat (wo, body, timeoutMs)                        *
+/* Calls the OpenAI-compatible chat endpoint and returns message content.      *
+/*******************************************************************************/
+async function getCallChat(wo, body, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(wo.Endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.APIKey}` },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+
+    const raw = await res.text();
+    if (!res.ok) {
+      return { ok: false, status: res.status, statusText: res.statusText, raw };
+    }
+
+    const data = getTryParseJSON(raw, null);
+    const choice = data?.choices?.[0];
+    const msg = choice?.message || {};
+    const text = typeof msg.content === "string" ? msg.content : "";
+    return { ok: true, text, raw };
+  } catch (e) {
+    const isAbort = e?.name === "AbortError" || String(e?.type).toLowerCase() === "aborted";
+    return { ok: false, error: isAbort ? "timeout" : (e?.message || String(e)) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/******************************************************************************* 
+/* functionSignature: getCleanSingleLinePrompt (s)                             *
+/* Normalizes the image prompt.                                                *
+/*******************************************************************************/
+function getCleanSingleLinePrompt(s) {
+  return String(s ?? "")
+    .replace(/\r?\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /******************************************************************************* 
 /* functionSignature: getCoreAi (coreData)                                     *
-/* Single model call -> optional single image generation -> compose -> persist. *
+/* Pass1 text -> persist; Pass2 prompt -> tool -> append URL -> return.        *
 /*******************************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
@@ -266,118 +299,114 @@ export default async function getCoreAi(coreData) {
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
 
+  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "AI request started" });
+
   let snapshot = [];
   try { snapshot = await getContext(wo); } catch {}
 
-  const messagesFromHistory = getPromptFromSnapshot(snapshot, kiCfg.includeHistory);
-  const systemContent = getSystemContent(wo);
+  const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory);
+  const system1 = getSystemContentTextRun(wo);
 
-  const messages = [
-    { role: "system", content: systemContent },
-    ...messagesFromHistory,
+  const messages1 = [
+    { role: "system", content: system1 },
+    ...history,
     { role: "user", content: userPromptRaw }
   ];
 
   const persistQueue = [];
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
+  /***** PASS 1: TEXT *****/
+  const pass1 = await getCallChat(
+    wo,
+    { model: wo.Model, messages: messages1, temperature: kiCfg.temperature, max_tokens: kiCfg.maxTokens },
+    kiCfg.requestTimeoutMs
+  );
 
-  let modelText = "";
-  try {
-    const body = {
-      model: wo.Model,
-      messages,
-      temperature: kiCfg.temperature,
-      max_tokens: kiCfg.maxTokens
-    };
-
-    const res = await fetch(wo.Endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.APIKey}` },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-
-    const raw = await res.text();
-    if (!res.ok) {
-      wo.Response = "[Empty AI response]";
-      wo.logging.push({
-        timestamp: new Date().toISOString(),
-        severity: "warn",
-        module: MODULE_NAME,
-        exitStatus: "failed",
-        message: `HTTP ${res.status} ${res.statusText} ${typeof raw === "string" ? raw.slice(0, 300) : ""}`
-      });
-      return coreData;
-    }
-
-    const data = getTryParseJSON(raw, null);
-    const choice = data?.choices?.[0];
-    const msg = choice?.message || {};
-    modelText = typeof msg.content === "string" ? msg.content : "";
-  } catch (err) {
-    const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
+  if (!pass1.ok) {
     wo.Response = "[Empty AI response]";
     wo.logging.push({
       timestamp: new Date().toISOString(),
-      severity: isAbort ? "warn" : "error",
+      severity: "warn",
       module: MODULE_NAME,
       exitStatus: "failed",
-      message: isAbort ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}`
+      message: pass1.error === "timeout"
+        ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
+        : `AI request failed: ${String(pass1?.status || "")} ${String(pass1?.statusText || "")} ${String(pass1?.error || "")} ${String(pass1?.raw || "").slice(0, 300)}`
     });
     return coreData;
-  } finally {
-    clearTimeout(timer);
   }
 
-  const parsed = getExtractFirstBracePrompt(modelText);
-  let finalText = String(modelText || "").trim();
+  const textOut = String(pass1.text ?? "").trim();
 
+  const assistantPass1 = { role: "assistant", authorName: getAssistantAuthorName(wo), content: textOut };
+  if (assistantPass1.authorName == null) delete assistantPass1.authorName;
+  persistQueue.push(getWithTurnId(assistantPass1, wo));
+
+  /***** PASS 2: IMAGE PROMPT (NOT persisted) *****/
+  const system2 = getSystemContentImagePromptRun();
+  const messages2 = [
+    { role: "system", content: system2 },
+    { role: "user", content: textOut }
+  ];
+
+  const pass2 = await getCallChat(
+    wo,
+    { model: wo.Model, messages: messages2, temperature: kiCfg.imagePromptTemperature, max_tokens: kiCfg.imagePromptMaxTokens },
+    kiCfg.requestTimeoutMs
+  );
+
+  let imagePrompt = "";
+  if (pass2.ok) imagePrompt = getCleanSingleLinePrompt(pass2.text);
+  if (!imagePrompt) imagePrompt = "A representative scene matching the provided story text, cinematic, detailed, high quality.";
+
+  /***** TOOL: FIRST TOOL ONLY *****/
   const toolsList = Array.isArray(kiCfg.toolsList) ? kiCfg.toolsList : [];
   const firstToolName = toolsList.length ? String(toolsList[0] ?? "").trim() : "";
+  let finalUrl = "";
 
-  if (parsed && parsed.prompt && firstToolName) {
+  if (firstToolName) {
     const tool = await getToolByName(firstToolName, wo);
-
     if (tool) {
       try {
-        const result = await tool.invoke({ prompt: parsed.prompt }, coreData);
+        const result = await tool.invoke({ prompt: imagePrompt }, coreData);
         const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
-        const url = getExtractUrlFromToolResult(content);
+        finalUrl = getExtractUrlFromToolResult(content);
 
         const toolMsg = { role: "tool", name: firstToolName, content };
         persistQueue.push(getWithTurnId(toolMsg, wo));
-
-        if (url) {
-          finalText = (parsed.before + url + parsed.after).trim();
-        } else {
-          finalText = (parsed.before + "[image_missing]" + parsed.after).trim();
-        }
       } catch (e) {
         const toolMsg = { role: "tool", name: firstToolName, content: JSON.stringify({ ok: false, error: e?.message || String(e) }) };
         persistQueue.push(getWithTurnId(toolMsg, wo));
-        finalText = (parsed.before + "[image_error]" + parsed.after).trim();
+        finalUrl = "";
       }
-    } else {
-      finalText = (parsed.before + "[image_tool_missing]" + parsed.after).trim();
     }
-  } else if (parsed && parsed.prompt && !firstToolName) {
-    finalText = (parsed.before + "[no_image_tool]" + parsed.after).trim();
   }
 
-  const assistantFinal = { role: "assistant", authorName: getAssistantAuthorName(wo), content: finalText };
-  if (assistantFinal.authorName == null) delete assistantFinal.authorName;
+  const finalText = (finalUrl ? (textOut + "\n" + finalUrl) : textOut).trim();
 
-  persistQueue.push(getWithTurnId(assistantFinal, wo));
-
+  /***** Persist only PASS 1 (and tool log if you want). Do NOT persist pass 2. *****/
   if (!skipContextWrites) {
     for (const turn of persistQueue) {
       try { await setContext(wo, turn); } catch {}
     }
+  } else {
+    wo.logging.push({
+      timestamp: new Date().toISOString(),
+      severity: "info",
+      module: MODULE_NAME,
+      exitStatus: "success",
+      message: `doNotWriteToContext=true → skipped persistence of ${persistQueue.length} turn(s)`
+    });
   }
 
   wo.Response = finalText || "[Empty AI response]";
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });
+  wo.logging.push({
+    timestamp: new Date().toISOString(),
+    severity: "info",
+    module: MODULE_NAME,
+    exitStatus: "success",
+    message: "AI response received."
+  });
+
   return coreData;
 }
