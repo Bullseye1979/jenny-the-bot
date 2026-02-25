@@ -1,9 +1,11 @@
 /******************************************************************************* 
 /* filename: "core-ai-twopass-image.js"                                        *
-/* Version 1.0                                                                 *
+/* Version 1.1                                                                 *
 /* Purpose: Two-pass generation for models that struggle with multi-step.      *
 /*          Pass 1 (LLM): Generate normal text response.                       *
 /*          Pass 2 (LLM): Turn that text into ONE image description/prompt.    *
+/*          Pass 2 now also receives Persona (+ optional ImagePersonaHint) so  *
+/*          the same character look stays consistent across images.            *
 /*          Then call ONLY the FIRST tool in Tools[] with {prompt:<imgPrompt>} *
 /*          Parse returned URL (string or JSON) and append it to the END of    *
 /*          the Pass-1 text on its own line.                                   *
@@ -79,8 +81,9 @@ function getKiCfg(wo) {
     maxTokens: getNum(wo?.MaxTokens, 1200),
     requestTimeoutMs: getNum(wo?.RequestTimeoutMs, 120000),
     toolsList: Array.isArray(wo?.Tools) ? wo.Tools : [],
-    imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 200),
-    imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.4)
+    imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 220),
+    imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.4),
+    imagePersonaHint: getStr(wo?.ImagePersonaHint, "") /* optional extra fixed look description */
   };
 }
 
@@ -216,19 +219,31 @@ function getSystemContentTextRun(wo) {
 }
 
 /******************************************************************************* 
-/* functionSignature: getSystemContentImagePromptRun ()                        *
-/* System content for pass 2 (image prompt generator).                         *
+/* functionSignature: getSystemContentImagePromptRun (persona, hint)           *
+/* System content for pass 2 (image prompt generator) incl persona anchoring.  *
 /*******************************************************************************/
-function getSystemContentImagePromptRun() {
-  return [
+function getSystemContentImagePromptRun(personaText, imagePersonaHint) {
+  const persona = String(personaText ?? "").trim();
+  const hint = String(imagePersonaHint ?? "").trim();
+
+  const anchor = [
+    "Character anchor (MUST keep consistent across images):",
+    persona ? `- Persona: ${persona}` : "- Persona: (none provided)",
+    hint ? `- Fixed look hint: ${hint}` : ""
+  ].filter(Boolean).join("\n");
+
+  const rules = [
     "You convert a story text into ONE concise image generation prompt.",
     "Rules:",
     "- Output ONLY the prompt text. No quotes. No markdown. No JSON. No extra lines.",
-    "- Make it descriptive: subject, setting, lighting, mood, camera framing.",
+    "- Start the prompt by describing the main character using the Character anchor.",
+    "- Keep the same character identity/look every time: hair, eyes, age, ethnicity if given, clothing vibe.",
+    "- Then describe the scene matching the story: setting, lighting, mood, camera framing.",
     "- Do NOT include any URLs.",
-    "- Keep it under 60 words.",
-    "- If the story is abstract, pick a representative scene."
+    "- Keep it under 70 words."
   ].join("\n");
+
+  return [anchor, rules].filter(Boolean).join("\n\n");
 }
 
 /******************************************************************************* 
@@ -248,9 +263,7 @@ async function getCallChat(wo, body, timeoutMs) {
     });
 
     const raw = await res.text();
-    if (!res.ok) {
-      return { ok: false, status: res.status, statusText: res.statusText, raw };
-    }
+    if (!res.ok) return { ok: false, status: res.status, statusText: res.statusText, raw };
 
     const data = getTryParseJSON(raw, null);
     const choice = data?.choices?.[0];
@@ -278,7 +291,7 @@ function getCleanSingleLinePrompt(s) {
 
 /******************************************************************************* 
 /* functionSignature: getCoreAi (coreData)                                     *
-/* Pass1 text -> persist; Pass2 prompt -> tool -> append URL -> return.        *
+/* Pass1 text -> persist; Pass2 prompt (+ persona) -> tool -> append URL.      *
 /*******************************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
@@ -299,26 +312,25 @@ export default async function getCoreAi(coreData) {
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
 
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "AI request started" });
-
   let snapshot = [];
   try { snapshot = await getContext(wo); } catch {}
 
   const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory);
   const system1 = getSystemContentTextRun(wo);
 
-  const messages1 = [
-    { role: "system", content: system1 },
-    ...history,
-    { role: "user", content: userPromptRaw }
-  ];
-
-  const persistQueue = [];
-
   /***** PASS 1: TEXT *****/
   const pass1 = await getCallChat(
     wo,
-    { model: wo.Model, messages: messages1, temperature: kiCfg.temperature, max_tokens: kiCfg.maxTokens },
+    {
+      model: wo.Model,
+      messages: [
+        { role: "system", content: system1 },
+        ...history,
+        { role: "user", content: userPromptRaw }
+      ],
+      temperature: kiCfg.temperature,
+      max_tokens: kiCfg.maxTokens
+    },
     kiCfg.requestTimeoutMs
   );
 
@@ -338,26 +350,37 @@ export default async function getCoreAi(coreData) {
 
   const textOut = String(pass1.text ?? "").trim();
 
+  const persistQueue = [];
   const assistantPass1 = { role: "assistant", authorName: getAssistantAuthorName(wo), content: textOut };
   if (assistantPass1.authorName == null) delete assistantPass1.authorName;
   persistQueue.push(getWithTurnId(assistantPass1, wo));
 
   /***** PASS 2: IMAGE PROMPT (NOT persisted) *****/
-  const system2 = getSystemContentImagePromptRun();
-  const messages2 = [
-    { role: "system", content: system2 },
-    { role: "user", content: textOut }
-  ];
+  const personaForImages = getStr(wo?.Persona, "");
+  const system2 = getSystemContentImagePromptRun(personaForImages, kiCfg.imagePersonaHint);
 
   const pass2 = await getCallChat(
     wo,
-    { model: wo.Model, messages: messages2, temperature: kiCfg.imagePromptTemperature, max_tokens: kiCfg.imagePromptMaxTokens },
+    {
+      model: wo.Model,
+      messages: [
+        { role: "system", content: system2 },
+        { role: "user", content: textOut }
+      ],
+      temperature: kiCfg.imagePromptTemperature,
+      max_tokens: kiCfg.imagePromptMaxTokens
+    },
     kiCfg.requestTimeoutMs
   );
 
   let imagePrompt = "";
   if (pass2.ok) imagePrompt = getCleanSingleLinePrompt(pass2.text);
-  if (!imagePrompt) imagePrompt = "A representative scene matching the provided story text, cinematic, detailed, high quality.";
+
+  if (!imagePrompt) {
+    const fallbackAnchor = (personaForImages || kiCfg.imagePersonaHint || "A consistent main character");
+    imagePrompt = `${fallbackAnchor}. A representative scene matching the provided story text, cinematic, detailed, high quality.`;
+    imagePrompt = getCleanSingleLinePrompt(imagePrompt);
+  }
 
   /***** TOOL: FIRST TOOL ONLY *****/
   const toolsList = Array.isArray(kiCfg.toolsList) ? kiCfg.toolsList : [];
@@ -384,29 +407,14 @@ export default async function getCoreAi(coreData) {
 
   const finalText = (finalUrl ? (textOut + "\n" + finalUrl) : textOut).trim();
 
-  /***** Persist only PASS 1 (and tool log if you want). Do NOT persist pass 2. *****/
+  /***** Persist only PASS 1 + tool result. Do NOT persist pass 2. *****/
   if (!skipContextWrites) {
     for (const turn of persistQueue) {
       try { await setContext(wo, turn); } catch {}
     }
-  } else {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `doNotWriteToContext=true → skipped persistence of ${persistQueue.length} turn(s)`
-    });
   }
 
   wo.Response = finalText || "[Empty AI response]";
-  wo.logging.push({
-    timestamp: new Date().toISOString(),
-    severity: "info",
-    module: MODULE_NAME,
-    exitStatus: "success",
-    message: "AI response received."
-  });
-
+  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });
   return coreData;
 }
