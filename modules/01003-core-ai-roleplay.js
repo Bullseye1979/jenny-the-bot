@@ -1,6 +1,6 @@
 /******************************************************************************* 
-/* filename: "core-ai-twopass-image.js"                                        *
-/* Version 1.2                                                                 *
+/* filename: "core-ai-roleplay.js"                                             *
+/* Version 1.0                                                                 *
 /* Purpose: Two-pass generation for models that struggle with multi-step.      *
 /*          Pass 1 (LLM): Generate normal text response.                       *
 /*          Pass 2 (LLM): Turn that text into ONE image description/prompt.    *
@@ -18,7 +18,7 @@
 
 import { getContext, setContext } from "../core/context.js";
 
-const MODULE_NAME = "core-ai-twopass-image";
+const MODULE_NAME = "core-ai-roleplay";
 
 /******************************************************************************* 
 /* functionSignature: getAssistantAuthorName (wo)                              *
@@ -59,7 +59,7 @@ function getTryParseJSON(text, fallback = null) { try { return JSON.parse(text);
 /*******************************************************************************/
 function getShouldRunForThisModule(wo) {
   const v = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
-  return v === "twopass-image" || v === "core-ai-twopass-image" || v === "twopassimage";
+  return v === "roleplay" || v === "core-ai-roleplay" || v === "Roleplay";
 }
 
 /******************************************************************************* 
