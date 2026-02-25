@@ -1,11 +1,12 @@
 /******************************************************************************* 
 /* filename: "core-ai-twopass-image.js"                                        *
-/* Version 1.1                                                                 *
+/* Version 1.2                                                                 *
 /* Purpose: Two-pass generation for models that struggle with multi-step.      *
 /*          Pass 1 (LLM): Generate normal text response.                       *
 /*          Pass 2 (LLM): Turn that text into ONE image description/prompt.    *
-/*          Pass 2 now also receives Persona (+ optional ImagePersonaHint) so  *
-/*          the same character look stays consistent across images.            *
+/*              - Pass 2 receives Persona + optional ImagePersonaHint.         *
+/*              - Pass 2 also receives CONTEXT (recent history) + latest user  *
+/*                input, so the prompt reflects events, not just vibes.        *
 /*          Then call ONLY the FIRST tool in Tools[] with {prompt:<imgPrompt>} *
 /*          Parse returned URL (string or JSON) and append it to the END of    *
 /*          the Pass-1 text on its own line.                                   *
@@ -81,9 +82,10 @@ function getKiCfg(wo) {
     maxTokens: getNum(wo?.MaxTokens, 1200),
     requestTimeoutMs: getNum(wo?.RequestTimeoutMs, 120000),
     toolsList: Array.isArray(wo?.Tools) ? wo.Tools : [],
-    imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 220),
-    imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.4),
-    imagePersonaHint: getStr(wo?.ImagePersonaHint, "") /* optional extra fixed look description */
+    imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 260),
+    imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.35),
+    imagePersonaHint: getStr(wo?.ImagePersonaHint, ""),
+    imageContextTurns: Math.max(0, getNum(wo?.ImageContextTurns, 8)) /* last N messages to feed into pass2 */
   };
 }
 
@@ -100,6 +102,26 @@ function getPromptFromSnapshot(rows, includeHistory) {
     else if (r.role === "assistant") out.push({ role: "assistant", content: r.content ?? "" });
   }
   return out;
+}
+
+/******************************************************************************* 
+/* functionSignature: getRecentContextForImage (rows, maxTurns)                *
+/* Builds compact context text for image prompt generation.                    *
+/*******************************************************************************/
+function getRecentContextForImage(rows, maxTurns) {
+  const n = Math.max(0, Number(maxTurns) || 0);
+  const r = Array.isArray(rows) ? rows : [];
+  if (!n || !r.length) return "";
+
+  const slice = r.slice(Math.max(0, r.length - n));
+  const lines = [];
+  for (const x of slice) {
+    const role = x?.role === "assistant" ? "Assistant" : "User";
+    const c = String(x?.content ?? "").trim();
+    if (!c) continue;
+    lines.push(`${role}: ${c}`);
+  }
+  return lines.join("\n");
 }
 
 /******************************************************************************* 
@@ -233,14 +255,14 @@ function getSystemContentImagePromptRun(personaText, imagePersonaHint) {
   ].filter(Boolean).join("\n");
 
   const rules = [
-    "You convert a story text into ONE concise image generation prompt.",
+    "You convert the provided ROLEPLAY CONTEXT into ONE image generation prompt that depicts a concrete event.",
     "Rules:",
     "- Output ONLY the prompt text. No quotes. No markdown. No JSON. No extra lines.",
-    "- Start the prompt by describing the main character using the Character anchor.",
-    "- Keep the same character identity/look every time: hair, eyes, age, ethnicity if given, clothing vibe.",
-    "- Then describe the scene matching the story: setting, lighting, mood, camera framing.",
+    "- The image MUST depict the most recent specific event/action from the context (not a generic mood shot).",
+    "- Start by describing the main character using the Character anchor, then the event scene.",
+    "- Include: setting, props, body language, facial expression, lighting, camera framing (e.g., close-up/medium/wide).",
     "- Do NOT include any URLs.",
-    "- Keep it under 70 words."
+    "- Keep it under 80 words."
   ].join("\n");
 
   return [anchor, rules].filter(Boolean).join("\n\n");
@@ -291,7 +313,7 @@ function getCleanSingleLinePrompt(s) {
 
 /******************************************************************************* 
 /* functionSignature: getCoreAi (coreData)                                     *
-/* Pass1 text -> persist; Pass2 prompt (+ persona) -> tool -> append URL.      *
+/* Pass1 text -> persist; Pass2 prompt (with context) -> tool -> append URL.   *
 /*******************************************************************************/
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
@@ -355,9 +377,23 @@ export default async function getCoreAi(coreData) {
   if (assistantPass1.authorName == null) delete assistantPass1.authorName;
   persistQueue.push(getWithTurnId(assistantPass1, wo));
 
-  /***** PASS 2: IMAGE PROMPT (NOT persisted) *****/
+  /***** PASS 2: IMAGE PROMPT (NOT persisted) – INCLUDE CONTEXT + LAST USER *****/
   const personaForImages = getStr(wo?.Persona, "");
   const system2 = getSystemContentImagePromptRun(personaForImages, kiCfg.imagePersonaHint);
+
+  const ctxText = getRecentContextForImage(snapshot, kiCfg.imageContextTurns);
+  const userBlock = [
+    "ROLEPLAY CONTEXT (recent turns):",
+    ctxText || "(none)",
+    "",
+    "LATEST USER INPUT:",
+    userPromptRaw || "(empty)",
+    "",
+    "LATEST ASSISTANT TEXT (what happened this turn):",
+    textOut || "(empty)",
+    "",
+    "TASK: Create one image prompt that depicts the most recent concrete event."
+  ].join("\n");
 
   const pass2 = await getCallChat(
     wo,
@@ -365,7 +401,7 @@ export default async function getCoreAi(coreData) {
       model: wo.Model,
       messages: [
         { role: "system", content: system2 },
-        { role: "user", content: textOut }
+        { role: "user", content: userBlock }
       ],
       temperature: kiCfg.imagePromptTemperature,
       max_tokens: kiCfg.imagePromptMaxTokens
@@ -378,7 +414,7 @@ export default async function getCoreAi(coreData) {
 
   if (!imagePrompt) {
     const fallbackAnchor = (personaForImages || kiCfg.imagePersonaHint || "A consistent main character");
-    imagePrompt = `${fallbackAnchor}. A representative scene matching the provided story text, cinematic, detailed, high quality.`;
+    imagePrompt = `${fallbackAnchor}. Depict the most recent concrete event from the provided context, cinematic, detailed, high quality.`;
     imagePrompt = getCleanSingleLinePrompt(imagePrompt);
   }
 
