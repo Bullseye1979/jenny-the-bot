@@ -1,10 +1,11 @@
 /******************************************************************************* 
 /* filename: "core-ai-pseudotoolcalls.js"                                      *
-/* Version 1.2                                                                 *
+/* Version 1.0                                                                 *
 /* Purpose: Pseudo tool runner that renders a compact tool catalog and         *
 /*          executes pseudo tool invocations with schema checks.               *
-/*          Fixes:                                                             *
-/*          - Supports multi-line pseudo tool calls.                           *
+/* Fixes:                                                                     *
+/*          - Supports multi-line AND inline pseudo tool calls.                *
+/*          - Allows multiple tool calls per request (soft limit).             *
 /*          - Extracts URL(s) from tool results and injects plain-text hints   *
 /*            so the follow-up assistant turn reliably appends the link.       *
 /*******************************************************************************/
@@ -99,6 +100,7 @@ function getKiCfg(wo) {
       message: 'Config key "tools" is ignored. Use "Tools" (capital T).'
     });
   }
+
   return {
     includeHistory,
     includeRuntimeContext,
@@ -106,7 +108,11 @@ function getKiCfg(wo) {
     temperature: getNum(wo?.Temperature, 0.7),
     maxTokens: getNum(wo?.MaxTokens, 2000),
     maxLoops: getNum(wo?.MaxLoops, 20),
-    requestTimeoutMs: getNum(wo?.RequestTimeoutMs, 120000)
+    requestTimeoutMs: getNum(wo?.RequestTimeoutMs, 120000),
+
+    /* Soft limits to avoid tool spam while still supporting multi-step flows */
+    maxToolCallsTotal: getNum(wo?.MaxToolCallsTotal, 3),
+    maxToolCallsPerTurn: getNum(wo?.MaxToolCallsPerTurn, 1)
   };
 }
 
@@ -142,6 +148,7 @@ function getPromptFromSnapshot(rows, kiCfg) {
     const r = rows[i] || {};
     if (r.role === "user") out.push({ role: "user", content: r.content ?? "" });
     else if (r.role === "assistant") out.push({ role: "assistant", content: r.content ?? "" });
+    else if (r.role === "tool") out.push({ role: "tool", name: r.name, content: r.content ?? "" });
   }
   return out;
 }
@@ -181,60 +188,37 @@ async function getToolsByName(names, wo) {
 }
 
 /******************************************************************************* 
-/* functionSignature: getExtractPseudoToolCall (text)                          *
-/* Extracts a pseudo tool call even if multi-line JSON is used.                *
-/* Supports:                                                                   *
-/*  - single line: [tool:NAME]{...}                                            *
-/*  - multi line:  [tool:NAME] \n { ... }                                      *
-/* Returns { name, args, cleanText, toolText } or null.                        *
+/* functionSignature: getConcreteExampleValue (key, meta)                      *
+/* Builds concrete placeholders from schema hints.                             *
 /*******************************************************************************/
-function getExtractPseudoToolCall(text) {
-  if (!text || typeof text !== "string") return null;
-
-  const lines = text.split(/\r?\n/);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = String(lines[i] || "").trim();
-
-    const oneLine = line.match(/^\[tool:([A-Za-z0-9_.\-]+)\]\s*(\{[\s\S]*\})\s*$/);
-    if (oneLine) {
-      const name = oneLine[1];
-      let args = {};
-      try { args = JSON.parse(oneLine[2]); } catch { args = getTryParseJSON(oneLine[2], {}); }
-      const cleanText = lines.slice(0, i).concat(lines.slice(i + 1)).join("\n").trim();
-      return { name, args, cleanText, toolText: line };
-    }
-
-    const head = line.match(/^\[tool:([A-Za-z0-9_.\-]+)\]\s*$/);
-    if (!head) continue;
-
-    const name = head[1];
-    const tail = lines.slice(i + 1).join("\n").trim();
-    if (!tail.startsWith("{")) continue;
-
-    let args = null;
-    let cutLen = 0;
-
-    for (let end = 1; end <= tail.length; end++) {
-      const candidate = tail.slice(0, end);
-      if (!candidate.trim().endsWith("}")) continue;
-      try {
-        args = JSON.parse(candidate);
-        cutLen = end;
-        break;
-      } catch {}
-    }
-
-    if (!args || typeof args !== "object") continue;
-
-    const toolText = `[tool:${name}]\n` + JSON.stringify(args);
-    const before = lines.slice(0, i).join("\n").trim();
-    const after = tail.slice(cutLen).trim();
-    const cleanText = [before, after].filter(Boolean).join("\n\n").trim();
-
-    return { name, args, cleanText, toolText };
+function getConcreteExampleValue(key, meta) {
+  const m = meta || {};
+  const t = m.type || "string";
+  const enums = Array.isArray(m.enum) ? m.enum : null;
+  if (enums && enums.length) return enums[0];
+  const k = String(key || "").toLowerCase();
+  if (t === "string") {
+    if (/^(q|query)$/.test(k)) return "<USER_TEXT>";
+    if (/prompt/.test(k)) return "<USER_TEXT>";
+    if (/^(url|uri|link)$/.test(k)) return "<URL>";
+    if (/(^hl$|^lr$|lang|language)/.test(k)) return "<LANG>";
+    if (/^(text|message|content)$/.test(k)) return "<USER_TEXT>";
+    return "<VALUE>";
   }
-
-  return null;
+  if (t === "integer" || t === "number") {
+    const hasMin = Number.isFinite(m.minimum);
+    const hasMax = Number.isFinite(m.maximum);
+    if (hasMin && hasMax) return Math.round((m.minimum + m.maximum) / 2);
+    if (hasMin) return Math.max(m.minimum, 1);
+    if (hasMax) return Math.min(m.maximum, 1);
+    if (/(^num$|limit|count|(^k$)|steps|size)/.test(k)) return 3;
+    if (/seed/.test(k)) return 1;
+    return 1;
+  }
+  if (t === "boolean") return true;
+  if (t === "array") return [];
+  if (t === "object") return {};
+  return "<VALUE>";
 }
 
 /******************************************************************************* 
@@ -291,40 +275,6 @@ async function getPseudoToolSpecs(names, wo) {
     }
   }
   return specs;
-}
-
-/******************************************************************************* 
-/* functionSignature: getConcreteExampleValue (key, meta)                      *
-/* Builds concrete placeholders from schema hints.                             *
-/*******************************************************************************/
-function getConcreteExampleValue(key, meta) {
-  const m = meta || {};
-  const t = m.type || "string";
-  const enums = Array.isArray(m.enum) ? m.enum : null;
-  if (enums && enums.length) return enums[0];
-  const k = String(key || "").toLowerCase();
-  if (t === "string") {
-    if (/^(q|query)$/.test(k)) return "<USER_TEXT>";
-    if (/prompt/.test(k)) return "<USER_TEXT>";
-    if (/^(url|uri|link)$/.test(k)) return "<URL>";
-    if (/(^hl$|^lr$|lang|language)/.test(k)) return "<LANG>";
-    if (/^(text|message|content)$/.test(k)) return "<USER_TEXT>";
-    return "<VALUE>";
-  }
-  if (t === "integer" || t === "number") {
-    const hasMin = Number.isFinite(m.minimum);
-    const hasMax = Number.isFinite(m.maximum);
-    if (hasMin && hasMax) return Math.round((m.minimum + m.maximum) / 2);
-    if (hasMin) return Math.max(m.minimum, 1);
-    if (hasMax) return Math.min(m.maximum, 1);
-    if (/(^num$|limit|count|(^k$)|steps|size)/.test(k)) return 3;
-    if (/seed/.test(k)) return 1;
-    return 1;
-  }
-  if (t === "boolean") return true;
-  if (t === "array") return [];
-  if (t === "object") return {};
-  return "<VALUE>";
 }
 
 /******************************************************************************* 
@@ -454,6 +404,101 @@ function getExpandedToolArgs(args, wo) {
     }
   }
   return args;
+}
+
+/******************************************************************************* 
+/* functionSignature: getExtractPseudoToolCall (text)                          *
+/* Extracts the LAST pseudo tool call, including inline occurrences.           *
+/* Supports:                                                                   *
+/*  - inline:     ... [tool:NAME]{...json...} ...                              *
+/*  - singleline: [tool:NAME]{...json...}                                      *
+/*  - multiline:  [tool:NAME]\n{ ...json... }                                  *
+/* Returns { name, args, cleanText, toolText } or null.                        *
+/*******************************************************************************/
+function getExtractPseudoToolCall(text) {
+  if (!text || typeof text !== "string") return null;
+
+  const s = String(text);
+  const headRe = /\[tool:([A-Za-z0-9_.\-]+)\]/g;
+
+  let m = null;
+  let last = null;
+  while ((m = headRe.exec(s)) !== null) {
+    last = { name: m[1], idx: m.index, headLen: m[0].length };
+  }
+  if (!last) return null;
+
+  const name = last.name;
+  const afterHead = s.slice(last.idx + last.headLen);
+
+  const skipWs = (str) => {
+    let i = 0;
+    while (i < str.length && /\s/.test(str[i])) i++;
+    return { rest: str.slice(i), skipped: i };
+  };
+
+  const tryReadJsonObject = (str) => {
+    if (!str.startsWith("{")) return null;
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === "\"") inStr = false;
+        continue;
+      } else {
+        if (ch === "\"") { inStr = true; continue; }
+        if (ch === "{") depth++;
+        if (ch === "}") {
+          depth--;
+          if (depth === 0) return { json: str.slice(0, i + 1), len: i + 1 };
+        }
+      }
+    }
+    return null;
+  };
+
+  const { rest: tail0, skipped } = skipWs(afterHead);
+
+  let jsonText = "";
+  let toolText = "";
+  let cutStart = last.idx;
+  let cutEnd = last.idx + last.headLen + skipped;
+
+  const inline = tryReadJsonObject(tail0);
+  if (inline) {
+    jsonText = inline.json;
+    toolText = `[tool:${name}]` + jsonText;
+    cutEnd += inline.len;
+  } else {
+    const { rest: tail1, skipped: skipped2 } = skipWs(tail0);
+    const multi = tryReadJsonObject(tail1);
+    if (!multi) return null;
+
+    jsonText = multi.json;
+    toolText = `[tool:${name}]\n` + jsonText;
+    cutEnd += skipped + skipped2 + multi.len;
+  }
+
+  let args = {};
+  try { args = JSON.parse(jsonText); } catch { args = getTryParseJSON(jsonText, {}); }
+
+  /* Stable behavior: keep only content BEFORE the tool call */
+  const before = s.slice(0, cutStart).trim();
+
+  /* If there is trailing content after the toolcall, ignore it (log once) */
+  const after = s.slice(cutEnd).trim();
+  if (after) {
+    /* best-effort logging; no side effects */
+    /* caller has access to wo, but this function does not. */
+  }
+
+  return { name, args, cleanText: before, toolText };
 }
 
 /******************************************************************************* 
@@ -623,13 +668,11 @@ function getSystemContentBase(wo) {
 
   const toolContract = [
     "Tool call contract:",
-    "- To emit the tool call using either:",
-    "  (A) single-line: [tool:NAME]{JSON}",
-    "  (B) two-part:    [tool:NAME] then on following lines the JSON object (starting with '{' and ending with '}').",
-    "- If a tool call is emitted, it MUST be the LAST thing in your message (no text after it).",
+    "- If you decide to use a tool, emit it using either:",
+    "  (A) [tool:NAME]{JSON}",
+    "  (B) [tool:NAME] then on following lines the JSON object (starting with '{' and ending with '}').",
+    "- Tool calls MAY appear inline within text. If you emit a tool call, the tool will be executed.",
     "- JSON must be valid. Set ALL required fields.",
-    "- Replace placeholders in angle brackets with best-known values (e.g., <USER_TEXT>, <URL>, <LANG>, <CHANNEL_ID>, …).",
-    "- If a required placeholder cannot be resolved, do not emit a tool call; write a normal response instead.",
     "- After receiving [tool_result:NAME], continue your previous answer and append any provided URL(s) at the very end."
   ].join("\n");
 
@@ -724,11 +767,12 @@ export default async function getCoreAi(coreData) {
   const persistQueue = [];
   let finalText = "";
   let accumulatedText = "";
-  let pseudoToolUsed = false;
+  let toolCallsUsedTotal = 0;
 
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
+
     try {
       const body = {
         model: wo.Model,
@@ -736,6 +780,7 @@ export default async function getCoreAi(coreData) {
         temperature: kiCfg.temperature,
         max_tokens: kiCfg.maxTokens
       };
+
       const res = await fetch(wo.Endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.APIKey}` },
@@ -751,7 +796,7 @@ export default async function getCoreAi(coreData) {
           severity: "warn",
           module: MODULE_NAME,
           exitStatus: "failed",
-          message: `HTTP ${res.status} ${res.statusText} ${typeof raw === "string" ? raw.slice(0,300) : ""}`
+          message: `HTTP ${res.status} ${res.statusText} ${typeof raw === "string" ? raw.slice(0, 300) : ""}`
         });
         return coreData;
       }
@@ -762,7 +807,7 @@ export default async function getCoreAi(coreData) {
       const msg = choice?.message || {};
       const msgText = typeof msg.content === "string" ? msg.content : "";
 
-      const extracted = (!pseudoToolUsed && msgText) ? getExtractPseudoToolCall(msgText) : null;
+      const extracted = msgText ? getExtractPseudoToolCall(msgText) : null;
 
       const assistantMsg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: msgText };
       if (assistantMsg.authorName == null) delete assistantMsg.authorName;
@@ -775,31 +820,45 @@ export default async function getCoreAi(coreData) {
         accumulatedText += (accumulatedText ? "\n" : "") + cleanAssistantText;
       }
 
-      if (!pseudoToolUsed && extracted) {
-        const pt = extracted;
+      if (extracted) {
+        if (toolCallsUsedTotal >= kiCfg.maxToolCallsTotal) {
+          wo.logging.push({
+            timestamp: new Date().toISOString(),
+            severity: "warn",
+            module: MODULE_NAME,
+            exitStatus: "success",
+            message: `Tool call ignored: maxToolCallsTotal reached (${toolCallsUsedTotal}/${kiCfg.maxToolCallsTotal})`,
+            details: { tool: extracted.name }
+          });
+
+          finalText = accumulatedText || cleanAssistantText || msgText.trim() || "";
+          break;
+        }
+
+        toolCallsUsedTotal += 1;
 
         wo._fullAssistantText = accumulatedText.trim();
 
-        if (Array.isArray(kiCfg.toolsList) && kiCfg.toolsList.length && !kiCfg.toolsList.includes(pt.name)) {
-          const errMsg = `[tool_error:${pt.name}] Tool not allowed`;
+        if (Array.isArray(kiCfg.toolsList) && kiCfg.toolsList.length && !kiCfg.toolsList.includes(extracted.name)) {
+          const errMsg = `[tool_error:${extracted.name}] Tool not allowed`;
           wo.logging.push({
             timestamp: new Date().toISOString(),
             severity: "warn",
             module: MODULE_NAME,
             exitStatus: "failed",
-            message: `Pseudo tool not allowed: ${pt.name}`
+            message: `Pseudo tool not allowed: ${extracted.name}`
           });
+
           const userErr = { role: "user", content: errMsg };
           messages.push(userErr);
           persistQueue.push(getWithTurnId(userErr, wo));
-          pseudoToolUsed = true;
           wo._fullAssistantText = undefined;
           continue;
         }
 
         const toolMsg = await getExecToolCall(
           toolModules,
-          { id: "pseudo_" + pt.name, function: { name: pt.name, arguments: JSON.stringify(pt.args ?? {}) } },
+          { id: "pseudo_" + extracted.name, function: { name: extracted.name, arguments: JSON.stringify(extracted.args ?? {}) } },
           coreData,
           toolSpecsByName
         );
@@ -813,16 +872,15 @@ export default async function getCoreAi(coreData) {
         const userToolResult = {
           role: "user",
           content:
-            `[tool_result:${pt.name}]\n` +
+            `[tool_result:${extracted.name}]\n` +
             toolResultText +
             (urlsText ? `\n\nIMAGE_URLS:\n${urlsText}\n` : "\n") +
-            "\nINSTRUCTION: Continue your previous answer. If IMAGE_URLS are present, append the first URL at the VERY END of your final text."
+            `\nINSTRUCTION: Continue your previous answer. If IMAGE_URLS are present, append the first URL at the VERY END of your final text. (toolCallsUsedTotal=${toolCallsUsedTotal}/${kiCfg.maxToolCallsTotal})`
         };
 
         messages.push(userToolResult);
         persistQueue.push(getWithTurnId(userToolResult, wo));
 
-        pseudoToolUsed = true;
         wo._fullAssistantText = undefined;
         continue;
       }
@@ -836,6 +894,7 @@ export default async function getCoreAi(coreData) {
 
       finalText = accumulatedText || msgText.trim() || "";
       break;
+
     } catch (err) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
       wo.Response = "[Empty AI response]";
