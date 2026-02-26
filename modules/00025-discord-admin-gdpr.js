@@ -1,11 +1,12 @@
-/**************************************************************
-/* filename: "discord-admin-gdpr.js"                         *
-/* Version 1.0                                               *
-/* Purpose: /gdpr (text|voice) (0|1); ensure table; update;  *
-/*          if both chat & voice == 0 then set disclaimer=0. *
 /**************************************************************/
-/**************************************************************
-/*                                                          *
+/* filename: "discord-admin-gdpr.js"                         */
+/* Version 1.0                                               */
+/* Purpose: /gdpr (text|voice) (0|1); ensure table; update;  */
+/*          stable option parsing; always touch updated_at;  */
+/*          if both chat & voice == 0 then set disclaimer=0. */
+/**************************************************************/
+/**************************************************************/
+/*                                                            */
 /**************************************************************/
 
 import mysql from "mysql2/promise";
@@ -13,9 +14,11 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-admin-gdpr";
 
-/**************************************************************
-/* functionSignature: getTableName (coreData)                *
-/* Resolves the consent table name from configuration        *
+const CREATED = new Set();
+
+/**************************************************************/
+/* functionSignature: getTableName (coreData)                */
+/* Resolves the consent table name from configuration        */
 /**************************************************************/
 function getTableName(coreData) {
   const t1 = coreData?.config?.["discord-gdpr-gate"]?.table;
@@ -27,9 +30,9 @@ function getTableName(coreData) {
   return "gdpr_consent";
 }
 
-/**************************************************************
-/* functionSignature: getDbConfig (wo)                       *
-/* Reads DB connection configuration from workingObject      *
+/**************************************************************/
+/* functionSignature: getDbConfig (wo)                       */
+/* Reads DB connection configuration from workingObject      */
 /**************************************************************/
 function getDbConfig(wo) {
   const db = wo?.db || {};
@@ -38,23 +41,44 @@ function getDbConfig(wo) {
   return { host, user, password, database, charset: "utf8mb4" };
 }
 
-/**************************************************************
-/* functionSignature: getParseValue (x)                      *
-/* Parses a numeric-like value into 0 or 1                   *
+/**************************************************************/
+/* functionSignature: getParseValue (x)                      */
+/* Parses a numeric-like value into 0 or 1                   */
 /**************************************************************/
 function getParseValue(x) {
   const n = Number(x);
   return n === 1 ? 1 : 0;
 }
 
-const CREATED = new Set();
+/**************************************************************/
+/* functionSignature: getAdminOptionValue (opts)             */
+/* Returns option value from object or array                 */
+/**************************************************************/
+function getAdminOptionValue(opts) {
+  if (!opts) return null;
 
-/**************************************************************
-/* functionSignature: setEnsureTable (conn, table)           *
-/* Ensures the consent table exists                          *
+  if (Array.isArray(opts)) {
+    const hit =
+      opts.find(o => String(o?.name || "").toLowerCase() === "value") ||
+      opts.find(o => Object.prototype.hasOwnProperty.call(o || {}, "value")) ||
+      opts[0];
+    return hit?.value ?? null;
+  }
+
+  if (typeof opts === "object") {
+    return opts.value ?? opts.val ?? opts.state ?? null;
+  }
+
+  return null;
+}
+
+/**************************************************************/
+/* functionSignature: setEnsureTable (conn, table)           */
+/* Ensures the consent table exists                          */
 /**************************************************************/
 async function setEnsureTable(conn, table) {
   if (CREATED.has(table)) return;
+
   const ddl = `
     CREATE TABLE IF NOT EXISTS \`${table}\` (
       \`user_id\`    VARCHAR(64)  NOT NULL,
@@ -68,15 +92,81 @@ async function setEnsureTable(conn, table) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
   await conn.execute(ddl);
+
   CREATED.add(table);
 }
 
-/**************************************************************
-/* functionSignature: getDiscordAdminGdpr (coreData)         *
+/**************************************************************/
+/* functionSignature: setEnsureRow (conn, table, uid, cid)    */
+/* Ensures a row exists for user/channel                      */
+/**************************************************************/
+async function setEnsureRow(conn, table, userId, channelId) {
+  await conn.execute(
+    `INSERT IGNORE INTO \`${table}\` (user_id, channel_id, chat, voice, disclaimer) VALUES (?, ?, 0, 0, 0)`,
+    [userId, channelId]
+  );
+}
+
+/**************************************************************/
+/* functionSignature: getRow (conn, table, uid, cid)          */
+/* Reads current consent row                                  */
+/**************************************************************/
+async function getRow(conn, table, userId, channelId) {
+  const [rows] = await conn.execute(
+    `SELECT chat, voice, disclaimer, updated_at FROM \`${table}\` WHERE user_id=? AND channel_id=? LIMIT 1`,
+    [userId, channelId]
+  );
+  const chat = Number(rows?.[0]?.chat || 0) ? 1 : 0;
+  const voice = Number(rows?.[0]?.voice || 0) ? 1 : 0;
+  const disclaimer = Number(rows?.[0]?.disclaimer || 0) ? 1 : 0;
+  const updatedAt = rows?.[0]?.updated_at ?? null;
+  return { chat, voice, disclaimer, updatedAt };
+}
+
+/**************************************************************/
+/* functionSignature: setUpdateText (conn, table, ctx)        */
+/* Updates chat consent and touches updated_at                */
+/**************************************************************/
+async function setUpdateText(conn, table, { userId, channelId, value }) {
+  await conn.execute(
+    `UPDATE \`${table}\` SET chat=?, disclaimer=1, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND channel_id=?`,
+    [value, userId, channelId]
+  );
+}
+
+/**************************************************************/
+/* functionSignature: setUpdateVoice (conn, table, ctx)       */
+/* Updates voice consent and touches updated_at               */
+/**************************************************************/
+async function setUpdateVoice(conn, table, { userId, channelId, value }) {
+  await conn.execute(
+    `UPDATE \`${table}\` SET voice=?, disclaimer=1, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND channel_id=?`,
+    [value, userId, channelId]
+  );
+}
+
+/**************************************************************/
+/* functionSignature: setResetDisclaimerIfBothZero (conn,ctx) */
+/* Resets disclaimer to 0 when both consents are 0            */
+/**************************************************************/
+async function setResetDisclaimerIfBothZero(conn, table, { userId, channelId }) {
+  const { chat, voice } = await getRow(conn, table, userId, channelId);
+  if (chat === 0 && voice === 0) {
+    await conn.execute(
+      `UPDATE \`${table}\` SET disclaimer=0, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND channel_id=?`,
+      [userId, channelId]
+    );
+    return true;
+  }
+  return false;
+}
+
+/**************************************************************/
+/* functionSignature: getDiscordAdminGdpr (coreData)         */
 /* Updates GDPR flags via /gdpr and resets disclaimer if req */
 /**************************************************************/
 export default async function getDiscordAdminGdpr(coreData) {
-  const wo  = coreData?.workingObject || {};
+  const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
 
   if (wo?.flow !== "discord-admin") return coreData;
@@ -84,18 +174,25 @@ export default async function getDiscordAdminGdpr(coreData) {
   const cmd = String(wo?.admin?.command || "").toLowerCase();
   if (cmd !== "gdpr") return coreData;
 
-  const userIdFromSlash = String(wo?.admin?.userId || "");
-  const channelId       = String(wo?.admin?.channelId || wo?.id || "");
-  const sub             = String(wo?.admin?.subcommand || "").toLowerCase();
-  const rawVal          = wo?.admin?.options?.value ?? wo?.admin?.options?.val ?? wo?.admin?.options?.state ?? null;
-  const value           = getParseValue(rawVal);
+  const targetUserId = String(wo?.admin?.userId || "");
+  const channelId = String(wo?.admin?.channelId || wo?.id || "");
+  const sub = String(wo?.admin?.subcommand || "").toLowerCase();
+
+  const rawVal = getAdminOptionValue(wo?.admin?.options);
+  const value = getParseValue(rawVal);
 
   const dbCfg = getDbConfig(wo);
   const table = getTableName(coreData);
-  const targetUserId = userIdFromSlash;
 
   if (!dbCfg || !targetUserId || !channelId || !sub || (sub !== "text" && sub !== "voice")) {
-    log("gdpr admin missing/invalid data", "error", { moduleName: MODULE_NAME, hasDb: !!dbCfg, targetUserId, channelId, sub });
+    log("gdpr admin missing/invalid data", "error", {
+      moduleName: MODULE_NAME,
+      hasDb: !!dbCfg,
+      targetUserId,
+      channelId,
+      sub,
+      rawVal
+    });
     wo.response = "";
     return coreData;
   }
@@ -105,38 +202,30 @@ export default async function getDiscordAdminGdpr(coreData) {
     conn = await mysql.createConnection(dbCfg);
     await setEnsureTable(conn, table);
 
+    await setEnsureRow(conn, table, targetUserId, channelId);
+
     if (sub === "text") {
-      await conn.execute(
-        `INSERT INTO \`${table}\` (user_id, channel_id, chat, voice, disclaimer)
-         VALUES (?, ?, ?, 0, 1)
-         ON DUPLICATE KEY UPDATE chat=VALUES(chat), disclaimer=1`,
-        [targetUserId, channelId, value]
-      );
+      await setUpdateText(conn, table, { userId: targetUserId, channelId, value });
     } else {
-      await conn.execute(
-        `INSERT INTO \`${table}\` (user_id, channel_id, chat, voice, disclaimer)
-         VALUES (?, ?, 0, ?, 1)
-         ON DUPLICATE KEY UPDATE voice=VALUES(voice), disclaimer=1`,
-        [targetUserId, channelId, value]
-      );
+      await setUpdateVoice(conn, table, { userId: targetUserId, channelId, value });
     }
 
-    const [rows] = await conn.execute(
-      `SELECT chat, voice FROM \`${table}\` WHERE user_id=? AND channel_id=? LIMIT 1`,
-      [targetUserId, channelId]
-    );
-    const chat  = Number(rows?.[0]?.chat || 0) ? 1 : 0;
-    const voice = Number(rows?.[0]?.voice || 0) ? 1 : 0;
+    const reset = await setResetDisclaimerIfBothZero(conn, table, { userId: targetUserId, channelId });
 
-    if (chat === 0 && voice === 0) {
-      await conn.execute(
-        `UPDATE \`${table}\` SET disclaimer=0 WHERE user_id=? AND channel_id=?`,
-        [targetUserId, channelId]
-      );
-      log("both consents 0 → disclaimer reset to 0 (admin)", "info", { moduleName: MODULE_NAME, targetUserId, channelId });
-    }
+    const { chat, voice, disclaimer, updatedAt } = await getRow(conn, table, targetUserId, channelId);
 
-    log("gdpr updated", "info", { moduleName: MODULE_NAME, targetUserId, channelId, set: sub, value });
+    log("gdpr updated", "info", {
+      moduleName: MODULE_NAME,
+      targetUserId,
+      channelId,
+      set: sub,
+      value,
+      chat,
+      voice,
+      disclaimer,
+      reset,
+      updatedAt
+    });
 
     wo.response = "";
     await conn.end().catch(() => {});
@@ -144,7 +233,7 @@ export default async function getDiscordAdminGdpr(coreData) {
 
   } catch (e) {
     if (conn) try { await conn.end(); } catch {}
-    log("gdpr update failed", "error", { moduleName: MODULE_NAME, reason: e?.message });
+    log("gdpr update failed", "error", { moduleName: MODULE_NAME, reason: e?.message || String(e) });
     wo.response = "";
     return coreData;
   }

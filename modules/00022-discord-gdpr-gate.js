@@ -1,12 +1,12 @@
-/**************************************************************
-/* filename: "discord-gdpr-gate.js"                          *
-/* Version 1.0                                               *
-/* Purpose: GDPR gate for "discord" (text) and "discord-voice"*
-/*          Sends disclaimer DM exactly once and enforces     *
-/*          consent checks; skips DMs and bot users.          *
 /**************************************************************/
-/**************************************************************
-/*                                                          *
+/* filename: "discord-gdpr-gate.js"                           */
+/* Version 1.0                                                */
+/* Purpose: GDPR gate for "discord" (text) and "discord-voice"*/
+/*          Sends disclaimer DM exactly once and enforces     */
+/*          consent checks; skips DMs and bot users.          */
+/**************************************************************/
+/**************************************************************/
+/*                                                            */
 /**************************************************************/
 
 import mysql from "mysql2/promise";
@@ -15,9 +15,9 @@ import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "gdpr-gate";
 
-/**************************************************************
-/* functionSignature: getTableName (coreData)                *
-/* Resolves the consent table name from configuration        *
+/**************************************************************/
+/* functionSignature: getTableName (coreData)                */
+/* Resolves the consent table name from configuration        */
 /**************************************************************/
 function getTableName(coreData) {
   const t1 = coreData?.config?.["discord-gdpr-gate"]?.table;
@@ -29,9 +29,9 @@ function getTableName(coreData) {
   return "gdpr_consent";
 }
 
-/**************************************************************
-/* functionSignature: getDbConfig (wo)                       *
-/* Reads DB connection configuration from workingObject      *
+/**************************************************************/
+/* functionSignature: getDbConfig (wo)                       */
+/* Reads DB connection configuration from workingObject      */
 /**************************************************************/
 function getDbConfig(wo) {
   const db = wo?.db || {};
@@ -40,20 +40,32 @@ function getDbConfig(wo) {
   return { host, user, password, database, charset: "utf8mb4" };
 }
 
-/**************************************************************
-/* functionSignature: getSimpleTemplate (str, vars)          *
-/* Applies {{var}} substitutions to a string                 *
+/**************************************************************/
+/* functionSignature: getSimpleTemplate (str, vars)          */
+/* Applies {{var}} substitutions to a string                 */
 /**************************************************************/
 function getSimpleTemplate(str, vars) {
   return String(str).replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (k in vars ? String(vars[k]) : ""));
 }
 
-/**************************************************************
-/* functionSignature: getBuildDisclaimerFromWO (wo, ctx)     *
-/* Builds disclaimer body and embed from workingObject        *
+/**************************************************************/
+/* functionSignature: getDisclaimerText (wo)                 */
+/* Resolves disclaimer text from multiple possible keys      */
+/**************************************************************/
+function getDisclaimerText(wo) {
+  const t1 = typeof wo?.gdprDisclaimer === "string" ? wo.gdprDisclaimer : "";
+  if (t1 && t1.trim()) return t1.trim();
+  const t2 = typeof wo?.GDPRDisclaimer === "string" ? wo.GDPRDisclaimer : "";
+  if (t2 && t2.trim()) return t2.trim();
+  return "";
+}
+
+/**************************************************************/
+/* functionSignature: getBuildDisclaimerFromWO (wo, ctx)     */
+/* Builds disclaimer body and embed from workingObject       */
 /**************************************************************/
 function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
-  const txt = typeof wo?.gdprDisclaimer === "string" ? wo.gdprDisclaimer.trim() : "";
+  const txt = getDisclaimerText(wo);
   if (!txt) return null;
 
   const operatorName = String(wo?.GdprOperatorName ?? wo?.GDPROperatorName ?? "");
@@ -67,9 +79,20 @@ function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
   return { body: desc, embed };
 }
 
-/**************************************************************
-/* functionSignature: setSendDisclaimerDM (wo, ctx, log)     *
-/* Sends the disclaimer as a direct message to the user      *
+/**************************************************************/
+/* functionSignature: setHardBlock (wo, body)                */
+/* Forces the pipeline to stop and prevents downstream work  */
+/**************************************************************/
+function setHardBlock(wo, body) {
+  wo.response = body ?? "";
+  wo.stop = true;
+  wo.blocked = true;
+  wo.skipLLM = true;
+}
+
+/**************************************************************/
+/* functionSignature: setSendDisclaimerDM (wo, ctx, log)     */
+/* Sends the disclaimer as a direct message to the user      */
 /**************************************************************/
 async function setSendDisclaimerDM(wo, ctx, log) {
   const built = getBuildDisclaimerFromWO(wo, ctx);
@@ -94,9 +117,9 @@ async function setSendDisclaimerDM(wo, ctx, log) {
   }
 }
 
-/**************************************************************
-/* functionSignature: setEnsureConsentTable (conn, table)    *
-/* Ensures the consent table exists in the database          *
+/**************************************************************/
+/* functionSignature: setEnsureConsentTable (conn, table)    */
+/* Ensures the consent table exists in the database          */
 /**************************************************************/
 async function setEnsureConsentTable(conn, table) {
   const sql = `
@@ -115,9 +138,9 @@ async function setEnsureConsentTable(conn, table) {
   await conn.execute(sql);
 }
 
-/**************************************************************
-/* functionSignature: getGdprGate (coreData)                 *
-/* Enforces GDPR gate, sends DM once, blocks if not allowed  *
+/**************************************************************/
+/* functionSignature: getGdprGate (coreData)                 */
+/* Enforces GDPR gate, sends DM once, blocks if not allowed  */
 /**************************************************************/
 export default async function getGdprGate(coreData) {
   const wo = coreData?.workingObject || {};
@@ -155,8 +178,7 @@ export default async function getGdprGate(coreData) {
   if (!userId || !channelId) {
     log("gdpr gate missing ids -> blocking", "warn", { moduleName: MODULE_NAME, userId, channelId, flow });
     const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });
-    wo.response = built?.body ?? "";
-    wo.stop = true;
+    setHardBlock(wo, built?.body ?? "");
     await setSendDisclaimerDM(wo, { userId, channelId, flow }, log);
     return coreData;
   }
@@ -164,8 +186,7 @@ export default async function getGdprGate(coreData) {
   if (!dbCfg) {
     log("no DB config; default-deny", "error", { moduleName: MODULE_NAME, flow, userId, channelId });
     const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });
-    wo.response = built?.body ?? "";
-    wo.stop = true;
+    setHardBlock(wo, built?.body ?? "");
     await setSendDisclaimerDM(wo, { userId, channelId, flow }, log);
     return coreData;
   }
@@ -205,8 +226,7 @@ export default async function getGdprGate(coreData) {
       if (upd.affectedRows === 1) {
         log("disclaimer 0→1, DM sent and block", "info", { moduleName: MODULE_NAME, userId, channelId, flow });
         const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });
-        wo.response = built?.body ?? "";
-        wo.stop = true;
+        setHardBlock(wo, built?.body ?? "");
         await setSendDisclaimerDM(wo, { userId, channelId, flow }, log);
         await conn.end().catch(() => {});
         return coreData;
@@ -216,8 +236,7 @@ export default async function getGdprGate(coreData) {
     const allowed = flow === "discord" ? chat === 1 : voice === 1;
     if (!allowed) {
       log("blocked by gdpr gate", "info", { moduleName: MODULE_NAME, flow, userId, channelId, chat, voice });
-      wo.response = "";
-      wo.stop = true;
+      setHardBlock(wo, "");
       await conn.end().catch(() => {});
       return coreData;
     }
@@ -231,8 +250,7 @@ export default async function getGdprGate(coreData) {
     }
     log("db error (default-deny)", "error", { moduleName: MODULE_NAME, flow, err: e?.message });
     const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });
-    wo.response = built?.body ?? "";
-    wo.stop = true;
+    setHardBlock(wo, built?.body ?? "");
     await setSendDisclaimerDM(wo, { userId, channelId, flow }, log);
     return coreData;
   }
