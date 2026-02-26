@@ -1,10 +1,10 @@
 /**************************************************************/
 /* filename: "discord-voice-tts.js"                            */
 /* Version: 1.0                                                */
-/* Purpose: Speak wo.Response with optional [Speaker: <voice>]  */
+/* Purpose: Speak wo.response with optional [Speaker: <voice>]  */
 /*          tags, prerender segments, and play sequentially     */
 /* Notes:                                                      */
-/*  - wo.TTSVoice is only the default voice.                   */
+/*  - wo.ttsVoice is only the default voice.                   */
 /*  - [speaker: <name>] is treated as the voice enum to use    */
 /*    from that point on (lowercased).                         */
 /*  - [speaker: default] or unclear/empty uses default voice.  */
@@ -289,7 +289,7 @@ async function getPrerenderedSegmentBuffers(items, concurrency, guardFn, refresh
 
 /**************************************************************/
 /* functionSignature: getDiscordVoiceTTS (coreData)           */
-/* Speaks wo.Response through a single TTS stream per guild   */
+/* Speaks wo.response through a single TTS stream per guild   */
 /**************************************************************/
 export default async function getDiscordVoiceTTS(coreData) {
   const wo = coreData.workingObject || {};
@@ -300,15 +300,15 @@ export default async function getDiscordVoiceTTS(coreData) {
     return coreData;
   }
 
-  const raw = (typeof wo.Response === "string" ? wo.Response.trim() : "");
+  const raw = (typeof wo.response === "string" ? wo.response.trim() : "");
   if (!raw) {
-    setLog(wo, "No Response to speak", "warn");
+    setLog(wo, "No response to speak", "warn");
     return coreData;
   }
 
   const { segments: voiceSegments, foundTag } = getTTSSpeakerSegments(raw);
   if (!voiceSegments.length) {
-    setLog(wo, "Response only contained links -> nothing to speak after sanitizing", "info");
+    setLog(wo, "response only contained links -> nothing to speak after sanitizing", "info");
     return coreData;
   }
 
@@ -396,10 +396,10 @@ export default async function getDiscordVoiceTTS(coreData) {
     } catch {}
   }
 
-  const model = wo.TTSModel || "gpt-4o-mini-tts";
-  const defaultVoice = getNormalizedVoiceKey(wo.TTSVoice) || "alloy";
-  const endpoint = wo.TTSEndpoint || "https://api.openai.com/v1/audio/speech";
-  const apiKey = wo.TTSAPIKey || process.env.OPENAI_API_KEY;
+  const model = wo.ttsModel || "gpt-4o-mini-tts";
+  const defaultVoice = getNormalizedVoiceKey(wo.ttsVoice) || "alloy";
+  const endpoint = wo.ttsEndpoint || "https://api.openai.com/v1/audio/speech";
+  const apiKey = wo.ttsApiKey || process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
     setLog(wo, "Missing TTS API key", "error");

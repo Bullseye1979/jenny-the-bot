@@ -52,8 +52,8 @@ function getCfg(wo) {
   return {
     enabled: getBool(wo?.ModerationEnabled ?? true, true),
     clientRef: getStr(wo?.clientRef, ""),
-    adminId: getStr(wo?.ModAdmin, ""),
-    trigSilence: getStr(wo?.ModSilence, "")
+    adminId: getStr(wo?.modAdmin, ""),
+    trigSilence: getStr(wo?.modSilence, "")
   };
 }
 
@@ -77,7 +77,7 @@ function setDecisionLog(wo, { level = "info", message = "Moderation decision", d
 
 /**************************************************************
 /* functionSignature: getModerationOutput (coreData)          *
-/* Evaluates wo.Response for [silence] only.                  *
+/* Evaluates wo.response for [silence] only.                  *
 /**************************************************************/
 export default async function getModerationOutput(coreData) {
   const wo = coreData?.workingObject || {};
@@ -95,11 +95,11 @@ export default async function getModerationOutput(coreData) {
 
     if (!cfg.enabled) return coreData;
 
-    const original = String(wo.Response ?? "");
+    const original = String(wo.response ?? "");
     const silenceHit = !!(cfg.trigSilence && new RegExp(getEscapedRegex(cfg.trigSilence), "i").test(original));
 
     if (silenceHit) {
-      wo.Response = "STOP";
+      wo.response = "STOP";
       wo.stop = true;
       const decision = { action: "drop", tag: "silence", reason: "trigger_match" };
       wo.Moderation = decision;

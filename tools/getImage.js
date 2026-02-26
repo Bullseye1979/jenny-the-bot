@@ -188,22 +188,22 @@ function getHeuristicEnhancedPrompt(basePrompt, { extraNegatives = [], extraQual
 function getResolveEnhancerConfig(args, wo, toolCfg, imageModelName) {
   const epArg = args?.enhancerEndpoint;
   const epCfg = toolCfg?.enhancerEndpoint || toolCfg?.endpoint;
-  const epWO  = wo?.Endpoint;
+  const epWO  = wo?.endpoint;
   const endpoint = String(epArg || epCfg || epWO || "https://api.openai.com/v1/chat/completions");
   const keyArg = args?.enhancerApiKey;
   const keyCfg = toolCfg?.enhancerApiKey || toolCfg?.apiKey;
-  const keyWO  = wo?.APIKey;
+  const keyWO  = wo?.apiKey;
   const apiKey = String(keyArg || keyCfg || keyWO || "");
-  const model = String(args?.enhancerModel || toolCfg?.enhancerModel || toolCfg?.model || wo?.Model || "gpt-4o-mini");
+  const model = String(args?.enhancerModel || toolCfg?.enhancerModel || toolCfg?.model || wo?.model || "gpt-4o-mini");
   const tempArg = args?.enhancerTemperature;
   const tempCfg = toolCfg?.enhancerTemperature;
-  const tempWO  = wo?.Temperature;
+  const tempWO  = wo?.temperature;
   const temperature = Number.isFinite(tempArg) ? tempArg : Number.isFinite(tempCfg) ? tempCfg : Number.isFinite(tempWO) ? tempWO : 0.7;
   const mtArg = args?.enhancerMaxTokens;
   const mtCfg = toolCfg?.enhancerMaxTokens;
-  const mtWO  = wo?.MaxTokens;
+  const mtWO  = wo?.maxTokens;
   const max_tokens = Number.isFinite(mtArg) ? mtArg : Number.isFinite(mtCfg) ? mtCfg : Number.isFinite(mtWO) ? mtWO : 350;
-  const timeout = Number.isFinite(toolCfg?.enhancerTimeoutMs) ? toolCfg.enhancerTimeoutMs : Number.isFinite(wo?.RequestTimeoutMs) ? wo.RequestTimeoutMs : 60000;
+  const timeout = Number.isFinite(toolCfg?.enhancerTimeoutMs) ? toolCfg.enhancerTimeoutMs : Number.isFinite(wo?.requestTimeoutMs) ? wo.requestTimeoutMs : 60000;
   const preferDigitalPainting = args?.preferDigitalPainting !== false;
   return { endpoint, apiKey, model, temperature, max_tokens, timeout, preferDigitalPainting, imageModelName };
 }
@@ -363,8 +363,8 @@ function getBuiltSize({ size, aspect, targetLongEdge = 1024 }) {
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getImage || {};
-  const apiKey = String(args?.apiKey || toolCfg.apiKey || wo?.APIKey || "");
-  if (!apiKey) return { ok: false, error: "Missing API key for images (args.apiKey / toolsconfig.getImage.apiKey / workingObject.APIKey)" };
+  const apiKey = String(args?.apiKey || toolCfg.apiKey || wo?.apiKey || "");
+  if (!apiKey) return { ok: false, error: "Missing API key for images (args.apiKey / toolsconfig.getImage.apiKey / workingObject.apiKey)" };
   const promptRaw = String(args?.prompt || "").trim();
   if (!promptRaw) return { ok: false, error: "Missing prompt" };
   const model = String(args?.model || toolCfg.model || "gpt-image-1");
@@ -377,7 +377,7 @@ async function getInvoke(args, coreData) {
   if (n > 4) n = 4;
   const strictPrompt = Boolean(args?.strictPrompt || false);
   const negative = args?.negative || null;
-  const publicBaseUrl = typeof toolCfg.public_base_url === "string" ? toolCfg.public_base_url : null;
+  const publicBaseUrl = typeof toolCfg.publicBaseUrl === "string" ? toolCfg.publicBaseUrl : null;
   const enhancedPrompt = strictPrompt ? promptRaw : await getBuildEnhancedPrompt({ wo, toolCfg, args, basePrompt: promptRaw, imageModelName: model, negative, extraTags: [] });
   const finalSize = getBuiltSize({ size: requestedSize, aspect, targetLongEdge });
   const body = { model, prompt: enhancedPrompt, size: finalSize, n };
@@ -412,7 +412,7 @@ function getDefaultExport() {
       type: "function",
       function: {
         name: MODULE_NAME,
-        description: "Generate one or more high-quality images from a prompt using the configured Images model; returns local paths/URLs. Model-agnostic; automatically enhances prompts unless strictPrompt=true. Never change set model unless it is explicitly stated.",
+        description: "Generate one or more high-quality images from a prompt using the configured Images model; returns local paths/URLs. model-agnostic; automatically enhances prompts unless strictPrompt=true. Never change set model unless it is explicitly stated.",
         parameters: {
           type: "object",
           properties: {
@@ -426,7 +426,7 @@ function getDefaultExport() {
             enhancerEndpoint: { type: "string", description: "Chat/completions endpoint for the prompt enhancer." },
             enhancerApiKey: { type: "string", description: "API key for the prompt enhancer." },
             enhancerModel: { type: "string", description: "GPT model for the prompt enhancer." },
-            enhancerTemperature: { type: "number", description: "Temperature for the prompt enhancer." },
+            enhancerTemperature: { type: "number", description: "temperature for the prompt enhancer." },
             enhancerMaxTokens: { type: "number", description: "max_tokens for the prompt enhancer." },
             preferDigitalPainting: { type: "boolean", description: "Prefer a digital painting style (default: true)." }
           },

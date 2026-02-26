@@ -44,7 +44,7 @@ function getPayload(wo, reason) {
     messageUrl,
     reason: getStr(reason || "Inappropriate behaviour"),
     userMessage: userMsg,
-    aiPreview: getPreview(getStr(wo?.Response || ""), 400)
+    aiPreview: getPreview(getStr(wo?.response || ""), 400)
   };
 }
 
@@ -57,7 +57,7 @@ async function getInvoke(args, coreData) {
   const reasonProvided = getStr(args?.reason || "");
   const effectiveReason = reasonProvided || "Inappropriate behaviour";
 
-  const adminId = getStr(wo?.ModAdmin || "");
+  const adminId = getStr(wo?.modAdmin || "");
   const clientRef = getStr(wo?.clientRef || "");
   const client = clientRef ? getItem(clientRef) : null;
 

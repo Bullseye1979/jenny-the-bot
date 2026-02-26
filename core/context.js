@@ -28,16 +28,16 @@ function getContextConfig(workingObject) {
   const ctxCfg = workingObject?.config?.context || {};
   const endpoint =
     ctxCfg.endpoint ||
-    workingObject?.Endpoint ||
+    workingObject?.endpoint ||
     process.env.OPENAI_ENDPOINT ||
     "https://api.openai.com/v1/chat/completions";
   const model =
     ctxCfg.model ||
-    workingObject?.Model ||
+    workingObject?.model ||
     "gpt-4o-mini";
   const apiKey =
     ctxCfg.apiKey ||
-    workingObject?.APIKey ||
+    workingObject?.apiKey ||
     workingObject?.apiKey ||
     process.env.OPENAI_API_KEY ||
     "";
@@ -449,13 +449,13 @@ export async function getContext(workingObject) {
 
   const nRaw = Number(workingObject?.contextSize ?? 10);
   const nUsers = Number.isFinite(nRaw) ? Math.max(1, Math.floor(nRaw)) : 10;
-  const detailed = workingObject?.getDetailedContext === true;
+  const detailed = workingObject?.detailedContext === true;
   const simplified = workingObject?.simplifiedContext === true;
 
   const metaFramesMode = getMetaFramesMode(workingObject);
 
-  const extraIdsRaw = Array.isArray(workingObject?.channelIDs)
-    ? workingObject.channelIDs
+  const extraIdsRaw = Array.isArray(workingObject?.channelIds)
+    ? workingObject.channelIds
     : [];
 
   const allIds = [

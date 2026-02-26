@@ -139,7 +139,7 @@ function getRun(cmd, args, cwd) {
 function getStrictCfg(wo) {
   const MODULE_NAME = "getToken";
   const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
-  const public_base_url = typeof cfg.public_base_url === "string" ? cfg.public_base_url : null;
+  const publicBaseUrl = typeof cfg.publicBaseUrl === "string" ? cfg.publicBaseUrl : null;
   const magickPath = String(cfg.magickPath || "convert");
   const size = Number.isFinite(cfg.size) ? Math.max(64, Math.floor(cfg.size)) : 512;
   const border_px = Number.isFinite(cfg.border_px) ? Math.max(1, Math.floor(cfg.border_px)) : 10;
@@ -160,7 +160,7 @@ function getStrictCfg(wo) {
     : [80, 100, 120];
 
   return {
-    public_base_url, magickPath, size, border_px,
+    publicBaseUrl, magickPath, size, border_px,
     ffmpegPath, maxMb, fpsList, scaleList,
     maxColorsList, ditherList, useGifsicleLossy, gifsiclePath, gifsicleLossyLevels
   };
@@ -499,19 +499,19 @@ async function getInvoke(args, coreData) {
       original: {
         filename: inName,
         path: inAbs,
-        url: getPublicUrl(cfg.public_base_url, inName),
+        url: getPublicUrl(cfg.publicBaseUrl, inName),
         mime: "application/octet-stream"
       },
       intermediate: {
         filename: chosenGifName,
         path: chosenGifAbs,
-        url: getPublicUrl(cfg.public_base_url, chosenGifName),
+        url: getPublicUrl(cfg.publicBaseUrl, chosenGifName),
         mime: "image/gif"
       },
       output: {
         filename: tokenName,
         path: tokenAbs,
-        url: getPublicUrl(cfg.public_base_url, tokenName),
+        url: getPublicUrl(cfg.publicBaseUrl, tokenName),
         mime: "image/gif",
         ring_color: ringColor,
         pingpong,
@@ -555,13 +555,13 @@ async function getInvoke(args, coreData) {
         original: {
           filename: inName,
           path: inAbs,
-          url: getPublicUrl(cfg.public_base_url, inName),
+          url: getPublicUrl(cfg.publicBaseUrl, inName),
           mime: "image/gif"
         },
         output: {
           filename: tokenName,
           path: tokenAbs,
-          url: getPublicUrl(cfg.public_base_url, tokenName),
+          url: getPublicUrl(cfg.publicBaseUrl, tokenName),
           mime: "image/gif",
           ring_color: ringColor,
           pingpong,
@@ -585,13 +585,13 @@ async function getInvoke(args, coreData) {
       original: {
         filename: inName,
         path: inAbs,
-        url: getPublicUrl(cfg.public_base_url, inName),
+        url: getPublicUrl(cfg.publicBaseUrl, inName),
         mime: origMime
       },
       output: {
         filename: tokenName,
         path: tokenAbs,
-        url: getPublicUrl(cfg.public_base_url, tokenName),
+        url: getPublicUrl(cfg.publicBaseUrl, tokenName),
         mime: "image/png",
         ring_color: ringColor,
         pingpong: false,

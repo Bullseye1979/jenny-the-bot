@@ -174,7 +174,7 @@ async function getInvoke(args, coreData) {
   const netTimeoutMs = getNumSafe(toolCfg.networkTimeoutMs, 1800000);
   const agent = new Agent({ headersTimeout: netTimeoutMs, bodyTimeout: 0 });
 
-  const publicBaseUrl = typeof toolCfg.public_base_url === "string" ? toolCfg.public_base_url : null;
+  const publicBaseUrl = typeof toolCfg.publicBaseUrl === "string" ? toolCfg.publicBaseUrl : null;
 
   const batch_size = Math.min(n, 4);
   const n_iter = Math.ceil(n / batch_size);

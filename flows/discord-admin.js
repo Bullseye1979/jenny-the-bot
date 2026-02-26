@@ -183,19 +183,19 @@ function getFindSubByName(cmdDef, subName) {
 
 /**************************************************************
 /* functionSignature: getHasAdminProp (obj)                  *
-/* True if object has an Admin property                      *
+/* True if object has an admin property                      *
 /**************************************************************/
 function getHasAdminProp(obj) {
-  return obj && Object.prototype.hasOwnProperty.call(obj, "Admin");
+  return obj && Object.prototype.hasOwnProperty.call(obj, "admin");
 }
 
 /**************************************************************
 /* functionSignature: getCheckAllowByAdminArray (defLike,    *
 /*                     userId)                               *
-/* Evaluates Admin array allow-list                          *
+/* Evaluates admin array allow-list                          *
 /**************************************************************/
 function getCheckAllowByAdminArray(defLike, userId) {
-  const list = getSafeArray(defLike?.Admin).map(String);
+  const list = getSafeArray(defLike?.admin).map(String);
   if (list.length === 0) return false;
   return list.includes(String(userId));
 }
@@ -203,7 +203,7 @@ function getCheckAllowByAdminArray(defLike, userId) {
 /**************************************************************
 /* functionSignature: getIsUserAllowedForCmdAndSub          *
 /*   (defs, cmdName, subName, userId)                        *
-/* Checks admin gate: sub.Admin > cmd.Admin > allow if none  *
+/* Checks admin gate: sub.admin > cmd.admin > allow if none  *
 /**************************************************************/
 function getIsUserAllowedForCmdAndSub(defs, cmdName, subName, userId) {
   const cmd = getFindDefByName(defs, cmdName);
@@ -216,18 +216,18 @@ function getIsUserAllowedForCmdAndSub(defs, cmdName, subName, userId) {
 
 /**************************************************************
 /* functionSignature: getDeepStripAdmin (def)                *
-/* Removes Admin fields from a definition tree               *
+/* Removes admin fields from a definition tree               *
 /**************************************************************/
 function getDeepStripAdmin(def) {
   if (!def || typeof def !== "object") return def;
-  const { Admin, options, ...rest } = def;
+  const { admin, options, ...rest } = def;
   if (Array.isArray(options)) rest.options = options.map(getDeepStripAdmin);
   return rest;
 }
 
 /**************************************************************
 /* functionSignature: getSanitizeDefsForDiscord (defs)       *
-/* Returns definitions without Admin fields                  *
+/* Returns definitions without admin fields                  *
 /**************************************************************/
 function getSanitizeDefsForDiscord(defs) {
   return getSafeArray(defs).map(getDeepStripAdmin);
@@ -357,7 +357,7 @@ function getBuildRunCore(createRunCore, interaction, baseWO) {
   const wo = rc.workingObject;
   if (baseWO && typeof baseWO === "object") {
     for (const [k, v] of Object.entries(baseWO)) {
-      if (k === "clientRef" || k === "Botname" || k === "persona" || k === "instructions") wo[k] = v;
+      if (k === "clientRef" || k === "botName" || k === "persona" || k === "instructions") wo[k] = v;
       if (k.startsWith("Avatar")) wo[k] = v;
     }
   }

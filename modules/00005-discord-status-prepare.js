@@ -72,7 +72,7 @@ export default async function getDiscordStatusPrepareFlow(baseCore) {
   const allowedList = getCleanAllowedChannels(config);
 
   if (!allowedList || allowedList.length === 0) {
-    workingObject.Response = "STOP";
+    workingObject.response = "STOP";
     workingObject.stop = true;
     log("allowedChannels empty or not configured → set STOP and abort", "info", { moduleName: MODULE_NAME });
     return baseCore;
@@ -93,7 +93,7 @@ export default async function getDiscordStatusPrepareFlow(baseCore) {
   workingObject.payload = prompt;
   workingObject.updateStatus = "true";
 
-  workingObject.Tools = [];
+  workingObject.tools = [];
   workingObject.doNotWriteToContext = true;
 
   log(

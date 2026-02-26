@@ -198,68 +198,68 @@ export default async function getDiscordAdminMacro(coreData) {
     const channelId = String(wo?.admin?.channelId || wo.channelID || wo.id || "");
     log("macro: incoming admin command", "debug", { moduleName: MODULE_NAME, flow: wo?.flow, command: cmd, subcommand: sub, userId, guildId, channelId });
     if (!userId) {
-      wo.Response = "⚠️ Macro: missing user context.";
+      wo.response = "⚠️ Macro: missing user context.";
       return coreData;
     }
     const pool = await getDbPool(wo, log);
     if (!pool) {
-      wo.Response = "⚠️ Macro: database connection not available.";
+      wo.response = "⚠️ Macro: database connection not available.";
       return coreData;
     }
     if (sub === "create") {
       const name = String(wo?.admin?.options?.name || "").trim();
       const text = String(wo?.admin?.options?.text || "").trim();
       if (!name || !text) {
-        wo.Response = "⚠️ Please provide both a macro name and a text body.";
+        wo.response = "⚠️ Please provide both a macro name and a text body.";
       } else {
         await setCreateOrOverwriteMacro({ pool, log, userId, guildId, channelId, name, text });
-        wo.Response = `✅ Macro **${name}** has been saved (overwritten if it already existed).`;
+        wo.response = `✅ Macro **${name}** has been saved (overwritten if it already existed).`;
       }
     } else if (sub === "delete") {
       const name = String(wo?.admin?.options?.name || "").trim();
       if (!name) {
-        wo.Response = "⚠️ Please provide the name of the macro you want to delete.";
+        wo.response = "⚠️ Please provide the name of the macro you want to delete.";
       } else {
         const deleted = await setDeleteMacro({ pool, log, userId, name });
         if (deleted) {
-          wo.Response = `🗑️ Macro **${name}** has been deleted.`;
+          wo.response = `🗑️ Macro **${name}** has been deleted.`;
         } else {
-          wo.Response = `ℹ️ Macro **${name}** was not found.`;
+          wo.response = `ℹ️ Macro **${name}** was not found.`;
         }
       }
     } else if (sub === "run") {
       const name = String(wo?.admin?.options?.name || "").trim();
       if (!name) {
-        wo.Response = "⚠️ Please provide the name of the macro you want to run.";
+        wo.response = "⚠️ Please provide the name of the macro you want to run.";
       } else {
         const result = await setRunMacro({ pool, log, wo, userId, guildId, channelId, name });
         if (!result?.found) {
-          wo.Response = `ℹ️ Macro **${name}** does not exist.`;
+          wo.response = `ℹ️ Macro **${name}** does not exist.`;
         } else if (!result?.sent) {
-          wo.Response = `⚠️ Macro **${name}** was found, but I could not send the message (reason: ${result.reason || "unknown"}).`;
+          wo.response = `⚠️ Macro **${name}** was found, but I could not send the message (reason: ${result.reason || "unknown"}).`;
         } else {
-          wo.Response = "";
+          wo.response = "";
         }
       }
     } else if (sub === "list") {
       const entries = await getListMacros({ pool, log, userId });
       if (!entries.length) {
-        wo.Response = "📭 You don't have any macros yet.";
+        wo.response = "📭 You don't have any macros yet.";
       } else {
         const lines = entries.map((r) => {
           const previewSafe = (r.preview || "").replace(/\r?\n/g, " ");
           return `**${r.name}**\n\`${previewSafe}\`\n`;
         });
-        wo.Response = "📚 **Your macros:**\n\n" + lines.join("\n");
+        wo.response = "📚 **Your macros:**\n\n" + lines.join("\n");
       }
     } else {
-      wo.Response = "⚠️ Unknown macro subcommand (allowed: create, run, delete, list).";
+      wo.response = "⚠️ Unknown macro subcommand (allowed: create, run, delete, list).";
     }
     return coreData;
   } catch (e) {
     log("macro handler failed", "error", { moduleName: MODULE_NAME, reason: e?.message || String(e), stack: e?.stack });
     const woRef = coreData?.workingObject || {};
-    woRef.Response = "❌ Internal error in macro handler.";
+    woRef.response = "❌ Internal error in macro handler.";
     return coreData;
   }
 }

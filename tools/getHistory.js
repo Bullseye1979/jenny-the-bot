@@ -225,18 +225,18 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
   const endpoint =
     (typeof cfg?.endpoint === "string" && cfg.endpoint)
       ? cfg.endpoint
-      : (typeof wo?.Endpoint === "string" && wo.Endpoint ? wo.Endpoint : "https://api.openai.com/v1/chat/completions");
+      : (typeof wo?.endpoint === "string" && wo.endpoint ? wo.endpoint : "https://api.openai.com/v1/chat/completions");
   const apiKey =
     (typeof cfg?.apiKey === "string" && cfg.apiKey)
       ? cfg.apiKey
-      : (typeof wo?.APIKey === "string" ? wo.APIKey : "");
+      : (typeof wo?.apiKey === "string" ? wo.apiKey : "");
   if (!apiKey) {
     return { ok: false, error: "Missing OpenAI API key" };
   }
   const model =
     (typeof cfg?.model === "string" && cfg.model)
       ? cfg.model
-      : (typeof wo?.Model === "string" && wo.Model ? wo.Model : "gpt-4o-mini");
+      : (typeof wo?.model === "string" && wo.model ? wo.model : "gpt-4o-mini");
   const temperature = Number.isFinite(cfg?.temperature) ? Number(cfg.temperature) : 0.2;
   const max_tokens = Number.isFinite(cfg?.max_tokens) ? Math.max(50, Math.min(4096, Number(cfg.max_tokens))) : 900;
   const lines = rows.map((r) => {
@@ -290,15 +290,15 @@ async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const cfgTool = wo?.toolsconfig?.getHistory || {};
   const primaryChannelId = String(wo?.channelID || wo?.id || "").trim();
-  const extraChannelIds = Array.isArray(wo?.channelIDs)
-    ? wo.channelIDs.map(c => String(c || "").trim()).filter(Boolean)
+  const extraChannelIds = Array.isArray(wo?.channelIds)
+    ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
   const channelIdSet = new Set();
   if (primaryChannelId) channelIdSet.add(primaryChannelId);
   for (const cid of extraChannelIds) channelIdSet.add(cid);
   const channelIds = [...channelIdSet];
   if (!channelIds.length) {
-    return { ok: false, error: "channel_id missing (wo.channelID / wo.id / wo.channelIDs)" };
+    return { ok: false, error: "channel_id missing (wo.channelID / wo.id / wo.channelIds)" };
   }
   const mainChannelId = primaryChannelId || channelIds[0];
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
@@ -567,7 +567,7 @@ function getDefaultExport() {
           "Get the historical records of the channel based on provided timeframes. " +
           "If rows ≤ threshold → dump, if threshold < rows ≤ max_rows → single summary, " +
           "if rows > max_rows → multi-chunk summary with short, prompt-focused chunks. " +
-          "History is pulled from workingObject.channelID / workingObject.id plus optional workingObject.channelIDs.",
+          "History is pulled from workingObject.channelID / workingObject.id plus optional workingObject.channelIds.",
         parameters: {
           type: "object",
           properties: {

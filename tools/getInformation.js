@@ -4,7 +4,7 @@
 /* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
 /*          info snippets ranked by coverage then frequency; output chronologically*
 /*          with conditional NEW EVENT separators and expose timeline_periods for  *
-/*          alignment across one or multiple channels (channelID + channelIDs).    *
+/*          alignment across one or multiple channels (channelID + channelIds).    *
 /************************************************************************************/
 /************************************************************************************
 /*                                                                                  *
@@ -356,8 +356,8 @@ async function getInformationInvoke(args, coreData) {
 
   const primaryChannelId = String(wo?.channelID || wo?.id || "").trim();
 
-  const extraChannelIds = Array.isArray(wo?.channelIDs)
-    ? wo.channelIDs.map(c => String(c || "").trim()).filter(Boolean)
+  const extraChannelIds = Array.isArray(wo?.channelIds)
+    ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
 
   const channelIdSet = new Set();
@@ -366,7 +366,7 @@ async function getInformationInvoke(args, coreData) {
 
   const channelIds = [...channelIdSet];
   if (!channelIds.length) {
-    return { error: "ERROR: channel_id missing (wo.channelID / wo.id / wo.channelIDs)" };
+    return { error: "ERROR: channel_id missing (wo.channelID / wo.id / wo.channelIds)" };
   }
   const mainChannelId = primaryChannelId || channelIds[0];
 
@@ -761,7 +761,7 @@ function getDefaultExport() {
         name: MODULE_NAME,
         description:
           "Use this function to get historical data based on keywords " +
-          "Search one or multiple channels (context.id / workingObject.channelID plus optional workingObject.channelIDs) " +
+          "Search one or multiple channels (context.id / workingObject.channelID plus optional workingObject.channelIds) " +
           "using fixed-size clusters (400 rows). " +
           "Excludes assistant messages and 'answered' turns (role/turn_id). " +
           "Prefers AI-provided 'keyword_groups' (with 'variants' and optional 'parts'). " +

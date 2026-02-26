@@ -260,7 +260,7 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
     wo.channelType = message.channel?.type ?? null;
     wo.isDM = wo.channelType === ChannelType.DM;
     if (wo.isDM) wo.DM = true;
-    wo.fileURLs = getAttachmentUrls(message);
+    wo.fileUrls = getAttachmentUrls(message);
     if (isMacro) wo.isMacro = true;
 
     try {

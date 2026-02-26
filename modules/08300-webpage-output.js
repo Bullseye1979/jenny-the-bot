@@ -290,7 +290,7 @@ export default async function getWebpageOutput(coreData) {
   }
 
   if (res.writableEnded) {
-    log("Response already ended; skip webpage-output", "warn", { moduleName: MODULE_NAME });
+    log("response already ended; skip webpage-output", "warn", { moduleName: MODULE_NAME });
     return coreData;
   }
 

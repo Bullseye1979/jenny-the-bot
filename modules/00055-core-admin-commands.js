@@ -38,7 +38,7 @@ function setStop(workingObject, responseText, responseValue = "STOP") {
   workingObject.response = text;
   workingObject.responseText = text;
 
-  workingObject.Response = getStr(responseValue);
+  workingObject.response = getStr(responseValue);
 }
 
 /****************************************************************************************************************

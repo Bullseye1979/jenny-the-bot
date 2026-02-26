@@ -53,7 +53,7 @@ function getSimpleTemplate(str, vars) {
 /* Builds disclaimer body and embed from workingObject        *
 /**************************************************************/
 function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
-  const txt = typeof wo?.GDPRDisclaimer === "string" ? wo.GDPRDisclaimer.trim() : "";
+  const txt = typeof wo?.gdprDisclaimer === "string" ? wo.gdprDisclaimer.trim() : "";
   if (!txt) return null;
 
   const operatorName = String(wo?.GdprOperatorName ?? wo?.GDPROperatorName ?? "");
@@ -74,7 +74,7 @@ function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
 async function setSendDisclaimerDM(wo, ctx, log) {
   const built = getBuildDisclaimerFromWO(wo, ctx);
   if (!built) {
-    log("GDPRDisclaimer missing; DM not sent", "error", { moduleName: MODULE_NAME, ...ctx });
+    log("gdprDisclaimer missing; DM not sent", "error", { moduleName: MODULE_NAME, ...ctx });
     return false;
   }
   try {
@@ -155,7 +155,7 @@ export default async function getGdprGate(coreData) {
   if (!userId || !channelId) {
     log("gdpr gate missing ids -> blocking", "warn", { moduleName: MODULE_NAME, userId, channelId, flow });
     const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });
-    wo.Response = built?.body ?? "";
+    wo.response = built?.body ?? "";
     wo.stop = true;
     await setSendDisclaimerDM(wo, { userId, channelId, flow }, log);
     return coreData;
@@ -164,7 +164,7 @@ export default async function getGdprGate(coreData) {
   if (!dbCfg) {
     log("no DB config; default-deny", "error", { moduleName: MODULE_NAME, flow, userId, channelId });
     const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });
-    wo.Response = built?.body ?? "";
+    wo.response = built?.body ?? "";
     wo.stop = true;
     await setSendDisclaimerDM(wo, { userId, channelId, flow }, log);
     return coreData;
@@ -205,7 +205,7 @@ export default async function getGdprGate(coreData) {
       if (upd.affectedRows === 1) {
         log("disclaimer 0→1, DM sent and block", "info", { moduleName: MODULE_NAME, userId, channelId, flow });
         const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });
-        wo.Response = built?.body ?? "";
+        wo.response = built?.body ?? "";
         wo.stop = true;
         await setSendDisclaimerDM(wo, { userId, channelId, flow }, log);
         await conn.end().catch(() => {});
@@ -216,7 +216,7 @@ export default async function getGdprGate(coreData) {
     const allowed = flow === "discord" ? chat === 1 : voice === 1;
     if (!allowed) {
       log("blocked by gdpr gate", "info", { moduleName: MODULE_NAME, flow, userId, channelId, chat, voice });
-      wo.Response = "";
+      wo.response = "";
       wo.stop = true;
       await conn.end().catch(() => {});
       return coreData;
@@ -231,7 +231,7 @@ export default async function getGdprGate(coreData) {
     }
     log("db error (default-deny)", "error", { moduleName: MODULE_NAME, flow, err: e?.message });
     const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });
-    wo.Response = built?.body ?? "";
+    wo.response = built?.body ?? "";
     wo.stop = true;
     await setSendDisclaimerDM(wo, { userId, channelId, flow }, log);
     return coreData;

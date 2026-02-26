@@ -71,7 +71,7 @@ export default async function getDiscordReactionFinish(coreData) {
   const wo = coreData?.workingObject || {};
   if (!Array.isArray(wo.logging)) wo.logging = [];
 
-  if (wo?.ShowReactions !== true) {
+  if (wo?.showReactions !== true) {
     wo.logging.push({
       timestamp: getNowIso(),
       severity: "info",

@@ -1,7 +1,7 @@
 /***************************************************************************************
 /* filename: "discord-add-files.js"                                                    *
 /* Version 1.0                                                                         *
-/* Purpose: Append Discord file URLs from workingObject.fileURLs into workingObject.   *
+/* Purpose: Append Discord file URLs from workingObject.fileUrls into workingObject.   *
 /*          payload / Payload as plain lines (one URL per line).                       *
 /***************************************************************************************/
 /***************************************************************************************
@@ -30,10 +30,10 @@ function getIsHttpUrl(s) {
 
 /***************************************************************************************
 /* functionSignature: getNormalizedFileUrls (wo)                                       *
-/* Extracts normalized http/https URLs from workingObject.fileURLs.                    *
+/* Extracts normalized http/https URLs from workingObject.fileUrls.                    *
 /***************************************************************************************/
 function getNormalizedFileUrls(wo) {
-  const raw = Array.isArray(wo?.fileURLs) ? wo.fileURLs : [];
+  const raw = Array.isArray(wo?.fileUrls) ? wo.fileUrls : [];
   const urls = [];
   for (const item of raw) {
     if (!item) continue;
@@ -138,7 +138,7 @@ export default async function getCore(coreData) {
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "success",
-      message: "No http/https fileURLs to append; payload unchanged."
+      message: "No http/https fileUrls to append; payload unchanged."
     });
     return coreData;
   }

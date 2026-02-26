@@ -4,7 +4,7 @@
 /* Purpose: Single-embed reply that shows the entire question as a Markdown     *
 /*          code block above the answer. Works in DMs (direct send) and guilds  *
 /*          (via webhook).                                                     *
-/*          If wo.ReasoningSummary exists, attach it as a Discord message       *
+/*          If wo.reasoningSummary exists, attach it as a Discord message       *
 /*          thread created from the LAST answer embed message (Create Thread on *
 /*          message). Preserves fenced code blocks across embed splits.         *
 /********************************************************************************/
@@ -186,8 +186,8 @@ function getAvatarLookupId(baseChannel, threadId, fallbackId) {
 /* Resolves username and avatar URL for webhook identity.                       *
 /********************************************************************************/
 async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, client) {
-  const raw = typeof wo?.Botname === "string" ? wo.Botname.trim() : "";
-  if (!raw) throw new Error(`${MODULE_NAME}: wo.Botname is required but empty/missing`);
+  const raw = typeof wo?.botName === "string" ? wo.botName.trim() : "";
+  if (!raw) throw new Error(`${MODULE_NAME}: wo.botName is required but empty/missing`);
 
   const username = raw.slice(0, 80);
   const baseURL = getModuleConfigBaseURL(config || {});
@@ -492,10 +492,10 @@ function getTextFromAny(x) {
 
 /********************************************************************************
 /* functionSignature: getReasoningText (wo)                                     *
-/* Returns ReasoningSummary as a normalized string.                             *
+/* Returns reasoningSummary as a normalized string.                             *
 /********************************************************************************/
 function getReasoningText(wo) {
-  const v = wo?.ReasoningSummary;
+  const v = wo?.reasoningSummary;
   if (v == null) return "";
   if (typeof v === "string") return getNormalizeReasoningText(v);
   return getNormalizeReasoningText(getTextFromAny(v).trim());
@@ -625,18 +625,18 @@ function getJoinLen(parts) {
 }
 
 /********************************************************************************
-/* functionSignature: getFooterText (botName, model, useAIModule, timeStr)      *
+/* functionSignature: getFooterText (botName, model, useAiModule, timeStr)      *
 /* Builds a consistent embed footer text.                                       *
 /********************************************************************************/
-function getFooterText(botName, model, useAIModule, timeStr) {
-  return `${botName} (${model || "-"} / ${useAIModule || "-"}) - ${timeStr}`;
+function getFooterText(botName, model, useAiModule, timeStr) {
+  return `${botName} (${model || "-"} / ${useAiModule || "-"}) - ${timeStr}`;
 }
 
 /********************************************************************************
 /* functionSignature: getBuildPrimaryEmbed (params)                             *
 /* Builds the main embed with question block + answer chunk.                    *
 /********************************************************************************/
-function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName, model, useAIModule, timeStr, imageUrl }) {
+function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName, model, useAiModule, timeStr, imageUrl }) {
   const qBlock = getBuildYamlQuestionBlock(askerDisplay, questionText);
   const joined = [qBlock, String(answerChunk || "")].filter(Boolean).join("\n\n") || "\u200b";
   const desc = joined.slice(0, EMBED_DESC_MAX) || "\u200b";
@@ -644,7 +644,7 @@ function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName
   const e = new EmbedBuilder()
     .setColor(COLOR_PRIMARY)
     .setDescription(desc)
-    .setFooter({ text: getFooterText(botName, model, useAIModule, timeStr) })
+    .setFooter({ text: getFooterText(botName, model, useAiModule, timeStr) })
     .setTimestamp(new Date());
 
   if (imageUrl) e.setImage(getWithCachebuster(imageUrl));
@@ -655,13 +655,13 @@ function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName
 /* functionSignature: getBuildAnswerEmbed (params)                              *
 /* Builds additional answer-only embeds for overflow.                           *
 /********************************************************************************/
-function getBuildAnswerEmbed({ answerChunk, botName, model, useAIModule, timeStr }) {
+function getBuildAnswerEmbed({ answerChunk, botName, model, useAiModule, timeStr }) {
   const desc = String(answerChunk || "").slice(0, EMBED_DESC_MAX) || "\u200b";
 
   return new EmbedBuilder()
     .setColor(COLOR_PRIMARY)
     .setDescription(desc)
-    .setFooter({ text: getFooterText(botName, model, useAIModule, timeStr) })
+    .setFooter({ text: getFooterText(botName, model, useAiModule, timeStr) })
     .setTimestamp(new Date());
 }
 
@@ -669,7 +669,7 @@ function getBuildAnswerEmbed({ answerChunk, botName, model, useAIModule, timeStr
 /* functionSignature: setBuildEmbedsForAnswer (params)                          *
 /* Creates embeds for answer; preserves fenced code blocks.                     *
 /********************************************************************************/
-function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botName, model, useAIModule, timeStr, imageUrl, isDM }) {
+function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botName, model, useAiModule, timeStr, imageUrl, isDM }) {
   const qBlock = getBuildYamlQuestionBlock(askerDisplay, questionText);
 
   const baseMax = isDM ? DM_ANSWER_MAX : GUILD_ANSWER_MAX;
@@ -700,7 +700,7 @@ function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botNa
         answerChunk: answerChunks[i],
         botName,
         model,
-        useAIModule,
+        useAiModule,
         timeStr,
         imageUrl
       }));
@@ -709,7 +709,7 @@ function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botNa
         answerChunk: answerChunks[i],
         botName,
         model,
-        useAIModule,
+        useAiModule,
         timeStr
       }));
     }
@@ -722,7 +722,7 @@ function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botNa
 /* functionSignature: getBuildReasoningEmbed (params)                           *
 /* Builds a reasoning embed for thread posting.                                 *
 /********************************************************************************/
-function getBuildReasoningEmbed({ chunk, partIndex, partCount, botName, model, useAIModule, timeStr }) {
+function getBuildReasoningEmbed({ chunk, partIndex, partCount, botName, model, useAiModule, timeStr }) {
   const title = partCount > 1 ? `Reasoning (${partIndex}/${partCount})` : "Reasoning";
   const desc = String(chunk || "").slice(0, EMBED_DESC_MAX) || "\u200b";
 
@@ -730,7 +730,7 @@ function getBuildReasoningEmbed({ chunk, partIndex, partCount, botName, model, u
     .setColor(COLOR_PRIMARY)
     .setTitle(title)
     .setDescription(desc)
-    .setFooter({ text: getFooterText(botName, model, useAIModule, timeStr) })
+    .setFooter({ text: getFooterText(botName, model, useAiModule, timeStr) })
     .setTimestamp(new Date());
 }
 
@@ -850,7 +850,7 @@ async function setSendReasoningEmbeds(webhookClient, payloadBase, reasoningText,
       partCount: chunks.length,
       botName: meta.botName,
       model: meta.model,
-      useAIModule: meta.useAIModule,
+      useAiModule: meta.useAiModule,
       timeStr: meta.timeStr
     });
 
@@ -892,7 +892,7 @@ async function setSendDirectReasoningEmbeds(channel, reasoningText, meta) {
       partCount: chunks.length,
       botName: meta.botName,
       model: meta.model,
-      useAIModule: meta.useAIModule,
+      useAiModule: meta.useAiModule,
       timeStr: meta.timeStr
     });
     await channel.send({ embeds: [e] });
@@ -911,8 +911,8 @@ export default async function getDiscordTextOutput(coreData) {
   const config = coreData.config || {};
   if (!Array.isArray(wo.logging)) wo.logging = [];
 
-  const silence = (wo.ModSilence || "[silence]").toString();
-  const response = (typeof wo.Response === "string" ? wo.Response : "").trim();
+  const silence = (wo.modSilence || "[silence]").toString();
+  const response = (typeof wo.response === "string" ? wo.response : "").trim();
 
   if (!response || response === silence) {
     wo.logging.push({
@@ -965,10 +965,10 @@ export default async function getDiscordTextOutput(coreData) {
     const questionRaw = getLikelyQuestion(wo);
     const askerDisplay = getAskerDisplay(wo, baseMessage);
 
-    const model = String(wo.Model || wo.model || "");
-    const useAIModule = String(wo.useAIModule || wo.UseAIModule || "");
+    const model = String(wo.model || wo.model || "");
+    const useAiModule = String(wo.useAiModule || wo.useAiModule || "");
     const timeStr = getLocalTimeString(new Date(), wo.timezone || "Europe/Berlin");
-    const botNameRaw = (typeof wo.Botname === "string" && wo.Botname.trim()) ? wo.Botname.trim() : "Bot";
+    const botNameRaw = (typeof wo.botName === "string" && wo.botName.trim()) ? wo.botName.trim() : "Bot";
     const reasoningText = getReasoningText(wo);
 
     if (isDM) {
@@ -978,7 +978,7 @@ export default async function getDiscordTextOutput(coreData) {
         answerText: response,
         botName: botNameRaw,
         model,
-        useAIModule,
+        useAiModule,
         timeStr,
         imageUrl: firstImage,
         isDM: true
@@ -991,7 +991,7 @@ export default async function getDiscordTextOutput(coreData) {
         sentReasoning = await setSendDirectReasoningEmbeds(baseChannel, reasoningText, {
           botName: botNameRaw,
           model,
-          useAIModule,
+          useAiModule,
           timeStr
         });
       }
@@ -1020,7 +1020,7 @@ export default async function getDiscordTextOutput(coreData) {
       answerText: response,
       botName: identity.username,
       model,
-      useAIModule,
+      useAiModule,
       timeStr,
       imageUrl: firstImage,
       isDM: false
@@ -1051,7 +1051,7 @@ export default async function getDiscordTextOutput(coreData) {
         sentReasoning = await setSendReasoningEmbeds(webhookClient, payloadBase, reasoningText, {
           botName: identity.username,
           model,
-          useAIModule,
+          useAiModule,
           timeStr
         });
 
@@ -1076,7 +1076,7 @@ export default async function getDiscordTextOutput(coreData) {
           sentReasoning = await setSendReasoningEmbeds(webhookClient, payloadBase, reasoningText, {
             botName: identity.username,
             model,
-            useAIModule,
+            useAiModule,
             timeStr
           });
         }

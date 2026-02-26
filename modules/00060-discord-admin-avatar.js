@@ -88,9 +88,9 @@ function setLog(wo, message, level = "info", extra = null) {
 /* Builds the final avatar prompt text from workingObject    *
 /**************************************************************/
 function getComposePrompt(wo) {
-  const persona = String(wo?.persona || wo?.Persona || "").trim();
-  const instructions = String(wo?.instructions || wo?.Instructions || "").trim();
-  const botname = String(wo?.Botname || wo?.botname || "").trim();
+  const persona = String(wo?.persona || wo?.persona || "").trim();
+  const instructions = String(wo?.instructions || wo?.instructions || "").trim();
+  const botname = String(wo?.botName || wo?.botname || "").trim();
   const avatarPrompt = String(wo?.avatarprompt ?? wo?.avatarPrompt ?? "").trim();
   const parts = [];
   if (persona) parts.push(persona);
@@ -142,15 +142,15 @@ async function getDownloadUrlBuffer(urlStr) {
 /* Calls the image API and returns the generated image buffer*
 /**************************************************************/
 async function getGenerateAvatarBuffer(wo) {
-  const endpoint = String(wo?.AvatarEndpoint || "");
-  const model = String(wo?.AvatarModel || "");
-  const apiKey = String(wo?.AvatarApiKey || "");
-  if (!endpoint) throw new Error("Missing AvatarEndpoint");
-  if (!model) throw new Error("Missing AvatarModel");
-  if (!apiKey) throw new Error("Missing AvatarApiKey");
+  const endpoint = String(wo?.avatarEndpoint || "");
+  const model = String(wo?.avatarModel || "");
+  const apiKey = String(wo?.avatarApiKey || "");
+  if (!endpoint) throw new Error("Missing avatarEndpoint");
+  if (!model) throw new Error("Missing avatarModel");
+  if (!apiKey) throw new Error("Missing avatarApiKey");
 
   const prompt = getComposePrompt(wo);
-  const size = String(wo?.AvatarSize ?? "1024x1024");
+  const size = String(wo?.avatarSize ?? "1024x1024");
 
   const body = { model, prompt, size, n: 1, response_format: "b64_json" };
   const resp = await fetch(endpoint, {
@@ -246,7 +246,7 @@ export default async function getDiscordAdminAvatar(coreData) {
   const channelId = getChannelId(wo);
   if (!channelId) {
     setLog(wo, "Missing channel id for avatar command", "warn");
-    wo.Response = "";
+    wo.response = "";
     return coreData;
   }
   let performedChange = false;
@@ -270,7 +270,7 @@ export default async function getDiscordAdminAvatar(coreData) {
     }
   } catch (e) {
     setLog(wo, `Avatar operation failed: ${e?.message || String(e)}`, "error");
-    wo.Response = "";
+    wo.response = "";
     return coreData;
   }
   if (performedChange && filePath) {
@@ -285,6 +285,6 @@ export default async function getDiscordAdminAvatar(coreData) {
       setLog(wo, `Embed send failed: ${e?.message || String(e)}`, "warn");
     }
   }
-  wo.Response = "";
+  wo.response = "";
   return coreData;
 }

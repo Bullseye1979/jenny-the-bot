@@ -25,8 +25,8 @@ function getString(value) {
 /* Extracts normalized attachment URLs from workingObject                        *
 /********************************************************************************/
 function getAttachmentUrlsFromWO(wo) {
-  if (!Array.isArray(wo?.fileURLs)) return [];
-  return wo.fileURLs.map((u) => (typeof u === "string" ? u.trim() : "")).filter(Boolean);
+  if (!Array.isArray(wo?.fileUrls)) return [];
+  return wo.fileUrls.map((u) => (typeof u === "string" ? u.trim() : "")).filter(Boolean);
 }
 
 /********************************************************************************

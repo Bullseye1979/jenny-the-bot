@@ -2,7 +2,7 @@
 /* filename: "discord-reaction-start.js"                      *
 /* Version 1.0                                                *
 /* Purpose: Add ⏳ reaction to the triggering Discord message *
-/*          (only if wo.ShowReactions === true)               *
+/*          (only if wo.showReactions === true)               *
 /**************************************************************/
 /**************************************************************
 /*                                                            *
@@ -22,7 +22,7 @@ export default async function getFlowStartReaction(coreData) {
   const log = getPrefixedLogger(wo, import.meta.url);
 
   try {
-    if (wo?.ShowReactions !== true) {
+    if (wo?.showReactions !== true) {
       log("Reactions disabled → skip ⏳", "info", { moduleName: MODULE_NAME });
       return coreData;
     }

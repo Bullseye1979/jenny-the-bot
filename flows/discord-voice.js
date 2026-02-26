@@ -146,7 +146,7 @@ function setMergeDynamicWO(src, dst) {
   const deny = new Set([
     "message",
     "payload",
-    "Response",
+    "response",
     "logging",
     "voiceIntent",
     "flow",

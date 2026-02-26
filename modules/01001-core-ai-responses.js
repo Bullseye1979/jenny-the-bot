@@ -37,10 +37,10 @@ const DOC_DIR = path.resolve("./pub/documents");
 
 /********************************************************************************
 /* functionSignature: getAssistantAuthorName (wo)                               *
-/* Returns the assistant authorName (Botname).                                  *
+/* Returns the assistant authorName (botName).                                  *
 /********************************************************************************/
 function getAssistantAuthorName(wo) {
-  const v = (typeof wo?.Botname === "string" && wo.Botname.trim().length) ? wo.Botname.trim() : "";
+  const v = (typeof wo?.botName === "string" && wo.botName.trim().length) ? wo.botName.trim() : "";
   return v.length ? v : undefined;
 }
 
@@ -361,15 +361,15 @@ function getToolsForResponses(toolDefs, responseTools, toolsDisabled) {
 /* Builds optional runtime context from last history record.                    *
 /********************************************************************************/
 function getRuntimeContextFromLast(wo, snapshot) {
-  if (wo?.IncludeRuntimeContext !== true) return null;
+  if (wo?.includeRuntimeContext !== true) return null;
   const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
   if (last && "content" in last) delete last.content;
   const metadata = {
     id: String(wo?.id ?? ""),
     flow: String(wo?.flow ?? ""),
     clientRef: String(wo?.clientRef ?? ""),
-    model: String(wo?.Model ?? ""),
-    tool_choice: (wo?.ToolChoice ?? "auto"),
+    model: String(wo?.model ?? ""),
+    tool_choice: (wo?.toolChoice ?? "auto"),
     timezone: String(wo?.timezone ?? "Europe/Berlin")
   };
   return { metadata, last };
@@ -1097,36 +1097,36 @@ export default async function getCoreAi(coreData) {
   const wo = coreData?.workingObject ?? {};
   if (!Array.isArray(wo.logging)) wo.logging = [];
 
-  const gate = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
+  const gate = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
   if (gate && gate !== "responses") {
-    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: `Skipped: useAIModule="${gate}" != "responses"` });
+    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: `Skipped: useAiModule="${gate}" != "responses"` });
     return coreData;
   }
 
   const skipContextWrites = wo?.doNotWriteToContext === true;
 
-  const endpoint = getStr(wo?.EndpointResponses, "");
-  const apiKey = getStr(wo?.APIKey, "");
-  const model = getStr(wo?.Model, "");
-  const baseUrl = getStr(wo?.BaseURL ?? wo?.baseUrl ?? wo?.base_url, "");
+  const endpoint = getStr(wo?.endpointResponses, "");
+  const apiKey = getStr(wo?.apiKey, "");
+  const model = getStr(wo?.model, "");
+  const baseUrl = getStr(wo?.baseUrl ?? wo?.baseUrl ?? wo?.base_url, "");
   const endpointFilesContentTemplate = getStr(wo?.EndpointFilesContent, "");
-  const maxTokens = getNum(wo?.MaxTokens, 2000);
-  const maxLoops = getNum(wo?.MaxLoops, 16);
-  const maxToolCalls = getNum(wo?.MaxToolCalls, 8);
-  const timeoutMs = getNum(wo?.RequestTimeoutMs, 120000);
+  const maxTokens = getNum(wo?.maxTokens, 2000);
+  const maxLoops = getNum(wo?.maxLoops, 16);
+  const maxToolCalls = getNum(wo?.maxToolCalls, 8);
+  const timeoutMs = getNum(wo?.requestTimeoutMs, 120000);
   const debugOn = Boolean(wo?.DebugPayload ?? process.env.AI_DEBUG);
 
   const reasoningEffort = getReasoningEffort(wo);
   const reasoningEnabled = (typeof reasoningEffort === "string" && reasoningEffort.length > 0);
 
   if (!endpoint || !apiKey || !model) {
-    wo.Response = "[Empty AI response]";
+    wo.response = "[Empty AI response]";
     wo.logging.push({
       timestamp: new Date().toISOString(),
       severity: "error",
       module: MODULE_NAME,
       exitStatus: "failed",
-      message: `Missing required: ${!endpoint ? "EndpointResponses " : ""}${!apiKey ? "APIKey " : ""}${!model ? "Model" : ""}`.trim()
+      message: `Missing required: ${!endpoint ? "endpointResponses " : ""}${!apiKey ? "apiKey " : ""}${!model ? "model" : ""}`.trim()
     });
     return coreData;
   }
@@ -1134,7 +1134,7 @@ export default async function getCoreAi(coreData) {
   const responseToolsNormalized = getNormalizedResponseTools(getResponseToolsRaw(wo));
   const responseToolsInfo = responseToolsNormalized.length ? responseToolsNormalized.map(x => x?.type).filter(Boolean).join(", ") : "(none)";
 
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Using BaseURL="${baseUrl || "(relative /documents)"}"` });
+  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Using baseUrl="${baseUrl || "(relative /documents)"}"` });
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Responses built-in tools (workingObject.ResponseTools): ${responseToolsInfo}` });
 
   let snapshot = [];
@@ -1149,9 +1149,9 @@ export default async function getCoreAi(coreData) {
     const nowIso = new Date().toISOString();
     const tz = getStr(wo2?.timezone, "Europe/Berlin");
     const base = [
-      typeof wo2.SystemPrompt === "string" ? wo2.SystemPrompt.trim() : "",
-      typeof wo2.Persona === "string" ? wo2.Persona.trim() : "",
-      typeof wo2.Instructions === "string" ? wo2.Instructions.trim() : ""
+      typeof wo2.systemPrompt === "string" ? wo2.systemPrompt.trim() : "",
+      typeof wo2.persona === "string" ? wo2.persona.trim() : "",
+      typeof wo2.instructions === "string" ? wo2.instructions.trim() : ""
     ].filter(Boolean).join("\n\n");
 
 
@@ -1204,11 +1204,11 @@ export default async function getCoreAi(coreData) {
   setLogConsole("request-messages-initial", { count: messages.length, messages });
   if (runtimeCtx) setLogConsole("runtime-context", runtimeCtx);
 
-  const toolNames = Array.isArray(wo?.Tools) ? wo.Tools : [];
+  const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
   const genericTools = await getToolsByName(toolNames, wo);
   const toolDefs = getNormalizedToolDefs(genericTools.map(t => t.definition).filter(Boolean));
 
-  const toolChoiceInitial = getNormalizedToolChoice(wo?.ToolChoice) || "auto";
+  const toolChoiceInitial = getNormalizedToolChoice(wo?.toolChoice) || "auto";
   const persistQueue = [];
 
   let finalText = "";
@@ -1259,7 +1259,7 @@ export default async function getCoreAi(coreData) {
       if (!res.ok) {
         const retryable = (res.status >= 500 && res.status <= 599) || res.status === 429;
         if (retryable && attempts < maxAttempts) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "retry", message: `Retrying due to HTTP ${res.status}` }); continue; }
-        wo.Response = "[Empty AI response]";
+        wo.response = "[Empty AI response]";
         wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "failed", message: `HTTP ${res.status} ${res.statusText} ${rawText.slice(0, 300)}` });
         return coreData;
       }
@@ -1351,7 +1351,7 @@ export default async function getCoreAi(coreData) {
       }
 
       if (toolsDisabled && hasToolCalls) {
-        wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "Tools disabled mode active; ignoring any tool-call requests in output." });
+        wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "tools disabled mode active; ignoring any tool-call requests in output." });
       }
 
       const truncated = getWasTruncatedOutput(data);
@@ -1370,7 +1370,7 @@ export default async function getCoreAi(coreData) {
       clearTimeout(timer);
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
       if (isAbort && attempts < maxAttempts) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "retry", message: `Retrying due to timeout after ${timeoutMs}ms` }); continue; }
-      wo.Response = "[Empty AI response]";
+      wo.response = "[Empty AI response]";
       wo.logging.push({ timestamp: new Date().toISOString(), severity: isAbort ? "warn" : "error", module: MODULE_NAME, exitStatus: "failed", message: isAbort ? `AI request timed out after ${timeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}` });
       setLogBig("responses-error", { message: err?.message || String(err), stack: err?.stack }, { toFile: debugOn });
       return coreData;
@@ -1379,9 +1379,9 @@ export default async function getCoreAi(coreData) {
 
   if (reasoningEnabled) {
     const joined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
-    wo.ReasoningSummary = joined.length ? joined : null;
+    wo.reasoningSummary = joined.length ? joined : null;
   } else {
-    wo.ReasoningSummary = undefined;
+    wo.reasoningSummary = undefined;
   }
 
   if (!skipContextWrites) {
@@ -1393,9 +1393,9 @@ export default async function getCoreAi(coreData) {
     wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `doNotWriteToContext=true → skipped persistence of ${persistQueue.length} turn(s)` });
   }
 
-  setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: persistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.ReasoningSummary ?? ""), 400) }, { toFile: debugOn });
+  setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: persistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
 
-  wo.Response = finalText || "[Empty AI response]";
+  wo.response = finalText || "[Empty AI response]";
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });
 
   return coreData;

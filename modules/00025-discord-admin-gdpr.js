@@ -96,7 +96,7 @@ export default async function getDiscordAdminGdpr(coreData) {
 
   if (!dbCfg || !targetUserId || !channelId || !sub || (sub !== "text" && sub !== "voice")) {
     log("gdpr admin missing/invalid data", "error", { moduleName: MODULE_NAME, hasDb: !!dbCfg, targetUserId, channelId, sub });
-    wo.Response = "";
+    wo.response = "";
     return coreData;
   }
 
@@ -138,14 +138,14 @@ export default async function getDiscordAdminGdpr(coreData) {
 
     log("gdpr updated", "info", { moduleName: MODULE_NAME, targetUserId, channelId, set: sub, value });
 
-    wo.Response = "";
+    wo.response = "";
     await conn.end().catch(() => {});
     return coreData;
 
   } catch (e) {
     if (conn) try { await conn.end(); } catch {}
     log("gdpr update failed", "error", { moduleName: MODULE_NAME, reason: e?.message });
-    wo.Response = "";
+    wo.response = "";
     return coreData;
   }
 }

@@ -17,19 +17,19 @@ const RESULT_PREVIEW_MAX = 400;
 
 /********************************************************************************
 /* functionSignature: getAssistantAuthorName (wo)                               *
-/* Returns the assistant authorName (Botname).                                  *
+/* Returns the assistant authorName (botName).                                  *
 /********************************************************************************/
 function getAssistantAuthorName(wo) {
-  const v = (typeof wo?.Botname === "string" && wo.Botname.trim().length) ? wo.Botname.trim() : "";
+  const v = (typeof wo?.botName === "string" && wo.botName.trim().length) ? wo.botName.trim() : "";
   return v.length ? v : undefined;
 }
 
 /********************************************************************************
 /* functionSignature: getShouldRunForThisModule (wo)                             *
-/* Returns true when useAIModule equals "completions".                           *
+/* Returns true when useAiModule equals "completions".                           *
 /********************************************************************************/
 function getShouldRunForThisModule(wo) {
-  const v = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
+  const v = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
   return v === "completions";
 }
 
@@ -83,17 +83,17 @@ function getWithTurnId(rec, wo) {
 /* Builds runtime configuration for the completions runner.                      *
 /********************************************************************************/
 function getKiCfg(wo) {
-  const includeHistory = getBool(wo?.IncludeHistory, true);
-  const includeHistoryTools = getBool(wo?.IncludeHistoryTools, false);
-  const includeRuntimeContext = getBool(wo?.IncludeRuntimeContext, false);
-  const toolsList = Array.isArray(wo?.Tools) ? wo.Tools : [];
-  if (Array.isArray(wo?.tools) && !Array.isArray(wo?.Tools)) {
+  const includeHistory = getBool(wo?.includeHistory, true);
+  const includeHistoryTools = getBool(wo?.includeHistoryTools, false);
+  const includeRuntimeContext = getBool(wo?.includeRuntimeContext, false);
+  const toolsList = Array.isArray(wo?.tools) ? wo.tools : [];
+  if (Array.isArray(wo?.tools) && !Array.isArray(wo?.tools)) {
     wo.logging?.push({
       timestamp: new Date().toISOString(),
       severity: "warn",
       module: MODULE_NAME,
       exitStatus: "success",
-      message: 'Config key "tools" is ignored. Use "Tools" (capital T).'
+      message: 'Config key "tools" is ignored. Use "tools" (capital T).'
     });
   }
   return {
@@ -102,11 +102,11 @@ function getKiCfg(wo) {
     includeRuntimeContext,
     exposeTools: toolsList.length > 0,
     toolsList,
-    toolChoice: getStr(wo?.ToolChoice, "auto"),
-    temperature: getNum(wo?.Temperature, 0.7),
-    maxTokens: getNum(wo?.MaxTokens, 2000),
-    maxLoops: getNum(wo?.MaxLoops, 20),
-    requestTimeoutMs: getNum(wo?.RequestTimeoutMs, 120000)
+    toolChoice: getStr(wo?.toolChoice, "auto"),
+    temperature: getNum(wo?.temperature, 0.7),
+    maxTokens: getNum(wo?.maxTokens, 2000),
+    maxLoops: getNum(wo?.maxLoops, 20),
+    requestTimeoutMs: getNum(wo?.requestTimeoutMs, 120000)
   };
 }
 
@@ -340,9 +340,9 @@ async function getSystemContent(wo, kiCfg) {
   const tz = getStr(wo?.timezone, "Europe/Berlin");
   const nowIso = now.toISOString();
   const base = [
-    typeof wo.SystemPrompt === "string" ? wo.SystemPrompt.trim() : "",
-    typeof wo.Persona === "string" ? wo.Persona.trim() : "",
-    typeof wo.Instructions === "string" ? wo.Instructions.trim() : ""
+    typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
+    typeof wo.persona === "string" ? wo.persona.trim() : "",
+    typeof wo.instructions === "string" ? wo.instructions.trim() : ""
   ].filter(Boolean).join("\n\n");
 
   const runtimeInfo = [
@@ -398,7 +398,7 @@ export default async function getCoreAi(coreData) {
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "skipped",
-      message: `Skipped: useAIModule="${String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim()}" != "completions"`
+      message: `Skipped: useAiModule="${String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim()}" != "completions"`
     });
     return coreData;
   }
@@ -432,22 +432,22 @@ export default async function getCoreAi(coreData) {
     const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
     try {
       const body = {
-        model: wo.Model,
+        model: wo.model,
         messages,
         temperature: kiCfg.temperature,
         max_tokens: kiCfg.maxTokens,
         tools: toolDefs.length ? toolDefs : undefined,
         tool_choice: toolDefs.length ? kiCfg.toolChoice : undefined
       };
-      const res = await fetch(wo.Endpoint, {
+      const res = await fetch(wo.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.APIKey}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.apiKey}` },
         body: JSON.stringify(body),
         signal: controller.signal
       });
       const raw = await res.text();
       if (!res.ok) {
-        wo.Response = "[Empty AI response]";
+        wo.response = "[Empty AI response]";
         wo.logging.push({
           timestamp: new Date().toISOString(),
           severity: "warn",
@@ -513,7 +513,7 @@ export default async function getCoreAi(coreData) {
       break;
     } catch (err) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
-      wo.Response = "[Empty AI response]";
+      wo.response = "[Empty AI response]";
       wo.logging.push({
         timestamp: new Date().toISOString(),
         severity: isAbort ? "warn" : "error",
@@ -550,7 +550,7 @@ export default async function getCoreAi(coreData) {
       message: `doNotWriteToContext=true → skipped context persistence for ${persistQueue.length} turn(s).`
     });
   }
-  wo.Response = (accumulatedText || "").trim() || "[Empty AI response]";
+  wo.response = (accumulatedText || "").trim() || "[Empty AI response]";
   wo.logging.push({
     timestamp: new Date().toISOString(),
     severity: "info",

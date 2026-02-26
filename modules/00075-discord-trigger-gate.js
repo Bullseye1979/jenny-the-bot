@@ -36,7 +36,7 @@ export default async function getDiscordTriggerGate(coreData) {
   const text = payloadRaw.trimStart().toLowerCase();
 
   if (!text) {
-    wo.Response = "STOP";
+    wo.response = "STOP";
     wo.stop = true;
     log("Blocked: empty payload", "warn", {
       moduleName: MODULE_NAME,
@@ -63,7 +63,7 @@ export default async function getDiscordTriggerGate(coreData) {
   }
 
   if (!matches) {
-    wo.Response = "STOP";
+    wo.response = "STOP";
     wo.stop = true;
     log("Blocked: trigger not found in first words", "warn", {
       moduleName: MODULE_NAME,

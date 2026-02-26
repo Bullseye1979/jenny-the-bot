@@ -168,7 +168,7 @@ function getRewriteAllImageLinks(text, idValue, allowedHosts) {
 
 /****************************************************************************************************************
  * functionSignature: getCoreAddId(coreData)
- * purpose: Main module entry. Mutates wo.Response by appending id to eligible image URLs.
+ * purpose: Main module entry. Mutates wo.response by appending id to eligible image URLs.
  ****************************************************************************************************************/
 export default async function getCoreAddId(coreData) {
   const wo = coreData?.workingObject || {};
@@ -176,7 +176,7 @@ export default async function getCoreAddId(coreData) {
 
   if (!Array.isArray(wo.logging)) wo.logging = [];
 
-  const response = typeof wo.Response === "string" ? wo.Response : "";
+  const response = typeof wo.response === "string" ? wo.response : "";
   if (!response.trim()) return coreData;
 
   const idValue = getStr(wo?.id).trim();
@@ -199,7 +199,7 @@ export default async function getCoreAddId(coreData) {
     return coreData;
   }
 
-  wo.Response = nextText;
+  wo.response = nextText;
   wo._imageLinkIdPatched = true;
   wo._imageLinkIdPatchedCount = changed;
 

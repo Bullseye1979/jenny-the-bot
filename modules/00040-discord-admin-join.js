@@ -123,21 +123,21 @@ export default async function getDiscordJoinLeave(coreData) {
     const textChannelId = String(wo?.admin?.channelId || wo?.id || "");
     if (!guildId || !userId || !textChannelId) {
       log("slash join/leave failed: missing guildId/userId/textChannelId", "error", { moduleName: MODULE_NAME, guildId, userId, textChannelId });
-      wo.Response = "";
+      wo.response = "";
       return coreData;
     }
 
     const client = await getResolveClient(wo);
     if (!client) {
       log("slash join/leave failed: missing discord client in registry", "error", { moduleName: MODULE_NAME });
-      wo.Response = "";
+      wo.response = "";
       return coreData;
     }
 
     const { guild, member } = await getResolveGuildAndMember(client, guildId, userId);
     if (!guild) {
       log("slash join/leave failed: could not fetch guild", "error", { moduleName: MODULE_NAME, guildId });
-      wo.Response = "";
+      wo.response = "";
       return coreData;
     }
 
@@ -162,14 +162,14 @@ export default async function getDiscordJoinLeave(coreData) {
         textChannelId: live?.textChannelId || null,
         voiceChannelId: live?.voiceChannelId || null
       });
-      wo.Response = "";
+      wo.response = "";
       return coreData;
     }
 
     const voiceChannelId = String(member?.voice?.channelId || "");
     if (!voiceChannelId) {
       log("join failed: user not connected to a voice channel", "warn", { moduleName: MODULE_NAME, guildId, userId, textChannelId });
-      wo.Response = "";
+      wo.response = "";
       return coreData;
     }
 
@@ -187,7 +187,7 @@ export default async function getDiscordJoinLeave(coreData) {
     const adapterCreator = guild.voiceAdapterCreator;
     if (!adapterCreator) {
       log("join failed: guild.voiceAdapterCreator missing", "error", { moduleName: MODULE_NAME, guildId, textChannelId, voiceChannelId });
-      wo.Response = "";
+      wo.response = "";
       return coreData;
     }
 
@@ -211,7 +211,7 @@ export default async function getDiscordJoinLeave(coreData) {
           "GuildVoiceStates intent must be enabled"
         ]
       });
-      wo.Response = "";
+      wo.response = "";
       return coreData;
     }
 
@@ -251,14 +251,14 @@ export default async function getDiscordJoinLeave(coreData) {
       }
     });
 
-    wo.Response = "";
+    wo.response = "";
     return coreData;
 
   } catch (e) {
     const elog = getPrefixedLogger(coreData?.workingObject || {}, import.meta.url);
     elog("slash join/leave failed", "error", { moduleName: MODULE_NAME, reason: e?.message || String(e) });
     const woRef = coreData?.workingObject || {};
-    woRef.Response = "";
+    woRef.response = "";
     return coreData;
   }
 }

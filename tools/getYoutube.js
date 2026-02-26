@@ -196,9 +196,9 @@ async function getInvoke(args, coreData) {
   const googleApiKey = getStr(cfg.googleApiKey, "");
   const transcriptLangs = Array.isArray(cfg.transcriptLangs) ? cfg.transcriptLangs : [];
   const dumpThresholdChars = getNum(cfg.dump_threshold_chars, 24000);
-  const endpoint = getStr(cfg.endpoint, wo?.Endpoint || "https://api.openai.com/v1/chat/completions");
-  const apiKey = getStr(cfg.apiKey, wo?.APIKey || wo?.apiKey || process.env.OPENAI_API_KEY || "");
-  const model = getStr(cfg.model, wo?.Model || "gpt-4o-mini");
+  const endpoint = getStr(cfg.endpoint, wo?.endpoint || "https://api.openai.com/v1/chat/completions");
+  const apiKey = getStr(cfg.apiKey, wo?.apiKey || wo?.apiKey || process.env.OPENAI_API_KEY || "");
+  const model = getStr(cfg.model, wo?.model || "gpt-4o-mini");
   const temperature = getNum(cfg.temperature, 0.2);
   const max_tokens = getNum(cfg.max_tokens, 1400);
   const aiTimeoutMs = getNum(cfg.aiTimeoutMs, 45000);

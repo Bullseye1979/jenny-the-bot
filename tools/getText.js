@@ -106,7 +106,7 @@ async function setWrittenTextFile(text, baseName, ext, cfg){
   const filePath = path.join(documentsDir, fileName);
   await fs.writeFile(filePath, text, "utf8");
 
-  const publicBase = cfg?.publicBaseUrl || cfg?.public_base_url || "";
+  const publicBase = cfg?.publicBaseUrl || cfg?.publicBaseUrl || "";
   const publicUrl = getAbsoluteUrl(publicBase, `/documents/${fileName}`);
 
   return { filePath, fileName, publicUrl };

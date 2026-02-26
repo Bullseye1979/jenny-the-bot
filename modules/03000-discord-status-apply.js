@@ -1,7 +1,7 @@
 /**********************************************************************************************************************
 /* filename: "discord-status-apply.js"                                                                                *
 /* Version 1.0                                                                                                        *
-/* Purpose: Apply Discord presence using AI-generated status in workingObject.Response                                *
+/* Purpose: Apply Discord presence using AI-generated status in workingObject.response                                *
 /**********************************************************************************************************************/
 /**********************************************************************************************************************
 /*                                                                                                                    *
@@ -112,7 +112,7 @@ async function setDiscordPresence(text, status, log) {
 
 /**********************************************************************************************************************
 /* functionSignature: getStatusFromResponse (resp, maxChars)                                                          *
-/* Extracts a single short status line from workingObject.Response                                                    *
+/* Extracts a single short status line from workingObject.response                                                    *
 /**********************************************************************************************************************/
 function getStatusFromResponse(resp, maxChars) {
   let t = String(resp || "").trim();
@@ -125,7 +125,7 @@ function getStatusFromResponse(resp, maxChars) {
 
 /**********************************************************************************************************************
 /* functionSignature: getDiscordStatusApplyFlow (baseCore)                                                            *
-/* Flow entry: reads AI-generated Response and updates Discord presence                                               *
+/* Flow entry: reads AI-generated response and updates Discord presence                                               *
 /**********************************************************************************************************************/
 let lastUpdateAt = 0;
 let lastAiStatusInMemory = "";
@@ -165,7 +165,7 @@ export default async function getDiscordStatusApplyFlow(baseCore) {
 
   const maxChars = getNum(cfg?.aiGenerator?.maxChars ?? cfg.maxChars, 40);
 
-  let aiStatus = getStatusFromResponse(wo.Response, maxChars);
+  let aiStatus = getStatusFromResponse(wo.response, maxChars);
 
   if (!aiStatus) {
     let regVal = "";
@@ -193,6 +193,6 @@ export default async function getDiscordStatusApplyFlow(baseCore) {
     await setDiscordPresence(placeholderText, status, log);
     lastUpdateAt = now;
   } else {
-    log("no status to set (Response empty, placeholder disabled)", "debug", { moduleName: MODULE_NAME });
+    log("no status to set (response empty, placeholder disabled)", "debug", { moduleName: MODULE_NAME });
   }
 }

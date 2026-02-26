@@ -4,10 +4,10 @@
 /* Purpose: Two-pass generation for models that struggle with multi-step.      *
 /*          Pass 1 (LLM): Generate normal text response.                       *
 /*          Pass 2 (LLM): Turn that text into ONE image description/prompt.    *
-/*              - Pass 2 receives Persona + optional ImagePersonaHint.         *
+/*              - Pass 2 receives persona + optional ImagePersonaHint.         *
 /*              - Pass 2 also receives CONTEXT (recent history) + latest user  *
 /*                input, so the prompt reflects events, not just vibes.        *
-/*          Then call ONLY the FIRST tool in Tools[] with {prompt:<imgPrompt>} *
+/*          Then call ONLY the FIRST tool in tools[] with {prompt:<imgPrompt>} *
 /*          Parse returned URL (string or JSON) and append it to the END of    *
 /*          the Pass-1 text on its own line.                                   *
 /* Persistence: Only persist the Pass-1 assistant text (NOT the prompt pass). *
@@ -22,10 +22,10 @@ const MODULE_NAME = "core-ai-roleplay";
 
 /******************************************************************************* 
 /* functionSignature: getAssistantAuthorName (wo)                              *
-/* Returns the assistant authorName (Botname).                                 *
+/* Returns the assistant authorName (botName).                                 *
 /*******************************************************************************/
 function getAssistantAuthorName(wo) {
-  const v = (typeof wo?.Botname === "string" && wo.Botname.trim().length) ? wo.Botname.trim() : "";
+  const v = (typeof wo?.botName === "string" && wo.botName.trim().length) ? wo.botName.trim() : "";
   return v.length ? v : undefined;
 }
 
@@ -58,7 +58,7 @@ function getTryParseJSON(text, fallback = null) { try { return JSON.parse(text);
 /* Determines whether to process this request.                                 *
 /*******************************************************************************/
 function getShouldRunForThisModule(wo) {
-  const v = String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim().toLowerCase();
+  const v = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
   return v === "roleplay" || v === "core-ai-roleplay" || v === "Roleplay";
 }
 
@@ -77,11 +77,11 @@ function getWithTurnId(rec, wo) {
 /*******************************************************************************/
 function getKiCfg(wo) {
   return {
-    includeHistory: getBool(wo?.IncludeHistory, true),
-    temperature: getNum(wo?.Temperature, 0.7),
-    maxTokens: getNum(wo?.MaxTokens, 1200),
-    requestTimeoutMs: getNum(wo?.RequestTimeoutMs, 120000),
-    toolsList: Array.isArray(wo?.Tools) ? wo.Tools : [],
+    includeHistory: getBool(wo?.includeHistory, true),
+    temperature: getNum(wo?.temperature, 0.7),
+    maxTokens: getNum(wo?.maxTokens, 1200),
+    requestTimeoutMs: getNum(wo?.requestTimeoutMs, 120000),
+    toolsList: Array.isArray(wo?.tools) ? wo.tools : [],
     imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 260),
     imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.35),
     imagePersonaHint: getStr(wo?.ImagePersonaHint, ""),
@@ -234,9 +234,9 @@ function getExtractUrlFromToolResult(toolResultContent) {
 /*******************************************************************************/
 function getSystemContentTextRun(wo) {
   return [
-    typeof wo.SystemPrompt === "string" ? wo.SystemPrompt.trim() : "",
-    typeof wo.Persona === "string" ? wo.Persona.trim() : "",
-    typeof wo.Instructions === "string" ? wo.Instructions.trim() : ""
+    typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
+    typeof wo.persona === "string" ? wo.persona.trim() : "",
+    typeof wo.instructions === "string" ? wo.instructions.trim() : ""
   ].filter(Boolean).join("\n\n");
 }
 
@@ -250,7 +250,7 @@ function getSystemContentImagePromptRun(personaText, imagePersonaHint) {
 
   const anchor = [
     "Character anchor (MUST keep consistent across images):",
-    persona ? `- Persona: ${persona}` : "- Persona: (none provided)",
+    persona ? `- persona: ${persona}` : "- persona: (none provided)",
     hint ? `- Fixed look hint: ${hint}` : ""
   ].filter(Boolean).join("\n");
 
@@ -277,9 +277,9 @@ async function getCallChat(wo, body, timeoutMs) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(wo.Endpoint, {
+    const res = await fetch(wo.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.APIKey}` },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.apiKey}` },
       body: JSON.stringify(body),
       signal: controller.signal
     });
@@ -325,7 +325,7 @@ export default async function getCoreAi(coreData) {
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "skipped",
-      message: `Skipped: useAIModule="${String(wo?.useAIModule ?? wo?.UseAIModule ?? "").trim()}" not handled by ${MODULE_NAME}`
+      message: `Skipped: useAiModule="${String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim()}" not handled by ${MODULE_NAME}`
     });
     return coreData;
   }
@@ -344,7 +344,7 @@ export default async function getCoreAi(coreData) {
   const pass1 = await getCallChat(
     wo,
     {
-      model: wo.Model,
+      model: wo.model,
       messages: [
         { role: "system", content: system1 },
         ...history,
@@ -357,7 +357,7 @@ export default async function getCoreAi(coreData) {
   );
 
   if (!pass1.ok) {
-    wo.Response = "[Empty AI response]";
+    wo.response = "[Empty AI response]";
     wo.logging.push({
       timestamp: new Date().toISOString(),
       severity: "warn",
@@ -378,7 +378,7 @@ export default async function getCoreAi(coreData) {
   persistQueue.push(getWithTurnId(assistantPass1, wo));
 
   /***** PASS 2: IMAGE PROMPT (NOT persisted) – INCLUDE CONTEXT + LAST USER *****/
-  const personaForImages = getStr(wo?.Persona, "");
+  const personaForImages = getStr(wo?.persona, "");
   const system2 = getSystemContentImagePromptRun(personaForImages, kiCfg.imagePersonaHint);
 
   const ctxText = getRecentContextForImage(snapshot, kiCfg.imageContextTurns);
@@ -398,7 +398,7 @@ export default async function getCoreAi(coreData) {
   const pass2 = await getCallChat(
     wo,
     {
-      model: wo.Model,
+      model: wo.model,
       messages: [
         { role: "system", content: system2 },
         { role: "user", content: userBlock }
@@ -450,7 +450,7 @@ export default async function getCoreAi(coreData) {
     }
   }
 
-  wo.Response = finalText || "[Empty AI response]";
+  wo.response = finalText || "[Empty AI response]";
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });
   return coreData;
 }

@@ -10,7 +10,7 @@
 /*          - Within that flow rule, exactly ONE user rule is applied               */
 /*            (last matching user rule wins)                                        */
 /*          - Arrays are ALWAYS replaced; plain objects are deep-merged             */
-/*          - "channelIDs" is NOT used for matching (context/bleeding elsewhere)    */
+/*          - "channelIds" is NOT used for matching (context/bleeding elsewhere)    */
 /*                                                                                */
 /* ChangeLog v2:                                                                   */
 /*          - Effective channel id now accepts id/channelId/message.channelId       */

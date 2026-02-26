@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l \"export default\" /w/home/discordbot/jenny-the-bot/development/modules/*.js)",
+      "Bash(echo \"EXIT: $?\")"
+    ]
+  }
+}

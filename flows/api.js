@@ -3,7 +3,7 @@
 * Version 1.0                                                                                                    *
 * Purpose: HTTP API flow starter (guaranteed JSON response) + polling endpoint for current toolcall registry.    *
 *          Toolcall endpoint reads the SAME registry key that toolcall.js watches (config.toolcall.registryKey   *
-*          or default "status:tool"). Always returns workingObject.Botname (or fallback).                        *
+*          or default "status:tool"). Always returns workingObject.botName (or fallback).                        *
 ****************************************************************************************************************/
 /****************************************************************************************************************
 *                                                                                                               *
@@ -27,13 +27,13 @@ function getStr(value) {
 
 /****************************************************************************************************************
 * functionSignature: getBotname(workingObject, baseCore)                                                         *
-* Purpose: Resolves the bot name from workingObject.Botname (preferred) with stable fallbacks.                   *
+* Purpose: Resolves the bot name from workingObject.botName (preferred) with stable fallbacks.                   *
 ****************************************************************************************************************/
 function getBotname(workingObject, baseCore) {
-  const fromWO = getStr(workingObject?.Botname).trim();
+  const fromWO = getStr(workingObject?.botName).trim();
   if (fromWO) return fromWO;
 
-  const fromBase = getStr(baseCore?.workingObject?.Botname).trim();
+  const fromBase = getStr(baseCore?.workingObject?.botName).trim();
   if (fromBase) return fromBase;
 
   const fromCfg = getStr(baseCore?.config?.botname).trim();
@@ -279,8 +279,8 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
     if (res.writableEnded) return;
 
-    const silenceToken = String(workingObject.ModSilence || "[silence]");
-    const text = String(workingObject.Response || "").trim();
+    const silenceToken = String(workingObject.modSilence || "[silence]");
+    const text = String(workingObject.response || "").trim();
 
     return getJson(res, 200, {
       ok: true,

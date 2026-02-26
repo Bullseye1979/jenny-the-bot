@@ -94,11 +94,11 @@ function resolveToolConfig(wo = {}, args = {}) {
     ? args.videoTimeoutMs
     : (Number.isFinite(tc.videoTimeoutMs) ? tc.videoTimeoutMs
       : (Number.isFinite(wo.videoTimeoutMs) ? wo.videoTimeoutMs : 600000));
-  const public_base_url = typeof (args.videoPublicBaseUrl || tc.videoPublicBaseUrl || wo.videoPublicBaseUrl) === "string"
+  const publicBaseUrl = typeof (args.videoPublicBaseUrl || tc.videoPublicBaseUrl || wo.videoPublicBaseUrl) === "string"
     ? String(args.videoPublicBaseUrl || tc.videoPublicBaseUrl || wo.videoPublicBaseUrl).replace(/\/+$/, "")
     : null;
   if (!apiToken) throw new Error(`[${MODULE_NAME}] missing toolsconfig.getVideoFromText.videoApiToken (or args.videoApiToken)`);
-  return { apiToken, baseUrl, model, pollIntervalMs, timeoutMs, public_base_url };
+  return { apiToken, baseUrl, model, pollIntervalMs, timeoutMs, publicBaseUrl };
 }
 
 /********************************************************************************
@@ -200,7 +200,7 @@ async function getRunSinglePrediction({ cfg, model, input }) {
       file: {
         filename: saved.filename,
         path: saved.abs,
-        url: getBuildPublicUrl(cfg.public_base_url, saved.filename)
+        url: getBuildPublicUrl(cfg.publicBaseUrl, saved.filename)
       }
     };
   } catch (e) {
