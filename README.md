@@ -174,7 +174,7 @@ These values serve as **runtime defaults** for every flow. They can be overridde
 | `payload` | string | `""` | The user's input message |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone for cron/time tools |
 | `baseUrl` | string | `""` | Public base URL for generated files (images, etc.) |
-| `allowArtifactGeneration` | boolean | `true` | Allow the AI to generate images and files |
+| `allowArtifactGeneration` | boolean | `true` | **Currently not implemented** — reserved for a future global on/off switch for image and file generation. Setting this value has no effect. |
 | `requestTimeoutMs` | number | `1000000` | HTTP request timeout in milliseconds |
 | `triggerWordWindow` | number | `3` | Number of words at start of message to scan for trigger |
 | `doNotWriteToContext` | boolean | `false` | Skip writing this turn to MySQL context |

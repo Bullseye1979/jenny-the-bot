@@ -350,7 +350,7 @@ The live dashboard displays:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `showReactions` | boolean | `true` | Add progress emoji reactions to Discord messages |
-| `allowArtifactGeneration` | boolean | `true` | Allow image/file generation |
+| `allowArtifactGeneration` | boolean | `true` | **Currently not implemented** — reserved for a future global on/off switch for image and file generation. Setting this value has no effect. |
 | `baseUrl` | string | `""` | Public base URL for file links, e.g. `https://myserver.com` |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone |
 

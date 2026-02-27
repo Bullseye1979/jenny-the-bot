@@ -89,7 +89,7 @@ All key names follow **camelCase** throughout.
 | `detailedContext` | boolean | `true` | Load full message JSON from MySQL (vs. text-only) |
 | `contextTokenBudget` | number | `60000` | Maximum tokens allocated for conversation history |
 | `contextSize` | number | `20` | Number of context rows to load from MySQL |
-| `allowArtifactGeneration` | boolean | `true` | Allow AI modules to generate images and file artifacts |
+| `allowArtifactGeneration` | boolean | `true` | **Currently not implemented** — reserved for a future global on/off switch for image and file generation. Setting this value has no effect. |
 | `requestTimeoutMs` | number | `1000000` | HTTP request timeout in milliseconds for LLM calls |
 | `triggerWordWindow` | number | `3` | Words scanned at the start of a message for the trigger word |
 | `trigger` | string | `"jenny"` | Trigger word that activates the bot (empty = always active) |

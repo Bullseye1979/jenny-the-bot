@@ -45,7 +45,7 @@
     "botsAllow": [],
 
     "showReactions": true,
-    "allowArtifactGeneration": true,
+    "allowArtifactGeneration": true,    "__NOTE_allowArtifactGeneration": "NOT YET IMPLEMENTED — reserved for future use; has no effect currently",
     "baseUrl": "YOUR_PUBLIC_SERVER_URL",
     "timezone": "Europe/Berlin",
 
