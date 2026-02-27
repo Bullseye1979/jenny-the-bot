@@ -410,6 +410,7 @@
     "webpage-output":          { "flow": ["webpage"]                                    },
     "discord-channel-gate":    { "flow": ["discord", "discord-voice", "discord-admin", "api"] },
     "api-token-gate":          { "flow": ["api"]                                         },
+    "config-editor":           { "port": 3111, "host": "127.0.0.1", "token": "", "configPath": "" },
     "discord-trigger-gate":    { "flow": ["discord", "discord-voice"]                   },
     "discord-reaction-start":  { "flow": ["discord"]                                    },
     "discord-reaction-finish": { "flow": ["discord"]                                    },

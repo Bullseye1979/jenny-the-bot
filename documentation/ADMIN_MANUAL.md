@@ -27,7 +27,8 @@
    - 6.4 [api](#64-api)
    - 6.5 [cron](#65-cron)
    - 6.6 [toolcall](#66-toolcall)
-   - 6.7 [webpage](#67-webpage)
+   - 6.7 [config-editor](#67-config-editor)
+   - 6.8 [webpage](#68-webpage)
 7. [Module Pipeline](#7-module-pipeline)
    - 7.1 [Pre-Processing (00xxx)](#71-pre-processing-00xxx)
    - 7.2 [AI Processing (01xxx)](#72-ai-processing-01xxx)
@@ -1046,6 +1047,38 @@ Starts a lightweight **HTTP API server** that exposes the full bot pipeline to e
 
 ---
 
+#### config.config-editor
+
+Starts a **web-based JSON configuration editor** — a browser UI that lets you browse, add, edit, duplicate and delete every value in `core.json` without touching a text editor. Works on desktop and mobile.
+
+- **Sections `{}`** appear as expandable tree nodes in the left sidebar.
+- **Object arrays `[{}, ...]`** appear as tree items (same hierarchy level as sections); each item can be opened, duplicated or deleted.
+- **Primitive arrays `["a", "b"]`** are displayed as tag/chip editors inside the section panel.
+- **Primitive values** are edited in-place with a type selector (string / number / boolean / null).
+- Every node supports **Add**, **Duplicate** and **Delete**.
+- **`Ctrl + S`** (or `⌘ S`) saves without clicking the button.
+
+The flow is started the same way as the `api` or `cron` flow — add it to your startup sequence.
+**Security:** bind to `127.0.0.1` (localhost only) or set a `token` for Bearer/Basic authentication. Leave `token` empty only on trusted networks.
+
+```json
+"config-editor": {
+  "port":       3111,
+  "host":       "127.0.0.1",
+  "token":      "",
+  "configPath": ""
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `port` | number | `3111` | HTTP port to listen on |
+| `host` | string | `"127.0.0.1"` | Bind address (`"0.0.0.0"` for all interfaces) |
+| `token` | string | `""` | Optional auth token; sent as `Authorization: Bearer <token>` or as the Basic password |
+| `configPath` | string | `""` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+
+---
+
 #### config.cron
 
 Runs **scheduled background jobs** at defined intervals using a simple cron expression engine. On each tick the scheduler checks whether any enabled job is due; if so, it triggers the full module pipeline for the configured target channel — allowing the bot to post autonomous status updates, daily reports, or reminders without any user input. Leave the `jobs` array empty to run the flow infrastructure without scheduling any jobs.
@@ -1338,8 +1371,8 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 | `flow` | `"discord"` |
 | `turn_id` | Monotonic ULID (26 characters) |
 | `payload` | Message content |
-| `id` | Channel ID |
-| `userid` / `userId` | Discord user ID of the author |
+| `channelID` | Channel ID |
+| `userId` | Discord user ID of the author |
 | `authorDisplayname` | Display name of the author |
 | `guildId` | Guild ID |
 | `isDM` | `true` if direct message |
@@ -1439,7 +1472,26 @@ Also supports `*/N * * * *` (every N minutes).
 
 ---
 
-### 6.7 webpage
+### 6.7 config-editor
+
+**File:** `flows/config-editor.js`
+**Purpose:** Web-based JSON configuration editor (standalone HTTP server, no module pipeline)
+
+**Access:** Open `http://<host>:<port>` in any browser.
+
+**Features:**
+- Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{…}]` as tree items
+- Right panel: inline editing of primitives, tag/chip editors for primitive arrays, navigation links for sub-sections
+- Add Attribute / Section / Object Array / Tag Array per section
+- Duplicate and Delete on every node and array item
+- Keyboard shortcut `Ctrl + S` / `⌘ S` to save
+- Fully responsive — works on mobile (hamburger sidebar)
+
+**Configuration:** `config["config-editor"]` — see [config.config-editor](#configconfig-editor).
+
+---
+
+### 6.8 webpage
 
 **File:** `flows/webpage.js`
 **Purpose:** Puppeteer-based web scraping

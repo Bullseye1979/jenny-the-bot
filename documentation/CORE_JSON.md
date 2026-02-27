@@ -492,6 +492,28 @@ The API flow is configured via command-line or defaults (host `0.0.0.0`, port `3
 
 ---
 
+### config-editor
+
+```jsonc
+"config-editor": {
+  "port":       3111,
+  "host":       "127.0.0.1",
+  "token":      "",
+  "configPath": ""
+}
+```
+
+Starts a standalone HTTP server serving a browser-based SPA for editing `core.json`. Does **not** run the module pipeline.
+
+| Key | Description |
+|---|---|
+| `port` | HTTP port to listen on (default `3111`) |
+| `host` | Bind address; `"127.0.0.1"` for localhost-only, `"0.0.0.0"` for all interfaces |
+| `token` | Optional auth token; supply as `Authorization: Bearer <token>` or as the Basic password. Leave empty to disable auth |
+| `configPath` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+
+---
+
 ### cron
 
 ```jsonc

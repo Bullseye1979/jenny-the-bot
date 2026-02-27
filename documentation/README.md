@@ -21,6 +21,7 @@ Jenny is a modular, production-grade Discord AI assistant built on Node.js. It f
    - [api](#api-flow)
    - [cron](#cron-flow)
    - [toolcall](#toolcall-flow)
+   - [config-editor](#config-editor-flow)
    - [webpage](#webpage-flow)
 7. [Module Pipeline](#module-pipeline)
    - [Pre-Processing (00xxx)](#pre-processing-00xxx)
@@ -230,6 +231,30 @@ Module-specific settings live under `config.<module-name>`. The most important s
 }
 ```
 
+#### config.config-editor
+
+Starts a web-based JSON configuration editor (standalone HTTP server). Open `http://<host>:<port>` in any browser to browse, add, edit, duplicate, and delete every value in `core.json` without touching a text editor.
+
+```jsonc
+{
+  "config-editor": {
+    "port":       3111,
+    "host":       "127.0.0.1",
+    "token":      "",
+    "configPath": ""
+  }
+}
+```
+
+| Key | Description |
+|---|---|
+| `port` | HTTP port to listen on (default `3111`) |
+| `host` | Bind address; use `"127.0.0.1"` for localhost-only or `"0.0.0.0"` for all interfaces |
+| `token` | Optional auth token; supply as `Authorization: Bearer <token>` or as the Basic password |
+| `configPath` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+
+---
+
 #### config.db / workingObject.db
 
 MySQL connection settings. Can be placed under `workingObject.db` or `config.db`:
@@ -313,8 +338,8 @@ Listens for Discord messages via `discord.js`. On each message:
 | `flow` | `"discord"` |
 | `turn_id` | ULID string |
 | `payload` | Message content |
-| `id` | Channel ID |
-| `userid` / `userId` | Author's Discord ID |
+| `channelID` | Channel ID |
+| `userId` | Author's Discord ID |
 | `authorDisplayname` | Author's display name |
 | `guildId` | Guild (server) ID |
 | `isDM` | `true` if direct message |
@@ -374,6 +399,7 @@ Starts an HTTP server (default port **3400**).
 ```jsonc
 {
   "turn_id":  "01JXXXXXXXXXXXXXXXXXXXXX",
+  "id":       "optional-channel-id",
   "response": "The weather in Berlin is..."
 }
 ```
@@ -393,6 +419,25 @@ Runs scheduled jobs defined in `config.cron.jobs`. On each tick (default every 1
 **File:** `flows/toolcall.js`
 
 Watches the `status:tool` registry key. When a tool-call result is deposited into the registry, this flow triggers, allowing deferred or async tool execution to feed back into the pipeline.
+
+---
+
+### config-editor Flow
+
+**File:** `flows/config-editor.js`
+
+Starts a standalone HTTP server that serves a single-page application (SPA) for editing `core.json` through a browser UI. Unlike all other flows, this flow does **not** run the module pipeline; it starts the server once and returns immediately.
+
+**Features:**
+- Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{…}]` as tree items at the same level
+- Right panel: inline editing of primitives, tag/chip editors for primitive arrays, navigation links for sub-sections
+- Add Attribute / Section / Object Array / Tag Array per section
+- Duplicate and Delete on every tree node and array item
+- Keyboard shortcut `Ctrl + S` / `⌘ S` to save
+- Fully responsive — works on mobile via a hamburger sidebar
+- Optional Bearer / Basic password authentication via `config["config-editor"].token`
+
+**Configuration:** `config["config-editor"]` — see [config.config-editor](#configconfig-editor).
 
 ---
 
