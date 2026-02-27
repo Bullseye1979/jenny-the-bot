@@ -1,0 +1,458 @@
+{
+  "__description": "Minimal core.json for Jenny Discord AI Bot — fill in all YOUR_* placeholders, then: cp core.json.example core.json && node main.js",
+
+  "workingObject": {
+    "__description": "Global runtime defaults for the bot",
+
+    "botName": "Jenny",
+    "systemPrompt": "You are a helpful assistant.",
+    "persona": "Helpful AI Assistant",
+    "instructions": "Answer concisely and helpfully.",
+    "trigger": "jenny",
+    "triggerWordWindow": 3,
+
+    "model": "gpt-4o-mini",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "endpointResponses": "https://api.openai.com/v1/responses",
+    "apiKey": "YOUR_OPENAI_API_KEY",
+
+    "useAiModule": "completions",
+    "temperature": 0.2,
+    "maxTokens": 2000,
+    "maxLoops": 10,
+    "maxToolCalls": 5,
+    "toolChoice": "auto",
+    "requestTimeoutMs": 120000,
+
+    "tools": [
+      "getGoogle",
+      "getWebpage",
+      "getImage",
+      "getTime"
+    ],
+
+    "includeHistory": true,
+    "includeHistoryTools": false,
+    "includeRuntimeContext": true,
+    "detailedContext": true,
+    "contextTokenBudget": 60000,
+    "contextSize": 20,
+    "doNotWriteToContext": false,
+
+    "modAdmin": "YOUR_DISCORD_USER_ID",
+    "modSilence": "[silence]",
+    "apiSecret": "",
+    "botsAllow": [],
+
+    "showReactions": true,
+    "allowArtifactGeneration": true,
+    "baseUrl": "YOUR_PUBLIC_SERVER_URL",
+    "timezone": "Europe/Berlin",
+
+    "response": "",
+    "payload": "",
+    "fileUrls": [],
+    "logging": [],
+
+    "db": {
+      "__description": "MySQL connection settings",
+      "host": "localhost",
+      "user": "YOUR_DB_USER",
+      "password": "YOUR_DB_PASSWORD",
+      "database": "YOUR_DB_NAME"
+    },
+
+    "ttsModel": "gpt-4o-mini-tts",
+    "ttsVoice": "nova",
+    "ttsEndpoint": "https://api.openai.com/v1/audio/speech",
+    "ttsApiKey": "YOUR_OPENAI_API_KEY",
+    "whisperModel": "whisper-1",
+    "whisperLanguage": "",
+    "whisperEndpoint": "https://api.openai.com",
+    "whisperApiKey": "YOUR_OPENAI_API_KEY",
+
+    "avatarApiKey": "YOUR_OPENAI_API_KEY",
+    "avatarEndpoint": "https://api.openai.com/v1/images/generations",
+    "avatarModel": "dall-e-3",
+    "avatarSize": "1024x1024",
+    "avatarPrompt": "",
+
+    "gdprDisclaimer": "GDPR Notice & Consent\n\nThis bot processes your Discord messages to provide AI assistant features.\n\nTo consent to text processing: /gdpr text 1\nTo consent to voice processing: /gdpr voice 1\nTo revoke consent: /gdpr text 0 or /gdpr voice 0\n\nContact the server administrator for questions.",
+
+    "discord-admin": {
+      "__description": "Slash command configuration",
+      "slash": {
+        "silent": true,
+        "ephemeral": false,
+        "definitions": [
+          {
+            "name": "macro",
+            "description": "Manage personal text macros",
+            "options": [
+              {
+                "type": 1,
+                "name": "create",
+                "description": "Create or update a macro",
+                "options": [
+                  { "type": 3, "name": "name", "description": "Macro name", "required": true },
+                  { "type": 3, "name": "text", "description": "Macro text", "required": true }
+                ]
+              },
+              {
+                "type": 1,
+                "name": "run",
+                "description": "Run a macro",
+                "options": [
+                  { "type": 3, "name": "name", "description": "Macro name", "required": true }
+                ]
+              },
+              { "type": 1, "name": "list", "description": "List all your macros" },
+              {
+                "type": 1,
+                "name": "delete",
+                "description": "Delete one of your macros",
+                "options": [
+                  { "type": 3, "name": "name", "description": "Macro name", "required": false }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "avatar",
+            "description": "Set or generate the bot's channel avatar",
+            "options": [
+              {
+                "type": 1,
+                "name": "url",
+                "admin": ["YOUR_DISCORD_USER_ID"],
+                "description": "Download image from a URL and set as avatar",
+                "options": [
+                  { "type": 3, "name": "url", "description": "Direct image URL", "required": true }
+                ]
+              },
+              {
+                "type": 1,
+                "name": "prompt",
+                "admin": ["YOUR_DISCORD_USER_ID"],
+                "description": "Generate avatar from prompt",
+                "options": [
+                  { "type": 3, "name": "text", "description": "Prompt text", "required": true }
+                ]
+              },
+              {
+                "type": 1,
+                "name": "regen",
+                "admin": ["YOUR_DISCORD_USER_ID"],
+                "description": "Regenerate avatar using current prompt"
+              }
+            ]
+          },
+          {
+            "name": "purge",
+            "description": "Delete recent messages",
+            "admin": ["YOUR_DISCORD_USER_ID"],
+            "options": [
+              { "type": 4, "name": "count", "description": "How many (max 5000)", "required": false }
+            ]
+          },
+          {
+            "name": "purgedb",
+            "description": "Delete the database entries for this channel",
+            "admin": ["YOUR_DISCORD_USER_ID"]
+          },
+          {
+            "name": "freeze",
+            "description": "Mark DB rows for this channel as frozen",
+            "admin": ["YOUR_DISCORD_USER_ID"]
+          },
+          {
+            "name": "gdpr",
+            "description": "Set GDPR consent flags",
+            "options": [
+              {
+                "type": 1,
+                "name": "text",
+                "description": "Enable/disable text chat consent",
+                "options": [
+                  { "type": 4, "name": "value", "description": "0 or 1", "required": true }
+                ]
+              },
+              {
+                "type": 1,
+                "name": "voice",
+                "description": "Enable/disable voice consent",
+                "options": [
+                  { "type": 4, "name": "value", "description": "0 or 1", "required": true }
+                ]
+              }
+            ]
+          },
+          { "name": "join",  "description": "Join my current voice channel" },
+          { "name": "leave", "description": "Leave the current voice channel" },
+          { "name": "error", "description": "Simulate an internal error for testing" }
+        ]
+      }
+    },
+
+    "toolsconfig": {
+      "__description": "Per-tool configuration — only fill in the tools you enable in 'tools' above",
+
+      "getGoogle": {
+        "__description": "Google Custom Search — requires apiKey and cseId",
+        "apiKey":    "YOUR_GOOGLE_API_KEY",
+        "cseId":     "YOUR_GOOGLE_CSE_ID",
+        "num":       5,
+        "safe":      "off",
+        "timeoutMs": 20000
+      },
+
+      "getWebpage": {
+        "__description": "Web page fetcher — requires apiKey + endpoint + model for summary mode",
+        "timeoutMs":     30000,
+        "maxInputChars": 100000,
+        "wordThreshold": 1500,
+        "endpoint":      "https://api.openai.com/v1/chat/completions",
+        "apiKey":        "YOUR_OPENAI_API_KEY",
+        "model":         "gpt-4o-mini",
+        "temperature":   0.2,
+        "max_tokens":    4000,
+        "aiTimeoutMs":   45000
+      },
+
+      "getImage": {
+        "__description": "DALL-E image generation — requires apiKey and publicBaseUrl",
+        "apiKey":              "YOUR_OPENAI_API_KEY",
+        "endpoint":            "https://api.openai.com/v1/images/generations",
+        "model":               "dall-e-3",
+        "size":                "1024x1024",
+        "n":                   1,
+        "publicBaseUrl":       "YOUR_PUBLIC_SERVER_URL/",
+        "targetLongEdge":      1024,
+        "enhancerEndpoint":    "https://api.openai.com/v1/chat/completions",
+        "enhancerApiKey":      "YOUR_OPENAI_API_KEY",
+        "enhancerModel":       "gpt-4o-mini",
+        "enhancerTemperature": 0.2,
+        "enhancerMaxTokens":   350,
+        "enhancerTimeoutMs":   60000
+      },
+
+      "getTime": {
+        "__description": "No API configuration required"
+      },
+
+      "getPDF": {
+        "__description": "PDF generation via Puppeteer — requires publicBaseUrl",
+        "publicBaseUrl":   "YOUR_PUBLIC_SERVER_URL",
+        "headless":        "new",
+        "chromeArgs":      ["--no-sandbox"],
+        "waitUntil":       "networkidle0",
+        "timeoutMs":       120000,
+        "format":          "A4",
+        "printBackground": true
+      },
+
+      "getText": {
+        "__description": "Text file generation — requires publicBaseUrl",
+        "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL"
+      },
+
+      "getHistory": {
+        "__description": "Conversation history tool — requires apiKey",
+        "pagesize":          500,
+        "max_rows":          2000,
+        "threshold":         800,
+        "model":             "gpt-4o-mini",
+        "temperature":       0,
+        "max_tokens":        4000,
+        "aiTimeoutMs":       45000,
+        "endpoint":          "https://api.openai.com/v1/chat/completions",
+        "apiKey":            "YOUR_OPENAI_API_KEY",
+        "include_tool_rows": false,
+        "chunk_max_tokens":  600
+      },
+
+      "getInformation": {
+        "__description": "Information clustering — no API configuration required",
+        "cluster_rows":         200,
+        "pad_rows":             20,
+        "token_window":         5,
+        "max_log_chars":        6000,
+        "max_output_lines":     500,
+        "min_coverage":         1,
+        "event_gap_minutes":    45,
+        "max_timeline_periods": 20,
+        "strip_code":           false
+      },
+
+      "getImageDescription": {
+        "__description": "Vision model for image descriptions — requires apiKey",
+        "apiKey":      "YOUR_OPENAI_API_KEY",
+        "model":       "gpt-4o-mini",
+        "endpoint":    "https://api.openai.com/v1/chat/completions",
+        "temperature": 0.2,
+        "max_tokens":  1000,
+        "timeout_ms":  60000
+      }
+    }
+  },
+
+  "config": {
+    "__description": "Flow wiring and module-specific configuration",
+
+    "discord": {
+      "__description": "Fill in your Discord bot token",
+      "flowName": "discord",
+      "token": "YOUR_DISCORD_BOT_TOKEN",
+      "intents": [
+        "Guilds",
+        "GuildMessages",
+        "MessageContent",
+        "GuildVoiceStates",
+        "GuildMembers",
+        "DirectMessages"
+      ]
+    },
+
+    "api": {
+      "__description": "HTTP API server (optional — remove this block to disable)",
+      "flowName": "api",
+      "host":     "0.0.0.0",
+      "port":     3400,
+      "path":     "/api"
+    },
+
+    "cron": {
+      "__description": "Scheduled jobs (optional — leave jobs array empty to disable)",
+      "flowName": "cron",
+      "timezone": "Europe/Berlin",
+      "tickMs":   15000,
+      "jobs":     []
+    },
+
+    "context": {
+      "__description": "Rolling summary backend — fill in apiKey",
+      "endpoint":   "https://api.openai.com/v1/chat/completions",
+      "model":      "gpt-4o-mini",
+      "apiKey":     "YOUR_OPENAI_API_KEY",
+      "periodSize": 600
+    },
+
+    "webpage":       { "flowName": "webpage"       },
+    "discord-admin": { "flowName": "discord-admin" },
+    "discord-voice": { "flowName": "discord-voice" },
+
+    "toolcall": {
+      "flowName":       "toolcall",
+      "pollMs":         400,
+      "initialDelayMs": 500,
+      "registryKey":    "status:tool"
+    },
+
+    "discord-status-apply": {
+      "flow":               ["discord-status", "toolcall"],
+      "status":             "online",
+      "placeholderEnabled": false,
+      "placeholderText":    "",
+      "minUpdateGapMs":     800,
+      "mapping": {
+        "getImage":            "⏳ Generating an image …",
+        "getImageSD":          "⏳ Generating an image (SD) …",
+        "getImageDescription": "⏳ Describing a picture …",
+        "getAnimatedPicture":  "⏳ Animating a picture …",
+        "getVideoFromText":    "⏳ Generating a video …",
+        "getGoogle":           "⏳ Searching with Google …",
+        "getWebpage":          "⏳ Reading a webpage …",
+        "getYoutube":          "⏳ Checking YouTube …",
+        "getTime":             "⏳ Checking the time …",
+        "getPDF":              "⏳ Generating a PDF …",
+        "getText":             "⏳ Generating a file …",
+        "getHistory":          "⏳ Checking history …",
+        "getInformation":      "⏳ Searching information …",
+        "getTimeline":         "⏳ Checking the timeline …",
+        "getToken":            "⏳ Generating a token …",
+        "getLocation":         "⏳ Looking up a location …",
+        "getJira":             "⏳ Working with Jira …",
+        "getConfluence":       "⏳ Working with Confluence …"
+      }
+    },
+
+    "discord-voice-transcribe": {
+      "flow":            ["discord-voice"],
+      "pollMs":          1000,
+      "silenceMs":       1500,
+      "maxCaptureMs":    25000,
+      "minVoicedMs":     1000,
+      "snrDbThreshold":  3.8,
+      "frameMs":         20,
+      "startDebounceMs": 600
+    },
+
+    "core-ai-completions":    { "flow": ["discord-status", "discord", "discord-voice", "api"] },
+    "core-ai-responses":      { "flow": ["discord-status", "discord", "discord-voice", "api"] },
+    "core-ai-pseudotoolcalls":{ "flow": ["discord-status", "discord", "discord-voice", "api"] },
+    "core-ai-roleplay":       { "flow": ["discord-status", "discord", "discord-voice", "api"] },
+
+    "discord-voice-tts":   { "flow": ["discord-voice"] },
+    "discord-add-context": { "flow": ["discord", "discord-voice"] },
+    "api-add-context":     { "flow": ["api"] },
+    "api-output":          { "flow": ["api"] },
+
+    "core-add-id": {
+      "flow":    ["discord", "discord-voice", "api"],
+      "servers": ["YOUR_SERVER_HOSTNAME"]
+    },
+
+    "discord-text-output": {
+      "flow":    ["all"],
+      "baseUrl": "YOUR_PUBLIC_SERVER_URL"
+    },
+
+    "webpage-output":          { "flow": ["webpage"]                                    },
+    "discord-channel-gate":    { "flow": ["discord", "discord-voice", "discord-admin", "api"] },
+    "api-token-gate":          { "flow": ["api"]                                         },
+    "discord-trigger-gate":    { "flow": ["discord", "discord-voice"]                   },
+    "discord-reaction-start":  { "flow": ["discord"]                                    },
+    "discord-reaction-finish": { "flow": ["discord"]                                    },
+    "discord-admin-join":      { "flow": ["discord-admin"]                              },
+
+    "discord-gdpr-gate": {
+      "flow":  ["discord", "discord-voice", "discord-admin"],
+      "table": "gdpr"
+    },
+
+    "discord-add-files":    { "flow": ["discord"]         },
+    "discord-admin-gdpr":   { "flow": ["discord-admin"], "table": "gdpr" },
+    "discord-admin-avatar": { "flow": ["discord-admin"]  },
+    "discord-admin-macro":  { "flow": ["discord-admin"]  },
+    "discord-admin-commands":{ "flow": ["discord-admin", "discord"] },
+    "core-admin-commands":  { "flow": ["api"]             },
+    "moderation-output":    { "flow": ["discord"]         },
+    "core-output":          { "flow": ["all"]             },
+
+    "core-channel-config": {
+      "__description": "Optional per-channel overrides — leave channels array empty to disable, or add entries as shown below",
+      "flow": ["discord", "discord-voice", "discord-admin", "discord-status", "api"],
+      "channels": [
+        {
+          "__description": "Example: a channel with custom settings — replace DISCORD_CHANNEL_ID_HERE",
+          "channelMatch": ["DISCORD_CHANNEL_ID_HERE"],
+          "overrides": {
+            "botName":      "Jenny",
+            "systemPrompt": "You are a helpful assistant.",
+            "instructions": "Answer clearly and concisely.",
+            "trigger":      "",
+            "temperature":  0.3,
+            "contextSize":  30,
+            "tools": [
+              "getGoogle",
+              "getWebpage",
+              "getImage",
+              "getTime",
+              "getHistory"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

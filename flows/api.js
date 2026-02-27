@@ -267,6 +267,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     workingObject.isDM = false;
     workingObject.guildId = "";
     workingObject.timestamp = new Date().toISOString();
+    workingObject.httpAuthorization = String(req.headers?.authorization || "");
 
     try {
       await runFlow("api", runCore);
@@ -278,6 +279,10 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     }
 
     if (res.writableEnded) return;
+
+    if (workingObject.apiGated === true) {
+      return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(workingObject, baseCore) });
+    }
 
     const silenceToken = String(workingObject.modSilence || "[silence]");
     const text = String(workingObject.response || "").trim();
