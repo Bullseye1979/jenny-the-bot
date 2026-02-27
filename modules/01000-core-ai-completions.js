@@ -116,7 +116,7 @@ function getKiCfg(wo) {
 /********************************************************************************/
 function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
   if (!kiCfg.includeRuntimeContext || !kiCfg.includeHistory || !lastRecord) return null;
-  const metadata = { id: String(wo?.id ?? ""), flow: String(wo?.flow ?? ""), clientRef: String(wo?.clientRef ?? "") };
+  const metadata = { id: String(wo?.channelID ?? ""), flow: String(wo?.flow ?? ""), clientRef: String(wo?.clientRef ?? "") };
   const last = { ...lastRecord }; if ("content" in last) delete last.content;
   return { metadata, last };
 }
@@ -366,7 +366,7 @@ async function getSystemContent(wo, kiCfg) {
       .map(v => String(v || "").trim())
       .filter(v => v.length > 0);
     if (!extraIds.length) return "";
-    const currentId = String(wo?.id ?? "").trim();
+    const currentId = String(wo?.channelID ?? "").trim();
     const lines = [
       "Multi-channel context:",
       "- The context includes messages from multiple channels. Each message may carry a `channelId` field that identifies its source channel."

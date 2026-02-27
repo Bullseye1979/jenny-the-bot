@@ -281,7 +281,7 @@ function getResolvedTimestamp(workingObject, record) {
 /* Inserts a normalized record and updates the timeline                          */
 /********************************************************************************/
 export async function setContext(workingObject, record) {
-  const id = String(workingObject?.id || "");
+  const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
 
@@ -443,7 +443,7 @@ function getBuildMetaFrame(obj, row, rowChannelId, roleLc) {
 /* Returns capped messages based on user-block budget; supports extra channels   */
 /********************************************************************************/
 export async function getContext(workingObject) {
-  const baseId = String(workingObject?.id || "");
+  const baseId = String(workingObject?.channelID || "");
   if (!baseId) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
 
@@ -735,7 +735,7 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
 /* Deletes non-frozen context and timeline rows                                  */
 /********************************************************************************/
 export async function setPurgeContext(workingObject) {
-  const id = String(workingObject?.id || "");
+  const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
   const [res1] = await pool.execute(
@@ -754,7 +754,7 @@ export async function setPurgeContext(workingObject) {
 /* Marks context and timeline rows as frozen                                     */
 /********************************************************************************/
 export async function setFreezeContext(workingObject) {
-  const id = String(workingObject?.id || "");
+  const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
   const [r1] = await pool.execute(

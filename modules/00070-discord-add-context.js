@@ -39,7 +39,7 @@ export default async function getDiscordAddContext(coreData) {
   const ts = String(wo?.timestamp || new Date().toISOString());
   const text = typeof wo?.payload === "string" ? wo.payload.trim() : "";
   wo.logging.push({ timestamp: ts, severity: "info", module: MODULE_NAME, exitStatus: "started", message: "Begin append message to context" });
-  if (!wo.db || !wo.flow || !wo.id || !text) {
+  if (!wo.db || !wo.flow || !wo.channelID || !text) {
     wo.logging.push({ timestamp: ts, severity: "error", module: MODULE_NAME, exitStatus: "failed", message: "Missing required fields: db, flow, id, or payload" });
     return coreData;
   }
@@ -50,9 +50,9 @@ export default async function getDiscordAddContext(coreData) {
     role,
     turn_id: turnId,
     content: getString(text),
-    userId: getString(wo.userid || wo.userId || ""),
-    authorName: getString(wo.authorDisplayname || wo.authorDisplayName || wo.authorName || ""),
-    channelId: getString(wo.channelID || wo.id || ""),
+    userId: getString(wo.userId || ""),
+    authorName: getString(wo.authorDisplayname || ""),
+    channelId: getString(wo.channelID || ""),
     messageId: getString(wo.messageId || ""),
     replyToId: getString(wo.replyToId || "") || undefined,
     files: files.length ? files : undefined,

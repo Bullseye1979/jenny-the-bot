@@ -367,6 +367,7 @@ function getBuildRunCore(createRunCore, interaction, baseWO) {
   wo.turn_id = getNewUlid();
   const snap = getInteractionSnapshot(interaction);
   wo.id = interaction.channelId || "";
+  wo.channelID = wo.id;
   wo.guildId = interaction.guildId || "";
   wo.payload = { discord: { interaction: snap } };
   wo.admin = {

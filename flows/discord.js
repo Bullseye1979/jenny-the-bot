@@ -246,7 +246,7 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
     wo.clientRef = clientRegistryId;
     wo.timestamp = new Date(message.createdTimestamp || Date.now()).toISOString();
     wo.channelID = message.channelId;
-    wo.userid = message.author?.id || "";
+    wo.userId = message.author?.id || "";
     wo.authorDisplayname = (message.member && (message.member.displayName || message.member.nickname)) || message.author?.username || "";
     wo.guildId = message.guildId || "";
 
@@ -259,7 +259,6 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
 
     wo.channelType = message.channel?.type ?? null;
     wo.isDM = wo.channelType === ChannelType.DM;
-    if (wo.isDM) wo.DM = true;
     wo.fileUrls = getAttachmentUrls(message);
     if (isMacro) wo.isMacro = true;
 

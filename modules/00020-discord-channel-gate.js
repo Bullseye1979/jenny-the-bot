@@ -19,7 +19,7 @@ export default async function getChannelGate(coreData) {
   const workingObject = coreData?.workingObject || {};
   const log = getPrefixedLogger(workingObject, import.meta.url);
 
-  const channelId = String(workingObject?.message?.channelId ?? workingObject?.id ?? "");
+  const channelId = String(workingObject?.channelID ?? "");
   const isAllowed = !!workingObject.channelallowed;
 
   if (!isAllowed) {

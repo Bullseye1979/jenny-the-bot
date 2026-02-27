@@ -155,7 +155,6 @@ function setMergeDynamicWO(src, dst) {
     "guildId",
     "clientRef",
     "voiceSessionRef",
-    "userid",
     "userId",
     "channelallowed",
     "config"
@@ -281,11 +280,10 @@ async function setAttachToSession(baseCore, sessionKey, session, cfg, runFlow, c
       wo.voiceSessionRef = sessionKey;
 
       if (guildId) wo.guildId = guildId;
-      if (targetId) wo.id = String(targetId);
+      if (targetId) { wo.id = String(targetId); wo.channelID = wo.id; }
 
       wo.clientRef = clientRef;
       wo.config = cfg;
-      wo.userid = String(userId);
       wo.userId = String(userId);
       wo.channelallowed = true;
       wo.authorDisplayname = speaker;
@@ -296,7 +294,7 @@ async function setAttachToSession(baseCore, sessionKey, session, cfg, runFlow, c
         moduleName: MODULE_NAME,
         sessionKey,
         userId,
-        postChannelId: wo.id || null,
+        postChannelId: wo.channelID || null,
         useVoiceChannel: !!wo.useVoiceChannel,
         textChannelId,
         voiceChannelId,

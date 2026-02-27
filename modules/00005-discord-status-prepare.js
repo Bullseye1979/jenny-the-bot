@@ -16,7 +16,7 @@ function getPrefixedLogger(wo, moduleUrl) {
   return function log(message, level = "info", meta = {}) {
     const prefix = `[${MODULE_NAME}]`;
     const where = moduleUrl ? String(moduleUrl) : "";
-    const details = { ...meta, channelId: wo?.channelId, id: wo?.id };
+    const details = { ...meta, channelID: wo?.channelID };
     const entry = { level, message, where, ...details };
   };
 }
@@ -88,7 +88,6 @@ export default async function getDiscordStatusPrepareFlow(baseCore) {
 
   workingObject.id = targetChannel;
   workingObject.channelID = targetChannel;
-  workingObject.channelId = targetChannel;
 
   workingObject.payload = prompt;
   workingObject.updateStatus = "true";

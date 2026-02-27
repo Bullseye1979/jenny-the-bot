@@ -2,7 +2,7 @@
 * filename: "core-admin-commands.js"                                                                           *
 * Version 1.0                                                                                                  *
 * Purpose: Generic "/..." admin commands for non-discord flows. Parses workingObject.payload for slash          *
-*          commands, executes admin actions for CURRENT workingObject.id only, sets stop + response fields,     *
+*          commands, executes admin actions for CURRENT workingObject.channelID only, sets stop + response fields, *
 *          and returns.                                                                                        *
 ****************************************************************************************************************/
 
@@ -71,7 +71,7 @@ export default async function getCoreAdminCommands(coreData) {
   const cmd = getSlashCommand(payload);
   if (!cmd) return coreData;
 
-  const id = getStr(workingObject.id).trim();
+  const id = getStr(workingObject.channelID).trim();
   if (!id) {
     setStop(workingObject, "admin command failed: missing id");
     return coreData;
@@ -81,7 +81,7 @@ export default async function getCoreAdminCommands(coreData) {
 
   try {
     if (cmd === "purgedb") {
-      const purgeWO = { ...workingObject, id };
+      const purgeWO = { ...workingObject, channelID: id };
       const deleted = await setPurgeContext(purgeWO);
 
       const deletedCount = Number.isFinite(deleted) ? Number(deleted) : 0;
@@ -92,7 +92,7 @@ export default async function getCoreAdminCommands(coreData) {
     }
 
     if (cmd === "freeze") {
-      const freezeWO = { ...workingObject, id };
+      const freezeWO = { ...workingObject, channelID: id };
       await setFreezeContext(freezeWO);
 
       setStop(workingObject, `freeze ok (id=${id})`);

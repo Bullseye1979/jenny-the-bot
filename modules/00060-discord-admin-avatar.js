@@ -21,7 +21,7 @@ import { getItem } from "../core/registry.js";
 /**************************************************************/
 function getChannelId(wo) {
   const fromAdmin = wo?.admin?.channelId;
-  const fromWO = wo?.id || wo?.channelId || wo?.channel_id;
+  const fromWO = wo?.channelID;
   return String(fromAdmin || fromWO || "");
 }
 

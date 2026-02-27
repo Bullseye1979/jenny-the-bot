@@ -939,14 +939,14 @@ export default async function getDiscordTextOutput(coreData) {
     return coreData;
   }
 
-  const channelId = String(wo.id || "");
+  const channelId = String(wo.channelID || "");
   if (!channelId) {
     wo.logging.push({
       timestamp: new Date().toISOString(),
       severity: "warn",
       module: MODULE_NAME,
       exitStatus: "skipped",
-      message: "Missing wo.id – cannot resolve channel."
+      message: "Missing wo.channelID – cannot resolve channel."
     });
     return coreData;
   }
@@ -954,7 +954,7 @@ export default async function getDiscordTextOutput(coreData) {
   const isDM =
     !!(wo.DM || wo.isDM || wo.channelType === 1 ||
       String(wo.channelType ?? "").toUpperCase() === "DM" ||
-      (!wo.guildId && (wo.userId || wo.userid)));
+      (!wo.guildId && !!wo.userId));
 
   try {
     const baseMessage = wo.message;

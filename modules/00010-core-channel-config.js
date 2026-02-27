@@ -176,13 +176,8 @@ function applyOverrides(workingObject, overrides) {
 /************************************************************************************/
 function getEffectiveChannelId(workingObject) {
   const id = normalizeStr(
-    workingObject?.id ??
-    workingObject?.channelId ??
     workingObject?.channelID ??
-    workingObject?.message?.channelId ??
-    workingObject?.message?.channelID ??
-    workingObject?.message?.channelID ??
-    workingObject?.message?.channelID
+    workingObject?.message?.channelId
   );
 
   const chType = workingObject?.channelType;
@@ -190,7 +185,7 @@ function getEffectiveChannelId(workingObject) {
     workingObject?.isDM === true ||
     String(chType ?? "").toUpperCase() === "DM" ||
     chType === 1 ||
-    (!workingObject?.guildId && !!normalizeStr(workingObject?.userId ?? workingObject?.userid));
+    (!workingObject?.guildId && !!normalizeStr(workingObject?.userId));
 
   return isDM ? "DM" : id;
 }
@@ -320,7 +315,7 @@ export default async function getChannelConfig(coreData) {
   const channels = cfg.channels;
   if (!Array.isArray(channels)) return coreData;
 
-  const userId = normalizeStr(workingObject?.userId ?? workingObject?.userid);
+  const userId = normalizeStr(workingObject?.userId);
   const effectiveChannelId = getEffectiveChannelId(workingObject);
   const flow = ensureFlow(workingObject, effectiveChannelId, log);
 

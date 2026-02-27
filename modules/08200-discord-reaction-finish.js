@@ -39,7 +39,7 @@ function getFlowHadErrors(wo) {
 function getIsDMContext(wo) {
   return !!(wo?.DM || wo?.isDM || wo?.channelType === 1 ||
             String(wo?.channelType ?? "").toUpperCase() === "DM" ||
-            (!wo?.guildId && (wo?.userId || wo?.userid)));
+            (!wo?.guildId && !!wo?.userId));
 }
 
 /***************************************************************

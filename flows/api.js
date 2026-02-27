@@ -261,6 +261,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     }
 
     workingObject.id = String(parsedBody.id);
+    workingObject.channelID = workingObject.id;
     workingObject.userId = parsedBody.userId ? String(parsedBody.userId) : "";
     workingObject.payload = String(parsedBody.payload);
     workingObject.channelType = "API";
@@ -290,7 +291,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     return getJson(res, 200, {
       ok: true,
       flow: "api",
-      id: workingObject.id,
+      id: workingObject.channelID,
       turn_id: workingObject.turn_id,
       channelallowed: workingObject.channelallowed,
       response: text && text !== silenceToken ? text : "",

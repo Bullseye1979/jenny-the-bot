@@ -490,7 +490,7 @@ export default async function getDiscordVoiceTranscribe(coreData) {
         ts: Date.now(),
         sessionKey,
         guildId: wo.guildId,
-        channelId: wo.channelId || wo.channelID,
+        channelId: wo.channelID,
         userId,
         speaker: wo.authorDisplayname || "Unknown",
         segments: parts.length,

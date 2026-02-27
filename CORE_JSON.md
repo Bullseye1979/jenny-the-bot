@@ -518,7 +518,7 @@ The API flow is configured via command-line or defaults (host `0.0.0.0`, port `3
 | `jobs[].id` | Unique job identifier |
 | `jobs[].cron` | Cron expression (e.g. `"*/5 * * * *"` for every 5 min) |
 | `jobs[].enabled` | Whether this job is active |
-| `jobs[].channelID` | Channel context injected into `workingObject.id` for this job |
+| `jobs[].channelID` | Channel context injected into `workingObject.channelID` for this job |
 
 ---
 

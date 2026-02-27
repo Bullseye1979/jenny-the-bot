@@ -164,7 +164,7 @@ export default async function getGdprGate(coreData) {
     wo?.isDM === true ||
     String(wo?.channelType ?? "").toUpperCase() === "DM" ||
     wo?.channelType === 1 ||
-    (!wo?.guildId && !!(wo?.userId ?? wo?.userid));
+    (!wo?.guildId && !!wo?.userId);
   if (isDM) {
     log("dm detected — skipping gdpr gate", "info", { moduleName: MODULE_NAME, flow });
     return coreData;
@@ -173,8 +173,8 @@ export default async function getGdprGate(coreData) {
   const dbCfg = getDbConfig(wo);
   const table = getTableName(coreData);
 
-  const userId = String(wo?.userId ?? wo?.userid ?? "");
-  const channelId = String(wo?.id ?? wo?.channelId ?? "");
+  const userId = String(wo?.userId ?? "");
+  const channelId = String(wo?.channelID ?? "");
   if (!userId || !channelId) {
     log("gdpr gate missing ids -> blocking", "warn", { moduleName: MODULE_NAME, userId, channelId, flow });
     const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });

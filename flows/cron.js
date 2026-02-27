@@ -167,7 +167,6 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
 
         rc.workingObject.flow = targetFlow;
         rc.workingObject.channelID = channelID;
-        if (!rc.workingObject.channelId) rc.workingObject.channelId = channelID;
         if (!rc.workingObject.id) rc.workingObject.id = channelID;
 
         log(

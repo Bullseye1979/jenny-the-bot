@@ -137,7 +137,7 @@ async function setRunMacro({ pool, log, wo, userId, guildId, channelId, name }) 
     log("macro run: missing discord client", "error", { moduleName: MODULE_NAME });
     return { found: true, sent: false, reason: "no_client" };
   }
-  const targetChannelId = String(channelId || wo?.admin?.channelId || wo?.channelID || wo?.id || "");
+  const targetChannelId = String(channelId || wo?.admin?.channelId || wo?.channelID || "");
   if (!targetChannelId) {
     log("macro run: missing channelId", "error", { moduleName: MODULE_NAME });
     return { found: true, sent: false, reason: "no_channel" };
@@ -193,9 +193,9 @@ export default async function getDiscordAdminMacro(coreData) {
     const cmd = String(wo?.admin?.command || "").toLowerCase();
     if (cmd !== "macro") return coreData;
     const sub = String(wo?.admin?.subcommand || wo?.admin?.subCommand || "").toLowerCase();
-    const userId = String(wo?.admin?.userId || wo.userid || wo.userId || "");
+    const userId = String(wo?.admin?.userId || wo.userId || "");
     const guildId = String(wo?.admin?.guildId || wo.guildId || "");
-    const channelId = String(wo?.admin?.channelId || wo.channelID || wo.id || "");
+    const channelId = String(wo?.admin?.channelId || wo.channelID || "");
     log("macro: incoming admin command", "debug", { moduleName: MODULE_NAME, flow: wo?.flow, command: cmd, subcommand: sub, userId, guildId, channelId });
     if (!userId) {
       wo.response = "⚠️ Macro: missing user context.";

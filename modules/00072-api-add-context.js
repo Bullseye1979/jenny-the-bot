@@ -56,7 +56,7 @@ export default async function getApiAddContext(coreData) {
     message: "Begin append API message to context",
   });
 
-  if (!workingObject.db || !workingObject.flow || !workingObject.id || !text) {
+  if (!workingObject.db || !workingObject.flow || !workingObject.channelID || !text) {
     setPushLog(logging, {
       timestamp,
       severity: "error",

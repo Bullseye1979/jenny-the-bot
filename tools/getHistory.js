@@ -289,7 +289,7 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
 async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const cfgTool = wo?.toolsconfig?.getHistory || {};
-  const primaryChannelId = String(wo?.channelID || wo?.id || "").trim();
+  const primaryChannelId = String(wo?.channelID || "").trim();
   const extraChannelIds = Array.isArray(wo?.channelIds)
     ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
@@ -298,7 +298,7 @@ async function getHistoryInvoke(args, coreData) {
   for (const cid of extraChannelIds) channelIdSet.add(cid);
   const channelIds = [...channelIdSet];
   if (!channelIds.length) {
-    return { ok: false, error: "channel_id missing (wo.channelID / wo.id / wo.channelIds)" };
+    return { ok: false, error: "channel_id missing (wo.channelID / wo.channelIds)" };
   }
   const mainChannelId = primaryChannelId || channelIds[0];
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
@@ -567,7 +567,7 @@ function getDefaultExport() {
           "Get the historical records of the channel based on provided timeframes. " +
           "If rows ≤ threshold → dump, if threshold < rows ≤ max_rows → single summary, " +
           "if rows > max_rows → multi-chunk summary with short, prompt-focused chunks. " +
-          "History is pulled from workingObject.channelID / workingObject.id plus optional workingObject.channelIds.",
+          "History is pulled from workingObject.channelID plus optional workingObject.channelIds.",
         parameters: {
           type: "object",
           properties: {

@@ -1,7 +1,7 @@
 /****************************************************************************************************************
  * filename: core-add-id.js
  * version: 1.0
- * purpose: Runs before output and appends `id=<wo.id>` to all image links that point to servers defined in
+ * purpose: Runs before output and appends `id=<wo.channelID>` to all image links that point to servers defined in
  *          config["core-add-id"].servers.
  ****************************************************************************************************************/
 
@@ -179,9 +179,9 @@ export default async function getCoreAddId(coreData) {
   const response = typeof wo.response === "string" ? wo.response : "";
   if (!response.trim()) return coreData;
 
-  const idValue = getStr(wo?.id).trim();
+  const idValue = getStr(wo?.channelID).trim();
   if (!idValue) {
-    setLog(wo, "warn", "skipped", "Missing wo.id → cannot append id param.");
+    setLog(wo, "warn", "skipped", "Missing wo.channelID → cannot append id param.");
     return coreData;
   }
 

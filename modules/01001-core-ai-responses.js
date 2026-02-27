@@ -365,7 +365,7 @@ function getRuntimeContextFromLast(wo, snapshot) {
   const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
   if (last && "content" in last) delete last.content;
   const metadata = {
-    id: String(wo?.id ?? ""),
+    id: String(wo?.channelID ?? ""),
     flow: String(wo?.flow ?? ""),
     clientRef: String(wo?.clientRef ?? ""),
     model: String(wo?.model ?? ""),

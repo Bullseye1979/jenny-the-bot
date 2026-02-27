@@ -120,7 +120,7 @@ export default async function getDiscordJoinLeave(coreData) {
 
     const guildId       = String(wo?.admin?.guildId   || "");
     const userId        = String(wo?.admin?.userId    || "");
-    const textChannelId = String(wo?.admin?.channelId || wo?.id || "");
+    const textChannelId = String(wo?.admin?.channelId || wo?.channelID || "");
     if (!guildId || !userId || !textChannelId) {
       log("slash join/leave failed: missing guildId/userId/textChannelId", "error", { moduleName: MODULE_NAME, guildId, userId, textChannelId });
       wo.response = "";

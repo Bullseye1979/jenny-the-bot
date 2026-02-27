@@ -78,7 +78,7 @@ async function getResolveChannelById(wo, channelId) {
 function getIsDMContext(wo) {
   return !!(wo?.DM || wo?.isDM || wo?.channelType === 1 ||
             String(wo?.channelType ?? "").toUpperCase() === "DM" ||
-            (!wo?.guildId && (wo?.userId || wo?.userid)));
+            (!wo?.guildId && !!wo?.userId));
 }
 
 /**************************************************************
@@ -231,14 +231,14 @@ async function setPurgeDmDb(wo, payload, log) {
   if (!getIsDMContext(wo)) return false;
   if (!getIsBangPurgeDb(payload)) return false;
 
-  const channelId = String(wo?.channelID || wo?.id || wo?.message?.channelId || "");
+  const channelId = String(wo?.channelID || "");
   if (!channelId) {
     wo.response = "STOP";
     wo.stop = true;
     return true;
   }
 
-  const deleted = await setPurgeContext({ ...wo, id: channelId });
+  const deleted = await setPurgeContext({ ...wo, channelID: channelId });
   log("db purge done (DM)", "info", { moduleName: MODULE_NAME, channelId, deleted });
 
   wo.response = "STOP";
@@ -256,7 +256,7 @@ async function setPurgeDmBotMessages(wo, payload, log) {
   if (count === null) return false;
 
   const client = await getResolveClient(wo);
-  const channelId = String(wo?.channelID || wo?.id || wo?.message?.channelId || "");
+  const channelId = String(wo?.channelID || "");
   if (!client || !channelId) {
     wo.response = "STOP";
     wo.stop = true;
@@ -331,14 +331,14 @@ export default async function getDiscordAdminCommands(coreData) {
     }
 
     if (cmd === "purgedb") {
-      const targetChannelId = String(wo?.admin?.channelId || wo?.channelID || wo?.id || "");
+      const targetChannelId = String(wo?.admin?.channelId || wo?.channelID || "");
       if (!targetChannelId) {
         log("db purge failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
         wo.response = "";
         return coreData;
       }
 
-      const purgeWO = { ...wo, id: targetChannelId };
+      const purgeWO = { ...wo, channelID: targetChannelId };
       const deleted = await setPurgeContext(purgeWO);
       log("db purge done", "info", { moduleName: MODULE_NAME, channelId: targetChannelId, deleted });
       wo.response = "";
@@ -346,21 +346,21 @@ export default async function getDiscordAdminCommands(coreData) {
     }
 
     if (cmd === "freeze") {
-      const targetChannelId = String(wo?.admin?.channelId || wo?.channelID || wo?.id || "");
+      const targetChannelId = String(wo?.admin?.channelId || wo?.channelID || "");
       if (!targetChannelId) {
         log("freeze failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
         wo.response = "";
         return coreData;
       }
 
-      const freezeWO = { ...wo, id: targetChannelId };
+      const freezeWO = { ...wo, channelID: targetChannelId };
       const updated = await setFreezeContext(freezeWO);
       log("freeze done", "info", { moduleName: MODULE_NAME, channelId: targetChannelId, updated });
       wo.response = "";
       return coreData;
     }
 
-    const channelId = String(wo?.admin?.channelId || wo?.channelID || wo?.id || "");
+    const channelId = String(wo?.admin?.channelId || wo?.channelID || "");
     const channel = await getResolveChannelById(wo, channelId);
     if (!channel) {
       log("slash admin command failed", "error", { moduleName: MODULE_NAME, reason: "could not resolve channel" });
