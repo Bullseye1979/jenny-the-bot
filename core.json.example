@@ -42,6 +42,7 @@
     "modAdmin": "YOUR_DISCORD_USER_ID",
     "modSilence": "[silence]",
     "apiSecret": "",
+    "apiEnabled": 1,
     "botsAllow": [],
 
     "showReactions": true,
@@ -410,7 +411,15 @@
     "webpage-output":          { "flow": ["webpage"]                                    },
     "discord-channel-gate":    { "flow": ["discord", "discord-voice", "discord-admin", "api"] },
     "api-token-gate":          { "flow": ["api"]                                         },
-    "config-editor":           { "port": 3111, "host": "127.0.0.1", "token": "", "configPath": "" },
+    "config-editor": {
+      "__description": "Web-based config editor + AI chat. Set token to require password. chats[] configures the chat tab.",
+      "port": 3111, "host": "127.0.0.1", "token": "", "configPath": "",
+      "apiUrl": "http://localhost:3400/api",
+      "chats": [
+        { "label": "General",           "channelID": "YOUR_CHANNEL_ID",  "apiSecret": "" },
+        { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
+      ]
+    },
     "discord-trigger-gate":    { "flow": ["discord", "discord-voice"]                   },
     "discord-reaction-start":  { "flow": ["discord"]                                    },
     "discord-reaction-finish": { "flow": ["discord"]                                    },
@@ -451,6 +460,20 @@
               "getTime",
               "getHistory"
             ]
+          }
+        },
+        {
+          "__description": "Browser extension channel — used by the Jenny Edge/Chrome extension",
+          "channelMatch": ["browser-extension"],
+          "overrides": {
+            "apiEnabled":   1,
+            "apiSecret":    "",
+            "botName":      "Jenny",
+            "persona":      "You are Jenny, a browser extension assistant. You help users summarize web pages and YouTube videos, and answer questions about page content.",
+            "systemPrompt": "Answer in full sentences. Answer only in English.",
+            "instructions": "When given a URL, use getWebpage or getYoutube to fetch and summarize the content. Check at least one source. Write how you came to your conclusion. Do not give out unverified information.",
+            "contextSize":  70,
+            "channelIds":   []
           }
         }
       ]

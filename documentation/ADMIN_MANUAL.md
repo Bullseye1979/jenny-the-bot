@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-02
+> **Version:** 1.1 · **Date:** 2026-02-28
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -29,6 +29,7 @@
    - 6.6 [toolcall](#66-toolcall)
    - 6.7 [config-editor](#67-config-editor)
    - 6.8 [webpage](#68-webpage)
+   - 6.9 [Browser Extension](#69-browser-extension)
 7. [Module Pipeline](#7-module-pipeline)
    - 7.1 [Pre-Processing (00xxx)](#71-pre-processing-00xxx)
    - 7.2 [AI Processing (01xxx)](#72-ai-processing-01xxx)
@@ -300,7 +301,8 @@ The live dashboard displays:
 | `triggerWordWindow` | number | `3` | Number of words from the start of a message in which the trigger is searched |
 | `modAdmin` | string | — | Discord user ID with administrator rights |
 | `modSilence` | string | `"[silence]"` | If the AI response contains this token, no output is sent |
-| `apiSecret` | string | `""` | Shared secret for the HTTP API token gate. When set, every POST `/api` request must supply `Authorization: Bearer <secret>`. Leave empty to disable the gate (open access). |
+| `apiSecret` | string | `""` | Shared secret for the HTTP API token gate. When set, every `POST /api` request must supply `Authorization: Bearer <secret>`. Leave empty to disable token checking. |
+| `apiEnabled` | number | `1` | Controls whether this channel can be reached via the HTTP API. `0` = always blocked (regardless of token). `1` = allowed when token matches or no secret is set. Can be overridden per channel via `core-channel-config`. |
 | `botsAllow` | array | `[]` | List of Discord bot IDs permitted to trigger the bot |
 
 #### AI Model
@@ -1029,6 +1031,8 @@ Starts a lightweight **HTTP API server** that exposes the full bot pipeline to e
 
 **Token gating:** Set `workingObject.apiSecret` to a strong random string and enable the `api-token-gate` module (see section 7.1) to protect the endpoint. Every request must then include the header `Authorization: Bearer <secret>`; missing or wrong tokens receive HTTP 401. The `/health` endpoint is never gated.
 
+**Channel blocking:** Set `apiEnabled: 0` in a channel override (`core-channel-config`) to permanently block API access to that channel, regardless of any token. `apiEnabled: 1` (default) allows access according to the token-gate rules above.
+
 ```json
 "api": {
   "flowName": "api",
@@ -1049,24 +1053,39 @@ Starts a lightweight **HTTP API server** that exposes the full bot pipeline to e
 
 #### config.config-editor
 
-Starts a **web-based JSON configuration editor** — a browser UI that lets you browse, add, edit, duplicate and delete every value in `core.json` without touching a text editor. Works on desktop and mobile.
+Starts a **web-based admin interface** with two tabs: an AI **Chat** tab (default) and a **Config Editor** tab. Works on desktop and mobile.
 
+**Chat tab:**
+- Dropdown to switch between configured channels.
+- Large scrollable message window (top) + text input (bottom).
+- Loads the last 100 context entries from MySQL on channel selection.
+- Sends messages to the bot via the HTTP API flow; the API secret is injected server-side.
+- Auto-resize textarea; Enter = send, Shift+Enter = newline; animated thinking indicator.
+- **Thinking indicator with tool name:** while the bot processes, the name of the currently active tool (e.g. `getImage`, `getWebpage`) is displayed next to the animated dots; polled from `/toolcall` every 800 ms.
+- **Markdown rendering:** headings (`#`/`##`/`###`), bold/italic, code blocks (fenced and inline), blockquotes, ordered/unordered lists, and horizontal rules are fully rendered in chat bubbles.
+- **Link parser & media embeds:** URLs in messages are rendered as clickable links; YouTube and Vimeo URLs embed an inline player; direct video files (`.mp4`, `.webm`, `.ogg`) are rendered with a `<video>` player; image URLs (`.jpg`, `.png`, `.gif`, `.webp`, `.svg`) are shown as inline images.
+
+**Config Editor tab:**
 - **Sections `{}`** appear as expandable tree nodes in the left sidebar.
-- **Object arrays `[{}, ...]`** appear as tree items (same hierarchy level as sections); each item can be opened, duplicated or deleted.
-- **Primitive arrays `["a", "b"]`** are displayed as tag/chip editors inside the section panel.
+- **Object arrays `[{}, ...]`** appear as tree items at the same hierarchy level as sections.
+- **Primitive arrays `["a", "b"]`** are displayed as tag/chip editors.
 - **Primitive values** are edited in-place with a type selector (string / number / boolean / null).
 - Every node supports **Add**, **Duplicate** and **Delete**.
 - **`Ctrl + S`** (or `⌘ S`) saves without clicking the button.
 
-The flow is started the same way as the `api` or `cron` flow — add it to your startup sequence.
-**Security:** bind to `127.0.0.1` (localhost only) or set a `token` for Bearer/Basic authentication. Leave `token` empty only on trusted networks.
+**Security:** bind to `127.0.0.1` (localhost only) or set a `token` for Bearer/Basic authentication.
 
 ```json
 "config-editor": {
   "port":       3111,
   "host":       "127.0.0.1",
   "token":      "",
-  "configPath": ""
+  "configPath": "",
+  "apiUrl":     "http://localhost:3400/api",
+  "chats": [
+    { "label": "General",           "channelID": "YOUR_CHANNEL_ID",  "apiSecret": "" },
+    { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
+  ]
 }
 ```
 
@@ -1076,6 +1095,11 @@ The flow is started the same way as the `api` or `cron` flow — add it to your 
 | `host` | string | `"127.0.0.1"` | Bind address (`"0.0.0.0"` for all interfaces) |
 | `token` | string | `""` | Optional auth token; sent as `Authorization: Bearer <token>` or as the Basic password |
 | `configPath` | string | `""` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+| `apiUrl` | string | `"http://localhost:3400/api"` | Default URL of the bot's HTTP API flow used for chat |
+| `chats[].label` | string | — | Display name shown in the channel dropdown |
+| `chats[].channelID` | string | — | Discord channel ID; injected into every API request for this chat |
+| `chats[].apiSecret` | string | `""` | Bearer secret for this channel's API requests (injected server-side, never sent to the browser) |
+| `chats[].apiUrl` | string | — | Per-chat API URL override; falls back to the global `apiUrl` if omitted |
 
 ---
 
@@ -1441,8 +1465,9 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 **POST /api response:**
 ```json
 {
-  "turn_id":  "01JXXXXXXXXXXXXXXXXXXXXX",
-  "response": "The weather in Berlin is..."
+  "turn_id":   "01JXXXXXXXXXXXXXXXXXXXXX",
+  "channelID": "optional-channel-id",
+  "response":  "The weather in Berlin is..."
 }
 ```
 
@@ -1475,17 +1500,30 @@ Also supports `*/N * * * *` (every N minutes).
 ### 6.7 config-editor
 
 **File:** `flows/config-editor.js`
-**Purpose:** Web-based JSON configuration editor (standalone HTTP server, no module pipeline)
+**Purpose:** Web-based admin interface with AI Chat + JSON Config Editor (standalone HTTP server, no module pipeline)
 
 **Access:** Open `http://<host>:<port>` in any browser.
 
-**Features:**
+**Tabs:**
+
+**💬 Chat (default)**
+- Channel dropdown populated from `config-editor.chats[]`
+- Last 100 context entries loaded from MySQL on channel select or ↺ refresh
+- Large scrollable message window (top) + auto-resize input (bottom)
+- Enter = send · Shift+Enter = newline
+- **Thinking indicator with tool name:** the currently active tool (e.g. `getImage`) is displayed before the animated dots; polled from `/toolcall` every 800 ms
+- **Markdown rendering:** `#`/`##`/`###` headings, bold/italic, fenced and inline code, blockquotes, lists, and `---` HR are fully rendered in chat bubbles
+- Messages are sent to the bot's API flow; `apiSecret` is injected server-side and never exposed to the browser
+- **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline
+
+**⚙ Config Editor**
 - Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{…}]` as tree items
 - Right panel: inline editing of primitives, tag/chip editors for primitive arrays, navigation links for sub-sections
 - Add Attribute / Section / Object Array / Tag Array per section
 - Duplicate and Delete on every node and array item
 - Keyboard shortcut `Ctrl + S` / `⌘ S` to save
-- Fully responsive — works on mobile (hamburger sidebar)
+
+**Fully responsive** — works on mobile (hamburger sidebar in Config tab).
 
 **Configuration:** `config["config-editor"]` — see [config.config-editor](#configconfig-editor).
 
@@ -1498,6 +1536,58 @@ Also supports `*/N * * * *` (every N minutes).
 
 **Trigger:** Called during web-fetch operations
 **Flow:** Renders a page via Puppeteer, extracts DOM content, injects into `workingObject`
+
+---
+
+### 6.9 Browser Extension
+
+**Directory:** `extensions/jenny-extension/`
+**Type:** Manifest V3 browser extension (Edge / Chrome)
+**Purpose:** Chat with the bot and summarize web pages or YouTube videos from the browser toolbar
+
+#### Features
+
+| Feature | Description |
+|---|---|
+| **Persistent side panel** | Opens as a browser side panel (not a popup) — stays open while you browse other pages or click elsewhere |
+| **Chat UI** | Full chat UI matching the config-editor chat; markdown rendering, link/video embeds, toolcall display |
+| **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
+| **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall` every 800 ms |
+| **Options page** | `apiUrl`, `channelID`, `apiSecret` stored in `chrome.storage.sync` |
+
+#### Installation (developer mode)
+
+1. Open `edge://extensions/` (or `chrome://extensions/`).
+2. Enable **Developer mode**.
+3. Click **Load unpacked** → select the `extensions/jenny-extension/` folder.
+4. Click the **Jenny Bot** icon in the toolbar to open the side panel.
+
+#### Options page fields
+
+| Field | Description |
+|---|---|
+| `API URL` | Full URL of the bot's API endpoint, e.g. `http://localhost:3400/api` |
+| `Channel ID` | Must match a channel with `apiEnabled: 1` in `core.json` — default `browser-extension` |
+| `API Secret` | Bearer token; leave empty if `apiSecret` is not set on the channel |
+
+#### Bot-side configuration
+
+The `browser-extension` channel is pre-configured in `core.json`. Key overrides:
+
+```jsonc
+{
+  "channelMatch": ["browser-extension"],
+  "overrides": {
+    "apiEnabled":   1,
+    "apiSecret":    "",
+    "persona":      "You are Jenny, a browser extension assistant ...",
+    "instructions": "When given a URL, use getWebpage or getYoutube to fetch and summarize the content.",
+    "contextSize":  70
+  }
+}
+```
+
+Add `{ "label": "Browser Extension", "channelID": "browser-extension" }` to `config-editor.chats[]` to monitor the extension's chat history in the admin panel.
 
 ---
 
@@ -1523,7 +1613,7 @@ export default async function myModule(coreData) {
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
 | 00020 | `discord-channel-gate` | Checks whether the bot is allowed to respond in this channel |
-| 00021 | `api-token-gate` | Verifies the Bearer token for HTTP API requests; blocks with HTTP 401 if wrong or missing (no-op when `apiSecret` is empty) |
+| 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set — blocks with HTTP 401 if wrong or missing |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
 | 00025 | `discord-admin-gdpr` | Handles admin GDPR management commands |
 | 00030 | `discord-voice-transcribe` | Transcribes voice audio via Whisper API |

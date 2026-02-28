@@ -253,15 +253,14 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       return getJson(res, 400, { error: "invalid_json", botname: getBotname(workingObject, baseCore) });
     }
 
-    if (!parsedBody?.id || !parsedBody?.payload) {
+    if (!parsedBody?.channelID || !parsedBody?.payload) {
       return getJson(res, 400, {
-        error: "id_and_payload_required",
+        error: "channelID_and_payload_required",
         botname: getBotname(workingObject, baseCore),
       });
     }
 
-    workingObject.id = String(parsedBody.id);
-    workingObject.channelID = workingObject.id;
+    workingObject.channelID = String(parsedBody.channelID);
     workingObject.userId = parsedBody.userId ? String(parsedBody.userId) : "";
     workingObject.payload = String(parsedBody.payload);
     workingObject.channelType = "API";
@@ -291,7 +290,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     return getJson(res, 200, {
       ok: true,
       flow: "api",
-      id: workingObject.channelID,
+      channelID: workingObject.channelID,
       turn_id: workingObject.turn_id,
       channelallowed: workingObject.channelallowed,
       response: text && text !== silenceToken ? text : "",

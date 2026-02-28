@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jenny Bot — Settings</title>
+<link rel="stylesheet" href="options.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Jenny Bot &mdash; Settings</h1>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="card-header">Connection</div>
+
+      <div class="field">
+        <label for="apiUrl">API URL</label>
+        <input type="url" id="apiUrl" placeholder="http://localhost:3400/api" autocomplete="off" spellcheck="false">
+        <p class="hint">Full URL of the bot's API endpoint, e.g. <code>http://localhost:3400/api</code></p>
+      </div>
+
+      <div class="field">
+        <label for="channelID">Channel ID</label>
+        <input type="text" id="channelID" placeholder="browser-extension" autocomplete="off" spellcheck="false">
+        <p class="hint">The channel this extension sends messages to (must match a channel with <code>apiEnabled: 1</code>).</p>
+      </div>
+
+      <div class="field">
+        <label for="apiSecret">API Secret (optional)</label>
+        <input type="password" id="apiSecret" placeholder="leave empty if no secret is set" autocomplete="off">
+        <p class="hint">Bearer token for the API. Leave blank if <code>apiSecret</code> is not configured on the channel.</p>
+      </div>
+    </div>
+
+    <div class="actions">
+      <span id="status"></span>
+      <button id="save-btn">Save</button>
+    </div>
+  </main>
+</div>
+<script src="options.js"></script>
+</body>
+</html>

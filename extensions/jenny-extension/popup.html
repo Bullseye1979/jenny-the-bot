@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jenny Bot</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <header>
+    <span id="bot-name">Jenny</span>
+    <div id="header-actions">
+      <button id="summarize-btn" title="Summarize current page / video">&#9654; Summarize</button>
+      <button id="options-btn" title="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <!-- Config warning (shown when apiUrl is not set) -->
+  <div id="config-warn" class="hidden">
+    <p>No API URL configured. <a id="open-options">Open settings</a> to set up the bot connection.</p>
+  </div>
+
+  <!-- Messages -->
+  <div id="msgs"></div>
+
+  <!-- Input -->
+  <div id="footer">
+    <textarea id="input" rows="1" placeholder="Type a message…"></textarea>
+    <button id="send-btn" title="Send">&#10148;</button>
+  </div>
+
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

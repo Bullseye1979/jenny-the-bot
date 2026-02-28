@@ -45,6 +45,7 @@ All key names follow **camelCase** throughout.
 2. [config](#config)
    - [discord](#discord)
    - [api](#api)
+   - [config-editor](#config-editor)
    - [cron](#cron)
    - [context](#context)
    - [webpage](#webpage)
@@ -99,6 +100,8 @@ All key names follow **camelCase** throughout.
 | `baseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving generated files (images, PDFs, etc.) |
 | `modAdmin` | string | `"406901027665870848"` | Discord user ID with elevated bot admin rights |
 | `modSilence` | string | `"[silence]"` | If this token appears in the AI response, output is suppressed |
+| `apiSecret` | string | `""` | Shared secret for the HTTP API token gate. When set, every `POST /api` request must supply `Authorization: Bearer <secret>`. Leave empty to disable token checking. |
+| `apiEnabled` | number | `1` | Controls whether this channel can be reached via the HTTP API. `0` = always blocked (regardless of token). `1` = allowed when token matches or no secret is set. Can be overridden per channel via `core-channel-config`. |
 | `gdprDisclaimer` | string | Long legal text | Full GDPR disclaimer text sent as a DM on first contact |
 | `fileUrls` | array | `[]` | Attachment URLs extracted from the current Discord message |
 | `response` | string | `""` | Final AI-generated response text (written by AI modules) |
@@ -499,11 +502,18 @@ The API flow is configured via command-line or defaults (host `0.0.0.0`, port `3
   "port":       3111,
   "host":       "127.0.0.1",
   "token":      "",
-  "configPath": ""
+  "configPath": "",
+  "apiUrl":     "http://localhost:3400/api",
+  "chats": [
+    { "label": "General",           "channelID": "YOUR_CHANNEL_ID",  "apiSecret": "" },
+    { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
+  ]
 }
 ```
 
-Starts a standalone HTTP server serving a browser-based SPA for editing `core.json`. Does **not** run the module pipeline.
+Starts a standalone HTTP server serving a two-tab SPA (Chat + Config Editor). Does **not** run the module pipeline.
+
+**Chat tab features:** markdown rendering (headings, bold, code blocks, blockquotes, lists), media embeds (YouTube/Vimeo inline player, `<video>` for direct video URLs, inline images), toolcall name displayed before the thinking dots (polled every 800 ms from `/toolcall`), and server-side API secret injection.
 
 | Key | Description |
 |---|---|
@@ -511,6 +521,11 @@ Starts a standalone HTTP server serving a browser-based SPA for editing `core.js
 | `host` | Bind address; `"127.0.0.1"` for localhost-only, `"0.0.0.0"` for all interfaces |
 | `token` | Optional auth token; supply as `Authorization: Bearer <token>` or as the Basic password. Leave empty to disable auth |
 | `configPath` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+| `apiUrl` | URL of the bot's HTTP API used by the Chat tab (default `http://localhost:3400/api`) |
+| `chats[].label` | Display name shown in the channel selector dropdown |
+| `chats[].channelID` | Channel ID passed to the API as context |
+| `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |
+| `chats[].apiUrl` | Per-chat API URL override; falls back to `apiUrl` if omitted |
 
 ---
 
@@ -717,8 +732,27 @@ Channel match
 | Value | Meaning |
 |---|---|
 | Discord channel ID string | Exact channel match |
-| `"browser"` | Matches the webpage / browser extension flow |
+| `"browser"` | Matches the legacy webpage flow |
+| `"browser-extension"` | Matches requests from the Jenny Edge/Chrome browser extension |
 | `"all"` | Matches every channel |
+
+**Browser extension channel example:**
+
+```jsonc
+{
+  "channelMatch": ["browser-extension"],
+  "overrides": {
+    "apiEnabled":   1,
+    "apiSecret":    "",
+    "botName":      "Jenny",
+    "persona":      "You are Jenny, a browser extension assistant. You help users summarize web pages and YouTube videos.",
+    "systemPrompt": "Answer in full sentences. Answer only in English.",
+    "instructions": "When given a URL, use getWebpage or getYoutube to fetch and summarize the content.",
+    "contextSize":  70,
+    "channelIds":   []
+  }
+}
+```
 
 **Merge rules:**
 
@@ -982,4 +1016,4 @@ Below is a minimal but functional `core.json` template with every section includ
 
 ---
 
-*Documentation generated 2026-02-26.*
+*Documentation generated 2026-02-28.*

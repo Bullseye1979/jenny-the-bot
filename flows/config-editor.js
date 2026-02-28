@@ -1,11 +1,12 @@
 /********************************************************************************************************************
 * filename: "config-editor.js"                                                                                     *
-* Version 1.0                                                                                                      *
-* Purpose: Web-based JSON configuration editor. Starts an HTTP server serving a single-page app that lets you     *
-*          browse and edit core.json (or any configured JSON file) through a tree UI.                              *
-*          Sections {} → tree nodes; simple arrays → tag/chip editors; object arrays → tree items (same level).   *
-*          Add / duplicate / delete on every node. Responsive for desktop and mobile.                              *
-*          Required config: port (default 3111). Optional: host, configPath, token (Basic/Bearer auth guard).      *
+* Version 2.0                                                                                                      *
+* Purpose: Web-based JSON configuration editor + AI chat interface.                                                *
+*          Starts an HTTP server serving a single-page app with two tabs:                                          *
+*            Chat tab   — interactive AI chat via the bot's API flow, with per-channel context history.            *
+*            Config tab — browse and edit core.json (or any JSON file) through a tree UI.                          *
+*          Required config: port (default 3111).                                                                   *
+*          Optional: host, token, configPath, apiUrl, chats[].                                                     *
 ********************************************************************************************************************/
 /********************************************************************************************************************
 *                                                                                                                  *
@@ -19,6 +20,9 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const MODULE_NAME = "config-editor";
+
+/** Lazily-created mysql2 connection pool — shared across all context requests. */
+let dbPool = null;
 
 /********************************************************************************************************************
 * functionSignature: getBody (req)
@@ -60,7 +64,7 @@ function writeJsonFile(filePath, data) {
 
 /********************************************************************************************************************
 * functionSignature: isAuthorized (req, token)
-* Purpose: Returns true if no token required or request carries the correct Bearer/Basic token.
+* Purpose: Returns true if no token is required or the request carries the correct Bearer/Basic token.
 ********************************************************************************************************************/
 function isAuthorized(req, token) {
   if (!token) return true;
@@ -74,18 +78,42 @@ function isAuthorized(req, token) {
 }
 
 /********************************************************************************************************************
+* functionSignature: getDb (coreData)
+* Purpose: Returns (creating if needed) a mysql2 connection pool using DB config from workingObject.
+********************************************************************************************************************/
+async function getDb(coreData) {
+  if (dbPool) return dbPool;
+  let mysql2;
+  try { mysql2 = await import("mysql2/promise"); }
+  catch (e) { throw new Error("mysql2 module not available: " + String(e?.message || e)); }
+  const db = coreData?.workingObject?.db || {};
+  dbPool = mysql2.createPool({
+    host:            String(db.host     || "localhost"),
+    port:            Number(db.port     || 3306),
+    user:            String(db.user     || ""),
+    password:        String(db.password || ""),
+    database:        String(db.database || ""),
+    charset:         String(db.charset  || "utf8mb4"),
+    connectionLimit: 3,
+    waitForConnections: true,
+  });
+  return dbPool;
+}
+
+/********************************************************************************************************************
 * functionSignature: getHtml ()
 * Purpose: Returns the full SPA HTML as a string (no external dependencies).
+*          Contains two tabs: Chat (default) and Config editor.
+*          IMPORTANT: No template-literal ${} or backticks inside this returned string.
 ********************************************************************************************************************/
 function getHtml() {
-  /* NOTE: No template-literal ${} or backticks inside this returned string. */
   return (
 '<!DOCTYPE html>\n' +
 '<html lang="en">\n' +
 '<head>\n' +
 '<meta charset="UTF-8">\n' +
 '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
-'<title>Config Editor</title>\n' +
+'<title>Jenny \u2014 Admin</title>\n' +
 '<style>\n' +
 '*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}\n' +
 ':root{\n' +
@@ -102,21 +130,73 @@ function getHtml() {
 '}\n' +
 'html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:14px}\n' +
 'body{background:var(--bg);color:var(--txt);overflow:hidden}\n' +
-'/* Header */\n' +
+'/* ---- Header ---- */\n' +
 'header{position:fixed;top:0;left:0;right:0;height:var(--hh);background:var(--hdr);color:var(--hdr-txt);display:flex;align-items:center;padding:0 12px;gap:10px;z-index:100;box-shadow:0 2px 6px rgba(0,0,0,.25)}\n' +
-'#menu-btn{display:none;width:36px;height:36px;border:none;background:rgba(255,255,255,.1);color:#fff;border-radius:5px;font-size:18px;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0}\n' +
-'header h1{font-size:15px;font-weight:600;flex:1}\n' +
-'#status-lbl{font-size:12px;opacity:.55}\n' +
-'#save-btn{padding:6px 16px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;background:rgba(255,255,255,.15);color:#fff}\n' +
-'#save-btn.dirty{background:var(--ok);color:#fff}\n' +
+'#menu-btn{width:36px;height:36px;border:none;background:rgba(255,255,255,.1);color:#fff;border-radius:5px;font-size:18px;cursor:pointer;display:none;align-items:center;justify-content:center;flex-shrink:0}\n' +
+'header h1{font-size:15px;font-weight:700;white-space:nowrap;letter-spacing:-.2px}\n' +
+'/* ---- Nav tabs ---- */\n' +
+'#nav-tabs{display:flex;gap:3px;margin-left:6px;flex:1}\n' +
+'.nav-tab{padding:5px 14px;border:none;border-radius:5px;font-size:13px;font-weight:500;cursor:pointer;background:rgba(255,255,255,.08);color:rgba(255,255,255,.55);transition:all .15s;white-space:nowrap}\n' +
+'.nav-tab:hover{background:rgba(255,255,255,.15);color:#fff}\n' +
+'.nav-tab.active{background:var(--acc);color:#fff}\n' +
+'#status-lbl{font-size:12px;opacity:.55;white-space:nowrap}\n' +
+'#save-btn{padding:6px 16px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;background:rgba(255,255,255,.15);color:#fff;white-space:nowrap}\n' +
+'#save-btn.dirty{background:var(--ok)}\n' +
 '#save-btn:disabled{opacity:.45;cursor:default}\n' +
-'/* Layout */\n' +
-'#app{display:flex;margin-top:var(--hh);height:calc(100vh - var(--hh));overflow:hidden}\n' +
-'/* Sidebar */\n' +
+'/* ---- Chat view ---- */\n' +
+'#chat-view{display:flex;flex-direction:column;height:calc(100vh - var(--hh));height:calc(100dvh - var(--hh));margin-top:var(--hh);overflow:hidden;background:var(--bg)}\n' +
+'#chat-channel-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--card);border-bottom:1px solid var(--bdr);flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.06)}\n' +
+'#chat-channel-bar label{font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap}\n' +
+'#chat-sel{flex:1;max-width:340px;padding:6px 10px;border:1px solid var(--bdr);border-radius:5px;font-size:13px;background:#fff;color:var(--txt);cursor:pointer}\n' +
+'#chat-sel:focus{outline:none;border-color:var(--acc)}\n' +
+'#chat-reload-btn{width:32px;height:32px;border:1px solid var(--bdr);border-radius:5px;background:#fff;color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}\n' +
+'#chat-reload-btn:hover{border-color:var(--acc);color:var(--acc)}\n' +
+'#chat-msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:8px}\n' +
+'#chat-msgs::-webkit-scrollbar{width:5px}\n' +
+'#chat-msgs::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}\n' +
+'.chat-msg{display:flex;max-width:76%}\n' +
+'.chat-msg.user{align-self:flex-end}\n' +
+'.chat-msg.assistant{align-self:flex-start}\n' +
+'.chat-bubble{padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.6;word-break:break-word;white-space:pre-wrap;box-shadow:0 1px 2px rgba(0,0,0,.07)}\n' +
+'.chat-msg.user .chat-bubble{background:var(--acc);color:#fff;border-bottom-right-radius:3px}\n' +
+'.chat-msg.assistant .chat-bubble{background:var(--card);color:var(--txt);border:1px solid var(--bdr);border-bottom-left-radius:3px}\n' +
+'.chat-thinking{display:flex;align-items:center;gap:5px;padding:12px 14px}\n' +
+'.chat-thinking span:not(.label){width:7px;height:7px;background:#94a3b8;border-radius:50%;display:inline-block;animation:chtk .9s ease-in-out infinite}\n' +
+'.chat-thinking span.label{font-size:11px;color:var(--muted);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;line-height:1}\n' +
+'.chat-thinking span:nth-child(2){animation-delay:.18s}\n' +
+'.chat-thinking span:nth-child(3){animation-delay:.36s}\n' +
+'@keyframes chtk{0%,80%,100%{transform:scale(.65);opacity:.35}40%{transform:scale(1.05);opacity:1}}\n' +
+'.chat-empty,.chat-loading{align-self:center;text-align:center;padding:48px 24px;color:var(--muted);font-size:13px;margin:auto}\n' +
+'#chat-footer{display:flex;align-items:flex-end;gap:10px;padding:10px 14px;background:var(--card);border-top:1px solid var(--bdr);flex-shrink:0}\n' +
+'#chat-input{flex:1;padding:9px 12px;border:1px solid var(--bdr);border-radius:8px;font-size:13px;font-family:inherit;resize:none;background:#fff;color:var(--txt);line-height:1.5;max-height:120px;overflow-y:auto;transition:border-color .15s}\n' +
+'#chat-input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(59,130,246,.1)}\n' +
+'#chat-send-btn{width:40px;height:40px;border:none;border-radius:8px;background:var(--acc);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}\n' +
+'#chat-send-btn:hover{background:var(--acc2)}\n' +
+'#chat-send-btn:disabled{opacity:.4;cursor:default}\n' +
+'.chat-bubble a{color:inherit;text-decoration:underline;word-break:break-all}\n' +
+'.chat-msg.user .chat-bubble a{color:#bfdbfe}\n' +
+'.chat-embed{margin-top:8px;border-radius:8px;overflow:hidden;width:100%;max-width:480px}\n' +
+'.chat-embed iframe{display:block;width:100%;aspect-ratio:16/9;border:none;background:#000}\n' +
+'.chat-embed video{display:block;width:100%;max-height:300px;background:#000}\n' +
+'.chat-img{display:block;max-width:100%;max-height:300px;border-radius:8px;margin-top:6px;cursor:pointer}\n' +
+'/* Markdown in chat bubbles */\n' +
+'.chat-bubble h1,.chat-bubble h2,.chat-bubble h3{margin:.35em 0 .15em;font-weight:700;line-height:1.3}\n' +
+'.chat-bubble h1{font-size:1.15em}.chat-bubble h2{font-size:1.05em}.chat-bubble h3{font-size:1em}\n' +
+'.chat-bubble ul,.chat-bubble ol{padding-left:1.4em;margin:.25em 0}.chat-bubble li{margin:.1em 0}\n' +
+'.chat-bubble blockquote{border-left:3px solid var(--acc);padding:.2em .7em;margin:.3em 0;opacity:.75}\n' +
+'.chat-msg.user .chat-bubble blockquote{border-left-color:rgba(255,255,255,.5)}\n' +
+'.chat-bubble code{background:rgba(0,0,0,.07);border-radius:3px;padding:1px 5px;font-family:monospace;font-size:.88em}\n' +
+'.chat-bubble pre{background:rgba(0,0,0,.06);border-radius:6px;padding:.5em .8em;overflow-x:auto;margin:.3em 0}\n' +
+'.chat-bubble pre code{background:none;padding:0;font-size:.87em}\n' +
+'.chat-msg.user .chat-bubble code,.chat-msg.user .chat-bubble pre{background:rgba(255,255,255,.18);color:#fff}\n' +
+'.chat-bubble hr{border:none;border-top:1px solid var(--bdr);margin:.4em 0}\n' +
+'@media(max-width:640px){.chat-msg{max-width:92%}#chat-channel-bar label{display:none}}\n' +
+'/* ---- Config view ---- */\n' +
+'#config-view{display:none;margin-top:var(--hh);height:calc(100vh - var(--hh));height:calc(100dvh - var(--hh));overflow:hidden}\n' +
+'#app{display:flex;height:100%;overflow:hidden}\n' +
 '#sidebar{width:var(--sw);min-width:var(--sw);background:var(--sb);color:var(--sb-text);overflow-y:auto;overflow-x:hidden;flex-shrink:0;border-right:1px solid rgba(255,255,255,.05);transition:transform .22s ease}\n' +
 '#sidebar::-webkit-scrollbar{width:4px}\n' +
 '#sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:2px}\n' +
-'/* Tree */\n' +
 '.tree-root{padding:8px 0}\n' +
 '.ti{position:relative}\n' +
 '.tl{display:flex;align-items:center;gap:5px;padding:6px 8px 6px 0;cursor:pointer;user-select:none;transition:background .1s;white-space:nowrap;overflow:hidden}\n' +
@@ -135,23 +215,19 @@ function getHtml() {
 '.tb:hover{background:rgba(255,255,255,.22)}\n' +
 '.tb.del:hover{background:var(--dan)}\n' +
 '.tc{}\n' +
-'/* Main */\n' +
 '#main{flex:1;overflow-y:auto;padding:16px}\n' +
 '#main::-webkit-scrollbar{width:6px}\n' +
 '#main::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}\n' +
-'/* Breadcrumb */\n' +
 '#bc{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:14px;font-size:13px;color:var(--muted)}\n' +
 '.bc-sep{opacity:.35}\n' +
 '.bc-i{cursor:pointer;padding:2px 5px;border-radius:3px;transition:background .1s}\n' +
 '.bc-i:hover{background:var(--bdr);color:var(--txt)}\n' +
 '.bc-i.cur{color:var(--txt);font-weight:500;cursor:default}\n' +
 '.bc-i.cur:hover{background:none}\n' +
-'/* Cards */\n' +
 '.card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);box-shadow:var(--sh);margin-bottom:16px;overflow:hidden}\n' +
 '.ch{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--bdr);background:#f8fafc}\n' +
 '.ch-title{font-weight:600;font-size:14px;flex:1}\n' +
 '.cb{padding:2px 0}\n' +
-'/* Property rows */\n' +
 '.pr{display:grid;grid-template-columns:minmax(110px,34%) 1fr auto;align-items:center;padding:5px 14px;gap:10px;border-bottom:1px solid #f1f5f9;min-height:42px}\n' +
 '.pr:last-child{border-bottom:none}\n' +
 '.pr:hover{background:#f8fafc}\n' +
@@ -165,7 +241,6 @@ function getHtml() {
 '.ib{width:28px;height:28px;border:none;cursor:pointer;background:transparent;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--muted);transition:background .1s,color .1s}\n' +
 '.ib:hover{background:#f1f5f9;color:var(--txt)}\n' +
 '.ib.del:hover{background:#fee2e2;color:var(--dan)}\n' +
-'/* Tag rows */\n' +
 '.tagrow{padding:8px 14px;border-bottom:1px solid #f1f5f9}\n' +
 '.tagrow:last-child{border-bottom:none}\n' +
 '.taglbl{font-size:12px;font-family:monospace;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}\n' +
@@ -176,7 +251,6 @@ function getHtml() {
 '.chip-rm{border:none;background:none;color:inherit;cursor:pointer;opacity:.5;font-size:14px;padding:0;line-height:1;transition:opacity .1s}\n' +
 '.chip-rm:hover{opacity:1}\n' +
 '.taginp{border:none;outline:none;font-size:13px;font-family:monospace;min-width:90px;flex:1;background:transparent;color:var(--txt);padding:2px 4px}\n' +
-'/* Sub-sections nav */\n' +
 '.navrow{display:flex;align-items:center;gap:8px;padding:7px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background .1s}\n' +
 '.navrow:last-child{border-bottom:none}\n' +
 '.navrow:hover{background:#f8fafc}\n' +
@@ -185,19 +259,15 @@ function getHtml() {
 '.navrow-preview{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}\n' +
 '.navrow-arr{font-size:14px;color:var(--muted)}\n' +
 '.navrow-acts{display:flex;gap:4px}\n' +
-'/* Add bar */\n' +
 '.addbar{display:flex;flex-wrap:wrap;gap:8px;padding:11px 14px;border-top:1px solid var(--bdr);background:#f8fafc}\n' +
 '.addbtn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1.5px dashed var(--bdr);border-radius:5px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;transition:all .14s}\n' +
 '.addbtn:hover{border-color:var(--acc);color:var(--acc);background:rgba(59,130,246,.05)}\n' +
-'/* Buttons */\n' +
 '.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:5px;font-size:13px;border:none;cursor:pointer;font-weight:500;transition:all .14s}\n' +
 '.btn-s{background:#f1f5f9;color:var(--txt)}.btn-s:hover{background:#e2e8f0}\n' +
 '.btn-d{background:#fee2e2;color:var(--dan)}.btn-d:hover{background:var(--dan);color:#fff}\n' +
 '.btn-p{background:var(--acc);color:#fff}.btn-p:hover{background:var(--acc2)}\n' +
-'/* Empty */\n' +
 '.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:52px;color:var(--muted);gap:8px;text-align:center}\n' +
 '.empty-ico{font-size:36px;opacity:.22}\n' +
-'/* Modal */\n' +
 '.mo{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;z-index:200;opacity:0;pointer-events:none;transition:opacity .15s}\n' +
 '.mo.open{opacity:1;pointer-events:all}\n' +
 '.mb{background:var(--card);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:22px;min-width:300px;max-width:480px;width:90%;transform:translateY(-8px);transition:transform .15s}\n' +
@@ -207,14 +277,12 @@ function getHtml() {
 '.mi:focus{outline:none;border-color:var(--acc)}\n' +
 '.msel{display:block;width:100%;padding:7px 10px;border:1px solid var(--bdr);border-radius:5px;font-size:13px;background:#fff;margin-bottom:12px}\n' +
 '.ma{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}\n' +
-'/* Toast */\n' +
 '.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(8px);background:#1e293b;color:#f1f5f9;padding:9px 18px;border-radius:6px;font-size:13px;pointer-events:none;opacity:0;transition:opacity .2s,transform .2s;z-index:300;box-shadow:0 4px 12px rgba(0,0,0,.2)}\n' +
 '.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}\n' +
 '#sovl{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50}\n' +
-'/* Mobile */\n' +
 '@media(max-width:640px){\n' +
 '  #menu-btn{display:flex}\n' +
-'  #sidebar{position:fixed;left:0;top:var(--hh);height:calc(100vh - var(--hh));z-index:60;transform:translateX(-100%)}\n' +
+'  #sidebar{position:fixed;left:0;top:var(--hh);height:calc(100vh - var(--hh));height:calc(100dvh - var(--hh));z-index:60;transform:translateX(-100%)}\n' +
 '  #sidebar.open{transform:translateX(0)}\n' +
 '  #sovl{display:block;opacity:0;pointer-events:none;transition:opacity .2s}\n' +
 '  #sovl.open{opacity:1;pointer-events:all}\n' +
@@ -227,19 +295,42 @@ function getHtml() {
 '<body>\n' +
 '<header>\n' +
 '  <button id="menu-btn" onclick="toggleSb()">&#9776;</button>\n' +
-'  <h1>&#9881;&#65039; Config Editor</h1>\n' +
+'  <h1>&#9881;&#65039; Jenny</h1>\n' +
+'  <div id="nav-tabs">\n' +
+'    <button id="tab-chat"   class="nav-tab active" onclick="switchTab(\'chat\')">&#128172; Chat</button>\n' +
+'    <button id="tab-config" class="nav-tab"        onclick="switchTab(\'config\')">&#9881; Config</button>\n' +
+'  </div>\n' +
 '  <span id="status-lbl"></span>\n' +
-'  <button id="save-btn" disabled onclick="saveConfig()">Saved</button>\n' +
+'  <button id="save-btn" style="display:none" disabled onclick="saveConfig()">Saved</button>\n' +
 '</header>\n' +
 '<div id="sovl" onclick="toggleSb()"></div>\n' +
-'<div id="app">\n' +
-'  <aside id="sidebar"><div id="tree" class="tree-root"></div></aside>\n' +
-'  <main id="main"><div id="ea"><div class="empty"><div class="empty-ico">&#127795;</div><div>Select a section from the tree</div></div></div></main>\n' +
+'\n' +
+'<!-- ===== CHAT VIEW (default) ===== -->\n' +
+'<div id="chat-view">\n' +
+'  <div id="chat-channel-bar">\n' +
+'    <label>Channel:</label>\n' +
+'    <select id="chat-sel" onchange="onChatSel(this.value)"><option value="">Loading\u2026</option></select>\n' +
+'    <button id="chat-reload-btn" onclick="reloadContext()" title="Reload context">&#8635;</button>\n' +
+'  </div>\n' +
+'  <div id="chat-msgs"><div class="chat-loading">Select a channel to start chatting.</div></div>\n' +
+'  <div id="chat-footer">\n' +
+'    <textarea id="chat-input" placeholder="Type a message\u2026  (Enter = send \u2022 Shift+Enter = newline)" rows="1"></textarea>\n' +
+'    <button id="chat-send-btn" onclick="sendMessage()" title="Send">&#10148;</button>\n' +
+'  </div>\n' +
 '</div>\n' +
+'\n' +
+'<!-- ===== CONFIG VIEW ===== -->\n' +
+'<div id="config-view">\n' +
+'  <div id="app">\n' +
+'    <aside id="sidebar"><div id="tree" class="tree-root"></div></aside>\n' +
+'    <main id="main"><div id="ea"><div class="empty"><div class="empty-ico">&#127795;</div><div>Select a section from the tree</div></div></div></main>\n' +
+'  </div>\n' +
+'</div>\n' +
+'\n' +
 '<!-- Modal -->\n' +
 '<div id="mo" class="mo"><div class="mb"><h2 id="mttl">Add</h2><div id="mc"></div><div class="ma"><button class="btn btn-s" onclick="closeMo()">Cancel</button><button class="btn btn-p" id="mok" onclick="confirmMo()">Add</button></div></div></div>\n' +
-'<!-- Toast -->\n' +
 '<div id="toast" class="toast"></div>\n' +
+'\n' +
 '<script>\n' +
 '/* ====================================================\n' +
 '   State\n' +
@@ -249,6 +340,25 @@ function getHtml() {
 'var dirty = false;\n' +
 'var exp = {};\n' +
 'var moCb = null;\n' +
+'var chatChannelID = "";\n' +
+'var chatMessages  = [];\n' +
+'var chatSending   = false;\n' +
+'var currentTab    = "chat";\n' +
+'\n' +
+'/* ====================================================\n' +
+'   Tab switching\n' +
+'   ==================================================== */\n' +
+'function switchTab(name) {\n' +
+'  currentTab = name;\n' +
+'  var isChat = (name === "chat");\n' +
+'  document.getElementById("chat-view").style.display   = isChat ? "flex" : "none";\n' +
+'  document.getElementById("config-view").style.display = isChat ? "none" : "block";\n' +
+'  document.getElementById("tab-chat").className   = "nav-tab" + (isChat  ? " active" : "");\n' +
+'  document.getElementById("tab-config").className = "nav-tab" + (!isChat ? " active" : "");\n' +
+'  document.getElementById("menu-btn").style.display  = isChat ? "none" : "";\n' +
+'  document.getElementById("save-btn").style.display  = isChat ? "none" : "";\n' +
+'  document.getElementById("status-lbl").style.display = isChat ? "none" : "";\n' +
+'}\n' +
 '\n' +
 '/* ====================================================\n' +
 '   Utilities\n' +
@@ -309,7 +419,242 @@ function getHtml() {
 '}\n' +
 '\n' +
 '/* ====================================================\n' +
-'   API\n' +
+'   Chat — channel list\n' +
+'   ==================================================== */\n' +
+'function loadChats() {\n' +
+'  fetch("/api/chats").then(function(r){ return r.json(); }).then(function(list){\n' +
+'    var selEl = document.getElementById("chat-sel");\n' +
+'    selEl.innerHTML = "";\n' +
+'    if (!list || !list.length) {\n' +
+'      var opt = document.createElement("option");\n' +
+'      opt.value = ""; opt.textContent = "No chats configured \u2014 add config-editor.chats[]";\n' +
+'      selEl.appendChild(opt); return;\n' +
+'    }\n' +
+'    list.forEach(function(c) {\n' +
+'      var opt = document.createElement("option");\n' +
+'      opt.value = c.channelID; opt.textContent = c.label || c.channelID;\n' +
+'      selEl.appendChild(opt);\n' +
+'    });\n' +
+'    if (list[0] && list[0].channelID) { selEl.value = list[0].channelID; onChatSel(list[0].channelID); }\n' +
+'  }).catch(function(e){ toast("Failed to load chats: "+e.message, 4000); });\n' +
+'}\n' +
+'\n' +
+'function onChatSel(channelID) {\n' +
+'  chatChannelID = channelID;\n' +
+'  if (channelID) loadContext(channelID);\n' +
+'  else document.getElementById("chat-msgs").innerHTML = \'<div class="chat-loading">Select a channel to start chatting.</div>\';\n' +
+'}\n' +
+'\n' +
+'function reloadContext() { if (chatChannelID) loadContext(chatChannelID); }\n' +
+'\n' +
+'/* ====================================================\n' +
+'   Chat — context (history)\n' +
+'   ==================================================== */\n' +
+'function loadContext(channelID) {\n' +
+'  document.getElementById("chat-msgs").innerHTML = \'<div class="chat-loading">Loading context\u2026</div>\';\n' +
+'  fetch("/api/context?channelID="+encodeURIComponent(channelID))\n' +
+'    .then(function(r){ return r.json(); })\n' +
+'    .then(function(data){\n' +
+'      if (data && data.error) { toast("Context error: "+data.error, 5000); chatMessages = []; renderMessages(); return; }\n' +
+'      chatMessages = Array.isArray(data) ? data : [];\n' +
+'      renderMessages();\n' +
+'    })\n' +
+'    .catch(function(e){ toast("Context load error: "+e.message, 4000); });\n' +
+'}\n' +
+'\n' +
+'/* ====================================================\n' +
+'   Chat — render\n' +
+'   ==================================================== */\n' +
+'function renderMessages() {\n' +
+'  var el = document.getElementById("chat-msgs");\n' +
+'  el.innerHTML = "";\n' +
+'  if (!chatMessages.length) {\n' +
+'    el.innerHTML = \'<div class="chat-empty">No messages in history yet.<br>Send the first message!</div>\';\n' +
+'    return;\n' +
+'  }\n' +
+'  chatMessages.forEach(function(msg) { el.appendChild(buildMsgEl(msg.role || "assistant", msg.text || "")); });\n' +
+'  el.scrollTop = el.scrollHeight;\n' +
+'}\n' +
+'\n' +
+'/* ====================================================\n' +
+'   Chat \u2014 markdown renderer + embed injector\n' +
+'   ==================================================== */\n' +
+'function escHtml(s) {\n' +
+'  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");\n' +
+'}\n' +
+'function safeUrl(u) { return /^https?:/i.test(u) ? u : ""; }\n' +
+'function mdInline(s) {\n' +
+'  /* Extract links into placeholders first to prevent bold/italic patterns\n' +
+'     from corrupting HTML attributes (e.g. target="_blank"). */\n' +
+'  var ls = [], li = 0;\n' +
+'  function lph(h) { var k = "\\x00L"+(li++)+"\\x00"; ls.push({k:k,v:h}); return k; }\n' +
+'  s = s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, function(_,t,u) {\n' +
+'    u = safeUrl(u.replace(/[.,;!?\\]>]+$/,""));\n' +
+'    if (!u) return t;\n' +
+'    return lph("<a href=\\""+escHtml(u)+"\\" target=\\"_blank\\" rel=\\"noopener noreferrer\\" data-url=\\""+escHtml(u)+"\\">"+t+"</a>");\n' +
+'  });\n' +
+'  s = s.replace(/https?:\\/\\/[^\\s<>"&]+/g, function(u) {\n' +
+'    u = safeUrl(u.replace(/[.,;!?\\]>]+$/,""));\n' +
+'    if (!u) return u;\n' +
+'    return lph("<a href=\\""+escHtml(u)+"\\" target=\\"_blank\\" rel=\\"noopener noreferrer\\" data-url=\\""+escHtml(u)+"\\">"+escHtml(u)+"</a>");\n' +
+'  });\n' +
+'  s = s.replace(/\\*\\*\\*(.+?)\\*\\*\\*/g,"<strong><em>$1</em></strong>");\n' +
+'  s = s.replace(/\\*\\*(.+?)\\*\\*/g,"<strong>$1</strong>");\n' +
+'  s = s.replace(/__(.+?)__/g,"<strong>$1</strong>");\n' +
+'  s = s.replace(/\\*([^*\\n]+)\\*/g,"<em>$1</em>");\n' +
+'  s = s.replace(/_([^_\\n]+)_/g,"<em>$1</em>");\n' +
+'  for (var i = 0; i < ls.length; i++) s = s.split(ls[i].k).join(ls[i].v);\n' +
+'  return s;\n' +
+'}\n' +
+'function renderMarkdown(raw) {\n' +
+'  var snips = [], n = 0;\n' +
+'  var t = String(raw || "");\n' +
+'  t = t.replace(/```[\\w]*\\n?([\\s\\S]*?)```/g, function(_,c) {\n' +
+'    var i = n++; snips[i] = "<pre><code>" + escHtml(c.replace(/\\n$/,"")) + "</code></pre>"; return "\\x00S"+i+"\\x00";\n' +
+'  });\n' +
+'  t = t.replace(/`([^`\\n]+)`/g, function(_,c) {\n' +
+'    var i = n++; snips[i] = "<code>" + escHtml(c) + "</code>"; return "\\x00S"+i+"\\x00";\n' +
+'  });\n' +
+'  var lines = t.split("\\n"), html = "", inUl = false;\n' +
+'  for (var i = 0; i < lines.length; i++) {\n' +
+'    var ln = lines[i];\n' +
+'    var hm = ln.match(/^(#{1,3})\\s+(.+)$/);\n' +
+'    if (hm) { if (inUl){html+="</ul>";inUl=false;} html+="<h"+hm[1].length+">"+mdInline(escHtml(hm[2]))+"</h"+hm[1].length+">"; continue; }\n' +
+'    var bm = ln.match(/^>\\s*(.*)/);\n' +
+'    if (bm) { if (inUl){html+="</ul>";inUl=false;} html+="<blockquote>"+mdInline(escHtml(bm[1]))+"</blockquote>"; continue; }\n' +
+'    if (/^(-{3,}|\\*{3,})$/.test(ln.trim())) { if (inUl){html+="</ul>";inUl=false;} html+="<hr>"; continue; }\n' +
+'    var lm = ln.match(/^(?:[*\\-]|\\d+\\.)\\s+(.+)$/);\n' +
+'    if (lm) { if (!inUl){html+="<ul>";inUl=true;} html+="<li>"+mdInline(escHtml(lm[1]))+"</li>"; continue; }\n' +
+'    if (!ln.trim()) { if (inUl){html+="</ul>";inUl=false;} html+="<br>"; continue; }\n' +
+'    if (inUl){html+="</ul>";inUl=false;}\n' +
+'    html += mdInline(escHtml(ln)) + "<br>";\n' +
+'  }\n' +
+'  if (inUl) html += "</ul>";\n' +
+'  html = html.replace(/(<br>\\s*)+$/, "");\n' +
+'  for (var j = 0; j < snips.length; j++) html = html.split("\\x00S"+j+"\\x00").join(snips[j]);\n' +
+'  return html;\n' +
+'}\n' +
+'function injectEmbeds(el) {\n' +
+'  var as = Array.prototype.slice.call(el.querySelectorAll("a[data-url]"));\n' +
+'  for (var i = 0; i < as.length; i++) {\n' +
+'    var a = as[i], u = a.getAttribute("data-url"), emb = null;\n' +
+'    var ytM = u.match(/(?:youtube\\.com\\/watch\\?(?:[^&]*&)*v=|youtu\\.be\\/)([A-Za-z0-9_-]{11})/);\n' +
+'    if (ytM) {\n' +
+'      emb = document.createElement("div"); emb.className = "chat-embed";\n' +
+'      var yi = document.createElement("iframe");\n' +
+'      yi.src = "https://www.youtube.com/embed/" + ytM[1];\n' +
+'      yi.setAttribute("frameborder","0"); yi.setAttribute("allowfullscreen","");\n' +
+'      yi.setAttribute("allow","accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture");\n' +
+'      emb.appendChild(yi);\n' +
+'    } else {\n' +
+'      var vmM = u.match(/vimeo\\.com\\/(?:video\\/)?(\\d+)/);\n' +
+'      if (vmM) {\n' +
+'        emb = document.createElement("div"); emb.className = "chat-embed";\n' +
+'        var vi = document.createElement("iframe");\n' +
+'        vi.src = "https://player.vimeo.com/video/" + vmM[1];\n' +
+'        vi.setAttribute("frameborder","0"); vi.setAttribute("allowfullscreen","");\n' +
+'        emb.appendChild(vi);\n' +
+'      } else if (/\\.(mp4|webm|ogg|mov|m4v)(\\?.*)?$/i.test(u)) {\n' +
+'        emb = document.createElement("div"); emb.className = "chat-embed";\n' +
+'        var dv = document.createElement("video"); dv.src = u; dv.controls = true;\n' +
+'        emb.appendChild(dv);\n' +
+'      } else if (/\\.(jpg|jpeg|png|gif|webp|svg)(\\?.*)?$/i.test(u)) {\n' +
+'        emb = document.createElement("img");\n' +
+'        emb.src = u; emb.className = "chat-img"; emb.alt = ""; emb.loading = "lazy";\n' +
+'        emb.onerror = function() { if (this.parentNode) this.parentNode.removeChild(this); };\n' +
+'      }\n' +
+'    }\n' +
+'    if (emb) a.parentNode.insertBefore(emb, a.nextSibling);\n' +
+'  }\n' +
+'}\n' +
+'function buildMsgEl(role, text) {\n' +
+'  var wrap = document.createElement("div");\n' +
+'  wrap.className = "chat-msg " + (role === "user" ? "user" : "assistant");\n' +
+'  var bubble = document.createElement("div"); bubble.className = "chat-bubble";\n' +
+'  bubble.innerHTML = renderMarkdown(text);\n' +
+'  injectEmbeds(bubble);\n' +
+'  wrap.appendChild(bubble);\n' +
+'  return wrap;\n' +
+'}\n' +
+'\n' +
+'function appendMessage(role, text) {\n' +
+'  chatMessages.push({ role: role, text: text });\n' +
+'  var el = document.getElementById("chat-msgs");\n' +
+'  var emptyEl = el.querySelector(".chat-empty");\n' +
+'  if (emptyEl) emptyEl.remove();\n' +
+'  el.appendChild(buildMsgEl(role, text));\n' +
+'  el.scrollTop = el.scrollHeight;\n' +
+'}\n' +
+'\n' +
+'/* ====================================================\n' +
+'   Chat — toolcall polling\n' +
+'   ==================================================== */\n' +
+'var chatPollTimer = null;\n' +
+'function startToolPoll(channelID) {\n' +
+'  stopToolPoll();\n' +
+'  chatPollTimer = setInterval(function() {\n' +
+'    fetch("/api/toolcall?channelID=" + encodeURIComponent(channelID))\n' +
+'      .then(function(r){ return r.json(); })\n' +
+'      .then(function(d){\n' +
+'        var lb = document.querySelector(".chat-thinking .label");\n' +
+'        if (!lb) { stopToolPoll(); return; }\n' +
+'        lb.textContent = (d.hasTool && d.identity) ? d.identity + "\u2009" : "";\n' +
+'      }).catch(function(){});\n' +
+'  }, 800);\n' +
+'}\n' +
+'function stopToolPoll() {\n' +
+'  if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }\n' +
+'}\n' +
+'\n' +
+'/* ====================================================\n' +
+'   Chat — send\n' +
+'   ==================================================== */\n' +
+'function sendMessage() {\n' +
+'  if (chatSending) return;\n' +
+'  if (!chatChannelID) { toast("Please select a channel first"); return; }\n' +
+'  var inp = document.getElementById("chat-input");\n' +
+'  var text = inp.value.trim();\n' +
+'  if (!text) return;\n' +
+'  inp.value = ""; inp.style.height = "auto";\n' +
+'  appendMessage("user", text);\n' +
+'  chatSending = true;\n' +
+'  var btn = document.getElementById("chat-send-btn");\n' +
+'  btn.disabled = true; btn.textContent = "";\n' +
+'  /* thinking indicator */\n' +
+'  var thinkWrap = document.createElement("div"); thinkWrap.className = "chat-msg assistant";\n' +
+'  var thinkBub  = document.createElement("div"); thinkBub.className  = "chat-bubble chat-thinking";\n' +
+'  var thinkLbl  = document.createElement("span"); thinkLbl.className = "label";\n' +
+'  thinkBub.appendChild(thinkLbl);\n' +
+'  thinkBub.appendChild(document.createElement("span"));\n' +
+'  thinkBub.appendChild(document.createElement("span"));\n' +
+'  thinkBub.appendChild(document.createElement("span"));\n' +
+'  thinkWrap.appendChild(thinkBub);\n' +
+'  var msgsEl = document.getElementById("chat-msgs");\n' +
+'  msgsEl.appendChild(thinkWrap); msgsEl.scrollTop = msgsEl.scrollHeight;\n' +
+'  startToolPoll(chatChannelID);\n' +
+'  fetch("/api/chat", {\n' +
+'    method: "POST",\n' +
+'    headers: { "Content-Type": "application/json" },\n' +
+'    body: JSON.stringify({ channelID: chatChannelID, payload: text })\n' +
+'  })\n' +
+'  .then(function(r){ return r.json(); })\n' +
+'  .then(function(d){\n' +
+'    stopToolPoll();\n' +
+'    if (thinkWrap.parentNode) thinkWrap.parentNode.removeChild(thinkWrap);\n' +
+'    chatSending = false; btn.disabled = false; btn.innerHTML = "&#10148;";\n' +
+'    if (d && d.response !== undefined) appendMessage("assistant", String(d.response || ""));\n' +
+'    else if (d && d.error) toast("API error: " + d.error, 6000);\n' +
+'  })\n' +
+'  .catch(function(e){\n' +
+'    stopToolPoll();\n' +
+'    if (thinkWrap.parentNode) thinkWrap.parentNode.removeChild(thinkWrap);\n' +
+'    chatSending = false; btn.disabled = false; btn.innerHTML = "&#10148;";\n' +
+'    toast("Send failed: " + e.message, 5000);\n' +
+'  });\n' +
+'}\n' +
+'\n' +
+'/* ====================================================\n' +
+'   Config — API\n' +
 '   ==================================================== */\n' +
 'function loadConfig() {\n' +
 '  fetch("/api/config").then(function(r){ return r.json(); }).then(function(d){\n' +
@@ -334,7 +679,7 @@ function getHtml() {
 '}\n' +
 '\n' +
 '/* ====================================================\n' +
-'   Tree\n' +
+'   Config — Tree\n' +
 '   ==================================================== */\n' +
 'function renderAll() { renderTree(); renderEditor(); }\n' +
 '\n' +
@@ -434,7 +779,7 @@ function getHtml() {
 '}\n' +
 '\n' +
 '/* ====================================================\n' +
-'   Editor\n' +
+'   Config — Editor\n' +
 '   ==================================================== */\n' +
 'function renderEditor() {\n' +
 '  var ea = document.getElementById("ea"); ea.innerHTML = "";\n' +
@@ -470,7 +815,6 @@ function getHtml() {
 'function buildSecEd(path, obj) {\n' +
 '  var wrap = document.createElement("div");\n' +
 '\n' +
-'  /* ---- Properties card ---- */\n' +
 '  var card = document.createElement("div"); card.className = "card";\n' +
 '  var hdr = document.createElement("div"); hdr.className = "ch";\n' +
 '  var ico = document.createElement("span"); ico.textContent = path.length === 0 ? "\\uD83C\\uDF10" : "\\uD83D\\uDCC1";\n' +
@@ -496,7 +840,6 @@ function getHtml() {
 '  var body = document.createElement("div"); body.className = "cb";\n' +
 '  var hasPrims = false, hasTagArrs = false, hasNavs = false;\n' +
 '\n' +
-'  /* Primitives */\n' +
 '  var ents = Object.entries(obj);\n' +
 '  for (var i = 0; i < ents.length; i++) {\n' +
 '    var k = ents[i][0], v = ents[i][1], t = getType(v);\n' +
@@ -506,13 +849,11 @@ function getHtml() {
 '    body.appendChild(buildPropRow(path, k, v, t));\n' +
 '  }\n' +
 '\n' +
-'  /* Tag arrays */\n' +
 '  for (var j = 0; j < ents.length; j++) {\n' +
 '    if (getType(ents[j][1]) !== "prim-arr") continue;\n' +
 '    body.appendChild(buildTagRow(path, ents[j][0], ents[j][1]));\n' +
 '  }\n' +
 '\n' +
-'  /* Sub-sections & object arrays navigation */\n' +
 '  for (var m = 0; m < ents.length; m++) {\n' +
 '    var ek = ents[m][0], ev = ents[m][1], et = getType(ev);\n' +
 '    if (!isTreeNode(et)) continue;\n' +
@@ -529,7 +870,6 @@ function getHtml() {
 '\n' +
 '  card.appendChild(body);\n' +
 '\n' +
-'  /* Add bar */\n' +
 '  var ab = document.createElement("div"); ab.className = "addbar";\n' +
 '  var addDefs = [\n' +
 '    ["+ Attribute", "string"],\n' +
@@ -734,7 +1074,7 @@ function getHtml() {
 '}\n' +
 '\n' +
 '/* ====================================================\n' +
-'   Operations\n' +
+'   Config — Operations\n' +
 '   ==================================================== */\n' +
 'function chgType(path, key, oldVal, newType) {\n' +
 '  var nv;\n' +
@@ -838,11 +1178,11 @@ function getHtml() {
 'function showAddMo(path) { showAddPropMo(path, "string"); }\n' +
 '\n' +
 'function showAddPropMo(path, pre) {\n' +
-'  var sel_s = pre === "string" ? "selected" : "";\n' +
-'  var sel_n = pre === "number" ? "selected" : "";\n' +
-'  var sel_o = pre === "object" ? "selected" : "";\n' +
+'  var sel_s  = pre === "string"       ? "selected" : "";\n' +
+'  var sel_n  = pre === "number"       ? "selected" : "";\n' +
+'  var sel_o  = pre === "object"       ? "selected" : "";\n' +
 '  var sel_oa = pre === "object-array" ? "selected" : "";\n' +
-'  var sel_pa = pre === "prim-arr" ? "selected" : "";\n' +
+'  var sel_pa = pre === "prim-arr"     ? "selected" : "";\n' +
 '  showMo("Add Property",\n' +
 '    \'<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Type</label>\' +\n' +
 '    \'<select id="mo-type" class="msel">\' +\n' +
@@ -863,7 +1203,7 @@ function getHtml() {
 '}\n' +
 '\n' +
 '/* ====================================================\n' +
-'   Sidebar toggle (mobile)\n' +
+'   Sidebar toggle (mobile, config tab only)\n' +
 '   ==================================================== */\n' +
 'function toggleSb() {\n' +
 '  document.getElementById("sidebar").classList.toggle("open");\n' +
@@ -875,9 +1215,28 @@ function getHtml() {
 '   ==================================================== */\n' +
 'document.addEventListener("keydown", function(e) {\n' +
 '  if (e.key === "Escape") closeMo();\n' +
-'  if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); if (dirty) saveConfig(); }\n' +
+'  if ((e.ctrlKey || e.metaKey) && e.key === "s") {\n' +
+'    e.preventDefault();\n' +
+'    if (currentTab === "config" && dirty) saveConfig();\n' +
+'  }\n' +
 '});\n' +
 '\n' +
+'/* ====================================================\n' +
+'   Chat input: auto-resize + Enter-to-send\n' +
+'   ==================================================== */\n' +
+'var chatInpEl = document.getElementById("chat-input");\n' +
+'chatInpEl.addEventListener("input", function() {\n' +
+'  this.style.height = "auto";\n' +
+'  this.style.height = Math.min(this.scrollHeight, 120) + "px";\n' +
+'});\n' +
+'chatInpEl.addEventListener("keydown", function(e) {\n' +
+'  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }\n' +
+'});\n' +
+'\n' +
+'/* ====================================================\n' +
+'   Init\n' +
+'   ==================================================== */\n' +
+'loadChats();\n' +
 'loadConfig();\n' +
 '</script>\n' +
 '</body>\n' +
@@ -888,15 +1247,20 @@ function getHtml() {
 /********************************************************************************************************************
 * functionSignature: startConfigEditor (coreData)
 * Purpose: Starts the config-editor HTTP server.
+*          Serves the SPA and exposes endpoints for config editing and AI chat.
 ********************************************************************************************************************/
 export default async function startConfigEditor(coreData) {
   const cfg      = coreData?.config?.[MODULE_NAME] || {};
-  const port     = Number(cfg.port ?? 3111);
-  const host     = String(cfg.host ?? "0.0.0.0");
-  const token    = String(cfg.token ?? "").trim();
+  const port     = Number(cfg.port    ?? 3111);
+  const host     = String(cfg.host    ?? "0.0.0.0");
+  const token    = String(cfg.token   ?? "").trim();
   const cfgFile  = cfg.configPath
     ? String(cfg.configPath)
     : path.resolve(__dirname, "..", "core.json");
+
+  /* Chat configuration */
+  const chats    = Array.isArray(cfg.chats) ? cfg.chats : [];
+  const globalApiUrl = String(cfg.apiUrl ?? "http://localhost:3400/api").trim();
 
   const html = getHtml();
 
@@ -910,18 +1274,18 @@ export default async function startConfigEditor(coreData) {
       if (!isAuthorized(req, token)) {
         res.writeHead(401, {
           "Content-Type": "application/json",
-          "WWW-Authenticate": "Basic realm=\"Config Editor\""
+          "WWW-Authenticate": "Basic realm=\"Jenny Admin\""
         });
         return res.end(JSON.stringify({ error: "unauthorized" }));
       }
 
-      /* Serve SPA */
+      /* ---- Serve SPA ---- */
       if (method === "GET" && (pathname === "/" || pathname === "/index.html")) {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         return res.end(html);
       }
 
-      /* GET config */
+      /* ---- GET /api/config ---- */
       if (method === "GET" && pathname === "/api/config") {
         const result = readJsonFile(cfgFile);
         if (!result.ok) {
@@ -932,7 +1296,7 @@ export default async function startConfigEditor(coreData) {
         return res.end(JSON.stringify(result.data));
       }
 
-      /* POST config */
+      /* ---- POST /api/config ---- */
       if (method === "POST" && pathname === "/api/config") {
         const body = await getBody(req);
         let data;
@@ -950,6 +1314,114 @@ export default async function startConfigEditor(coreData) {
         return res.end(JSON.stringify({ ok: true }));
       }
 
+      /* ---- GET /api/chats — public chat list (no apiSecret exposed) ---- */
+      if (method === "GET" && pathname === "/api/chats") {
+        const publicChats = chats.map(c => ({
+          label:     String(c.label     || c.channelID || "Chat"),
+          channelID: String(c.channelID || ""),
+        })).filter(c => c.channelID);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify(publicChats));
+      }
+
+      /* ---- GET /api/context?channelID=xxx — last 100 context rows from MySQL ---- */
+      if (method === "GET" && pathname === "/api/context") {
+        const channelID = String(url.searchParams.get("channelID") || "").trim();
+        if (!channelID) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "channelID parameter required" }));
+        }
+        try {
+          const pool = await getDb(coreData);
+          const [rows] = await pool.query(
+            "SELECT role, text, json, ts FROM context WHERE id = ? ORDER BY ctx_id DESC LIMIT 100",
+            [channelID]
+          );
+          /* Reverse so oldest message is first.
+             Only user/assistant rows are shown — tool/system rows are internal pipeline details.
+             Prefer json.content (full, untruncated) over the text column (capped at 500 chars). */
+          const msgs = rows.reverse()
+            .filter(r => { const rl = String(r.role || "").toLowerCase(); return rl === "user" || rl === "assistant"; })
+            .map(r => {
+              let text = String(r.text || "");
+              try {
+                const obj = JSON.parse(r.json);
+                if (typeof obj?.content === "string" && obj.content) text = obj.content;
+              } catch (_) {}
+              return { role: String(r.role || "assistant"), text, ts: r.ts };
+            });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify(msgs));
+        } catch (e) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: String(e?.message || e) }));
+        }
+      }
+
+      /* ---- POST /api/chat — proxy message to the bot API ---- */
+      if (method === "POST" && pathname === "/api/chat") {
+        const body = await getBody(req);
+        let data;
+        try { data = JSON.parse(body); }
+        catch (e) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Invalid JSON" }));
+        }
+
+        const channelID = String(data.channelID || "").trim();
+        const payload   = String(data.payload   || "").trim();
+        if (!payload) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "payload required" }));
+        }
+
+        /* Find the matching chat config entry to get its apiSecret / apiUrl */
+        const chatCfg    = chats.find(c => String(c.channelID || "") === channelID) || {};
+        const chatApiUrl = String(chatCfg.apiUrl || globalApiUrl);
+        const chatSecret = String(chatCfg.apiSecret || "").trim();
+
+        try {
+          const reqHeaders = { "Content-Type": "application/json" };
+          if (chatSecret) reqHeaders["Authorization"] = "Bearer " + chatSecret;
+
+          const apiRes = await fetch(chatApiUrl, {
+            method:  "POST",
+            headers: reqHeaders,
+            body:    JSON.stringify({ channelID, payload }),
+          });
+
+          const result = await apiRes.json();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify(result));
+        } catch (e) {
+          res.writeHead(502, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "API call failed: " + String(e?.message || e) }));
+        }
+      }
+
+      /* ---- GET /api/toolcall?channelID=xxx — proxy to bot's /toolcall endpoint ---- */
+      if (method === "GET" && pathname === "/api/toolcall") {
+        const channelID  = String(url.searchParams.get("channelID") || "").trim();
+        const chatCfg    = chats.find(c => String(c.channelID || "") === channelID) || {};
+        const chatApiUrl = String(chatCfg.apiUrl || globalApiUrl);
+        const chatSecret = String(chatCfg.apiSecret || "").trim();
+
+        /* Derive toolcall URL: replace trailing /api (or /api/) with /toolcall */
+        const toolcallUrl = chatApiUrl.replace(/\/api\/?$/, "/toolcall");
+
+        try {
+          const reqHeaders = {};
+          if (chatSecret) reqHeaders["Authorization"] = "Bearer " + chatSecret;
+          const tcRes  = await fetch(toolcallUrl, { headers: reqHeaders });
+          const result = await tcRes.json();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify(result));
+        } catch (e) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: false, hasTool: false, identity: "", error: String(e?.message || e) }));
+        }
+      }
+
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Not found" }));
     } catch (e) {
@@ -960,9 +1432,11 @@ export default async function startConfigEditor(coreData) {
 
   server.listen(port, host, () => {
     const displayHost = host === "0.0.0.0" ? "localhost" : host;
-    console.log("[" + MODULE_NAME + "] Config editor running at http://" + displayHost + ":" + port);
+    console.log("[" + MODULE_NAME + "] Running at http://" + displayHost + ":" + port);
     if (token) console.log("[" + MODULE_NAME + "] Auth token set (use as Bearer or Basic password)");
-    else console.log("[" + MODULE_NAME + "] Warning: no auth token configured (config.config-editor.token)");
+    else       console.log("[" + MODULE_NAME + "] Warning: no auth token configured (config.config-editor.token)");
+    if (chats.length) console.log("[" + MODULE_NAME + "] " + chats.length + " chat(s) configured");
+    else              console.log("[" + MODULE_NAME + "] No chats configured (add config-editor.chats[])");
   });
 
   server.on("error", (e) => {

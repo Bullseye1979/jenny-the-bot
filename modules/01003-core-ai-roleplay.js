@@ -89,9 +89,22 @@ function getKiCfg(wo) {
   };
 }
 
-/******************************************************************************* 
+/*******************************************************************************
+/* functionSignature: getStripTrailingUrl (text)                               *
+/* Removes a bare URL appended on the last line of an assistant message.       *
+/* Prevents the model from learning to hallucinate image URLs in future turns. *
+/*******************************************************************************/
+function getStripTrailingUrl(text) {
+  return String(text ?? "")
+    .replace(/\n+(https?:\/\/\S+)\s*$/i, "")
+    .trimEnd();
+}
+
+/*******************************************************************************
 /* functionSignature: getPromptFromSnapshot (rows, includeHistory)             *
 /* Maps history rows to chat messages.                                         *
+/* Trailing image URLs are stripped from assistant messages so the model does  *
+/* not learn to hallucinate similar URLs in subsequent turns.                  *
 /*******************************************************************************/
 function getPromptFromSnapshot(rows, includeHistory) {
   if (!includeHistory) return [];
@@ -99,7 +112,7 @@ function getPromptFromSnapshot(rows, includeHistory) {
   for (let i = 0; i < (rows || []).length; i++) {
     const r = rows[i] || {};
     if (r.role === "user") out.push({ role: "user", content: r.content ?? "" });
-    else if (r.role === "assistant") out.push({ role: "assistant", content: r.content ?? "" });
+    else if (r.role === "assistant") out.push({ role: "assistant", content: getStripTrailingUrl(r.content ?? "") });
   }
   return out;
 }
@@ -117,7 +130,7 @@ function getRecentContextForImage(rows, maxTurns) {
   const lines = [];
   for (const x of slice) {
     const role = x?.role === "assistant" ? "Assistant" : "User";
-    const c = String(x?.content ?? "").trim();
+    const c = getStripTrailingUrl(String(x?.content ?? "")).trim();
     if (!c) continue;
     lines.push(`${role}: ${c}`);
   }
@@ -375,7 +388,7 @@ export default async function getCoreAi(coreData) {
   const persistQueue = [];
   const assistantPass1 = { role: "assistant", authorName: getAssistantAuthorName(wo), content: textOut };
   if (assistantPass1.authorName == null) delete assistantPass1.authorName;
-  persistQueue.push(getWithTurnId(assistantPass1, wo));
+  /* Push happens AFTER finalUrl is known — see below. */
 
   /***** PASS 2: IMAGE PROMPT (NOT persisted) – INCLUDE CONTEXT + LAST USER *****/
   const personaForImages = getStr(wo?.persona, "");
@@ -430,12 +443,8 @@ export default async function getCoreAi(coreData) {
         const result = await tool.invoke({ prompt: imagePrompt }, coreData);
         const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
         finalUrl = getExtractUrlFromToolResult(content);
-
-        const toolMsg = { role: "tool", name: firstToolName, content };
-        persistQueue.push(getWithTurnId(toolMsg, wo));
+        /* Tool result not persisted — the URL is appended to assistantPass1.content below. */
       } catch (e) {
-        const toolMsg = { role: "tool", name: firstToolName, content: JSON.stringify({ ok: false, error: e?.message || String(e) }) };
-        persistQueue.push(getWithTurnId(toolMsg, wo));
         finalUrl = "";
       }
     }
@@ -443,7 +452,12 @@ export default async function getCoreAi(coreData) {
 
   const finalText = (finalUrl ? (textOut + "\n" + finalUrl) : textOut).trim();
 
-  /***** Persist only PASS 1 + tool result. Do NOT persist pass 2. *****/
+  /* Set final content (text + URL) and push — getWithTurnId clones via spread,
+     so the push must happen here, after finalText is known. */
+  assistantPass1.content = finalText;
+  persistQueue.push(getWithTurnId(assistantPass1, wo));
+
+  /***** Persist PASS 1 (with URL). Tool result and Pass 2 are not persisted. *****/
   if (!skipContextWrites) {
     for (const turn of persistQueue) {
       try { await setContext(wo, turn); } catch {}

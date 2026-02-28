@@ -23,6 +23,7 @@ Jenny is a modular, production-grade Discord AI assistant built on Node.js. It f
    - [toolcall](#toolcall-flow)
    - [config-editor](#config-editor-flow)
    - [webpage](#webpage-flow)
+7. [Browser Extension](#browser-extension)
 7. [Module Pipeline](#module-pipeline)
    - [Pre-Processing (00xxx)](#pre-processing-00xxx)
    - [AI Processing (01xxx)](#ai-processing-01xxx)
@@ -181,6 +182,8 @@ These values serve as **runtime defaults** for every flow. They can be overridde
 | `doNotWriteToContext` | boolean | `false` | Skip writing this turn to MySQL context |
 | `modAdmin` | string | — | Discord user ID of the bot admin |
 | `modSilence` | string | `"[silence]"` | Token that suppresses output if found in response |
+| `apiSecret` | string | `""` | Shared secret for the HTTP API token gate. When set, every `POST /api` request must supply `Authorization: Bearer <secret>`. Leave empty to disable token checking. |
+| `apiEnabled` | number | `1` | Controls whether this channel can be reached via the HTTP API. `0` = always blocked (regardless of token). `1` = allowed when token matches or no secret is set. Can be overridden per channel via `core-channel-config`. |
 | `gdprDisclaimer` | string | Long legal text | Full GDPR disclaimer sent to users on first interaction |
 | `avatarApiKey` | string | — | API key for avatar image generation |
 | `avatarEndpoint` | string | DALL-E endpoint | Endpoint for avatar generation |
@@ -233,7 +236,10 @@ Module-specific settings live under `config.<module-name>`. The most important s
 
 #### config.config-editor
 
-Starts a web-based JSON configuration editor (standalone HTTP server). Open `http://<host>:<port>` in any browser to browse, add, edit, duplicate, and delete every value in `core.json` without touching a text editor.
+Starts a standalone HTTP server serving a two-tab single-page application (SPA):
+
+- **💬 Chat** (default) — AI chat window with channel selector; loads the last 100 context entries from MySQL on channel select; messages are proxied server-side so `apiSecret` is never exposed to the browser.
+- **⚙ Config Editor** — browse, add, edit, duplicate, and delete every value in `core.json` without touching a text editor.
 
 ```jsonc
 {
@@ -241,7 +247,11 @@ Starts a web-based JSON configuration editor (standalone HTTP server). Open `htt
     "port":       3111,
     "host":       "127.0.0.1",
     "token":      "",
-    "configPath": ""
+    "configPath": "",
+    "apiUrl":     "http://localhost:3400/api",
+    "chats": [
+      { "label": "General", "channelID": "", "apiSecret": "" }
+    ]
   }
 }
 ```
@@ -252,6 +262,11 @@ Starts a web-based JSON configuration editor (standalone HTTP server). Open `htt
 | `host` | Bind address; use `"127.0.0.1"` for localhost-only or `"0.0.0.0"` for all interfaces |
 | `token` | Optional auth token; supply as `Authorization: Bearer <token>` or as the Basic password |
 | `configPath` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+| `apiUrl` | URL of the bot's HTTP API endpoint used by the Chat tab (default `http://localhost:3400/api`) |
+| `chats[].label` | Display name shown in the channel selector dropdown |
+| `chats[].channelID` | Channel ID passed to the API as context |
+| `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |
+| `chats[].apiUrl` | Per-chat API URL override; falls back to the global `apiUrl` if omitted |
 
 ---
 
@@ -398,9 +413,9 @@ Starts an HTTP server (default port **3400**).
 
 ```jsonc
 {
-  "turn_id":  "01JXXXXXXXXXXXXXXXXXXXXX",
-  "id":       "optional-channel-id",
-  "response": "The weather in Berlin is..."
+  "turn_id":   "01JXXXXXXXXXXXXXXXXXXXXX",
+  "channelID": "optional-channel-id",
+  "response":  "The weather in Berlin is..."
 }
 ```
 
@@ -426,16 +441,26 @@ Watches the `status:tool` registry key. When a tool-call result is deposited int
 
 **File:** `flows/config-editor.js`
 
-Starts a standalone HTTP server that serves a single-page application (SPA) for editing `core.json` through a browser UI. Unlike all other flows, this flow does **not** run the module pipeline; it starts the server once and returns immediately.
+Starts a standalone HTTP server serving a two-tab single-page application (SPA). Unlike all other flows, this flow does **not** run the module pipeline; it starts the server once and returns immediately.
 
-**Features:**
+**💬 Chat tab (default)**
+- Large scrollable chat window with AI; loads the last 100 context entries from MySQL on channel select
+- Channel selector dropdown (configured via `chats[]` in `core.json`)
+- Messages proxied server-side — `apiSecret` is never sent to the browser
+- Textarea auto-resizes; `Enter` sends, `Shift + Enter` adds a newline
+- **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
+- **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; polled from `/toolcall` every 800 ms
+- **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline
+
+**⚙ Config Editor tab**
 - Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{…}]` as tree items at the same level
 - Right panel: inline editing of primitives, tag/chip editors for primitive arrays, navigation links for sub-sections
 - Add Attribute / Section / Object Array / Tag Array per section
 - Duplicate and Delete on every tree node and array item
 - Keyboard shortcut `Ctrl + S` / `⌘ S` to save
 - Fully responsive — works on mobile via a hamburger sidebar
-- Optional Bearer / Basic password authentication via `config["config-editor"].token`
+
+Both tabs are protected by the optional Bearer / Basic password authentication via `config["config-editor"].token`.
 
 **Configuration:** `config["config-editor"]` — see [config.config-editor](#configconfig-editor).
 
@@ -936,4 +961,56 @@ Jenny registers slash commands via the `discord-admin` flow. Commands are define
 
 ---
 
-*Documentation generated 2026-02-26.*
+## Browser Extension
+
+A Manifest V3 browser extension (Edge / Chrome) is included under `extensions/jenny-extension/`.
+
+### Features
+
+| Feature | Description |
+|---|---|
+| **Chat UI** | Full chat window with markdown rendering, link embedding, and video playback — identical to the config-editor chat |
+| **Summarize button** | One click sends the current tab's URL to the bot with a summarization task (`getWebpage` / `getYoutube`) |
+| **Toolcall display** | Active tool name shown next to the animated thinking dots |
+| **Options page** | Configure API URL, Channel ID, and API Secret via `chrome.storage` |
+
+### Installation
+
+1. Open `edge://extensions/` (or `chrome://extensions/`).
+2. Enable **Developer mode** (top-right toggle).
+3. Click **Load unpacked** → select `extensions/jenny-extension/`.
+
+### Configuration (Options page)
+
+| Field | Description |
+|---|---|
+| **API URL** | Full URL of the bot's API endpoint, e.g. `http://localhost:3400/api` |
+| **Channel ID** | Channel the extension talks to; must have `apiEnabled: 1` in `core.json` |
+| **API Secret** | Bearer token (leave empty if `apiSecret` is not set on the channel) |
+
+### Bot-side setup (`core.json`)
+
+Add or verify the `browser-extension` channel entry in `core-channel-config.channels`:
+
+```jsonc
+{
+  "channelMatch": ["browser-extension"],
+  "overrides": {
+    "apiEnabled": 1,
+    "apiSecret":  "",
+    "persona":    "You are Jenny, a browser extension assistant. You help users summarize web pages and YouTube videos.",
+    "instructions": "When given a URL, use getWebpage or getYoutube to fetch and summarize the content.",
+    "contextSize":  70
+  }
+}
+```
+
+And add the chat to `config-editor.chats[]` so the admin panel can monitor it:
+
+```jsonc
+{ "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
+```
+
+---
+
+*Documentation generated 2026-02-28.*
