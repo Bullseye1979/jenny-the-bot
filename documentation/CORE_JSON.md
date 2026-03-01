@@ -45,7 +45,9 @@ All key names follow **camelCase** throughout.
 2. [config](#config)
    - [discord](#discord)
    - [api](#api)
-   - [config-editor](#config-editor)
+   - [config-editor](#config-editor) *(deprecated)*
+   - [webpage-config-editor](#webpage-config-editor)
+   - [webpage-chat](#webpage-chat)
    - [cron](#cron)
    - [context](#context)
    - [webpage](#webpage)
@@ -497,31 +499,71 @@ The API flow is configured via command-line or defaults (host `0.0.0.0`, port `3
 
 ### config-editor
 
+> **Deprecated.** `flows/config-editor.js` is now a no-op stub. Migrate editor settings to [`webpage-config-editor`](#webpage-config-editor) and chat settings to [`webpage-chat`](#webpage-chat).
+
 ```jsonc
 "config-editor": {
+  "port": 3111, "host": "127.0.0.1", "token": "", "configPath": "", "apiUrl": "", "chats": []
+}
+```
+
+---
+
+### webpage-config-editor
+
+JSON config editor SPA served as a **webpage-flow module** (`modules/00047`) on a dedicated port. The port must also appear in `config.webpage.ports`. The AI chat has moved to [`webpage-chat`](#webpage-chat).
+
+```jsonc
+"webpage-config-editor": {
+  "flow":       ["webpage"],
   "port":       3111,
   "host":       "127.0.0.1",
   "token":      "",
   "configPath": "",
-  "apiUrl":     "http://localhost:3400/api",
+  "label":      "⚙️ Config"
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port to listen on (default `3111`) — also add to `config.webpage.ports` |
+| `host` | Bind address; `"127.0.0.1"` for localhost-only (the webpage flow server controls binding) |
+| `token` | Optional auth token; supply as `Authorization: Bearer <token>` or as the Basic password. Leave empty to disable auth |
+| `configPath` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+| `label` | Nav menu label for cross-linking from other webpage tools |
+
+---
+
+### webpage-chat
+
+AI chat SPA served as a **webpage-flow module** (`modules/00048`) on the same port as `webpage-config-editor`, routed via `GET /chat`. The API secret per channel is injected server-side — never exposed to the browser.
+
+```jsonc
+"webpage-chat": {
+  "flow":   ["webpage"],
+  "port":   3111,
+  "host":   "127.0.0.1",
+  "token":  "",
+  "apiUrl": "http://localhost:3400/api",
+  "label":  "💬 Chat",
   "chats": [
-    { "label": "General",           "channelID": "YOUR_CHANNEL_ID",  "apiSecret": "" },
+    { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
     { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
   ]
 }
 ```
 
-Starts a standalone HTTP server serving a two-tab SPA (Chat + Config Editor). Does **not** run the module pipeline.
-
-**Chat tab features:** markdown rendering (headings, bold, code blocks, blockquotes, lists), media embeds (YouTube/Vimeo inline player, `<video>` for direct video URLs, inline images), toolcall name displayed before the thinking dots (polled every 800 ms from `/toolcall`), and server-side API secret injection.
+**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), toolcall name polled per-channel every 800 ms from `/api/toolcall?channelID=<id>`, server-side API secret injection.
 
 | Key | Description |
 |---|---|
-| `port` | HTTP port to listen on (default `3111`) |
-| `host` | Bind address; `"127.0.0.1"` for localhost-only, `"0.0.0.0"` for all interfaces |
-| `token` | Optional auth token; supply as `Authorization: Bearer <token>` or as the Basic password. Leave empty to disable auth |
-| `configPath` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
-| `apiUrl` | URL of the bot's HTTP API used by the Chat tab (default `http://localhost:3400/api`) |
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port to listen on (default `3111`) — must also be in `config.webpage.ports` |
+| `host` | Bind address |
+| `token` | Optional auth token (Bearer or Basic). Leave empty to disable auth |
+| `apiUrl` | Default URL of the bot's HTTP API endpoint (default `http://localhost:3400/api`) |
+| `label` | Nav menu label for cross-linking from other webpage tools |
 | `chats[].label` | Display name shown in the channel selector dropdown |
 | `chats[].channelID` | Channel ID passed to the API as context |
 | `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |
@@ -582,10 +624,19 @@ Starts a standalone HTTP server serving a two-tab SPA (Chat + Config Editor). Do
 ### webpage
 
 ```jsonc
-"webpage": { "flowName": "webpage" }
+"webpage": {
+  "flowName": "webpage",
+  "ports": [3000, 3111]
+}
 ```
 
-Declares the webpage flow.
+Declares the webpage flow and the ports it listens on.
+
+| Key | Description |
+|---|---|
+| `flowName` | Internal name of this flow (`"webpage"`) |
+| `ports` | Array of TCP ports to listen on. One HTTP server is started per port. Each request exposes `wo.http.port` so modules can route by port. Falls back to `port` (single number) or `3000` if omitted |
+| `port` | *(legacy)* Single port — use `ports` array instead for multi-port operation |
 
 ---
 

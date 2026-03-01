@@ -191,7 +191,9 @@ function renderEmpty() {
 function startPoll() {
   stopPoll();
   if (!cfg.apiUrl) return;
+  /* Append channelID so the bot returns the channel-specific toolcall status. */
   var toolcallUrl = cfg.apiUrl.replace(/\/api\/?$/, "/toolcall");
+  if (cfg.channelID) toolcallUrl += "?channelID=" + encodeURIComponent(cfg.channelID);
   pollTimer = setInterval(function() {
     var headers = {};
     if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
@@ -273,15 +275,17 @@ function sendMessage(payload) {
    Summarize current tab
    ============================================================ */
 function summarizePage() {
-  /* chrome.tabs.query({ active, currentWindow/lastFocusedWindow }) is unreliable in side panels:
-     from Chrome 117 the side panel runs in its own window, so both currentWindow and
-     lastFocusedWindow may resolve to the panel window (which has no tabs).
-     chrome.windows.getLastFocused with windowTypes:["normal"] explicitly targets the
-     last focused normal browser window, reliably returning the active page tab. */
-  chrome.windows.getLastFocused({ populate: true, windowTypes: ["normal"] }, function(win) {
-    var tab = win && Array.isArray(win.tabs) && win.tabs.find(function(t) { return t.active; });
-    if (!tab || !tab.url) { appendMsg("assistant", "\u26a0\ufe0f Could not get current tab URL."); return; }
-    var url = tab.url;
+  /* Ask the background service worker for the active tab URL.
+     The service worker tracks tab changes via onActivated/onUpdated events,
+     so it always knows the last active normal-window tab regardless of which
+     window currently has focus (avoids the side-panel-as-last-focused-window
+     problem introduced in Chrome 117+). */
+  chrome.runtime.sendMessage({ type: "getActiveTabUrl" }, function(resp) {
+    if (chrome.runtime.lastError || !resp || !resp.url) {
+      appendMsg("assistant", "\u26a0\ufe0f Could not get current tab URL.");
+      return;
+    }
+    var url = resp.url;
     var isYT = /youtube\.com\/watch|youtu\.be\//.test(url);
     var task = isYT
       ? "Please summarize this YouTube video: " + url

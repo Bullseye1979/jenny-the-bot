@@ -204,6 +204,34 @@ async function getToolcallSnapshot(registryKey) {
 }
 
 /****************************************************************************************************************
+* functionSignature: getApiSecret(baseCore)                                                                      *
+* Purpose: Returns the configured API secret; empty string means gate is disabled.                               *
+****************************************************************************************************************/
+function getApiSecret(baseCore) {
+  return String(baseCore?.workingObject?.apiSecret || "").trim();
+}
+
+/****************************************************************************************************************
+* functionSignature: getBearerToken(req)                                                                         *
+* Purpose: Extracts the Bearer token from the Authorization header.                                              *
+****************************************************************************************************************/
+function getBearerToken(req) {
+  const auth = String(req.headers?.authorization || "").trim();
+  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
+  return "";
+}
+
+/****************************************************************************************************************
+* functionSignature: isBearerValid(req, baseCore)                                                                *
+* Purpose: Returns true if no secret is configured (gate disabled) or the Bearer token matches the secret.      *
+****************************************************************************************************************/
+function isBearerValid(req, baseCore) {
+  const secret = getApiSecret(baseCore);
+  if (!secret) return true;
+  return getBearerToken(req) === secret;
+}
+
+/****************************************************************************************************************
 * functionSignature: getApiFlow(baseCore, runFlow, createRunCore)                                                *
 * Purpose: Starts the HTTP API endpoint, executes the flow per request, and guarantees JSON response.            *
 ****************************************************************************************************************/
@@ -217,13 +245,25 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const toolcallRegistryKey = getToolcallRegistryKey(baseCore, cfg);
 
   const server = http.createServer(async (req, res) => {
+    /* /health is intentionally unauthenticated (standard for monitoring / load balancers) */
     if (req.method === "GET" && req.url === "/health") {
       return getJson(res, 200, { ok: true, botname: getBotname(undefined, baseCore) });
     }
 
-    if (req.method === "GET" && req.url === toolcallPath) {
+    if (req.method === "GET" && (req.url === toolcallPath || req.url.startsWith(toolcallPath + "?"))) {
+      /* /toolcall exposes registry data — protect it with the same bearer as the main endpoint */
+      if (!isBearerValid(req, baseCore)) {
+        return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(undefined, baseCore) });
+      }
+
       try {
-        const snapshot = await getToolcallSnapshot(toolcallRegistryKey);
+        /* Support optional ?channelID=xxx for per-channel toolcall status */
+        const _tcUrlObj = new URL(req.url, `http://localhost:${port}`);
+        const _tcChannelID = String(_tcUrlObj.searchParams.get("channelID") || "").trim();
+        const effectiveKey = _tcChannelID
+          ? toolcallRegistryKey + ":" + _tcChannelID
+          : toolcallRegistryKey;
+        const snapshot = await getToolcallSnapshot(effectiveKey);
         return getJson(res, 200, { ...snapshot, botname: getBotname(undefined, baseCore) });
       } catch (e) {
         return getJson(res, 500, {

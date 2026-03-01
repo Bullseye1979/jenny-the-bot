@@ -5,6 +5,7 @@
 /*  Output jump for flow "webpage": retrieves req/res from    *
 /*  registry by requestKey, serves /documents/* with          *
 /*  range support, otherwise sends wo.http.response.          *
+/*  Treats client disconnect / write-after-end as SOFT.       *
 /**************************************************************/
 /**************************************************************
 /*                                                          *
@@ -21,9 +22,27 @@ const MODULE_NAME = "webpage-output";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**************************************************************
-/* functionSignature: getContentType (filePath)              *
-/* Return an appropriate Content-Type header for a file.     *
+/**************************************************************/
+/* functionSignature: getIsSoftHttpWriteError (e)             */
+/* Returns true for expected HTTP write errors (client abort) */
+/**************************************************************/
+function getIsSoftHttpWriteError(e) {
+  const code = String(e?.code || "");
+  const msg = String(e?.message || "").toLowerCase();
+
+  if (code === "ECONNRESET") return true;
+  if (code === "EPIPE") return true;
+
+  if (msg.includes("write after end")) return true;
+  if (msg.includes("headers after they are sent")) return true;
+  if (msg.includes("cannot set headers after they are sent")) return true;
+
+  return false;
+}
+
+/**************************************************************/
+/* functionSignature: getContentType (filePath)              */
+/* Return an appropriate Content-Type header for a file.     */
 /**************************************************************/
 function getContentType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
@@ -49,17 +68,21 @@ function getContentType(filePath) {
   }
 }
 
-/**************************************************************
-/* functionSignature: setSendResponse (res, status, body, headers) *
-/* Send an HTTP response with safe defaults and length.       *
+/**************************************************************/
+/* functionSignature: setSendResponse (res, status, body, headers) */
+/* Send an HTTP response with safe defaults and length.       */
 /**************************************************************/
 function setSendResponse(res, status, body = "", headers = {}) {
-  if (!res || res.writableEnded) return;
+  if (!res) return;
+  if (res.writableEnded) return;
+  if (res.headersSent) return;
+
   const finalHeaders = {
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     ...headers
   };
+
   if (!("Content-Length" in finalHeaders) && body != null) {
     if (typeof body === "string") {
       finalHeaders["Content-Length"] = Buffer.byteLength(body, "utf8");
@@ -67,16 +90,22 @@ function setSendResponse(res, status, body = "", headers = {}) {
       finalHeaders["Content-Length"] = body.length;
     }
   }
-  res.writeHead(status, finalHeaders);
-  if (res.req?.method === "HEAD") return res.end();
-  if (body == null) return res.end();
-  if (typeof body === "string" || Buffer.isBuffer(body)) return res.end(body);
-  return res.end(String(body));
+
+  try {
+    res.writeHead(status, finalHeaders);
+    if (res.req?.method === "HEAD") return res.end();
+    if (body == null) return res.end();
+    if (typeof body === "string" || Buffer.isBuffer(body)) return res.end(body);
+    return res.end(String(body));
+  } catch (e) {
+    if (getIsSoftHttpWriteError(e)) return;
+    throw e;
+  }
 }
 
-/**************************************************************
-/* functionSignature: getSafeJoin (root, reqPath)            *
-/* Safely resolve a path within a root directory.            *
+/**************************************************************/
+/* functionSignature: getSafeJoin (root, reqPath)            */
+/* Safely resolve a path within a root directory.            */
 /**************************************************************/
 function getSafeJoin(root, reqPath) {
   const clean = decodeURIComponent(String(reqPath || "/").split("?")[0].split("#")[0]);
@@ -86,87 +115,146 @@ function getSafeJoin(root, reqPath) {
   return resolved;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getServeFileWithRange (req, res, absPath, stat) *
-/* Serve a file with HEAD and Range support.                  *
+/* Serve a file with HEAD and Range support.                  */
 /**************************************************************/
 function getServeFileWithRange(req, res, absPath, stat) {
   const total = stat.size;
   const ctype = getContentType(absPath);
   const filename = path.basename(absPath);
 
+  const setDestroyOnClose = (stream) => {
+    const onClose = () => {
+      try { stream?.destroy(); } catch {}
+    };
+    const onAborted = () => {
+      try { stream?.destroy(); } catch {}
+    };
+    res.once("close", onClose);
+    req.once("aborted", onAborted);
+  };
+
   if (req.method === "HEAD" && !req.headers.range) {
-    if (res.writableEnded) return;
-    res.writeHead(200, {
-      "Content-Type": ctype,
-      "Content-Length": total,
-      "Accept-Ranges": "bytes",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff"
-    });
-    return res.end();
+    if (!res || res.writableEnded || res.headersSent) return;
+    try {
+      res.writeHead(200, {
+        "Content-Type": ctype,
+        "Content-Length": total,
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      return res.end();
+    } catch (e) {
+      if (getIsSoftHttpWriteError(e)) return;
+      throw e;
+    }
   }
 
   const range = req.headers.range;
   if (!range) {
-    if (res.writableEnded) return;
-    res.writeHead(200, {
-      "Content-Type": ctype,
-      "Content-Length": total,
-      "Accept-Ranges": "bytes",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff"
-    });
-    if (req.method === "HEAD") return res.end();
+    if (!res || res.writableEnded || res.headersSent) return;
+    try {
+      res.writeHead(200, {
+        "Content-Type": ctype,
+        "Content-Length": total,
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      if (req.method === "HEAD") return res.end();
+    } catch (e) {
+      if (getIsSoftHttpWriteError(e)) return;
+      throw e;
+    }
+
     const stream = fs.createReadStream(absPath);
-    stream.on("error", () => setSendResponse(res, 500, "Internal Server Error"));
-    return stream.pipe(res);
+    setDestroyOnClose(stream);
+
+    stream.on("error", (e) => {
+      if (getIsSoftHttpWriteError(e)) return;
+      setSendResponse(res, 500, "Internal Server Error");
+    });
+
+    try {
+      return stream.pipe(res);
+    } catch (e) {
+      if (getIsSoftHttpWriteError(e)) return;
+      throw e;
+    }
   }
 
   const m = /^bytes=(\d*)-(\d*)$/.exec(range);
   if (!m) {
-    if (res.writableEnded) return;
-    res.writeHead(416, {
-      "Content-Range": `bytes */${total}`,
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff"
-    });
-    return res.end();
+    if (!res || res.writableEnded || res.headersSent) return;
+    try {
+      res.writeHead(416, {
+        "Content-Range": `bytes */${total}`,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      return res.end();
+    } catch (e) {
+      if (getIsSoftHttpWriteError(e)) return;
+      throw e;
+    }
   }
 
   let start = m[1] ? parseInt(m[1], 10) : 0;
   let end   = m[2] ? parseInt(m[2], 10) : total - 1;
 
   if (isNaN(start) || isNaN(end) || start > end || start >= total) {
-    if (res.writableEnded) return;
-    res.writeHead(416, { "Content-Range": `bytes */${total}` });
-    return res.end();
+    if (!res || res.writableEnded || res.headersSent) return;
+    try {
+      res.writeHead(416, { "Content-Range": `bytes */${total}` });
+      return res.end();
+    } catch (e) {
+      if (getIsSoftHttpWriteError(e)) return;
+      throw e;
+    }
   }
 
   end = Math.min(end, total - 1);
   const chunkSize = (end - start) + 1;
 
-  if (res.writableEnded) return;
-  res.writeHead(206, {
-    "Content-Type": ctype,
-    "Content-Length": chunkSize,
-    "Content-Range": `bytes ${start}-${end}/${total}`,
-    "Accept-Ranges": "bytes",
-    "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-    "Cache-Control": "no-store",
-    "X-Content-Type-Options": "nosniff"
-  });
+  if (!res || res.writableEnded || res.headersSent) return;
 
-  if (req.method === "HEAD") return res.end();
+  try {
+    res.writeHead(206, {
+      "Content-Type": ctype,
+      "Content-Length": chunkSize,
+      "Content-Range": `bytes ${start}-${end}/${total}`,
+      "Accept-Ranges": "bytes",
+      "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff"
+    });
+    if (req.method === "HEAD") return res.end();
+  } catch (e) {
+    if (getIsSoftHttpWriteError(e)) return;
+    throw e;
+  }
 
   const stream = fs.createReadStream(absPath, { start, end });
-  stream.on("error", () => setSendResponse(res, 500, "Internal Server Error"));
-  stream.pipe(res);
+  setDestroyOnClose(stream);
+
+  stream.on("error", (e) => {
+    if (getIsSoftHttpWriteError(e)) return;
+    setSendResponse(res, 500, "Internal Server Error");
+  });
+
+  try {
+    stream.pipe(res);
+  } catch (e) {
+    if (getIsSoftHttpWriteError(e)) return;
+    throw e;
+  }
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getHandleStaticDocument (wo, req, res, log) *
 /* Serve a static file from documents root with range support. *
 /**************************************************************/
@@ -191,19 +279,30 @@ function getHandleStaticDocument(wo, req, res, log) {
   }
 
   fs.stat(target, (err, stat) => {
+    if (res.writableEnded) return;
     if (err || !stat.isFile()) {
       return setSendResponse(res, 404, "Not Found");
     }
-    wo.http.response = {
-      status: 200,
-      headers: { "Content-Type": getContentType(target) },
-      body: null
-    };
-    return getServeFileWithRange(req, res, target, stat);
+
+    try {
+      wo.http.response = {
+        status: 200,
+        headers: { "Content-Type": getContentType(target) },
+        body: null
+      };
+      return getServeFileWithRange(req, res, target, stat);
+    } catch (e) {
+      if (getIsSoftHttpWriteError(e)) return;
+      log("documents serve failed", "error", {
+        moduleName: MODULE_NAME,
+        error: e?.message || String(e)
+      });
+      return setSendResponse(res, 500, "Internal Server Error");
+    }
   });
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getHandleHttpResponse (wo, req, res, log) *
 /* Send an application response or stream a specified file.   *
 /**************************************************************/
@@ -223,7 +322,8 @@ function getHandleHttpResponse(wo, req, res, log) {
       if (!stat.isFile()) return setSendResponse(res, 404, "Not Found");
       wo.http.response.status = 200;
       return getServeFileWithRange(req, res, abs, stat);
-    } catch {
+    } catch (e) {
+      if (getIsSoftHttpWriteError(e)) return;
       return setSendResponse(res, 404, "Not Found");
     }
   }
@@ -253,9 +353,9 @@ function getHandleHttpResponse(wo, req, res, log) {
   return setSendResponse(res, status, body, headers);
 }
 
-/**************************************************************
-/* functionSignature: getWebpageOutput (coreData)            *
-/* Main output handler for the "webpage" flow.               *
+/**************************************************************/
+/* functionSignature: getWebpageOutput (coreData)            */
+/* Main output handler for the "webpage" flow.               */
 /**************************************************************/
 export default async function getWebpageOutput(coreData) {
   const wo = coreData?.workingObject || {};
@@ -289,6 +389,11 @@ export default async function getWebpageOutput(coreData) {
     return coreData;
   }
 
+  if (req.aborted) {
+    log("request aborted; skip webpage-output", "warn", { moduleName: MODULE_NAME });
+    return coreData;
+  }
+
   if (res.writableEnded) {
     log("response already ended; skip webpage-output", "warn", { moduleName: MODULE_NAME });
     return coreData;
@@ -303,12 +408,23 @@ export default async function getWebpageOutput(coreData) {
       getHandleHttpResponse(wo, req, res, log);
     }
   } catch (e) {
+    if (getIsSoftHttpWriteError(e)) {
+      log("webpage-output soft error (client disconnected)", "warn", {
+        moduleName: MODULE_NAME,
+        error: e?.message || String(e)
+      });
+      return coreData;
+    }
+
     log("webpage-output failed", "error", {
       moduleName: MODULE_NAME,
       error: e?.message || String(e)
     });
-    if (!res.writableEnded) {
-      setSendResponse(res, 500, "Internal Server Error");
+
+    if (!res.writableEnded && !res.headersSent) {
+      try {
+        setSendResponse(res, 500, "Internal Server Error");
+      } catch {}
     }
   }
 

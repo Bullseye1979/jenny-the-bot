@@ -474,8 +474,11 @@ async function setExecGenericTool(toolModules, call, coreData) {
     };
   }
 
+  /* Channel-specific toolcall key (for API / browser-extension consumers) */
+  const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   try {
     try { await putItem(name, "status:tool"); } catch {}
+    if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
     const res = await tool.invoke(args, coreData);
     const mapped = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
@@ -505,7 +508,10 @@ async function setExecGenericTool(toolModules, call, coreData) {
     return { ok: false, name, call_id: callId, content: JSON.stringify(mappedErr) };
   } finally {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs) ? Number(coreData.workingObject.StatusToolClearDelayMs) : 800;
-    setTimeout(() => { try { putItem("", "status:tool"); } catch {} }, Math.max(0, delayMs));
+    setTimeout(() => {
+      try { putItem("", "status:tool"); } catch {}
+      if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
+    }, Math.max(0, delayMs));
   }
 }
 

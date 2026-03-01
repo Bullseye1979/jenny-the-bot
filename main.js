@@ -551,6 +551,9 @@ async function getRunFlow(flowName, coreDataForRun) {
   FLOW_STATES.set(state.runId, state);
   setRenderThrottled(null, true);
 
+
+  
+
   /**************************************************************/
   /* functionSignature: getRunModule (s, kind)               *
   /* Runs a single module file                               *
@@ -569,6 +572,7 @@ async function getRunFlow(flowName, coreDataForRun) {
       state.lastModule = cleanName;
       state.lastError = "";
     } catch (e) {
+      console.error("[RunnerFail]", cleanName, e?.code || "", e?.stack || e);
       const dt = performance.now() - t0;
       if (kind === "normal") state.fail++;
       state.lastModule = cleanName;

@@ -27,8 +27,9 @@
    - 6.4 [api](#64-api)
    - 6.5 [cron](#65-cron)
    - 6.6 [toolcall](#66-toolcall)
-   - 6.7 [config-editor](#67-config-editor)
+   - 6.7 [webpage (config-editor module)](#67-webpage-config-editor-module)
    - 6.8 [webpage](#68-webpage)
+   - 6.8.1 [Adding a new webpage module](#681-adding-a-new-webpage-module)
    - 6.9 [Browser Extension](#69-browser-extension)
 7. [Module Pipeline](#7-module-pipeline)
    - 7.1 [Pre-Processing (00xxx)](#71-pre-processing-00xxx)
@@ -1051,39 +1052,55 @@ Starts a lightweight **HTTP API server** that exposes the full bot pipeline to e
 
 ---
 
-#### config.config-editor
+#### config.webpage-config-editor
 
-Starts a **web-based admin interface** with two tabs: an AI **Chat** tab (default) and a **Config Editor** tab. Works on desktop and mobile.
+> **Replaces the former `config-editor` flow.** The config editor is now a **webpage-flow module** (`modules/00047-webpage-config-editor.js`) served on a dedicated port listed in `config.webpage.ports`.
 
-**Chat tab:**
-- Dropdown to switch between configured channels.
-- Large scrollable message window (top) + text input (bottom).
-- Loads the last 100 context entries from MySQL on channel selection.
-- Sends messages to the bot via the HTTP API flow; the API secret is injected server-side.
-- Auto-resize textarea; Enter = send, Shift+Enter = newline; animated thinking indicator.
-- **Thinking indicator with tool name:** while the bot processes, the name of the currently active tool (e.g. `getImage`, `getWebpage`) is displayed next to the animated dots; polled from `/toolcall` every 800 ms.
-- **Markdown rendering:** headings (`#`/`##`/`###`), bold/italic, code blocks (fenced and inline), blockquotes, ordered/unordered lists, and horizontal rules are fully rendered in chat bubbles.
-- **Link parser & media embeds:** URLs in messages are rendered as clickable links; YouTube and Vimeo URLs embed an inline player; direct video files (`.mp4`, `.webm`, `.ogg`) are rendered with a `<video>` player; image URLs (`.jpg`, `.png`, `.gif`, `.webp`, `.svg`) are shown as inline images.
-
-**Config Editor tab:**
-- **Sections `{}`** appear as expandable tree nodes in the left sidebar.
-- **Object arrays `[{}, ...]`** appear as tree items at the same hierarchy level as sections.
-- **Primitive arrays `["a", "b"]`** are displayed as tag/chip editors.
-- **Primitive values** are edited in-place with a type selector (string / number / boolean / null).
-- Every node supports **Add**, **Duplicate** and **Delete**.
-- **`Ctrl + S`** (or `⌘ S`) saves without clicking the button.
+Serves the **JSON config editor SPA** (`GET /`) with full tree editing. The AI chat has moved to the separate `webpage-chat` module (`modules/00048-webpage-chat.js`, `GET /chat`).
 
 **Security:** bind to `127.0.0.1` (localhost only) or set a `token` for Bearer/Basic authentication.
 
+**Setup:** add the port to `config.webpage.ports` array so the webpage flow listens on it:
 ```json
-"config-editor": {
+"webpage": { "flowName": "webpage", "ports": [3000, 3111] }
+```
+
+```json
+"webpage-config-editor": {
+  "flow":       ["webpage"],
   "port":       3111,
   "host":       "127.0.0.1",
   "token":      "",
   "configPath": "",
-  "apiUrl":     "http://localhost:3400/api",
+  "label":      "⚙️ Config"
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | `["webpage"]` | Must include `"webpage"` for the module to activate |
+| `port` | number | `3111` | HTTP port to listen on — must also be listed in `config.webpage.ports` |
+| `host` | string | `"127.0.0.1"` | Bind address (controlled by the webpage flow server, not this module) |
+| `token` | string | `""` | Optional auth token; sent as `Authorization: Bearer <token>` or as the Basic password |
+| `configPath` | string | `""` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+| `label` | string | `"⚙️ Config"` | Navigation menu label shown in other webpage tools |
+
+---
+
+#### config.webpage-chat
+
+Serves the **AI chat SPA** (`GET /chat`). Runs on the same port as `webpage-config-editor` (default 3111), routed by path. The `apiSecret` for each channel is injected server-side — it is never sent to the browser.
+
+```json
+"webpage-chat": {
+  "flow":   ["webpage"],
+  "port":   3111,
+  "host":   "127.0.0.1",
+  "token":  "",
+  "apiUrl": "http://localhost:3400/api",
+  "label":  "💬 Chat",
   "chats": [
-    { "label": "General",           "channelID": "YOUR_CHANNEL_ID",  "apiSecret": "" },
+    { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
     { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
   ]
 }
@@ -1091,15 +1108,22 @@ Starts a **web-based admin interface** with two tabs: an AI **Chat** tab (defaul
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `port` | number | `3111` | HTTP port to listen on |
-| `host` | string | `"127.0.0.1"` | Bind address (`"0.0.0.0"` for all interfaces) |
+| `flow` | array | `["webpage"]` | Must include `"webpage"` for the module to activate |
+| `port` | number | `3111` | HTTP port to listen on — must also be listed in `config.webpage.ports` |
+| `host` | string | `"127.0.0.1"` | Bind address (controlled by the webpage flow server, not this module) |
 | `token` | string | `""` | Optional auth token; sent as `Authorization: Bearer <token>` or as the Basic password |
-| `configPath` | string | `""` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
-| `apiUrl` | string | `"http://localhost:3400/api"` | Default URL of the bot's HTTP API flow used for chat |
+| `apiUrl` | string | `"http://localhost:3400/api"` | Default URL of the bot's HTTP API flow used for all chats |
+| `label` | string | `"💬 Chat"` | Navigation menu label shown in other webpage tools |
 | `chats[].label` | string | — | Display name shown in the channel dropdown |
-| `chats[].channelID` | string | — | Discord channel ID; injected into every API request for this chat |
+| `chats[].channelID` | string | — | Channel ID; injected into every API request for this chat |
 | `chats[].apiSecret` | string | `""` | Bearer secret for this channel's API requests (injected server-side, never sent to the browser) |
 | `chats[].apiUrl` | string | — | Per-chat API URL override; falls back to the global `apiUrl` if omitted |
+
+---
+
+#### config.config-editor
+
+> **Deprecated.** `flows/config-editor.js` is a no-op stub and will be removed in a future release. Migrate config settings to `config.webpage-config-editor` and chat settings to `config.webpage-chat`.
 
 ---
 
@@ -1159,7 +1183,7 @@ Controls the **rolling-summary backend** that compresses ageing conversation his
 
 #### config.toolcall
 
-Wires up the internal **tool-call status tracking flow**. When the AI invokes a tool, the tool's name is written to the registry under `registryKey`. The toolcall flow polls that key and passes the value to `discord-status-apply`, so the bot's Discord activity indicator updates to show which tool is currently running (e.g. "⏳ Generating an image …") in near-real time. This flow runs independently of the main pipeline.
+Wires up the internal **tool-call status tracking flow**. When the AI invokes a tool, the tool's name is written to the registry under `registryKey` (global) **and** under `registryKey:<channelID>` (per-channel). The toolcall flow polls the global key and passes the value to `discord-status-apply`, so the bot's Discord activity indicator updates to show which tool is currently running (e.g. "⏳ Generating an image …") in near-real time. External consumers (browser extension, config-editor) poll `/toolcall?channelID=<id>` to get the per-channel status without interference from other channels. This flow runs independently of the main pipeline.
 
 ```json
 "toolcall": {
@@ -1451,7 +1475,8 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api` | Submit a request; returns JSON `{ turn_id, response }` |
-| `GET` | `/toolcall` | Poll tool-call status from registry |
+| `GET` | `/toolcall` | Poll global tool-call status from registry |
+| `GET` | `/toolcall?channelID=<id>` | Poll **channel-specific** tool-call status (used by browser extension and config-editor) |
 
 **POST /api request:**
 ```json
@@ -1497,45 +1522,175 @@ Also supports `*/N * * * *` (every N minutes).
 
 ---
 
-### 6.7 config-editor
+### 6.7 webpage (config-editor and chat modules)
 
-**File:** `flows/config-editor.js`
-**Purpose:** Web-based admin interface with AI Chat + JSON Config Editor (standalone HTTP server, no module pipeline)
+**Files:** `flows/webpage.js` + `modules/00047-webpage-config-editor.js` + `modules/00048-webpage-chat.js`
+**Purpose:** The webpage flow serves **multiple ports simultaneously** (configured via `config.webpage.ports`). The two admin modules share a single port (default 3111) and route by URL path.
 
-**Access:** Open `http://<host>:<port>` in any browser.
+**Access:** Open `http://<host>:3111` in any browser.
 
-**Tabs:**
+**Multi-port:** `config.webpage.ports` is an array — one HTTP server is started per port. Each incoming request sets `wo.http.port` so modules can route by port. Both modules only handle requests arriving on their configured port.
 
-**💬 Chat (default)**
-- Channel dropdown populated from `config-editor.chats[]`
-- Last 100 context entries loaded from MySQL on channel select or ↺ refresh
-- Large scrollable message window (top) + auto-resize input (bottom)
-- Enter = send · Shift+Enter = newline
-- **Thinking indicator with tool name:** the currently active tool (e.g. `getImage`) is displayed before the animated dots; polled from `/toolcall` every 800 ms
-- **Markdown rendering:** `#`/`##`/`###` headings, bold/italic, fenced and inline code, blockquotes, lists, and `---` HR are fully rendered in chat bubbles
-- Messages are sent to the bot's API flow; `apiSecret` is injected server-side and never exposed to the browser
-- **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline
-
-**⚙ Config Editor**
+**⚙ Config Editor** (`modules/00047-webpage-config-editor.js`, `GET /`)
 - Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{…}]` as tree items
 - Right panel: inline editing of primitives, tag/chip editors for primitive arrays, navigation links for sub-sections
 - Add Attribute / Section / Object Array / Tag Array per section
 - Duplicate and Delete on every node and array item
 - Keyboard shortcut `Ctrl + S` / `⌘ S` to save
+- **Fully responsive** — works on mobile (hamburger sidebar)
 
-**Fully responsive** — works on mobile (hamburger sidebar in Config tab).
+**💬 Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
+- Channel dropdown populated from `webpage-chat.chats[]`
+- Last 100 context entries loaded from MySQL on channel select or ↺ refresh
+- Large scrollable message window (top) + auto-resize input (bottom)
+- Enter = send · Shift+Enter = newline
+- **Thinking indicator with tool name:** the currently active tool is shown next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel)
+- **Markdown rendering:** `#`/`##`/`###` headings, bold/italic, fenced and inline code, blockquotes, lists, and `---` HR are fully rendered in chat bubbles
+- Messages are sent to the bot's API flow; `apiSecret` is injected server-side and never exposed to the browser
+- **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
 
-**Configuration:** `config["config-editor"]` — see [config.config-editor](#configconfig-editor).
+**Configuration:** `config["webpage-config-editor"]` and `config["webpage-chat"]` — see the respective config sections below.
+
+> **Migration from config-editor:** The `flows/config-editor.js` flow is now a **no-op stub** (prints a deprecation warning and returns). Move your settings from `config["config-editor"]` to `config["webpage-config-editor"]` (config) and `config["webpage-chat"]` (chat), then add port 3111 to `config.webpage.ports`.
 
 ---
 
 ### 6.8 webpage
 
 **File:** `flows/webpage.js`
-**Purpose:** Puppeteer-based web scraping
+**Purpose:** HTTP server flow for web-based tools (document serving, AI image inpainting, config editor, custom modules).
 
-**Trigger:** Called during web-fetch operations
-**Flow:** Renders a page via Puppeteer, extracts DOM content, injects into `workingObject`
+**Multi-port support:** `config.webpage.ports` accepts an array of port numbers. One HTTP server per port is started. Each incoming request populates the following `workingObject` fields before running the module pipeline:
+
+| Field | Type | Description |
+|---|---|---|
+| `wo.http.port` | number | The port this request arrived on — use this to route |
+| `wo.http.method` | string | HTTP method (`"GET"`, `"POST"`, …) |
+| `wo.http.path` | string | URL path without query string (e.g. `"/api/data"`) |
+| `wo.http.url` | string | Full URL including query string |
+| `wo.http.headers` | object | Request headers |
+| `wo.http.body` | string | Request body (for POST/PUT) |
+| `wo.http.requestKey` | string | Registry key where `{ req, res }` is stored |
+| `wo.http.response` | object | Set `{ status, headers, body }` here — `webpage-output` sends it |
+| `wo.web.menu` | array | Modules push `{ label, port, path }` here for nav cross-linking |
+| `wo.jump` | boolean | Set to `true` to skip AI modules; checked by modules to avoid double-handling |
+
+---
+
+### 6.8.1 Adding a new webpage module
+
+New web tools can be added by dropping a single file into `modules/`. No flow changes required.
+
+#### Step 1 — Create the module file
+
+```
+modules/NNNNN-webpage-myapp.js
+```
+
+Use a number between `00045` and `00049` to run before AI processing, or higher if needed.
+
+#### Step 2 — Module skeleton
+
+```js
+"use strict";
+import { getItem } from "../core/registry.js";
+
+const MODULE_NAME = "webpage-myapp";
+
+async function setSendNow(wo) {
+  const key = wo?.http?.requestKey;
+  if (!key) return;
+  const entry = await getItem(key).catch(() => null);
+  if (!entry?.res) return;
+  const { res } = entry;
+  const r = wo.http?.response || {};
+  res.writeHead(Number(r.status ?? 200), r.headers ?? { "Content-Type": "application/json" });
+  res.end(typeof r.body === "string" ? r.body : JSON.stringify(r.body ?? ""));
+}
+
+export default async function getWebpageMyapp(coreData) {
+  const wo  = coreData?.workingObject || {};
+  if (wo?.flow !== "webpage") return coreData;          // only in webpage flow
+
+  const cfg   = coreData?.config?.[MODULE_NAME] || {};
+  const port  = Number(cfg.port  ?? 3222);              // your port
+  const label = String(cfg.label ?? "🔧 My App");
+
+  /* Always register in the nav menu (shown on all pages sharing this port) */
+  if (Array.isArray(wo.web?.menu)) {
+    wo.web.menu.push({ label, port, path: "/myapp" });
+  }
+
+  /* Only handle requests arriving on our port */
+  if (wo.http?.port !== port) return coreData;
+
+  /* Skip if another module on the same port already handled this request */
+  if (wo.jump) return coreData;
+
+  const method  = String(wo.http?.method ?? "GET").toUpperCase();
+  const urlPath = String(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
+
+  /* ---- GET /myapp → serve SPA ---- */
+  if (method === "GET" && urlPath === "/myapp") {
+    wo.http.response = {
+      status:  200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+      body:    "<html>...</html>"
+    };
+    wo.web.useLayout = false;   // bypass the shared layout; we serve our own full HTML
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
+  /* ---- GET /api/mydata → JSON endpoint ---- */
+  if (method === "GET" && urlPath === "/api/mydata") {
+    wo.http.response = {
+      status:  200,
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ ok: true })
+    };
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
+  /* Unknown path — let other modules or webpage-output handle it */
+  return coreData;
+}
+```
+
+#### Step 3 — Add config section to `core.json`
+
+```jsonc
+"webpage-myapp": {
+  "flow":  ["webpage"],
+  "port":  3222,
+  "label": "🔧 My App"
+}
+```
+
+#### Step 4 — Register the port in `config.webpage.ports`
+
+```jsonc
+"webpage": {
+  "flowName": "webpage",
+  "ports": [3000, 3111, 3222]
+}
+```
+
+That's it. The bot picks up the new module on next restart.
+
+#### Key rules for multi-module port sharing
+
+Multiple modules can share a single port (as `00047` and `00048` do on port 3111). Each module routes by URL path:
+
+1. **Always push to `wo.web.menu`** — regardless of port and before any early returns, so cross-nav links work on all pages.
+2. **Check `wo.http.port !== port`** — return immediately if the request is on a different port.
+3. **Check `wo.jump`** — return immediately if a module earlier in the pipeline already handled this request.
+4. **Use `wo.http.path`** for URL routing — this is the path without query string.
+5. **Set `wo.jump = true`** when handling a route — this prevents subsequent modules from overriding the response.
+6. **Do not add a catch-all 404 fallback** — unrecognized paths should fall through (`return coreData`) so modules further down the pipeline can handle them.
 
 ---
 
@@ -1551,8 +1706,8 @@ Also supports `*/N * * * *` (every N minutes).
 |---|---|
 | **Persistent side panel** | Opens as a browser side panel (not a popup) — stays open while you browse other pages or click elsewhere |
 | **Chat UI** | Full chat UI matching the config-editor chat; markdown rendering, link/video embeds, toolcall display |
-| **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
-| **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall` every 800 ms |
+| **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page — uses a background service worker to track the active tab URL reliably even from Chrome side panels |
+| **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelID=<id>` every 800 ms (per-channel) |
 | **Options page** | `apiUrl`, `channelID`, `apiSecret` stored in `chrome.storage.sync` |
 
 #### Installation (developer mode)
@@ -1587,7 +1742,7 @@ The `browser-extension` channel is pre-configured in `core.json`. Key overrides:
 }
 ```
 
-Add `{ "label": "Browser Extension", "channelID": "browser-extension" }` to `config-editor.chats[]` to monitor the extension's chat history in the admin panel.
+Add `{ "label": "Browser Extension", "channelID": "browser-extension" }` to `webpage-chat.chats[]` to monitor the extension's chat history in the admin panel.
 
 ---
 
@@ -1620,6 +1775,8 @@ export default async function myModule(coreData) {
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00045 | `webpage-inpaint` | Image inpainting for web content |
+| 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /` and `GET\|POST /api/config` on the configured port within the webpage flow |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /api/chats`, `GET /api/context`, `POST /api/chat`, `GET /api/toolcall` on the configured port |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
 | 00055 | `core-admin-commands` | Core admin operations (purge, freeze, DB commands) |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |

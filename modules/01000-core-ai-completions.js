@@ -293,8 +293,11 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
+  /* Channel-specific toolcall key (for API / browser-extension consumers) */
+  const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   try {
     try { await putItem(name, "status:tool"); } catch {}
+    if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
     const result = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
     wo.logging?.push({
@@ -327,7 +330,10 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs)
       ? Number(coreData.workingObject.StatusToolClearDelayMs)
       : 800;
-    setTimeout(() => { try { putItem("", "status:tool"); } catch {} }, Math.max(0, delayMs));
+    setTimeout(() => {
+      try { putItem("", "status:tool"); } catch {}
+      if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
+    }, Math.max(0, delayMs));
   }
 }
 

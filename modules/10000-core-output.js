@@ -28,7 +28,7 @@ const LAST_OBJECT_NAME = "last-object.json";
 
 let WRITE_CHAIN = Promise.resolve();
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: setLog (wo, message, level, extra)     *
 /* Appends a structured entry to wo.logging                  *
 /**************************************************************/
@@ -43,7 +43,7 @@ function setLog(wo, message, level = "info", extra = {}) {
   });
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getRedact (value, keyPath)             *
 /* Redacts secrets and truncates large strings               *
 /**************************************************************/
@@ -64,7 +64,7 @@ function getRedact(value, keyPath) {
   return value;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getMessageSnapshot (m)                 *
 /* Produces a lightweight, safe snapshot of a message object *
 /**************************************************************/
@@ -84,7 +84,7 @@ function getMessageSnapshot(m) {
   };
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getSafeReplacerFactory ()              *
 /* Creates a JSON replacer that redacts and handles cycles   *
 /**************************************************************/
@@ -131,24 +131,29 @@ function getSafeReplacerFactory() {
   };
 }
 
-/**************************************************************
-/* functionSignature: getWithKeyPath (obj, keyPath)          *
-/* Wraps objects to carry a dotted key path for redaction     *
 /**************************************************************/
-function getWithKeyPath(obj, keyPath = "") {
+/* functionSignature: getWithKeyPath (obj, keyPath, seen)    *
+/* Wraps objects to carry a dotted key path for redaction.   *
+/* Uses a WeakSet to detect and short-circuit circular refs. *
+/**************************************************************/
+function getWithKeyPath(obj, keyPath = "", seen = new WeakSet()) {
   if (obj && typeof obj === "object") {
+    if (seen.has(obj)) return `[[Circular:${keyPath}]]`;
+    seen.add(obj);
     const proxy = Array.isArray(obj) ? [] : Object.create(Object.getPrototypeOf(obj));
     Object.defineProperty(proxy, "__keyPath", { value: keyPath, enumerable: false });
     for (const k of Object.keys(obj)) {
       const child = obj[k];
-      proxy[k] = child && typeof child === "object" ? getWithKeyPath(child, keyPath ? `${keyPath}.${k}` : k) : child;
+      proxy[k] = child && typeof child === "object"
+        ? getWithKeyPath(child, keyPath ? `${keyPath}.${k}` : k, seen)
+        : child;
     }
     return proxy;
   }
   return obj;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getVerifyWritable (dir)                *
 /* Verifies directory is writable; throws on failure         *
 /**************************************************************/
@@ -157,7 +162,7 @@ async function getVerifyWritable(dir) {
   await fsp.access(dir, fsp.constants ? fsp.constants.W_OK : 2);
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: setEnsureDirs ()                       *
 /* Ensures base log directories exist                        *
 /**************************************************************/
@@ -168,7 +173,7 @@ async function setEnsureDirs() {
   await getVerifyWritable(OBJECTS_DIR);
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getPickFirstString (...values)         *
 /* Returns first non-empty trimmed string from values        *
 /**************************************************************/
@@ -179,7 +184,7 @@ function getPickFirstString(...values) {
   return "";
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getFlowKey (coreData)                  *
 /* Derives a stable, filesystem-safe flow key                *
 /**************************************************************/
@@ -206,7 +211,7 @@ function getFlowKey(coreData) {
     .replace(/^_+|_+$/g, "") || "default";
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getFlowObjectsDir (flowKey)            *
 /* Returns directory for a specific flow's object logs       *
 /**************************************************************/
@@ -214,7 +219,7 @@ function getFlowObjectsDir(flowKey) {
   return path.join(OBJECTS_DIR, flowKey);
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getBuildObjectsPath (index, flowKey)   *
 /* Builds a full path for objects-N.log for a given flow     *
 /**************************************************************/
@@ -222,7 +227,7 @@ function getBuildObjectsPath(index, flowKey) {
   return path.join(getFlowObjectsDir(flowKey), `${FILE_BASENAME}-${index}${FILE_EXT}`);
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getListLogFiles (flowKey)              *
 /* Lists existing rolling object log files for a flow        *
 /**************************************************************/
@@ -244,7 +249,7 @@ async function getListLogFiles(flowKey) {
   return out;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getFileSize (p)                        *
 /* Returns file size in bytes or 0 if not found              *
 /**************************************************************/
@@ -253,7 +258,7 @@ async function getFileSize(p) {
   return st?.size || 0;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: setAppendRolling (text, flowKey)       *
 /* Appends to rolling objects-N.log per flow, keep last two  *
 /**************************************************************/
@@ -286,7 +291,7 @@ async function setAppendRolling(text, flowKey) {
   return currentPath;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: setWriteLastObject (flowKey, safeJson) *
 /* Writes the last-object.json for a flow                    *
 /**************************************************************/
@@ -300,7 +305,7 @@ async function setWriteLastObject(flowKey, safeJson) {
   return lastPath;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: setEnqueueWrite (fn)                   *
 /* Serializes file writes to avoid race conditions           *
 /**************************************************************/
@@ -309,7 +314,7 @@ function setEnqueueWrite(fn) {
   return WRITE_CHAIN;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getNormalizeWOLogItem (x)              *
 /* Normalizes entries from wo.logging for readable log       *
 /**************************************************************/
@@ -325,7 +330,7 @@ function getNormalizeWOLogItem(x) {
   };
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getToOneLineLog (e)                    *
 /* Formats a normalized log entry into a one-line string     *
 /**************************************************************/
@@ -346,7 +351,7 @@ function getToOneLineLog(e) {
   return `[${ts}] [${level}] ${mod}:${prefix} ${getRedact(msg, "message")}${reason}${ctx}`;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getReadableLogBlock (wo)               *
 /* Builds a readable log block from wo.logging               *
 /**************************************************************/
@@ -364,7 +369,7 @@ function getReadableLogBlock(wo) {
   return header + lines + footer;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getBuildEventsPath (index)             *
 /* Builds a full path for events-N.log in logs/              *
 /**************************************************************/
@@ -372,7 +377,7 @@ function getBuildEventsPath(index) {
   return path.join(LOG_DIR, `${EVENT_BASENAME}-${index}${EVENT_EXT}`);
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getListEventFiles ()                   *
 /* Lists existing rolling events log files in logs/          *
 /**************************************************************/
@@ -392,7 +397,7 @@ async function getListEventFiles() {
   return out;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: setAppendReadableLog (text)            *
 /* Appends to rolling events-N.log in logs/, keep last two   *
 /**************************************************************/
@@ -422,76 +427,90 @@ async function setAppendReadableLog(text) {
   return currentPath;
 }
 
-/**************************************************************
+/**************************************************************/
 /* functionSignature: getCoreOutput (coreData)               *
 /* Appends a safe coreData dump to per-flow rolling log,     *
 /* writes per-flow last-object.json, and appends readable log*
 /**************************************************************/
 export default async function getCoreOutput(coreData) {
-  const wo = coreData.workingObject || {};
-  const flowKey = getFlowKey(coreData);
-  const forLog = {
-    ...coreData,
-    workingObject: {
-      ...(coreData.workingObject || {}),
-      message: getMessageSnapshot(coreData?.workingObject?.message)
-    }
-  };
-  const proxy = getWithKeyPath(forLog, "");
-  let safeJson = "";
   try {
-    safeJson = JSON.stringify(proxy, getSafeReplacerFactory(), 2);
-  } catch (e) {
-    safeJson = JSON.stringify({
-      stringifyError: String(e?.message || e),
-      fallback: "[unstringifiable]"
-    });
-    setLog(wo, "Failed to stringify coreData; wrote fallback payload.", "error", {
-      reason: "stringify-failed"
-    });
-  }
-  const record =
-    "\n================ CORE DATA DUMP ================\n" +
-    safeJson +
-    "\n================================================\n";
-  try {
-    const pathWritten = await setEnqueueWrite(() => setAppendRolling(record, flowKey));
-    setLog(wo, "Core data appended to per-flow rolling log file.", "info", {
-      path: pathWritten,
-      flowKey,
-      maxFileBytes: MAX_FILE_BYTES,
-      policy: "2-file rolling per flow, oldest removed on third"
-    });
-  } catch (e) {
-    setLog(wo, "Failed to append core data to per-flow rolling log.", "error", {
-      flowKey,
-      reason: String(e?.message || e)
-    });
-  }
-  try {
-    const lastPath = await setEnqueueWrite(() => setWriteLastObject(flowKey, safeJson));
-    setLog(wo, "Last object for flow written.", "info", {
-      path: lastPath,
-      flowKey
-    });
-  } catch (e) {
-    setLog(wo, "Failed to write last object for flow.", "error", {
-      flowKey,
-      reason: String(e?.message || e)
-    });
-  }
-  const readable = getReadableLogBlock(wo);
-  if (readable) {
+    if (!coreData || typeof coreData !== "object") return coreData;
+
+    const wo = coreData?.workingObject || {};
+    const flowKey = getFlowKey(coreData);
+
+    const forLog = {
+      ...coreData,
+      workingObject: {
+        ...(coreData?.workingObject || {}),
+        message: getMessageSnapshot(coreData?.workingObject?.message)
+      }
+    };
+
+    let proxy;
+    let safeJson = "";
     try {
-      const pathReadable = await setEnqueueWrite(() => setAppendReadableLog(readable));
-      setLog(wo, "Readable log appended to events file.", "info", {
-        path: pathReadable,
+      proxy = getWithKeyPath(forLog, "");
+      safeJson = JSON.stringify(proxy, getSafeReplacerFactory(), 2);
+    } catch (e) {
+      safeJson = JSON.stringify({
+        stringifyError: String(e?.message || e),
+        fallback: "[unstringifiable]"
+      });
+      setLog(wo, "Failed to stringify coreData; wrote fallback payload.", "error", {
+        reason: "stringify-failed"
+      });
+    }
+
+    const record =
+      "\n================ CORE DATA DUMP ================\n" +
+      safeJson +
+      "\n================================================\n";
+
+    try {
+      const pathWritten = await setEnqueueWrite(() => setAppendRolling(record, flowKey));
+      setLog(wo, "Core data appended to per-flow rolling log file.", "info", {
+        path: pathWritten,
+        flowKey,
         maxFileBytes: MAX_FILE_BYTES,
-        policy: "2-file rolling, oldest removed on third"
+        policy: "2-file rolling per flow, oldest removed on third"
       });
     } catch (e) {
-      setLog(wo, "Failed to append readable log.", "error", { reason: String(e?.message || e) });
+      setLog(wo, "Failed to append core data to per-flow rolling log.", "error", {
+        flowKey,
+        reason: String(e?.message || e)
+      });
     }
+
+    try {
+      const lastPath = await setEnqueueWrite(() => setWriteLastObject(flowKey, safeJson));
+      setLog(wo, "Last object for flow written.", "info", {
+        path: lastPath,
+        flowKey
+      });
+    } catch (e) {
+      setLog(wo, "Failed to write last object for flow.", "error", {
+        flowKey,
+        reason: String(e?.message || e)
+      });
+    }
+
+    const readable = getReadableLogBlock(wo);
+    if (readable) {
+      try {
+        const pathReadable = await setEnqueueWrite(() => setAppendReadableLog(readable));
+        setLog(wo, "Readable log appended to events file.", "info", {
+          path: pathReadable,
+          maxFileBytes: MAX_FILE_BYTES,
+          policy: "2-file rolling, oldest removed on third"
+        });
+      } catch (e) {
+        setLog(wo, "Failed to append readable log.", "error", { reason: String(e?.message || e) });
+      }
+    }
+
+    return coreData;
+  } catch (e) {
+    return coreData;
   }
-  return coreData;
 }

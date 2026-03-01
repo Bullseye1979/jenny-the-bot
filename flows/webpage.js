@@ -168,18 +168,11 @@ function getConfigFlowName(baseCore) {
 }
 
 /**************************************************************
-/* functionSignature: getWebpageFlow (baseCore, runFlow,     *
-/*                                    createRunCore)         *
-/* Start HTTP server and trigger the configured flow per req *
+/* functionSignature: getCreateServer (baseCore, runFlow,    *
+/*   createRunCore, flowName, port, pubRoot, documentsRoot)  *
+/* Create and start one HTTP server on the given port.       *
 /**************************************************************/
-export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
-  const cfg = baseCore?.config?.[MODULE_NAME] || {};
-  const flowName = getConfigFlowName(baseCore);
-  const port = Number(cfg.port) || 3000;
-
-  const pubRoot = path.join(__dirname, "..", "pub");
-  const documentsRoot = path.join(pubRoot, "documents");
-
+function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRoot, documentsRoot) {
   const server = http.createServer(async (req, res) => {
     try {
       if (!req?.url) return setSendResponse(res, 400, "Bad Request");
@@ -210,6 +203,8 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
       wo.http.remoteAddress = req.socket?.remoteAddress || req.connection?.remoteAddress || null;
       wo.http.host = req.headers?.host || null;
       wo.http.receivedAt = nowIso;
+      /* Expose which port this request arrived on so modules can route by port */
+      wo.http.port = port;
 
       if (urlPath.startsWith("/api/")) {
         wo.http.kind = "api";
@@ -266,12 +261,20 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
           body: JSON.stringify({ ok: false, error: "Not Found" })
         };
 
+      /* Initialise the web context for this request.
+         wo.web.menu  — nav items added by each module as it runs
+         wo.web.html  — page body set by the first matching module
+         wo.web.port  — same as wo.http.port (convenience copy)
+         wo.web.useLayout — set to false by modules that build their own full HTML */
+      wo.web = { port, menu: [], html: null, useLayout: true };
+
       const log3 = getPrefixedLogger(wo, import.meta.url);
       log3("webpage flow trigger", "info", {
         moduleName: MODULE_NAME,
         path: urlPath,
         method,
         kind: wo.http.kind,
+        port,
         requestKey
       });
 
@@ -300,4 +303,33 @@ export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
   });
 
   server.listen(port, () => {});
+  return server;
+}
+
+/**************************************************************
+/* functionSignature: getWebpageFlow (baseCore, runFlow,     *
+/*                                    createRunCore)         *
+/* Start one HTTP server per configured port and trigger     *
+/* the configured flow per request.                          *
+/**************************************************************/
+export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
+  const cfg      = baseCore?.config?.[MODULE_NAME] || {};
+  const flowName = getConfigFlowName(baseCore);
+
+  const pubRoot       = path.join(__dirname, "..", "pub");
+  const documentsRoot = path.join(pubRoot, "documents");
+
+  /* Support a "ports" array for multi-port operation (e.g. main page + config editor).
+     Falls back to a single "port" value (default 3000) for backwards compatibility. */
+  let ports;
+  if (Array.isArray(cfg.ports) && cfg.ports.length) {
+    ports = cfg.ports.map(p => Number(p)).filter(p => Number.isFinite(p) && p > 0);
+  }
+  if (!ports || !ports.length) {
+    ports = [Number(cfg.port) || 3000];
+  }
+
+  for (const port of ports) {
+    getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRoot, documentsRoot);
+  }
 }
