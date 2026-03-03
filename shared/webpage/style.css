@@ -246,6 +246,16 @@ header h1{
   0%,100%{transform:translateY(0);opacity:.30}
   50%{transform:translateY(-3px);opacity:.95}
 }
+/* Fix: no ugly leading space before thinking dots */
+.chat-bubble.chat-thinking{
+  gap: 0;            /* remove the blank gap between (empty) label and dots */
+}
+
+.chat-bubble.chat-thinking .label{
+  display: none;     /* hide label completely (it causes the leading whitespace) */
+  margin: 0;
+  padding: 0;
+}
 
 #chat-footer{
   flex-shrink:0;
