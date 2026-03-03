@@ -4,6 +4,7 @@
 * Purpose: HTTP API flow starter (guaranteed JSON response) + polling endpoint for current toolcall registry.    *
 *          Toolcall endpoint reads the SAME registry key that toolcall.js watches (config.toolcall.registryKey   *
 *          or default "status:tool"). Always returns workingObject.botName (or fallback).                        *
+*          Adds GET context endpoint for UI usage.                                                                *
 ****************************************************************************************************************/
 /****************************************************************************************************************
 *                                                                                                               *
@@ -11,6 +12,7 @@
 
 import http from "node:http";
 import { getItem } from "../core/registry.js";
+import { getContext } from "../core/context.js";
 
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -232,6 +234,43 @@ function isBearerValid(req, baseCore) {
 }
 
 /****************************************************************************************************************
+* functionSignature: getContextSnapshot(baseCore, channelID, limit)                                               *
+* Purpose: Returns a simplified context snapshot (role/text/ts).                                                 *
+****************************************************************************************************************/
+async function getContextSnapshot(baseCore, channelID, limit) {
+  const n = Number(limit);
+  const size = Number.isFinite(n) ? Math.max(1, Math.min(500, Math.floor(n))) : 100;
+
+  const woBase = baseCore?.workingObject || {};
+
+  const wo = {
+    ...woBase,
+    channelID: String(channelID || ""),
+    contextSize: size,
+    simplifiedContext: true,
+    detailedContext: false,
+    contextMetaFrames: "off",
+  };
+
+  const rows = await getContext(wo);
+
+  const out = [];
+  for (const m of Array.isArray(rows) ? rows : []) {
+    if (m?.internal_meta === true) continue;
+    const role = String(m?.role || "").toLowerCase();
+    if (role !== "user" && role !== "assistant") continue;
+    out.push({
+      role,
+      text: String(m?.content ?? ""),
+      ts: m?.ts || null,
+      channelId: m?.channelId ? String(m.channelId) : undefined,
+    });
+  }
+
+  return out;
+}
+
+/****************************************************************************************************************
 * functionSignature: getApiFlow(baseCore, runFlow, createRunCore)                                                *
 * Purpose: Starts the HTTP API endpoint, executes the flow per request, and guarantees JSON response.            *
 ****************************************************************************************************************/
@@ -244,20 +283,19 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const toolcallPath = String(cfg.toolcallPath || "/toolcall");
   const toolcallRegistryKey = getToolcallRegistryKey(baseCore, cfg);
 
+  const contextPath = String(cfg.contextPath || "/context");
+
   const server = http.createServer(async (req, res) => {
-    /* /health is intentionally unauthenticated (standard for monitoring / load balancers) */
     if (req.method === "GET" && req.url === "/health") {
       return getJson(res, 200, { ok: true, botname: getBotname(undefined, baseCore) });
     }
 
     if (req.method === "GET" && (req.url === toolcallPath || req.url.startsWith(toolcallPath + "?"))) {
-      /* /toolcall exposes registry data — protect it with the same bearer as the main endpoint */
       if (!isBearerValid(req, baseCore)) {
         return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(undefined, baseCore) });
       }
 
       try {
-        /* Support optional ?channelID=xxx for per-channel toolcall status */
         const _tcUrlObj = new URL(req.url, `http://localhost:${port}`);
         const _tcChannelID = String(_tcUrlObj.searchParams.get("channelID") || "").trim();
         const effectiveKey = _tcChannelID
@@ -269,6 +307,33 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         return getJson(res, 500, {
           ok: false,
           error: "registry_failed",
+          reason: e?.message || String(e),
+          timestamp: new Date().toISOString(),
+          botname: getBotname(undefined, baseCore),
+        });
+      }
+    }
+
+    if (req.method === "GET" && (req.url === contextPath || req.url.startsWith(contextPath + "?"))) {
+      if (!isBearerValid(req, baseCore)) {
+        return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(undefined, baseCore) });
+      }
+
+      try {
+        const _ctxUrlObj = new URL(req.url, `http://localhost:${port}`);
+        const _ctxChannelID = String(_ctxUrlObj.searchParams.get("channelID") || "").trim();
+        const _ctxLimit = String(_ctxUrlObj.searchParams.get("limit") || "").trim();
+
+        if (!_ctxChannelID) {
+          return getJson(res, 400, { ok: false, error: "channelID_required", botname: getBotname(undefined, baseCore) });
+        }
+
+        const msgs = await getContextSnapshot(baseCore, _ctxChannelID, _ctxLimit);
+        return getJson(res, 200, { ok: true, channelID: _ctxChannelID, count: msgs.length, messages: msgs, botname: getBotname(undefined, baseCore) });
+      } catch (e) {
+        return getJson(res, 500, {
+          ok: false,
+          error: "context_failed",
           reason: e?.message || String(e),
           timestamp: new Date().toISOString(),
           botname: getBotname(undefined, baseCore),
