@@ -201,7 +201,6 @@ function getConfigHtml(opts) {
 '<div class="cfg-wrap">\n' +
 '  <div class="cfg-actions">\n' +
 '    <button class="btn btn-s" onclick="loadConfig()">↻ Reload</button>\n' +
-'    <span style="color:var(--muted);font-size:12px">Editing: ' + configBase + '/api/config</span>\n' +
 '  </div>\n' +
 '  <textarea id="cfg-text" class="cfg-text" spellcheck="false"></textarea>\n' +
 '</div>\n' +

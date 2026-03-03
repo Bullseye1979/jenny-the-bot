@@ -248,7 +248,7 @@ header h1{
 }
 /* Fix: no ugly leading space before thinking dots */
 .chat-bubble.chat-thinking{
-  gap: 0;            /* remove the blank gap between (empty) label and dots */
+  gap: 5;            /* remove the blank gap between (empty) label and dots */
 }
 
 .chat-bubble.chat-thinking .label{
