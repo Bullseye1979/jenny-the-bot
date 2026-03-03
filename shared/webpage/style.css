@@ -189,7 +189,7 @@ header h1{
 /* Message rows */
 .chat-msg{
   display:flex;
-  max-width:min(76%,2048px);
+  max-width:min(76%,1030px);
   min-width:0;
 }
 .chat-msg.user{align-self:flex-end}
