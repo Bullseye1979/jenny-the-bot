@@ -175,6 +175,7 @@ header h1{
   padding:16px 14px;
   display:flex;
   flex-direction:column;
+  background-color: lightgray;
   gap:8px;
 }
 
