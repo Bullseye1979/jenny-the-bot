@@ -53,12 +53,32 @@ function getBody(wo) {
 }
 
 /********************************************************************************************************************
-* functionSignature: getIsRoleAllowed (wo)
+* functionSignature: getIsAllowedRoles (wo, allowedRoles)
 ********************************************************************************************************************/
-function getIsRoleAllowed(wo) {
-  const r = String(wo?.webAuth?.role || "").trim().toLowerCase();
-  return r === "member" || r === "admin";
+function getIsAllowedRoles(wo, allowedRoles) {
+  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
+  if (!req.length) return true;
+
+  const have = new Set();
+  const primary = String(wo?.webAuth?.role || "").trim().toLowerCase();
+  if (primary) have.add(primary);
+
+  const roles = wo?.webAuth?.roles;
+  if (Array.isArray(roles)) {
+    for (const r of roles) {
+      const v = String(r || "").trim().toLowerCase();
+      if (v) have.add(v);
+    }
+  }
+
+  for (const r of req) {
+    const need = String(r || "").trim().toLowerCase();
+    if (!need) continue;
+    if (have.has(need)) return true;
+  }
+  return false;
 }
+
 
 
 /********************************************************************************************************************
@@ -147,19 +167,10 @@ export default async function getWebpageChat(coreData) {
   const method  = String(wo.http?.method ?? "GET").toUpperCase();
   const urlPath = String(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
 
-  /* Deep-link protection */
-  if (!getIsRoleAllowed(wo)) {
-    if (urlPath === basePath || urlPath.startsWith(basePath + "/")) {
-      setNotFound(wo);
-      wo.jump = true;
-      await setSendNow(wo);
-      return coreData;
-    }
-    return coreData;
-  }
+  const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
+  const isAllowed = getIsAllowedRoles(wo, allowedRoles);
 
-  
-  /* ---- GET /chat/style.css ---- */
+/* ---- GET /chat/style.css ---- */
   if (method === "GET" && urlPath === basePath + "/style.css") {
     const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
     wo.http.response = {
@@ -175,6 +186,25 @@ export default async function getWebpageChat(coreData) {
 
 /* ---- GET /chat ---- */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
+    if (!isAllowed) {
+      wo.http.response = {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+        body: getAccessDeniedHtml({
+          menu: wo.web?.menu || [],
+          role: wo.webAuth?.role || "",
+          activePath: urlPath,
+          base: basePath,
+          title: "Chat",
+          message: "Access denied."
+        })
+      };
+      wo.web.useLayout = false;
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
     wo.http.response = {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -193,6 +223,13 @@ export default async function getWebpageChat(coreData) {
 
   /* ---- GET /chat/api/chats ---- */
   if (method === "GET" && urlPath === basePath + "/api/chats") {
+    if (!isAllowed) {
+      setJsonResp(wo, 403, { error: "forbidden" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
 const publicChats = chats
   .filter(c => getIsChatVisibleForUser(wo, c))
   .map(c => ({ label: String(c.label || c.channelID || "Chat"), channelID: String(c.channelID || "") }))
@@ -205,6 +242,13 @@ return coreData;
 
   /* ---- GET /chat/api/context?channelID=xxx ---- */
   if (method === "GET" && urlPath === basePath + "/api/context") {
+    if (!isAllowed) {
+      setJsonResp(wo, 403, { error: "forbidden" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
     const rawUrl    = String(wo.http?.url ?? (basePath + "/api/context"));
     const urlObj    = new URL(rawUrl, "http://localhost");
     const channelID = String(urlObj.searchParams.get("channelID") || "").trim();
@@ -254,6 +298,13 @@ return coreData;
 
   /* ---- POST /chat/api/chat ---- */
   if (method === "POST" && urlPath === basePath + "/api/chat") {
+    if (!isAllowed) {
+      setJsonResp(wo, 403, { error: "forbidden" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
     let reqData = wo.http?.json ?? null;
     if (reqData === null) {
       try { reqData = JSON.parse(getBody(wo)); }
@@ -334,6 +385,13 @@ return coreData;
 
   /* ---- GET /chat/api/toolcall?channelID=xxx ---- */
   if (method === "GET" && urlPath === basePath + "/api/toolcall") {
+    if (!isAllowed) {
+      setJsonResp(wo, 403, { error: "forbidden" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
     const rawUrl    = String(wo.http?.url ?? (basePath + "/api/toolcall"));
     const urlObj    = new URL(rawUrl, "http://localhost");
     const channelID = String(urlObj.searchParams.get("channelID") || "").trim();
@@ -379,6 +437,44 @@ return coreData;
   }
 
   return coreData;
+}
+
+/********************************************************************************************************************
+* functionSignature: getAccessDeniedHtml (opts)
+* Purpose: Shows menu + access denied message, leaves rest of page empty.
+********************************************************************************************************************/
+function getAccessDeniedHtml(opts) {
+  const base       = String(opts?.base || "/").replace(/\/+$|\/+$/g,"") || "/";
+  const activePath = String(opts?.activePath || base) || base;
+  const role       = String(opts?.role || "").trim();
+  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role);
+
+  const title = String(opts?.title || "Page");
+  const msg   = String(opts?.message || "Access denied.");
+
+  return (
+'<!DOCTYPE html>\n' +
+'<html lang="en">\n' +
+'<head>\n' +
+'<meta charset="UTF-8">\n' +
+'<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
+'<title>Jenny — ' + title + '</title>\n' +
+'<link rel="stylesheet" href="' + base + '/style.css">\n' +
+'</head>\n' +
+'<body>\n' +
+'<header>\n' +
+'  <h1>Jenny</h1>\n' +
+(menuHtml ? ('  ' + menuHtml + '\n') : '') +
+'</header>\n' +
+'<div style="margin-top:var(--hh);padding:12px">\n' +
+'  <div style="padding:12px;border:1px solid var(--bdr);border-radius:10px;background:#fff">\n' +
+'    <strong>Access denied</strong><br>\n' +
+'    <span style="color:var(--muted)">' + msg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + '</span>\n' +
+'  </div>\n' +
+'</div>\n' +
+'</body>\n' +
+'</html>'
+  );
 }
 
 /********************************************************************************************************************

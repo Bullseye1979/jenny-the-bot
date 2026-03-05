@@ -46,11 +46,32 @@ function setNotFound(wo) {
 }
 
 /********************************************************************************************************************
-* functionSignature: getIsAdmin (wo)
+* functionSignature: getIsAllowedRoles (wo, allowedRoles)
 ********************************************************************************************************************/
-function getIsAdmin(wo) {
-  return String(wo?.webAuth?.role || "").trim().toLowerCase() === "admin";
+function getIsAllowedRoles(wo, allowedRoles) {
+  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
+  if (!req.length) return true;
+
+  const have = new Set();
+  const primary = String(wo?.webAuth?.role || "").trim().toLowerCase();
+  if (primary) have.add(primary);
+
+  const roles = wo?.webAuth?.roles;
+  if (Array.isArray(roles)) {
+    for (const r of roles) {
+      const v = String(r || "").trim().toLowerCase();
+      if (v) have.add(v);
+    }
+  }
+
+  for (const r of req) {
+    const need = String(r || "").trim().toLowerCase();
+    if (!need) continue;
+    if (have.has(need)) return true;
+  }
+  return false;
 }
+
 
 /********************************************************************************************************************
 * functionSignature: getBasePath (cfg)
@@ -90,18 +111,10 @@ export default async function getWebpageConfigEditor(coreData) {
   /* Never intercept auth paths on loginPort */
   if (urlPath === "/auth" || urlPath.startsWith("/auth/")) return coreData;
 
-  /* Deep-link protection (stealth) */
-  if (!getIsAdmin(wo)) {
-    if (urlPath === basePath || urlPath.startsWith(basePath + "/")) {
-      setNotFound(wo);
-      wo.jump = true;
-      await setSendNow(wo);
-      return coreData;
-    }
-    return coreData;
-  }
+  const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
+  const isAllowed = getIsAllowedRoles(wo, allowedRoles);
 
-  /* ---- GET /config/style.css ---- */
+/* ---- GET /config/style.css ---- */
   if (method === "GET" && urlPath === basePath + "/style.css") {
     const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
     wo.http.response = {
@@ -117,6 +130,18 @@ export default async function getWebpageConfigEditor(coreData) {
 
   /* ---- GET /config ---- */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
+    if (!isAllowed) {
+      wo.http.response = {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+        body: getAccessDeniedHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, title: "Config", message: "Access denied." })
+      };
+      wo.web.useLayout = false;
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
     wo.http.response = {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -130,6 +155,13 @@ export default async function getWebpageConfigEditor(coreData) {
 
   /* ---- GET /config/api/config ---- */
   if (method === "GET" && urlPath === basePath + "/api/config") {
+    if (!isAllowed) {
+      setJsonResp(wo, 403, { error: "forbidden" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
     const result = readJsonFile(cfgFile);
     if (!result.ok) setJsonResp(wo, 500, { error: result.error });
     else setJsonResp(wo, 200, result.data);
@@ -140,6 +172,13 @@ export default async function getWebpageConfigEditor(coreData) {
 
   /* ---- POST /config/api/config ---- */
   if (method === "POST" && urlPath === basePath + "/api/config") {
+    if (!isAllowed) {
+      setJsonResp(wo, 403, { error: "forbidden" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
     let data = wo.http?.json ?? null;
     if (data === null) {
       const rawBody = String(wo.http?.rawBody ?? wo.http?.body ?? "");
@@ -160,6 +199,44 @@ export default async function getWebpageConfigEditor(coreData) {
   }
 
   return coreData;
+}
+
+/********************************************************************************************************************
+* functionSignature: getAccessDeniedHtml (opts)
+* Purpose: Shows menu + access denied message, leaves rest of page empty.
+********************************************************************************************************************/
+function getAccessDeniedHtml(opts) {
+  const base       = String(opts?.base || "/").replace(/\/+$|\/+$/g,"") || "/";
+  const activePath = String(opts?.activePath || base) || base;
+  const role       = String(opts?.role || "").trim();
+  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role);
+
+  const title = String(opts?.title || "Page");
+  const msg   = String(opts?.message || "Access denied.");
+
+  return (
+'<!DOCTYPE html>\n' +
+'<html lang="en">\n' +
+'<head>\n' +
+'<meta charset="UTF-8">\n' +
+'<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
+'<title>Jenny — ' + title + '</title>\n' +
+'<link rel="stylesheet" href="' + base + '/style.css">\n' +
+'</head>\n' +
+'<body>\n' +
+'<header>\n' +
+'  <h1>Jenny</h1>\n' +
+(menuHtml ? ('  ' + menuHtml + '\n') : '') +
+'</header>\n' +
+'<div style="margin-top:var(--hh);padding:12px">\n' +
+'  <div style="padding:12px;border:1px solid var(--bdr);border-radius:10px;background:#fff">\n' +
+'    <strong>Access denied</strong><br>\n' +
+'    <span style="color:var(--muted)">' + msg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + '</span>\n' +
+'  </div>\n' +
+'</div>\n' +
+'</body>\n' +
+'</html>'
+  );
 }
 
 /********************************************************************************************************************
