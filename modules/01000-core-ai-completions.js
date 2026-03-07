@@ -75,7 +75,7 @@ function getTryParseJSON(text, fallback = {}) { try { return JSON.parse(text); }
 /********************************************************************************/
 function getWithTurnId(rec, wo) {
   const t = typeof wo?.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
-  return t ? { ...rec, turn_id: t } : rec;
+  return { ...(t ? { ...rec, turn_id: t } : rec), ts: new Date().toISOString() };
 }
 
 /********************************************************************************
@@ -499,7 +499,9 @@ export default async function getCoreAi(coreData) {
         });
       }
       messages.push(assistantMsg);
-      persistQueue.push(getWithTurnId(assistantMsg, wo));
+      if (assistantMsg.content || (Array.isArray(assistantMsg.tool_calls) && assistantMsg.tool_calls.length)) {
+        persistQueue.push(getWithTurnId(assistantMsg, wo));
+      }
       if (toolCalls && toolCalls.length && toolModules.length) {
         wo._fullAssistantText = accumulatedText;
         for (const tc of toolCalls) {

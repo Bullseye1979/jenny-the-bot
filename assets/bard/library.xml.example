@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<library>
+  <!--
+    Example music library for the Bard Bot.
+    Copy this file to library.xml and adjust to your MP3 files.
+
+    Each <track> needs:
+      file   - filename relative to the configured musicDir (assets/bard/)
+      title  - display name (used in logs / now-playing)
+      tags   - comma-separated mood/atmosphere keywords matched against LLM labels
+      volume - playback multiplier (0.1 = very quiet, 1.0 = normal, 1.5 = louder, max 4.0)
+
+    Suggested tags: battle, fight, intense, boss, epic, calm, magic, city, people,
+                    sneaky, shady, exploration, adventure, travel, forest, peaceful,
+                    whimsical, mystery, underdark, creepy, suspense, dark, joy,
+                    social, relaxed, celebration, dramatic, sadness, emotional
+  -->
+
+  <!-- === Battle / Combat === -->
+  <track file="Battle1.mp3" title="Battle March">
+    <tags>battle,fight,fast,intense</tags>
+    <volume>0.8</volume>
+  </track>
+  <track file="Battle2.mp3" title="Clash of Steel">
+    <tags>battle,fight,fast,intense</tags>
+    <volume>0.8</volume>
+  </track>
+  <track file="Battle3.mp3" title="Boss Encounter">
+    <tags>boss,battle,fight,fast,intense</tags>
+    <volume>0.8</volume>
+  </track>
+
+  <!-- === Epic / Dramatic === -->
+  <track file="Epic1.mp3" title="Final Showdown">
+    <tags>epic,calm,magic</tags>
+    <volume>0.8</volume>
+  </track>
+
+  <!-- === City / Urban === -->
+  <track file="City1.mp3" title="City Streets">
+    <tags>city,people,buzzing,crowded</tags>
+    <volume>1.0</volume>
+  </track>
+  <track file="City2.mp3" title="Back Alleys">
+    <tags>city,sneaky,searching,shady</tags>
+    <volume>1.0</volume>
+  </track>
+
+  <!-- === Exploration / Travel === -->
+  <track file="Exploring1.mp3" title="Into the Unknown">
+    <tags>exploration,adventure,travel</tags>
+    <volume>1.5</volume>
+  </track>
+  <track file="Wilderness1.mp3" title="Forest Path">
+    <tags>forest,peaceful,calm,travel</tags>
+    <volume>1.5</volume>
+  </track>
+
+  <!-- === Magical / Mystical === -->
+  <track file="Magical1.mp3" title="Arcane Realm">
+    <tags>magic,whimsical,calm,mystery</tags>
+    <volume>1.5</volume>
+  </track>
+  <track file="Underdark1.mp3" title="Underdark Depths">
+    <tags>underdark,mystery,creepy,suspense</tags>
+    <volume>1.5</volume>
+  </track>
+</library>

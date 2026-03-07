@@ -1,4 +1,21 @@
-/**************************************************************/
+/************************************************************************************
+/* filename: webpage-auth.js                                                       *
+/* Version 1.0                                                                     *
+/* Purpose: Discord OAuth2 SSO for webpage ports. Handles login, callback,         *
+/*          and logout. Writes wo.webAuth; non-auth requests pass through.         *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
+/************************************************************************************/
 /* filename: "webpage-auth.js"                                *
 /* Version 1.2                                                *
 /* Purpose: Discord OAuth2 SSO for selected webpage ports.    *
@@ -92,7 +109,7 @@ function getParseCookies(cookieHeader) {
 /**************************************************************/
 function getB64UrlEncode(input) {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input));
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
 /**************************************************************/
@@ -450,7 +467,16 @@ export default async function getWebpageAuth(coreData) {
   /* /auth/login + /auth/callback handled ONLY on loginPort      */
   /**************************************************************/
   if (reqPort !== loginPort) {
-    setRedirect(wo, (publicBase ? publicBase : "") + "/auth/login?next=" + encodeURIComponent(getNextFromUrl(wo)));
+    /* Re-use the existing ?next= query param (or fall back to /) so the URL
+       doesn't grow on every bounce.  Also derive the login base from the
+       public redirectUri origin so direct-port access (host:3115) still
+       ends up at the Caddy-proxied login page, not back on the same port. */
+    const next = String(wo.http?.query?.next || "/");
+    let loginBase = publicBase;
+    if (cfg.redirectUri) {
+      try { loginBase = new URL(String(cfg.redirectUri)).origin; } catch {}
+    }
+    setRedirect(wo, loginBase + "/auth/login?next=" + encodeURIComponent(next));
     wo.jump = true;
     await setSendNow(wo);
     return coreData;

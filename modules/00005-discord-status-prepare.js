@@ -1,25 +1,16 @@
 /************************************************************************************
 /* filename: discord-status-prepare.js                                             *
 /* Version 1.0                                                                     *
-/* Purpose: Prepare AI prompt for Discord presence generation via core-completions *
+/* Purpose: Prepares AI prompt for Discord presence generation.                    *
 /************************************************************************************/
+
 /************************************************************************************/
+/*                                                                                 *
 /************************************************************************************/
+
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-status-prepare";
-
-/************************************************************************************
-/* functionSignature: getPrefixedLogger (wo, moduleUrl)                            *
-/* Returns a logger function with prefixed module info and metadata                *
-/************************************************************************************/
-function getPrefixedLogger(wo, moduleUrl) {
-  return function log(message, level = "info", meta = {}) {
-    const prefix = `[${MODULE_NAME}]`;
-    const where = moduleUrl ? String(moduleUrl) : "";
-    const details = { ...meta, channelID: wo?.channelID };
-    const entry = { level, message, where, ...details };
-  };
-}
 
 /************************************************************************************
 /* functionSignature: getStr (v, d)                                                *

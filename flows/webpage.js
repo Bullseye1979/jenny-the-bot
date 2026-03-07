@@ -136,8 +136,7 @@ function getReadBody(req, maxBytes = 1e6) {
     req.on("end", () => {
       if (done) return;
       done = true;
-      if (!chunks.length) return resolve("");
-      resolve(Buffer.concat(chunks).toString("utf8"));
+      resolve(chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0));
     });
     req.on("error", (err) => fail(err));
     req.on("close", () => {
@@ -226,10 +225,11 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
 
       if (["POST", "PUT", "PATCH"].includes(method)) {
         try {
-          const raw = await getReadBody(req, 1e6);
-          wo.http.rawBody = raw;
+          const rawBuf = await getReadBody(req, 50e6);
+          wo.http.rawBodyBytes = rawBuf;
+          wo.http.rawBody = rawBuf.toString("utf8");
           try {
-            const json = raw ? JSON.parse(raw) : null;
+            const json = rawBuf.length ? JSON.parse(wo.http.rawBody) : null;
             if (json && typeof json === "object") wo.http.json = json;
           } catch {}
         } catch (err) {
@@ -282,26 +282,35 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
         await runFlow(flowName, runCore);
       } catch (e) {
         const reason = e?.message || String(e);
-        const log4 = getPrefixedLogger(wo, import.meta.url);
-        log4("webpage flow execution failed", "error", {
-          moduleName: MODULE_NAME,
-          path: urlPath,
-          reason
-        });
+        const stack  = e?.stack  || "";
+        console.error("[webpage] runFlow threw:", reason, stack);
+        try {
+          const log4 = getPrefixedLogger(wo, import.meta.url);
+          log4("webpage flow execution failed", "error", {
+            moduleName: MODULE_NAME,
+            path: urlPath,
+            reason,
+            stack
+          });
+        } catch {}
         if (!res.writableEnded) {
           return setSendResponse(
             res,
             500,
-            JSON.stringify({ ok: false, error: "Internal Server Error" }),
+            JSON.stringify({ ok: false, error: "Internal Server Error", reason, stack }),
             { "Content-Type": "application/json; charset=utf-8" }
           );
         }
       }
-    } catch {
-      setSendResponse(res, 500, "Internal Server Error");
+    } catch (outerErr) {
+      console.error("[webpage] outer handler threw:", outerErr?.message || outerErr, outerErr?.stack || "");
+      try { setSendResponse(res, 500, JSON.stringify({ ok: false, error: "Internal Server Error", reason: outerErr?.message || String(outerErr) })); } catch {}
     }
   });
 
+  server.on("error", (err) => {
+    console.error(`[webpage] Port ${port} binding failed: ${err.code || err.message}`);
+  });
   server.listen(port, () => {});
   return server;
 }

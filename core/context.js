@@ -1,16 +1,13 @@
-/********************************************************************************
-/* filename: "context.js"                                                       *
-/* Version 1                                                                    *
-/* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline    *
-/* summaries, and user-block capping. Supports extra channels.                  *
-/* Extra-channel behavior: assistant messages are presented as user messages     *
-/* with a short quote prefix. Adds one short system rule to prevent quote        *
-/* instruction/capability leakage.                                               *
-/* Trim behavior: drop only last user message from the base channel context.    *
-/********************************************************************************/
-/********************************************************************************
-/*                                                                              *
-/********************************************************************************/
+/************************************************************************************/
+/* filename: context.js                                                              *
+/* Version 1.0                                                                       *
+/* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline         *
+/*          summaries, and user-block capping. Supports extra channels.              *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                   *
+/************************************************************************************/
 
 import mysql from "mysql2/promise";
 import crypto from "crypto";
@@ -20,10 +17,10 @@ let sharedDsn = "";
 
 const TIMELINE_TABLE = "timeline_periods";
 
-/********************************************************************************/
-/* functionSignature: getContextConfig (workingObject)                           *
-/* Resolves endpoint, model, apiKey, and timeline size                           */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getContextConfig (workingObject)                               *
+/* Resolves endpoint, model, apiKey, and timeline size.                              *
+/************************************************************************************/
 function getContextConfig(workingObject) {
   const ctxCfg = workingObject?.config?.context || {};
   const endpoint =
@@ -47,10 +44,10 @@ function getContextConfig(workingObject) {
   return { endpoint, model, apiKey, periodSize };
 }
 
-/********************************************************************************/
-/* functionSignature: getDsnKey (db)                                             *
-/* Builds a stable DSN key string for pool reuse                                 */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getDsnKey (db)                                                 *
+/* Builds a stable DSN key string for pool reuse.                                    *
+/************************************************************************************/
 function getDsnKey(db) {
   const host = db?.host || "";
   const port = db?.port ?? 3306;
@@ -60,10 +57,10 @@ function getDsnKey(db) {
   return `${host}|${port}|${user}|${database}|${charset}`;
 }
 
-/********************************************************************************/
-/* functionSignature: getEnsurePool (workingObject)                              *
-/* Ensures pool exists and schema with ctx_id AI PK is ready                     */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getEnsurePool (workingObject)                                  *
+/* Ensures pool exists and schema with ctx_id AI PK is ready.                        *
+/************************************************************************************/
 async function getEnsurePool(workingObject) {
   const db = workingObject?.db;
   if (!db) throw new Error("[context] missing db configuration");
@@ -153,10 +150,10 @@ async function getEnsurePool(workingObject) {
   return pool;
 }
 
-/********************************************************************************/
-/* functionSignature: getDeepSanitize (value)                                    *
-/* Sanitizes nested values to JSON-safe structures                               */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getDeepSanitize (value)                                        *
+/* Sanitizes nested values to JSON-safe structures.                                  *
+/************************************************************************************/
 function getDeepSanitize(value) {
   const t = typeof value;
   if (value === null) return null;
@@ -202,10 +199,10 @@ function getDeepSanitize(value) {
   }
 }
 
-/********************************************************************************/
-/* functionSignature: getNormalizeToolCalls (toolCalls)                          *
-/* Normalizes assistant tool calls to a standard shape                           */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getNormalizeToolCalls (toolCalls)                              *
+/* Normalizes assistant tool calls to a standard shape.                              *
+/************************************************************************************/
 function getNormalizeToolCalls(toolCalls) {
   if (!Array.isArray(toolCalls)) return undefined;
   return toolCalls.map((tc) => ({
@@ -223,10 +220,10 @@ function getNormalizeToolCalls(toolCalls) {
   }));
 }
 
-/********************************************************************************/
-/* functionSignature: getNormalizeRecord (record)                                *
-/* Normalizes a context record and sanitizes nested values                       */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getNormalizeRecord (record)                                    *
+/* Normalizes a context record and sanitizes nested values.                          *
+/************************************************************************************/
 function getNormalizeRecord(record) {
   const obj = typeof record === "object" && record !== null ? { ...record } : {};
   obj.role = typeof obj.role === "string" ? obj.role.toLowerCase() : "";
@@ -241,10 +238,10 @@ function getNormalizeRecord(record) {
   return getDeepSanitize(obj);
 }
 
-/********************************************************************************/
-/* functionSignature: getDeriveIndexText (rec)                                   *
-/* Derives a short indexable text snippet from a record                          */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getDeriveIndexText (rec)                                       *
+/* Derives a short indexable text snippet from a record.                             *
+/************************************************************************************/
 function getDeriveIndexText(rec) {
   if (typeof rec?.content === "string" && rec.content) {
     return rec.content.slice(0, 500);
@@ -257,30 +254,28 @@ function getDeriveIndexText(rec) {
   return bits.join(" ").slice(0, 500) || null;
 }
 
-/********************************************************************************/
-/* functionSignature: getResolvedTimestamp (workingObject, record)               *
-/* Resolves Date for DB ts column from wo.timestamp/record                       */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getResolvedTimestamp (workingObject, record)                   *
+/* Resolves Date for DB ts column from wo.timestamp/record.                          *
+/************************************************************************************/
 function getResolvedTimestamp(workingObject, record) {
-  const candidates = [];
   if (record && typeof record.ts === "string" && record.ts.length) {
-    candidates.push(record.ts);
+    const d = new Date(record.ts);
+    if (!Number.isNaN(d.getTime())) return d;
   }
   if (typeof workingObject?.timestamp === "string" && workingObject.timestamp.length) {
-    candidates.push(workingObject.timestamp);
-  }
-  for (const t of candidates) {
-    const d = new Date(t);
+    const d = new Date(workingObject.timestamp);
     if (!Number.isNaN(d.getTime())) return d;
   }
   return new Date();
 }
 
-/********************************************************************************/
-/* functionSignature: setContext (workingObject, record)                         *
-/* Inserts a normalized record and updates the timeline                          */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: setContext (workingObject, record)                             *
+/* Inserts a normalized record and updates the timeline.                             *
+/************************************************************************************/
 export async function setContext(workingObject, record) {
+  if (record?.internal_meta === true) return false;
   const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
@@ -311,10 +306,10 @@ export async function setContext(workingObject, record) {
   return true;
 }
 
-/********************************************************************************/
-/* functionSignature: getContextRowsForId (pool, id, nUsers, detailed)           *
-/* Internal helper: fetches context rows for a single id                         */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getContextRowsForId (pool, id, nUsers, detailed)               *
+/* Internal helper: fetches context rows for a single id.                            *
+/************************************************************************************/
 async function getContextRowsForId(pool, id, nUsers, detailed) {
   const cutoffSql = `
     SELECT MIN(ts) AS min_ts
@@ -394,10 +389,10 @@ async function getContextRowsForId(pool, id, nUsers, detailed) {
   return rows;
 }
 
-/********************************************************************************/
-/* functionSignature: getMetaFramesMode (workingObject)                          *
-/* Resolves meta-frames mode for context output                                  */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getMetaFramesMode (workingObject)                              *
+/* Resolves meta-frames mode for context output.                                     *
+/************************************************************************************/
 function getMetaFramesMode(workingObject) {
   const v =
     workingObject?.contextMetaFrames ??
@@ -410,10 +405,10 @@ function getMetaFramesMode(workingObject) {
   return "off";
 }
 
-/********************************************************************************/
-/* functionSignature: getBuildMetaFrame (obj, row, rowChannelId, roleLc)          *
-/* Builds a compact meta-frame line for attribution and channel routing          */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getBuildMetaFrame (obj, row, rowChannelId, roleLc)             *
+/* Builds a compact meta-frame line for attribution and channel routing.             *
+/************************************************************************************/
 function getBuildMetaFrame(obj, row, rowChannelId, roleLc) {
   const parts = [];
 
@@ -438,10 +433,10 @@ function getBuildMetaFrame(obj, row, rowChannelId, roleLc) {
   return `META|${parts.join("|")}`;
 }
 
-/********************************************************************************/
-/* functionSignature: getContext (workingObject)                                 *
-/* Returns capped messages based on user-block budget; supports extra channels   */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getContext (workingObject)                                     *
+/* Returns capped messages based on user-block budget; supports extra channels.      *
+/************************************************************************************/
 export async function getContext(workingObject) {
   const baseId = String(workingObject?.channelID || "");
   if (!baseId) throw new Error("[context] missing id");
@@ -496,12 +491,6 @@ export async function getContext(workingObject) {
           ? obj.authorName.trim()
           : null;
 
-      /********************************************************************************/
-      /* Extra channels: present assistant messages as user messages (quoted)          */
-      /* - base channel: unchanged                                                    */
-      /* - extra channels: user stays user, assistant becomes user + short prefix     */
-      /* - drop tool/system/other roles from extra channels                           */
-      /********************************************************************************/
       let effectiveRole = roleLc;
       let forcedContent = null;
 
@@ -584,12 +573,6 @@ export async function getContext(workingObject) {
         baseMsg.channelId = rowChannelId;
       }
 
-      /********************************************************************************/
-      /* Optional per-turn meta-frames (as user messages)                             */
-      /* - adds attribution/routing metadata without JSON                             */
-      /* - avoids assistant-content anchoring                                         */
-      /* - never persisted; generated only in getContext output                       */
-      /********************************************************************************/
       if (metaFramesMode === "user") {
         const metaLine = getBuildMetaFrame(
           { ...obj, role: origRoleLc, authorName: origAuthorName || obj?.authorName },
@@ -614,9 +597,6 @@ export async function getContext(workingObject) {
     } catch {}
   }
 
-  /********************************************************************************/
-  /* Add one short system rule if quotes/meta exist                                */
-  /********************************************************************************/
   const sysRules = [];
   if (hasQuotes) {
     sysRules.push(
@@ -635,10 +615,6 @@ export async function getContext(workingObject) {
     });
   }
 
-  /********************************************************************************/
-  /* Drop last user message only from base channel (avoid duplicating request)     */
-  /* - skip internal meta frames                                                   */
-  /********************************************************************************/
   for (let i = messages.length - 1; i >= 0; i--) {
     const roleLc = String(messages[i]?.role || "").toLowerCase();
     if (roleLc !== "user") continue;
@@ -659,10 +635,10 @@ export async function getContext(workingObject) {
   return capped;
 }
 
-/********************************************************************************/
-/* functionSignature: setMaybeCreateTimelinePeriod (pool, wo, channelId)         *
-/* Creates a summary row when period size is met                                 */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: setMaybeCreateTimelinePeriod (pool, workingObject, channelId)  *
+/* Creates a summary row when period size is met.                                    *
+/************************************************************************************/
 async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   const { periodSize } = getContextConfig(workingObject);
   const [cntRows] = await pool.query(
@@ -730,10 +706,10 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   );
 }
 
-/********************************************************************************/
-/* functionSignature: setPurgeContext (workingObject)                            *
-/* Deletes non-frozen context and timeline rows                                  */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: setPurgeContext (workingObject)                                *
+/* Deletes non-frozen context and timeline rows.                                     *
+/************************************************************************************/
 export async function setPurgeContext(workingObject) {
   const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
@@ -749,10 +725,10 @@ export async function setPurgeContext(workingObject) {
   return Number(res1?.affectedRows || 0) + Number(res2?.affectedRows || 0);
 }
 
-/********************************************************************************/
-/* functionSignature: setFreezeContext (workingObject)                           *
-/* Marks context and timeline rows as frozen                                     */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: setFreezeContext (workingObject)                               *
+/* Marks context and timeline rows as frozen.                                        *
+/************************************************************************************/
 export async function setFreezeContext(workingObject) {
   const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
@@ -768,10 +744,68 @@ export async function setFreezeContext(workingObject) {
   return Number(r1?.affectedRows || 0) + Number(r2?.affectedRows || 0);
 }
 
-/********************************************************************************/
-/* functionSignature: getEstimatedTokensFromMessage (msg)                        *
-/* Rough estimate of tokens for budgeting                                        */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getContextLastSeconds (workingObject, seconds)                 *
+/* Returns [{role, text}] for all user/assistant rows in the last N seconds.         *
+/************************************************************************************/
+export async function getContextLastSeconds(workingObject, seconds = 60) {
+  const id = String(workingObject?.channelID || "");
+  if (!id) return [];
+  try {
+    const pool = await getEnsurePool(workingObject);
+    const [rows] = await pool.execute(
+      `SELECT role, text FROM context
+        WHERE id = ?
+          AND role IN ('user', 'assistant')
+          AND ts >= DATE_SUB(NOW(), INTERVAL ? SECOND)
+        ORDER BY ctx_id ASC`,
+      [id, Math.max(1, Math.round(Number(seconds) || 60))]
+    );
+    return Array.isArray(rows)
+      ? rows.map(r => ({ role: String(r.role || "user"), text: String(r.text || "") })).filter(r => r.text)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/************************************************************************************/
+/* functionSignature: getContextSince (workingObject, since)                         *
+/* Returns [{role, text}] for all user/assistant rows with ts >= since (ISO string   *
+/* or Date). Channel-isolated by workingObject.channelID. Returns [] on any error.   *
+/************************************************************************************/
+export async function getContextSince(workingObject, since) {
+  const id = String(workingObject?.channelID || "");
+  if (!id || !since) return [];
+  let sinceDate;
+  try {
+    sinceDate = since instanceof Date ? since : new Date(since);
+    if (isNaN(sinceDate.getTime())) return [];
+  } catch {
+    return [];
+  }
+  try {
+    const pool = await getEnsurePool(workingObject);
+    const [rows] = await pool.execute(
+      `SELECT role, text FROM context
+        WHERE id = ?
+          AND role IN ('user', 'assistant')
+          AND ts >= ?
+        ORDER BY ctx_id ASC`,
+      [id, sinceDate]
+    );
+    return Array.isArray(rows)
+      ? rows.map(r => ({ role: String(r.role || "user"), text: String(r.text || "") })).filter(r => r.text)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/************************************************************************************/
+/* functionSignature: getEstimatedTokensFromMessage (msg)                            *
+/* Rough estimate of tokens for budgeting.                                           *
+/************************************************************************************/
 function getEstimatedTokensFromMessage(msg) {
   if (!msg) return 0;
   const parts = [];
@@ -781,10 +815,10 @@ function getEstimatedTokensFromMessage(msg) {
   return Math.ceil(parts.join(" ").length / 4);
 }
 
-/********************************************************************************/
-/* functionSignature: getCapByTokenBudgetUserBlocks (messages, budget)           *
-/* Caps messages by user-anchored blocks and budget                              */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getCapByTokenBudgetUserBlocks (messages, budget)               *
+/* Caps messages by user-anchored blocks and budget.                                 *
+/************************************************************************************/
 function getCapByTokenBudgetUserBlocks(messages, budget) {
   if (!Array.isArray(messages) || !messages.length) return [];
   const maxTokens = Number(budget);
@@ -817,10 +851,10 @@ function getCapByTokenBudgetUserBlocks(messages, budget) {
   return blocks;
 }
 
-/********************************************************************************/
-/* functionSignature: getChecksumBatchFromContextRows (rows)                     *
-/* Computes a SHA-256 checksum for a batch of rows                               */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getChecksumBatchFromContextRows (rows)                         *
+/* Computes a SHA-256 checksum for a batch of rows.                                  *
+/************************************************************************************/
 function getChecksumBatchFromContextRows(rows) {
   const h = crypto.createHash("sha256");
   for (const r of rows || []) {
@@ -832,10 +866,10 @@ function getChecksumBatchFromContextRows(rows) {
   return h.digest("hex");
 }
 
-/********************************************************************************/
-/* functionSignature: getSummarizeContextBatch (wo, rows, meta)                  *
-/* Summarizes a batch via the configured endpoint                                */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getSummarizeContextBatch (workingObject, rows, meta)           *
+/* Summarizes a batch via the configured endpoint.                                   *
+/************************************************************************************/
 async function getSummarizeContextBatch(workingObject, rows, meta) {
   const { endpoint, model, apiKey } = getContextConfig(workingObject);
   const clipped = (rows || []).slice(-50);
@@ -879,10 +913,10 @@ async function getSummarizeContextBatch(workingObject, rows, meta) {
   }
 }
 
-/********************************************************************************/
-/* functionSignature: getDefaultExport ()                                        *
-/* Provides named functions via a default export object                          */
-/********************************************************************************/
+/************************************************************************************/
+/* functionSignature: getDefaultExport ()                                            *
+/* Provides named functions via a default export object.                             *
+/************************************************************************************/
 function getDefaultExport() {
   return { setContext, getContext, setPurgeContext, setFreezeContext };
 }

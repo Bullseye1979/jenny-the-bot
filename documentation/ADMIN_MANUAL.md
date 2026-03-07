@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.1 · **Date:** 2026-02-28
+> **Version:** 1.3 · **Date:** 2026-03-07
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -27,7 +27,7 @@
    - 6.4 [api](#64-api)
    - 6.5 [cron](#65-cron)
    - 6.6 [toolcall](#66-toolcall)
-   - 6.7 [webpage (config-editor module)](#67-webpage-config-editor-module)
+   - 6.7 [webpage (config-editor and chat modules)](#67-webpage-config-editor-and-chat-modules)
    - 6.8 [webpage](#68-webpage)
    - 6.8.1 [Adding a new webpage module](#681-adding-a-new-webpage-module)
    - 6.9 [Browser Extension](#69-browser-extension)
@@ -64,7 +64,12 @@
 11. [Macro System](#11-macro-system)
 12. [Discord Slash Commands — Overview](#12-discord-slash-commands--overview)
 13. [Database Schema](#13-database-schema)
-14. [Dependencies](#14-dependencies)
+14. [Reverse Proxy (Caddy)](#14-reverse-proxy-caddy)
+15. [Discord Bot Permissions](#15-discord-bot-permissions)
+16. [Web Modules](#16-web-modules)
+17. [Creating a New Web Module](#17-creating-a-new-web-module)
+18. [Bard Music System](#18-bard-music-system)
+19. [Dependencies](#19-dependencies)
 
 ---
 
@@ -181,8 +186,8 @@ It may take a few minutes before they appear inside Discord.
 Every user must explicitly consent before the bot will interact with them:
 
 ```
-/gdpr text 1    ← enable text processing
-/gdpr voice 1   ← enable voice processing (optional)
+/gdpr text 1    <- enable text processing
+/gdpr voice 1   <- enable voice processing (optional)
 ```
 
 ---
@@ -193,26 +198,26 @@ Jenny uses a **pipeline-based modular architecture**:
 
 ```
 Event source (Discord / HTTP API / Cron / Voice / Webpage)
-        │
-        ▼
+        |
+        v
    Flow Handler
-   ┌─────────────────────────────────────────┐
-   │ Creates workingObject with event data    │
-   │ Calls runFlow()                          │
-   └─────────────────────────────────────────┘
-        │
-        ▼
-   Module Pipeline (ordered execution 00xxx → 10xxx)
-   ┌────────────┬────────────┬────────────┬────────────┐
-   │ 00xxx      │ 01xxx      │ 02–08xxx   │ 10xxx      │
-   │ Pre-Proc.  │ AI Module  │ Output     │ Logging    │
-   └────────────┴────────────┴────────────┴────────────┘
-        │
-        ▼
+   +-----------------------------------------+
+   | Creates workingObject with event data    |
+   | Calls runFlow()                          |
+   +-----------------------------------------+
+        |
+        v
+   Module Pipeline (ordered execution 00xxx -> 10xxx)
+   +------------+------------+------------+------------+
+   | 00xxx      | 01xxx      | 02-08xxx   | 10xxx      |
+   | Pre-Proc.  | AI Module  | Output     | Logging    |
+   +------------+------------+------------+------------+
+        |
+        v
    Storage
-   ┌─────────────────┬────────────────────────┐
-   │ MySQL (context) │ In-Memory (registry)   │
-   └─────────────────┴────────────────────────┘
+   +-----------------+------------------------+
+   | MySQL (context) | In-Memory (registry)   |
+   +-----------------+------------------------+
 ```
 
 **Key principles:**
@@ -231,7 +236,6 @@ Event source (Discord / HTTP API / Cron / Voice / Webpage)
 ├── core.json                # Central configuration file (not checked in)
 ├── core.json.example        # Minimal example configuration
 ├── package.json
-├── ADMIN_MANUAL.md          # This file
 ├── core/
 │   ├── registry.js          # In-memory KV store with TTL/LRU
 │   ├── context.js           # MySQL conversation storage
@@ -241,11 +245,19 @@ Event source (Discord / HTTP API / Cron / Voice / Webpage)
 │   ├── discord-admin.js     # Slash command handler
 │   ├── discord-voice.js     # Voice channel handler
 │   ├── api.js               # HTTP API server
+│   ├── bard.js              # Bard music bot (second Discord client)
 │   ├── cron.js              # Scheduled jobs
 │   ├── toolcall.js          # Registry-triggered flow
-│   └── webpage.js           # Puppeteer web scraping
-├── modules/                 # 30 modules (ordered 00xxx–10xxx)
-├── tools/                   # 19 LLM-callable tools
+│   └── webpage.js           # Multi-port HTTP server for web tools
+├── modules/                 # Ordered modules (00xxx-10xxx)
+├── tools/                   # LLM-callable tools
+├── shared/
+│   └── webpage/
+│       ├── interface.js     # Shared web utilities (menu, auth, DB, file I/O)
+│       └── style.css        # Shared CSS for all web modules
+├── assets/
+│   └── bard/
+│       └── library.xml      # Bard music catalog
 ├── pub/
 │   ├── documents/           # Generated images, PDFs, videos
 │   └── debug/               # Debug logs
@@ -265,6 +277,10 @@ The live dashboard displays:
 - ASCII progress bar per flow
 - System memory (RSS / heap)
 - Last 10 completed flows with final status
+
+**Console padding:** Each dashboard line is padded with trailing spaces to the full terminal width so no leftover text is visible from shorter previous renders. ANSI escape codes are excluded from the visual width calculation.
+
+**Web dashboard:** `main.js` also writes structured telemetry to the `dashboard:state` registry key every 2 seconds. The `00051-webpage-dashboard.js` module reads this key and serves it as an HTML page at `/dashboard` (port 3115) with configurable auto-refresh (default 5 s).
 
 **Hot-Reload:** Every change to `core.json` is detected automatically and the bot reinitializes without a restart.
 
@@ -312,7 +328,6 @@ The live dashboard displays:
 |---|---|---|---|
 | `model` | string | `"gpt-4o-mini"` | LLM model ID |
 | `endpoint` | string | OpenAI URL | Chat completions endpoint |
-| `endpointResponses` | string | OpenAI URL | Responses API endpoint |
 | `apiKey` | string | — | API key for LLM calls |
 | `useAiModule` | string | `"completions"` | AI module to use: `"completions"` \| `"responses"` \| `"pseudotoolcalls"` |
 | `temperature` | number | `0.2` | Sampling temperature (0–2) |
@@ -323,7 +338,7 @@ The live dashboard displays:
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `reasoning` | string | — | Reasoning effort: `"low"` \| `"medium"` \| `"high"` |
+| `reasoning` | boolean | `false` | Enable extended reasoning / chain-of-thought output |
 | `ResponseTools` | array | — | Native Responses API tools, e.g. `[{"type":"web_search"},{"type":"image_generation"}]` |
 
 #### Tool Calling
@@ -479,6 +494,22 @@ The slash command block lives under `workingObject["discord-admin"].slash`:
 
 The `admin` array on a command or subcommand restricts execution to the listed user IDs.
 
+**Built-in slash commands defined here:**
+
+| Command | Admin | Description |
+|---|---|---|
+| `/macro` | Partial | Create, run, list, delete personal macros |
+| `/avatar` | Yes | Set or generate a bot avatar |
+| `/purge` | Yes | Delete recent messages |
+| `/purgedb` | Yes | Wipe database entries for this channel |
+| `/freeze` | Yes | Mark database rows as frozen |
+| `/gdpr` | No | Set GDPR consent flags |
+| `/join` | No | Join user's voice channel |
+| `/leave` | No | Leave voice channel |
+| `/bardjoin` | No | Bard bot joins voice channel and starts playing music |
+| `/leavebard` | No | Bard bot leaves voice channel |
+| `/error` | No | Simulate an internal error (testing) |
+
 ---
 
 ### 5.6 toolsconfig — Per-Tool Configuration
@@ -489,7 +520,7 @@ All tool configurations live under `workingObject.toolsconfig.<toolName>`:
 
 #### toolsconfig.getGoogle
 
-Performs web searches using the **Google Custom Search JSON API**. The AI calls this tool to search the internet and receive a ranked list of results including titles, snippets, and URLs. Requires a Google Cloud API key with the Custom Search API enabled and a configured Custom Search Engine (CSE) ID.
+Performs web searches using the Google Custom Search JSON API.
 
 ```json
 "getGoogle": {
@@ -521,7 +552,7 @@ Performs web searches using the **Google Custom Search JSON API**. The AI calls 
 
 #### toolsconfig.getWebpage
 
-Fetches and reads the content of any web page by URL. For pages below the `wordThreshold` the raw extracted text is returned directly (**dump mode**); for longer pages the content is compressed by an AI model (**summary mode**). The AI uses this tool to access current online information, documentation, news, or articles that are not in its training data.
+Fetches and reads web page content.
 
 ```json
 "getWebpage": {
@@ -555,7 +586,7 @@ Fetches and reads the content of any web page by URL. For pages below the `wordT
 
 #### toolsconfig.getImage
 
-Generates images from a natural-language prompt using an **OpenAI-compatible Images API** (e.g. DALL-E 3 or gpt-image-1). Before the prompt is sent to the image model, an optional second AI call automatically enhances it with quality, style, camera, and negative tags to improve output quality. Generated files are saved to `pub/documents/` and returned as public URLs. Works with any OpenAI-compatible image endpoint.
+Generates images from a natural-language prompt using an OpenAI-compatible Images API.
 
 ```json
 "getImage": {
@@ -597,7 +628,7 @@ Generates images from a natural-language prompt using an **OpenAI-compatible Ima
 
 #### toolsconfig.getImageDescription
 
-Sends an image URL to a **vision-capable language model** and returns a detailed text description of its content. The AI uses this tool when a user shares an image and asks questions about it, or when a previously generated image needs to be analysed for downstream processing.
+Vision model — describe an image.
 
 ```json
 "getImageDescription": {
@@ -623,45 +654,47 @@ Sends an image URL to a **vision-capable language model** and returns a detailed
 
 #### toolsconfig.getImageSD
 
-Generates images via a **locally running Stable Diffusion instance** (AUTOMATIC1111 WebUI API). An alternative to cloud-based image generation that runs entirely on your own hardware. Requires a local Stable Diffusion server reachable at `base_url`. Useful for uncensored or fine-tuned checkpoint models that are not available via the OpenAI API.
+Local Stable Diffusion image generation (AUTOMATIC1111 WebUI API).
+
+All attribute keys use camelCase. The formerly snake_case keys (`base_url`, `cfg_scale`, `negative_extra`) have been renamed.
 
 ```json
 "getImageSD": {
-  "base_url":          "http://127.0.0.1:7860",
-  "publicBaseUrl":     "https://myserver.com",
-  "size":              "512x512",
-  "n":                 1,
-  "steps":             15,
-  "cfg_scale":         7,
-  "sampler":           "Euler a",
-  "seed":              -1,
-  "model":             "realisticVisionV60B1_v51HyperVAE.safetensors",
-  "negative_extra":    "overprocessed, muddy colors",
-  "timeoutMs":         1400000,
-  "networkTimeoutMs":  14400000
+  "baseUrl":          "http://127.0.0.1:7860",
+  "publicBaseUrl":    "https://myserver.com",
+  "size":             "512x512",
+  "n":                1,
+  "steps":            15,
+  "cfgScale":         7,
+  "sampler":          "Euler a",
+  "seed":             -1,
+  "model":            "realisticVisionV60B1_v51HyperVAE.safetensors",
+  "negativeExtra":    "overprocessed, muddy colors",
+  "timeoutMs":        1400000,
+  "networkTimeoutMs": 14400000
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `base_url` | string | Local Stable Diffusion API URL (e.g. AUTOMATIC1111) |
+| `baseUrl` | string | Local Stable Diffusion API URL (AUTOMATIC1111) |
 | `publicBaseUrl` | string | Public base URL for generated images |
 | `size` | string | Image size `"WxH"` |
 | `n` | number | Number of images |
 | `steps` | number | Inference steps |
-| `cfg_scale` | number | CFG scale |
-| `sampler` | string | Sampler name |
+| `cfgScale` | number | CFG guidance scale |
+| `sampler` | string | Sampler algorithm |
 | `seed` | number | Seed (-1 = random) |
 | `model` | string | Checkpoint filename |
-| `negative_extra` | string | Extra negative prompts |
-| `timeoutMs` | number | Timeout per generation (ms) |
-| `networkTimeoutMs` | number | Network timeout (ms) |
+| `negativeExtra` | string | Extra negative prompt text |
+| `timeoutMs` | number | Request timeout (ms) |
+| `networkTimeoutMs` | number | Network-level timeout (ms) |
 
 ---
 
 #### toolsconfig.getAnimatedPicture
 
-Animates a still image into a **short video clip** using an image-to-video model on Replicate (default: WAN 2.5 i2v). The AI provides a source image URL and an optional motion prompt; the job is submitted asynchronously and polled until complete. The resulting video is saved to `pub/documents/` and returned as a public URL. Requires a Replicate API token.
+Animate a still image into a short video (image-to-video via Replicate WAN).
 
 ```json
 "getAnimatedPicture": {
@@ -687,7 +720,7 @@ Animates a still image into a **short video clip** using an image-to-video model
 
 #### toolsconfig.getVideoFromText
 
-Generates a **short video from a text prompt** using a text-to-video model on Replicate (default: Google Veo 3). The job is submitted asynchronously and polled until complete; the finished video file is saved to `pub/documents/` and returned as a public URL. Requires a Replicate API token.
+Generate a video from a text prompt (text-to-video via Replicate / Veo-3).
 
 ```json
 "getVideoFromText": {
@@ -706,22 +739,22 @@ Same parameters as `getAnimatedPicture`, but for text-to-video generation.
 
 #### toolsconfig.getYoutube
 
-Searches YouTube for videos and/or fetches a video's **full transcript**. Short transcripts are returned verbatim (dump mode); long transcripts are answered or summarised by an AI model. Useful for letting the bot answer questions about specific YouTube content, summarise lectures or tutorials, or find relevant videos on a topic. The Google API key is only needed for the search mode.
+YouTube search and transcript fetcher.
 
 ```json
 "getYoutube": {
-  "googleApiKey":         "YOUR_GOOGLE_API_KEY",
-  "endpoint":             "https://api.openai.com/v1/chat/completions",
-  "apiKey":               "YOUR_OPENAI_API_KEY",
-  "model":                "gpt-4.1",
-  "temperature":          0.2,
-  "max_tokens":           8000,
-  "dump_threshold_chars": 20000,
-  "transcriptLangs":      ["en", "de"],
-  "regionCode":           "US",
-  "relevanceLanguage":    "en",
-  "searchMaxResults":     5,
-  "aiTimeoutMs":          300000
+  "googleApiKey":       "YOUR_GOOGLE_API_KEY",
+  "endpoint":           "https://api.openai.com/v1/chat/completions",
+  "apiKey":             "YOUR_OPENAI_API_KEY",
+  "model":              "gpt-4.1",
+  "temperature":        0.2,
+  "max_tokens":         8000,
+  "dumpThresholdChars": 20000,
+  "transcriptLangs":    ["en", "de"],
+  "regionCode":         "US",
+  "relevanceLanguage":  "en",
+  "searchMaxResults":   5,
+  "aiTimeoutMs":        300000
 }
 ```
 
@@ -733,7 +766,7 @@ Searches YouTube for videos and/or fetches a video's **full transcript**. Short 
 | `model` | string | Model for AI summary |
 | `temperature` | number | Temperature for AI summary |
 | `max_tokens` | number | Max tokens for AI response |
-| `dump_threshold_chars` | number | Below this char count: dump mode; above: AI summary |
+| `dumpThresholdChars` | number | Below this char count: dump mode; above: AI summary |
 | `transcriptLangs` | array | Preferred transcript languages (falls back to `en`) |
 | `regionCode` | string | YouTube region code, e.g. `"US"` |
 | `relevanceLanguage` | string | Relevance language for search, e.g. `"en"` |
@@ -744,7 +777,7 @@ Searches YouTube for videos and/or fetches a video's **full transcript**. Short 
 
 #### toolsconfig.getJira
 
-Provides **full CRUD access to Jira Cloud** issues via the Atlassian REST API. The AI can create, read, update, and transition issues, execute JQL searches, and list projects. Ideal for integrating the bot into software development workflows — users can ask the bot to file bugs, check sprint status, or update ticket descriptions directly from Discord.
+Full CRUD access to Jira Cloud issues via the Atlassian REST API.
 
 ```json
 "getJira": {
@@ -795,7 +828,7 @@ Provides **full CRUD access to Jira Cloud** issues via the Atlassian REST API. T
 
 #### toolsconfig.getConfluence
 
-Provides **full CRUD access to Confluence Cloud pages** via the Atlassian REST API. The AI can read existing pages, create new ones, append content, list child pages, move pages, delete pages, and upload attachments. Useful for maintaining a living knowledge base that the bot can both read from and write to on behalf of users.
+Full CRUD access to Confluence Cloud pages via the Atlassian REST API.
 
 ```json
 "getConfluence": {
@@ -821,7 +854,7 @@ Provides **full CRUD access to Confluence Cloud pages** via the Atlassian REST A
 
 #### toolsconfig.getPDF
 
-Renders an HTML string into a **PDF file** using Puppeteer (headless Chromium). The generated PDF is saved to `pub/documents/` and returned as a public download URL. The AI uses this tool to export formatted reports, formatted documents, invoices, or any other printable content that a user requests. Requires Chromium/Puppeteer to be installed.
+HTML to PDF generator using Puppeteer (headless Chromium).
 
 ```json
 "getPDF": {
@@ -849,7 +882,7 @@ Renders an HTML string into a **PDF file** using Puppeteer (headless Chromium). 
 
 #### toolsconfig.getText
 
-Saves any text or Markdown content to a **plain-text file** in `pub/documents/` and returns a public download URL. The AI uses this tool to deliver code files, configuration templates, Markdown documents, or any other text-based artifact that would exceed Discord's 2000-character message limit. No external API is required.
+Plain-text file generator.
 
 ```json
 "getText": {
@@ -865,7 +898,7 @@ Saves any text or Markdown content to a **plain-text file** in `pub/documents/` 
 
 #### toolsconfig.getHistory
 
-Queries the bot's **MySQL conversation history** for a channel and returns a paginated excerpt. Short result sets are returned as raw text (dump mode); larger result sets are answered or summarised by an AI model. This enables the bot to recall past conversations that fall outside the active context window — useful for long-running projects or when a user asks "what did we discuss last week?".
+Conversation history retrieval and summarisation.
 
 ```json
 "getHistory": {
@@ -901,7 +934,7 @@ Queries the bot's **MySQL conversation history** for a channel and returns a pag
 
 #### toolsconfig.getInformation
 
-Performs a **semantic cluster search** over the stored conversation log to surface relevant past messages, events, or decisions. Unlike `getHistory` (which is strictly chronological), this tool groups thematically related entries and scores them by relevance to the query, then pads the hits with surrounding context rows. No external API is required — all processing runs in-memory against MySQL data.
+Semantic cluster search over the stored conversation log.
 
 ```json
 "getInformation": {
@@ -933,14 +966,14 @@ Performs a **semantic cluster search** over the stored conversation log to surfa
 
 #### toolsconfig.getLocation
 
-Generates **Google Maps links and Google Street View images** for a given address or set of coordinates. The bot saves the Street View photograph locally and returns a public URL alongside an interactive Google Maps link. Requires a Google Maps Platform API key with the Street View Static API enabled.
+Google Maps and Street View.
 
 ```json
 "getLocation": {
   "googleApiKey":  "YOUR_GOOGLE_API_KEY",
   "publicBaseUrl": "https://myserver.com",
-  "street_size":   "800x600",
-  "street_fov":    90,
+  "streetSize":    "800x600",
+  "streetFov":     90,
   "timeoutMs":     20000
 }
 ```
@@ -949,15 +982,15 @@ Generates **Google Maps links and Google Street View images** for a given addres
 |---|---|---|
 | `googleApiKey` | string | **Required.** Google Maps API key |
 | `publicBaseUrl` | string | **Required.** Public base URL for Street View images |
-| `street_size` | string | Street View image dimensions |
-| `street_fov` | number | Field of view (degrees) |
+| `streetSize` | string | Street View image dimensions |
+| `streetFov` | number | Field of view (degrees) |
 | `timeoutMs` | number | HTTP timeout (ms) |
 
 ---
 
 #### toolsconfig.getToken
 
-Converts a still image or video clip into a **small animated GIF** suitable for use as a Discord emoji or sticker. The tool decodes the source with `ffmpeg` and `ImageMagick`, then applies an iterative lossy-compression fallback chain (via `gifsicle`) to meet the `maxMb` size limit, automatically reducing FPS, scale, and colour palette as needed. The result is saved to `pub/documents/` and returned as a public URL. Requires `ffmpeg`, `convert` (ImageMagick), and `gifsicle` to be installed on the host.
+Animated GIF generator from images or video.
 
 ```json
 "getToken": {
@@ -970,7 +1003,7 @@ Converts a still image or video clip into a **small animated GIF** suitable for 
   "fpsList":            [12, 10, 8],
   "scaleList":          [512, 384, 320],
   "maxColorsList":      [128, 96, 64, 48, 32],
-  "ditherList":         ["bayer:bayer_scale=3:diff_mode=rectangle", "bayer:bayer_scale=5:diff_mode=rectangle", "none"],
+  "ditherList":         ["bayer:bayer_scale=3:diff_mode=rectangle", "none"],
   "useGifsicleLossy":   true,
   "gifsiclePath":       "gifsicle",
   "gifsicleLossyLevels": [80, 100, 120]
@@ -1001,7 +1034,7 @@ The `config` block controls which modules are active in which flows.
 
 #### config.discord
 
-Configures and starts the **Discord.js gateway client** that listens for all incoming messages, reactions, and slash command interactions across every guild and DM the bot has access to. This is the primary event source for the bot. The `token` and `intents` are forwarded directly to the Discord.js `Client` constructor.
+Configures and starts the Discord.js gateway client.
 
 ```json
 "discord": {
@@ -1028,11 +1061,11 @@ Configures and starts the **Discord.js gateway client** that listens for all inc
 
 #### config.api
 
-Starts a lightweight **HTTP API server** that exposes the full bot pipeline to external applications. Any service capable of making an HTTP POST can submit a message and receive the bot's response — useful for browser extensions, web applications, home-automation integrations, or internal tooling. Remove this block entirely to disable the HTTP API.
+Starts a lightweight HTTP API server.
 
-**Token gating:** Set `workingObject.apiSecret` to a strong random string and enable the `api-token-gate` module (see section 7.1) to protect the endpoint. Every request must then include the header `Authorization: Bearer <secret>`; missing or wrong tokens receive HTTP 401. The `/health` endpoint is never gated.
+**Token gating:** Set `workingObject.apiSecret` to enable token checking. Every request must include `Authorization: Bearer <secret>`.
 
-**Channel blocking:** Set `apiEnabled: 0` in a channel override (`core-channel-config`) to permanently block API access to that channel, regardless of any token. `apiEnabled: 1` (default) allows access according to the token-gate rules above.
+**Channel blocking:** Set `apiEnabled: 0` in a channel override to block API access permanently.
 
 ```json
 "api": {
@@ -1054,16 +1087,7 @@ Starts a lightweight **HTTP API server** that exposes the full bot pipeline to e
 
 #### config.webpage-config-editor
 
-> **Replaces the former `config-editor` flow.** The config editor is now a **webpage-flow module** (`modules/00047-webpage-config-editor.js`) served on a dedicated port listed in `config.webpage.ports`.
-
-Serves the **JSON config editor SPA** (`GET /`) with full tree editing. The AI chat has moved to the separate `webpage-chat` module (`modules/00048-webpage-chat.js`, `GET /chat`).
-
-**Security:** bind to `127.0.0.1` (localhost only) or set a `token` for Bearer/Basic authentication.
-
-**Setup:** add the port to `config.webpage.ports` array so the webpage flow listens on it:
-```json
-"webpage": { "flowName": "webpage", "ports": [3000, 3111] }
-```
+> **Replaces the former `config-editor` flow.** Served on a dedicated port listed in `config.webpage.ports`.
 
 ```json
 "webpage-config-editor": {
@@ -1072,7 +1096,7 @@ Serves the **JSON config editor SPA** (`GET /`) with full tree editing. The AI c
   "host":       "127.0.0.1",
   "token":      "",
   "configPath": "",
-  "label":      "⚙️ Config"
+  "label":      "Config"
 }
 ```
 
@@ -1083,22 +1107,22 @@ Serves the **JSON config editor SPA** (`GET /`) with full tree editing. The AI c
 | `host` | string | `"127.0.0.1"` | Bind address (controlled by the webpage flow server, not this module) |
 | `token` | string | `""` | Optional auth token; sent as `Authorization: Bearer <token>` or as the Basic password |
 | `configPath` | string | `""` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
-| `label` | string | `"⚙️ Config"` | Navigation menu label shown in other webpage tools |
+| `label` | string | `"Config"` | Navigation menu label shown in other webpage tools |
 
 ---
 
 #### config.webpage-chat
 
-Serves the **AI chat SPA** (`GET /chat`). Runs on the same port as `webpage-config-editor` (default 3111), routed by path. The `apiSecret` for each channel is injected server-side — it is never sent to the browser.
+Serves the AI chat SPA (`GET /chat`). The `apiSecret` for each channel is injected server-side — it is never sent to the browser.
 
 ```json
 "webpage-chat": {
   "flow":   ["webpage"],
-  "port":   3111,
+  "port":   3112,
   "host":   "127.0.0.1",
   "token":  "",
   "apiUrl": "http://localhost:3400/api",
-  "label":  "💬 Chat",
+  "label":  "Chat",
   "chats": [
     { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
     { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
@@ -1109,11 +1133,11 @@ Serves the **AI chat SPA** (`GET /chat`). Runs on the same port as `webpage-conf
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `flow` | array | `["webpage"]` | Must include `"webpage"` for the module to activate |
-| `port` | number | `3111` | HTTP port to listen on — must also be listed in `config.webpage.ports` |
-| `host` | string | `"127.0.0.1"` | Bind address (controlled by the webpage flow server, not this module) |
-| `token` | string | `""` | Optional auth token; sent as `Authorization: Bearer <token>` or as the Basic password |
+| `port` | number | `3112` | HTTP port to listen on — must also be listed in `config.webpage.ports` |
+| `host` | string | `"127.0.0.1"` | Bind address |
+| `token` | string | `""` | Optional auth token (Bearer or Basic). Leave empty to disable auth |
 | `apiUrl` | string | `"http://localhost:3400/api"` | Default URL of the bot's HTTP API flow used for all chats |
-| `label` | string | `"💬 Chat"` | Navigation menu label shown in other webpage tools |
+| `label` | string | `"Chat"` | Navigation menu label shown in other webpage tools |
 | `chats[].label` | string | — | Display name shown in the channel dropdown |
 | `chats[].channelID` | string | — | Channel ID; injected into every API request for this chat |
 | `chats[].apiSecret` | string | `""` | Bearer secret for this channel's API requests (injected server-side, never sent to the browser) |
@@ -1129,7 +1153,7 @@ Serves the **AI chat SPA** (`GET /chat`). Runs on the same port as `webpage-conf
 
 #### config.cron
 
-Runs **scheduled background jobs** at defined intervals using a simple cron expression engine. On each tick the scheduler checks whether any enabled job is due; if so, it triggers the full module pipeline for the configured target channel — allowing the bot to post autonomous status updates, daily reports, or reminders without any user input. Leave the `jobs` array empty to run the flow infrastructure without scheduling any jobs.
+Runs scheduled background jobs.
 
 ```json
 "cron": {
@@ -1161,7 +1185,7 @@ Runs **scheduled background jobs** at defined intervals using a simple cron expr
 
 #### config.context
 
-Controls the **rolling-summary backend** that compresses ageing conversation history into AI-generated period summaries. When a time window (`periodSize` seconds) closes, the raw messages within it are sent to an LLM, which writes a concise summary to the `timeline_periods` table. The raw rows are then replaced by the summary, keeping the MySQL `context` table lean while preserving long-term memory. This model and key are used solely for summary generation and can differ from the bot's main model.
+Controls the rolling-summary backend.
 
 ```json
 "context": {
@@ -1183,7 +1207,7 @@ Controls the **rolling-summary backend** that compresses ageing conversation his
 
 #### config.toolcall
 
-Wires up the internal **tool-call status tracking flow**. When the AI invokes a tool, the tool's name is written to the registry under `registryKey` (global) **and** under `registryKey:<channelID>` (per-channel). The toolcall flow polls the global key and passes the value to `discord-status-apply`, so the bot's Discord activity indicator updates to show which tool is currently running (e.g. "⏳ Generating an image …") in near-real time. External consumers (browser extension, config-editor) poll `/toolcall?channelID=<id>` to get the per-channel status without interference from other channels. This flow runs independently of the main pipeline.
+Wires up the internal tool-call status tracking flow.
 
 ```json
 "toolcall": {
@@ -1203,119 +1227,21 @@ Wires up the internal **tool-call status tracking flow**. When the AI invokes a 
 
 ---
 
-#### config.discord-status-prepare
+#### config.bard
 
-Module that **reads recent conversation history** from the specified `allowedChannels` and asks the LLM to produce a short (≤5 word) activity string describing what the bot is currently doing or discussing. The result is stored in `workingObject` and consumed by `discord-status-apply`. Runs exclusively on the `discord-status` flow, which is triggered by a cron job at a configurable interval.
+Configuration for the Bard music bot.
 
 ```json
-"discord-status-prepare": {
-  "flow":            ["discord-status"],
-  "allowedChannels": ["CHANNEL_ID"],
-  "prompt":          "Summarize the context in 5 words or less."
+"bard": {
+  "token":    "YOUR_BARD_BOT_TOKEN",
+  "musicDir": "assets/bard"
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `flow` | array | Active flows for this module |
-| `allowedChannels` | array | Channel IDs whose history is used for the status |
-| `prompt` | string | Prompt for status summarization |
-
----
-
-#### config.discord-status-apply
-
-**Applies the Discord bot presence/activity text.** It operates in two modes: (1) during normal conversation it sets the activity to the AI-generated string from `discord-status-prepare`; (2) while a tool is executing it reads the tool name from the registry and substitutes a human-readable placeholder from the `mapping` table. A `minUpdateGapMs` guard prevents the Discord API from being hit too frequently. Set `placeholderEnabled: false` if you do not want the "working" status texts.
-
-```json
-"discord-status-apply": {
-  "flow":               ["discord-status", "toolcall"],
-  "status":             "online",
-  "placeholderEnabled": true,
-  "placeholderText":    " // myserver.com // ",
-  "minUpdateGapMs":     800,
-  "mapping": {
-    "getImage":   "⏳ Generating an image …",
-    "getGoogle":  "⏳ Searching with Google …"
-  }
-}
-```
-
-| Parameter | Type | Description |
-|---|---|---|
-| `flow` | array | Active flows |
-| `status` | string | Discord presence status: `"online"` \| `"idle"` \| `"dnd"` |
-| `placeholderEnabled` | boolean | Show placeholder status when no tool is active |
-| `placeholderText` | string | Placeholder status text |
-| `minUpdateGapMs` | number | Min gap between status updates (ms) |
-| `mapping` | object | Tool name → status text mapping |
-
----
-
-#### config.discord-voice-transcribe
-
-Controls the **voice recording and silence-detection engine**. Opus audio frames arriving from Discord's gateway are accumulated in a session buffer. When silence has been detected for at least `silenceMs` milliseconds (or the recording reaches `maxCaptureMs`), the captured audio is submitted to OpenAI Whisper for speech-to-text transcription. The resulting text becomes the turn's `payload` and the full module pipeline continues from there. Parameters like `snrDbThreshold` and `minVoicedMs` suppress background noise and accidental triggers.
-
-```json
-"discord-voice-transcribe": {
-  "flow":            ["discord-voice"],
-  "pollMs":          1000,
-  "silenceMs":       1500,
-  "maxCaptureMs":    25000,
-  "minVoicedMs":     1000,
-  "snrDbThreshold":  3.8,
-  "frameMs":         20,
-  "startDebounceMs": 600
-}
-```
-
-| Parameter | Type | Description |
-|---|---|---|
-| `pollMs` | number | Audio frame poll interval (ms) |
-| `silenceMs` | number | Silence duration before recording ends (ms) |
-| `maxCaptureMs` | number | Max recording duration (ms) |
-| `minVoicedMs` | number | Min voice activity for a valid recording (ms) |
-| `snrDbThreshold` | number | Signal-to-noise threshold (dB) |
-| `frameMs` | number | Audio frame length (ms) |
-| `startDebounceMs` | number | Debounce before recording starts (ms) |
-
----
-
-#### config.webpage-inpaint
-
-Enables **AI-based image inpainting** for content received through the webpage flow. When the bot processes a web page that contains an image, this module can route that image to an external inpainting service (at `inpaintHost`) for content replacement, object removal, or background fill. The result is then forwarded back into the pipeline. Set `enabled: false` to bypass this step.
-
-```json
-"webpage-inpaint": {
-  "flow":        ["webpage"],
-  "enabled":     true,
-  "inpaintHost": "inpainting.myserver.com"
-}
-```
-
-| Parameter | Type | Description |
-|---|---|---|
-| `flow` | array | Active flows |
-| `enabled` | boolean | Inpainting enabled |
-| `inpaintHost` | string | Hostname of the inpainting service |
-
----
-
-#### config.core-add-id
-
-Tags each outgoing response with a **reference URL** linking back to the full debug log for that turn. The URL is assembled from one of the configured `servers` and the turn's ULID, making it easy to trace any bot message back to its complete internal JSON log in `pub/debug/`. This is purely for diagnostic purposes and has no effect on the response sent to the user.
-
-```json
-"core-add-id": {
-  "flow":    ["discord", "discord-voice", "api"],
-  "servers": ["myserver.com", "anotherserver.com"]
-}
-```
-
-| Parameter | Type | Description |
-|---|---|---|
-| `flow` | array | Active flows |
-| `servers` | array | Server URLs registered as public endpoints |
+| `token` | string | **Required.** Discord bot token for the Bard bot |
+| `musicDir` | string | Directory containing MP3 files and `library.xml` |
 
 ---
 
@@ -1344,6 +1270,12 @@ Every module can be restricted to specific flows via its config block:
 | `core-ai-completions` | discord-status, discord, discord-voice, api |
 | `core-ai-responses` | discord-status, discord, discord-voice, api |
 | `core-output` | all |
+| `bard-admin-join` | discord-admin |
+| `bard-cron` | bard-label-gen |
+| `webpage-bard` | webpage |
+| `webpage-config-editor` | webpage |
+| `webpage-chat` | webpage |
+| `webpage-inpainting` | webpage |
 
 ---
 
@@ -1353,8 +1285,8 @@ The three-level hierarchy allows fine-grained configuration:
 
 ```
 Channel override
-  └── Flow override
-        └── User override
+  +-- Flow override
+        +-- User override
 ```
 
 ```json
@@ -1436,6 +1368,10 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 - Filters own bot messages (except those in `botsAllow`)
 - Triggers the `discord-admin` flow for slash command interactions
 
+**Intents used:** `Guilds`, `GuildMessages`, `MessageContent`, `GuildVoiceStates`, `DirectMessages`
+
+> Note: `MessageContent` is a **privileged intent** and must be enabled in the Discord Developer Portal under your bot's settings.
+
 ---
 
 ### 6.2 discord-admin
@@ -1508,6 +1444,17 @@ Also supports `*/N * * * *` (every N minutes).
 
 **Job configuration:** See `config.cron.jobs[]`
 
+**Parallel execution:** Each job runs as a fire-and-forget async IIFE with its own `running` flag. This means long-running jobs (e.g. `discord-status`) do not delay other jobs (e.g. `bard-label-gen`) — all due jobs start concurrently.
+
+```javascript
+// Internal pattern — each job:
+(async () => {
+  try { await runFlow(targetFlow, rc); }
+  catch (e) { /* log */ }
+  finally { job.running = false; job.nextDueAt = getNextDue(job); }
+})();
+```
+
 ---
 
 ### 6.6 toolcall
@@ -1525,31 +1472,27 @@ Also supports `*/N * * * *` (every N minutes).
 ### 6.7 webpage (config-editor and chat modules)
 
 **Files:** `flows/webpage.js` + `modules/00047-webpage-config-editor.js` + `modules/00048-webpage-chat.js`
-**Purpose:** The webpage flow serves **multiple ports simultaneously** (configured via `config.webpage.ports`). The two admin modules share a single port (default 3111) and route by URL path.
+**Purpose:** The webpage flow serves **multiple ports simultaneously** (configured via `config.webpage.ports`). Admin modules route by URL path.
 
-**Access:** Open `http://<host>:3111` in any browser.
+**Multi-port:** `config.webpage.ports` is an array — one HTTP server is started per port. Each incoming request sets `wo.http.port` so modules can route by port.
 
-**Multi-port:** `config.webpage.ports` is an array — one HTTP server is started per port. Each incoming request sets `wo.http.port` so modules can route by port. Both modules only handle requests arriving on their configured port.
-
-**⚙ Config Editor** (`modules/00047-webpage-config-editor.js`, `GET /`)
-- Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{…}]` as tree items
+**Config Editor** (`modules/00047-webpage-config-editor.js`, `GET /config`)
+- Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{...}]` as tree items
 - Right panel: inline editing of primitives, tag/chip editors for primitive arrays, navigation links for sub-sections
 - Add Attribute / Section / Object Array / Tag Array per section
 - Duplicate and Delete on every node and array item
-- Keyboard shortcut `Ctrl + S` / `⌘ S` to save
+- Keyboard shortcut `Ctrl + S` / `Cmd S` to save
 - **Fully responsive** — works on mobile (hamburger sidebar)
 
-**💬 Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
+**Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
 - Channel dropdown populated from `webpage-chat.chats[]`
-- Last 100 context entries loaded from MySQL on channel select or ↺ refresh
+- Last 100 context entries loaded from MySQL on channel select or refresh
 - Large scrollable message window (top) + auto-resize input (bottom)
-- Enter = send · Shift+Enter = newline
+- Enter = send, Shift+Enter = newline
 - **Thinking indicator with tool name:** the currently active tool is shown next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel)
 - **Markdown rendering:** `#`/`##`/`###` headings, bold/italic, fenced and inline code, blockquotes, lists, and `---` HR are fully rendered in chat bubbles
 - Messages are sent to the bot's API flow; `apiSecret` is injected server-side and never exposed to the browser
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
-
-**Configuration:** `config["webpage-config-editor"]` and `config["webpage-chat"]` — see the respective config sections below.
 
 > **Migration from config-editor:** The `flows/config-editor.js` flow is now a **no-op stub** (prints a deprecation warning and returns). Move your settings from `config["config-editor"]` to `config["webpage-config-editor"]` (config) and `config["webpage-chat"]` (chat), then add port 3111 to `config.webpage.ports`.
 
@@ -1565,7 +1508,7 @@ Also supports `*/N * * * *` (every N minutes).
 | Field | Type | Description |
 |---|---|---|
 | `wo.http.port` | number | The port this request arrived on — use this to route |
-| `wo.http.method` | string | HTTP method (`"GET"`, `"POST"`, …) |
+| `wo.http.method` | string | HTTP method (`"GET"`, `"POST"`, ...) |
 | `wo.http.path` | string | URL path without query string (e.g. `"/api/data"`) |
 | `wo.http.url` | string | Full URL including query string |
 | `wo.http.headers` | object | Request headers |
@@ -1581,7 +1524,7 @@ Also supports `*/N * * * *` (every N minutes).
 
 New web tools can be added by dropping a single file into `modules/`. No flow changes required.
 
-#### Step 1 — Create the module file
+**Step 1 — Create the module file**
 
 ```
 modules/NNNNN-webpage-myapp.js
@@ -1589,101 +1532,32 @@ modules/NNNNN-webpage-myapp.js
 
 Use a number between `00045` and `00049` to run before AI processing, or higher if needed.
 
-#### Step 2 — Module skeleton
+**Step 2 — Module skeleton**
 
-```js
-"use strict";
-import { getItem } from "../core/registry.js";
+See [Section 17: Creating a New Web Module](#17-creating-a-new-web-module) for the full template and guidelines.
 
-const MODULE_NAME = "webpage-myapp";
-
-async function setSendNow(wo) {
-  const key = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = await getItem(key).catch(() => null);
-  if (!entry?.res) return;
-  const { res } = entry;
-  const r = wo.http?.response || {};
-  res.writeHead(Number(r.status ?? 200), r.headers ?? { "Content-Type": "application/json" });
-  res.end(typeof r.body === "string" ? r.body : JSON.stringify(r.body ?? ""));
-}
-
-export default async function getWebpageMyapp(coreData) {
-  const wo  = coreData?.workingObject || {};
-  if (wo?.flow !== "webpage") return coreData;          // only in webpage flow
-
-  const cfg   = coreData?.config?.[MODULE_NAME] || {};
-  const port  = Number(cfg.port  ?? 3222);              // your port
-  const label = String(cfg.label ?? "🔧 My App");
-
-  /* Always register in the nav menu (shown on all pages sharing this port) */
-  if (Array.isArray(wo.web?.menu)) {
-    wo.web.menu.push({ label, port, path: "/myapp" });
-  }
-
-  /* Only handle requests arriving on our port */
-  if (wo.http?.port !== port) return coreData;
-
-  /* Skip if another module on the same port already handled this request */
-  if (wo.jump) return coreData;
-
-  const method  = String(wo.http?.method ?? "GET").toUpperCase();
-  const urlPath = String(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
-
-  /* ---- GET /myapp → serve SPA ---- */
-  if (method === "GET" && urlPath === "/myapp") {
-    wo.http.response = {
-      status:  200,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    "<html>...</html>"
-    };
-    wo.web.useLayout = false;   // bypass the shared layout; we serve our own full HTML
-    wo.jump = true;
-    await setSendNow(wo);
-    return coreData;
-  }
-
-  /* ---- GET /api/mydata → JSON endpoint ---- */
-  if (method === "GET" && urlPath === "/api/mydata") {
-    wo.http.response = {
-      status:  200,
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ ok: true })
-    };
-    wo.jump = true;
-    await setSendNow(wo);
-    return coreData;
-  }
-
-  /* Unknown path — let other modules or webpage-output handle it */
-  return coreData;
-}
-```
-
-#### Step 3 — Add config section to `core.json`
+**Step 3 — Add config section to `core.json`**
 
 ```jsonc
 "webpage-myapp": {
   "flow":  ["webpage"],
   "port":  3222,
-  "label": "🔧 My App"
+  "label": "My App"
 }
 ```
 
-#### Step 4 — Register the port in `config.webpage.ports`
+**Step 4 — Register the port in `config.webpage.ports`**
 
 ```jsonc
 "webpage": {
   "flowName": "webpage",
-  "ports": [3000, 3111, 3222]
+  "ports": [3000, 3111, 3112, 3113, 3114, 3222]
 }
 ```
 
-That's it. The bot picks up the new module on next restart.
+**Key rules for multi-module port sharing**
 
-#### Key rules for multi-module port sharing
-
-Multiple modules can share a single port (as `00047` and `00048` do on port 3111). Each module routes by URL path:
+Multiple modules can share a single port. Each module routes by URL path:
 
 1. **Always push to `wo.web.menu`** — regardless of port and before any early returns, so cross-nav links work on all pages.
 2. **Check `wo.http.port !== port`** — return immediately if the request is on a different port.
@@ -1706,7 +1580,7 @@ Multiple modules can share a single port (as `00047` and `00048` do on port 3111
 |---|---|
 | **Persistent side panel** | Opens as a browser side panel (not a popup) — stays open while you browse other pages or click elsewhere |
 | **Chat UI** | Full chat UI matching the config-editor chat; markdown rendering, link/video embeds, toolcall display |
-| **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page — uses a background service worker to track the active tab URL reliably even from Chrome side panels |
+| **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelID=<id>` every 800 ms (per-channel) |
 | **Options page** | `apiUrl`, `channelID`, `apiSecret` stored in `chrome.storage.sync` |
 
@@ -1714,7 +1588,7 @@ Multiple modules can share a single port (as `00047` and `00048` do on port 3111
 
 1. Open `edge://extensions/` (or `chrome://extensions/`).
 2. Enable **Developer mode**.
-3. Click **Load unpacked** → select the `extensions/jenny-extension/` folder.
+3. Click **Load unpacked** -> select the `extensions/jenny-extension/` folder.
 4. Click the **Jenny Bot** icon in the toolbar to open the side panel.
 
 #### Options page fields
@@ -1755,7 +1629,7 @@ Every module is an async function:
 export default async function myModule(coreData) {
   const { workingObject, logging } = coreData;
   // Read from workingObject, do work, write results back
-  // Optional: workingObject.stop = true → halt pipeline
+  // Optional: workingObject.stop = true -> halt pipeline
 }
 ```
 
@@ -1768,15 +1642,19 @@ export default async function myModule(coreData) {
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
 | 00020 | `discord-channel-gate` | Checks whether the bot is allowed to respond in this channel |
-| 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set — blocks with HTTP 401 if wrong or missing |
+| 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
 | 00025 | `discord-admin-gdpr` | Handles admin GDPR management commands |
 | 00030 | `discord-voice-transcribe` | Transcribes voice audio via Whisper API |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
+| 00035 | `bard-admin-join` | Processes `/bardjoin` and `/leavebard` commands for the Bard music bot |
+| 00036 | `bard-cron` | Generates mood labels for the Bard music bot (flow: `bard-label-gen`) |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
-| 00045 | `webpage-inpaint` | Image inpainting for web content |
-| 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /` and `GET\|POST /api/config` on the configured port within the webpage flow |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /api/chats`, `GET /api/context`, `POST /api/chat`, `GET /api/toolcall` on the configured port |
+| 00045 | `webpage-inpaint` | Image inpainting redirect for web content |
+| 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard-admin`) |
+| 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /chat/api/chats`, `GET /chat/api/messages`, `POST /chat/api/messages` on the configured port |
+| 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
 | 00055 | `core-admin-commands` | Core admin operations (purge, freeze, DB commands) |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
@@ -1868,26 +1746,13 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `query` | string | ✓ | Search query |
+| `query` | string | Yes | Search query |
 | `num` | integer (1–10) | — | Number of results (default from toolsconfig) |
 | `safe` | string | — | Safe search: `"off"` \| `"active"` \| `"high"` |
 | `hl` | string | — | UI language hint, e.g. `"en"` |
 | `lr` | string | — | Language restrict, e.g. `"lang_en"` |
 | `cr` | string | — | Country restrict, e.g. `"countryUS"` |
 | `gl` | string | — | Geolocation, e.g. `"us"` |
-
-**Return value:**
-```json
-{
-  "ok": true,
-  "query": "...",
-  "total": 5,
-  "searchInformation": { "formattedSearchTime": "...", "formattedTotalResults": "..." },
-  "items": [
-    { "title": "...", "snippet": "...", "link": "...", "displayLink": "...", "mime": "..." }
-  ]
-}
-```
 
 ---
 
@@ -1900,13 +1765,13 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `url` | string | ✓ | Absolute URL (http/https) |
-| `user_prompt` | string | ✓ | User question/task against the page text |
+| `url` | string | Yes | Absolute URL (http/https) |
+| `user_prompt` | string | Yes | User question/task against the page text |
 | `prompt` | string | — | Optional extra system instructions to bias the summary |
 
 **Modes:**
-- `dump`: page has fewer than `wordThreshold` words → text returned directly
-- `summary`: page exceeds `wordThreshold` → AI summary
+- `dump`: page has fewer than `wordThreshold` words -> text returned directly
+- `summary`: page exceeds `wordThreshold` -> AI summary
 
 ---
 
@@ -1919,19 +1784,13 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `prompt` | string | ✓ | Scene description |
+| `prompt` | string | Yes | Scene description |
 | `size` | string | — | Explicit size `"WxH"`, e.g. `"1024x1024"` |
 | `aspect` | string | — | Aspect preset: `"portrait"`, `"landscape"`, `"1:1"`, `"16:9"`, etc. |
 | `targetLongEdge` | number | — | Target pixels for the long edge when `size` is omitted |
 | `n` | integer (1–4) | — | Number of images |
 | `strictPrompt` | boolean | — | `true` = use prompt exactly (skip enhancer) |
 | `negative` | string/array | — | Negative tags |
-| `enhancerEndpoint` | string | — | Endpoint for the prompt enhancer |
-| `enhancerApiKey` | string | — | API key for the enhancer |
-| `enhancerModel` | string | — | Model for the enhancer |
-| `enhancerTemperature` | number | — | Temperature for the enhancer |
-| `enhancerMaxTokens` | number | — | Max tokens for the enhancer |
-| `preferDigitalPainting` | boolean | — | Prefer a digital painting style (default: true) |
 
 **Prompt enhancement:** The tool automatically improves prompts with quality tags, camera/lens suggestions and negative tags. Use `strictPrompt: true` to pass the prompt unchanged.
 
@@ -1946,7 +1805,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `url` | string | ✓ | Image URL |
+| `url` | string | Yes | Image URL |
 | `prompt` | string | — | Specific analysis request |
 
 ---
@@ -1967,7 +1826,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | `cfg_scale` | number | CFG scale |
 | `seed` | number | Seed (-1 = random) |
 
-**Prerequisite:** A local AUTOMATIC1111 instance running at `base_url`.
+**Prerequisite:** A local AUTOMATIC1111 instance running at `baseUrl`.
 
 ---
 
@@ -1980,7 +1839,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `image_url` | string | ✓ | URL of the source image |
+| `image_url` | string | Yes | URL of the source image |
 | `prompt` | string | — | Description of the motion/animation |
 | `duration` | number | — | Video duration in seconds |
 
@@ -1995,7 +1854,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `prompt` | string | ✓ | Scene description for the video |
+| `prompt` | string | Yes | Scene description for the video |
 | `duration` | number | — | Video duration in seconds |
 | `aspect_ratio` | string | — | Format: `"16:9"`, `"9:16"`, `"1:1"` |
 
@@ -2017,12 +1876,6 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | `query` | string | For search mode | Search query |
 | `max_results` | number | — | Max search results (1–10) |
 | `safe_search` | string | — | `"none"` \| `"moderate"` \| `"strict"` |
-
-**Modes:**
-- `transcript` + short transcript → dump mode (text returned directly)
-- `transcript` + long transcript + `user_prompt` → QA mode (AI answer)
-- `transcript` + long transcript → summary mode (AI summary)
-- `search` → YouTube search results
 
 ---
 
@@ -2073,7 +1926,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `html` | string | ✓ | Full HTML content |
+| `html` | string | Yes | Full HTML content |
 | `filename` | string | — | Desired filename (without extension) |
 
 ---
@@ -2087,7 +1940,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `content` | string | ✓ | File content |
+| `content` | string | Yes | File content |
 | `filename` | string | — | Desired filename |
 | `extension` | string | — | File extension, e.g. `"md"`, `"txt"`, `"py"` |
 
@@ -2134,7 +1987,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `location` | string | ✓ | Address or coordinates |
+| `location` | string | Yes | Address or coordinates |
 | `heading` | number | — | Viewing direction (0–360 degrees) |
 | `pitch` | number | — | Tilt (-90–90 degrees) |
 | `fov` | number | — | Field of view (10–120 degrees) |
@@ -2179,7 +2032,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `source_url` | string | ✓ | URL of source image or video |
+| `source_url` | string | Yes | URL of source image or video |
 | `size` | number | — | GIF target size in pixels |
 | `border_px` | number | — | Border in pixels |
 | `fps` | number | — | Frames per second |
@@ -2197,7 +2050,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `user_id` | string | ✓ | Discord user ID |
+| `user_id` | string | Yes | Discord user ID |
 | `reason` | string | — | Reason for the ban |
 | `delete_message_days` | number | — | Delete messages from the last N days (0–7) |
 
@@ -2236,11 +2089,26 @@ clearAll();                // Clear the entire registry
 
 **Exported functions:**
 ```javascript
-import { getAddContext, getWriteContext, getDeleteContext } from "./core/context.js";
+import { getAddContext, getWriteContext, getDeleteContext,
+         setContext, getContext, getContextLastSeconds, getContextSince } from "./core/context.js";
 
-getAddContext(workingObject);               // Load history into workingObject
-getWriteContext(workingObject, record);     // Persist a turn to MySQL
-getDeleteContext(workingObject, channelId); // Delete messages for a channel
+getAddContext(workingObject);                  // Load history into workingObject
+getWriteContext(workingObject, record);        // Persist a turn to MySQL
+getDeleteContext(workingObject, channelId);    // Delete messages for a channel
+setContext(workingObject, record);             // Append one record to the context DB (used by discord-add-context etc.)
+getContext(workingObject, n);                  // Return the last n turns for workingObject.channelID
+getContextLastSeconds(workingObject, seconds); // Return all turns in the last N seconds for the channel
+getContextSince(workingObject, since);         // Return all turns since a Date or ISO timestamp for the channel
+```
+
+**`getContextSince`** is used by the Bard cron job (`00036-bard-cron.js`) to read chat that occurred since the job last ran. This avoids a fixed time window and ensures no messages are missed even if the cron interval stretches.
+
+```javascript
+// Example: read context since a registry-stored timestamp
+const lastRun = await getItem("bard:lastrun:guildId"); // { ts: "2026-03-07T..." }
+const rows = lastRun?.ts
+  ? await getContextSince(wo, lastRun.ts)          // since last run
+  : await getContextLastSeconds(wo, 300);           // fallback: last 5 minutes
 ```
 
 **Rolling summaries:**
@@ -2271,7 +2139,7 @@ log.error("API call failed", err);
 **Log entry structure:**
 ```javascript
 {
-  ts:         "2026-02-26T12:34:56.789Z",
+  ts:         "2026-03-07T12:34:56.789Z",
   level:      "info" | "warn" | "error",
   message:    "...",
   prefix:     "[00070:discord-add-context]",
@@ -2352,6 +2220,8 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 | `/gdpr voice <0\|1>` | No | Set GDPR consent for voice |
 | `/join` | No | Bot joins current voice channel |
 | `/leave` | No | Bot leaves voice channel |
+| `/bardjoin` | No | Bard bot joins voice channel and starts playing music |
+| `/leavebard` | No | Bard bot leaves voice channel |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -2399,15 +2269,337 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 
 ---
 
-## 14. Dependencies
+## 14. Reverse Proxy (Caddy)
+
+Jenny runs multiple HTTP servers on different ports. A reverse proxy such as Caddy consolidates them under a single domain with automatic HTTPS.
+
+**Example Caddyfile:**
+
+```
+jenny.example.com {
+    encode gzip
+    reverse_proxy /config*      localhost:3111
+    reverse_proxy /chat*        localhost:3112
+    reverse_proxy /inpainting*  localhost:3113
+    reverse_proxy /documents*   localhost:3113
+    reverse_proxy /bard-admin*  localhost:3114
+    reverse_proxy /dashboard*   localhost:3115
+    reverse_proxy /auth*        localhost:3111
+    reverse_proxy *             localhost:3400
+}
+```
+
+> **Local development:** Add `tls internal` inside the block to use a self-signed certificate.
+> **Production:** Caddy handles HTTPS automatically via Let's Encrypt when a public domain is used — no extra configuration needed.
+
+**Port mapping:**
+
+| Port | Service |
+|---|---|
+| 3400 | Main API + health endpoint |
+| 3111 | Config Editor (`/config`) + auth (`/auth`) |
+| 3112 | Chat SPA (`/chat`) |
+| 3113 | Inpainting SPA (`/inpainting`) + document serving (`/documents`) |
+| 3114 | Bard Admin UI (`/bard-admin`) |
+| 3115 | Live Dashboard (`/dashboard`) |
+
+---
+
+## 15. Discord Bot Permissions
+
+### Jenny the Bot (main bot)
+
+- In the Discord Developer Portal, enable **Message Content Intent** under Privileged Gateway Intents.
+- Intents used: `Guilds`, `GuildMessages`, `MessageContent`, `GuildVoiceStates`, `DirectMessages`
+- Required bot permissions: Send Messages, Read Message History, Embed Links, Attach Files, Use Slash Commands, Connect, Speak, Use Voice Activity
+- Recommended invite: use Administrator permission for the simplest setup.
+
+Invite URL template:
+```
+https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot+applications.commands
+```
+
+### Jenny the Bard (second bot for music)
+
+- No privileged intents required.
+- Intents used: `Guilds`, `GuildVoiceStates`
+- Required bot permissions: Connect + Speak (minimum); Administrator recommended.
+- Token goes in `core.json["bard"]["token"]`.
+
+Invite URL:
+```
+https://discord.com/oauth2/authorize?client_id=BARD_CLIENT_ID&permissions=8&scope=bot+applications.commands
+```
+
+> **Important:** Missing SPEAK permission causes silent audio failure — the player shows "Playing" status but produces no sound. This failure is silent and not indicated in logs.
+
+---
+
+## 16. Web Modules
+
+### Web Module Overview
+
+| Module File | Port | URL Prefix | Config Key | Purpose |
+|---|---|---|---|---|
+| `00047-webpage-config-editor.js` | 3111 | `/config` | `webpage-config-editor` | Live JSON editor for core.json |
+| `00048-webpage-chat.js` | 3112 | `/chat` | `webpage-chat` | Chat history viewer and message sender |
+| `00049-webpage-inpainting.js` | 3113 | `/inpainting` | `webpage-inpainting` | Image inpainting single-page app |
+| `00046-webpage-bard.js` | 3114 | `/bard-admin` | `webpage-bard` | Bard music library manager |
+| `00051-webpage-dashboard.js` | 3115 | `/dashboard` | `webpage-dashboard` | Live bot telemetry dashboard |
+
+### How Web Modules Work
+
+- All subscribe to flow: `webpage`
+- `flows/webpage.js` starts one HTTP server per port listed in `config.webpage.ports[]`
+- Each incoming request triggers the full module pipeline
+- Modules check `wo.http.port` and skip if port does not match
+- Shared utilities: `shared/webpage/interface.js` exports: `getMenuHtml`, `isAuthorized`, `getDb`, `readJsonFile`, `writeJsonFile`
+- Shared CSS: `shared/webpage/style.css` — each module serves it at `/<basePath>/style.css`
+
+### HTTP Routes per Module
+
+**Config Editor (port 3111, /config):**
+- `GET /config` — renders the config editor UI (role-gated)
+- `GET /config/style.css` — serves shared CSS
+- `GET /config/api/config` — returns current core.json as JSON
+- `POST /config/api/config` — accepts and writes updated core.json
+
+**Chat (port 3112, /chat):**
+- `GET /chat` — renders the chat SPA
+- `GET /chat/style.css` — serves shared CSS
+- `GET /chat/api/chats` — returns list of available chat channels (role-filtered)
+- `GET /chat/api/messages?channelID=xxx` — fetches message history for a channel
+- `POST /chat/api/messages` — sends a message to a Discord channel
+
+**Inpainting (port 3113, /inpainting):**
+- `GET /inpainting` — renders the inpainting SPA
+- `GET /inpainting/style.css` — serves shared CSS
+- `POST /inpainting/api/inpaint` — handles image inpainting requests
+- `GET /inpainting/auth/token` — generates auth token for deep links
+- `GET /documents/*.png` — redirected here by module 00045
+
+**Bard Admin (port 3114, /bard-admin):**
+- `GET /bard-admin` — renders the music library manager UI
+- `GET /bard-admin/style.css` — serves shared CSS
+- `GET /bard-admin/api/library` — returns `{tracks: [...], files: [...]}`
+- `POST /bard-admin/api/upload` — uploads an MP3 file and adds to library.xml
+- `POST /bard-admin/api/tags` — updates track metadata (title, tags, volume)
+- `DELETE /bard-admin/api/track` — deletes a track and its MP3 file
+
+**Dashboard (port 3115, /dashboard):**
+- `GET /dashboard` — renders the live bot telemetry dashboard (role-gated)
+- Page auto-refreshes every `refreshSeconds` seconds (default: 5)
+- Data source: `dashboard:state` registry key, written by `main.js` every 2 seconds
+
+**core.json configuration:**
+```json
+"webpage-dashboard": {
+  "flow": ["webpage"],
+  "port": 3115,
+  "basePath": "/dashboard",
+  "allowedRoles": ["admin"],
+  "refreshSeconds": 5
+}
+```
+
+---
+
+## 17. Creating a New Web Module
+
+The following template shows the standard pattern for a new webpage module.
+
+```javascript
+/************************************************************************************/
+/* filename: webpage-mymodule.js                                                    */
+/* Version 1.0                                                                      */
+/* Purpose: Description of what this module does.                                   */
+/************************************************************************************/
+
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { getMenuHtml, isAuthorized } from "../shared/webpage/interface.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
+const MODULE_NAME = "webpage-my-module";
+
+export default async function getWebpageMyModule(coreData) {
+  const wo = coreData?.workingObject || {};
+  if (wo?.flow !== "webpage") return coreData;
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
+  const port = Number(cfg.port ?? 3116); // pick the next available port after 3115
+  if (Number(wo.http?.port) !== port) return coreData;
+  if (wo.jump) return coreData;
+
+  const method  = String(wo.http?.method ?? "GET").toUpperCase();
+  const urlPath = String(wo.http?.path ?? "/").split("?")[0];
+  const basePath = String(cfg.basePath ?? "/mymodule");
+
+  /* --- CSS --- */
+  if (method === "GET" && urlPath === basePath + "/style.css") {
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/css" },
+      body: fs.readFileSync(path.resolve(__dirname, "../shared/webpage/style.css"), "utf-8") };
+    wo.jump = true;
+    return coreData;
+  }
+
+  /* --- Main page --- */
+  if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" },
+      body: "<html>...</html>" };
+    wo.jump = true;
+    return coreData;
+  }
+
+  return coreData;
+}
+```
+
+**core.json configuration entry:**
+```json
+"webpage-my-module": {
+  "flow": ["webpage"],
+  "port": 3116,
+  "basePath": "/mymodule",
+  "allowedRoles": ["admin"]
+}
+```
+
+**Add port 3116 to `config.webpage.ports[]` array in core.json.**
+
+**Add Caddy route:** `reverse_proxy /mymodule*  localhost:3116`
+
+**Optionally add menu entry** in `workingObject.web.menu`:
+```json
+{ "text": "My Module", "link": "/mymodule", "roles": ["admin"] }
+```
+
+---
+
+## 18. Bard Music System
+
+### Overview
+
+Jenny the Bard is a second Discord bot that automatically plays mood-appropriate background music for tabletop RPG sessions. A cron job analyzes the chat context at every run using an LLM, generates 3 mood tags, and stores them in the registry. The bard bot polls the registry every 30 seconds and switches music when the current track no longer matches the active mood.
+
+### Architecture
+
+```
+/bardjoin command
+  -> 00035-bard-admin-join.js
+  -> joins voice channel (using bard bot token)
+  -> stores bard:session:{guildId} in registry
+
+Cron job (every minute, runs in parallel with other cron jobs)
+  -> 00036-bard-cron.js (flow: bard-label-gen)
+  -> reads bard:lastrun:{guildId} from registry (timestamp of last run)
+  -> reads chat context since that timestamp via getContextSince()
+     (fallback: last 5 minutes on first run)
+  -> writes current timestamp to bard:lastrun:{guildId}
+  -> calls LLM to generate 3 mood tags
+  -> stores bard:labels:{guildId} in registry
+
+flows/bard.js (polls every 30 seconds)
+  -> reads bard:registry for active sessions
+  -> reads bard:labels:{guildId} for current mood
+  -> reads bard:nowplaying:{guildId} for current track
+  -> selects next song via label matching
+  -> plays via @discordjs/voice AudioPlayer
+
+player.on(AudioPlayerStatus.Idle)
+  -> automatic next-song selection on track end
+```
+
+### Registry Keys
+
+| Key | Contents |
+|-----|---------|
+| `bard:client` | Discord.js Client instance for the bard bot |
+| `bard:registry` | `{ list: ["bard:session:{guildId}"] }` |
+| `bard:session:{guildId}` | `{ guildId, voiceChannelId, textChannelId, connection, player }` |
+| `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], updatedAt, guildId }` |
+| `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
+| `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written before each LLM call so the next run reads context from exactly this point forward |
+
+### Music Library (library.xml)
+
+Located at: `assets/bard/library.xml` (configurable via `core.json["bard"]["musicDir"]`)
+
+Format:
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<library>
+  <track file="Battle1.mp3" title="Battle March">
+    <tags>battle,fight,fast,intense</tags>
+    <volume>0.8</volume>
+  </track>
+</library>
+```
+
+Fields:
+- `file`: MP3 filename, relative to musicDir
+- `title`: Display name shown in logs and now-playing info
+- `tags`: Comma-separated mood tags (lowercase, no spaces)
+- `volume`: Playback volume multiplier, 0.1–4.0 (default: 1.0)
+
+### Tag Vocabulary (existing tracks)
+
+- Combat: `battle`, `fight`, `fast`, `intense`, `boss`
+- Epic: `epic`, `magic`
+- City: `city`, `people`, `buzzing`, `crowded`, `sneaky`, `searching`, `shady`
+- Exploration: `exploration`, `adventure`, `travel`, `forest`, `peaceful`, `calm`
+- Mystery: `mystery`, `underdark`, `creepy`, `suspense`, `whimsical`
+
+### Song Selection Algorithm
+
+1. Check if the currently playing track still matches at least one active label — if yes, keep playing (no change)
+2. Score all tracks by count of matching labels
+3. Candidates = all tracks with the highest score (if score is 0 for all, all tracks are candidates)
+4. Pick a random track from candidates, excluding the track that just finished
+5. Play the selected track
+
+### Slash Commands
+
+- `/bardjoin` — joins the voice channel of the command user (uses bard bot, not Jenny)
+- `/leavebard` — removes the bard bot from the voice channel
+
+### Bard Admin UI
+
+Accessible at `/bard-admin`. Features:
+- Upload MP3 files via drag-and-drop or file picker
+- Edit track title, tags (comma-separated), and volume per track
+- Delete tracks (removes both library entry and MP3 file)
+
+### Setup
+
+1. Create a second Discord bot application in the Discord Developer Portal
+2. Add the bot token to `core.json["bard"]["token"]`
+3. Invite the bot with Connect + Speak permissions (or Administrator)
+4. Start the main bot — the bard flow initializes automatically on startup
+5. Use `/bardjoin` in a Discord server where both bots are members
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| No audio in voice channel | Bot lacks SPEAK permission | Grant SPEAK (or Administrator) in Discord |
+| Bot does not join | Invalid or missing token | Check `core.json["bard"]["token"]` |
+| Labels not updating | Cron job disabled | Enable `bard-label-gen` job in core.json |
+| Same song repeats | Only one track matches labels | Add more tracks or broaden their tags |
+| Bot joins but immediately leaves | Connection error | Check server logs for voice state errors |
+
+---
+
+## 19. Dependencies
 
 | Package | Version | Purpose |
 |---|---|---|
 | `discord.js` | ^14.x | Discord client (messages, guilds, voice) |
-| `@discordjs/voice` | ^0.18.x | Voice connection and audio pipeline |
+| `@discordjs/voice` | ^0.19.x | Voice connection and audio pipeline |
 | `@discordjs/opus` | ^0.10.x | Opus audio codec |
 | `opusscript` | ^0.0.8 | Pure-JS Opus fallback |
-| `prism-media` | ^1.3.x | Audio transcoding (OggOpus → MP3) |
+| `prism-media` | ^1.3.x | Audio transcoding (OggOpus -> MP3) |
 | `fluent-ffmpeg` | ^2.1.x | Audio processing |
 | `mysql2` | ^3.x | MySQL driver (Promise API) |
 | `axios` | ^1.x | HTTP client |
@@ -2420,4 +2612,4 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 ---
 
 *End of Administrator Manual*
-*Generated: 2026-02 · Jenny Discord AI Bot v1.0*
+*Generated: 2026-03-07 · Jenny Discord AI Bot v1.2*

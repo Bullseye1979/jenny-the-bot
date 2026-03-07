@@ -442,23 +442,49 @@ export default async function getDiscordVoiceTTS(coreData) {
   async function getTTSBufferForSegment(input, voice) {
     const v = getNormalizedVoiceKey(voice) || defaultVoice;
 
-    const resp = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        voice: v,
-        input,
-        response_format: "opus"
-      })
-    });
+    const fetchTimeoutMs = Number(wo.TTSFetchTimeoutMs || 30000);
+    const controller = new AbortController();
+    const fetchTimer = setTimeout(() => controller.abort(), fetchTimeoutMs);
+
+    let resp;
+    try {
+      resp = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          voice: v,
+          input,
+          response_format: "opus"
+        }),
+        signal: controller.signal
+      });
+    } catch (fetchErr) {
+      clearTimeout(fetchTimer);
+      const isAbort = fetchErr?.name === "AbortError" ||
+                      String(fetchErr?.message || "").includes("aborted");
+      if (isAbort) {
+        throw new Error(
+          `TTS fetch timeout after ${fetchTimeoutMs}ms ` +
+          `(model=${model} endpoint=${endpoint} voice=${v} inputLen=${input.length})`
+        );
+      }
+      throw new Error(
+        `TTS fetch network error: ${fetchErr?.message || String(fetchErr)} ` +
+        `(model=${model} endpoint=${endpoint})`
+      );
+    }
+    clearTimeout(fetchTimer);
 
     if (!resp.ok) {
       const errTxt = await resp.text().catch(() => "");
-      throw new Error(`TTS HTTP ${resp.status}: ${errTxt.slice(0, 200)}`);
+      throw new Error(
+        `TTS HTTP ${resp.status} from ${endpoint} ` +
+        `(model=${model} voice=${v}): ${errTxt.slice(0, 300)}`
+      );
     }
 
     const buf = Buffer.from(await resp.arrayBuffer());
@@ -578,6 +604,7 @@ export default async function getDiscordVoiceTTS(coreData) {
     player._ttsOwner = owner;
     player._ttsLockKey = lockKey;
     player._ttsGuildId = guildId;
+    player._ttsAutoRelease = !hasMultiVoice;
   }
 
   const renderItems = [];

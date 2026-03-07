@@ -1,43 +1,44 @@
-/********************************************************************************
-/* filename: "getWebpage.js"                                                     *
-/* Version 1.0                                                                   *
-/* Purpose: Fetch webpages; dump cleaned text or summarize via OpenAI if long.   *
-/********************************************************************************/
-/********************************************************************************
-/*                                                                              *
-/********************************************************************************/
+/**********************************************************************************/
+/* filename: getWebpage.js                                                         *
+/* Version 1.0                                                                     *
+/* Purpose: Fetch webpages, dump cleaned text or summarize via OpenAI if long.     *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 const MODULE_NAME = "getWebpage";
 
-/********************************************************************************
-/* functionSignature: getStr (value, fallback)                                   *
-/* Returns a string if valid, otherwise the fallback.                            *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getStr (value, fallback)                                     *
+/* Returns a string if valid, otherwise the fallback.                              *
+/**********************************************************************************/
 function getStr(value, fallback) {
   return typeof value === "string" && value.length ? value : fallback;
 }
 
-/********************************************************************************
-/* functionSignature: getNum (value, fallback)                                   *
-/* Returns a finite number or the fallback.                                      *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNum (value, fallback)                                     *
+/* Returns a finite number or the fallback.                                        *
+/**********************************************************************************/
 function getNum(value, fallback) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
-/********************************************************************************
-/* functionSignature: getClamp (n, min, max)                                     *
-/* Clamps a numeric value into [min, max].                                       *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getClamp (n, min, max)                                       *
+/* Clamps a numeric value into [min, max].                                         *
+/**********************************************************************************/
 function getClamp(n, min, max) {
   const x = Number.isFinite(n) ? n : min;
   return Math.max(min, Math.min(max, x));
 }
 
-/********************************************************************************
-/* functionSignature: getHttpGet (url, headers, timeoutMs)                       *
-/* Executes an HTTP GET with timeout; returns { ok, status, text, ct }.          *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getHttpGet (url, headers, timeoutMs)                         *
+/* Executes an HTTP GET with timeout; returns { ok, status, text, ct }.            *
+/**********************************************************************************/
 async function getHttpGet(url, headers = {}, timeoutMs = 20000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
@@ -52,10 +53,10 @@ async function getHttpGet(url, headers = {}, timeoutMs = 20000) {
   return { ok: !!res?.ok, status: res?.status || 0, text: text || "", ct };
 }
 
-/********************************************************************************
-/* functionSignature: getStripBlocks (html)                                      *
-/* Removes non-content HTML blocks to reduce noise.                              *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getStripBlocks (html)                                        *
+/* Removes non-content HTML blocks to reduce noise.                                *
+/**********************************************************************************/
 function getStripBlocks(html) {
   const h = String(html || "");
   return h
@@ -69,19 +70,19 @@ function getStripBlocks(html) {
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, "");
 }
 
-/********************************************************************************
-/* functionSignature: getExtractTitle (html)                                     *
-/* Extracts the <title> text from HTML.                                          *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getExtractTitle (html)                                       *
+/* Extracts the <title> text from HTML.                                            *
+/**********************************************************************************/
 function getExtractTitle(html) {
   const m = String(html || "").match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   return m ? m[1].replace(/\s+/g, " ").trim() : "";
 }
 
-/********************************************************************************
-/* functionSignature: getHtmlToText (html)                                       *
-/* Converts HTML to readable plaintext with basic structure.                     *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getHtmlToText (html)                                         *
+/* Converts HTML to readable plaintext with basic structure.                       *
+/**********************************************************************************/
 function getHtmlToText(html) {
   let h = getStripBlocks(html);
   h = h.replace(/<\/(p|div|section|article|header|footer|aside|li|ul|ol|h[1-6]|br|main|nav)>/gi, "\n");
@@ -96,20 +97,20 @@ function getHtmlToText(html) {
   return lines.join("\n");
 }
 
-/********************************************************************************
-/* functionSignature: getWordCount (text)                                        *
-/* Counts words in plaintext.                                                    *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getWordCount (text)                                          *
+/* Counts words in plaintext.                                                      *
+/**********************************************************************************/
 function getWordCount(text) {
   const s = String(text || "").trim();
   if (!s) return 0;
   return s.split(/\s+/g).length;
 }
 
-/********************************************************************************
-/* functionSignature: getBuildMessages (userPrompt, title, url, text, extra)     *
-/* Builds chat messages payload for summarization.                               *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildMessages (userPrompt, title, url, text, extra)       *
+/* Builds chat messages payload for summarization.                                 *
+/**********************************************************************************/
 function getBuildMessages(userPrompt, title, url, text, extraPrompt) {
   const baseSystem = {
     role: "system",
@@ -138,10 +139,10 @@ function getBuildMessages(userPrompt, title, url, text, extraPrompt) {
   return msgs;
 }
 
-/********************************************************************************
-/* functionSignature: getInvoke (args, coreData)                                 *
-/* Main entry: fetch page, dump or summarize based on word threshold.            *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInvoke (args, coreData)                                   *
+/* Main entry: fetch page, dump or summarize based on word threshold.              *
+/**********************************************************************************/
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getWebpage || {};

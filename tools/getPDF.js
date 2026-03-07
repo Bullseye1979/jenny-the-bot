@@ -1,29 +1,29 @@
-/**************************************************************
-/* filename: "getPDF.js"                                      *
-/* Version 1.0                                                *
-/* Purpose: Toolcall-ready HTML→PDF/HTML generator that saves *
-/*          to ../pub/documents, requires CSS, extracts CSS   *
-/*          from HTML, and uses toolsconfig.getPDF settings   *
-/**************************************************************/
-/**************************************************************/
-/*                                                            *
-/**************************************************************/
+/**********************************************************************************/
+/* filename: getPDF.js                                                             *
+/* Version 1.0                                                                     *
+/* Purpose: Toolcall-ready HTML to PDF/HTML generator that saves to                *
+/*          ../pub/documents, requires CSS, and uses toolsconfig.getPDF settings.  *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 import path from "path";
 import fs from "fs/promises";
 import puppeteer from "puppeteer";
 import { fileURLToPath } from "url";
 
-/**************************************************************
-/* functionSignature: logDebug (label, obj)                   *
-/* No-op debug helper to disable console output               *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: logDebug (label, obj)                                        *
+/* No-op debug helper to disable console output                                    *
+/**********************************************************************************/
 function logDebug(label, obj){}
 
-/**************************************************************
-/* functionSignature: normalizeFilename (s, fallback)         *
-/* Returns fs-safe lowercased base filename without extension *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: normalizeFilename (s, fallback)                              *
+/* Returns fs-safe lowercased base filename without extension                      *
+/**********************************************************************************/
 function normalizeFilename(s, fallback = ""){
   const base = String(s || "")
     .toLowerCase()
@@ -34,22 +34,22 @@ function normalizeFilename(s, fallback = ""){
   return base || fallback || `document-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}`;
 }
 
-/**************************************************************
-/* functionSignature: ensureAbsoluteUrl (publicBaseUrl, path) *
-/* Builds absolute URL using publicBaseUrl or returns relative*
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: ensureAbsoluteUrl (publicBaseUrl, path)                      *
+/* Builds absolute URL using publicBaseUrl or returns relative                     *
+/**********************************************************************************/
 function ensureAbsoluteUrl(publicBaseUrl, urlPath){
   const u = String(urlPath || "");
   const base = String(publicBaseUrl || "").replace(/\/$/, "");
-  if (/^https?:\/\//i.test(u)) return u;
+  if (/^https?:\/\//.test(u)) return u;
   if (base) return `${base}${u.startsWith("/") ? "" : "/"}${u}`;
   return u;
 }
 
-/**************************************************************
-/* functionSignature: extractBody (html)                      *
-/* Returns innerHTML of <body> when available                 *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: extractBody (html)                                           *
+/* Returns innerHTML of <body> when available                                      *
+/**********************************************************************************/
 function extractBody(html){
   const s = String(html || "");
   const open = s.toLowerCase().indexOf("<body");
@@ -61,10 +61,10 @@ function extractBody(html){
   return s.slice(gt + 1, close);
 }
 
-/**************************************************************
-/* functionSignature: enforcedCss ()                          *
-/* Returns enforced CSS string for stable print layout        *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: enforcedCss ()                                               *
+/* Returns enforced CSS string for stable print layout                             *
+/**********************************************************************************/
 function enforcedCss(){
   return [
     "@page{size:A4;margin:20mm !important}",
@@ -76,11 +76,11 @@ function enforcedCss(){
   ].join("");
 }
 
-/**************************************************************
-/* functionSignature: buildPrintableHtml (bodyHtml, userCss,  *
-/* title)                                                     *
-/* Wraps body HTML and CSS into a full printable HTML         *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: buildPrintableHtml (bodyHtml, userCss,                       *
+/* title)                                                                          *
+/* Wraps body HTML and CSS into a full printable HTML                              *
+/**********************************************************************************/
 function buildPrintableHtml(bodyHtml, userCss = "", title = "Document"){
   const cssFinal = `${String(userCss || "")}\n${enforcedCss()}`;
   const safeTitle = String(title || "Document").slice(0, 140);
@@ -100,10 +100,10 @@ ${bodyHtml || ""}
   return { html, cssFinal };
 }
 
-/**************************************************************
-/* functionSignature: getPlainFromHTML (html, maxLen)         *
-/* Returns lightweight plain text extracted from HTML         *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: getPlainFromHTML (html, maxLen)                              *
+/* Returns lightweight plain text extracted from HTML                              *
+/**********************************************************************************/
 function getPlainFromHTML(html, maxLen = 200000){
   let s = String(html || "");
   s = s.replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -113,10 +113,10 @@ function getPlainFromHTML(html, maxLen = 200000){
   return s.slice(0, maxLen);
 }
 
-/**************************************************************
-/* functionSignature: extractFence (str, lang)                *
-/* Extracts first fenced ```<lang> ... ``` block              *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: extractFence (str, lang)                                     *
+/* Extracts first fenced ```<lang> ... ``` block                                   *
+/**********************************************************************************/
 function extractFence(str, lang){
   const src = String(str || "");
   const startToken = "```" + String(lang || "").toLowerCase();
@@ -130,11 +130,11 @@ function extractFence(str, lang){
   return src.slice(i, end).trim();
 }
 
-/**************************************************************
-/* functionSignature: tolerantExtractJsonStringValue (source, *
-/* key)                                                       *
-/* Extracts a JSON string value for key without regex flags   *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: tolerantExtractJsonStringValue (source,                      *
+/* key)                                                                            *
+/* Extracts a JSON string value for key without regex flags                        *
+/**********************************************************************************/
 function tolerantExtractJsonStringValue(source, key){
   const s = String(source || "");
   const needle = `"${key}"`;
@@ -175,10 +175,10 @@ function tolerantExtractJsonStringValue(source, key){
   return { value, ok };
 }
 
-/**************************************************************
-/* functionSignature: tolerantParseArgs (input)               *
-/* Parses object, raw strings, fenced or JSON-like inputs     *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: tolerantParseArgs (input)                                    *
+/* Parses object, raw strings, fenced or JSON-like inputs                          *
+/**********************************************************************************/
 function tolerantParseArgs(input){
   if (input && typeof input === "object" && !Array.isArray(input)){
     const { html, css, title, filename, raw } = input;
@@ -348,10 +348,10 @@ function tolerantParseArgs(input){
   return { html: str, css:"", title:"", filename:"" };
 }
 
-/**************************************************************
-/* functionSignature: generatePdfAndHtml (parsed, cfg)        *
-/* Generates files and returns public URLs and metadata        *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: generatePdfAndHtml (parsed, cfg)                             *
+/* Generates files and returns public URLs and metadata                            *
+/**********************************************************************************/
 async function generatePdfAndHtml(parsed, cfg){
   let browser = null;
   try{
@@ -402,10 +402,10 @@ async function generatePdfAndHtml(parsed, cfg){
   }
 }
 
-/**************************************************************
-/* functionSignature: getInvoke (args, coreData)              *
-/* Toolcall entrypoint: parses, validates, renders PDF/HTML   *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInvoke (args, coreData)                                   *
+/* Toolcall entrypoint: parses, validates, renders PDF/HTML                        *
+/**********************************************************************************/
 const MODULE_NAME = "getPDF";
 async function getInvoke(args, coreData){
   try{

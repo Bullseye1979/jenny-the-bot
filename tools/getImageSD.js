@@ -1,11 +1,13 @@
-/********************************************************************************
-/* filename: "getImageSD.js"                                                    *
-/* Version 1.0                                                                  *
-/* Purpose: Generate images via Stable Diffusion A1111 API; save to             *
-/*          ./pub/documents and return public links.                            *
-/********************************************************************************/
-/*                                                                              */
-/********************************************************************************/
+/**********************************************************************************/
+/* filename: getImageSD.js                                                         *
+/* Version 1.0                                                                     *
+/* Purpose: Generate images via Stable Diffusion A1111 API, save to                *
+/*          ./pub/documents and return public links.                               *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 import fs from "node:fs";
 import path from "node:path";
@@ -31,27 +33,27 @@ const DEFAULT_NEGATIVE_PROMPT = [
   "glitches, tiling, pattern artifacts, banding, moire"
 ].join(", ");
 
-/********************************************************************************
-/* functionSignature: getEnsureDir (absPath)                                    *
-/* Creates a directory recursively if it does not exist                          *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getEnsureDir (absPath)                                       *
+/* Creates a directory recursively if it does not exist                            *
+/**********************************************************************************/
 function getEnsureDir(absPath) {
   if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
 }
 
-/********************************************************************************
-/* functionSignature: getRandSuffix ()                                          *
-/* Returns a short random suffix for filenames                                   *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getRandSuffix ()                                             *
+/* Returns a short random suffix for filenames                                     *
+/**********************************************************************************/
 function getRandSuffix() {
   const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
   return n.slice(-6);
 }
 
-/********************************************************************************
-/* functionSignature: getSaveBuffer (buf, dirAbs, ext)                           *
-/* Saves a buffer to directory with timestamped name                             *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getSaveBuffer (buf, dirAbs, ext)                             *
+/* Saves a buffer to directory with timestamped name                               *
+/**********************************************************************************/
 function getSaveBuffer(buf, dirAbs, ext = ".png") {
   getEnsureDir(dirAbs);
   const filename = `img_${Date.now()}_${getRandSuffix()}${ext}`;
@@ -60,20 +62,20 @@ function getSaveBuffer(buf, dirAbs, ext = ".png") {
   return { filename, abs };
 }
 
-/********************************************************************************
-/* functionSignature: getBuildPublicUrl (base, filename)                        *
-/* Builds a public URL for a saved document file                                 *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildPublicUrl (base, filename)                           *
+/* Builds a public URL for a saved document file                                   *
+/**********************************************************************************/
 function getBuildPublicUrl(base, filename) {
   if (!base) return null;
   const trimmed = String(base).replace(/\/+$/, "");
   return `${trimmed}/documents/${filename}`;
 }
 
-/********************************************************************************
-/* functionSignature: getParseSize (sizeStr, defW, defH)                        *
-/* Parses "WxH" into width and height rounded to multiples of 8                  *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getParseSize (sizeStr, defW, defH)                           *
+/* Parses "WxH" into width and height rounded to multiples of 8                    *
+/**********************************************************************************/
 function getParseSize(sizeStr, defW = 1024, defH = 1024) {
   const m = String(sizeStr || "").match(/^\s*(\d+)\s*[xX]\s*(\d+)\s*$/);
   let width = defW, height = defH;
@@ -86,20 +88,20 @@ function getParseSize(sizeStr, defW = 1024, defH = 1024) {
   return { width, height };
 }
 
-/********************************************************************************
-/* functionSignature: getStripDataUrlPrefix (b64)                               *
-/* Removes data URL prefix if present from base64 string                         *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getStripDataUrlPrefix (b64)                                  *
+/* Removes data URL prefix if present from base64 string                           *
+/**********************************************************************************/
 function getStripDataUrlPrefix(b64) {
   if (typeof b64 !== "string") return b64;
   const i = b64.indexOf("base64,");
   return i >= 0 ? b64.slice(i + "base64,".length) : b64;
 }
 
-/********************************************************************************
-/* functionSignature: getPersistSDImages (b64List, publicBaseUrl)               *
-/* Persists base64 images to ./pub/documents and returns file metadata           *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getPersistSDImages (b64List, publicBaseUrl)                  *
+/* Persists base64 images to ./pub/documents and returns file metadata             *
+/**********************************************************************************/
 async function getPersistSDImages(b64List, publicBaseUrl) {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
@@ -128,25 +130,25 @@ async function getPersistSDImages(b64List, publicBaseUrl) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: getNumSafe (value, fallback)                              *
-/* Parses a number or returns the fallback                                       *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNumSafe (value, fallback)                                 *
+/* Parses a number or returns the fallback                                         *
+/**********************************************************************************/
 function getNumSafe(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
-/********************************************************************************
-/* functionSignature: getInvoke (args, coreData)                                *
-/* Generates images via A1111 API using toolsconfig and returns saved file info  *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInvoke (args, coreData)                                   *
+/* Generates images via A1111 API using toolsconfig and returns saved file info    *
+/**********************************************************************************/
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getImageSD || {};
 
-  const baseUrl = typeof toolCfg.base_url === "string" ? toolCfg.base_url : null;
-  if (!baseUrl) return { ok: false, error: "Missing toolsconfig.getImageSD.base_url (e.g., http://127.0.0.1:7860)" };
+  const baseUrl = typeof toolCfg.baseUrl === "string" ? toolCfg.baseUrl : null;
+  if (!baseUrl) return { ok: false, error: "Missing toolsconfig.getImageSD.baseUrl" };
 
   const prompt = String(args?.prompt || "").trim();
   if (!prompt) return { ok: false, error: "Missing prompt" };
@@ -159,13 +161,13 @@ async function getInvoke(args, coreData) {
   if (n > 8) n = 8;
 
   const steps = getNumSafe(toolCfg.steps, 20);
-  const cfg_scale = getNumSafe(toolCfg.cfg_scale ?? toolCfg.cfg, 6.5);
+  const cfg_scale = getNumSafe(toolCfg.cfgScale ?? toolCfg.cfg, 6.5);
   const sampler_name = typeof toolCfg.sampler === "string" && toolCfg.sampler.length ? toolCfg.sampler : "DPM++ 2M Karras";
   const seed = getNumSafe(toolCfg.seed, -1);
 
   const negative_prompt = [
     DEFAULT_NEGATIVE_PROMPT,
-    (typeof toolCfg.negative_extra === "string" && toolCfg.negative_extra.trim()) ? toolCfg.negative_extra.trim() : ""
+    (typeof toolCfg.negativeExtra === "string" && toolCfg.negativeExtra.trim()) ? toolCfg.negativeExtra.trim() : ""
   ].filter(Boolean).join(", ");
 
   const model = (typeof toolCfg.model === "string" && toolCfg.model.length) ? toolCfg.model : null;

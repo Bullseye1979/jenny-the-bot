@@ -1,4 +1,21 @@
-/**************************************************************/
+/************************************************************************************
+/* filename: discord-admin-gdpr.js                                                 *
+/* Version 1.0                                                                     *
+/* Purpose: Handles /gdpr (text|voice) (0|1) command; updates consent table and    *
+/*          resets disclaimer when both chat and voice consent are 0.              *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
+/************************************************************************************/
 /* filename: "discord-admin-gdpr.js"                         */
 /* Version 1.0                                               */
 /* Purpose: /gdpr (text|voice) (0|1); ensure table; update;  */
@@ -16,10 +33,10 @@ const MODULE_NAME = "discord-admin-gdpr";
 
 const CREATED = new Set();
 
-/**************************************************************/
-/* functionSignature: getTableName (coreData)                */
-/* Resolves the consent table name from configuration        */
-/**************************************************************/
+/************************************************************************************/
+/* functionSignature: getTableName (coreData)                                      *
+/* the consent table name resolved from configuration.                             *
+/************************************************************************************/
 function getTableName(coreData) {
   const t1 = coreData?.config?.["discord-gdpr-gate"]?.table;
   if (typeof t1 === "string" && t1.trim()) return t1.trim();
@@ -30,10 +47,10 @@ function getTableName(coreData) {
   return "gdpr_consent";
 }
 
-/**************************************************************/
-/* functionSignature: getDbConfig (wo)                       */
-/* Reads DB connection configuration from workingObject      */
-/**************************************************************/
+/************************************************************************************/
+/* functionSignature: getDbConfig (wo)                                             *
+/* the DB connection config object or null if incomplete.                          *
+/************************************************************************************/
 function getDbConfig(wo) {
   const db = wo?.db || {};
   const { host, user, password, database } = db;
@@ -41,19 +58,19 @@ function getDbConfig(wo) {
   return { host, user, password, database, charset: "utf8mb4" };
 }
 
-/**************************************************************/
-/* functionSignature: getParseValue (x)                      */
-/* Parses a numeric-like value into 0 or 1                   */
-/**************************************************************/
+/************************************************************************************/
+/* functionSignature: getParseValue (x)                                            *
+/* 0 or 1 from a numeric-like value.                                               *
+/************************************************************************************/
 function getParseValue(x) {
   const n = Number(x);
   return n === 1 ? 1 : 0;
 }
 
-/**************************************************************/
-/* functionSignature: getAdminOptionValue (opts)             */
-/* Returns option value from object or array                 */
-/**************************************************************/
+/************************************************************************************/
+/* functionSignature: getAdminOptionValue (opts)                                   *
+/* the option value from an object or array of option objects.                     *
+/************************************************************************************/
 function getAdminOptionValue(opts) {
   if (!opts) return null;
 
@@ -72,10 +89,10 @@ function getAdminOptionValue(opts) {
   return null;
 }
 
-/**************************************************************/
-/* functionSignature: setEnsureTable (conn, table)           */
-/* Ensures the consent table exists                          */
-/**************************************************************/
+/************************************************************************************/
+/* functionSignature: setEnsureTable (conn, table)                                 *
+/* nothing; creates the consent table when it does not exist.                      *
+/************************************************************************************/
 async function setEnsureTable(conn, table) {
   if (CREATED.has(table)) return;
 
@@ -161,10 +178,10 @@ async function setResetDisclaimerIfBothZero(conn, table, { userId, channelId }) 
   return false;
 }
 
-/**************************************************************/
-/* functionSignature: getDiscordAdminGdpr (coreData)         */
-/* Updates GDPR flags via /gdpr and resets disclaimer if req */
-/**************************************************************/
+/************************************************************************************/
+/* functionSignature: getDiscordAdminGdpr (coreData)                               *
+/* coreData after updating GDPR consent flags.                                     *
+/************************************************************************************/
 export default async function getDiscordAdminGdpr(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

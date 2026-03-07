@@ -1,3 +1,19 @@
+/************************************************************************************
+/* filename: core-channel-config.js                                                *
+/* Version 1.0                                                                     *
+/* Purpose: Applies strict hierarchical channel/flow/user overrides.               *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                 *
 /************************************************************************************/
 /* filename: "core-channel-config.js"                                              */
 /* Version: 1                                                                       */
@@ -22,8 +38,8 @@ import { getPrefixedLogger } from "../core/logging.js";
 const MODULE_NAME = "core-channel-config";
 
 /************************************************************************************/
-/* functionSignature: isPlainObject (v)                                             */
-/* Returns true if v is a plain object                                              */
+/* functionSignature: isPlainObject (v)                                            *
+/* true if v is a plain object.                                                    *
 /************************************************************************************/
 function isPlainObject(v) {
   if (!v || typeof v !== "object") return false;
@@ -32,8 +48,8 @@ function isPlainObject(v) {
 }
 
 /************************************************************************************/
-/* functionSignature: normalizeStr (v)                                              */
-/* Normalizes a value into a trimmed string                                         */
+/* functionSignature: normalizeStr (v)                                             *
+/* a trimmed string from any value.                                                *
 /************************************************************************************/
 function normalizeStr(v) {
   if (v === undefined || v === null) return "";
@@ -41,8 +57,8 @@ function normalizeStr(v) {
 }
 
 /************************************************************************************/
-/* functionSignature: normalizeStrList (v)                                          */
-/* Normalizes a value into a list of trimmed strings                                */
+/* functionSignature: normalizeStrList (v)                                         *
+/* a list of trimmed non-empty strings.                                            *
 /************************************************************************************/
 function normalizeStrList(v) {
   if (!Array.isArray(v)) return [];
@@ -50,8 +66,8 @@ function normalizeStrList(v) {
 }
 
 /************************************************************************************/
-/* functionSignature: includesCI (list, value)                                      */
-/* Case-insensitive includes for string lists                                       */
+/* functionSignature: includesCI (list, value)                                     *
+/* true if list contains value (case-insensitive).                                 *
 /************************************************************************************/
 function includesCI(list, value) {
   const v = normalizeStr(value);
@@ -67,8 +83,8 @@ function includesCI(list, value) {
 }
 
 /************************************************************************************/
-/* functionSignature: deepMergePlain (target, source)                               */
-/* Deep merges plain objects; arrays replaced; null/undefined ignored               */
+/* functionSignature: deepMergePlain (target, source)                              *
+/* a deep-merged plain object; arrays are replaced.                                *
 /************************************************************************************/
 function deepMergePlain(target, source) {
   const out = isPlainObject(target) ? { ...target } : {};
@@ -101,8 +117,8 @@ function deepMergePlain(target, source) {
 }
 
 /************************************************************************************/
-/* functionSignature: matchChannel (node, channelId)                                */
-/* Matches effectiveChannelId against node.channelMatch                             */
+/* functionSignature: matchChannel (node, channelId)                               *
+/* true if channelId matches node.channelMatch.                                    *
 /************************************************************************************/
 function matchChannel(node, channelId) {
   const list = normalizeStrList(node?.channelMatch);
@@ -111,8 +127,8 @@ function matchChannel(node, channelId) {
 }
 
 /************************************************************************************/
-/* functionSignature: matchFlow (node, flow)                                        */
-/* Matches flow against node.flowMatch (case-insensitive)                           */
+/* functionSignature: matchFlow (node, flow)                                       *
+/* true if flow matches node.flowMatch (case-insensitive).                         *
 /************************************************************************************/
 function matchFlow(node, flow) {
   const list = normalizeStrList(node?.flowMatch);
@@ -121,8 +137,8 @@ function matchFlow(node, flow) {
 }
 
 /************************************************************************************/
-/* functionSignature: matchUser (node, userId)                                      */
-/* Matches userId against node.userMatch                                            */
+/* functionSignature: matchUser (node, userId)                                     *
+/* true if userId matches node.userMatch.                                          *
 /************************************************************************************/
 function matchUser(node, userId) {
   const list = normalizeStrList(node?.userMatch);
@@ -131,8 +147,8 @@ function matchUser(node, userId) {
 }
 
 /************************************************************************************/
-/* functionSignature: applyOverrides (workingObject, overrides)                     */
-/* Applies overrides onto workingObject (objects deep-merged, arrays replaced)      */
+/* functionSignature: applyOverrides (workingObject, overrides)                    *
+/* the count of keys applied from overrides onto workingObject.                    *
 /************************************************************************************/
 function applyOverrides(workingObject, overrides) {
   if (!isPlainObject(workingObject)) return 0;
@@ -171,8 +187,8 @@ function applyOverrides(workingObject, overrides) {
 }
 
 /************************************************************************************/
-/* functionSignature: getEffectiveChannelId (workingObject)                         */
-/* Returns channel id or "DM"                                                      */
+/* functionSignature: getEffectiveChannelId (workingObject)                        *
+/* "DM" for DM contexts, otherwise the channel id string.                          *
 /************************************************************************************/
 function getEffectiveChannelId(workingObject) {
   const id = normalizeStr(
@@ -191,8 +207,8 @@ function getEffectiveChannelId(workingObject) {
 }
 
 /************************************************************************************/
-/* functionSignature: ensureFlow (workingObject, effectiveChannelId, log)           */
-/* Ensures flow exists; for DM defaults to "discord"                                */
+/* functionSignature: ensureFlow (workingObject, effectiveChannelId, log)          *
+/* the flow string; defaults to "discord" for DMs when empty.                      *
 /************************************************************************************/
 function ensureFlow(workingObject, effectiveChannelId, log) {
   let flow = normalizeStr(workingObject?.flow);
@@ -207,8 +223,8 @@ function ensureFlow(workingObject, effectiveChannelId, log) {
 }
 
 /************************************************************************************/
-/* functionSignature: pickLastMatchingIndex (list, matcherFn)                       */
-/* Returns { index, count } where index is last matching element index              */
+/* functionSignature: pickLastMatchingIndex (list, matcherFn)                      *
+/* { index, count } where index is the last match position.                        *
 /************************************************************************************/
 function pickLastMatchingIndex(list, matcherFn) {
   const arr = Array.isArray(list) ? list : [];
@@ -225,9 +241,9 @@ function pickLastMatchingIndex(list, matcherFn) {
 }
 
 /************************************************************************************/
-/* functionSignature: applyStrictHierarchy (workingObject, cfgChannels, channelId,  */
-/*                         flow, userId)                                            */
-/* Channel -> exactly one Flow (last match) -> exactly one User (last match)         */
+/* functionSignature: applyStrictHierarchy (workingObject, cfgChannels,            *
+/*                    channelId, flow, userId)                                     *
+/* { appliedKeys, matchedRules, warnings } from hierarchical matching.             *
 /************************************************************************************/
 function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userId) {
   const channels = Array.isArray(cfgChannels) ? cfgChannels : [];
@@ -302,8 +318,8 @@ function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userI
 }
 
 /************************************************************************************/
-/* functionSignature: getChannelConfig (coreData)                                   */
-/* Applies hierarchical overrides onto coreData.workingObject                        */
+/* functionSignature: getChannelConfig (coreData)                                  *
+/* coreData after applying hierarchical overrides onto workingObject.              *
 /************************************************************************************/
 export default async function getChannelConfig(coreData) {
   const workingObject = coreData?.workingObject || {};

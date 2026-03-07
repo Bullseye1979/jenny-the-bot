@@ -1,11 +1,12 @@
-/**************************************************************
-/* filename: "getBan.js"                                      *
-/* Version 1.0                                                *
-/* Purpose: Send a ban request to the configured admin via DM *
-/**************************************************************/
-/**************************************************************
-/*                                                            *
-/**************************************************************/
+/**********************************************************************************/
+/* filename: getBan.js                                                             *
+/* Version 1.0                                                                     *
+/* Purpose: Send a ban request to the configured admin via DM.                     *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 import { getItem } from "../core/registry.js";
 
@@ -18,10 +19,10 @@ function getPreview(s, max = 400) {
   return t.length > max ? t.slice(0, max) + " …[truncated]" : t;
 }
 
-/**************************************************************
-/* functionSignature: getPayload (wo, reason)                 *
-/* Collects user/context info for the ban DM                  *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: getPayload (wo, reason)                                      *
+/* Collects user/context info for the ban DM                                       *
+/**********************************************************************************/
 function getPayload(wo, reason) {
   const userId      = getStr(wo?.message?.author?.id) || getStr(wo?.message?.authorId) || getStr(wo?.User?.id) || "";
   const userTag     = getStr(wo?.message?.authorTag) || getStr(wo?.User?.tag);
@@ -48,10 +49,10 @@ function getPayload(wo, reason) {
   };
 }
 
-/**************************************************************
-/* functionSignature: getInvoke (args, coreData)              *
-/* Sends DM to admin; returns { user, reason }                *
-/**************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInvoke (args, coreData)                                   *
+/* Sends DM to admin; returns { user, reason }                                     *
+/**********************************************************************************/
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const reasonProvided = getStr(args?.reason || "");

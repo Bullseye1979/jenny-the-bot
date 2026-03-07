@@ -47,11 +47,12 @@ export default async function getDiscordAddContext(coreData) {
   const role = "user";
   const turnId = typeof wo.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
   const record = {
+    ts: getString(wo.timestamp || ""),
     role,
     turn_id: turnId,
     content: getString(text),
     userId: getString(wo.userId || ""),
-    authorName: getString(wo.authorDisplayname || ""),
+    authorName: getString(wo.authorDisplayName || wo.authorDisplayname || ""),
     channelId: getString(wo.channelID || ""),
     messageId: getString(wo.messageId || ""),
     replyToId: getString(wo.replyToId || "") || undefined,

@@ -73,6 +73,7 @@ export default async function getApiAddContext(coreData) {
       : undefined;
 
   const record = {
+    ts: getString(workingObject.timestamp || ""),
     role: "user",
     turn_id: turnId,
     content: getString(text),

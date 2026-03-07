@@ -72,7 +72,7 @@ function getJSON(t, f = null) { try { return JSON.parse(t); } catch { return f; 
 /* functionSignature: getWithTurnId (rec, wo)                                   *
 /* Adds turn_id from working object if present.                                 *
 /********************************************************************************/
-function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; return t ? { ...rec, turn_id: t } : rec; }
+function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; return { ...(t ? { ...rec, turn_id: t } : rec), ts: new Date().toISOString() }; }
 
 /********************************************************************************
 /* functionSignature: getPreview (s, n)                                         *

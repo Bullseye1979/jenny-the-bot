@@ -175,18 +175,20 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
           { moduleName: MODULE_NAME }
         );
 
-        try {
-          await runFlow(targetFlow, rc);
-        } catch (e) {
-          log(
-            `cron job "${job.id}" failed: ${e?.message || String(e)}`,
-            "error",
-            { moduleName: MODULE_NAME }
-          );
-        } finally {
-          job.running = false;
-          job.nextDueAt = getNextDue(job, log);
-        }
+        (async () => {
+          try {
+            await runFlow(targetFlow, rc);
+          } catch (e) {
+            log(
+              `cron job "${job.id}" failed: ${e?.message || String(e)}`,
+              "error",
+              { moduleName: MODULE_NAME }
+            );
+          } finally {
+            job.running = false;
+            job.nextDueAt = getNextDue(job, log);
+          }
+        })();
       }
     }
 

@@ -1,18 +1,19 @@
-/***************************************************************
-/* filename: "getImageDescription.js"                          *
-/* Version 1.0                                                 *
-/* Purpose: Vision analysis via Chat Completions using         *
-/*          exactly one image passed as args.imageURL.         *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
+/**********************************************************************************/
+/* filename: getImageDescription.js                                                *
+/* Version 1.0                                                                     *
+/* Purpose: Vision analysis via Chat Completions using one image passed            *
+/*          as args.imageURL.                                                      *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 const MODULE_NAME = "getImageDescription";
 
-/***************************************************************
-/* getStrictConfig (workingObject)                             *
-/***************************************************************/
+/**********************************************************************************/
+/* getStrictConfig (workingObject)                                                 *
+/**********************************************************************************/
 function getStrictConfig(workingObject) {
   const toolCfg = workingObject?.toolsconfig?.[MODULE_NAME];
   if (!toolCfg || typeof toolCfg !== "object") throw new Error(`[${MODULE_NAME}] missing toolsconfig.${MODULE_NAME}`);
@@ -31,9 +32,9 @@ function getStrictConfig(workingObject) {
   return { apiKey, model, endpoint, temperature, max_tokens, timeout_ms };
 }
 
-/***************************************************************
-/* getMessages (imageUrl, analysisPrompt)                      *
-/***************************************************************/
+/**********************************************************************************/
+/* getMessages (imageUrl, analysisPrompt)                                          *
+/**********************************************************************************/
 function getMessages(imageUrl, analysisPrompt) {
   return [
     { role: "system", content: "You are an expert vision analyst. Provide faithful, useful descriptions and extract visible text." },
@@ -41,24 +42,24 @@ function getMessages(imageUrl, analysisPrompt) {
   ];
 }
 
-/***************************************************************
-/* getIsAzureOpenAI (endpoint)                                 *
-/***************************************************************/
+/**********************************************************************************/
+/* getIsAzureOpenAI (endpoint)                                                     *
+/**********************************************************************************/
 function getIsAzureOpenAI(endpoint) {
   return /azure\.com/i.test(endpoint);
 }
 
-/***************************************************************
-/* getHeaders (endpoint, apiKey)                               *
-/***************************************************************/
+/**********************************************************************************/
+/* getHeaders (endpoint, apiKey)                                                   *
+/**********************************************************************************/
 function getHeaders(endpoint, apiKey) {
   if (getIsAzureOpenAI(endpoint)) return { "Content-Type": "application/json", "api-key": apiKey };
   return { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
 }
 
-/***************************************************************
-/* getHttpErrorText (status, statusText)                       *
-/***************************************************************/
+/**********************************************************************************/
+/* getHttpErrorText (status, statusText)                                           *
+/**********************************************************************************/
 function getHttpErrorText(status, statusText) {
   if (status === 403) return "Image URL forbidden or expired";
   if (status === 404) return "Image URL not found";
@@ -67,19 +68,19 @@ function getHttpErrorText(status, statusText) {
   return `HTTP ${status} ${statusText || ""}`.trim();
 }
 
-/***************************************************************
-/* validateImageUrl (imageURL)                                 *
-/***************************************************************/
+/**********************************************************************************/
+/* validateImageUrl (imageURL)                                                     *
+/**********************************************************************************/
 function validateImageUrl(u) {
   const s = String(u || "").trim();
   if (!s) return null;
-  if (!/^https?:\/\//i.test(s)) return null;
+  if (!/^https?:\/\//.test(s)) return null;
   return s;
 }
 
-/***************************************************************
-/* getInvoke (args, coreData)                                  *
-/***************************************************************/
+/**********************************************************************************/
+/* getInvoke (args, coreData)                                                      *
+/**********************************************************************************/
 async function getInvoke(args, coreData) {
   const workingObject = coreData?.workingObject || {};
   const { apiKey, model, endpoint, temperature, max_tokens, timeout_ms } = getStrictConfig(workingObject);

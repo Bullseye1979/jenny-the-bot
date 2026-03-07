@@ -1,14 +1,13 @@
-/****************************************************************************************************************
-* filename: api.js                                                                                               *
-* Version 1.0                                                                                                    *
-* Purpose: HTTP API flow starter (guaranteed JSON response) + polling endpoint for current toolcall registry.    *
-*          Toolcall endpoint reads the SAME registry key that toolcall.js watches (config.toolcall.registryKey   *
-*          or default "status:tool"). Always returns workingObject.botName (or fallback).                        *
-*          Adds GET context endpoint for UI usage.                                                                *
-****************************************************************************************************************/
-/****************************************************************************************************************
-*                                                                                                               *
-****************************************************************************************************************/
+/************************************************************************************/
+/* filename: api.js                                                                  *
+/* Version 1.0                                                                       *
+/* Purpose: HTTP API flow starter (guaranteed JSON response) + polling endpoint for  *
+/*          current toolcall registry. Adds GET context endpoint for UI usage.       *
+/************************************************************************************/
+
+/************************************************************************************/
+/*                                                                                   *
+/************************************************************************************/
 
 import http from "node:http";
 import { getItem } from "../core/registry.js";
@@ -19,18 +18,18 @@ const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 let lastTimeMs = 0;
 let lastRandomBytes = new Uint8Array(10).fill(0);
 
-/****************************************************************************************************************
-* functionSignature: getStr(value)                                                                               *
-* Purpose: Returns a string; empty string for nullish.                                                           *
-****************************************************************************************************************/
+/************************************************************************************/
+/* functionSignature: getStr (value)                                                 *
+/* Returns a string; empty string for nullish.                                       *
+/************************************************************************************/
 function getStr(value) {
   return value == null ? "" : String(value);
 }
 
-/****************************************************************************************************************
-* functionSignature: getBotname(workingObject, baseCore)                                                         *
-* Purpose: Resolves the bot name from workingObject.botName (preferred) with stable fallbacks.                   *
-****************************************************************************************************************/
+/************************************************************************************/
+/* functionSignature: getBotname (workingObject, baseCore)                           *
+/* Resolves the bot name from workingObject.botName (preferred) with stable fallbacks.*
+/************************************************************************************/
 function getBotname(workingObject, baseCore) {
   const fromWO = getStr(workingObject?.botName).trim();
   if (fromWO) return fromWO;

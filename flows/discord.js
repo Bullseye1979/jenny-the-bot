@@ -9,7 +9,8 @@
 /*                                                          *
 /**************************************************************/
 
-import { Client, GatewayIntentBits, Partials, ChannelType } from "discord.js";
+import discordJs from "discord.js";
+const { Client, GatewayIntentBits, Partials, ChannelType } = discordJs;
 import { putItem, getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 

@@ -12,7 +12,8 @@
 
 import { getItem, putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
-import { MessageFlags } from "discord.js";
+import discordJs from "discord.js";
+const { MessageFlags } = discordJs;
 
 const MODULE_NAME = "discord-admin";
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -427,7 +428,7 @@ async function setStartWhenClientAvailable(baseCore, runFlow, createRunCore) {
       const silent = getSilentFlag(root);
       try {
         if (!client.isReady?.()) {
-          await new Promise((resolve) => client.once(("clientReady" in client) ? "clientReady" : "ready", resolve));
+          await new Promise((resolve) => client.once("clientReady", resolve));
         }
       } catch {}
       const changed = await setRegisterSlashCommands(client, defs);

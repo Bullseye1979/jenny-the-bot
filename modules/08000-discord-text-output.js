@@ -9,7 +9,8 @@
 /*          message). Preserves fenced code blocks across embed splits.         *
 /********************************************************************************/
 
-import { EmbedBuilder, PermissionFlagsBits, WebhookClient } from "discord.js";
+import discordJs from "discord.js";
+const { EmbedBuilder, PermissionFlagsBits, WebhookClient } = discordJs;
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "discord-text-output";

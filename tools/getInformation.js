@@ -1,14 +1,13 @@
-/************************************************************************************
-/* filename: "getInformation.js"                                                   *
+/**********************************************************************************/
+/* filename: getInformation.js                                                     *
 /* Version 1.0                                                                     *
 /* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
-/*          info snippets ranked by coverage then frequency; output chronologically*
-/*          with conditional NEW EVENT separators and expose timeline_periods for  *
-/*          alignment across one or multiple channels (channelID + channelIds).    *
-/************************************************************************************/
-/************************************************************************************
-/*                                                                                  *
-/************************************************************************************/
+/*          info snippets ranked by coverage then frequency.                       *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 import mysql from "mysql2/promise";
 
@@ -38,10 +37,10 @@ const CONTENT_EXPR = `
 
 const ESCAPE_CLAUSE = "ESCAPE '\\\\'";
 
-/************************************************************************************
+/**********************************************************************************/
 /* functionSignature: getPool (wo)                                                 *
 /* Returns or creates a pooled DB connection for given config.                     *
-/************************************************************************************/
+/**********************************************************************************/
 async function getPool(wo) {
   const key = JSON.stringify({ h: wo?.db?.host, u: wo?.db?.user, d: wo?.db?.database });
   if (POOLS.has(key)) return POOLS.get(key);
@@ -59,10 +58,10 @@ async function getPool(wo) {
   return pool;
 }
 
-/************************************************************************************
-/* functionSignature: getMaxTimelineToFetch (wo, giCfg)                             *
-/* Resolves the maximum number of timeline periods to fetch.                        *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getMaxTimelineToFetch (wo, giCfg)                            *
+/* Resolves the maximum number of timeline periods to fetch.                       *
+/**********************************************************************************/
 function getMaxTimelineToFetch(wo, giCfg) {
   if (Number.isFinite(giCfg?.max_timeline_periods)) {
     return Math.max(1, Number(giCfg.max_timeline_periods));
@@ -74,10 +73,10 @@ function getMaxTimelineToFetch(wo, giCfg) {
   return null;
 }
 
-/************************************************************************************
-/* functionSignature: getNormalizePhrasesToWords (arr)                              *
-/* Normalizes phrases into a capped list of unique words.                           *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNormalizePhrasesToWords (arr)                             *
+/* Normalizes phrases into a capped list of unique words.                          *
+/**********************************************************************************/
 function getNormalizePhrasesToWords(arr) {
   if (!Array.isArray(arr)) return [];
   const seen = new Set();
@@ -98,10 +97,10 @@ function getNormalizePhrasesToWords(arr) {
   return out;
 }
 
-/************************************************************************************
-/* functionSignature: getStripLargeCodeBlocks (text)                                *
-/* Collapses large triple-backtick blocks with a placeholder.                       *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getStripLargeCodeBlocks (text)                               *
+/* Collapses large triple-backtick blocks with a placeholder.                      *
+/**********************************************************************************/
 function getStripLargeCodeBlocks(text) {
   return String(text || "").replace(/```[\s\S]*?```/g, (m) => {
     const lines = m.split("\n").length;
@@ -109,25 +108,25 @@ function getStripLargeCodeBlocks(text) {
   });
 }
 
-/************************************************************************************
+/**********************************************************************************/
 /* functionSignature: getEscapeLike (s)                                            *
 /* Escapes %, _ and \ for SQL LIKE expressions.                                    *
-/************************************************************************************/
+/**********************************************************************************/
 function getEscapeLike(s) { return String(s).replace(/[\\%_]/g, m => '\\' + m); }
 
-/************************************************************************************
-/* functionSignature: getPickFirstString (...vals)                                  *
-/* Returns the first non-empty trimmed string value.                                *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getPickFirstString (...vals)                                 *
+/* Returns the first non-empty trimmed string value.                               *
+/**********************************************************************************/
 function getPickFirstString(...vals) {
   for (const v of vals) if (typeof v === "string" && v.trim()) return v.trim();
   return "";
 }
 
-/************************************************************************************
-/* functionSignature: getParseRowForText (row, opts)                                *
-/* Extracts sender tag and content text from a DB row.                              *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getParseRowForText (row, opts)                               *
+/* Extracts sender tag and content text from a DB row.                             *
+/**********************************************************************************/
 function getParseRowForText(row, { stripCode }) {
   const role = (typeof row.role === "string" && row.role.trim()) ? row.role.trim() : "unknown";
   let author = "unknown", content = "";
@@ -151,46 +150,46 @@ function getParseRowForText(row, { stripCode }) {
   return { sender, content: String(content || "").trim() };
 }
 
-/************************************************************************************
-/* functionSignature: getEscRe (s)                                                  *
-/* Escapes a string for safe use in a RegExp pattern.                               *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getEscRe (s)                                                 *
+/* Escapes a string for safe use in a RegExp pattern.                              *
+/**********************************************************************************/
 function getEscRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
-/************************************************************************************
-/* functionSignature: getNorm (s)                                                   *
-/* Lowercases and normalizes a string value.                                        *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNorm (s)                                                  *
+/* Lowercases and normalizes a string value.                                       *
+/**********************************************************************************/
 function getNorm(s) { return String(s || "").toLowerCase(); }
 
-/************************************************************************************
-/* functionSignature: getUniqueArr (a)                                              *
-/* Returns a unique array with falsy values removed.                                *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getUniqueArr (a)                                             *
+/* Returns a unique array with falsy values removed.                               *
+/**********************************************************************************/
 function getUniqueArr(a) { return [...new Set((a || []).filter(Boolean))]; }
 
-/************************************************************************************
-/* functionSignature: getTokenize (text)                                            *
-/* Tokenizes text into lowercase alphanumeric tokens.                               *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getTokenize (text)                                           *
+/* Tokenizes text into lowercase alphanumeric tokens.                              *
+/**********************************************************************************/
 function getTokenize(text) {
   return String(text || "").toLowerCase().split(/\W+/).filter(Boolean);
 }
 
-/************************************************************************************
-/* functionSignature: getParseTs (ts)                                               *
-/* Parses a timestamp string to milliseconds or null.                               *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getParseTs (ts)                                              *
+/* Parses a timestamp string to milliseconds or null.                              *
+/**********************************************************************************/
 function getParseTs(ts) {
   if (!ts) return null;
   const t = Date.parse(ts);
   return Number.isFinite(t) ? t : null;
 }
 
-/************************************************************************************
-/* functionSignature: getFmtDelta (ms)                                              *
-/* Formats a duration in ms as human-readable h/m string.                           *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getFmtDelta (ms)                                             *
+/* Formats a duration in ms as human-readable h/m string.                          *
+/**********************************************************************************/
 function getFmtDelta(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600);
@@ -199,10 +198,10 @@ function getFmtDelta(ms) {
   return `${m}m`;
 }
 
-/************************************************************************************
-/* functionSignature: getNormalizeGroupsFromArgs (args)                              *
-/* Builds normalized keyword groups from args.                                      *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNormalizeGroupsFromArgs (args)                            *
+/* Builds normalized keyword groups from args.                                     *
+/**********************************************************************************/
 function getNormalizeGroupsFromArgs(args) {
   if (Array.isArray(args?.keyword_groups) && args.keyword_groups.length) {
     return args.keyword_groups.map((g, i) => ({
@@ -224,10 +223,10 @@ function getNormalizeGroupsFromArgs(args) {
   }));
 }
 
-/************************************************************************************
-/* functionSignature: getPartsInWindow (tokens, parts, K)                            *
-/* Detects proximity of distinct parts within a token window.                       *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getPartsInWindow (tokens, parts, K)                          *
+/* Detects proximity of distinct parts within a token window.                      *
+/**********************************************************************************/
 function getPartsInWindow(tokens, parts, K = DEFAULT_TOKEN_WINDOW) {
   if (!parts?.length) return 0;
   const posMap = new Map(parts.map(p => [p, []]));
@@ -250,10 +249,10 @@ function getPartsInWindow(tokens, parts, K = DEFAULT_TOKEN_WINDOW) {
   return 1;
 }
 
-/************************************************************************************
-/* functionSignature: getAnalyzeClusterRows (rows, groups, opts)                    *
-/* Computes coverage, hits, and evidence metrics per cluster.                       *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getAnalyzeClusterRows (rows, groups, opts)                   *
+/* Computes coverage, hits, and evidence metrics per cluster.                      *
+/**********************************************************************************/
 function getAnalyzeClusterRows(rows, groups, { tokenWindow = DEFAULT_TOKEN_WINDOW, stripCode = false } = {}) {
   const gState = groups.map(() => ({ lvl: 0, partialLines: 0, hadFull: false }));
   let coverage = 0, sumEvidenceLevel = 0, fullformGroups = 0, totalHits = 0, rowsMulti = 0, rowsAny = 0;
@@ -304,10 +303,10 @@ function getAnalyzeClusterRows(rows, groups, { tokenWindow = DEFAULT_TOKEN_WINDO
   return { coverage, sumEvidenceLevel, fullformGroups, totalHits, rowsMulti, rowsAny };
 }
 
-/************************************************************************************
-/* functionSignature: getBuildClustersFromHits (hitRows, rowsPerCluster)            *
-/* Builds fixed-size clusters from hit row numbers per channel.                     *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildClustersFromHits (hitRows, rowsPerCluster)           *
+/* Builds fixed-size clusters from hit row numbers per channel.                    *
+/**********************************************************************************/
 function getBuildClustersFromHits(hitRows, rowsPerCluster) {
   const R = Math.max(1, Math.floor(rowsPerCluster));
   const set = new Map();
@@ -333,10 +332,10 @@ function getBuildClustersFromHits(hitRows, rowsPerCluster) {
   return [...set.values()];
 }
 
-/************************************************************************************
-/* functionSignature: getBuildLikeFlags (contentExpr, tokens)                       *
-/* Produces SELECT flag columns and a WHERE-any SQL fragment.                       *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildLikeFlags (contentExpr, tokens)                      *
+/* Produces SELECT flag columns and a WHERE-any SQL fragment.                      *
+/**********************************************************************************/
 function getBuildLikeFlags(contentExpr, tokens) {
   const flagExprs = tokens.map(() =>
     `(${contentExpr} LIKE (?) ${ESCAPE_CLAUSE})`
@@ -346,10 +345,10 @@ function getBuildLikeFlags(contentExpr, tokens) {
   return { selectFlagsSQL, whereAnySQL };
 }
 
-/************************************************************************************
-/* functionSignature: getInformationInvoke (args, coreData)                         *
-/* Executes clustered search and returns snippets with meta.                        *
-/************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInformationInvoke (args, coreData)                        *
+/* Executes clustered search and returns snippets with meta.                       *
+/**********************************************************************************/
 async function getInformationInvoke(args, coreData) {
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
@@ -748,10 +747,10 @@ async function getInformationInvoke(args, coreData) {
   }
 }
 
-/************************************************************************************
+/**********************************************************************************/
 /* functionSignature: getDefaultExport ()                                          *
 /* Returns the tool definition object and invoke function.                         *
-/************************************************************************************/
+/**********************************************************************************/
 function getDefaultExport() {
   return {
     name: MODULE_NAME,

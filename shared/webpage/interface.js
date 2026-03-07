@@ -1,14 +1,12 @@
-/********************************************************************************************************************
-* filename: "interface.js"
-* Version 3.0
-* Purpose: Shared webpage utilities + menu renderer.
-*          UI HTML lives in the webpage modules:
-*            - modules/00047-webpage-config-editor.js
-*            - modules/00048-webpage-chat.js
-********************************************************************************************************************/
-/********************************************************************************************************************
-*
-********************************************************************************************************************/
+/**********************************************************************************/
+/* filename: interface.js                                                          *
+/* Version 1.0                                                                     *
+/* Purpose: Shared webpage utilities and menu renderer.                            *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 "use strict";
 
@@ -19,13 +17,12 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-/** Lazily-created mysql2 connection pool — shared across all context requests. */
 let dbPool = null;
 
-/********************************************************************************************************************
-* functionSignature: getBody (req)
-* Purpose: Reads request body into a string.
-********************************************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBody (req)                                                *
+/* Purpose: Reads request body into a string.                                      *
+/**********************************************************************************/
 function getBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -35,10 +32,10 @@ function getBody(req) {
   });
 }
 
-/********************************************************************************************************************
-* functionSignature: readJsonFile (filePath)
-* Purpose: Reads and parses a JSON file.
-********************************************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: readJsonFile (filePath)                                      *
+/* Purpose: Reads and parses a JSON file.                                          *
+/**********************************************************************************/
 function readJsonFile(filePath) {
   try {
     return { ok: true, data: JSON.parse(fs.readFileSync(filePath, "utf-8")) };
@@ -47,10 +44,10 @@ function readJsonFile(filePath) {
   }
 }
 
-/********************************************************************************************************************
-* functionSignature: writeJsonFile (filePath, data)
-* Purpose: Writes data as pretty-printed JSON.
-********************************************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: writeJsonFile (filePath, data)                               *
+/* Purpose: Writes data as pretty-printed JSON.                                    *
+/**********************************************************************************/
 function writeJsonFile(filePath, data) {
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
@@ -60,10 +57,11 @@ function writeJsonFile(filePath, data) {
   }
 }
 
-/********************************************************************************************************************
-* functionSignature: isAuthorized (req, token)
-* Purpose: Returns true if no token is required or the request carries the correct Bearer/Basic token.
-********************************************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: isAuthorized (req, token)                                    *
+/* Purpose: Returns true if no token is required or the request carries the        *
+/*          correct Bearer/Basic token.                                            *
+/**********************************************************************************/
 function isAuthorized(req, token) {
   if (!token) return true;
   const auth = String(req.headers.authorization || "").trim();
@@ -75,10 +73,11 @@ function isAuthorized(req, token) {
   return false;
 }
 
-/********************************************************************************************************************
-* functionSignature: getDb (coreData)
-* Purpose: Returns (creating if needed) a mysql2 connection pool using DB config from workingObject.
-********************************************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getDb (coreData)                                             *
+/* Purpose: Returns (creating if needed) a mysql2 connection pool using DB config  *
+/*          from workingObject.                                                    *
+/**********************************************************************************/
 async function getDb(coreData) {
   if (dbPool) return dbPool;
 
@@ -101,51 +100,75 @@ async function getDb(coreData) {
   return dbPool;
 }
 
-/********************************************************************************************************************
-* functionSignature: getMenuHtml (menu, activePath, role, rightHtmlOpt)
-* Purpose: Renders header nav links from wo.web.menu (webpage-menu) and shows effective role + logout.
-*          Optional: rightHtmlOpt renders custom right-side controls (e.g., Save button) left of role/logout.
-********************************************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getMenuHtml (menu, activePath, role, rightHtmlOpt)           *
+/* Purpose: Renders header nav links from wo.web.menu (webpage-menu) and shows     *
+/*          effective role + logout.                                               *
+/* Optional: rightHtmlOpt renders custom right-side controls (e.g., Save button)   *
+/*          left of role/logout.                                                   *
+/**********************************************************************************/
 function getMenuHtml(menu, activePath, role, rightHtmlOpt) {
   const items = Array.isArray(menu) ? menu : [];
+  const VISIBLE = 3; /* first N items shown directly on desktop */
 
   const cur = String(activePath || "/") || "/";
   const r0  = String(role || "").trim();
   const r   = r0 ? r0.toLowerCase() : "";
 
-  let nav = '<nav class="nav-links">';
-
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i] || {};
+  /* Collect role-filtered items */
+  const filtered = [];
+  for (const it of items) {
     const text  = String(it.text || it.label || it.name || "").trim();
     const link  = String(it.link || it.href  || it.url  || "").trim();
     const roles = Array.isArray(it.roles) ? it.roles : [];
-
     if (!text || !link) continue;
-
-    /* Role gate:
-       - roles empty => show
-       - role missing => show everything (fallback)
-       - admin => show everything
-       - else => must match roles[] */
+    /* Role gate: roles empty => show; admin => show all; else must match */
     if (roles.length && r && r !== "admin") {
       const ok = roles.map(x => String(x || "").trim().toLowerCase()).filter(Boolean).includes(r);
       if (!ok) continue;
     }
-
-    const isActive = (cur === link) || (link !== "/" && cur.startsWith(link));
-    nav += '<a href="' + escAttr(link) + '" class="nav-link' + (isActive ? " active" : "") + '">' +
-           escHtml(text) + '</a>';
+    filtered.push({ text, link });
   }
+
+  const primary  = filtered.slice(0, VISIBLE);   /* shown directly on desktop */
+  const overflow = filtered.slice(VISIBLE);       /* always in dropdown */
+
+  function mkLink(it, extraClass) {
+    const isActive = (cur === it.link) || (it.link !== "/" && cur.startsWith(it.link));
+    return '<a href="' + escAttr(it.link) + '" class="nav-link' +
+      (isActive ? " active" : "") +
+      (extraClass ? " " + extraClass : "") +
+      '">' + escHtml(it.text) + "</a>";
+  }
+
+  let nav = '<nav class="nav-links">';
+
+  /* Direct primary items (hidden on mobile via CSS) */
+  for (const it of primary) nav += mkLink(it, "nav-primary");
+
+  /* Collapsible dropdown — always rendered so mobile can use it too */
+  nav += '<details class="nav-more' + (overflow.length ? " has-overflow" : "") + '">';
+  nav += '<summary class="nav-link nav-more-btn">&#xB7;&#xB7;&#xB7;</summary>';
+  nav += '<div class="nav-more-drop">';
+  /* Primary items repeated inside dropdown — shown only on mobile via CSS */
+  for (const it of primary)  nav += mkLink(it, "nav-more-item nav-more-primary");
+  /* Overflow items always visible in dropdown */
+  for (const it of overflow) nav += mkLink(it, "nav-more-item");
+  nav += "</div></details>";
 
   nav += "</nav>";
 
+  /* Close dropdown when clicking outside (runs once per page) */
+  nav += '<script>!function(){if(window._navMoreReady)return;window._navMoreReady=true;' +
+         'document.addEventListener("click",function(e){' +
+         'var d=document.querySelector(".nav-more[open]");' +
+         'if(d&&!d.contains(e.target))d.removeAttribute("open");' +
+         '},true);}();</script>';
+
   const roleLabel = r ? r : "unknown";
-
   const rightHtml = String(rightHtmlOpt || "");
-
   const right =
-    '<div class="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:10px;white-space:nowrap">' +
+    '<div class="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:10px;white-space:nowrap;flex-shrink:0">' +
       (rightHtml ? rightHtml : "") +
       '<span class="nav-role">role: ' + escHtml(roleLabel) + '</span>' +
       '<a class="nav-logout" href="/auth/logout">Logout</a>' +
@@ -159,9 +182,9 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt) {
   );
 }
 
-/********************************************************************************************************************
-* functionSignature: escHtml (s)
-********************************************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: escHtml (s)                                                  *
+/**********************************************************************************/
 function escHtml(s) {
   return String(s)
     .replace(/&/g,"&amp;")
@@ -170,14 +193,14 @@ function escHtml(s) {
     .replace(/"/g,"&quot;");
 }
 
-/********************************************************************************************************************
-* functionSignature: escAttr (s)
-********************************************************************************************************************/
+/**********************************************************************************/
+/* functionSignature: escAttr (s)                                                  *
+/**********************************************************************************/
 function escAttr(s) {
   return escHtml(s).replace(/'/g,"&#39;");
 }
 
-/********************************************************************************************************************
-* Named exports
-********************************************************************************************************************/
+/**********************************************************************************/
+/* Named exports                                                                   *
+/**********************************************************************************/
 export { getBody, readJsonFile, writeJsonFile, isAuthorized, getDb, getMenuHtml };

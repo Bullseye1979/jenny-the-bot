@@ -80,7 +80,7 @@ function getShouldRunForThisModule(wo) {
 /*******************************************************************************/
 function getWithTurnId(rec, wo) {
   const t = typeof wo?.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
-  return t ? { ...rec, turn_id: t } : rec;
+  return { ...(t ? { ...rec, turn_id: t } : rec), ts: new Date().toISOString() };
 }
 
 /******************************************************************************* 

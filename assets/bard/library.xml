@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<library>
+  <track file="Battle1.mp3" title="Battle March">
+    <tags>battle,fight,fast,intense</tags>
+    <volume>0.8</volume>
+  </track>
+  <track file="Battle2.mp3" title="Clash of Steel">
+    <tags>battle,fight,fast,intense</tags>
+    <volume>0.8</volume>
+  </track>
+  <track file="Battle3.mp3" title="Boss Encounter">
+    <tags>boss,battle,fight,fast,intense</tags>
+    <volume>0.8</volume>
+  </track>
+  <track file="Epic1.mp3" title="Final Showdown">
+    <tags>epic,calm,magic</tags>
+    <volume>0.8</volume>
+  </track>
+  <track file="City1.mp3" title="City Streets">
+    <tags>city,people,buzzing,crowded</tags>
+    <volume>1.0</volume>
+  </track>
+  <track file="City2.mp3" title="Back Alleys">
+    <tags>city,sneaky,searching,shady</tags>
+    <volume>1.0</volume>
+  </track>
+  <track file="Exploring1.mp3" title="Into the Unknown">
+    <tags>exploration,adventure,travel</tags>
+    <volume>1.5</volume>
+  </track>
+  <track file="Wilderness1.mp3" title="Forest Path">
+    <tags>forest,peaceful,calm,travel</tags>
+    <volume>1.5</volume>
+  </track>
+  <track file="Magical1.mp3" title="Arcane Realm">
+    <tags>magic,whimsical,calm,mystery</tags>
+    <volume>1.5</volume>
+  </track>
+  <track file="Underdark1.mp3" title="Underdark Depths">
+    <tags>underdark,mystery,creepy,suspense</tags>
+    <volume>1.5</volume>
+  </track>
+  <track file="Battle4.mp3" title="Army of the Night">
+    <tags>battle,fight,fast,intense</tags>
+    <volume>0.1</volume>
+  </track>
+  <track file="Two_Steps_From_Hell_-_Archangel.mp3" title="Two Steps From Hell - Archangel">
+    <tags>battle,fight,fast,intense</tags>
+    <volume>1.0</volume>
+  </track>
+</library>

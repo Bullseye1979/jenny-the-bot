@@ -1,46 +1,47 @@
-/***************************************************************
-/* filename: "getGoogle.js"                                    *
-/* Version 1.0                                                 *
-/* Purpose: Perform Google Custom Search via toolsconfig and   *
-/*          expose results as a function toolcall "get google" *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
+/**********************************************************************************/
+/* filename: getGoogle.js                                                          *
+/* Version 1.0                                                                     *
+/* Purpose: Perform Google Custom Search via toolsconfig and expose results        *
+/*          as a function toolcall.                                                *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 import fetch from "node-fetch";
 
 const MODULE_NAME = "getGoogle";
 
-/***************************************************************
-/* functionSignature: getStr (value, fallback)                 *
-/* Returns a non-empty string or the provided default          *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getStr (value, fallback)                                     *
+/* Returns a non-empty string or the provided default                              *
+/**********************************************************************************/
 function getStr(value, fallback) {
   return typeof value === "string" && value.length ? value : fallback;
 }
 
-/***************************************************************
-/* functionSignature: getNum (value, fallback)                 *
-/* Returns a finite number or the provided default             *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNum (value, fallback)                                     *
+/* Returns a finite number or the provided default                                 *
+/**********************************************************************************/
 function getNum(value, fallback) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
-/***************************************************************
-/* functionSignature: getClamp (n, min, max)                   *
-/* Clamps a number into [min, max]                             *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getClamp (n, min, max)                                       *
+/* Clamps a number into [min, max]                                                 *
+/**********************************************************************************/
 function getClamp(n, min, max) {
   const x = Number.isFinite(n) ? n : min;
   return Math.max(min, Math.min(max, x));
 }
 
-/***************************************************************
-/* functionSignature: getHttpJson (url, params, timeoutMs)     *
-/* Performs a GET request with query params and JSON parsing   *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getHttpJson (url, params, timeoutMs)                         *
+/* Performs a GET request with query params and JSON parsing                       *
+/**********************************************************************************/
 async function getHttpJson(url, params, timeoutMs = 20000) {
   const u = new URL(url);
   Object.entries(params || {}).forEach(([k, v]) => {
@@ -64,10 +65,10 @@ async function getHttpJson(url, params, timeoutMs = 20000) {
   return data;
 }
 
-/***************************************************************
-/* functionSignature: getNormalizeItems (items)                *
-/* Maps Google items into a compact, stable structure          *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNormalizeItems (items)                                    *
+/* Maps Google items into a compact, stable structure                              *
+/**********************************************************************************/
 function getNormalizeItems(items) {
   const list = Array.isArray(items) ? items : [];
   return list.map((it) => ({
@@ -79,10 +80,10 @@ function getNormalizeItems(items) {
   })).filter(r => r.link);
 }
 
-/***************************************************************
-/* functionSignature: getInvoke (args, coreData)               *
-/* Executes Google Custom Search using toolsconfig.getGoogle   *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInvoke (args, coreData)                                   *
+/* Executes Google Custom Search using toolsconfig.getGoogle                       *
+/**********************************************************************************/
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getGoogle || {};
@@ -96,11 +97,11 @@ async function getInvoke(args, coreData) {
   if (!query) return { ok: false, error: "Missing query" };
 
   const numReq = getClamp(getNum(args?.num, getNum(toolCfg.num, 5)), 1, 10);
-  const safe   = getStr(args?.safe, getStr(toolCfg.safe, "off"));     // "off" | "active" | "high"
-  const hl     = getStr(args?.hl,   getStr(toolCfg.hl,   ""));         // UI Language (e.g., "de")
-  const lr     = getStr(args?.lr,   getStr(toolCfg.lr,   ""));         // Language restrict (e.g., "lang_de")
-  const cr     = getStr(args?.cr,   getStr(toolCfg.cr,   ""));         // Country restrict (e.g., "countryDE")
-  const gl     = getStr(args?.gl,   getStr(toolCfg.gl,   ""));         // Geolocation (e.g., "de")
+  const safe   = getStr(args?.safe, getStr(toolCfg.safe, "off"));
+  const hl     = getStr(args?.hl,   getStr(toolCfg.hl,   ""));
+  const lr     = getStr(args?.lr,   getStr(toolCfg.lr,   ""));
+  const cr     = getStr(args?.cr,   getStr(toolCfg.cr,   ""));
+  const gl     = getStr(args?.gl,   getStr(toolCfg.gl,   ""));
   const timeoutMs = getNum(toolCfg.timeoutMs, 20000);
 
   const params = {

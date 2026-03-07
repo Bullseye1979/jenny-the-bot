@@ -258,8 +258,10 @@ function sendMessage(payload) {
     if (thinkWrap.parentNode) thinkWrap.parentNode.removeChild(thinkWrap);
     sending = false;
     sendBtn.disabled = false;
-    if (d && d.response !== undefined) appendMsg("assistant", String(d.response || ""));
-    else if (d && d.error) appendMsg("assistant", "\u26a0\ufe0f Error: " + d.error);
+    if (d && d.response !== undefined) {
+      var raw = String(d.response || "").split("\n").filter(function(l) { return !/^META\|/.test(l.trim()); }).join("\n").trim();
+      appendMsg("assistant", raw);
+    } else if (d && d.error) appendMsg("assistant", "\u26a0\ufe0f Error: " + d.error);
     else appendMsg("assistant", "\u26a0\ufe0f Unexpected response");
   })
   .catch(function(e) {

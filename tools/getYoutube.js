@@ -1,19 +1,20 @@
-/********************************************************************************
-/* filename: "getYoutube.js"                                                     *
-/* Version 1.0                                                                   *
-/* Purpose: Fetch YouTube transcripts, then dump or summarize; optional search.  *
-/********************************************************************************/
-/********************************************************************************
-/*                                                                              *
-/********************************************************************************/
+/**********************************************************************************/
+/* filename: getYoutube.js                                                         *
+/* Version 1.0                                                                     *
+/* Purpose: Fetch YouTube transcripts, then dump or summarize; optional search.    *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 const MODULE_NAME = "getYoutube";
 let YT_LIB = null;
 
-/********************************************************************************
-/* functionSignature: getYoutubeLib ()                                           *
-/* Lazy-loads youtube-transcript-plus and caches the module reference.          *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getYoutubeLib ()                                             *
+/* Lazy-loads youtube-transcript-plus and caches the module reference.             *
+/**********************************************************************************/
 async function getYoutubeLib() {
   if (YT_LIB) return YT_LIB;
   try {
@@ -25,40 +26,40 @@ async function getYoutubeLib() {
   return YT_LIB;
 }
 
-/********************************************************************************
-/* functionSignature: getStr (v, f)                                             *
-/* Returns v if it is a non-empty string, otherwise f.                          *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getStr (v, f)                                                *
+/* Returns v if it is a non-empty string, otherwise f.                             *
+/**********************************************************************************/
 function getStr(v, f = "") { return typeof v === "string" && v.length ? v : f; }
 
-/********************************************************************************
-/* functionSignature: getNum (v, f)                                             *
-/* Returns a finite number or the fallback value f.                             *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNum (v, f)                                                *
+/* Returns a finite number or the fallback value f.                                *
+/**********************************************************************************/
 function getNum(v, f = 0) { return Number.isFinite(v) ? Number(v) : f; }
 
-/********************************************************************************
-/* functionSignature: getClamp (n, min, max)                                    *
-/* Clamps a number n between min and max.                                       *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getClamp (n, min, max)                                       *
+/* Clamps a number n between min and max.                                          *
+/**********************************************************************************/
 function getClamp(n, min, max) { const x = Number.isFinite(n) ? n : min; return Math.max(min, Math.min(max, x)); }
 
-/********************************************************************************
-/* functionSignature: getToSeconds (offset)                                     *
-/* Normalizes millisecond or second offsets to whole seconds.                   *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getToSeconds (offset)                                        *
+/* Normalizes millisecond or second offsets to whole seconds.                      *
+/**********************************************************************************/
 function getToSeconds(offset) { const n = Number(offset || 0); return n > 10000 ? Math.round(n / 1000) : Math.round(n); }
 
-/********************************************************************************
-/* functionSignature: getFmtTime (s)                                            *
-/* Formats seconds as H:MM:SS or M:SS.                                          *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getFmtTime (s)                                               *
+/* Formats seconds as H:MM:SS or M:SS.                                             *
+/**********************************************************************************/
 function getFmtTime(s) { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60; const pad = (x) => String(x).padStart(2, "0"); return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`; }
 
-/********************************************************************************
-/* functionSignature: getExtractVideoId (input)                                 *
-/* Extracts an 11-char YouTube video ID from various URL forms.                 *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getExtractVideoId (input)                                    *
+/* Extracts an 11-char YouTube video ID from various URL forms.                    *
+/**********************************************************************************/
 function getExtractVideoId(input) {
   if (!input) return null;
   const plain = String(input).trim();
@@ -73,10 +74,10 @@ function getExtractVideoId(input) {
   } catch { return null; }
 }
 
-/********************************************************************************
-/* functionSignature: getFetchJsonWithTimeout (url, ms)                         *
-/* Fetches a URL and returns parsed JSON, aborting after ms milliseconds.       *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getFetchJsonWithTimeout (url, ms)                            *
+/* Fetches a URL and returns parsed JSON, aborting after ms milliseconds.          *
+/**********************************************************************************/
 async function getFetchJsonWithTimeout(url, ms) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), Math.max(1, ms || 15000));
@@ -91,10 +92,10 @@ async function getFetchJsonWithTimeout(url, ms) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getFetchTranscript (videoId, langsWanted)                 *
-/* Retrieves a transcript in preferred languages with normalized entries.       *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getFetchTranscript (videoId, langsWanted)                    *
+/* Retrieves a transcript in preferred languages with normalized entries.          *
+/**********************************************************************************/
 async function getFetchTranscript(videoId, langsWanted = []) {
   const yt = await getYoutubeLib();
   if (!yt) return { ok: false, error: "YTLIB_MISSING — install youtube-transcript-plus", items: [] };
@@ -119,10 +120,10 @@ async function getFetchTranscript(videoId, langsWanted = []) {
   return { ok: false, error: "YT_NO_TRANSCRIPT", items: [] };
 }
 
-/********************************************************************************
-/* functionSignature: getFetchVideoMeta (googleApiKey, videoId, region)         *
-/* Retrieves basic video metadata via YouTube Data API v3.                      *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getFetchVideoMeta (googleApiKey, videoId, region)            *
+/* Retrieves basic video metadata via YouTube Data API v3.                         *
+/**********************************************************************************/
 async function getFetchVideoMeta(googleApiKey, videoId, region = "DE") {
   if (!googleApiKey) return { ok: false, error: "YT_NO_API_KEY", meta: null };
   const params = new URLSearchParams({ key: googleApiKey, id: videoId, part: "snippet" });
@@ -134,10 +135,10 @@ async function getFetchVideoMeta(googleApiKey, videoId, region = "DE") {
   return { ok: true, meta: { video_id: videoId, title: sn.title || "", channel_title: sn.channelTitle || "", channel_id: sn.channelId || "", published_at: sn.publishedAt || "", region } };
 }
 
-/********************************************************************************
-/* functionSignature: getSearchVideos (opts)                                    *
-/* Executes a YouTube search and returns normalized results.                    *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getSearchVideos (opts)                                       *
+/* Executes a YouTube search and returns normalized results.                       *
+/**********************************************************************************/
 async function getSearchVideos({ googleApiKey, query, maxResults, relevanceLanguage, regionCode, safeSearch }) {
   if (!googleApiKey) return { ok: false, error: "YT_NO_API_KEY" };
   const params = new URLSearchParams({
@@ -161,10 +162,10 @@ async function getSearchVideos({ googleApiKey, query, maxResults, relevanceLangu
   return { ok: true, results };
 }
 
-/********************************************************************************
-/* functionSignature: getCallOpenAI (opts)                                      *
-/* Calls an OpenAI-compatible chat completions endpoint and returns content.     *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getCallOpenAI (opts)                                         *
+/* Calls an OpenAI-compatible chat completions endpoint and returns content.       *
+/**********************************************************************************/
 async function getCallOpenAI({ endpoint, apiKey, model, messages, temperature, max_tokens, timeoutMs }) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), Math.max(1, timeoutMs || 45000));
@@ -185,17 +186,17 @@ async function getCallOpenAI({ endpoint, apiKey, model, messages, temperature, m
   }
 }
 
-/********************************************************************************
-/* functionSignature: getInvoke (args, coreData)                                *
-/* Main entry: transcript dump/summary/QA or YouTube search based on mode.      *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInvoke (args, coreData)                                   *
+/* Main entry: transcript dump/summary/QA or YouTube search based on mode.         *
+/**********************************************************************************/
 async function getInvoke(args, coreData) {
   const started = Date.now();
   const wo = coreData?.workingObject || {};
   const cfg = wo?.toolsconfig?.getYoutube || {};
   const googleApiKey = getStr(cfg.googleApiKey, "");
   const transcriptLangs = Array.isArray(cfg.transcriptLangs) ? cfg.transcriptLangs : [];
-  const dumpThresholdChars = getNum(cfg.dump_threshold_chars, 24000);
+  const dumpThresholdChars = getNum(cfg.dumpThresholdChars, 24000);
   const endpoint = getStr(cfg.endpoint, wo?.endpoint || "https://api.openai.com/v1/chat/completions");
   const apiKey = getStr(cfg.apiKey, wo?.apiKey || wo?.apiKey || process.env.OPENAI_API_KEY || "");
   const model = getStr(cfg.model, wo?.model || "gpt-4o-mini");

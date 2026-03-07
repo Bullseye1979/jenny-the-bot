@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
+import { putItem } from "./core/registry.js";
 
 const MODULE_NAME = "main";
 
@@ -89,8 +90,10 @@ const SYM = {
 };
 
 const CLEAR_MIN_INTERVAL_MS = 1000;
+const REGISTRY_WRITE_INTERVAL_MS = 2000;
 let __lastRenderAt = 0;
 let __lastRenderLineCount = 0;
+let __lastRegistryWriteAt = 0;
 let __firstRender = true;
 
 const FLOW_STATES = new Map();
@@ -157,8 +160,12 @@ function getFmtMem(bytes) {
 /**************************************************************/
 function getPadLinesToWidth(text) {
   const cols = process.stdout.columns || 120;
+  const ansiRe = /\x1b\[[0-9;]*m|\x1b\[[0-9;]*[A-Za-z]/g;
   const lines = text.split("\n");
-  return lines.map(line => (line.length < cols ? line + " ".repeat(cols - line.length) : line)).join("\n");
+  return lines.map(line => {
+    const visual = line.replace(ansiRe, "").length;
+    return visual < cols ? line + " ".repeat(cols - visual) : line;
+  }).join("\n");
 }
 
 /**************************************************************
@@ -276,6 +283,47 @@ function getRenderAllDashboards() {
 }
 
 /**************************************************************
+/* functionSignature: setWriteDashboardToRegistry ()         *
+/* Writes structured telemetry to registry key              *
+/* dashboard:state for the web dashboard module             *
+/**************************************************************/
+function setWriteDashboardToRegistry() {
+  const now = Date.now();
+  if (now - __lastRegistryWriteAt < REGISTRY_WRITE_INTERVAL_MS) return;
+  __lastRegistryWriteAt = now;
+  const list = Array.from(FLOW_STATES.values());
+  const mem = process.memoryUsage?.();
+  const nowPerf = performance.now();
+  const flows = list.slice().sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0)).map(state => ({
+    runId: state.runId || "",
+    flowName: state.flowName || "",
+    runIndex: state.runIndex || 1,
+    phase: state.phase || "run",
+    ok: state.ok || 0,
+    fail: state.fail || 0,
+    skip: state.skip || 0,
+    total: state.total || 0,
+    current: state.current || "",
+    stopped: !!state.stopped,
+    lastModule: state.lastModule || "",
+    lastError: state.lastError || "",
+    elapsedMs: nowPerf - (state.startedAt || nowPerf),
+    finishedAt: state.finishedAt || null
+  }));
+  const data = {
+    ts: new Date().toISOString(),
+    mem: {
+      rss: mem?.rss || 0,
+      heap: mem?.heapUsed || 0,
+      rssStr: mem?.rss ? getFmtMem(mem.rss) : "n/a",
+      heapStr: mem?.heapUsed ? getFmtMem(mem.heapUsed) : "n/a"
+    },
+    flows
+  };
+  putItem(data, "dashboard:state");
+}
+
+/**************************************************************
 /* functionSignature: setRenderThrottled (_, force)          *
 /* Renders dashboard at most once per second                 *
 /**************************************************************/
@@ -302,6 +350,7 @@ function setRenderThrottled(_ignored, force = false) {
   }
 
   __lastRenderLineCount = lineCount;
+  setWriteDashboardToRegistry();
 }
 
 /**************************************************************

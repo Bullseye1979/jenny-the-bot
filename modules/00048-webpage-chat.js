@@ -280,13 +280,17 @@ return coreData;
       const msgs = rows.reverse()
         .filter(r => { const rl = String(r.role || "").toLowerCase(); return rl === "user" || rl === "assistant"; })
         .map(r => {
-          let text = String(r.text || "");
+          let text = "";
           try {
             const obj = JSON.parse(r.json);
+            if (obj?.internal_meta === true) return null;
             if (typeof obj?.content === "string" && obj.content) text = obj.content;
           } catch (_) {}
+          if (!text) return null;
+          if (/^META\|/.test(text)) return null;
           return { role: String(r.role || "assistant"), text, ts: r.ts };
-        });
+        })
+        .filter(Boolean);
       setJsonResp(wo, 200, msgs);
     } catch (e) {
       setJsonResp(wo, 500, { error: String(e?.message || e) });
@@ -503,12 +507,13 @@ function getChatHtml(opts) {
 '</header>\n' +
 '\n' +
 '<div id="chat-view">\n' +
-'  <div id="chat-channel-bar">\n' +
-'    <label>Channel:</label>\n' +
-'    <select id="chat-sel" onchange="onChatSel(this.value)"><option value="">Loading…</option></select>\n' +
-'    <button id="chat-reload-btn" onclick="reloadContext()" title="Reload context">↻</button>\n' +
+'  <div id="chat-center">\n' +
+'    <div id="chat-channel-bar">\n' +
+'      <select id="chat-sel" onchange="onChatSel(this.value)"><option value="">Loading…</option></select>\n' +
+'      <button id="chat-reload-btn" onclick="reloadContext()" title="Reload">↻</button>\n' +
+'    </div>\n' +
+'    <div id="chat-msgs"><div class="chat-loading">Select a channel to start chatting.</div></div>\n' +
 '  </div>\n' +
-'  <div id="chat-msgs"><div class="chat-loading">Select a channel to start chatting.</div></div>\n' +
 '  <div id="chat-footer">\n' +
 '    <textarea id="chat-input" placeholder="Type a message…  (Enter = send • Shift+Enter = newline)" rows="1"></textarea>\n' +
 '    <button id="chat-send-btn" onclick="sendMessage()" title="Send">➤</button>\n' +

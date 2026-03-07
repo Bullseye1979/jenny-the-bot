@@ -1,22 +1,23 @@
-/***************************************************************
-/* filename: "getTimeline.js"                                  *
-/* Version 1.0                                                 *
-/* Purpose: Return stored timeline periods for current channel *
-/*          with indices, timestamps, and summaries.           *
-/***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
+/**********************************************************************************/
+/* filename: getTimeline.js                                                        *
+/* Version 1.0                                                                     *
+/* Purpose: Return stored timeline periods for the current channel with            *
+/*          indices, timestamps, and summaries.                                    *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 import mysql from "mysql2/promise";
 
 const MODULE_NAME = "getTimeline";
 const POOLS = new Map();
 
-/***************************************************************
-/* functionSignature: getPool (wo)                             *
-/* Returns or creates a MySQL pool for the given wo.db config. *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getPool (wo)                                                 *
+/* Returns or creates a MySQL pool for the given wo.db config.                     *
+/**********************************************************************************/
 async function getPool(wo) {
   const key = JSON.stringify({ h: wo?.db?.host, u: wo?.db?.user, d: wo?.db?.database });
   if (POOLS.has(key)) return POOLS.get(key);
@@ -34,10 +35,10 @@ async function getPool(wo) {
   return pool;
 }
 
-/***************************************************************
-/* functionSignature: getEffectiveLimit (args, wo)             *
-/* Resolves the effective period limit from args and configs.  *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getEffectiveLimit (args, wo)                                 *
+/* Resolves the effective period limit from args and configs.                      *
+/**********************************************************************************/
 function getEffectiveLimit(args, wo) {
   if (Number.isFinite(args?.limit)) {
     return Math.max(1, Number(args.limit));
@@ -53,10 +54,10 @@ function getEffectiveLimit(args, wo) {
   return null;
 }
 
-/***************************************************************
-/* functionSignature: getTimelineInvoke (args, coreData)       *
-/* Fetches timeline periods for wo.channelID with metadata.    *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getTimelineInvoke (args, coreData)                           *
+/* Fetches timeline periods for wo.channelID with metadata.                        *
+/**********************************************************************************/
 async function getTimelineInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const channelId = String(wo?.channelID || "");
@@ -130,10 +131,10 @@ async function getTimelineInvoke(args, coreData) {
   }
 }
 
-/***************************************************************
-/* functionSignature: getDefaultExport ()                      *
-/* Exposes tool definition and invoke handler for the module.  *
-/***************************************************************/
+/**********************************************************************************/
+/* functionSignature: getDefaultExport ()                                          *
+/* Exposes tool definition and invoke handler for the module.                      *
+/**********************************************************************************/
 function getDefaultExport() {
   return {
     name: MODULE_NAME,

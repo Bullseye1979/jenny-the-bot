@@ -12,7 +12,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fetch from "node-fetch";
-import { EmbedBuilder } from "discord.js";
+import discordJs from "discord.js";
+const { EmbedBuilder } = discordJs;
 import { getItem } from "../core/registry.js";
 
 /**************************************************************

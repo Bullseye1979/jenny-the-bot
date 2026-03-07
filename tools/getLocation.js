@@ -1,12 +1,13 @@
-/********************************************************************************
-/* filename: "getLocation.js"                                                   *
-/* Version 1.0                                                                  *
-/* Purpose: Generate Street View image/link, interactive pano, and Google Maps  *
-/*          URL (+optional directions text).                                    *
-/********************************************************************************/
-/********************************************************************************
-/*                                                                              *
-/********************************************************************************/
+/**********************************************************************************/
+/* filename: getLocation.js                                                        *
+/* Version 1.0                                                                     *
+/* Purpose: Generate Street View image/link, interactive pano, and Google Maps     *
+/*          URL with optional directions text.                                     *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -19,48 +20,48 @@ const __dirname  = path.dirname(__filename);
 const ROOT_DIR   = path.join(__dirname, "..");
 const DOC_DIR    = path.join(ROOT_DIR, "pub", "documents");
 
-/********************************************************************************
-/* functionSignature: getStr (value, fallback)                                  *
-/* Returns a non-empty string or the provided default                           *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getStr (value, fallback)                                     *
+/* Returns a non-empty string or the provided default                              *
+/**********************************************************************************/
 function getStr(value, fallback) {
   return typeof value === "string" && value.length ? value : fallback;
 }
 
-/********************************************************************************
-/* functionSignature: getNum (value, fallback)                                  *
-/* Returns a finite number or the provided default                              *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNum (value, fallback)                                     *
+/* Returns a finite number or the provided default                                 *
+/**********************************************************************************/
 function getNum(value, fallback) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
-/********************************************************************************
-/* functionSignature: getClamp (n, min, max)                                    *
-/* Clamps a number into [min, max]                                              *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getClamp (n, min, max)                                       *
+/* Clamps a number into [min, max]                                                 *
+/**********************************************************************************/
 function getClamp(n, min, max) {
   const x = Number.isFinite(n) ? n : min;
   return Math.max(min, Math.min(max, x));
 }
 
-/********************************************************************************
-/* functionSignature: getEnsureAbsoluteUrl (urlPath, cfg)                       *
-/* Resolves relative path against PUBLIC_BASE_URL / baseUrl                     *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getEnsureAbsoluteUrl (urlPath, cfg)                          *
+/* Resolves relative path against PUBLIC_BASE_URL / baseUrl                        *
+/**********************************************************************************/
 function getEnsureAbsoluteUrl(urlPath, cfg) {
   const baseCfg = getStr(cfg?.publicBaseUrl, getStr(cfg?.baseUrl, ""));
   const base = (baseCfg || "").replace(/\/$/, "");
   const normalized = String(urlPath || "").replace(/\\/g, "/");
-  if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (/^https?:\/\//.test(normalized)) return normalized;
   if (base) return `${base}${normalized.startsWith("/") ? "" : "/"}${normalized}`;
   return normalized;
 }
 
-/********************************************************************************
-/* functionSignature: getPickExtFromContentType (ct)                            *
-/* Picks a file extension from a content-type                                   *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getPickExtFromContentType (ct)                               *
+/* Picks a file extension from a content-type                                      *
+/**********************************************************************************/
 function getPickExtFromContentType(ct) {
   const s = String(ct || "").toLowerCase();
   if (s.includes("image/png")) return ".png";
@@ -70,10 +71,10 @@ function getPickExtFromContentType(ct) {
   return ".png";
 }
 
-/********************************************************************************
-/* functionSignature: getSafeBaseFromHint (hint)                                *
-/* Creates a safe filename base slug                                            *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getSafeBaseFromHint (hint)                                   *
+/* Creates a safe filename base slug                                               *
+/**********************************************************************************/
 function getSafeBaseFromHint(hint) {
   const s = String(hint || "streetview")
     .toLowerCase()
@@ -84,10 +85,10 @@ function getSafeBaseFromHint(hint) {
   return s || "streetview";
 }
 
-/********************************************************************************
-/* functionSignature: setSaveBufferAsPicture (buffer, nameHint, ct, cfg)        *
-/* Saves buffer under /pub/documents and returns public URL                     *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: setSaveBufferAsPicture (buffer, nameHint, ct, cfg)           *
+/* Saves buffer under /pub/documents and returns public URL                        *
+/**********************************************************************************/
 async function setSaveBufferAsPicture(buffer, nameHint, ct = "image/png", cfg) {
   await fs.mkdir(DOC_DIR, { recursive: true });
   const ext = getPickExtFromContentType(ct);
@@ -102,26 +103,26 @@ async function setSaveBufferAsPicture(buffer, nameHint, ct = "image/png", cfg) {
   return { filename, filePath, publicUrl };
 }
 
-/********************************************************************************
-/* functionSignature: getIsLatLon (input)                                       *
-/* Checks if input is a "lat,lng" pair                                          *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getIsLatLon (input)                                          *
+/* Checks if input is a "lat,lng" pair                                             *
+/**********************************************************************************/
 function getIsLatLon(input) {
   return /^\s*-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+\s*$/.test(String(input || ""));
 }
 
-/********************************************************************************
-/* functionSignature: getNormalize (s)                                          *
-/* Normalizes whitespace and commas                                             *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getNormalize (s)                                             *
+/* Normalizes whitespace and commas                                                *
+/**********************************************************************************/
 function getNormalize(s) {
   return String(s || "").trim().replace(/^[,;]+|[,;]+$/g, "").replace(/\s{2,}/g, " ");
 }
 
-/********************************************************************************
-/* functionSignature: getTrimLatLng (lat, lng, decimals)                        *
-/* Trims lat/lng to fixed decimals                                              *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getTrimLatLng (lat, lng, decimals)                           *
+/* Trims lat/lng to fixed decimals                                                 *
+/**********************************************************************************/
 function getTrimLatLng(lat, lng, decimals = 5) {
   const toNum = (v) => {
     const n = Number(v);
@@ -133,10 +134,10 @@ function getTrimLatLng(lat, lng, decimals = 5) {
   return `${la.toFixed(decimals)},${ln.toFixed(decimals)}`;
 }
 
-/********************************************************************************
-/* functionSignature: getHttpJson (url, params, timeoutMs)                      *
-/* GET with query params and JSON parsing                                       *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getHttpJson (url, params, timeoutMs)                         *
+/* GET with query params and JSON parsing                                          *
+/**********************************************************************************/
 async function getHttpJson(url, params, timeoutMs = 20000) {
   const u = new URL(url);
   Object.entries(params || {}).forEach(([k, v]) => {
@@ -160,10 +161,10 @@ async function getHttpJson(url, params, timeoutMs = 20000) {
   return data;
 }
 
-/********************************************************************************
-/* functionSignature: getHttpBuffer (url, timeoutMs)                            *
-/* GET binary buffer with timeout                                               *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getHttpBuffer (url, timeoutMs)                               *
+/* GET binary buffer with timeout                                                  *
+/**********************************************************************************/
 async function getHttpBuffer(url, timeoutMs = 30000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
@@ -178,10 +179,10 @@ async function getHttpBuffer(url, timeoutMs = 30000) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getGeocodeOne (query, apiKey, timeoutMs)                  *
-/* Geocodes one query; supports "lat,lng" passthrough                           *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getGeocodeOne (query, apiKey, timeoutMs)                     *
+/* Geocodes one query; supports "lat,lng" passthrough                              *
+/**********************************************************************************/
 async function getGeocodeOne(query, apiKey, timeoutMs) {
   const q = getNormalize(query);
   if (!q) return null;
@@ -206,10 +207,10 @@ async function getGeocodeOne(query, apiKey, timeoutMs) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getBuildMapsURLApi1 ({ points, isRoute })                 *
-/* Builds Google Maps URL for route or search                                   *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildMapsURLApi1 ({ points, isRoute })                    *
+/* Builds Google Maps URL for route or search                                      *
+/**********************************************************************************/
 function getBuildMapsURLApi1({ points, isRoute }) {
   if (isRoute && Array.isArray(points) && points.length >= 2) {
     const origin = encodeURIComponent(points[0]);
@@ -222,18 +223,18 @@ function getBuildMapsURLApi1({ points, isRoute }) {
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
-/********************************************************************************
-/* functionSignature: getBuildStreetViewPanoURLFromLatLon (latLon)              *
-/* Builds interactive pano URL from coordinates                                 *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildStreetViewPanoURLFromLatLon (latLon)                 *
+/* Builds interactive pano URL from coordinates                                    *
+/**********************************************************************************/
 function getBuildStreetViewPanoURLFromLatLon(latLon) {
   return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(latLon)}`;
 }
 
-/********************************************************************************
-/* functionSignature: getBuildStreetViewImageURL (opts)                         *
-/* Builds Google Static Street View image URL                                   *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildStreetViewImageURL (opts)                            *
+/* Builds Google Static Street View image URL                                      *
+/**********************************************************************************/
 function getBuildStreetViewImageURL({ latLon, address, size = "640x400", fov = 90, heading, pitch, apiKey }) {
   const params = new URLSearchParams({ size, fov: String(fov), key: apiKey });
   if (latLon) params.set("location", latLon);
@@ -243,10 +244,11 @@ function getBuildStreetViewImageURL({ latLon, address, size = "640x400", fov = 9
   return `https://maps.googleapis.com/maps/api/streetview?${params.toString()}`;
 }
 
-/********************************************************************************
-/* functionSignature: getDirectionsDetail (origin, destination, waypoints, apiKey, timeoutMs) *
-/* Fetches driving directions and returns text + end coord                      *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getDirectionsDetail (origin, destination, waypoints, apiKey, *
+/*          timeoutMs)                                                             *
+/* Fetches driving directions and returns text + end coord                         *
+/**********************************************************************************/
 async function getDirectionsDetail(origin, destination, waypoints = [], apiKey, timeoutMs) {
   try {
     const params = { origin, destination, mode: "driving", key: apiKey };
@@ -266,10 +268,11 @@ async function getDirectionsDetail(origin, destination, waypoints = [], apiKey, 
   }
 }
 
-/********************************************************************************
-/* functionSignature: setDownloadStreetViewToLocal (imageUrl, nameHint, cfg, timeoutMs) *
-/* Downloads image and saves to /pub/documents                                  *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: setDownloadStreetViewToLocal (imageUrl, nameHint, cfg,       *
+/*          timeoutMs)                                                             *
+/* Downloads image and saves to /pub/documents                                     *
+/**********************************************************************************/
 async function setDownloadStreetViewToLocal(imageUrl, nameHint, cfg, timeoutMs) {
   const { buffer, contentType } = await getHttpBuffer(imageUrl, timeoutMs);
   if (!String(contentType).toLowerCase().startsWith("image/")) throw new Error("STREETVIEW_NON_IMAGE");
@@ -277,10 +280,10 @@ async function setDownloadStreetViewToLocal(imageUrl, nameHint, cfg, timeoutMs) 
   return { url: saved.publicUrl, filePath: saved.filePath };
 }
 
-/********************************************************************************
-/* functionSignature: getInvoke (args, coreData)                                *
-/* Tool entrypoint compatible with core tool loader                             *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInvoke (args, coreData)                                   *
+/* Tool entrypoint compatible with core tool loader                                *
+/**********************************************************************************/
 async function getInvoke(args, coreData) {
   try {
     const wo = coreData?.workingObject || {};
@@ -294,8 +297,8 @@ async function getInvoke(args, coreData) {
 
     const isRouteRequested = !!args?.route;
     const inputLocations = Array.isArray(args?.locations) ? args.locations : [];
-    const streetSize = getStr(args?.street_size, getStr(toolCfg.street_size, "640x400"));
-    const streetFov = getClamp(getNum(args?.street_fov, getNum(toolCfg.street_fov, 90)), 1, 120);
+    const streetSize = getStr(args?.street_size, getStr(toolCfg.streetSize, "640x400"));
+    const streetFov = getClamp(getNum(args?.street_fov, getNum(toolCfg.streetFov, 90)), 1, 120);
     const streetHeading = Number.isFinite(args?.street_heading) ? Number(args.street_heading) : (Number.isFinite(toolCfg.street_heading) ? Number(toolCfg.street_heading) : undefined);
     const streetPitch = Number.isFinite(args?.street_pitch) ? Number(args.street_pitch) : (Number.isFinite(toolCfg.street_pitch) ? Number(toolCfg.street_pitch) : undefined);
 

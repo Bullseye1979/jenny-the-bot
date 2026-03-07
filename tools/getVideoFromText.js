@@ -1,12 +1,13 @@
-/********************************************************************************
-/* filename: "getVideoFromText.js"                                              *
-/* Version 1.0                                                                  *
-/* Purpose: Create a short video from text via Replicate (Google Veo 3), save   *
-/*          it under ./pub/documents, and return a public URL                   *
-/********************************************************************************/
-/********************************************************************************
-/*                                                                              *
-/********************************************************************************/
+/**********************************************************************************/
+/* filename: getVideoFromText.js                                                   *
+/* Version 1.0                                                                     *
+/* Purpose: Create a short video from text via Replicate (Google Veo 3), save      *
+/*          it under ./pub/documents, and return a public URL.                     *
+/**********************************************************************************/
+
+/**********************************************************************************/
+/*                                                                                 *
+/**********************************************************************************/
 
 import fs from "node:fs";
 import path from "node:path";
@@ -14,27 +15,27 @@ import { fileURLToPath } from "node:url";
 
 const MODULE_NAME = "getVideoFromText";
 
-/********************************************************************************
-/* functionSignature: getEnsureDir (absPath)                                    *
-/* Ensures a directory exists                                                   *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getEnsureDir (absPath)                                       *
+/* Ensures a directory exists                                                      *
+/**********************************************************************************/
 function getEnsureDir(absPath) {
   if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
 }
 
-/********************************************************************************
-/* functionSignature: getRandSuffix ()                                          *
-/* Returns a short random lowercase base36 suffix                               *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getRandSuffix ()                                             *
+/* Returns a short random lowercase base36 suffix                                  *
+/**********************************************************************************/
 function getRandSuffix() {
   const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
   return n.slice(-6);
 }
 
-/********************************************************************************
-/* functionSignature: getGuessExtFromCtype (ctype)                              *
-/* Guesses a video file extension from content-type                             *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getGuessExtFromCtype (ctype)                                 *
+/* Guesses a video file extension from content-type                                *
+/**********************************************************************************/
 function getGuessExtFromCtype(ctype) {
   const c = String(ctype || "").toLowerCase();
   if (c.includes("webm")) return ".webm";
@@ -42,20 +43,20 @@ function getGuessExtFromCtype(ctype) {
   return ".mp4";
 }
 
-/********************************************************************************
-/* functionSignature: getBuildPublicUrl (base, filename)                        *
-/* Builds a public URL for a given filename                                     *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildPublicUrl (base, filename)                           *
+/* Builds a public URL for a given filename                                        *
+/**********************************************************************************/
 function getBuildPublicUrl(base, filename) {
   if (!base) return `/documents/${filename}`;
   const trimmed = String(base).replace(/\/+$/, "");
   return `${trimmed}/documents/${filename}`;
 }
 
-/********************************************************************************
-/* functionSignature: getSaveBuffer (buf, dirAbs, ext)                          *
-/* Saves a buffer to disk with a generated name                                 *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getSaveBuffer (buf, dirAbs, ext)                             *
+/* Saves a buffer to disk with a generated name                                    *
+/**********************************************************************************/
 function getSaveBuffer(buf, dirAbs, ext = ".mp4") {
   getEnsureDir(dirAbs);
   const filename = `video_${Date.now()}_${getRandSuffix()}${ext}`;
@@ -64,10 +65,10 @@ function getSaveBuffer(buf, dirAbs, ext = ".mp4") {
   return { filename, abs };
 }
 
-/********************************************************************************
-/* functionSignature: getDownloadToBuffer (url)                                 *
-/* Downloads a URL and returns buffer and content-type                          *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getDownloadToBuffer (url)                                    *
+/* Downloads a URL and returns buffer and content-type                             *
+/**********************************************************************************/
 async function getDownloadToBuffer(url) {
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -76,11 +77,11 @@ async function getDownloadToBuffer(url) {
   return { buf, ctype };
 }
 
-/********************************************************************************
-/* functionSignature: resolveToolConfig (wo, args)                              *
-/* Build config from toolsconfig.getVideoFromText with                          *
-/* args overrides and legacy workingObject fallbacks                            *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: resolveToolConfig (wo, args)                                 *
+/* Build config from toolsconfig.getVideoFromText with                             *
+/* args overrides and legacy workingObject fallbacks                               *
+/**********************************************************************************/
 function resolveToolConfig(wo = {}, args = {}) {
   const tc = wo?.toolsconfig?.getVideoFromText || {};
   const apiToken = String(args.videoApiToken || tc.videoApiToken || wo.videoApiToken || "").trim();
@@ -101,12 +102,12 @@ function resolveToolConfig(wo = {}, args = {}) {
   return { apiToken, baseUrl, model, pollIntervalMs, timeoutMs, publicBaseUrl };
 }
 
-/********************************************************************************
-/* functionSignature: getCreatePrediction (cfg, input, model)                   *
-/* Starts a prediction and returns its id                                       *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getCreatePrediction (cfg, input, model)                      *
+/* Starts a prediction and returns its id                                          *
+/**********************************************************************************/
 async function getCreatePrediction(cfg, input, model) {
-  // cfg.baseUrl z.B. "https://api.replicate.com/v1"
+
   const url = `${cfg.baseUrl}/predictions`;
   const payload = {
     version: String(model),
@@ -133,10 +134,10 @@ async function getCreatePrediction(cfg, input, model) {
   return id;
 }
 
-/********************************************************************************
-/* functionSignature: getWaitPrediction (cfg, id)                               *
-/* Polls a prediction until completion or timeout                               *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getWaitPrediction (cfg, id)                                  *
+/* Polls a prediction until completion or timeout                                  *
+/**********************************************************************************/
 async function getWaitPrediction(cfg, id) {
   const started = Date.now();
   for (;;) {
@@ -154,10 +155,10 @@ async function getWaitPrediction(cfg, id) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getExtractFirstOutputUrl (data)                           *
-/* Extracts the first output URL from prediction data                           *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getExtractFirstOutputUrl (data)                              *
+/* Extracts the first output URL from prediction data                              *
+/**********************************************************************************/
 function getExtractFirstOutputUrl(data) {
   const out = data?.output;
   if (!out) return null;
@@ -167,19 +168,19 @@ function getExtractFirstOutputUrl(data) {
   return null;
 }
 
-/********************************************************************************
-/* functionSignature: getBuildInput (prompt)                                    *
-/* Builds a minimal text-to-video input object                                  *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getBuildInput (prompt)                                       *
+/* Builds a minimal text-to-video input object                                     *
+/**********************************************************************************/
 function getBuildInput(prompt) {
   const p = String(prompt || "");
   return { prompt: p };
 }
 
-/********************************************************************************
-/* functionSignature: getRunSinglePrediction ({ cfg, model, input })            *
-/* Runs one prediction, downloads, saves, and returns metadata                  *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getRunSinglePrediction ({ cfg, model, input })               *
+/* Runs one prediction, downloads, saves, and returns metadata                     *
+/**********************************************************************************/
 async function getRunSinglePrediction({ cfg, model, input }) {
   let predictionId;
   try {
@@ -208,10 +209,10 @@ async function getRunSinglePrediction({ cfg, model, input }) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getInvoke (args, coreData)                                *
-/* Main entry: validates input, runs prediction, returns result                 *
-/********************************************************************************/
+/**********************************************************************************/
+/* functionSignature: getInvoke (args, coreData)                                   *
+/* Main entry: validates input, runs prediction, returns result                    *
+/**********************************************************************************/
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   let cfg;
