@@ -1244,7 +1244,7 @@ Configuration for the Bard music bot.
 |---|---|---|
 | `token` | string | **Required.** Discord bot token for the Bard bot |
 | `musicDir` | string | Directory containing MP3 files and `library.xml` (default: `assets/bard`) |
-| `idlePresence` | string | Discord presence text shown when no track is playing (e.g. library empty or no matching tags). Empty string = no presence shown. Default: `""` |
+| `idlePresence` | string | Discord presence text shown when no track is playing (e.g. library empty or no matching tags). If empty or not set, falls back to `"..."`. Default: `""` |
 | `pollIntervalMs` | number | Poll interval in milliseconds (min 5000, default: 30000) |
 
 ---
@@ -2500,6 +2500,12 @@ Jenny the Bard is a second Discord bot that automatically plays mood-appropriate
   -> joins voice channel (using bard bot token)
   -> stores bard:session:{guildId} in registry
 
+/bardleave command
+  -> 00035-bard-admin-join.js
+  -> stops player, destroys voice connection
+  -> removes bard:session:{guildId} and bard:nowplaying:{guildId} from registry
+  -> immediately sets idle presence (core.json["bard"]["idlePresence"]) or clears it
+
 Cron job (every minute, runs in parallel with other cron jobs)
   -> 00036-bard-cron.js (flow: bard-label-gen)
   -> reads bard:lastrun:{guildId} from registry (timestamp of last run)
@@ -2611,7 +2617,7 @@ The Bard bot's Discord status is controlled by two config keys in `core.json["ba
 |-----------|--------------|-------------------|
 | Music is playing | `Listening to <filename>` (MP3 filename without `.mp3`) | automatic, no config needed |
 | **Bot is not in any voice channel** | `Listening to <idlePresence>` | `core.json["bard"]["idlePresence"]` |
-| `idlePresence` is empty or not set | No status / all activities cleared | — |
+| `idlePresence` is empty or not set | `Listening to ...` (built-in fallback) | — |
 
 **The primary use case for `idlePresence`** is when the bot is not joined to any voice channel — e.g. after `/bardleave` or before the first `/bardjoin`. This is the state that occurs in normal operation.
 

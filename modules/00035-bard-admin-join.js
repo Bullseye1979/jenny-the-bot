@@ -31,6 +31,8 @@ import {
   VoiceConnectionStatus,
   entersState
 } from "@discordjs/voice";
+import discordJs from "discord.js";
+const { ActivityType } = discordJs;
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
@@ -128,6 +130,13 @@ export default async function getBardAdminJoin(coreData) {
         guildId,
         voiceChannelId: live?.voiceChannelId || null
       });
+      // Immediately update presence — don't wait for the next poll cycle
+      try {
+        const idleText = String(coreData?.config?.["bard"]?.idlePresence ?? "");
+        if (bardClient?.user) {
+          bardClient.user.setPresence({ activities: [{ name: idleText || "...", type: ActivityType.Listening }], status: "online" });
+        }
+      } catch {}
       wo.response = "";
       return coreData;
     }

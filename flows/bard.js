@@ -139,11 +139,7 @@ async function setIdlePresence(text) {
   try {
     const bardClient = await getItem("bard:client");
     if (!bardClient?.user) return;
-    if (text) {
-      bardClient.user.setPresence({ activities: [{ name: text, type: ActivityType.Listening }], status: "online" });
-    } else {
-      bardClient.user.setPresence({ activities: [], status: "online" });
-    }
+    bardClient.user.setPresence({ activities: [{ name: text || "...", type: ActivityType.Listening }], status: "online" });
   } catch {}
 }
 
