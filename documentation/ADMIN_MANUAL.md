@@ -1516,7 +1516,9 @@ Also supports `*/N * * * *` (every N minutes).
 | `wo.http.path` | string | URL path without query string (e.g. `"/api/data"`) |
 | `wo.http.url` | string | Full URL including query string |
 | `wo.http.headers` | object | Request headers |
-| `wo.http.body` | string | Request body (for POST/PUT) |
+| `wo.http.rawBody` | string | Request body as UTF-8 string (populated for POST, PUT, PATCH, DELETE) |
+| `wo.http.rawBodyBytes` | Buffer | Request body as raw Buffer (same methods as above) |
+| `wo.http.json` | object | Parsed JSON body, if `Content-Type` is JSON and parsing succeeds (same methods) |
 | `wo.http.requestKey` | string | Registry key where `{ req, res }` is stored |
 | `wo.http.response` | object | Set `{ status, headers, body }` here — `webpage-output` sends it |
 | `wo.web.menu` | array | Modules push `{ label, port, path }` here for nav cross-linking |

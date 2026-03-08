@@ -223,7 +223,7 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
         wo.http.query = {};
       }
 
-      if (["POST", "PUT", "PATCH"].includes(method)) {
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
         try {
           const rawBuf = await getReadBody(req, 50e6);
           wo.http.rawBodyBytes = rawBuf;
