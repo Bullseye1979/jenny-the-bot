@@ -2511,15 +2511,17 @@ Cron job (every minute, runs in parallel with other cron jobs)
 
 flows/bard.js (polls every 30 seconds)
   -> reloads library.xml from disk (picks up newly added tracks without restart)
-  -> reads bard:registry for active sessions
+  -> no active sessions: sets idle presence (core.json["bard"]["idlePresence"]) → stop
   -> reads bard:labels:{guildId} for current mood
   -> reads bard:nowplaying:{guildId} for current track
   -> selects next song via label matching
-  -> plays via @discordjs/voice AudioPlayer
+  -> song found: plays track, sets "Listening to <filename>" presence
+  -> no song found: sets idle presence
 
 player.on(AudioPlayerStatus.Idle)
   -> reloads library.xml from disk
-  -> automatic next-song selection on track end
+  -> song found: plays next track, sets "Listening to <filename>" presence
+  -> no song found: sets idle presence
 ```
 
 ### Registry Keys
@@ -2603,11 +2605,24 @@ The prompt template may contain the placeholder `{{TAGS}}`, which is replaced at
 
 ### Discord Presence
 
-While music is playing the Bard bot automatically updates its Discord status. The presence is set as **Listening to <filename>**, where *filename* is the MP3 filename without the `.mp3` extension (e.g. `Battle1.mp3` → **Listening to Battle1**).
+The Bard bot's Discord status is controlled by two config keys in `core.json["bard"]`:
 
-The presence is updated every time a new track starts via `client.user.setPresence()` with `ActivityType.Listening`. The filename (not the `title` field from `library.xml`) is used as the activity name.
+| Situation | What is shown | Where to configure |
+|-----------|--------------|-------------------|
+| Music is playing | `Listening to <filename>` (MP3 filename without `.mp3`) | automatic, no config needed |
+| **Bot is not in any voice channel** | `Listening to <idlePresence>` | `core.json["bard"]["idlePresence"]` |
+| `idlePresence` is empty or not set | No status / all activities cleared | — |
 
-When no matching track is available (library empty, no tags match, or song-end with no successor), the bot switches to the **idle presence** configured in `core.json["bard"]["idlePresence"]`. If the value is an empty string or not set, all activities are cleared instead.
+**The primary use case for `idlePresence`** is when the bot is not joined to any voice channel — e.g. after `/bardleave` or before the first `/bardjoin`. This is the state that occurs in normal operation.
+
+**Configuration:**
+```json
+"bard": {
+  "idlePresence": "Waiting for adventure..."
+}
+```
+
+The filename shown while playing is the raw MP3 filename minus the extension (e.g. `Battle March.mp3` → **Listening to Battle March**), not the `title` field from `library.xml`.
 
 ---
 
@@ -2634,6 +2649,8 @@ When no matching track is available (library empty, no tags match, or song-end w
 | Same song repeats | Only one track matches labels | Add more tracks or broaden their tags |
 | Bot joins but immediately leaves | Connection error | Check server logs for voice state errors |
 | Voice input silent (bot cannot hear users) | DAVE E2EE decryption not working | Run `npm install` on the server to install `@snazzah/davey` and the correct platform binary. Restart the bot after install. |
+| Idle presence not showing after `/bardleave` | `idlePresence` not configured | Set `core.json["bard"]["idlePresence"]` to the desired text |
+| Idle presence shows while music is playing | Should not happen — check logs | Presence is set by `setPlayTrack()`; if overridden, check for errors in the bard flow |
 
 ---
 

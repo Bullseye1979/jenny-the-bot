@@ -261,6 +261,8 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence) {
       const keys = Array.isArray(reg?.list) ? reg.list : [];
 
       if (!keys.length) {
+        await setIdlePresence(idlePresence);
+        return;
       }
 
       for (const sessionKey of keys) {
