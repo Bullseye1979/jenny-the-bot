@@ -350,24 +350,24 @@ function getBardHtml({ menu, role, activePath, base }) {
 '<h2>Upload MP3</h2>\n' +
 '<div id="drop-zone">\n' +
 '  <input type="file" id="file-input" accept=".mp3">\n' +
-'  <div id="drop-label">MP3 hier ablegen oder <u style="cursor:pointer" onclick="document.getElementById(\'file-input\').click()">auswählen</u></div>\n' +
+'  <div id="drop-label">Drop MP3 here or <u style="cursor:pointer" onclick="document.getElementById(\'file-input\').click()">browse</u></div>\n' +
 '</div>\n' +
 '<div id="upload-form" class="hidden">\n' +
 '  <div class="upload-row"><span id="upload-filename"></span></div>\n' +
-'  <input class="inp" type="text" id="upload-title" placeholder="Titel">\n' +
-'  <input class="inp" type="text" id="upload-tags" placeholder="Tags (kommagetrennt, z.B. battle,intense,fight)">\n' +
-'  <input class="inp" type="number" id="upload-vol" min="0.1" max="4" step="0.1" value="1.0" placeholder="Lautstärke (1.0 = 100%)">\n' +
+'  <input class="inp" type="text" id="upload-title" placeholder="Title">\n' +
+'  <input class="inp" type="text" id="upload-tags" placeholder="Tags (comma-separated, e.g. battle,intense,fight)">\n' +
+'  <input class="inp" type="number" id="upload-vol" min="0.1" max="4" step="0.1" value="1.0" placeholder="Volume (1.0 = 100%)">\n' +
 '  <div style="display:flex;gap:8px">\n' +
-'    <button class="btn btn-p" onclick="doUpload()">Hochladen</button>\n' +
-'    <button class="btn btn-s" onclick="resetUpload()">Abbrechen</button>\n' +
+'    <button class="btn btn-p" onclick="doUpload()">Upload</button>\n' +
+'    <button class="btn btn-s" onclick="resetUpload()">Cancel</button>\n' +
 '  </div>\n' +
 '</div>\n' +
 '</div>\n' +
 
 /**********************************************************************************/
 '<div class="card">\n' +
-'<h2>Bibliothek</h2>\n' +
-'<div id="lib-list"><div id="lib-empty">Lade…</div></div>\n' +
+'<h2>Library</h2>\n' +
+'<div id="lib-list"><div id="lib-empty">Loading…</div></div>\n' +
 '</div>\n' +
 '</div>\n' +
 
@@ -395,7 +395,7 @@ function getBardHtml({ menu, role, activePath, base }) {
 '});\n' +
 '\n' +
 'function setFile(f){\n' +
-'  if(!/\\.mp3$/i.test(f.name)){toast("Nur MP3-Dateien erlaubt",3000);return;}\n' +
+'  if(!/\\.mp3$/i.test(f.name)){toast("Only MP3 files allowed",3000);return;}\n' +
 '  pendingFile=f;\n' +
 '  document.getElementById("upload-filename").textContent=f.name;\n' +
 '  document.getElementById("upload-title").value=f.name.replace(/\\.mp3$/i,"");\n' +
@@ -410,11 +410,11 @@ function getBardHtml({ menu, role, activePath, base }) {
 '}\n' +
 '\n' +
 'function doUpload(){\n' +
-'  if(!pendingFile){toast("Keine Datei ausgewählt");return;}\n' +
+'  if(!pendingFile){toast("No file selected");return;}\n' +
 '  var title=document.getElementById("upload-title").value.trim();\n' +
 '  var tags=document.getElementById("upload-tags").value.split(",").map(function(t){return t.trim().toLowerCase().replace(/[^a-z0-9_-]/g,"");}).filter(Boolean);\n' +
 '  var vol=parseFloat(document.getElementById("upload-vol").value)||1.0;\n' +
-'  var btn=document.querySelector("#upload-form .btn-p"); btn.disabled=true; btn.textContent="Lädt…";\n' +
+'  var btn=document.querySelector("#upload-form .btn-p"); btn.disabled=true; btn.textContent="Uploading…";\n' +
 '  var reader=new FileReader();\n' +
 '  reader.onload=function(){\n' +
 '    var b64=reader.result.split(",")[1];\n' +
@@ -422,10 +422,10 @@ function getBardHtml({ menu, role, activePath, base }) {
 '      body:JSON.stringify({filename:pendingFile.name,title:title,tags:tags,volume:vol,data:b64})})\n' +
 '    .then(function(r){return r.json();})\n' +
 '    .then(function(d){\n' +
-'      btn.disabled=false; btn.textContent="Hochladen";\n' +
-'      if(d.ok){toast("Hochgeladen: "+d.filename,3000); resetUpload(); loadLibrary();}\n' +
-'      else toast("Fehler: "+(d.error||"?"),5000);\n' +
-'    }).catch(function(e){btn.disabled=false;btn.textContent="Hochladen";toast("Fehler: "+e.message,5000);});\n' +
+'      btn.disabled=false; btn.textContent="Upload";\n' +
+'      if(d.ok){toast("Uploaded: "+d.filename,3000); resetUpload(); loadLibrary();}\n' +
+'      else toast("Error: "+(d.error||"?"),5000);\n' +
+'    }).catch(function(e){btn.disabled=false;btn.textContent="Upload";toast("Error: "+e.message,5000);});\n' +
 '  };\n' +
 '  reader.readAsDataURL(pendingFile);\n' +
 '}\n' +
@@ -433,23 +433,23 @@ function getBardHtml({ menu, role, activePath, base }) {
 '/**********************************************************************************/\n' +
 'function loadLibrary(){\n' +
 '  fetch(BASE+"/api/library").then(function(r){return r.json();})\n' +
-'  .then(function(d){renderLibrary(d.tracks||[]);}).catch(function(e){toast("Ladefehler: "+e.message,5000);});\n' +
+'  .then(function(d){renderLibrary(d.tracks||[]);}).catch(function(e){toast("Load error: "+e.message,5000);});\n' +
 '}\n' +
 '\n' +
 'function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}\n' +
 '\n' +
 'function renderLibrary(tracks){\n' +
 '  var el=document.getElementById("lib-list");\n' +
-'  if(!tracks.length){el.innerHTML=\'<div id="lib-empty">Keine Tracks in der Bibliothek.</div>\';return;}\n' +
+'  if(!tracks.length){el.innerHTML=\'<div id="lib-empty">No tracks in library.</div>\';return;}\n' +
 '  var html="";\n' +
 '  tracks.forEach(function(t,i){\n' +
 '    html+=\'<div class="track-row" data-i="\'+i+\'">\'+\n' +
 '      \'<span class="track-file">\'+esc(t.file)+\'</span>\'+\n' +
-'      \'<input class="inp track-title" type="text" value="\'+esc(t.title)+\'" placeholder="Titel" data-file="\'+esc(t.file)+\'">\'+\n' +
+'      \'<input class="inp track-title" type="text" value="\'+esc(t.title)+\'" placeholder="Title" data-file="\'+esc(t.file)+\'">\'+\n' +
 '      \'<input class="inp track-tags" type="text" value="\'+esc((t.tags||[]).join(","))+\'" placeholder="Tags" data-file="\'+esc(t.file)+\'">\'+\n' +
-'      \'<input class="inp track-vol" type="number" min="0.1" max="4" step="0.1" value="\'+parseFloat(t.volume||1).toFixed(1)+\'" title="Lautstärke" data-file="\'+esc(t.file)+\'">\'+\n' +
+'      \'<input class="inp track-vol" type="number" min="0.1" max="4" step="0.1" value="\'+parseFloat(t.volume||1).toFixed(1)+\'" title="Volume" data-file="\'+esc(t.file)+\'">\'+\n' +
 '      \'<div class="track-actions">\'+\n' +
-'      \'<button class="btn btn-p" onclick="saveTrack(this)" data-file="\'+esc(t.file)+\'">Speichern</button>\'+\n' +
+'      \'<button class="btn btn-p" onclick="saveTrack(this)" data-file="\'+esc(t.file)+\'">Save</button>\'+\n' +
 '      \'<button class="btn btn-d" onclick="deleteTrack(this)" data-file="\'+esc(t.file)+\'">✕</button>\'+\n' +
 '      \'</div></div>\';\n' +
 '  });\n' +
@@ -468,20 +468,20 @@ function getBardHtml({ menu, role, activePath, base }) {
 '  .then(function(r){return r.json();})\n' +
 '  .then(function(d){\n' +
 '    btn.disabled=false;\n' +
-'    if(d.ok) toast("Gespeichert",2000); else toast("Fehler: "+(d.error||"?"),5000);\n' +
-'  }).catch(function(e){btn.disabled=false;toast("Fehler: "+e.message,5000);});\n' +
+'    if(d.ok) toast("Saved",2000); else toast("Error: "+(d.error||"?"),5000);\n' +
+'  }).catch(function(e){btn.disabled=false;toast("Error: "+e.message,5000);});\n' +
 '}\n' +
 '\n' +
 'function deleteTrack(btn){\n' +
 '  var file=btn.getAttribute("data-file");\n' +
-'  if(!confirm("MP3-Datei unwiderruflich löschen?\\n\\n"+file)) return;\n' +
+'  if(!confirm("Permanently delete MP3 file?\\n\\n"+file)) return;\n' +
 '  btn.disabled=true;\n' +
 '  fetch(BASE+"/api/track",{method:"DELETE",headers:{"Content-Type":"application/json"},\n' +
 '    body:JSON.stringify({file:file})})\n' +
 '  .then(function(r){return r.json();})\n' +
 '  .then(function(d){\n' +
-'    if(d.ok){toast("Gelöscht: "+file,2500); loadLibrary();} else {btn.disabled=false; toast("Fehler: "+(d.error||"?"),5000);}\n' +
-'  }).catch(function(e){btn.disabled=false;toast("Fehler: "+e.message,5000);});\n' +
+'    if(d.ok){toast("Deleted: "+file,2500); loadLibrary();} else {btn.disabled=false; toast("Error: "+(d.error||"?"),5000);}\n' +
+'  }).catch(function(e){btn.disabled=false;toast("Error: "+e.message,5000);});\n' +
 '}\n' +
 '\n' +
 'loadLibrary();\n' +

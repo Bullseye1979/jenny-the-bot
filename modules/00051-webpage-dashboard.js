@@ -123,11 +123,11 @@ function getFlowStatusCls(f) {
 /* Returns an HTML badge label for the flow status                                   *
 /************************************************************************************/
 function getFlowBadge(f) {
-  if (f.fail > 0) return "&#x2716;&nbsp;Fehler";
-  if (f.stopped) return "&#x25A0;&nbsp;gestoppt";
-  if (f.phase === "done") return "&#x2714;&nbsp;fertig";
+  if (f.fail > 0) return "&#x2716;&nbsp;Error";
+  if (f.stopped) return "&#x25A0;&nbsp;stopped";
+  if (f.phase === "done") return "&#x2714;&nbsp;done";
   if (f.phase === "jump") return "&#x25B6;&nbsp;jump";
-  return "&#x25B6;&nbsp;l&auml;uft";
+  return "&#x25B6;&nbsp;running";
 }
 
 /************************************************************************************/
@@ -169,7 +169,7 @@ function buildDashboardHtml(data, menu, role, basePath, refreshSec) {
   <div class="ddetail">${detail}</div>` : ""}
 </div>`;
       }).join("\n")
-    : `<div class="dempty">Noch keine Flows aufgezeichnet.</div>`;
+    : `<div class="dempty">No flows recorded yet.</div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -288,13 +288,13 @@ try{var __dh=JSON.parse(localStorage.getItem('dash-hidden-flows')||'["webpage"]'
 </header>
 <div class="dwrap">
   <div class="dstats">
-    <div class="dstat">Aktualisiert<strong>${escHtml(ts)}</strong></div>
+    <div class="dstat">Updated<strong>${escHtml(ts)}</strong></div>
     <div class="dstat">RSS<strong>${memRss}</strong></div>
     <div class="dstat">Heap<strong>${memHeap}</strong></div>
     <div class="dstat">Flows<strong>${escHtml(String(flows.length))}</strong></div>
   </div>
   <div class="dcontrols">
-    <label class="dtoggle"><input type="checkbox" id="dcb-webpage"> HTTP-Flows (webpage) ausblenden</label>
+    <label class="dtoggle"><input type="checkbox" id="dcb-webpage"> Hide HTTP flows (webpage)</label>
   </div>
   <div class="dflows">
 ${flowCards}

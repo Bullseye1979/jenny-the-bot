@@ -2529,6 +2529,8 @@ player.on(AudioPlayerStatus.Idle)
 
 Located at: `assets/bard/library.xml` (configurable via `core.json["bard"]["musicDir"]`)
 
+**Auto-creation:** If `library.xml` (or the music directory itself) does not exist when the bard flow starts, both are created automatically. The new file contains an empty `<library>` element. No manual setup is required; simply drop MP3 files into the music directory and add tracks via the Bard Admin UI.
+
 Format:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -2589,7 +2591,11 @@ The presence is updated every time a new track starts via `client.user.setPresen
 3. Invite the bot with Connect + Speak permissions (or Administrator)
 4. Run `npm install` on the server — this installs `@snazzah/davey` (DAVE E2EE dispatcher) and the correct platform binary automatically (see §19)
 5. Start the main bot — the bard flow initializes automatically on startup
-6. Use `/bardjoin` in a Discord server where both bots are members
+6. On first start, `assets/bard/` and `library.xml` are created automatically if they do not exist
+7. Add MP3 files to `assets/bard/` and manage the track catalog via the Bard Admin UI at `/bard-admin`
+8. Use `/bardjoin` in a Discord server where both bots are members
+
+> **Note:** `assets/bard/` (music files and `library.xml`) is listed in `.gitignore` and is not tracked by git. Only `assets/bard/library.xml.example` is committed as a reference template. Copy it to `library.xml` to pre-populate the catalog, or let the bot create an empty one automatically.
 
 ### Troubleshooting
 
