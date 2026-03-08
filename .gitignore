@@ -14,3 +14,7 @@ tmp/
 # safety
 logs/
 *.log
+
+# Bard assets — music files and library.xml are instance-specific
+assets/bard/*
+!assets/bard/library.xml.example

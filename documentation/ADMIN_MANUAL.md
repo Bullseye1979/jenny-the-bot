@@ -1641,6 +1641,7 @@ export default async function myModule(coreData) {
 |---|---|---|
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
+| 00019 | `bard-voice-gate` | Skips the discord-voice pipeline if the speaker is the Bard bot itself (prevents the bot from transcribing its own playback) |
 | 00020 | `discord-channel-gate` | Checks whether the bot is allowed to respond in this channel |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
@@ -1653,7 +1654,7 @@ export default async function myModule(coreData) {
 | 00045 | `webpage-inpaint` | Image inpainting redirect for web content |
 | 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard-admin`) |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /chat/api/chats`, `GET /chat/api/messages`, `POST /chat/api/messages` on the configured port |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /chat/api/chats`, `GET /chat/api/messages`, `POST /chat/api/messages` on the configured port. The `/chat/api/messages` endpoint filters out records with `internal_meta: true`, empty content, and lines starting with `META|` before returning them to the browser. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
 | 00055 | `core-admin-commands` | Core admin operations (purge, freeze, DB commands) |
@@ -2100,6 +2101,8 @@ getContext(workingObject, n);                  // Return the last n turns for wo
 getContextLastSeconds(workingObject, seconds); // Return all turns in the last N seconds for the channel
 getContextSince(workingObject, since);         // Return all turns since a Date or ISO timestamp for the channel
 ```
+
+**Internal meta frames:** `setContext()` silently discards any record where `record.internal_meta === true`. Meta frames are generated dynamically at retrieval time by `getContext()` and injected into the AI context window; they are never stored in MySQL. This prevents ghost entries (e.g. `[assistant] Jenny` index strings) from appearing in the database or the chat UI.
 
 **`getContextSince`** is used by the Bard cron job (`00036-bard-cron.js`) to read chat that occurred since the job last ran. This avoids a fixed time window and ensures no messages are missed even if the cron interval stretches.
 
@@ -2571,13 +2574,22 @@ Accessible at `/bard-admin`. Features:
 - Edit track title, tags (comma-separated), and volume per track
 - Delete tracks (removes both library entry and MP3 file)
 
+### Discord Presence
+
+While music is playing the Bard bot automatically updates its Discord status. The presence is set as **Listening to <filename>**, where *filename* is the MP3 filename without the `.mp3` extension (e.g. `Battle1.mp3` → **Listening to Battle1**).
+
+The presence is updated every time a new track starts via `client.user.setPresence()` with `ActivityType.Listening`. The filename (not the `title` field from `library.xml`) is used as the activity name. There is no configuration for this behaviour; it is always active when the bard flow is running.
+
+---
+
 ### Setup
 
 1. Create a second Discord bot application in the Discord Developer Portal
 2. Add the bot token to `core.json["bard"]["token"]`
 3. Invite the bot with Connect + Speak permissions (or Administrator)
-4. Start the main bot — the bard flow initializes automatically on startup
-5. Use `/bardjoin` in a Discord server where both bots are members
+4. Run `npm install` on the server — this installs `@snazzah/davey` (DAVE E2EE dispatcher) and the correct platform binary automatically (see §19)
+5. Start the main bot — the bard flow initializes automatically on startup
+6. Use `/bardjoin` in a Discord server where both bots are members
 
 ### Troubleshooting
 
@@ -2588,6 +2600,7 @@ Accessible at `/bard-admin`. Features:
 | Labels not updating | Cron job disabled | Enable `bard-label-gen` job in core.json |
 | Same song repeats | Only one track matches labels | Add more tracks or broaden their tags |
 | Bot joins but immediately leaves | Connection error | Check server logs for voice state errors |
+| Voice input silent (bot cannot hear users) | DAVE E2EE decryption not working | Run `npm install` on the server to install `@snazzah/davey` and the correct platform binary. Restart the bot after install. |
 
 ---
 
@@ -2597,6 +2610,9 @@ Accessible at `/bard-admin`. Features:
 |---|---|---|
 | `discord.js` | ^14.x | Discord client (messages, guilds, voice) |
 | `@discordjs/voice` | ^0.19.x | Voice connection and audio pipeline |
+| `@snazzah/davey` | ^0.1.x | DAVE E2EE dispatcher — required by `@discordjs/voice` 0.19+ for voice encryption/decryption. Install with `npm install`; the correct platform binary is selected automatically. |
+| `@snazzah/davey-linux-x64-gnu` | ^0.1.x | Linux x64 native binary for DAVE E2EE (`optionalDependency` — installed automatically on Linux) |
+| `@snazzah/davey-win32-x64-msvc` | ^0.1.x | Windows x64 native binary for DAVE E2EE (`optionalDependency` — installed automatically on Windows) |
 | `@discordjs/opus` | ^0.10.x | Opus audio codec |
 | `opusscript` | ^0.0.8 | Pure-JS Opus fallback |
 | `prism-media` | ^1.3.x | Audio transcoding (OggOpus -> MP3) |
@@ -2612,4 +2628,4 @@ Accessible at `/bard-admin`. Features:
 ---
 
 *End of Administrator Manual*
-*Generated: 2026-03-07 · Jenny Discord AI Bot v1.2*
+*Generated: 2026-03-08 · Jenny Discord AI Bot v1.3*

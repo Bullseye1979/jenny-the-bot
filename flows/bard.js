@@ -61,10 +61,16 @@ function getParseLibraryXml(xmlText) {
 /* functionSignature: getLoadLibrary (musicDir)                                      *
 /* Loads and parses library.xml from the given directory. Returns [] on failure.     *
 /************************************************************************************/
+const LIBRARY_XML_EMPTY = `<?xml version="1.0" encoding="UTF-8"?>\n<library>\n</library>\n`;
+
 function getLoadLibrary(musicDir) {
   try {
     const xmlPath = path.join(musicDir, "library.xml");
+    if (!fs.existsSync(musicDir)) {
+      fs.mkdirSync(musicDir, { recursive: true });
+    }
     if (!fs.existsSync(xmlPath)) {
+      fs.writeFileSync(xmlPath, LIBRARY_XML_EMPTY, "utf8");
       return [];
     }
     const xmlText = fs.readFileSync(xmlPath, "utf8");

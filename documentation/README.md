@@ -1024,7 +1024,8 @@ Jenny registers slash commands via the `discord-admin` flow. Commands are define
 | Package | Version | Purpose |
 |---|---|---|
 | `discord.js` | ^14.22.1 | Discord client (messages, guilds, voice states) |
-| `@discordjs/voice` | ^0.18.0 | Voice connection and audio pipeline |
+| `@discordjs/voice` | ^0.19.0 | Voice connection and audio pipeline |
+| `@snazzah/davey` | ^0.1.10 | DAVE E2EE dispatcher (required by `@discordjs/voice` 0.19+); platform binary installed automatically via `optionalDependencies` |
 | `@discordjs/opus` | ^0.10.0 | Opus audio codec |
 | `opusscript` | ^0.0.8 | Pure-JS Opus fallback |
 | `prism-media` | ^1.3.5 | Audio transcoding for Discord voice |
@@ -1051,6 +1052,7 @@ A Manifest V3 browser extension (Edge / Chrome) is included under `extensions/je
 | **Chat UI** | Full chat window with markdown rendering, link embedding, and video playback — identical to the admin panel chat |
 | **Summarize button** | One click sends the current tab's URL to the bot with a summarization task (`getWebpage` / `getYoutube`) |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots |
+| **META frame filtering** | Lines starting with `META|` are stripped from API responses before display; internal context-injection frames are never shown to the user |
 | **Options page** | Configure API URL, Channel ID, and API Secret via `chrome.storage` |
 
 ### Installation
@@ -1092,4 +1094,4 @@ And add the chat to `webpage-chat.chats[]` so the admin panel can monitor it:
 
 ---
 
-*Documentation generated 2026-02-28.*
+*Documentation generated 2026-03-08.*
