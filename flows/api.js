@@ -110,10 +110,17 @@ function getUlid() {
 * functionSignature: getJson(res, status, body)                                                                  *
 * Purpose: Sends a JSON response with standard headers and prevents caching.                                     *
 ****************************************************************************************************************/
+function setCorsHeaders(res) {
+  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+  res.setHeader("access-control-allow-headers", "content-type, authorization");
+}
+
 function getJson(res, status, body) {
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.setHeader("cache-control", "no-store");
+  setCorsHeaders(res);
   res.end(JSON.stringify(body));
 }
 
@@ -285,6 +292,12 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const contextPath = String(cfg.contextPath || "/context");
 
   const server = http.createServer(async (req, res) => {
+    if (req.method === "OPTIONS") {
+      setCorsHeaders(res);
+      res.statusCode = 204;
+      return res.end();
+    }
+
     if (req.method === "GET" && req.url === "/health") {
       return getJson(res, 200, { ok: true, botname: getBotname(undefined, baseCore) });
     }
