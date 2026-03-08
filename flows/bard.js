@@ -172,12 +172,11 @@ async function setPlayTrack(session, track, musicDir, log) {
 }
 
 /************************************************************************************/
-/* functionSignature: setBindSessionPlayer (session, sessionKey, library, musicDir,  *
-/*                                          log)                                     *
-/* Binds the Idle event to the session player (once per session). On song end, picks  *
-/* the next song.                                                                    *
+/* functionSignature: setBindSessionPlayer (session, sessionKey, musicDir, log)      *
+/* Binds the Idle event to the session player (once per session). On song end,       *
+/* reloads library.xml from disk and picks the next song.                            *
 /************************************************************************************/
-function setBindSessionPlayer(session, sessionKey, library, musicDir, log) {
+function setBindSessionPlayer(session, sessionKey, musicDir, log) {
   if (session._playerBound) return;
   session._playerBound = true;
 
@@ -201,6 +200,7 @@ function setBindSessionPlayer(session, sessionKey, library, musicDir, log) {
       } else {
       }
 
+      const library = getLoadLibrary(musicDir);
       const next = getSelectSong(labels, library, null, currentFile);
       if (!next) {
         log("no tracks in library for song-end pick", "warn", { moduleName: MODULE_NAME });
@@ -228,12 +228,14 @@ function setBindSessionPlayer(session, sessionKey, library, musicDir, log) {
 }
 
 /************************************************************************************/
-/* functionSignature: getScanAndPlay (library, musicDir, pollMs, log)                *
-/* Returns the polling function. Scans bard:registry and manages music per session.  *
+/* functionSignature: getScanAndPlay (musicDir, pollMs, log)                         *
+/* Returns the polling function. Reloads library.xml each cycle, scans               *
+/* bard:registry and manages music per session.                                      *
 /************************************************************************************/
-function getScanAndPlay(library, musicDir, pollMs, log) {
+function getScanAndPlay(musicDir, pollMs, log) {
   async function scanAndPlay() {
     try {
+      const library = getLoadLibrary(musicDir);
       const reg = await getItem("bard:registry");
       const keys = Array.isArray(reg?.list) ? reg.list : [];
 
@@ -258,7 +260,7 @@ function getScanAndPlay(library, musicDir, pollMs, log) {
           }
 
 
-          setBindSessionPlayer(session, sessionKey, library, musicDir, log);
+          setBindSessionPlayer(session, sessionKey, musicDir, log);
 
           const isPlaying = playerState === AudioPlayerStatus.Playing ||
                             playerState === AudioPlayerStatus.Buffering;
@@ -321,8 +323,8 @@ export default async function getBardFlow(baseCore, runFlow, createRunCore) {
   );
 
 
-  const library = getLoadLibrary(musicDir);
-  log(`library loaded: ${library.length} track(s)`, "info", { moduleName: MODULE_NAME, musicDir });
+  const startupLibrary = getLoadLibrary(musicDir);
+  log(`library loaded: ${startupLibrary.length} track(s)`, "info", { moduleName: MODULE_NAME, musicDir });
 
   let bardClient;
   try {
@@ -348,6 +350,6 @@ export default async function getBardFlow(baseCore, runFlow, createRunCore) {
     return;
   }
 
-  const scanAndPlay = getScanAndPlay(library, musicDir, pollMs, log);
+  const scanAndPlay = getScanAndPlay(musicDir, pollMs, log);
   setTimeout(scanAndPlay, 1000);
 }

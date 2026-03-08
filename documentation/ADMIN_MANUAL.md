@@ -2504,6 +2504,7 @@ Cron job (every minute, runs in parallel with other cron jobs)
   -> stores bard:labels:{guildId} in registry
 
 flows/bard.js (polls every 30 seconds)
+  -> reloads library.xml from disk (picks up newly added tracks without restart)
   -> reads bard:registry for active sessions
   -> reads bard:labels:{guildId} for current mood
   -> reads bard:nowplaying:{guildId} for current track
@@ -2511,6 +2512,7 @@ flows/bard.js (polls every 30 seconds)
   -> plays via @discordjs/voice AudioPlayer
 
 player.on(AudioPlayerStatus.Idle)
+  -> reloads library.xml from disk
   -> automatic next-song selection on track end
 ```
 
@@ -2530,6 +2532,8 @@ player.on(AudioPlayerStatus.Idle)
 Located at: `assets/bard/library.xml` (configurable via `core.json["bard"]["musicDir"]`)
 
 **Auto-creation:** If `library.xml` (or the music directory itself) does not exist when the bard flow starts, both are created automatically. The new file contains an empty `<library>` element. No manual setup is required; simply drop MP3 files into the music directory and add tracks via the Bard Admin UI.
+
+**Hot-reload:** `library.xml` is read from disk on every poll cycle (~30 s) and on every song-end event. Tracks added or edited while the bot is running are picked up automatically — no restart required.
 
 Format:
 ```xml
