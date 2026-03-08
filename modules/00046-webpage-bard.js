@@ -218,7 +218,7 @@ export default async function getWebpageBard(coreData) {
   if (method === "POST" && urlPath === basePath + "/api/upload") {
     let reqData; try { reqData = JSON.parse(getBody(wo)); } catch (_) { setJsonResp(wo, 400, { error: "Invalid JSON" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
-    const filename = path.basename(getStr(reqData?.filename)).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filename = path.basename(getStr(reqData?.filename)).replace(/[^a-zA-Z0-9 ._-]/g, "_");
     const title    = getStr(reqData?.title || filename.replace(/\.mp3$/i, ""));
     const tags     = Array.isArray(reqData?.tags) ? reqData.tags.map(t => getStr(t).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "")).filter(Boolean) : [];
     const data     = getStr(reqData?.data);

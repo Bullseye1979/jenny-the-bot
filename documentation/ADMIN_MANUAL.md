@@ -1233,15 +1233,19 @@ Configuration for the Bard music bot.
 
 ```json
 "bard": {
-  "token":    "YOUR_BARD_BOT_TOKEN",
-  "musicDir": "assets/bard"
+  "token":         "YOUR_BARD_BOT_TOKEN",
+  "musicDir":      "assets/bard",
+  "idlePresence":  "Waiting for adventure...",
+  "pollIntervalMs": 30000
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
 | `token` | string | **Required.** Discord bot token for the Bard bot |
-| `musicDir` | string | Directory containing MP3 files and `library.xml` |
+| `musicDir` | string | Directory containing MP3 files and `library.xml` (default: `assets/bard`) |
+| `idlePresence` | string | Discord presence text shown when no track is playing (e.g. library empty or no matching tags). Empty string = no presence shown. Default: `""` |
+| `pollIntervalMs` | number | Poll interval in milliseconds (min 5000, default: 30000) |
 
 ---
 
@@ -2500,7 +2504,7 @@ Cron job (every minute, runs in parallel with other cron jobs)
   -> reads chat context since that timestamp via getContextSince()
      (fallback: last 5 minutes on first run)
   -> writes current timestamp to bard:lastrun:{guildId}
-  -> calls LLM to generate 3 mood tags
+  -> calls LLM to generate 3 mood tags (prompt from wo.prompt → cfg.prompt → bard.prompt → default)
   -> stores bard:labels:{guildId} in registry
 
 flows/bard.js (polls every 30 seconds)
@@ -2580,11 +2584,28 @@ Accessible at `/bard-admin`. Features:
 - Edit track title, tags (comma-separated), and volume per track
 - Delete tracks (removes both library entry and MP3 file)
 
+Filenames are preserved as-is, including spaces. Only characters outside `[a-zA-Z0-9 ._-]` are replaced with `_`.
+
+### Label Generation Prompt
+
+The LLM prompt used by `00036-bard-cron.js` to classify mood tags is resolved in this priority order:
+
+| Priority | Source | How to set |
+|----------|--------|-----------|
+| 1 (highest) | `wo.prompt` | Set via channel/flow/user override in `core.json` (see §5.8) — allows per-channel customization |
+| 2 | `config["bard-cron"].prompt` | Static fallback in `core.json` |
+| 3 | `config["bard"].prompt` | Shared bard config fallback |
+| 4 (lowest) | Built-in default | Hardcoded in `00036-bard-cron.js` (`DEFAULT_PROMPT_TEMPLATE`) |
+
+The prompt template may contain the placeholder `{{TAGS}}`, which is replaced at runtime with the comma-separated list of all tags found in `library.xml`.
+
 ### Discord Presence
 
 While music is playing the Bard bot automatically updates its Discord status. The presence is set as **Listening to <filename>**, where *filename* is the MP3 filename without the `.mp3` extension (e.g. `Battle1.mp3` → **Listening to Battle1**).
 
-The presence is updated every time a new track starts via `client.user.setPresence()` with `ActivityType.Listening`. The filename (not the `title` field from `library.xml`) is used as the activity name. There is no configuration for this behaviour; it is always active when the bard flow is running.
+The presence is updated every time a new track starts via `client.user.setPresence()` with `ActivityType.Listening`. The filename (not the `title` field from `library.xml`) is used as the activity name.
+
+When no matching track is available (library empty, no tags match, or song-end with no successor), the bot switches to the **idle presence** configured in `core.json["bard"]["idlePresence"]`. If the value is an empty string or not set, all activities are cleared instead.
 
 ---
 

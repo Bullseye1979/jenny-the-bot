@@ -131,6 +131,23 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
 }
 
 /************************************************************************************/
+/* functionSignature: setIdlePresence (text)                                         *
+/* Sets the bard client's Discord presence to the configured idle text.              *
+/* Clears all activities when text is empty.                                         *
+/************************************************************************************/
+async function setIdlePresence(text) {
+  try {
+    const bardClient = await getItem("bard:client");
+    if (!bardClient?.user) return;
+    if (text) {
+      bardClient.user.setPresence({ activities: [{ name: text, type: ActivityType.Listening }], status: "online" });
+    } else {
+      bardClient.user.setPresence({ activities: [], status: "online" });
+    }
+  } catch {}
+}
+
+/************************************************************************************/
 /* functionSignature: setPlayTrack (session, track, musicDir, log)                   *
 /* Creates an audio resource and plays it on the session's player.                   *
 /************************************************************************************/
@@ -172,11 +189,13 @@ async function setPlayTrack(session, track, musicDir, log) {
 }
 
 /************************************************************************************/
-/* functionSignature: setBindSessionPlayer (session, sessionKey, musicDir, log)      *
+/* functionSignature: setBindSessionPlayer (session, sessionKey, musicDir, log,      *
+/*                                          idlePresence)                            *
 /* Binds the Idle event to the session player (once per session). On song end,       *
-/* reloads library.xml from disk and picks the next song.                            *
+/* reloads library.xml from disk and picks the next song. Sets idle presence when    *
+/* no matching track is found.                                                       *
 /************************************************************************************/
-function setBindSessionPlayer(session, sessionKey, musicDir, log) {
+function setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence) {
   if (session._playerBound) return;
   session._playerBound = true;
 
@@ -204,6 +223,7 @@ function setBindSessionPlayer(session, sessionKey, musicDir, log) {
       const next = getSelectSong(labels, library, null, currentFile);
       if (!next) {
         log("no tracks in library for song-end pick", "warn", { moduleName: MODULE_NAME });
+        await setIdlePresence(idlePresence);
         return;
       }
       liveSession._lastLabels = labels;
@@ -228,11 +248,12 @@ function setBindSessionPlayer(session, sessionKey, musicDir, log) {
 }
 
 /************************************************************************************/
-/* functionSignature: getScanAndPlay (musicDir, pollMs, log)                         *
+/* functionSignature: getScanAndPlay (musicDir, pollMs, log, idlePresence)           *
 /* Returns the polling function. Reloads library.xml each cycle, scans               *
-/* bard:registry and manages music per session.                                      *
+/* bard:registry and manages music per session. Sets idle presence when no           *
+/* matching track is found.                                                          *
 /************************************************************************************/
-function getScanAndPlay(musicDir, pollMs, log) {
+function getScanAndPlay(musicDir, pollMs, log, idlePresence) {
   async function scanAndPlay() {
     try {
       const library = getLoadLibrary(musicDir);
@@ -260,7 +281,7 @@ function getScanAndPlay(musicDir, pollMs, log) {
           }
 
 
-          setBindSessionPlayer(session, sessionKey, musicDir, log);
+          setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence);
 
           const isPlaying = playerState === AudioPlayerStatus.Playing ||
                             playerState === AudioPlayerStatus.Buffering;
@@ -278,6 +299,7 @@ function getScanAndPlay(musicDir, pollMs, log) {
           } else {
             const next = getSelectSong(labels, library, null, currentFile);
             if (!next) {
+              await setIdlePresence(idlePresence);
               continue;
             }
             session._lastLabels = labels;
@@ -322,6 +344,8 @@ export default async function getBardFlow(baseCore, runFlow, createRunCore) {
     typeof cfg.musicDir === "string" ? cfg.musicDir : "assets/bard"
   );
 
+  const idlePresence = typeof cfg.idlePresence === "string" ? cfg.idlePresence : "";
+
 
   const startupLibrary = getLoadLibrary(musicDir);
   log(`library loaded: ${startupLibrary.length} track(s)`, "info", { moduleName: MODULE_NAME, musicDir });
@@ -350,6 +374,6 @@ export default async function getBardFlow(baseCore, runFlow, createRunCore) {
     return;
   }
 
-  const scanAndPlay = getScanAndPlay(musicDir, pollMs, log);
+  const scanAndPlay = getScanAndPlay(musicDir, pollMs, log, idlePresence);
   setTimeout(scanAndPlay, 1000);
 }

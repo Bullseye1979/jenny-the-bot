@@ -195,8 +195,9 @@ export default async function getBardCron(coreData) {
   );
   const validTags = getLibraryTags(musicDir);
 
-  // Build prompt: use config template or default, inject {{TAGS}}
-  const promptTemplate = getStr(cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
+  // Build prompt: workingObject takes priority (allows per-channel overrides),
+  // then module config, then bard config, then built-in default
+  const promptTemplate = getStr(wo.prompt || cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
   const prompt = buildPrompt(promptTemplate, validTags);
 
   for (const sessionKey of sessionKeys) {
