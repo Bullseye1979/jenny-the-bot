@@ -277,13 +277,9 @@ details[open].nav-more .nav-more-drop{display:flex}
   0%,100%{transform:translateY(0);opacity:.30}
   50%{transform:translateY(-3px);opacity:.95}
 }
-/* Fix: no ugly leading space before thinking dots */
-.chat-bubble.chat-thinking{
-  gap: 5;            /* remove the blank gap between (empty) label and dots */
-}
-
-.chat-bubble.chat-thinking .label{
-  display: none;     /* hide label completely (it causes the leading whitespace) */
+/* Hide label only when empty to prevent leading whitespace; show it when toolcall name is set */
+.chat-bubble.chat-thinking .label:empty{
+  display: none;
   margin: 0;
   padding: 0;
 }

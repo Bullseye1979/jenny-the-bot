@@ -1599,8 +1599,11 @@ Multiple modules can share a single port. Each module routes by URL path:
 
 1. Open `edge://extensions/` (or `chrome://extensions/`).
 2. Enable **Developer mode**.
-3. Click **Load unpacked** -> select the `extensions/jenny-extension/` folder.
+3. Click **Load unpacked** → select the `extensions/jenny-extension/` folder.
 4. Click the **Jenny Bot** icon in the toolbar to open the side panel.
+5. Accept the **"Read and change all your data on all websites"** permission prompt — this is required so the extension can reach the bot's API (`host_permissions: ["<all_urls>"]` in `manifest.json`).
+
+> **CORS note:** The bot's API server (`flows/api.js`) returns `Access-Control-Allow-Origin: *` and handles `OPTIONS` preflight requests. Without this, Chrome would block the extension's `fetch()` calls even with correct `host_permissions`.
 
 #### Options page fields
 
@@ -2775,7 +2778,7 @@ The Bard bot's Discord status is controlled by two config keys in `core.json["ba
 }
 ```
 
-The filename shown while playing is the raw MP3 filename minus the extension (e.g. `Battle March.mp3` → **Listening to Battle March**), not the `title` field from `library.xml`.
+The Discord presence shows the `title` field from `library.xml` (e.g. title `"Battle March"` → **Listening to Battle March**). If no title is set the raw MP3 filename minus the extension is used as fallback.
 
 ---
 

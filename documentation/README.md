@@ -1060,6 +1060,7 @@ A Manifest V3 browser extension (Edge / Chrome) is included under `extensions/je
 1. Open `edge://extensions/` (or `chrome://extensions/`).
 2. Enable **Developer mode** (top-right toggle).
 3. Click **Load unpacked** → select `extensions/jenny-extension/`.
+4. Accept the **"Read and change all your data on all websites"** permission prompt (`host_permissions: ["<all_urls>"]` is required for the extension to reach the bot's API).
 
 ### Configuration (Options page)
 
