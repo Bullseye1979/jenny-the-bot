@@ -247,6 +247,22 @@
           {
             "name": "error",
             "description": "Simulate an internal error for testing"
+          },
+          {
+            "name": "bardjoin",
+            "description": "Spawn the bard bot in your current voice channel to play mood music"
+          },
+          {
+            "name": "bardleave",
+            "description": "Remove the bard bot from the voice channel"
+          },
+          {
+            "name": "bardstart",
+            "description": "Start the bard music stream for the browser (no Discord voice join required)"
+          },
+          {
+            "name": "bardstop",
+            "description": "Stop the browser bard music stream"
           }
         ]
       }
@@ -372,7 +388,15 @@
       "flowName": "cron",
       "timezone": "Europe/Berlin",
       "tickMs": 15000,
-      "jobs": []
+      "jobs": [
+        {
+          "__description": "Bard label generation — runs every 5 minutes, updates mood labels for active sessions. Set channelID to your D&D text channel ID.",
+          "id": "bard-label-gen",
+          "cron": "*/5 * * * *",
+          "enabled": false,
+          "channelID": "YOUR_DND_TEXT_CHANNEL_ID"
+        }
+      ]
     },
     "context": {
       "__description": "Rolling summary backend — fill in apiKey",
@@ -385,7 +409,25 @@
       "flowName": "webpage",
       "ports": [
         3000,
-        3111
+        3111,
+        3112,
+        3113,
+        3114,
+        3115,
+        3116
+      ]
+    },
+    "webpage-menu": {
+      "__description": "Global navigation menu shown on all webpage modules. Add one item per page. 'roles' is optional: omit or leave empty to show to everyone.",
+      "flow": [
+        "webpage"
+      ],
+      "items": [
+        { "text": "⚙️ Config",      "link": "/config",     "roles": ["admin"] },
+        { "text": "💬 Chat",         "link": "/chat"                          },
+        { "text": "🖼️ Inpainting",  "link": "/inpainting"                    },
+        { "text": "🎵 Bard Admin",   "link": "/bard-admin", "roles": ["admin"] },
+        { "text": "🎶 Bard Stream",  "link": "/bard-stream"                   }
       ]
     },
     "discord-admin": {
@@ -447,7 +489,8 @@
         "discord-status",
         "discord",
         "discord-voice",
-        "api"
+        "api",
+        "bard-label-gen"
       ]
     },
     "core-ai-responses": {
@@ -642,6 +685,44 @@
       "flow": [
         "all"
       ]
+    },
+    "bard": {
+      "__description": "Bard bot — second Discord bot that plays D&D mood music in voice channels",
+      "flow": [],
+      "token":          "YOUR_BARD_BOT_TOKEN",
+      "musicDir":       "assets/bard",
+      "idlePresence":   "Waiting for adventure...",
+      "pollIntervalMs": 30000
+    },
+    "bard-cron": {
+      "__description": "Label generation cron module. Inherits endpoint/apiKey/model from workingObject defaults if not set here.",
+      "flow": [
+        "bard-label-gen"
+      ]
+    },
+    "bard-label-output": {
+      "__description": "Writes AI-generated mood labels to the registry after each bard-label-gen run.",
+      "flow": [
+        "bard-label-gen"
+      ]
+    },
+    "webpage-bard": {
+      "__description": "Bard music manager SPA (upload, tag, delete tracks). Requires port 3114 in webpage.ports.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3114,
+      "allowedRoles": [],
+      "label": "🎵 Bard Admin"
+    },
+    "webpage-bard-stream": {
+      "__description": "Browser audio player for the live Bard stream. Requires port 3116 in webpage.ports.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3116,
+      "allowedRoles": [],
+      "label": "🎶 Bard Stream"
     },
     "core-channel-config": {
       "__description": "Optional per-channel overrides — leave channels array empty to disable, or add entries as shown below",

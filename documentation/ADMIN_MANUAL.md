@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.3 · **Date:** 2026-03-07
+> **Version:** 1.0 · **Date:** 2026-03-08
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -27,7 +27,7 @@
    - 6.4 [api](#64-api)
    - 6.5 [cron](#65-cron)
    - 6.6 [toolcall](#66-toolcall)
-   - 6.7 [webpage (config-editor and chat modules)](#67-webpage-config-editor-and-chat-modules)
+   - 6.7 [webpage (config-editor, chat modules)](#67-webpage-config-editor-chat-modules)
    - 6.8 [webpage](#68-webpage)
    - 6.8.1 [Adding a new webpage module](#681-adding-a-new-webpage-module)
    - 6.9 [Browser Extension](#69-browser-extension)
@@ -67,9 +67,10 @@
 14. [Reverse Proxy (Caddy)](#14-reverse-proxy-caddy)
 15. [Discord Bot Permissions](#15-discord-bot-permissions)
 16. [Web Modules](#16-web-modules)
-17. [Creating a New Web Module](#17-creating-a-new-web-module)
-18. [Bard Music System](#18-bard-music-system)
-19. [Dependencies](#19-dependencies)
+17. [Web Module Permission Concept](#17-web-module-permission-concept)
+18. [Creating a New Web Module](#18-creating-a-new-web-module)
+19. [Bard Music System](#19-bard-music-system)
+20. [Dependencies](#20-dependencies)
 
 ---
 
@@ -507,7 +508,7 @@ The `admin` array on a command or subcommand restricts execution to the listed u
 | `/join` | No | Join user's voice channel |
 | `/leave` | No | Leave voice channel |
 | `/bardjoin` | No | Bard bot joins voice channel and starts playing music |
-| `/leavebard` | No | Bard bot leaves voice channel |
+| `/bardleave` | No | Bard bot leaves voice channel |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -1145,12 +1146,6 @@ Serves the AI chat SPA (`GET /chat`). The `apiSecret` for each channel is inject
 
 ---
 
-#### config.config-editor
-
-> **Deprecated.** `flows/config-editor.js` is a no-op stub and will be removed in a future release. Migrate config settings to `config.webpage-config-editor` and chat settings to `config.webpage-chat`.
-
----
-
 #### config.cron
 
 Runs scheduled background jobs.
@@ -1247,6 +1242,17 @@ Configuration for the Bard music bot.
 | `idlePresence` | string | Discord presence text shown when no track is playing (e.g. library empty or no matching tags). If empty or not set, falls back to `"..."`. Default: `""` |
 | `pollIntervalMs` | number | Poll interval in milliseconds (min 5000, default: 30000) |
 
+#### config.bard-cron
+
+Configuration for the label-generation module. AI params (`endpoint`, `apiKey`, `model`) fall back to the global `workingObject` defaults if not set here.
+
+```json
+"bard-cron": {
+  "flow": ["bard-label-gen"],
+  "prompt": "Optional custom system prompt template (use {{TAGS}} placeholder)"
+}
+```
+
 ---
 
 #### Module–Flow Assignment (Reference)
@@ -1271,11 +1277,12 @@ Every module can be restricted to specific flows via its config block:
 | `discord-text-output` | all |
 | `discord-voice-tts` | discord-voice |
 | `discord-voice-transcribe` | discord-voice |
-| `core-ai-completions` | discord-status, discord, discord-voice, api |
+| `core-ai-completions` | discord-status, discord, discord-voice, api, **bard-label-gen** |
 | `core-ai-responses` | discord-status, discord, discord-voice, api |
 | `core-output` | all |
 | `bard-admin-join` | discord-admin |
 | `bard-cron` | bard-label-gen |
+| `bard-label-output` | bard-label-gen |
 | `webpage-bard` | webpage |
 | `webpage-config-editor` | webpage |
 | `webpage-chat` | webpage |
@@ -1473,7 +1480,7 @@ Also supports `*/N * * * *` (every N minutes).
 
 ---
 
-### 6.7 webpage (config-editor and chat modules)
+### 6.7 webpage (config-editor, chat modules)
 
 **Files:** `flows/webpage.js` + `modules/00047-webpage-config-editor.js` + `modules/00048-webpage-chat.js`
 **Purpose:** The webpage flow serves **multiple ports simultaneously** (configured via `config.webpage.ports`). Admin modules route by URL path.
@@ -1497,8 +1504,6 @@ Also supports `*/N * * * *` (every N minutes).
 - **Markdown rendering:** `#`/`##`/`###` headings, bold/italic, fenced and inline code, blockquotes, lists, and `---` HR are fully rendered in chat bubbles
 - Messages are sent to the bot's API flow; `apiSecret` is injected server-side and never exposed to the browser
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
-
-> **Migration from config-editor:** The `flows/config-editor.js` flow is now a **no-op stub** (prints a deprecation warning and returns). Move your settings from `config["config-editor"]` to `config["webpage-config-editor"]` (config) and `config["webpage-chat"]` (chat), then add port 3111 to `config.webpage.ports`.
 
 ---
 
@@ -1654,11 +1659,11 @@ export default async function myModule(coreData) {
 | 00025 | `discord-admin-gdpr` | Handles admin GDPR management commands |
 | 00030 | `discord-voice-transcribe` | Transcribes voice audio via Whisper API |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
-| 00035 | `bard-admin-join` | Processes `/bardjoin` and `/leavebard` commands for the Bard music bot |
-| 00036 | `bard-cron` | Generates mood labels for the Bard music bot (flow: `bard-label-gen`) |
+| 00035 | `bard-admin-join` | Processes `/bardjoin` and `/bardleave` commands for the Bard music bot |
+| 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00045 | `webpage-inpaint` | Image inpainting redirect for web content |
-| 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard-admin`) |
+| 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard-admin`) — includes play-preview buttons and live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /chat/api/chats`, `GET /chat/api/messages`, `POST /chat/api/messages` on the configured port. The `/chat/api/messages` endpoint filters out records with `internal_meta: true`, empty content, and lines starting with `META|` before returning them to the browser. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
@@ -1705,6 +1710,7 @@ Only **one** of these modules runs per turn, selected by `workingObject.useAiMod
 | 03000 | `discord-status-apply` | Applies the generated Discord presence status |
 | 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
+| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow; writes validated tags to `bard:labels:{guildId}` |
 | 08100 | `discord-voice-tts` | Synthesises TTS audio with speaker-tagged voice selection |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
 | 08300 | `webpage-output` | Sends the response back to the webpage flow caller |
@@ -2230,7 +2236,7 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 | `/join` | No | Bot joins current voice channel |
 | `/leave` | No | Bot leaves voice channel |
 | `/bardjoin` | No | Bard bot joins voice channel and starts playing music |
-| `/leavebard` | No | Bard bot leaves voice channel |
+| `/bardleave` | No | Bard bot leaves voice channel |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -2287,14 +2293,14 @@ Jenny runs multiple HTTP servers on different ports. A reverse proxy such as Cad
 ```
 jenny.example.com {
     encode gzip
-    reverse_proxy /config*      localhost:3111
-    reverse_proxy /chat*        localhost:3112
-    reverse_proxy /inpainting*  localhost:3113
-    reverse_proxy /documents*   localhost:3113
-    reverse_proxy /bard-admin*  localhost:3114
-    reverse_proxy /dashboard*   localhost:3115
-    reverse_proxy /auth*        localhost:3111
-    reverse_proxy *             localhost:3400
+    reverse_proxy /config*       localhost:3111
+    reverse_proxy /chat*         localhost:3112
+    reverse_proxy /inpainting*   localhost:3113
+    reverse_proxy /documents*    localhost:3113
+    reverse_proxy /bard-admin*   localhost:3114
+    reverse_proxy /dashboard*    localhost:3115
+    reverse_proxy /auth*         localhost:3111
+    reverse_proxy *              localhost:3400
 }
 ```
 
@@ -2413,7 +2419,97 @@ https://discord.com/oauth2/authorize?client_id=BARD_CLIENT_ID&permissions=8&scop
 
 ---
 
-## 17. Creating a New Web Module
+## 17. Web Module Permission Concept
+
+Jenny's web modules use a layered permission system. Three independent components decide what a user can see and access:
+
+### Authentication (`00041-webpage-auth.js`)
+
+This module runs for every request on ports listed in `config["webpage-auth"].ports`. It reads session cookies, looks up the user in the configured user store, and sets `wo.webAuth`:
+
+```json
+{ "username": "alice", "userId": "123", "role": "admin", "roles": ["admin", "staff"] }
+```
+
+If no valid session cookie is present, `wo.webAuth` is not set (or has empty fields). Unauthenticated users can still access the site — individual modules decide whether to allow or deny them.
+
+### Navigation Menu (`00043-webpage-menu.js`)
+
+Menu items are defined in `config["webpage-menu"].items[]`. Each item can have an optional `roles` array:
+
+```json
+{ "text": "⚙️ Config",    "link": "/config",    "roles": ["admin"] },
+{ "text": "🎵 Bard",      "link": "/bard-admin", "roles": ["admin"] }
+```
+
+**Menu visibility rules:**
+
+| Condition | Result |
+|---|---|
+| `roles` not set or empty array | **Always shown** — no restriction |
+| User has no role (unauthenticated) | **Always shown** — fallback, does not restrict unauthenticated users |
+| Role is `"admin"` | **Always shown** — admin sees everything |
+| Role matches one of `roles` | **Shown** |
+| Role does not match any of `roles` | **Hidden** |
+
+> **Important:** An unauthenticated user (no `wo.webAuth.role`) always sees all menu items, regardless of the `roles` config. The menu is purely cosmetic — the actual page may still deny access.
+
+### Page Access (`allowedRoles` in each module)
+
+Each web module independently controls access to its pages using a `getIsAllowed` helper that checks `cfg.allowedRoles`:
+
+```javascript
+function getIsAllowed(wo, allowedRoles) {
+  if (!allowedRoles.length) return true;             // no restriction → always accessible
+  const have = getUserRoleLabels(wo);                // roles from wo.webAuth
+  return allowedRoles.some(r => have.has(r));        // must match at least one role
+}
+```
+
+**Page access rules:**
+
+| `allowedRoles` config | User has matching role | Result |
+|---|---|---|
+| Empty array `[]` or not set | — | **Always accessible** (public) |
+| Non-empty, e.g. `["admin"]` | Yes | **Accessible** |
+| Non-empty, e.g. `["admin"]` | No | **Access Denied** (403 or HTML error page) |
+| Non-empty, e.g. `["admin"]` | No role (unauthenticated) | **Access Denied** |
+
+> **Key difference from menu:** The page access check does **not** have a fallback for unauthenticated users. If `allowedRoles` is set, users without a matching role are denied — including unauthenticated users.
+
+### Summary
+
+| Component | Empty roles config | Unauthenticated fallback |
+|---|---|---|
+| Menu item | Always shown | Always shown (fallback) |
+| Page content | Always accessible | Always accessible (no restriction) |
+| Page content (roles set) | N/A | Access Denied |
+
+### Example Configurations
+
+**Public page** (no auth required):
+```json
+"webpage-bard": { "allowedRoles": [] }
+```
+
+**Admin-only page** (authenticated admin required):
+```json
+"webpage-config-editor": { "allowedRoles": ["admin"] }
+```
+
+**Menu item visible to all** (no roles key):
+```json
+{ "text": "💬 Chat", "link": "/chat" }
+```
+
+**Menu item visible to admins only**:
+```json
+{ "text": "⚙️ Config", "link": "/config", "roles": ["admin"] }
+```
+
+---
+
+## 18. Creating a New Web Module
 
 The following template shows the standard pattern for a new webpage module.
 
@@ -2437,7 +2533,7 @@ export default async function getWebpageMyModule(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
   const cfg = coreData?.config?.[MODULE_NAME] || {};
-  const port = Number(cfg.port ?? 3116); // pick the next available port after 3115
+  const port = Number(cfg.port ?? 3116); // pick the next available port
   if (Number(wo.http?.port) !== port) return coreData;
   if (wo.jump) return coreData;
 
@@ -2475,18 +2571,33 @@ export default async function getWebpageMyModule(coreData) {
 }
 ```
 
-**Add port 3116 to `config.webpage.ports[]` array in core.json.**
+**Steps to register the module:**
 
-**Add Caddy route:** `reverse_proxy /mymodule*  localhost:3116`
+1. **Add port** to `config.webpage.ports[]` in core.json:
+   ```json
+   "webpage": { "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116] }
+   ```
 
-**Optionally add menu entry** in `workingObject.web.menu`:
-```json
-{ "text": "My Module", "link": "/mymodule", "roles": ["admin"] }
-```
+2. **Add Caddy route** (prepend to the existing block, before `reverse_proxy * localhost:3400`):
+   ```
+   reverse_proxy /mymodule*  localhost:3117
+   ```
+
+3. **Add menu entry** in `config["webpage-menu"].items[]`:
+   ```json
+   { "text": "My Module", "link": "/mymodule", "roles": ["admin"] }
+   ```
+   Omit `"roles"` (or leave it as `[]`) to make the menu item visible to everyone.
+
+4. **Set `allowedRoles`** in the module config:
+   - `"allowedRoles": []` — page is public (no login required)
+   - `"allowedRoles": ["admin"]` — only users with the `admin` role can access the page
+
+See [§17 Web Module Permission Concept](#17-web-module-permission-concept) for the full rules.
 
 ---
 
-## 18. Bard Music System
+## 19. Bard Music System
 
 ### Overview
 
@@ -2503,31 +2614,40 @@ Jenny the Bard is a second Discord bot that automatically plays mood-appropriate
 /bardleave command
   -> 00035-bard-admin-join.js
   -> stops player, destroys voice connection
-  -> removes bard:session:{guildId} and bard:nowplaying:{guildId} from registry
-  -> immediately sets idle presence (core.json["bard"]["idlePresence"]) or clears it
+  -> removes bard:session:{guildId}, bard:nowplaying:{guildId}, bard:stream:{guildId} from registry
+  -> immediately sets idle presence (core.json["bard"]["idlePresence"]) or "..."
 
-Cron job (every minute, runs in parallel with other cron jobs)
-  -> 00036-bard-cron.js (flow: bard-label-gen)
-  -> reads bard:lastrun:{guildId} from registry (timestamp of last run)
-  -> reads chat context since that timestamp via getContextSince()
-     (fallback: last 5 minutes on first run)
-  -> writes current timestamp to bard:lastrun:{guildId}
-  -> calls LLM to generate 3 mood tags (prompt from wo.prompt → cfg.prompt → bard.prompt → default)
-  -> stores bard:labels:{guildId} in registry
+Cron job (every N minutes, flow: bard-label-gen)
+  -> 00036-bard-cron.js (preparer)
+     - reads bard:lastrun:{guildId} from registry
+     - reads chat context since that timestamp via getContextSince()
+       (fallback: last 5 minutes on first run)
+     - writes current timestamp to bard:lastrun:{guildId}
+     - builds wo.systemPrompt = prompt template + {{TAGS}} list + current labels info
+     - builds wo.payload = formatted conversation text
+     - sets wo.useAiModule = "completions", wo.doNotWriteToContext = true, wo.includeHistory = false
+  -> 01000-core-ai-completions.js  (shared AI pipeline, flow: bard-label-gen)
+     - calls LLM with wo.systemPrompt + wo.payload
+     - writes result to wo.response
+  -> 08050-bard-label-output.js (output)
+     - parses wo.response into 3 valid tags (validated against library.xml tag set)
+     - writes bard:labels:{guildId} to registry
 
-flows/bard.js (polls every 30 seconds)
+flows/bard.js (polls every 30 seconds) — Discord voice sessions only
   -> reloads library.xml from disk (picks up newly added tracks without restart)
   -> no active sessions: sets idle presence (core.json["bard"]["idlePresence"]) → stop
   -> reads bard:labels:{guildId} for current mood
   -> reads bard:nowplaying:{guildId} for current track
-  -> selects next song via label matching
-  -> song found: plays track, sets "Listening to <filename>" presence
-  -> no song found: sets idle presence
+  -> if current track no longer matches labels: switches song mid-track
+  -> song found: plays track via Discord AudioPlayer, writes bard:stream:{guildId},
+     sets "Listening to <filename>" presence
+  -> no song found: clears bard:stream:{guildId}, sets idle presence
 
-player.on(AudioPlayerStatus.Idle)
+player.on(AudioPlayerStatus.Idle) — Discord voice: song ended naturally
   -> reloads library.xml from disk
-  -> song found: plays next track, sets "Listening to <filename>" presence
-  -> no song found: sets idle presence
+  -> song found: plays next track, writes bard:stream:{guildId},
+     sets "Listening to <filename>" presence
+  -> no song found: clears bard:stream:{guildId}, sets idle presence
 ```
 
 ### Registry Keys
@@ -2539,6 +2659,7 @@ player.on(AudioPlayerStatus.Idle)
 | `bard:session:{guildId}` | `{ guildId, voiceChannelId, textChannelId, connection, player }` |
 | `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], updatedAt, guildId }` |
 | `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
+| `bard:stream:{guildId}` | `{ guildId, file, title, labels, startedAt, musicDir }` — set when a track starts; cleared when idle. Read by the Now Playing card in `webpage-bard`. |
 | `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written before each LLM call so the next run reads context from exactly this point forward |
 
 ### Music Library (library.xml)
@@ -2576,16 +2697,20 @@ Fields:
 
 ### Song Selection Algorithm
 
-1. Check if the currently playing track still matches at least one active label — if yes, keep playing (no change)
-2. Score all tracks by count of matching labels
-3. Candidates = all tracks with the highest score (if score is 0 for all, all tracks are candidates)
-4. Pick a random track from candidates, excluding the track that just finished
-5. Play the selected track
+1. **No labels available yet** — keep the current song; do not switch until labels arrive from the cron job.
+2. **Current track still matches at least one active label** — keep playing (no change).
+3. **Current track no longer matches any active label** — switch immediately (mid-track):
+   - Score all tracks by count of matching labels
+   - Candidates = all tracks with the highest score (if score is 0 for all, all tracks are candidates)
+   - Pick a random track from candidates, excluding the track just interrupted
+4. **Song ends naturally** — triggered by the `AudioPlayerStatus.Idle` event on the Discord player; picks next track based on current labels, excluding the finished track.
 
 ### Slash Commands
 
-- `/bardjoin` — joins the voice channel of the command user (uses bard bot, not Jenny)
-- `/leavebard` — removes the bard bot from the voice channel
+| Command | Description |
+|---|---|
+| `/bardjoin` | Bard bot joins the voice channel of the command user and starts playing music |
+| `/bardleave` | Bard bot leaves the voice channel |
 
 ### Bard Admin UI
 
@@ -2593,6 +2718,8 @@ Accessible at `/bard-admin`. Features:
 - Upload MP3 files via drag-and-drop or file picker
 - Edit track title, tags (comma-separated), and volume per track
 - Delete tracks (removes both library entry and MP3 file)
+- **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
+- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`) — updated every few seconds via polling
 
 Filenames are preserved as-is, including spaces. Only characters outside `[a-zA-Z0-9 ._-]` are replaced with `_`.
 
@@ -2608,6 +2735,26 @@ The LLM prompt used by `00036-bard-cron.js` to classify mood tags is resolved in
 | 4 (lowest) | Built-in default | Hardcoded in `00036-bard-cron.js` (`DEFAULT_PROMPT_TEMPLATE`) |
 
 The prompt template may contain the placeholder `{{TAGS}}`, which is replaced at runtime with the comma-separated list of all tags found in `library.xml`.
+
+**Current labels are also passed to the AI** (appended to the system prompt) so the model can consider whether to keep or change the current mood when new context is available.
+
+### bard-label-gen Flow (Pipeline Overview)
+
+The `bard-label-gen` flow uses the **standard AI pipeline** instead of its own inline LLM call:
+
+```
+Cron trigger (bard-label-gen)
+  └─> 00036-bard-cron       — prepares payload, systemPrompt, AI params
+  └─> 01000-core-ai-completions — calls the LLM, writes wo.response
+  └─> 08050-bard-label-output  — parses response, writes bard:labels:{guildId}
+```
+
+This means the label-gen AI call:
+- Inherits `model`, `endpoint`, `apiKey` from `workingObject` (global defaults) unless overridden in `config["bard-cron"]` or `config["bard"]`
+- Runs with `temperature: 0.3`, `maxTokens: 60`, no tools, no history
+- Does **not** write to the conversation context (`doNotWriteToContext: true`)
+
+**One guild per cron tick.** If the cron job's `channelID` matches a session's text channel ID, that guild is processed. Otherwise the first session with new context is chosen. For multi-guild setups, configure one cron job per guild with a different `channelID`.
 
 ### Discord Presence
 
@@ -2660,7 +2807,7 @@ The filename shown while playing is the raw MP3 filename minus the extension (e.
 
 ---
 
-## 19. Dependencies
+## 20. Dependencies
 
 | Package | Version | Purpose |
 |---|---|---|

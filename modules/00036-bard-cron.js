@@ -1,29 +1,12 @@
-/************************************************************************************
+/************************************************************************************/
 /* filename: bard-cron.js                                                          *
-/* Version 1.0                                                                     *
-/* Purpose: Cron module for the bard-label-gen flow. Reads channel context,        *
-/*          queries LLM for 3 mood tags, stores them in bard:labels:guildId.       *
+/* Version 2.0                                                                     *
+/* Purpose: Prepares the bard-label-gen flow payload for core-ai-completions.      *
+/*          Reads channel context, builds a system prompt (tag list + current       *
+/*          labels) and sets wo.payload so the shared AI pipeline can run.          *
+/*          bard-label-output (08050) picks up wo.response to write the labels.    *
 /************************************************************************************/
 
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,8 +24,7 @@ const DEFAULT_PROMPT_TEMPLATE =
   "You MUST use ONLY tags from this exact list — no other words allowed: {{TAGS}}. " +
   "Use the exact tag words from the list. Do NOT invent similar words. " +
   "Return ONLY the 3 chosen tags as a comma-separated list. No explanation, no punctuation. " +
-  "Example: battle,intense,danger\n\n" +
-  "Conversation:\n";
+  "Example: battle,intense,danger";
 
 /************************************************************************************/
 /* functionSignature: getNowIso()                                                  *
@@ -67,9 +49,7 @@ function getStr(v) {
 function getLibraryTags(musicDir) {
   try {
     const xmlPath = path.join(musicDir, "library.xml");
-    if (!fs.existsSync(xmlPath)) {
-      return new Set();
-    }
+    if (!fs.existsSync(xmlPath)) return new Set();
     const xmlText = fs.readFileSync(xmlPath, "utf8");
     const tagSet = new Set();
     const re = /<tags>([^<]*)<\/tags>/gi;
@@ -81,185 +61,155 @@ function getLibraryTags(musicDir) {
       });
     }
     return tagSet;
-  } catch (e) {
+  } catch {
     return new Set();
   }
 }
 
 /************************************************************************************/
-/* functionSignature: buildPrompt(template, tagSet)                                *
-/* Injects the dynamic tag list into the prompt template ({{TAGS}} placeholder).   *
+/* functionSignature: buildSystemPrompt(template, tagSet, currentLabels)           *
+/* Injects the dynamic tag list and current labels into the system prompt.         *
 /************************************************************************************/
-function buildPrompt(template, tagSet) {
+function buildSystemPrompt(template, tagSet, currentLabels) {
   const tagList = [...tagSet].sort().join(",");
-  return template.replace("{{TAGS}}", tagList);
-}
-
-/************************************************************************************/
-/* functionSignature: getLlmLabels (endpoint, apiKey, model, systemPrompt,         *
-/*                    userText, validTags, timeoutMs)                              *
-/* an array of up to 3 valid lowercase tag strings from the LLM.                   *
-/************************************************************************************/
-async function getLlmLabels(endpoint, apiKey, model, systemPrompt, userText, validTags, timeoutMs = 15000) {
-  const body = JSON.stringify({
-    model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user",   content: userText }
-    ],
-    temperature: 0.3,
-    max_tokens: 60
-  });
-
-  const endpointShort = endpoint.replace(/^https?:\/\//, "");
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
-      body,
-      signal: controller.signal
-    });
-    clearTimeout(timer);
-
-
-    if (!res.ok) {
-      return [];
-    }
-    const data = await res.json();
-    const content = getStr(data?.choices?.[0]?.message?.content).trim();
-
-    if (!content) {
-      return [];
-    }
-
-    const raw = content
-      .split(",")
-      .map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""))
-      .filter(Boolean);
-
-    const labels   = raw.filter(t => validTags.size === 0 || validTags.has(t)).slice(0, 3);
-    const rejected = raw.filter(t => validTags.size > 0 && !validTags.has(t));
-
-    if (rejected.length) {
-    }
-    return labels;
-  } catch (e) {
-    clearTimeout(timer);
-    return [];
+  let prompt = template.replace("{{TAGS}}", tagList);
+  if (currentLabels.length) {
+    prompt += `\n\nCurrently active mood labels: ${currentLabels.join(",")}.` +
+              " Consider whether to keep or change them based on the conversation.";
   }
+  return prompt;
 }
 
 /************************************************************************************/
 /* functionSignature: getBardCron(coreData)                                        *
-/* Main module entry. Generates mood labels for all active bard sessions.          *
+/* Prepares wo.payload, wo.systemPrompt and AI params so core-ai-completions can   *
+/* generate the mood labels. Handles one guild per flow run (the first active      *
+/* session that has new context, or the one matching wo.channelID).                *
 /************************************************************************************/
 export default async function getBardCron(coreData) {
-  const wo = coreData?.workingObject || {};
+  const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
-  const config = coreData?.config || {};
 
   if (getStr(wo?.flow) !== "bard-label-gen") return coreData;
 
-  const cfg    = config[MODULE_NAME] || {};
+  const config  = coreData?.config || {};
+  const cfg     = config[MODULE_NAME] || {};
   const bardCfg = config["bard"] || {};
 
+  // Discover active bard sessions
   let reg = null;
   try { reg = await getItem("bard:registry"); } catch { reg = null; }
   const sessionKeys = Array.isArray(reg?.list) ? reg.list : [];
 
+  log(`[label-debug] bard-label-gen fired: woCh="${getStr(wo.channelID)}" sessions=${sessionKeys.length}`, "info", { moduleName: MODULE_NAME });
+
   if (!sessionKeys.length) {
-    log("bard-cron: no active bard sessions — skipping label generation", "info", { moduleName: MODULE_NAME });
+    log("no active bard sessions — skipping label generation", "info", { moduleName: MODULE_NAME });
+    wo.jump = true;
     return coreData;
   }
 
-  const endpoint = getStr(cfg.endpoint || wo.endpoint || config.workingObject?.endpoint || bardCfg.endpoint);
-  const apiKey   = getStr(cfg.apiKey   || wo.apiKey   || config.workingObject?.apiKey   || bardCfg.apiKey);
-  const model    = getStr(cfg.model    || wo.model    || config.workingObject?.model    || bardCfg.model || "gpt-4o-mini");
-
-  if (!endpoint || !apiKey) {
-    log("bard-cron: no LLM endpoint/apiKey configured — skipping label generation", "warn", { moduleName: MODULE_NAME });
-    return coreData;
-  }
-
-  // Load valid tags dynamically from library.xml
+  // Load tag list from library.xml
   const musicDir = path.resolve(
     __dirname, "..",
     typeof bardCfg.musicDir === "string" ? bardCfg.musicDir : "assets/bard"
   );
   const validTags = getLibraryTags(musicDir);
 
-  // Build prompt: workingObject takes priority (allows per-channel overrides),
-  // then module config, then bard config, then built-in default
-  const promptTemplate = getStr(wo.prompt || cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
-  const prompt = buildPrompt(promptTemplate, validTags);
+  // Find the target session: prefer the one whose textChannelId matches wo.channelID,
+  // otherwise use the first session that has new context.
+  const woCh = getStr(wo.channelID);
+  let targetSession = null;
+  let targetLastRunAt = "";
+  let targetNowTs = "";
 
   for (const sessionKey of sessionKeys) {
     try {
       const session = await getItem(sessionKey);
-      if (!session) {
-        continue;
-      }
+      if (!session) continue;
 
       const textChannelId = getStr(session.textChannelId);
+      if (!textChannelId) continue;
 
-      if (!textChannelId) {
-        log(`bard-cron: session ${sessionKey} has no textChannelId — skipping`, "warn", { moduleName: MODULE_NAME });
-        continue;
-      }
+      // If a specific channelID is configured on the cron job, match it
+      if (woCh && woCh !== "cron" && woCh !== textChannelId) continue;
 
       const lastRunKey = `bard:lastrun:${session.guildId}`;
       let lastRunData = null;
       try { lastRunData = await getItem(lastRunKey); } catch {}
       const lastRunAt = getStr(lastRunData?.ts || "");
 
-      const nowTs = getNowIso();
-      await putItem({ ts: nowTs, guildId: session.guildId }, lastRunKey);
-
       const woForCtx = { ...wo, channelID: textChannelId };
       const rows = lastRunAt
         ? await getContextSince(woForCtx, lastRunAt)
         : await getContextLastSeconds(woForCtx, 300);
 
+      log(`[label-debug] guild=${session.guildId} textChannelId=${textChannelId} lastRunAt="${lastRunAt||"none"}" contextRows=${rows.length}`, "info", { moduleName: MODULE_NAME });
+
       if (!rows.length) {
-        log(`bard-cron: no new context since ${lastRunAt || "last 300s"} for channel ${textChannelId}`, "info", { moduleName: MODULE_NAME });
+        log(`no new context since ${lastRunAt || "last 300s"} for channel ${textChannelId}`, "info", { moduleName: MODULE_NAME });
         continue;
       }
+
+      targetSession  = session;
+      targetLastRunAt = lastRunAt;
+      targetNowTs = getNowIso();
+
+      // Write lastrun timestamp immediately so the next run won't re-process
+      await putItem({ ts: targetNowTs, guildId: session.guildId }, lastRunKey);
 
       const userText = rows
         .map(r => `${r.role === "assistant" ? "Bot" : "Player"}: ${r.text}`)
         .join("\n");
 
+      // Fetch current labels for context
+      let currentLabels = [];
+      try {
+        const labelsData = await getItem(`bard:labels:${session.guildId}`);
+        if (Array.isArray(labelsData?.labels)) currentLabels = labelsData.labels;
+      } catch {}
 
-      const labels = await getLlmLabels(endpoint, apiKey, model, prompt, userText, validTags);
+      // Build system prompt: template + tag list + current labels
+      const promptTemplate = getStr(wo.prompt || cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
+      const systemPrompt = buildSystemPrompt(promptTemplate, validTags, currentLabels);
 
-      if (!labels.length) {
-        log(`bard-cron: LLM returned no valid labels for guild ${session.guildId}`, "warn", { moduleName: MODULE_NAME });
-        continue;
-      }
+      // Set up the working object for the core-ai pipeline
+      wo.systemPrompt = systemPrompt;
+      wo.payload      = userText;
 
-      const labelsEntry = {
-        labels,
-        guildId: session.guildId,
-        updatedAt: getNowIso()
-      };
+      // Store bard-specific state so bard-label-output can use it
+      wo._bardGuildId    = getStr(session.guildId);
+      wo._bardValidTags  = [...validTags];
 
-      await putItem(labelsEntry, `bard:labels:${session.guildId}`);
+      // Override AI params for label generation (low tokens, no history, no tools)
+      if (!wo.model)    wo.model    = getStr(cfg.model    || bardCfg.model    || "gpt-4o-mini");
+      if (!wo.endpoint) wo.endpoint = getStr(cfg.endpoint || bardCfg.endpoint);
+      if (!wo.apiKey)   wo.apiKey   = getStr(cfg.apiKey   || bardCfg.apiKey);
 
-      log(`bard-cron: labels set for guild ${session.guildId}`, "info", {
+      wo.temperature       = 0.3;
+      wo.maxTokens         = 60;
+      wo.useAiModule       = "completions";
+      wo.includeHistory    = false;
+      wo.doNotWriteToContext = true;
+      wo.tools             = [];
+
+      log(`prepared label-gen payload for guild ${session.guildId}`, "info", {
         moduleName: MODULE_NAME,
-        labels,
-        textChannelId
+        guildId: session.guildId,
+        textChannelId,
+        tagCount: validTags.size,
+        currentLabels
       });
+
+      break; // one guild per flow run
     } catch (e) {
-      log(`bard-cron: error for session ${sessionKey}: ${e?.message}`, "error", { moduleName: MODULE_NAME });
+      log(`error preparing session ${sessionKey}: ${e?.message}`, "error", { moduleName: MODULE_NAME });
     }
+  }
+
+  if (!targetSession) {
+    log("no sessions with new context — nothing to do", "info", { moduleName: MODULE_NAME });
+    wo.jump = true;
   }
 
   return coreData;

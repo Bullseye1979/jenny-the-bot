@@ -54,6 +54,42 @@ const __dirname  = path.dirname(__filename);
 /**********************************************************************************/
 /**********************************************************************************/
 
+async function setSendAudioStream(wo, filePath, rangeHeader) {
+  const key = wo?.http?.requestKey;
+  if (!key) return false;
+  const entry = await Promise.resolve(getItem(key)).catch(() => null);
+  if (!entry?.res) return false;
+  const { res } = entry;
+  let stat;
+  try { stat = fs.statSync(filePath); } catch {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: "File not found" }));
+    return true;
+  }
+  const total = stat.size;
+  const range = rangeHeader ? /bytes=(\d*)-(\d*)/.exec(rangeHeader) : null;
+  if (range) {
+    const start = range[1] !== "" ? parseInt(range[1], 10) : 0;
+    const end   = range[2] !== "" ? parseInt(range[2], 10) : total - 1;
+    const safeEnd = Math.min(end, total - 1);
+    if (start >= total || start > safeEnd) {
+      res.writeHead(416, { "Content-Range": `bytes */${total}` });
+      res.end();
+      return true;
+    }
+    res.writeHead(206, { "Content-Range": `bytes ${start}-${safeEnd}/${total}`, "Accept-Ranges": "bytes", "Content-Length": safeEnd - start + 1, "Content-Type": "audio/mpeg", "Cache-Control": "no-store" });
+    const stream = fs.createReadStream(filePath, { start, end: safeEnd });
+    res.on("close", () => { if (!stream.destroyed) stream.destroy(); });
+    stream.pipe(res);
+  } else {
+    res.writeHead(200, { "Accept-Ranges": "bytes", "Content-Length": total, "Content-Type": "audio/mpeg", "Cache-Control": "no-store" });
+    const stream = fs.createReadStream(filePath);
+    res.on("close", () => { if (!stream.destroyed) stream.destroy(); });
+    stream.pipe(res);
+  }
+  return true;
+}
+
 async function setSendNow(wo) {
   const key = wo?.http?.requestKey;
   if (!key) return;
@@ -193,11 +229,43 @@ export default async function getWebpageBard(coreData) {
     wo.http.response = {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body: isAllowed
-        ? getBardHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath })
-        : getAccessDeniedHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath })
+      body: getBardHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, isAdmin: isAllowed })
     };
     wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  /**********************************************************************************/
+  if (method === "GET" && urlPath === basePath + "/api/nowplaying") {
+    let reg = null;
+    try { reg = await getItem("bard:registry"); } catch {}
+    const sessionKeys = Array.isArray(reg?.list) ? reg.list : [];
+    let streamEntry = null;
+    for (const sk of sessionKeys) {
+      try {
+        const s = await getItem(sk);
+        if (!s) continue;
+        const gId = getStr(s.guildId);
+        if (gId) { streamEntry = await getItem(`bard:stream:${gId}`) || null; }
+        if (streamEntry) break;
+      } catch {}
+    }
+    setJsonResp(wo, 200, streamEntry || null);
+    wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  /**********************************************************************************/
+  if (method === "GET" && urlPath === basePath + "/api/audio") {
+    const query    = wo.http?.query || {};
+    const filename = path.basename(getStr(query.file || ""));
+    if (!filename || !/\.mp3$/i.test(filename)) {
+      setJsonResp(wo, 400, { ok: false, error: "file param required (must be .mp3)" });
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+    const filePath    = path.join(musicDir, filename);
+    const rangeHeader = getStr(wo.http?.headers?.range || "");
+    const sent = await setSendAudioStream(wo, filePath, rangeHeader);
+    if (sent) { wo.web.useLayout = false; wo.jump = true; }
+    return coreData;
   }
 
   /**********************************************************************************/
@@ -268,7 +336,6 @@ export default async function getWebpageBard(coreData) {
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /**********************************************************************************/
   if (method === "DELETE" && urlPath === basePath + "/api/track") {
     let reqData; try { reqData = JSON.parse(getBody(wo)); } catch (_) { setJsonResp(wo, 400, { error: "Invalid JSON" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -295,28 +362,36 @@ export default async function getWebpageBard(coreData) {
 
 /**********************************************************************************/
 /**********************************************************************************/
-function getAccessDeniedHtml({ menu, role, activePath, base }) {
-  const menuHtml = getMenuHtml(menu || [], activePath || base, role || "");
-  return (
-'<!DOCTYPE html><html lang="en"><head>' +
-'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-'<title>Jenny — Bard Admin</title>' +
-'<link rel="stylesheet" href="' + base + '/style.css"></head><body>' +
-'<header><h1>Jenny</h1>' + (menuHtml ? menuHtml : "") + '</header>' +
-'<div style="margin-top:var(--hh);padding:16px">' +
-'<div style="padding:12px;border:1px solid var(--bdr);border-radius:8px;background:#fff">' +
-'<strong>Access denied</strong><br><span style="color:var(--muted)">You do not have permission to access the Bard Admin.</span>' +
-'</div></div></body></html>'
-  );
-}
 
-function getBardHtml({ menu, role, activePath, base }) {
+function getBardHtml({ menu, role, activePath, base, isAdmin }) {
   const menuHtml = getMenuHtml(menu || [], activePath || base, role || "");
+  const adminHtml =
+'<div class="card">\n' +
+'<h2>Upload MP3</h2>\n' +
+'<div id="drop-zone">\n' +
+'  <input type="file" id="file-input" accept=".mp3">\n' +
+'  <div id="drop-label">Drop MP3 here or <u style="cursor:pointer" onclick="document.getElementById(\'file-input\').click()">browse</u></div>\n' +
+'</div>\n' +
+'<div id="upload-form" class="hidden">\n' +
+'  <div class="upload-row"><span id="upload-filename"></span></div>\n' +
+'  <input class="inp" type="text" id="upload-title" placeholder="Title">\n' +
+'  <input class="inp" type="text" id="upload-tags" placeholder="Tags (comma-separated, e.g. battle,intense,fight)">\n' +
+'  <input class="inp" type="number" id="upload-vol" min="0.1" max="4" step="0.1" value="1.0" placeholder="Volume (1.0 = 100%)">\n' +
+'  <div style="display:flex;gap:8px">\n' +
+'    <button class="btn btn-p" onclick="doUpload()">Upload</button>\n' +
+'    <button class="btn btn-s" onclick="resetUpload()">Cancel</button>\n' +
+'  </div>\n' +
+'</div>\n' +
+'</div>\n' +
+'<div class="card">\n' +
+'<h2>Library</h2>\n' +
+'<div id="lib-list"><div id="lib-empty">Loading…</div></div>\n' +
+'</div>\n';
 
   return (
 '<!DOCTYPE html>\n<html lang="en">\n<head>\n' +
 '<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
-'<title>Jenny — Bard Admin</title>\n' +
+'<title>🎵 Bard</title>\n' +
 '<link rel="stylesheet" href="' + base + '/style.css">\n' +
 '<style>\n' +
 '#bard-wrap{margin-top:var(--hh);height:calc(100vh - var(--hh));height:calc(100dvh - var(--hh));overflow-y:auto;padding:16px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px);display:flex;flex-direction:column;gap:16px;max-width:860px;margin-left:auto;margin-right:auto}\n' +
@@ -339,36 +414,44 @@ function getBardHtml({ menu, role, activePath, base }) {
 '.track-vol{flex:0 0 65px;text-align:center}\n' +
 '.track-actions{display:flex;gap:6px;flex-shrink:0}\n' +
 '#lib-empty{color:var(--muted);font-size:13px;padding:8px 0}\n' +
-'#lib-list{}\n' +
+'.now-playing-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;min-height:28px}\n' +
+'.now-playing-title{font-weight:600;font-size:14px;flex:1}\n' +
+'.now-playing-labels{display:flex;gap:4px;flex-wrap:wrap}\n' +
+'.now-playing-label{background:var(--acc,#3b82f6);color:#fff;border-radius:999px;padding:.1rem .6rem;font-size:.75rem}\n' +
+'#live-player{display:flex;flex-direction:column;gap:8px}\n' +
+'#player-track{height:6px;background:var(--bdr);border-radius:3px;overflow:hidden;cursor:default;user-select:none}\n' +
+'#player-bar{height:100%;background:var(--acc);border-radius:3px;transition:width .8s linear;width:0%}\n' +
+'.player-controls{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}\n' +
+'#player-time{font-variant-numeric:tabular-nums;min-width:90px}\n' +
+'.player-vol{display:flex;align-items:center;gap:6px}\n' +
+'#player-vol{width:72px;accent-color:var(--acc);cursor:pointer}\n' +
+'#nowplaying-idle{color:var(--muted);font-size:13px;padding:4px 0}\n' +
+'#np-file{font-size:11px;color:var(--muted);margin-bottom:8px;word-break:break-all}\n' +
 '</style>\n' +
 '</head>\n<body>\n' +
-'<header><h1>Jenny</h1>' + (menuHtml ? menuHtml : "") + '</header>\n' +
+'<header><h1>🎵 Bard</h1>' + (menuHtml ? menuHtml : "") + '</header>\n' +
 '<div id="bard-wrap">\n' +
 
-/**********************************************************************************/
-'<div class="card">\n' +
-'<h2>Upload MP3</h2>\n' +
-'<div id="drop-zone">\n' +
-'  <input type="file" id="file-input" accept=".mp3">\n' +
-'  <div id="drop-label">Drop MP3 here or <u style="cursor:pointer" onclick="document.getElementById(\'file-input\').click()">browse</u></div>\n' +
-'</div>\n' +
-'<div id="upload-form" class="hidden">\n' +
-'  <div class="upload-row"><span id="upload-filename"></span></div>\n' +
-'  <input class="inp" type="text" id="upload-title" placeholder="Title">\n' +
-'  <input class="inp" type="text" id="upload-tags" placeholder="Tags (comma-separated, e.g. battle,intense,fight)">\n' +
-'  <input class="inp" type="number" id="upload-vol" min="0.1" max="4" step="0.1" value="1.0" placeholder="Volume (1.0 = 100%)">\n' +
-'  <div style="display:flex;gap:8px">\n' +
-'    <button class="btn btn-p" onclick="doUpload()">Upload</button>\n' +
-'    <button class="btn btn-s" onclick="resetUpload()">Cancel</button>\n' +
+'<div class="card" id="nowplaying-card">\n' +
+'<h2>Now Playing</h2>\n' +
+'<div id="nowplaying-idle">Nothing playing right now.</div>\n' +
+'<div id="nowplaying-active" style="display:none">\n' +
+'  <div class="now-playing-row"><span class="now-playing-title" id="np-title">—</span><span class="now-playing-labels" id="np-labels"></span></div>\n' +
+'  <div id="np-file"></div>\n' +
+'  <div id="live-player">\n' +
+'    <div id="player-start"><button class="btn btn-p" onclick="unlockPlayer()" style="width:100%;margin-bottom:6px">▶ Zum Anhören klicken</button></div>\n' +
+'    <div id="player-track"><div id="player-bar"></div></div>\n' +
+'    <div class="player-controls">\n' +
+'      <span id="player-time">0:00 / 0:00</span>\n' +
+'      <div class="player-vol"><span>🔊</span><input type="range" id="player-vol" min="0" max="1" step="0.02" value="0.8"></div>\n' +
+'    </div>\n' +
 '  </div>\n' +
 '</div>\n' +
+'<audio id="bard-live-audio" preload="auto" style="display:none"></audio>\n' +
 '</div>\n' +
 
-/**********************************************************************************/
-'<div class="card">\n' +
-'<h2>Library</h2>\n' +
-'<div id="lib-list"><div id="lib-empty">Loading…</div></div>\n' +
-'</div>\n' +
+(isAdmin ? adminHtml : '') +
+
 '</div>\n' +
 
 '<div id="toast" class="toast"></div>\n' +
@@ -384,15 +467,16 @@ function getBardHtml({ menu, role, activePath, base }) {
 '\n' +
 '/**********************************************************************************/\n' +
 'var dz=document.getElementById("drop-zone");\n' +
-'dz.addEventListener("dragover",function(e){e.preventDefault();dz.classList.add("over");});\n' +
-'dz.addEventListener("dragleave",function(){dz.classList.remove("over");});\n' +
-'dz.addEventListener("drop",function(e){\n' +
-'  e.preventDefault(); dz.classList.remove("over");\n' +
-'  var f=e.dataTransfer.files[0]; if(f) setFile(f);\n' +
-'});\n' +
-'document.getElementById("file-input").addEventListener("change",function(){\n' +
-'  if(this.files[0]) setFile(this.files[0]);\n' +
-'});\n' +
+'if(dz){\n' +
+'  dz.addEventListener("dragover",function(e){e.preventDefault();dz.classList.add("over");});\n' +
+'  dz.addEventListener("dragleave",function(){dz.classList.remove("over");});\n' +
+'  dz.addEventListener("drop",function(e){\n' +
+'    e.preventDefault(); dz.classList.remove("over");\n' +
+'    var f=e.dataTransfer.files[0]; if(f) setFile(f);\n' +
+'  });\n' +
+'  var fi=document.getElementById("file-input");\n' +
+'  if(fi) fi.addEventListener("change",function(){if(this.files[0]) setFile(this.files[0]);});\n' +
+'}\n' +
 '\n' +
 'function setFile(f){\n' +
 '  if(!/\\.mp3$/i.test(f.name)){toast("Only MP3 files allowed",3000);return;}\n' +
@@ -449,6 +533,7 @@ function getBardHtml({ menu, role, activePath, base }) {
 '      \'<input class="inp track-tags" type="text" value="\'+esc((t.tags||[]).join(","))+\'" placeholder="Tags" data-file="\'+esc(t.file)+\'">\'+\n' +
 '      \'<input class="inp track-vol" type="number" min="0.1" max="4" step="0.1" value="\'+parseFloat(t.volume||1).toFixed(1)+\'" title="Volume" data-file="\'+esc(t.file)+\'">\'+\n' +
 '      \'<div class="track-actions">\'+\n' +
+'      \'<button class="btn btn-s" onclick="previewTrack(this)" data-file="\'+esc(t.file)+\'" title="Preview">▶</button>\'+\n' +
 '      \'<button class="btn btn-p" onclick="saveTrack(this)" data-file="\'+esc(t.file)+\'">Save</button>\'+\n' +
 '      \'<button class="btn btn-d" onclick="deleteTrack(this)" data-file="\'+esc(t.file)+\'">✕</button>\'+\n' +
 '      \'</div></div>\';\n' +
@@ -484,7 +569,94 @@ function getBardHtml({ menu, role, activePath, base }) {
 '  }).catch(function(e){btn.disabled=false;toast("Error: "+e.message,5000);});\n' +
 '}\n' +
 '\n' +
-'loadLibrary();\n' +
+
+'var previewAudio=null;\n' +
+'function previewTrack(btn){\n' +
+'  var file=btn.getAttribute("data-file");\n' +
+'  if(!previewAudio){previewAudio=document.createElement("audio");previewAudio.controls=false;}\n' +
+'  if(previewAudio.src.endsWith(encodeURIComponent(file))&&!previewAudio.paused){previewAudio.pause();btn.textContent="▶";return;}\n' +
+'  document.querySelectorAll(".track-actions .btn-s").forEach(function(b){b.textContent="▶";});\n' +
+'  previewAudio.src=BASE+"/api/audio?file="+encodeURIComponent(file);\n' +
+'  previewAudio.play().catch(function(){});\n' +
+'  btn.textContent="■";\n' +
+'  previewAudio.onended=function(){btn.textContent="▶";};\n' +
+'}\n' +
+'\n' +
+'/* Now Playing — live player (no pause, no seek, volume only) */\n' +
+'var npFile=null;\n' +
+'var liveAudio=document.getElementById("bard-live-audio");\n' +
+'var npIdle=document.getElementById("nowplaying-idle");\n' +
+'var npActive=document.getElementById("nowplaying-active");\n' +
+'var npTitle=document.getElementById("np-title");\n' +
+'var npLabels=document.getElementById("np-labels");\n' +
+'var playerBar=document.getElementById("player-bar");\n' +
+'var playerTime=document.getElementById("player-time");\n' +
+'var playerVol=document.getElementById("player-vol");\n' +
+'var npFileEl=document.getElementById("np-file");\n' +
+'var playerUnlocked=false;\n' +
+'var loadingNewTrack=false;\n' +
+'\n' +
+'if(playerVol){\n' +
+'  liveAudio.volume=parseFloat(playerVol.value)||0.8;\n' +
+'  playerVol.addEventListener("input",function(){liveAudio.volume=parseFloat(playerVol.value)||0.8;});\n' +
+'}\n' +
+'\n' +
+'function unlockPlayer(){\n' +
+'  playerUnlocked=true;\n' +
+'  var ps=document.getElementById("player-start");\n' +
+'  if(ps)ps.style.display="none";\n' +
+'  if(liveAudio.src)liveAudio.play().catch(function(){});\n' +
+'}\n' +
+'\n' +
+'/* Prevent pause — keep live stream running */\n' +
+'liveAudio.addEventListener("pause",function(){if(playerUnlocked&&npFile&&!loadingNewTrack)liveAudio.play().catch(function(){});});\n' +
+'\n' +
+'function fmtTime(s){\n' +
+'  if(!isFinite(s)||s<0)return"0:00";\n' +
+'  var m=Math.floor(s/60),sec=Math.floor(s%60);\n' +
+'  return m+":"+(sec<10?"0":"")+sec;\n' +
+'}\n' +
+'\n' +
+'function updatePlayerUI(){\n' +
+'  if(!liveAudio||!npFile)return;\n' +
+'  var cur=liveAudio.currentTime||0, dur=liveAudio.duration||0;\n' +
+'  if(playerBar)playerBar.style.width=(dur>0?Math.min(100,(cur/dur)*100):0)+"%";\n' +
+'  if(playerTime)playerTime.textContent=fmtTime(cur)+" / "+fmtTime(dur);\n' +
+'}\n' +
+'setInterval(updatePlayerUI,1000);\n' +
+'\n' +
+'function pollNowPlaying(){\n' +
+'  fetch(BASE+"/api/nowplaying").then(function(r){return r.json();})\n' +
+'  .then(function(d){\n' +
+'    if(!d||!d.file){\n' +
+'      npIdle.style.display="";npActive.style.display="none";\n' +
+'      npFile=null;liveAudio.pause();liveAudio.src="";\n' +
+'      return;\n' +
+'    }\n' +
+'    npIdle.style.display="none";npActive.style.display="";\n' +
+'    npTitle.textContent=d.title||d.file.replace(/\\.mp3$/i,"");\n' +
+'    if(npFileEl)npFileEl.textContent=d.file.toLowerCase();\n' +
+'    var lbs=Array.isArray(d.labels)?d.labels:[];\n' +
+'    npLabels.innerHTML=lbs.map(function(l){return\'<span class="now-playing-label">\'+esc(l)+\'</span>\';}).join("");\n' +
+'    if(d.file!==npFile){\n' +
+'      npFile=d.file;\n' +
+'      var elapsed=(Date.now()-new Date(d.startedAt).getTime())/1000;\n' +
+'      loadingNewTrack=true;\n' +
+'      liveAudio.src=BASE+"/api/audio?file="+encodeURIComponent(d.file);\n' +
+'      liveAudio.onloadedmetadata=function(){\n' +
+'        loadingNewTrack=false;\n' +
+'        if(elapsed>0&&elapsed<liveAudio.duration-1)liveAudio.currentTime=elapsed;\n' +
+'        if(playerUnlocked)liveAudio.play().catch(function(){});\n' +
+'        else{var ps=document.getElementById("player-start");if(ps)ps.style.display="";}\n' +
+'      };\n' +
+'      liveAudio.load();\n' +
+'    }\n' +
+'  }).catch(function(){});\n' +
+'  setTimeout(pollNowPlaying,5000);\n' +
+'}\n' +
+'pollNowPlaying();\n' +
+'\n' +
+(isAdmin ? 'loadLibrary();\n' : '') +
 '</script>\n' +
 '</body>\n</html>'
   );

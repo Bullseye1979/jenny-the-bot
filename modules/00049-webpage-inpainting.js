@@ -323,7 +323,7 @@ function setForbiddenPage(wo, menu, activePath, basePath) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>Jenny — Inpainting</title>
+<title>🎨 Inpainting</title>
 <link rel="stylesheet" href="${bp}/style.css">
 </head>
 <body>
@@ -2540,7 +2540,7 @@ overlayHint.classList.add("hidden");
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>Jenny — Inpainting</title>
+<title>🎨 Inpainting</title>
 <link rel="stylesheet" href="${basePath}/style.css">
 <style>
 ${toolCss}
@@ -2551,7 +2551,7 @@ body{padding:0;margin:0;background:var(--bg,#f0f2f5);color:var(--txt,#1e293b);di
 </head>
 <body>
 <header>
-  <h1>Jenny</h1>
+  <h1>🎨 Inpainting</h1>
   ${menuHtml || ""}
 </header>
 <div class="app">

@@ -220,12 +220,12 @@ function getAccessDeniedHtml(opts) {
 '<head>\n' +
 '<meta charset="UTF-8">\n' +
 '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
-'<title>Jenny — ' + title + '</title>\n' +
+'<title>⚙️ Config</title>\n' +
 '<link rel="stylesheet" href="' + base + '/style.css">\n' +
 '</head>\n' +
 '<body>\n' +
 '<header>\n' +
-'  <h1>Jenny</h1>\n' +
+'  <h1>⚙️ Config</h1>\n' +
 (menuHtml ? ('  ' + menuHtml + '\n') : '') +
 '</header>\n' +
 '<div style="margin-top:var(--hh);padding:12px">\n' +
@@ -259,7 +259,7 @@ function getConfigHtml(opts) {
 '<head>\n' +
 '<meta charset="UTF-8">\n' +
 '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
-'<title>Jenny — Config</title>\n' +
+'<title>⚙️ Config</title>\n' +
 '<link rel="stylesheet" href="' + configBase + '/style.css">\n' +
 '<style>\n' +
 '/* small page-specific layout */\n' +
@@ -271,7 +271,7 @@ function getConfigHtml(opts) {
 '</head>\n' +
 '<body>\n' +
 '<header>\n' +
-'  <h1>Jenny</h1>\n' +
+'  <h1>⚙️ Config</h1>\n' +
 (menuHtml ? ('  ' + menuHtml + '\n') : '') +
 '</header>\n' +
 '\n' +

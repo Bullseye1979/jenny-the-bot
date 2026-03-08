@@ -53,8 +53,8 @@ function getIsAllowed(role, rolesArr) {
   /* No restriction configured => visible */
   if (!roles.length) return true;
 
-  /* Fallback: role not known => ignore restrictions */
-  if (!role) return true;
+  /* No role assigned => deny restricted items */
+  if (!role) return false;
 
   /* admin sees everything */
   if (role === "admin") return true;

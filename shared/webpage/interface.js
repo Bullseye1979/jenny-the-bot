@@ -165,13 +165,14 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt) {
          'if(d&&!d.contains(e.target))d.removeAttribute("open");' +
          '},true);}();</script>';
 
-  const roleLabel = r ? r : "unknown";
   const rightHtml = String(rightHtmlOpt || "");
   const right =
     '<div class="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:10px;white-space:nowrap;flex-shrink:0">' +
       (rightHtml ? rightHtml : "") +
-      '<span class="nav-role">role: ' + escHtml(roleLabel) + '</span>' +
-      '<a class="nav-logout" href="/auth/logout">Logout</a>' +
+      '<span class="nav-role">👤 ' + escHtml(r ? r : "guest") + '</span>' +
+      (r
+        ? '<a class="nav-logout" href="/auth/logout">Logout</a>'
+        : '<a class="nav-logout" href="/auth/login">Login</a>') +
     '</div>';
 
   return (

@@ -124,6 +124,7 @@ export default async function getBardAdminJoin(coreData) {
       try { await deleteItem(sessionKey); } catch {}
       try { await deleteItem(`bard:labels:${guildId}`); } catch {}
       try { await deleteItem(`bard:nowplaying:${guildId}`); } catch {}
+      try { await deleteItem(`bard:stream:${guildId}`); } catch {}
       await setRemoveBardSessionKey(sessionKey);
       log("bardleave: bard session terminated", "info", {
         moduleName: MODULE_NAME,
