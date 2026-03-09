@@ -116,18 +116,19 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
     score: track.tags.filter(t => labelSet.has(t)).length
   }));
 
-  const maxScore = Math.max(...scored.map(s => s.score));
-  const candidates = maxScore > 0
-    ? scored.filter(s => s.score === maxScore)
-    : scored;
+  // Weighted random: tracks with more matching labels are proportionally more likely,
+  // but not guaranteed — avoids the same high-scoring song looping forever.
+  // Tracks with score 0 are only used as fallback when nothing matches any label.
+  const positiveScored = scored.filter(s => s.score > 0);
+  const candidates = positiveScored.length > 0 ? positiveScored : scored;
 
-  const pick = candidates[Math.floor(Math.random() * candidates.length)];
-
-  if (pick) {
-  } else {
+  const totalWeight = candidates.reduce((sum, s) => sum + Math.max(1, s.score), 0);
+  let r = Math.random() * totalWeight;
+  for (const s of candidates) {
+    r -= Math.max(1, s.score);
+    if (r <= 0) return s.track;
   }
-
-  return pick ? pick.track : null;
+  return candidates[candidates.length - 1].track;
 }
 
 /************************************************************************************/
@@ -243,6 +244,7 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
     const resource = createAudioResource(filePath, { inputType: StreamType.Arbitrary, inlineVolume: true });
     const vol = Number.isFinite(track.volume) ? Math.max(0.1, Math.min(4.0, track.volume)) : 1.0;
     session._currentVolume = vol;   // remember for future fade-outs
+    session._lastPlayedFile = track.file; // remember for post-song exclusion
     // Start silent if fading in so there is no gap between tracks
     if (resource.volume) resource.volume.setVolume(fadeIn && fadeMs > 0 ? 0 : vol);
     session.player.play(resource);
@@ -396,7 +398,9 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
             // Labels changed mid-song: fade out current, then fade in new (crossfade)
             await setPlayTrack(session, next, musicDir, log, cfg, { fadeIn: true, fadeOut: true });
           } else {
-            const next = getSelectSong(labels, library, null, currentFile);
+            // Use _lastPlayedFile as exclude fallback — nowplaying was cleared by the Idle handler
+            // so currentFile is null, but we still want to avoid immediately repeating the last song.
+            const next = getSelectSong(labels, library, null, session._lastPlayedFile || currentFile);
             if (!next) {
               try { await deleteItem(`bard:stream:${session.guildId}`); } catch {}
               await setIdlePresence(idlePresence);
