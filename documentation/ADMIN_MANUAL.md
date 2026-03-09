@@ -2811,8 +2811,9 @@ Accessible at `/bard-admin`. Features:
 - Delete tracks (removes both library entry and MP3 file)
 - **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
 - **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Sync behaviour:
-  - **Regular polling:** every 5 seconds.
-  - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 5-second cycle. This minimises the gap between tracks in the browser player.
+  - **Regular polling:** every 2 seconds.
+  - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 2-second cycle. This minimises the gap between tracks in the browser player.
+  - **On crossfade (label change mid-song):** `bard:stream` is updated with the new track *before* the Discord fade-out starts. The browser therefore loads and plays the new track immediately at full volume; Discord fades out the old track in parallel. The two streams are intentionally not in sync during the Discord fade — this is by design since the browser and Discord audio are independent.
   - **On "▶ Zum Anhören klicken" (start button):** the elapsed position is recalculated at the exact moment the user clicks, so the stream is in sync even if the user waited on the page before pressing play. The catch-up seek happens at button-press time, not at the next track change.
 
 Filenames are preserved as-is, including spaces. Only characters outside `[a-zA-Z0-9 ._-]` are replaced with `_`.
@@ -2907,7 +2908,8 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 | Idle presence not showing after `/bardleave` | `idlePresence` not configured | Set `core.json["bard"]["idlePresence"]` to the desired text |
 | Idle presence shows while music is playing | Should not happen — check logs | Presence is set by `setPlayTrack()`; if overridden, check for errors in the bard flow |
 | Gap of silence between tracks (Discord) | Library empty or no matching tracks | Song-end triggers an immediate server poll. If no matching track is found, idle presence is set and nothing plays until the next poll. |
-| First few seconds of next track missing (browser player) | Browser poll interval lag — browser polled too late after song ended | The browser polls immediately (300 ms after `ended`), retrying every 500 ms until the server reports the new track. If the gap persists, check the browser console for errors in `pollNowPlaying`. |
+| First few seconds of next track missing (browser player, natural song end) | Browser detected the new track late (up to poll interval), causing an over-seek at load time, so the audio finishes early | Browser poll interval is 2 s; the browser retries every 500 ms (up to 10×) after `ended` until the server reports the new track. If the gap persists, check the browser console for errors in `pollNowPlaying`. |
+| Next track delayed in browser (crossfade / label change mid-song) | Was caused by browser waiting for Discord fade-out to complete before `bard:stream` was updated | Fixed: `bard:stream` is now written *before* `setFadeOut`, so the browser starts immediately. |
 | Stream out of sync after delayed play button press | Elapsed position was calculated at page-load time, not at button-press time | The catch-up seek is now recalculated at the moment the user clicks "▶ Zum Anhören klicken", so the stream is always in sync regardless of how long the user waited before pressing play. |
 | Bot joins but audio is muted and admin cannot unmute | `joinMuted=true` but bot lacks permissions | The bard bot needs `MUTE_MEMBERS` permission to server-mute itself. Grant the permission in Discord Server Settings → Roles. |
 | Bot joins muted but audio should play | `joinMuted=true` is set | An admin must server-unmute the bot in the voice channel (right-click the bot → Server Unmute). |

@@ -630,7 +630,7 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '});\n' +
 '\n' +
 '/* Song ended naturally — poll immediately so the next track loads without waiting\n' +
-'   for the regular 5-second interval. Retries every 500 ms (up to 10x) if the server\n' +
+'   for the regular 2-second interval. Retries every 500 ms (up to 10x) if the server\n' +
 '   has not yet selected the next song when the first immediate poll fires. */\n' +
 'liveAudio.addEventListener("ended",function(){\n' +
 '  _expectingNewTrack=true;_expectRetries=0;\n' +
@@ -664,7 +664,7 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '      npIdle.style.display="";npActive.style.display="none";\n' +
 '      npFile=null;liveAudio.pause();liveAudio.src="";\n' +
 '      _expectingNewTrack=false;_expectRetries=0;\n' +
-'      schedulePoll(5000);return;\n' +
+'      schedulePoll(2000);return;\n' +
 '    }\n' +
 '    npIdle.style.display="none";npActive.style.display="";\n' +
 '    npTitle.textContent=d.title||d.file.replace(/\\.mp3$/i,"");\n' +
@@ -692,9 +692,9 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '      /* Server has not yet started the next track — retry quickly. */\n' +
 '      _expectRetries++;schedulePoll(500);\n' +
 '    }else{\n' +
-'      _expectingNewTrack=false;_expectRetries=0;schedulePoll(5000);\n' +
+'      _expectingNewTrack=false;_expectRetries=0;schedulePoll(2000);\n' +
 '    }\n' +
-'  }).catch(function(){_expectingNewTrack=false;_expectRetries=0;schedulePoll(5000);});\n' +
+'  }).catch(function(){_expectingNewTrack=false;_expectRetries=0;schedulePoll(2000);});\n' +
 '}\n' +
 'pollNowPlaying();\n' +
 '\n' +

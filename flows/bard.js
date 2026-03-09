@@ -202,9 +202,12 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
       return false;
     }
     const fadeMs = Number.isFinite(Number(cfg?.fadeDurationMs)) ? Math.max(0, Number(cfg.fadeDurationMs)) : 1200;
-    // Fade out the currently playing resource before switching (crossfade / label change).
-    // Use the stored volume — never read from VolumeTransformer state which may be mid-fade-in.
+    // Crossfade: notify the browser about the new track immediately, then let Discord fade
+    // out the current resource. The browser loads MP3s directly at full volume and is
+    // independent of the Discord VolumeTransformer — no need to wait for the fade to finish.
     if (fadeOut && session._currentResource && fadeMs > 0) {
+      const earlyTs = new Date().toISOString();
+      await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], startedAt: earlyTs, musicDir }, `bard:stream:${session.guildId}`);
       const fromVol = session._currentVolume ?? 1.0;
       await setFadeOut(session, session._currentResource, fromVol, fadeMs);
     }
