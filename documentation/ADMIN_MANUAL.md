@@ -2790,7 +2790,7 @@ Accessible at `/bard-admin`. Features:
 - Edit track title, tags (comma-separated), and volume per track
 - Delete tracks (removes both library entry and MP3 file)
 - **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
-- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`) — updated every few seconds via polling
+- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). The browser polls every 5 seconds normally; when the current track ends naturally, an immediate poll fires (300 ms delay to let the server select the next song). If the server has not yet started the next track, the browser retries every 500 ms for up to 5 seconds, then falls back to the regular 5-second cycle. This minimises the gap between the end of one track and the start of the next in the browser player.
 
 Filenames are preserved as-is, including spaces. Only characters outside `[a-zA-Z0-9 ._-]` are replaced with `_`.
 
@@ -2883,7 +2883,8 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 | Voice input silent (bot cannot hear users) | DAVE E2EE decryption not working | Run `npm install` on the server to install `@snazzah/davey` and the correct platform binary. Restart the bot after install. |
 | Idle presence not showing after `/bardleave` | `idlePresence` not configured | Set `core.json["bard"]["idlePresence"]` to the desired text |
 | Idle presence shows while music is playing | Should not happen — check logs | Presence is set by `setPlayTrack()`; if overridden, check for errors in the bard flow |
-| Gap of silence between tracks | Library empty or no matching tracks | Song-end triggers an immediate poll cycle. If no matching track is found, idle presence is set and nothing plays until the next poll. |
+| Gap of silence between tracks (Discord) | Library empty or no matching tracks | Song-end triggers an immediate server poll. If no matching track is found, idle presence is set and nothing plays until the next poll. |
+| First few seconds of next track missing (browser player) | Browser poll interval lag — browser polled too late after song ended | The browser now polls immediately (after 300 ms) when the audio element fires `ended`, and retries every 500 ms if the server has not yet started the next track. If the gap persists, check browser console for errors in `pollNowPlaying`. |
 | Bot joins but audio is muted and admin cannot unmute | `joinMuted=true` but bot lacks permissions | The bard bot needs `MUTE_MEMBERS` permission to server-mute itself. Grant the permission in Discord Server Settings → Roles. |
 | Bot joins muted but audio should play | `joinMuted=true` is set | An admin must server-unmute the bot in the voice channel (right-click the bot → Server Unmute). |
 

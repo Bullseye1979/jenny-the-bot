@@ -595,6 +595,9 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 'var npFileEl=document.getElementById("np-file");\n' +
 'var playerUnlocked=false;\n' +
 'var loadingNewTrack=false;\n' +
+'var _pollTimer=null;\n' +
+'var _expectingNewTrack=false;\n' +
+'var _expectRetries=0;\n' +
 '\n' +
 'if(playerVol){\n' +
 '  liveAudio.volume=parseFloat(playerVol.value)||0.8;\n' +
@@ -617,6 +620,14 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '    liveAudio.play().catch(function(){});\n' +
 '});\n' +
 '\n' +
+'/* Song ended naturally — poll immediately so the next track loads without waiting\n' +
+'   for the regular 5-second interval. Retries every 500 ms (up to 10x) if the server\n' +
+'   has not yet selected the next song when the first immediate poll fires. */\n' +
+'liveAudio.addEventListener("ended",function(){\n' +
+'  _expectingNewTrack=true;_expectRetries=0;\n' +
+'  schedulePoll(300);\n' +
+'});\n' +
+'\n' +
 'function fmtTime(s){\n' +
 '  if(!isFinite(s)||s<0)return"0:00";\n' +
 '  var m=Math.floor(s/60),sec=Math.floor(s%60);\n' +
@@ -631,34 +642,51 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '}\n' +
 'setInterval(updatePlayerUI,1000);\n' +
 '\n' +
+'function schedulePoll(delay){\n' +
+'  if(_pollTimer)clearTimeout(_pollTimer);\n' +
+'  _pollTimer=setTimeout(pollNowPlaying,delay);\n' +
+'}\n' +
+'\n' +
 'function pollNowPlaying(){\n' +
+'  _pollTimer=null;\n' +
 '  fetch(BASE+"/api/nowplaying").then(function(r){return r.json();})\n' +
 '  .then(function(d){\n' +
 '    if(!d||!d.file){\n' +
 '      npIdle.style.display="";npActive.style.display="none";\n' +
 '      npFile=null;liveAudio.pause();liveAudio.src="";\n' +
-'      return;\n' +
+'      _expectingNewTrack=false;_expectRetries=0;\n' +
+'      schedulePoll(5000);return;\n' +
 '    }\n' +
 '    npIdle.style.display="none";npActive.style.display="";\n' +
 '    npTitle.textContent=d.title||d.file.replace(/\\.mp3$/i,"");\n' +
 '    if(npFileEl)npFileEl.textContent=d.file.toLowerCase();\n' +
 '    var lbs=Array.isArray(d.labels)?d.labels:[];\n' +
 '    npLabels.innerHTML=lbs.map(function(l){return\'<span class="now-playing-label">\'+esc(l)+\'</span>\';}).join("");\n' +
-'    if(d.file!==npFile){\n' +
+'    var gotNewTrack=d.file!==npFile;\n' +
+'    if(gotNewTrack){\n' +
 '      npFile=d.file;\n' +
-'      var elapsed=(Date.now()-new Date(d.startedAt).getTime())/1000;\n' +
+'      /* Store startedAt as a timestamp — elapsed is recalculated in onloadedmetadata\n' +
+'         so the audio-load latency is accounted for and the seek is as accurate as\n' +
+'         possible, not off by the time it took to load metadata. */\n' +
+'      var trackStartedAt=new Date(d.startedAt).getTime();\n' +
 '      loadingNewTrack=true;\n' +
 '      liveAudio.src=BASE+"/api/audio?file="+encodeURIComponent(d.file);\n' +
 '      liveAudio.onloadedmetadata=function(){\n' +
 '        loadingNewTrack=false;\n' +
+'        var elapsed=(Date.now()-trackStartedAt)/1000;\n' +
 '        if(elapsed>0&&elapsed<liveAudio.duration-1)liveAudio.currentTime=elapsed;\n' +
 '        if(playerUnlocked)liveAudio.play().catch(function(){});\n' +
 '        else{var ps=document.getElementById("player-start");if(ps)ps.style.display="";}\n' +
 '      };\n' +
 '      liveAudio.load();\n' +
 '    }\n' +
-'  }).catch(function(){});\n' +
-'  setTimeout(pollNowPlaying,5000);\n' +
+'    if(_expectingNewTrack&&!gotNewTrack&&_expectRetries<10){\n' +
+'      /* Server has not yet started the next track — retry quickly. */\n' +
+'      _expectRetries++;schedulePoll(500);\n' +
+'    }else{\n' +
+'      _expectingNewTrack=false;_expectRetries=0;schedulePoll(5000);\n' +
+'    }\n' +
+'  }).catch(function(){_expectingNewTrack=false;_expectRetries=0;schedulePoll(5000);});\n' +
 '}\n' +
 'pollNowPlaying();\n' +
 '\n' +
