@@ -21,15 +21,15 @@ function getStrictConfig(workingObject) {
   const model = String(toolCfg.model || "").trim();
   const endpoint = String(toolCfg.endpoint || "").trim();
   const temperature = toolCfg.temperature;
-  const max_tokens = toolCfg.max_tokens;
-  const timeout_ms = toolCfg.timeout_ms;
+  const maxTokens = toolCfg.maxTokens;
+  const timeoutMs = toolCfg.timeoutMs;
   if (!apiKey) throw new Error(`[${MODULE_NAME}] missing apiKey`);
   if (!model) throw new Error(`[${MODULE_NAME}] missing model`);
   if (!endpoint) throw new Error(`[${MODULE_NAME}] missing endpoint`);
   if (!Number.isFinite(temperature)) throw new Error(`[${MODULE_NAME}] missing temperature`);
-  if (!Number.isFinite(max_tokens)) throw new Error(`[${MODULE_NAME}] missing max_tokens`);
-  if (!Number.isFinite(timeout_ms)) throw new Error(`[${MODULE_NAME}] missing timeout_ms`);
-  return { apiKey, model, endpoint, temperature, max_tokens, timeout_ms };
+  if (!Number.isFinite(maxTokens)) throw new Error(`[${MODULE_NAME}] missing maxTokens`);
+  if (!Number.isFinite(timeoutMs)) throw new Error(`[${MODULE_NAME}] missing timeoutMs`);
+  return { apiKey, model, endpoint, temperature, maxTokens, timeoutMs };
 }
 
 /**********************************************************************************/
@@ -83,7 +83,7 @@ function validateImageUrl(u) {
 /**********************************************************************************/
 async function getInvoke(args, coreData) {
   const workingObject = coreData?.workingObject || {};
-  const { apiKey, model, endpoint, temperature, max_tokens, timeout_ms } = getStrictConfig(workingObject);
+  const { apiKey, model, endpoint, temperature, maxTokens, timeoutMs } = getStrictConfig(workingObject);
 
   const imageUrl = validateImageUrl(args?.imageURL);
   if (!imageUrl) {
@@ -97,13 +97,13 @@ async function getInvoke(args, coreData) {
 
   const messages = getMessages(imageUrl, analysisPrompt);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout_ms);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: getHeaders(endpoint, apiKey),
-      body: JSON.stringify({ model, messages, temperature, max_tokens }),
+      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
       signal: controller.signal
     });
     const raw = await res.text();
@@ -121,7 +121,7 @@ async function getInvoke(args, coreData) {
     return { ok: true, model, input: { imageURL: imageUrl, prompt: analysisPrompt }, description: content };
   } catch (e) {
     const isAbort = e?.name === "AbortError";
-    return { ok: false, error: isAbort ? `[${MODULE_NAME}] Request timed out after ${timeout_ms}ms` : `[${MODULE_NAME}] ${e?.message || String(e)}` };
+    return { ok: false, error: isAbort ? `[${MODULE_NAME}] Request timed out after ${timeoutMs}ms` : `[${MODULE_NAME}] ${e?.message || String(e)}` };
   } finally {
     clearTimeout(timer);
   }

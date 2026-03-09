@@ -838,6 +838,34 @@ function getParsedResponsesOutput(raw) {
 }
 
 /********************************************************************************
+/* functionSignature: getLooksCutOff (text)                                     *
+/* Returns true when text ends mid-sentence (no recognised closing punctuation).*
+/* Used as fallback when finish_reason is null (some local backends omit it).   *
+/* Not applied when finish_reason === "stop" to avoid false positives.          *
+/********************************************************************************/
+function getLooksCutOff(text) {
+  const s = String(text ?? "").trimEnd();
+  if (!s) return false;
+  const last = s[s.length - 1];
+  return !/[.!?:;*"»)\]>~`]/.test(last);
+}
+
+/********************************************************************************
+/* functionSignature: getFinishReasonFromData (data)                            *
+/* Extracts the first non-null finish_reason from a Responses API data object.  *
+/********************************************************************************/
+function getFinishReasonFromData(data) {
+  try {
+    const outputs = Array.isArray(data?.output) ? data.output : [];
+    for (const m of outputs) {
+      const content = Array.isArray(m?.content) ? m.content : [];
+      for (const c of content) { if (c?.finish_reason) return c.finish_reason; }
+    }
+  } catch {}
+  return null;
+}
+
+/********************************************************************************
 /* functionSignature: getWasTruncatedOutput (data)                              *
 /* Detects whether model output was truncated.                                  *
 /********************************************************************************/
@@ -1307,6 +1335,14 @@ export default async function getCoreAi(coreData) {
       const toolCalls = Array.isArray(parsed.toolCalls) ? parsed.toolCalls : [];
       const hasToolCalls = toolCalls.length > 0;
       const assistantText = (parsed.text || "").trim();
+      const finish = getFinishReasonFromData(data);
+      wo.logging.push({
+        timestamp: new Date().toISOString(),
+        severity: "info",
+        module: MODULE_NAME,
+        exitStatus: "success",
+        message: `AI turn ${iter + 1}: finish_reason="${finish ?? "null"}" content_length=${assistantText.length} tool_calls=${toolCalls.length}`
+      });
 
       /********************************************************************************
       /* Fix v1.1: Persist assistant turn even when text is empty but images exist  *
@@ -1361,10 +1397,18 @@ export default async function getCoreAi(coreData) {
       }
 
       const truncated = getWasTruncatedOutput(data);
-      if (truncated) {
+      const cutOff = truncated || (finish == null && getLooksCutOff(assistantText));
+      if (cutOff) {
         const cont = { role: "user", content: "continue" };
         messages.push(cont);
         persistQueue.push(getWithTurnId(cont, wo));
+        wo.logging.push({
+          timestamp: new Date().toISOString(),
+          severity: "info",
+          module: MODULE_NAME,
+          exitStatus: "success",
+          message: `Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(assistantText)}`
+        });
         continue;
       }
 

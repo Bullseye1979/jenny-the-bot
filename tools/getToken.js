@@ -142,7 +142,7 @@ function getStrictCfg(wo) {
   const publicBaseUrl = typeof cfg.publicBaseUrl === "string" ? cfg.publicBaseUrl : null;
   const magickPath = String(cfg.magickPath || "convert");
   const size = Number.isFinite(cfg.size) ? Math.max(64, Math.floor(cfg.size)) : 512;
-  const border_px = Number.isFinite(cfg.border_px) ? Math.max(1, Math.floor(cfg.border_px)) : 10;
+  const borderPx = Number.isFinite(cfg.borderPx) ? Math.max(1, Math.floor(cfg.borderPx)) : 10;
   const ffmpegPath = String(cfg.ffmpegPath || "ffmpeg");
   const maxMb = Number.isFinite(cfg.maxMb) ? Math.max(1, Math.floor(cfg.maxMb)) : 4;
   const fpsList = Array.isArray(cfg.fpsList) && cfg.fpsList.length ? cfg.fpsList.map(n => Math.max(4, Math.floor(n))) : [12, 10, 8];
@@ -160,7 +160,7 @@ function getStrictCfg(wo) {
     : [80, 100, 120];
 
   return {
-    publicBaseUrl, magickPath, size, border_px,
+    publicBaseUrl, magickPath, size, borderPx,
     ffmpegPath, maxMb, fpsList, scaleList,
     maxColorsList, ditherList, useGifsicleLossy, gifsiclePath, gifsicleLossyLevels
   };
@@ -459,7 +459,7 @@ async function getInvoke(args, coreData) {
       const tokenTmpAbs = path.join(documentsDir, tokenTmpName);
 
       try {
-        await setTokenizeAnimated(cfg, gifAbs, tokenTmpAbs, cfg.size, ringColor, cfg.border_px, pingpong);
+        await setTokenizeAnimated(cfg, gifAbs, tokenTmpAbs, cfg.size, ringColor, cfg.borderPx, pingpong);
       } catch {
         try { fs.unlinkSync(gifAbs); } catch {}
         try { fs.unlinkSync(tokenTmpAbs); } catch {}
@@ -532,7 +532,7 @@ async function getInvoke(args, coreData) {
       const tokenName = `token_${Date.now()}_${getRandSuffix()}.gif`;
       const tokenAbs = path.join(documentsDir, tokenName);
 
-      await setTokenizeAnimated(cfg, inAbs, tokenAbs, cfg.size, ringColor, cfg.border_px, pingpong);
+      await setTokenizeAnimated(cfg, inAbs, tokenAbs, cfg.size, ringColor, cfg.borderPx, pingpong);
 
       try {
         const st = fs.statSync(tokenAbs);
@@ -572,7 +572,7 @@ async function getInvoke(args, coreData) {
 
     const tokenName = `token_${Date.now()}_${getRandSuffix()}.png`;
     const tokenAbs = path.join(documentsDir, tokenName);
-    await setTokenizeStatic(cfg, inAbs, tokenAbs, cfg.size, ringColor, cfg.border_px);
+    await setTokenizeStatic(cfg, inAbs, tokenAbs, cfg.size, ringColor, cfg.borderPx);
 
     const origMime = /\.png$/i.test(inName) ? "image/png" :
                      /\.jpe?g$/i.test(inName) ? "image/jpeg" :

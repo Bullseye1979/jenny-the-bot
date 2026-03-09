@@ -153,6 +153,13 @@ async function getSearchVideos({ googleApiKey, query, maxResults, relevanceLangu
   });
   const url = `https://www.googleapis.com/youtube/v3/search?${params.toString()}`;
   const r = await getFetchJsonWithTimeout(url, 15000);
+  if (!r.ok) return { ok: false, error: r.error || "YT_SEARCH_FETCH_FAILED" };
+  if (r?.data?.error) {
+    const apiErr = r.data.error;
+    const msg = apiErr?.message || JSON.stringify(apiErr);
+    const code = apiErr?.code ? `[${apiErr.code}] ` : "";
+    return { ok: false, error: `YT_API_ERROR: ${code}${msg}` };
+  }
   const items = Array.isArray(r?.data?.items) ? r.data.items : [];
   const results = items.map((it) => {
     const id = it?.id?.videoId || "";
@@ -201,7 +208,7 @@ async function getInvoke(args, coreData) {
   const apiKey = getStr(cfg.apiKey, wo?.apiKey || wo?.apiKey || process.env.OPENAI_API_KEY || "");
   const model = getStr(cfg.model, wo?.model || "gpt-4o-mini");
   const temperature = getNum(cfg.temperature, 0.2);
-  const max_tokens = getNum(cfg.max_tokens, 1400);
+  const maxTokens = getNum(cfg.maxTokens, 1400);
   const aiTimeoutMs = getNum(cfg.aiTimeoutMs, 45000);
   const regionCode = getStr(cfg.regionCode, "DE");
   const relevanceLanguage = getStr(cfg.relevanceLanguage, "de");
@@ -239,7 +246,7 @@ async function getInvoke(args, coreData) {
   }
   const systemMsg = ["You are a YouTube transcript analyst.", "You get a transcript with timestamps.", "If the user asked a specific question, answer it using ONLY the transcript.", "If the user did not ask a question, write a structured summary with sections and keep timestamps where they help.", "Do NOT invent content that is not in the transcript.", "Language: keep the language of the user prompt, otherwise use English."].join(" ");
   const messages = [{ role: "system", content: systemMsg }, ...(hasUserPrompt ? [{ role: "user", content: `User request:\n${userPrompt}` }] : []), { role: "user", content: `Transcript (truncated to ${dumpThresholdChars} chars if long):\n\n${linear.slice(0, 180000)}` }];
-  const aiRes = await getCallOpenAI({ endpoint, apiKey, model, messages, temperature, max_tokens, timeoutMs: aiTimeoutMs });
+  const aiRes = await getCallOpenAI({ endpoint, apiKey, model, messages, temperature, max_tokens: maxTokens, timeoutMs: aiTimeoutMs });
   if (!aiRes.ok) {
     return { ok: false, error: aiRes.error || "YT_SUMMARY_FAILED", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, took_ms: Date.now() - started };
   }

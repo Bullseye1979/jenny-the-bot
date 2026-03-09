@@ -53,7 +53,20 @@ function getStr(value, def) { return (typeof value === "string" && value.trim().
 /*******************************************************************************/
 function getTryParseJSON(text, fallback = null) { try { return JSON.parse(text); } catch { return fallback; } }
 
-/******************************************************************************* 
+/*******************************************************************************
+/* functionSignature: getLooksCutOff (text)                                    *
+/* Returns true when text ends mid-sentence (no recognised closing punctuation)*
+/* Used as fallback when finish_reason is null (some local backends omit it).  *
+/* Not applied when finish_reason === "stop" to avoid false positives.         *
+/*******************************************************************************/
+function getLooksCutOff(text) {
+  const s = String(text ?? "").trimEnd();
+  if (!s) return false;
+  const last = s[s.length - 1];
+  return !/[.!?:;*"»)\]>~`]/.test(last);
+}
+
+/*******************************************************************************
 /* functionSignature: getShouldRunForThisModule (wo)                           *
 /* Determines whether to process this request.                                 *
 /*******************************************************************************/
@@ -85,7 +98,8 @@ function getKiCfg(wo) {
     imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 260),
     imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.35),
     imagePersonaHint: getStr(wo?.ImagePersonaHint, ""),
-    imageContextTurns: Math.max(0, getNum(wo?.ImageContextTurns, 8)) /* last N messages to feed into pass2 */
+    imageContextTurns: Math.max(0, getNum(wo?.ImageContextTurns, 8)), /* last N messages to feed into pass2 */
+    maxLoops: Math.max(1, getNum(wo?.maxLoops, 5))
   };
 }
 
@@ -304,7 +318,8 @@ async function getCallChat(wo, body, timeoutMs) {
     const choice = data?.choices?.[0];
     const msg = choice?.message || {};
     const text = typeof msg.content === "string" ? msg.content : "";
-    return { ok: true, text, raw };
+    const finish = choice?.finish_reason ?? null;
+    return { ok: true, text, finish, raw };
   } catch (e) {
     const isAbort = e?.name === "AbortError" || String(e?.type).toLowerCase() === "aborted";
     return { ok: false, error: isAbort ? "timeout" : (e?.message || String(e)) };
@@ -353,37 +368,63 @@ export default async function getCoreAi(coreData) {
   const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory);
   const system1 = getSystemContentTextRun(wo);
 
-  /***** PASS 1: TEXT *****/
-  const pass1 = await getCallChat(
-    wo,
-    {
-      model: wo.model,
-      messages: [
-        { role: "system", content: system1 },
-        ...history,
-        { role: "user", content: userPromptRaw }
-      ],
-      temperature: kiCfg.temperature,
-      max_tokens: kiCfg.maxTokens
-    },
-    kiCfg.requestTimeoutMs
-  );
+  /***** PASS 1: TEXT (with continue loop) *****/
+  const pass1Messages = [
+    { role: "system", content: system1 },
+    ...history,
+    { role: "user", content: userPromptRaw }
+  ];
+  let textOut = "";
 
-  if (!pass1.ok) {
-    wo.response = "[Empty AI response]";
+  for (let i = 0; i < kiCfg.maxLoops; i++) {
+    const pass1 = await getCallChat(
+      wo,
+      { model: wo.model, messages: pass1Messages, temperature: kiCfg.temperature, max_tokens: kiCfg.maxTokens },
+      kiCfg.requestTimeoutMs
+    );
+
+    if (!pass1.ok) {
+      wo.response = "[Empty AI response]";
+      wo.logging.push({
+        timestamp: new Date().toISOString(),
+        severity: "warn",
+        module: MODULE_NAME,
+        exitStatus: "failed",
+        message: pass1.error === "timeout"
+          ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
+          : `AI request failed: ${String(pass1?.status || "")} ${String(pass1?.statusText || "")} ${String(pass1?.error || "")} ${String(pass1?.raw || "").slice(0, 300)}`
+      });
+      return coreData;
+    }
+
+    const chunkText = String(pass1.text ?? "").trim();
     wo.logging.push({
       timestamp: new Date().toISOString(),
-      severity: "warn",
+      severity: "info",
       module: MODULE_NAME,
-      exitStatus: "failed",
-      message: pass1.error === "timeout"
-        ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
-        : `AI request failed: ${String(pass1?.status || "")} ${String(pass1?.statusText || "")} ${String(pass1?.error || "")} ${String(pass1?.raw || "").slice(0, 300)}`
+      exitStatus: "success",
+      message: `AI pass1 turn ${i + 1}: finish_reason="${pass1.finish ?? "null"}" content_length=${chunkText.length}`
     });
-    return coreData;
+
+    textOut += (textOut ? "\n" : "") + chunkText;
+    pass1Messages.push({ role: "assistant", content: chunkText });
+
+    const cutOff = pass1.finish === "length" || (pass1.finish == null && getLooksCutOff(chunkText));
+    if (cutOff) {
+      pass1Messages.push({ role: "user", content: "continue" });
+      wo.logging.push({
+        timestamp: new Date().toISOString(),
+        severity: "info",
+        module: MODULE_NAME,
+        exitStatus: "success",
+        message: `Continue triggered: finish_reason="${pass1.finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`
+      });
+      continue;
+    }
+    break;
   }
 
-  const textOut = String(pass1.text ?? "").trim();
+  textOut = textOut.trim();
 
   const persistQueue = [];
   const assistantPass1 = { role: "assistant", authorName: getAssistantAuthorName(wo), content: textOut };

@@ -607,20 +607,25 @@ Exactly **one** of the three AI modules below is activated per run, selected by 
 | Module | Name | useAiModule value | Description |
 |---|---|---|---|
 | `01000` | core-ai-completions | `"completions"` | `chat/completions` runner with iterative tool calling and automatic cut-off continuation |
-| `01001` | core-ai-responses | `"responses"` | Full Responses API with iterative tool calling, reasoning accumulation, image persistence |
+| `01001` | core-ai-responses | `"responses"` | Full Responses API with iterative tool calling, reasoning accumulation, image persistence, finish_reason logging, and automatic cut-off continuation |
 | `01002` | core-ai-pseudotoolcalls | `"pseudotoolcalls"` | Text-based pseudo tool calling without native API tools |
-| `01003` | core-ai-roleplay | — | Character/persona injection for roleplay scenarios |
+| `01003` | core-ai-roleplay | `"roleplay"` | Two-pass generation (text + image prompt) with tool calling, finish_reason logging, and automatic cut-off continuation |
 
 #### core-ai-responses (01001) — Detail
 
 This is the primary AI module. It runs a loop of up to `maxLoops` iterations:
 
 1. Translates the context (MySQL history + current payload) into the Responses API format.
-2. Calls the LLM.
-3. If the response contains tool calls, invokes each tool, appends results, and loops.
-4. Once no more tool calls are present (or budget is exhausted), sets `workingObject.response`.
-5. Appends any reasoning tokens to `workingObject.reasoningSummary`.
-6. Persists images returned by tools to `./pub/documents/`.
+2. Calls the Responses API; on each turn:
+   - **Tool calls present** → invokes each tool, appends results, loops.
+   - **`status === "incomplete"` or `finish_reason === "length"`** → sends a continue turn and loops.
+   - **`finish_reason === null` AND output looks truncated** → heuristic continue (`getLooksCutOff`), loops.
+   - **Any other `finish_reason`** (e.g. `"stop"`) → exits loop.
+3. Appends any reasoning tokens to `workingObject.reasoningSummary`.
+4. Persists images returned by tools to `./pub/documents/`.
+5. Sets `workingObject.response` to the accumulated text.
+
+**Logging:** Every turn logs `finish_reason`, `content_length`, and `tool_calls` count. A `Continue triggered` entry is written when continuation fires.
 
 ---
 
@@ -1017,8 +1022,8 @@ Jenny registers slash commands via the `discord-admin` flow. Commands are define
 | `/gdpr voice <0\|1>` | No | Toggle GDPR consent for voice processing |
 | `/join` | No | Bot joins your current voice channel |
 | `/leave` | No | Bot leaves the voice channel |
-| `/bardjoin` | Yes | Bard bot joins your current voice channel |
-| `/bardleave` | Yes | Bard bot leaves the voice channel |
+| `/bardjoin` | No | Bard bot joins your current voice channel |
+| `/bardleave` | No | Bard bot leaves the voice channel |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---

@@ -557,12 +557,12 @@ Fetches and reads web page content.
 
 ```json
 "getWebpage": {
-  "user_agent":    "Mozilla/5.0 ...",
+  "userAgent":     "Mozilla/5.0 ...",
   "timeoutMs":     30000,
   "maxInputChars": 240000,
   "model":         "gpt-4.1",
   "temperature":   0.2,
-  "max_tokens":    18000,
+  "maxTokens":     18000,
   "aiTimeoutMs":   45000,
   "wordThreshold": 2000,
   "endpoint":      "https://api.openai.com/v1/chat/completions",
@@ -572,7 +572,7 @@ Fetches and reads web page content.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `user_agent` | string | Chrome UA | HTTP User-Agent for page requests |
+| `userAgent` | string | Chrome UA | HTTP User-Agent for page requests |
 | `timeoutMs` | number | `30000` | HTTP timeout for page fetch (ms) |
 | `maxInputChars` | number | `240000` | Hard character cap on extracted page text |
 | `wordThreshold` | number | `2000` | Below this word count: dump mode; above: AI summary |
@@ -580,7 +580,7 @@ Fetches and reads web page content.
 | `apiKey` | string | — | **Required for summary mode.** API key |
 | `model` | string | — | **Required for summary mode.** Model ID |
 | `temperature` | number | `0.2` | Sampling temperature for AI summary |
-| `max_tokens` | number | `18000` | Max tokens for AI summary |
+| `maxTokens` | number | `18000` | Max tokens for AI summary |
 | `aiTimeoutMs` | number | `45000` | Timeout for AI call (ms) |
 
 ---
@@ -637,8 +637,8 @@ Vision model — describe an image.
   "model":       "gpt-4o-mini",
   "endpoint":    "https://api.openai.com/v1/chat/completions",
   "temperature": 0.2,
-  "max_tokens":  1000,
-  "timeout_ms":  60000
+  "maxTokens":   1000,
+  "timeoutMs":   60000
 }
 ```
 
@@ -648,16 +648,14 @@ Vision model — describe an image.
 | `model` | string | `"gpt-4o-mini"` | Vision model |
 | `endpoint` | string | — | **Required.** Chat completions endpoint |
 | `temperature` | number | `0.2` | Sampling temperature |
-| `max_tokens` | number | `1000` | Max tokens |
-| `timeout_ms` | number | `60000` | Timeout (ms) |
+| `maxTokens` | number | `1000` | Max tokens |
+| `timeoutMs` | number | `60000` | Timeout (ms) |
 
 ---
 
 #### toolsconfig.getImageSD
 
 Local Stable Diffusion image generation (AUTOMATIC1111 WebUI API).
-
-All attribute keys use camelCase. The formerly snake_case keys (`base_url`, `cfg_scale`, `negative_extra`) have been renamed.
 
 ```json
 "getImageSD": {
@@ -749,7 +747,7 @@ YouTube search and transcript fetcher.
   "apiKey":             "YOUR_OPENAI_API_KEY",
   "model":              "gpt-4.1",
   "temperature":        0.2,
-  "max_tokens":         8000,
+  "maxTokens":          8000,
   "dumpThresholdChars": 20000,
   "transcriptLangs":    ["en", "de"],
   "regionCode":         "US",
@@ -766,7 +764,7 @@ YouTube search and transcript fetcher.
 | `apiKey` | string | API key for AI summary |
 | `model` | string | Model for AI summary |
 | `temperature` | number | Temperature for AI summary |
-| `max_tokens` | number | Max tokens for AI response |
+| `maxTokens` | number | Max tokens for AI response |
 | `dumpThresholdChars` | number | Below this char count: dump mode; above: AI summary |
 | `transcriptLangs` | array | Preferred transcript languages (falls back to `en`) |
 | `regionCode` | string | YouTube region code, e.g. `"US"` |
@@ -903,33 +901,33 @@ Conversation history retrieval and summarisation.
 
 ```json
 "getHistory": {
-  "pagesize":          1000,
-  "max_rows":          4000,
-  "threshold":         800,
-  "model":             "gpt-4.1",
-  "temperature":       0,
-  "max_tokens":        8000,
-  "aiTimeoutMs":       45000,
-  "endpoint":          "https://api.openai.com/v1/chat/completions",
-  "apiKey":            "YOUR_OPENAI_API_KEY",
-  "include_tool_rows": false,
-  "chunk_max_tokens":  600
+  "pagesize":       1000,
+  "maxRows":        4000,
+  "threshold":      800,
+  "model":          "gpt-4.1",
+  "temperature":    0,
+  "maxTokens":      8000,
+  "aiTimeoutMs":    45000,
+  "endpoint":       "https://api.openai.com/v1/chat/completions",
+  "apiKey":         "YOUR_OPENAI_API_KEY",
+  "includeToolRows": false,
+  "chunkMaxTokens": 600
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
 | `pagesize` | number | Rows per page when reading from MySQL |
-| `max_rows` | number | Maximum total rows loaded |
+| `maxRows` | number | Maximum total rows loaded |
 | `threshold` | number | Below this char count: dump; above: AI summary |
 | `model` | string | Model for AI summary |
 | `temperature` | number | Temperature (0 = deterministic) |
-| `max_tokens` | number | Max tokens for AI response |
+| `maxTokens` | number | Max tokens for AI response |
 | `aiTimeoutMs` | number | Timeout for AI call (ms) |
 | `endpoint` | string | Chat completions endpoint |
 | `apiKey` | string | API key |
-| `include_tool_rows` | boolean | Include tool-call rows in history |
-| `chunk_max_tokens` | number | Max tokens per history chunk |
+| `includeToolRows` | boolean | Include tool-call rows in history |
+| `chunkMaxTokens` | number | Max tokens per history chunk |
 
 ---
 
@@ -939,29 +937,29 @@ Semantic cluster search over the stored conversation log.
 
 ```json
 "getInformation": {
-  "cluster_rows":         200,
-  "pad_rows":             20,
-  "token_window":         5,
-  "max_log_chars":        6000,
-  "max_output_lines":     1000,
-  "min_coverage":         1,
-  "event_gap_minutes":    45,
-  "max_timeline_periods": 30,
-  "strip_code":           false
+  "clusterRows":       200,
+  "padRows":           20,
+  "tokenWindow":       5,
+  "maxLogChars":       6000,
+  "maxOutputLines":    1000,
+  "minCoverage":       1,
+  "eventGapMinutes":   45,
+  "maxTimelinePeriods": 30,
+  "stripCode":         false
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `cluster_rows` | number | Rows per cluster |
-| `pad_rows` | number | Context rows around matching hits |
-| `token_window` | number | Search window for token matching |
-| `max_log_chars` | number | Max characters in log output |
-| `max_output_lines` | number | Max output lines |
-| `min_coverage` | number | Minimum coverage for a cluster |
-| `event_gap_minutes` | number | Time gap in minutes between events |
-| `max_timeline_periods` | number | Max timeline periods |
-| `strip_code` | boolean | Strip code blocks from log |
+| `clusterRows` | number | Rows per cluster |
+| `padRows` | number | Context rows around matching hits |
+| `tokenWindow` | number | Search window for token matching |
+| `maxLogChars` | number | Max characters in log output |
+| `maxOutputLines` | number | Max output lines |
+| `minCoverage` | number | Minimum coverage for a cluster |
+| `eventGapMinutes` | number | Time gap in minutes between events |
+| `maxTimelinePeriods` | number | Max timeline periods |
+| `stripCode` | boolean | Strip code blocks from log |
 
 ---
 
@@ -998,7 +996,7 @@ Animated GIF generator from images or video.
   "publicBaseUrl":      "https://myserver.com",
   "magickPath":         "convert",
   "size":               512,
-  "border_px":          10,
+  "borderPx":           10,
   "ffmpegPath":         "ffmpeg",
   "maxMb":              10,
   "fpsList":            [12, 10, 8],
@@ -1016,7 +1014,7 @@ Animated GIF generator from images or video.
 | `publicBaseUrl` | string | **Required.** Public base URL for GIF links |
 | `magickPath` | string | Path to the `convert` command (ImageMagick) |
 | `size` | number | GIF target size in pixels |
-| `border_px` | number | Border in pixels |
+| `borderPx` | number | Border in pixels |
 | `ffmpegPath` | string | Path to `ffmpeg` |
 | `maxMb` | number | Max GIF file size in MB |
 | `fpsList` | array | Fallback FPS list (tried high-to-low) |
@@ -1682,7 +1680,7 @@ Only **one** of these modules runs per turn, selected by `workingObject.useAiMod
 | 01000 | `core-ai-completions` | `"completions"` | OpenAI-compatible `chat/completions` runner with tool calling, multi-turn continue logic, and local-model heuristics |
 | 01001 | `core-ai-responses` | `"responses"` | Full Responses API with iterative tool calling, reasoning, image persistence |
 | 01002 | `core-ai-pseudotoolcalls` | `"pseudotoolcalls"` | Text-based pseudo tool calling (for local models) |
-| 01003 | `core-ai-roleplay` | — | Character/persona injection for roleplay |
+| 01003 | `core-ai-roleplay` | `"roleplay"` | Two-pass generation (text + image prompt) with tool calling, finish_reason logging, and automatic cut-off continuation |
 
 #### core-ai-completions (01000) — Detailed flow
 
@@ -1705,13 +1703,16 @@ The heuristic is intentionally **not** applied when `finish_reason === "stop"` t
 #### core-ai-responses (01001) — Detailed flow
 
 1. Translates MySQL history into Responses API format
-2. Calls the LLM; if tool calls are present:
-   - Invokes each tool
-   - Appends results to context
-   - Loops (max `maxLoops`)
-3. Once no more tool calls: sets `workingObject.response`
-4. Appends reasoning tokens to `workingObject.reasoningSummary`
-5. Persists images returned by tools to `./pub/documents/`
+2. Calls the Responses API; loops up to `maxLoops`:
+   - **Tool calls present** → executes each tool, appends results, loops
+   - **`status === "incomplete"` or `finish_reason === "length"`** → sends a continue turn and loops
+   - **`finish_reason === null` AND output looks truncated** → heuristic continue (`getLooksCutOff`), loops
+   - **Any other `finish_reason`** (e.g. `"stop"`) → done; exits loop
+3. Appends reasoning tokens to `workingObject.reasoningSummary`
+4. Persists images returned by tools to `./pub/documents/`
+5. Sets `workingObject.response` to the accumulated text of all turns
+
+**Logging:** Every AI turn logs `finish_reason`, `content_length`, and `tool_calls` count at `info` level. A `Continue triggered` entry is logged when continuation fires.
 
 ---
 
@@ -2060,7 +2061,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 |---|---|---|---|
 | `source_url` | string | Yes | URL of source image or video |
 | `size` | number | — | GIF target size in pixels |
-| `border_px` | number | — | Border in pixels |
+| `borderPx` | number | — | Border in pixels |
 | `fps` | number | — | Frames per second |
 
 **Prerequisites:** `ffmpeg`, `convert` (ImageMagick), and `gifsicle` must be installed.

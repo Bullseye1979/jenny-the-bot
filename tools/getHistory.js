@@ -244,7 +244,7 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
       ? cfg.model
       : (typeof wo?.model === "string" && wo.model ? wo.model : "gpt-4o-mini");
   const temperature = Number.isFinite(cfg?.temperature) ? Number(cfg.temperature) : 0.2;
-  const max_tokens = Number.isFinite(cfg?.max_tokens) ? Math.max(50, Math.min(4096, Number(cfg.max_tokens))) : 900;
+  const maxTokens = Number.isFinite(cfg?.maxTokens) ? Math.max(50, Math.min(4096, Number(cfg.maxTokens))) : 900;
   const lines = rows.map((r) => {
     const t = (typeof r?.text === "string" && r.text) ? r.text : "";
     const j = (typeof r?.json === "string" && r.json) ? r.json : "";
@@ -262,7 +262,7 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
     res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature, max_tokens }),
+      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
       signal: controller.signal
     });
     raw = await res.text();
@@ -341,12 +341,12 @@ async function getHistoryInvoke(args, coreData) {
   }
   const startCtxIdRaw = args?.start_ctx_id ?? args?.start_ctx ?? null;
   const startCtxId = startCtxIdRaw != null ? Number(startCtxIdRaw) : null;
-  const maxRows = Math.max(1, Number.isFinite(Number(cfgTool?.max_rows)) ? Number(cfgTool.max_rows) : 5000);
+  const maxRows = Math.max(1, Number.isFinite(Number(cfgTool?.maxRows)) ? Number(cfgTool.maxRows) : 5000);
   const pageSize = Math.max(1, Number.isFinite(Number(cfgTool?.pagesize)) ? Number(cfgTool.pagesize) : 1000);
   const threshold = Math.max(1, Number.isFinite(Number(cfgTool?.threshold)) ? Number(cfgTool.threshold) : 300);
-  const chunkMaxTokens = Math.max(50, Number.isFinite(Number(cfgTool?.chunk_max_tokens)) ? Number(cfgTool.chunk_max_tokens) : 150);
+  const chunkMaxTokens = Math.max(50, Number.isFinite(Number(cfgTool?.chunkMaxTokens)) ? Number(cfgTool.chunkMaxTokens) : 150);
   const chunkMaxChunks = Math.max(1, Number.isFinite(Number(cfgTool?.chunk_max_chunks)) ? Number(cfgTool.chunk_max_chunks) : 10);
-  const includeToolRows = cfgTool.include_tool_rows !== false;
+  const includeToolRows = cfgTool.includeToolRows !== false;
   const pool = await getPool(wo);
   let rows = await getPreloadUpToCap(pool, channelIds, {
     startTs,
@@ -482,7 +482,7 @@ async function getHistoryInvoke(args, coreData) {
       actual_start: getISO(chunkFirst.ts),
       actual_end: getISO(chunkLast.ts)
     };
-    const chunkCfg = { ...cfgTool, max_tokens: chunkMaxTokens };
+    const chunkCfg = { ...cfgTool, maxTokens: chunkMaxTokens };
     const chunkInput = chunkRows.map((r) => ({
       ctx_id: r.ctx_id,
       ts: r.ts,

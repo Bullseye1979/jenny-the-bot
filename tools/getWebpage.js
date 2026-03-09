@@ -156,7 +156,7 @@ async function getInvoke(args, coreData) {
 
   const timeoutMs = getNum(toolCfg.timeoutMs, 30000);
   const ua = getStr(
-    toolCfg.user_agent,
+    toolCfg.userAgent,
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
   );
 
@@ -201,7 +201,7 @@ async function getInvoke(args, coreData) {
   if (!model) return { ok: false, error: "Missing toolsconfig.getWebpage.model" };
 
   const temperature = getNum(toolCfg.temperature, 0.1);
-  const max_tokens = getClamp(getNum(toolCfg.max_tokens, 1400), 100, 4096);
+  const maxTokens = getClamp(getNum(toolCfg.maxTokens, 1400), 100, 4096);
   const aiTimeoutMs = getNum(toolCfg.aiTimeoutMs, 45000);
 
   const messages = getBuildMessages(user_prompt, title, url, pageText, prompt);
@@ -213,7 +213,7 @@ async function getInvoke(args, coreData) {
     res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature, max_tokens }),
+      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
       signal: controller.signal
     });
     raw = await res.text();

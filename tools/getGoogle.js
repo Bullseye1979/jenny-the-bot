@@ -88,7 +88,7 @@ async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getGoogle || {};
   const apiKey = getStr(toolCfg.apiKey, null);
-  const cseId  = getStr(toolCfg.cseId || toolCfg.cse_id, null);
+  const cseId  = getStr(toolCfg.cseId, null);
 
   if (!apiKey) return { ok: false, error: "Missing toolsconfig.getGoogle.apiKey" };
   if (!cseId)  return { ok: false, error: "Missing toolsconfig.getGoogle.cseId" };

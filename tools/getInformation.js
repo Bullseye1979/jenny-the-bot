@@ -63,8 +63,8 @@ async function getPool(wo) {
 /* Resolves the maximum number of timeline periods to fetch.                       *
 /**********************************************************************************/
 function getMaxTimelineToFetch(wo, giCfg) {
-  if (Number.isFinite(giCfg?.max_timeline_periods)) {
-    return Math.max(1, Number(giCfg.max_timeline_periods));
+  if (Number.isFinite(giCfg?.maxTimelinePeriods)) {
+    return Math.max(1, Number(giCfg.maxTimelinePeriods));
   }
   const cfgCtx = wo?.config?.context;
   if (Number.isFinite(cfgCtx?.maxTimelinePeriods)) {
@@ -373,14 +373,14 @@ async function getInformationInvoke(args, coreData) {
   if (!Array.isArray(groups) || !groups.length) return { error: "ERROR: no keyword_groups or keywords" };
 
   const giCfg = wo?.toolsconfig?.getInformation || {};
-  const rowsPerCluster = Math.max(1, Math.floor(giCfg.cluster_rows ?? DEFAULT_ROWS_PER_CLUSTER));
-  const stripCode = giCfg.strip_code === true;
-  const padRows = Math.max(0, Math.floor(giCfg.pad_rows ?? DEFAULT_PAD_ROWS));
-  const tokenWindow = Math.max(1, Math.floor(giCfg.token_window ?? DEFAULT_TOKEN_WINDOW));
-  const maxLogChars = Number.isFinite(giCfg.max_log_chars) ? giCfg.max_log_chars : DEFAULT_MAX_LOG_CHARS;
-  const maxOutputLines = Math.max(100, Math.floor(giCfg.max_output_lines ?? DEFAULT_MAX_OUTPUT_LINES));
-  const minCoverage = Math.max(0, Math.floor(giCfg.min_coverage ?? DEFAULT_MIN_COVERAGE));
-  const eventGapMinutes = Math.max(1, Math.floor(giCfg.event_gap_minutes ?? DEFAULT_EVENT_GAP_MINUTES));
+  const rowsPerCluster = Math.max(1, Math.floor(giCfg.clusterRows ?? DEFAULT_ROWS_PER_CLUSTER));
+  const stripCode = giCfg.stripCode === true;
+  const padRows = Math.max(0, Math.floor(giCfg.padRows ?? DEFAULT_PAD_ROWS));
+  const tokenWindow = Math.max(1, Math.floor(giCfg.tokenWindow ?? DEFAULT_TOKEN_WINDOW));
+  const maxLogChars = Number.isFinite(giCfg.maxLogChars) ? giCfg.maxLogChars : DEFAULT_MAX_LOG_CHARS;
+  const maxOutputLines = Math.max(100, Math.floor(giCfg.maxOutputLines ?? DEFAULT_MAX_OUTPUT_LINES));
+  const minCoverage = Math.max(0, Math.floor(giCfg.minCoverage ?? DEFAULT_MIN_COVERAGE));
+  const eventGapMinutes = Math.max(1, Math.floor(giCfg.eventGapMinutes ?? DEFAULT_EVENT_GAP_MINUTES));
   const EVENT_GAP_MS = eventGapMinutes * 60 * 1000;
 
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {

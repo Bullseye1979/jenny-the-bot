@@ -11,7 +11,7 @@ The file has two top-level sections:
 }
 ```
 
-Most key names follow **camelCase** throughout. A small number of legacy tool-config parameters still use snake_case — these are documented with their exact names as they appear in the tool source files.
+All key names follow **camelCase** throughout.
 
 > **Tip:** Use `__description` fields freely anywhere in the JSON. They are ignored by the bot and serve purely as inline comments.
 
@@ -174,8 +174,8 @@ Each definition object contains `name`, `description`, optional `admin` (array o
 | `/gdpr` | No | Set GDPR consent flags |
 | `/join` | No | Join user's voice channel |
 | `/leave` | No | Leave voice channel |
-| `/bardjoin` | Yes | Bard bot joins user's voice channel |
-| `/bardleave` | Yes | Bard bot leaves the voice channel |
+| `/bardjoin` | No | Bard bot joins user's voice channel |
+| `/bardleave` | No | Bard bot leaves the voice channel |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -255,8 +255,8 @@ Vision model — describe an image.
 | `model` | string | `"gpt-4o-mini"` | Vision model |
 | `endpoint` | string | OpenAI completions URL | API endpoint |
 | `temperature` | number | `0.2` | Sampling temperature |
-| `max_tokens` | number | `1000` | Max tokens in the description |
-| `timeout_ms` | number | `60000` | Request timeout |
+| `maxTokens` | number | `1000` | Max tokens in the description |
+| `timeoutMs` | number | `60000` | Request timeout |
 
 #### getAnimatedPicture
 
@@ -306,12 +306,12 @@ Web page fetcher and AI post-processor.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `user_agent` | string | `"Mozilla/5.0 ..."` | HTTP User-Agent header |
+| `userAgent` | string | `"Mozilla/5.0 ..."` | HTTP User-Agent header |
 | `timeoutMs` | number | `30000` | Fetch timeout in milliseconds |
 | `maxInputChars` | number | `240000` | Maximum characters of page content to process |
 | `model` | string | `"gpt-4.1"` | LLM model for AI post-processing |
 | `temperature` | number | `0.2` | Sampling temperature |
-| `max_tokens` | number | `18000` | Max tokens for AI post-processing |
+| `maxTokens` | number | `18000` | Max tokens for AI post-processing |
 | `aiTimeoutMs` | number | `45000` | LLM call timeout |
 | `wordThreshold` | number | `2000` | Minimum word count before AI post-processing is triggered |
 | `endpoint` | string | OpenAI completions URL | LLM endpoint |
@@ -328,7 +328,7 @@ YouTube search and transcript fetcher.
 | `apiKey` | string | `"sk-proj-..."` | API key |
 | `model` | string | `"gpt-4.1"` | LLM model for summarisation |
 | `temperature` | number | `0.2` | Sampling temperature |
-| `max_tokens` | number | `8000` | Max tokens for summarisation |
+| `maxTokens` | number | `8000` | Max tokens for summarisation |
 | `dumpThresholdChars` | number | `20000` | Character threshold above which full transcript is truncated |
 | `transcriptLangs` | array | `["de","en"]` | Preferred transcript languages (ordered by priority) |
 | `regionCode` | string | `"DE"` | YouTube search region |
@@ -343,16 +343,16 @@ Conversation history retrieval and summarisation.
 | Key | Type | Example | Description |
 |---|---|---|---|
 | `pagesize` | number | `1000` | Rows fetched per page from MySQL |
-| `max_rows` | number | `4000` | Absolute maximum rows to read |
+| `maxRows` | number | `4000` | Absolute maximum rows to read |
 | `threshold` | number | `800` | Token count above which a page is summarised |
 | `model` | string | `"gpt-4.1"` | Summarisation model |
 | `temperature` | number | `0` | Temperature (0 = deterministic for summaries) |
-| `max_tokens` | number | `8000` | Max tokens for each summary |
+| `maxTokens` | number | `8000` | Max tokens for each summary |
 | `aiTimeoutMs` | number | `45000` | LLM call timeout |
 | `endpoint` | string | OpenAI completions URL | LLM endpoint |
 | `apiKey` | string | `"sk-proj-..."` | API key |
-| `include_tool_rows` | boolean | `false` | Include tool-call rows in history |
-| `chunk_max_tokens` | number | `600` | Maximum token size of each chunk before summarising |
+| `includeToolRows` | boolean | `false` | Include tool-call rows in history |
+| `chunkMaxTokens` | number | `600` | Maximum token size of each chunk before summarising |
 
 #### getInformation
 
@@ -360,15 +360,15 @@ Information clustering and retrieval from the context log.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `cluster_rows` | number | `200` | Number of context rows to cluster |
-| `pad_rows` | number | `20` | Rows of padding added around a cluster |
-| `token_window` | number | `5` | Token window for clustering |
-| `max_log_chars` | number | `6000` | Maximum characters from the log to include |
-| `max_output_lines` | number | `1000` | Maximum output lines |
-| `min_coverage` | number | `1` | Minimum coverage threshold |
-| `event_gap_minutes` | number | `45` | Minutes between events before a new cluster starts |
-| `max_timeline_periods` | number | `30` | Maximum number of timeline periods |
-| `strip_code` | boolean | `false` | Strip code blocks from context before clustering |
+| `clusterRows` | number | `200` | Number of context rows to cluster |
+| `padRows` | number | `20` | Rows of padding added around a cluster |
+| `tokenWindow` | number | `5` | Token window for clustering |
+| `maxLogChars` | number | `6000` | Maximum characters from the log to include |
+| `maxOutputLines` | number | `1000` | Maximum output lines |
+| `minCoverage` | number | `1` | Minimum coverage threshold |
+| `eventGapMinutes` | number | `45` | Minutes between events before a new cluster starts |
+| `maxTimelinePeriods` | number | `30` | Maximum number of timeline periods |
+| `stripCode` | boolean | `false` | Strip code blocks from context before clustering |
 
 #### getConfluence
 
@@ -433,7 +433,7 @@ Animated token (GIF) generator from images or video.
 | `publicBaseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving the GIF |
 | `magickPath` | string | `"convert"` | Path to ImageMagick `convert` binary |
 | `size` | number | `512` | Output GIF canvas size (pixels) |
-| `border_px` | number | `10` | Border width in pixels |
+| `borderPx` | number | `10` | Border width in pixels |
 | `ffmpegPath` | string | `"ffmpeg"` | Path to the `ffmpeg` binary |
 | `maxMb` | number | `10` | Maximum output file size in megabytes |
 | `fpsList` | array | `[12,10,8]` | Frame-rate candidates tried in order (highest first) |
@@ -944,7 +944,7 @@ Below is a minimal but functional `core.json` template with every section includ
         "endpoint": "https://api.openai.com/v1/chat/completions",
         "apiKey":   "<YOUR_OPENAI_API_KEY>",
         "pagesize": 1000,
-        "max_rows": 4000
+        "maxRows": 4000
       },
       "getPDF": {
         "publicBaseUrl":   "https://yourserver.example.com",

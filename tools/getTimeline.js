@@ -44,8 +44,8 @@ function getEffectiveLimit(args, wo) {
     return Math.max(1, Number(args.limit));
   }
   const tlCfg = wo?.toolsconfig?.getTimeline;
-  if (Number.isFinite(tlCfg?.max_timeline_periods)) {
-    return Math.max(1, Number(tlCfg.max_timeline_periods));
+  if (Number.isFinite(tlCfg?.maxTimelinePeriods)) {
+    return Math.max(1, Number(tlCfg.maxTimelinePeriods));
   }
   const ctxCfg = wo?.config?.context;
   if (Number.isFinite(ctxCfg?.maxTimelinePeriods)) {
