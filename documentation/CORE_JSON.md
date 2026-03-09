@@ -11,7 +11,7 @@ The file has two top-level sections:
 }
 ```
 
-All key names follow **camelCase** throughout.
+Most key names follow **camelCase** throughout. A small number of legacy tool-config parameters still use snake_case — these are documented with their exact names as they appear in the tool source files.
 
 > **Tip:** Use `__description` fields freely anywhere in the JSON. They are ignored by the bot and serve purely as inline comments.
 
@@ -174,6 +174,8 @@ Each definition object contains `name`, `description`, optional `admin` (array o
 | `/gdpr` | No | Set GDPR consent flags |
 | `/join` | No | Join user's voice channel |
 | `/leave` | No | Leave voice channel |
+| `/bardjoin` | Yes | Bard bot joins user's voice channel |
+| `/bardleave` | Yes | Bard bot leaves the voice channel |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -230,16 +232,16 @@ Local Stable Diffusion image generation.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `base_url` | string | `"http://127.0.0.1:7860"` | Base URL of the Stable Diffusion Web UI API |
+| `baseUrl` | string | `"http://127.0.0.1:7860"` | Base URL of the Stable Diffusion Web UI API |
 | `publicBaseUrl` | string | `"https://yourserver.example.com"` | Public URL for serving output images |
 | `size` | string | `"256x256"` | Output image dimensions |
 | `n` | number | `1` | Number of images |
 | `steps` | number | `15` | Diffusion steps |
-| `cfg_scale` | number | `7` | Guidance scale |
+| `cfgScale` | number | `7` | Guidance scale |
 | `sampler` | string | `"Euler a"` | Sampler algorithm |
 | `seed` | number | `-1` | Seed (-1 = random) |
 | `model` | string | `"realisticVisionV60B1_v51HyperVAE.safetensors"` | Checkpoint model filename |
-| `negative_extra` | string | `"overprocessed, muddy colors"` | Extra negative prompt text |
+| `negativeExtra` | string | `"overprocessed, muddy colors"` | Extra negative prompt text |
 | `timeoutMs` | number | `1400000` | Request timeout in milliseconds |
 | `networkTimeoutMs` | number | `14400000` | Network-level timeout in milliseconds |
 
@@ -327,7 +329,7 @@ YouTube search and transcript fetcher.
 | `model` | string | `"gpt-4.1"` | LLM model for summarisation |
 | `temperature` | number | `0.2` | Sampling temperature |
 | `max_tokens` | number | `8000` | Max tokens for summarisation |
-| `dump_threshold_chars` | number | `20000` | Character threshold above which full transcript is truncated |
+| `dumpThresholdChars` | number | `20000` | Character threshold above which full transcript is truncated |
 | `transcriptLangs` | array | `["de","en"]` | Preferred transcript languages (ordered by priority) |
 | `regionCode` | string | `"DE"` | YouTube search region |
 | `relevanceLanguage` | string | `"de"` | Language hint for YouTube search results |
@@ -450,8 +452,8 @@ Google Maps and Street View.
 |---|---|---|---|
 | `googleApiKey` | string | `"AIza..."` | Google API key |
 | `publicBaseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving map images |
-| `street_size` | string | `"800x600"` | Street View image dimensions |
-| `street_fov` | number | `90` | Street View field of view (degrees) |
+| `streetSize` | string | `"800x600"` | Street View image dimensions |
+| `streetFov` | number | `90` | Street View field of view (degrees) |
 | `timeoutMs` | number | `20000` | API request timeout |
 
 ---
@@ -1067,4 +1069,4 @@ Below is a minimal but functional `core.json` template with every section includ
 
 ---
 
-*Documentation generated 2026-02-28.*
+*Documentation generated 2026-03-09.*

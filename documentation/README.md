@@ -49,9 +49,11 @@ Jenny is a modular, production-grade Discord AI assistant built on Node.js. It f
 
 | Requirement | Version |
 |---|---|
-| Node.js | ≥ 18 (ESM, `node:` built-ins) |
-| MySQL / MariaDB | ≥ 5.7 |
-| ffmpeg | Latest (audio processing) |
+| Node.js | 20.x (ESM, `node:` built-ins) |
+| MySQL / MariaDB | 8.0 / 10.6 |
+| FFmpeg | 6.x (required for voice) |
+| ImageMagick `convert` | 7.x (required for `getToken`) |
+| Gifsicle | 1.94+ (required for `getToken`) |
 | OpenAI API key | Required |
 | Discord Bot Token | Required |
 
@@ -604,7 +606,7 @@ Exactly **one** of the three AI modules below is activated per run, selected by 
 
 | Module | Name | useAiModule value | Description |
 |---|---|---|---|
-| `01000` | core-ai-completions | `"completions"` | Simple `chat/completions` runner; no tool calling |
+| `01000` | core-ai-completions | `"completions"` | `chat/completions` runner with iterative tool calling and automatic cut-off continuation |
 | `01001` | core-ai-responses | `"responses"` | Full Responses API with iterative tool calling, reasoning accumulation, image persistence |
 | `01002` | core-ai-pseudotoolcalls | `"pseudotoolcalls"` | Text-based pseudo tool calling without native API tools |
 | `01003` | core-ai-roleplay | — | Character/persona injection for roleplay scenarios |
@@ -1015,6 +1017,8 @@ Jenny registers slash commands via the `discord-admin` flow. Commands are define
 | `/gdpr voice <0\|1>` | No | Toggle GDPR consent for voice processing |
 | `/join` | No | Bot joins your current voice channel |
 | `/leave` | No | Bot leaves the voice channel |
+| `/bardjoin` | Yes | Bard bot joins your current voice channel |
+| `/bardleave` | Yes | Bard bot leaves the voice channel |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -1095,4 +1099,4 @@ And add the chat to `webpage-chat.chats[]` so the admin panel can monitor it:
 
 ---
 
-*Documentation generated 2026-03-08.*
+*Documentation generated 2026-03-09.*

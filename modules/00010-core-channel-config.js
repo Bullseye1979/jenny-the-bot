@@ -4,35 +4,6 @@
 /* Purpose: Applies strict hierarchical channel/flow/user overrides.               *
 /************************************************************************************/
 
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-/* filename: "core-channel-config.js"                                              */
-/* Version: 1                                                                       */
-/* Purpose: Strict hierarchical overrides for workingObject.                        */
-/*          Hierarchy: Channel -> Flow -> User                                      */
-/*          Rules:                                                                  */
-/*          - Channel applies for the channel regardless of flow                    */
-/*          - Within a matched channel entry, exactly ONE flow rule is applied      */
-/*            (last matching flow rule wins)                                        */
-/*          - Within that flow rule, exactly ONE user rule is applied               */
-/*            (last matching user rule wins)                                        */
-/*          - Arrays are ALWAYS replaced; plain objects are deep-merged             */
-/*          - "channelIds" is NOT used for matching (context/bleeding elsewhere)    */
-/*                                                                                */
-/* ChangeLog v2:                                                                   */
-/*          - Effective channel id now accepts id/channelId/message.channelId       */
-/*          - Channel match is now case-insensitive (like flow match)               */
-/************************************************************************************/
-
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-channel-config";
