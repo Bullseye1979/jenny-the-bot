@@ -2710,10 +2710,8 @@ flows/bard.js (polls every 5 s by default, min 5 s) — Discord voice sessions o
   -> no song found: clears bard:stream:{guildId}, sets idle presence
 
 player.on(AudioPlayerStatus.Idle) — Discord voice: song ended naturally
-  -> reloads library.xml from disk
-  -> song found: plays next track, writes bard:stream:{guildId},
-     sets "Listening to <filename>" presence
-  -> no song found: clears bard:stream:{guildId}, sets idle presence
+  -> clears bard:stream:{guildId} and bard:nowplaying:{guildId}
+  -> triggers an immediate poll cycle — the poll picks the next song
 ```
 
 ### Registry Keys
@@ -2734,7 +2732,7 @@ Located at: `assets/bard/library.xml` (configurable via `core.json["bard"]["musi
 
 **Auto-creation:** If `library.xml` (or the music directory itself) does not exist when the bard flow starts, both are created automatically. The new file contains an empty `<library>` element. No manual setup is required; simply drop MP3 files into the music directory and add tracks via the Bard Admin UI.
 
-**Hot-reload:** `library.xml` is read from disk on every poll cycle (~30 s) and on every song-end event. Tracks added or edited while the bot is running are picked up automatically — no restart required.
+**Hot-reload:** `library.xml` is read from disk on every poll cycle. Song-end triggers an immediate poll, so newly added tracks are picked up within milliseconds after the current song finishes. No restart required.
 
 Format:
 ```xml
@@ -2769,7 +2767,7 @@ Fields:
    - Score all tracks by count of matching labels
    - Candidates = all tracks with the highest score (if score is 0 for all, all tracks are candidates)
    - Pick a random track from candidates, excluding the track just interrupted
-4. **Song ends naturally** — triggered by the `AudioPlayerStatus.Idle` event on the Discord player; picks next track based on current labels, excluding the finished track.
+4. **Song ends naturally** — the `AudioPlayerStatus.Idle` event clears playback state and triggers an immediate poll cycle. The poll then picks the next track based on current labels, excluding the finished track.
 
 ### Slash Commands
 
@@ -2846,7 +2844,7 @@ The Bard bot's Discord status is controlled by two config keys in `core.json["ba
 | Key | Default | Description |
 |-----|---------|-------------|
 | `idlePresence` | `""` | Presence text shown when no voice session is active |
-| `fadeDurationMs` | `1200` | Fade duration in ms for track transitions. Used for fade-in on every new track (eliminates the silent gap between songs) and for fade-out when switching mid-song due to a label change (crossfade-style). Set to `0` to disable all fading. |
+| `fadeDurationMs` | `1200` | Fade duration in ms for track transitions (Discord voice only). Fade-in ramps volume from 0 on every new track. Fade-out runs when switching mid-track due to a label change. A pre-emptive fade-out is also scheduled near the natural end of each track via `ffprobe`. Set to `0` to disable all fading. |
 | `joinMuted` | `false` | If `true`, the bard bot is **server-muted** immediately after joining a voice channel. An admin can then unmute it in Discord. Requires the bot to have the `MUTE_MEMBERS` permission in the guild. This is *not* a self-mute — Discord clients show it as a server mute (yellow microphone icon), and only an admin can lift it. |
 
 The Discord presence shows the `title` field from `library.xml` (e.g. title `"Battle March"` → **Listening to Battle March**). If no title is set the raw MP3 filename minus the extension is used as fallback.
@@ -2878,7 +2876,7 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 | Voice input silent (bot cannot hear users) | DAVE E2EE decryption not working | Run `npm install` on the server to install `@snazzah/davey` and the correct platform binary. Restart the bot after install. |
 | Idle presence not showing after `/bardleave` | `idlePresence` not configured | Set `core.json["bard"]["idlePresence"]` to the desired text |
 | Idle presence shows while music is playing | Should not happen — check logs | Presence is set by `setPlayTrack()`; if overridden, check for errors in the bard flow |
-| Gap of silence between tracks | `fadeDurationMs` too low or fading error | Check logs; ensure `fadeDurationMs` is ≥ 500. Fade-in starts at volume 0 immediately when the new track begins. The pre-emptive fade-out requires `ffprobe` / `fluent-ffmpeg` to read MP3 duration — if that fails silently, the fade-out is skipped. |
+| Gap of silence between tracks | Pre-emptive fade-out failed or library empty | Song-end triggers an immediate poll to minimize silence. The pre-emptive fade-out requires `ffprobe` / `fluent-ffmpeg`; if it fails silently, no fade-out occurs but the next track still starts promptly. If the library has no matching tracks, idle presence is set and no track plays. |
 | Bot joins but audio is muted and admin cannot unmute | `joinMuted=true` but bot lacks permissions | The bard bot needs `MUTE_MEMBERS` permission to server-mute itself. Grant the permission in Discord Server Settings → Roles. |
 | Bot joins muted but audio should play | `joinMuted=true` is set | An admin must server-unmute the bot in the voice channel (right-click the bot → Server Unmute). |
 

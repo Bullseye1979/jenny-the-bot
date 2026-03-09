@@ -281,54 +281,27 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
 }
 
 /************************************************************************************/
-/* functionSignature: setBindSessionPlayer (session, sessionKey, musicDir, log,      *
-/*                                          idlePresence)                            *
-/* Binds the Idle event to the session player (once per session). On song end,       *
-/* reloads library.xml from disk and picks the next song. Sets idle presence when    *
-/* no matching track is found.                                                       *
+/* functionSignature: setBindSessionPlayer (session, sessionKey, log, triggerPoll)  *
+/* Binds the Idle event to the session player (once per session). On song end,      *
+/* clears stream/nowplaying state and triggers an immediate poll cycle so the poll  *
+/* loop is the sole authority for picking the next song.                            *
 /************************************************************************************/
-function setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence, cfg) {
+function setBindSessionPlayer(session, sessionKey, log, triggerPoll) {
   if (session._playerBound) return;
   session._playerBound = true;
 
   const player = session.player;
 
   player.on(AudioPlayerStatus.Idle, async () => {
-    // Prevent the poll's else-branch from racing us while we pick the next track.
-    session._idleHandling = true;
-    session._idleHandlingSetAt = Date.now();
     try {
-      log("song ended, selecting next track", "info", { moduleName: MODULE_NAME, sessionKey });
-      const liveSession = await getItem(sessionKey);
-      if (!liveSession) {
-        return;
-      }
-
-      const labelsData = await getItem(`bard:labels:${liveSession.guildId}`);
-      const currentNp = await getItem(`bard:nowplaying:${liveSession.guildId}`);
-      const currentFile = currentNp?.file || null;
-
-      let labels = Array.isArray(labelsData?.labels) ? labelsData.labels : [];
-      if (labels.length === 0 && Array.isArray(currentNp?.labels) && currentNp.labels.length) {
-        labels = currentNp.labels;
-      } else {
-      }
-
-      const library = getLoadLibrary(musicDir);
-      const next = getSelectSong(labels, library, null, currentFile);
-      if (!next) {
-        log("no tracks in library for song-end pick", "warn", { moduleName: MODULE_NAME });
-        try { await deleteItem(`bard:stream:${liveSession.guildId}`); } catch {}
-        await setIdlePresence(idlePresence);
-        return;
-      }
-      liveSession._lastLabels = labels;
-      // Natural end-of-song: fade in only (nothing to fade out)
-      await setPlayTrack(liveSession, next, musicDir, log, cfg, { fadeIn: true, fadeOut: false });
+      log("song ended, triggering next poll cycle", "info", { moduleName: MODULE_NAME, sessionKey });
+      // Clear playback state so the poll picks the next song cleanly.
+      try { await deleteItem(`bard:stream:${session.guildId}`); } catch {}
+      try { await deleteItem(`bard:nowplaying:${session.guildId}`); } catch {}
     } catch (e) {
       log(`idle-handler error: ${e?.message}`, "error", { moduleName: MODULE_NAME });
     } finally {
-      session._idleHandling = false;
+      triggerPoll();
     }
   });
 
@@ -347,13 +320,23 @@ function setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence, 
 }
 
 /************************************************************************************/
-/* functionSignature: getScanAndPlay (musicDir, pollMs, log, idlePresence)           *
-/* Returns the polling function. Reloads library.xml each cycle, scans               *
-/* bard:registry and manages music per session. Sets idle presence when no           *
-/* matching track is found.                                                          *
+/* functionSignature: getScanAndPlay (musicDir, pollMs, log, idlePresence, cfg)      *
+/* Returns the polling function. The poll loop is the sole authority for song        *
+/* selection. A triggerPoll() closure lets the Idle event handler fire an immediate  *
+/* poll without racing a currently-running cycle.                                    *
 /************************************************************************************/
 function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
+  let _running = false;
+  let _pendingPoll = false;
+
+  function triggerPoll() {
+    if (!_running) { scanAndPlay(); } else { _pendingPoll = true; }
+  }
+
   async function scanAndPlay() {
+    if (_running) { _pendingPoll = true; return; }
+    _running = true;
+    _pendingPoll = false;
     try {
       const library = getLoadLibrary(musicDir);
       const reg = await getItem("bard:registry");
@@ -384,7 +367,7 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
 
           log(`[label-debug] guild=${session.guildId} playerState=${playerState} labels=[${labels.join(",")}] labelsUpdatedAt=${labelsData?.updatedAt||"none"} currentFile=${currentFile||"none"}`, "info", { moduleName: MODULE_NAME });
 
-          setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence, cfg);
+          setBindSessionPlayer(session, sessionKey, log, triggerPoll);
 
           const isPlaying = playerState === AudioPlayerStatus.Playing ||
                             playerState === AudioPlayerStatus.Buffering;
@@ -413,18 +396,6 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
             // Labels changed mid-song: fade out current, then fade in new (crossfade)
             await setPlayTrack(session, next, musicDir, log, cfg, { fadeIn: true, fadeOut: true });
           } else {
-            // Skip if the Idle-event handler is already picking the next track.
-            // Only take over after it has been gone for more than 2 poll cycles
-            // (safety net in case the handler crashed without clearing the flag).
-            if (session._idleHandling) {
-              const idleFlag = session._idleHandlingSetAt || 0;
-              if (Date.now() - idleFlag < pollMs * 2) {
-                continue;
-              }
-              // Recovery: handler seems stuck — clear flag and proceed.
-              session._idleHandling = false;
-            }
-
             const next = getSelectSong(labels, library, null, currentFile);
             if (!next) {
               try { await deleteItem(`bard:stream:${session.guildId}`); } catch {}
@@ -442,7 +413,13 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
     } catch (e) {
       log(`scanAndPlay error: ${e?.message}`, "error", { moduleName: MODULE_NAME });
     } finally {
-      setTimeout(scanAndPlay, pollMs);
+      _running = false;
+      if (_pendingPoll) {
+        _pendingPoll = false;
+        setImmediate(scanAndPlay);
+      } else {
+        setTimeout(scanAndPlay, pollMs);
+      }
     }
   }
   return scanAndPlay;

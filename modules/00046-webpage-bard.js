@@ -229,7 +229,7 @@ export default async function getWebpageBard(coreData) {
     wo.http.response = {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body: getBardHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, isAdmin: isAllowed, fadeDurationMs: Math.max(0, Number((coreData?.config?.["bard"] || {}).fadeDurationMs ?? 1200)) })
+      body: getBardHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, isAdmin: isAllowed })
     };
     wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
   }
@@ -363,7 +363,7 @@ export default async function getWebpageBard(coreData) {
 /**********************************************************************************/
 /**********************************************************************************/
 
-function getBardHtml({ menu, role, activePath, base, isAdmin, fadeDurationMs = 1200 }) {
+function getBardHtml({ menu, role, activePath, base, isAdmin }) {
   const menuHtml = getMenuHtml(menu || [], activePath || base, role || "");
   const adminHtml =
 '<div class="card">\n' +
@@ -458,44 +458,11 @@ function getBardHtml({ menu, role, activePath, base, isAdmin, fadeDurationMs = 1
 
 '<script>\n' +
 'var BASE="' + base + '";\n' +
-'var FADE_MS=' + Math.max(0, Number(fadeDurationMs)) + ';\n' +
 'var pendingFile=null;\n' +
 '\n' +
 'function toast(msg,ms){\n' +
 '  var t=document.getElementById("toast"); t.textContent=msg; t.classList.add("on");\n' +
 '  setTimeout(function(){t.classList.remove("on");},ms||2800);\n' +
-'}\n' +
-'\n' +
-'var _actx=null,_gain=null,_preFading=false;\n' +
-'function getAudioGraph(){\n' +
-'  if(!_actx){\n' +
-'    _actx=new AudioContext();\n' +
-'    _gain=_actx.createGain();\n' +
-'    _gain.connect(_actx.destination);\n' +
-'    _actx.createMediaElementSource(liveAudio).connect(_gain);\n' +
-'  }\n' +
-'  return {actx:_actx,gain:_gain};\n' +
-'}\n' +
-'function doFadeIn(ms){\n' +
-'  if(!_actx||!(ms>0))return;\n' +
-'  try{\n' +
-'    var g=getAudioGraph(),t=g.actx.currentTime;\n' +
-'    g.gain.gain.cancelScheduledValues(t);\n' +
-'    g.gain.gain.setValueAtTime(0,t);\n' +
-'    g.gain.gain.linearRampToValueAtTime(1,t+ms/1000);\n' +
-'  }catch(e){}\n' +
-'}\n' +
-'function doFadeOut(ms,cb){\n' +
-'  if(!_actx||!(ms>0)){if(cb)cb();return;}\n' +
-'  try{\n' +
-'    var g=getAudioGraph(),t=g.actx.currentTime;\n' +
-'    var cur=g.gain.gain.value;\n' +
-'    if(!(cur>0)){if(cb)cb();return;}\n' +
-'    g.gain.gain.cancelScheduledValues(t);\n' +
-'    g.gain.gain.setValueAtTime(cur,t);\n' +
-'    g.gain.gain.linearRampToValueAtTime(0,t+ms/1000);\n' +
-'    setTimeout(cb||function(){},ms);\n' +
-'  }catch(e){if(cb)cb();}\n' +
 '}\n' +
 '\n' +
 '/**********************************************************************************/\n' +
@@ -638,10 +605,7 @@ function getBardHtml({ menu, role, activePath, base, isAdmin, fadeDurationMs = 1
 '  playerUnlocked=true;\n' +
 '  var ps=document.getElementById("player-start");\n' +
 '  if(ps)ps.style.display="none";\n' +
-'  if(liveAudio.src){\n' +
-'    try{var g=getAudioGraph();if(g.actx.state==="suspended")g.actx.resume().catch(function(){});doFadeIn(FADE_MS);}catch(e){}\n' +
-'    liveAudio.play().catch(function(){});\n' +
-'  }\n' +
+'  if(liveAudio.src)liveAudio.play().catch(function(){});\n' +
 '}\n' +
 '\n' +
 '/* Prevent pause — keep live stream running */\n' +
@@ -658,9 +622,6 @@ function getBardHtml({ menu, role, activePath, base, isAdmin, fadeDurationMs = 1
 '  var cur=liveAudio.currentTime||0, dur=liveAudio.duration||0;\n' +
 '  if(playerBar)playerBar.style.width=(dur>0?Math.min(100,(cur/dur)*100):0)+"%";\n' +
 '  if(playerTime)playerTime.textContent=fmtTime(cur)+" / "+fmtTime(dur);\n' +
-'  if(playerUnlocked&&_actx&&FADE_MS>0&&dur>0&&!_preFading){\n' +
-'    if(cur>0&&cur>=(dur-(FADE_MS/1000)-0.2)){_preFading=true;doFadeOut(FADE_MS,function(){});}\n' +
-'  }\n' +
 '}\n' +
 'setInterval(updatePlayerUI,1000);\n' +
 '\n' +
@@ -678,21 +639,17 @@ function getBardHtml({ menu, role, activePath, base, isAdmin, fadeDurationMs = 1
 '    var lbs=Array.isArray(d.labels)?d.labels:[];\n' +
 '    npLabels.innerHTML=lbs.map(function(l){return\'<span class="now-playing-label">\'+esc(l)+\'</span>\';}).join("");\n' +
 '    if(d.file!==npFile){\n' +
-'      var wasPlaying=!!npFile;\n' +
 '      npFile=d.file;\n' +
 '      var elapsed=(Date.now()-new Date(d.startedAt).getTime())/1000;\n' +
-'      var loadNewTrack=function(){\n' +
-'        _preFading=false;loadingNewTrack=true;\n' +
-'        liveAudio.src=BASE+"/api/audio?file="+encodeURIComponent(d.file);\n' +
-'        liveAudio.onloadedmetadata=function(){\n' +
-'          loadingNewTrack=false;\n' +
-'          if(elapsed>0&&elapsed<liveAudio.duration-1)liveAudio.currentTime=elapsed;\n' +
-'          if(playerUnlocked){doFadeIn(FADE_MS);liveAudio.play().catch(function(){});}\n' +
-'          else{var ps=document.getElementById("player-start");if(ps)ps.style.display="";}\n' +
-'        };\n' +
-'        liveAudio.load();\n' +
+'      loadingNewTrack=true;\n' +
+'      liveAudio.src=BASE+"/api/audio?file="+encodeURIComponent(d.file);\n' +
+'      liveAudio.onloadedmetadata=function(){\n' +
+'        loadingNewTrack=false;\n' +
+'        if(elapsed>0&&elapsed<liveAudio.duration-1)liveAudio.currentTime=elapsed;\n' +
+'        if(playerUnlocked)liveAudio.play().catch(function(){});\n' +
+'        else{var ps=document.getElementById("player-start");if(ps)ps.style.display="";}\n' +
 '      };\n' +
-'      if(playerUnlocked&&wasPlaying&&FADE_MS>0){doFadeOut(FADE_MS,loadNewTrack);}else{loadNewTrack();}\n' +
+'      liveAudio.load();\n' +
 '    }\n' +
 '  }).catch(function(){});\n' +
 '  setTimeout(pollNowPlaying,5000);\n' +
