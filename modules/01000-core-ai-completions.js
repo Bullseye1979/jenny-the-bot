@@ -64,6 +64,21 @@ function getBool(value, def) { return typeof value === "boolean" ? value : def; 
 function getStr(value, def) { return (typeof value === "string" && value.length) ? value : def; }
 
 /********************************************************************************
+/* functionSignature: getLooksCutOff (text)                                     *
+/* Returns true when text appears to end mid-sentence (no closing punctuation). *
+/* Used as a fallback heuristic when finish_reason is null/undefined.           *
+/* Intentionally NOT applied when finish_reason === "stop" to avoid false       *
+/* positives on short structured outputs (e.g. bard label lists).               *
+/********************************************************************************/
+function getLooksCutOff(text) {
+  const s = String(text ?? "").trimEnd();
+  if (!s) return false;
+  // Ends with a recognised closing character — treat as complete
+  if (/[.!?)\]"'`}]$/.test(s)) return false;
+  return true;
+}
+
+/********************************************************************************
 /* functionSignature: getTryParseJSON (text, fallback)                           *
 /* Parses JSON text with a fallback value on failure.                            *
 /********************************************************************************/
@@ -360,7 +375,8 @@ async function getSystemContent(wo, kiCfg) {
   ].join("\n");
   const commonPolicy = [
     "Policy:",
-    "- NEVER ANSWER TO OLDER USER REQUESTS",
+    "- Do not answer unrelated older user requests.",
+    "- If the latest user message asks you to continue your previous response, continue exactly where you stopped — do not repeat, summarize, or restart.",
     "- If tools are available, use them only when necessary.",
     "- When you emit a tool call, do not include extra prose in the same turn.",
     "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
@@ -468,6 +484,13 @@ export default async function getCoreAi(coreData) {
       const finish = choice?.finish_reason;
       const msg = choice?.message || {};
       const toolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
+      wo.logging.push({
+        timestamp: new Date().toISOString(),
+        severity: "info",
+        module: MODULE_NAME,
+        exitStatus: "success",
+        message: `AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${typeof msg.content === "string" ? msg.content.length : 0} tool_calls=${toolCalls?.length ?? 0}`
+      });
       const assistantMsg = {
       role: "assistant",
         authorName: getAssistantAuthorName(wo),
@@ -512,10 +535,25 @@ export default async function getCoreAi(coreData) {
         wo._fullAssistantText = undefined;
         continue;
       }
-      if (finish === "length") {
-        const cont = { role: "user", content: "continue" };
+      // Continue when: token limit hit (explicit) OR finish_reason is absent and the
+      // output appears truncated (local backends like oobabooga sometimes return null
+      // instead of "length" when hitting a stop token mid-sentence).
+      // Not applied for finish === "stop" to avoid false positives on short outputs.
+      const cutOff = finish === "length" || (finish == null && getLooksCutOff(chunkText));
+      if (cutOff) {
+        const cont = {
+          role: "user",
+          content: "Continue exactly where you stopped. Do not restart, do not summarize, do not repeat the previous text. Output only the missing continuation."
+        };
         messages.push(cont);
         persistQueue.push(getWithTurnId(cont, wo));
+        wo.logging.push({
+          timestamp: new Date().toISOString(),
+          severity: "info",
+          module: MODULE_NAME,
+          exitStatus: "success",
+          message: `Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`
+        });
         continue;
       }
       break;

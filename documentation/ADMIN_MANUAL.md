@@ -1679,10 +1679,28 @@ Only **one** of these modules runs per turn, selected by `workingObject.useAiMod
 
 | No. | File | useAiModule | Purpose |
 |---|---|---|---|
-| 01000 | `core-ai-completions` | `"completions"` | Simple `chat/completions` runner; no tool calling |
+| 01000 | `core-ai-completions` | `"completions"` | OpenAI-compatible `chat/completions` runner with tool calling, multi-turn continue logic, and local-model heuristics |
 | 01001 | `core-ai-responses` | `"responses"` | Full Responses API with iterative tool calling, reasoning, image persistence |
 | 01002 | `core-ai-pseudotoolcalls` | `"pseudotoolcalls"` | Text-based pseudo tool calling (for local models) |
 | 01003 | `core-ai-roleplay` | — | Character/persona injection for roleplay |
+
+#### core-ai-completions (01000) — Detailed flow
+
+1. Builds the message array: system prompt → history (if `includeHistory=true`) → current user turn
+2. Calls `POST /chat/completions`; loops up to `maxLoops` (default 20):
+   - **Tool calls present** → executes each tool, appends results, loops
+   - **`finish_reason === "length"`** → explicit token-limit hit; sends a continue turn and loops
+   - **`finish_reason === null/undefined` AND output looks truncated** → heuristic continue (see below); loops
+   - **Any other `finish_reason`** (e.g. `"stop"`) → done; exits loop
+3. Sets `workingObject.response` to the accumulated text of all turns
+4. Persists all turns to MySQL context (unless `doNotWriteToContext=true`)
+
+**Continue strategy for local backends (oobabooga/Hermes):**
+Some local backends return `finish_reason: null` instead of `"length"` when hitting a stop token mid-sentence. The module detects this with a heuristic (`getLooksCutOff`): if `finish_reason` is absent *and* the response does not end with a sentence-closing character (`.!?)"'\`}]`), a continue turn is injected automatically. The continue message is explicit:
+*"Continue exactly where you stopped. Do not restart, do not summarize, do not repeat the previous text. Output only the missing continuation."*
+The heuristic is intentionally **not** applied when `finish_reason === "stop"` to avoid false positives on short structured outputs such as bard mood-label lists.
+
+**Logging:** Every AI turn logs `finish_reason`, `content_length`, and `tool_calls` count at `info` level, and a `Continue triggered` entry when the continue heuristic fires. Useful for diagnosing cut-off behaviour on local models.
 
 #### core-ai-responses (01001) — Detailed flow
 
