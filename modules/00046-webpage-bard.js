@@ -598,6 +598,7 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 'var _pollTimer=null;\n' +
 'var _expectingNewTrack=false;\n' +
 'var _expectRetries=0;\n' +
+'var _trackStartedAt=0;\n' +
 '\n' +
 'if(playerVol){\n' +
 '  liveAudio.volume=parseFloat(playerVol.value)||0.8;\n' +
@@ -608,7 +609,15 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '  playerUnlocked=true;\n' +
 '  var ps=document.getElementById("player-start");\n' +
 '  if(ps)ps.style.display="none";\n' +
-'  if(liveAudio.src)liveAudio.play().catch(function(){});\n' +
+'  if(liveAudio.src){\n' +
+'    /* Recalculate seek position at the moment the user presses play so the stream\n' +
+'       is in sync even if the user waited a while before clicking. */\n' +
+'    if(_trackStartedAt>0&&liveAudio.duration>0){\n' +
+'      var elapsed=(Date.now()-_trackStartedAt)/1000;\n' +
+'      if(elapsed>0&&elapsed<liveAudio.duration-1)liveAudio.currentTime=elapsed;\n' +
+'    }\n' +
+'    liveAudio.play().catch(function(){});\n' +
+'  }\n' +
 '}\n' +
 '\n' +
 '/* Prevent pause — keep live stream running.\n' +
@@ -665,15 +674,14 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '    var gotNewTrack=d.file!==npFile;\n' +
 '    if(gotNewTrack){\n' +
 '      npFile=d.file;\n' +
-'      /* Store startedAt as a timestamp — elapsed is recalculated in onloadedmetadata\n' +
-'         so the audio-load latency is accounted for and the seek is as accurate as\n' +
-'         possible, not off by the time it took to load metadata. */\n' +
-'      var trackStartedAt=new Date(d.startedAt).getTime();\n' +
+'      /* Store startedAt as a module-level timestamp so unlockPlayer() can also\n' +
+'         recalculate elapsed at button-press time for an accurate catch-up seek. */\n' +
+'      _trackStartedAt=new Date(d.startedAt).getTime();\n' +
 '      loadingNewTrack=true;\n' +
 '      liveAudio.src=BASE+"/api/audio?file="+encodeURIComponent(d.file);\n' +
 '      liveAudio.onloadedmetadata=function(){\n' +
 '        loadingNewTrack=false;\n' +
-'        var elapsed=(Date.now()-trackStartedAt)/1000;\n' +
+'        var elapsed=(Date.now()-_trackStartedAt)/1000;\n' +
 '        if(elapsed>0&&elapsed<liveAudio.duration-1)liveAudio.currentTime=elapsed;\n' +
 '        if(playerUnlocked)liveAudio.play().catch(function(){});\n' +
 '        else{var ps=document.getElementById("player-start");if(ps)ps.style.display="";}\n' +
