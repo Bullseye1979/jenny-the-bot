@@ -271,6 +271,25 @@ export default async function getBardAdminJoin(coreData) {
     try { await putItem(liveSession, sessionKey); } catch {}
     await setAddBardSessionKey(sessionKey);
 
+    // Server-mute the bard bot on join if configured (admin can unmute from Discord)
+    const bardCfg = coreData?.config?.["bard"] || {};
+    if (bardCfg.joinMuted) {
+      try {
+        // Re-fetch member to get fresh voice state after connection is Ready
+        const bardMember = await guild.members.fetch(bardClient.user.id).catch(() => null)
+          || guild.members.me;
+        if (bardMember?.voice?.channelId) {
+          await bardMember.voice.setMute(true, "Bard joined muted — unmute in Discord to enable audio");
+          log("bardjoin: bard bot server-muted (joinMuted=true)", "info", { moduleName: MODULE_NAME, guildId });
+        }
+      } catch (me) {
+        log(`bardjoin: could not server-mute bard bot (needs MUTE_MEMBERS permission): ${me?.message}`, "warn", {
+          moduleName: MODULE_NAME,
+          guildId
+        });
+      }
+    }
+
     log("bardjoin: bard session created", "info", {
       moduleName: MODULE_NAME,
       sessionKey,

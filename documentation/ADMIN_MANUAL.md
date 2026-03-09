@@ -27,7 +27,7 @@
    - 6.4 [api](#64-api)
    - 6.5 [cron](#65-cron)
    - 6.6 [toolcall](#66-toolcall)
-   - 6.7 [webpage (config-editor, chat modules)](#67-webpage-config-editor-chat-modules)
+   - 6.7 [webpage (chat module)](#67-webpage-chat-module)
    - 6.8 [webpage](#68-webpage)
    - 6.8.1 [Adding a new webpage module](#681-adding-a-new-webpage-module)
    - 6.9 [Browser Extension](#69-browser-extension)
@@ -1088,7 +1088,7 @@ Starts a lightweight HTTP API server.
 
 #### config.webpage-config-editor
 
-> **Replaces the former `config-editor` flow.** Served on a dedicated port listed in `config.webpage.ports`.
+Served on a dedicated port listed in `config.webpage.ports`.
 
 ```json
 "webpage-config-editor": {
@@ -1231,7 +1231,7 @@ Configuration for the Bard music bot.
   "token":         "YOUR_BARD_BOT_TOKEN",
   "musicDir":      "assets/bard",
   "idlePresence":  "Waiting for adventure...",
-  "pollIntervalMs": 30000
+  "pollIntervalMs": 5000
 }
 ```
 
@@ -1240,7 +1240,7 @@ Configuration for the Bard music bot.
 | `token` | string | **Required.** Discord bot token for the Bard bot |
 | `musicDir` | string | Directory containing MP3 files and `library.xml` (default: `assets/bard`) |
 | `idlePresence` | string | Discord presence text shown when no track is playing (e.g. library empty or no matching tags). If empty or not set, falls back to `"..."`. Default: `""` |
-| `pollIntervalMs` | number | Poll interval in milliseconds (min 5000, default: 30000) |
+| `pollIntervalMs` | number | Poll interval in milliseconds (min 5000, default: 5000) |
 
 #### config.bard-cron
 
@@ -1340,7 +1340,7 @@ Channel override
 - Channel and flow matching: **case-insensitive**
 - User matching: **case-sensitive**
 
-**channelMatch:** Can contain channel IDs or channel names. The special value `"browser"` matches all API requests.
+**channelMatch:** Can contain channel IDs or channel names. The special value `"browser"` matches all API requests. The special value `"DM"` matches Direct Messages sent to the bot — add a channel entry with `"channelMatch": ["DM"]` to enable DM support (without it the channel-gate blocks all DMs).
 
 **All `workingObject` parameters can be used in overrides**, including `toolsconfig`.
 
@@ -1423,7 +1423,7 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 |---|---|---|
 | `POST` | `/api` | Submit a request; returns JSON `{ turn_id, response }` |
 | `GET` | `/toolcall` | Poll global tool-call status from registry |
-| `GET` | `/toolcall?channelID=<id>` | Poll **channel-specific** tool-call status (used by browser extension and config-editor) |
+| `GET` | `/toolcall?channelID=<id>` | Poll **channel-specific** tool-call status (used by browser extension and chat UI) |
 
 **POST /api request:**
 ```json
@@ -1480,20 +1480,12 @@ Also supports `*/N * * * *` (every N minutes).
 
 ---
 
-### 6.7 webpage (config-editor, chat modules)
+### 6.7 webpage (chat module)
 
-**Files:** `flows/webpage.js` + `modules/00047-webpage-config-editor.js` + `modules/00048-webpage-chat.js`
+**Files:** `flows/webpage.js` + `modules/00048-webpage-chat.js`
 **Purpose:** The webpage flow serves **multiple ports simultaneously** (configured via `config.webpage.ports`). Admin modules route by URL path.
 
 **Multi-port:** `config.webpage.ports` is an array — one HTTP server is started per port. Each incoming request sets `wo.http.port` so modules can route by port.
-
-**Config Editor** (`modules/00047-webpage-config-editor.js`, `GET /config`)
-- Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{...}]` as tree items
-- Right panel: inline editing of primitives, tag/chip editors for primitive arrays, navigation links for sub-sections
-- Add Attribute / Section / Object Array / Tag Array per section
-- Duplicate and Delete on every node and array item
-- Keyboard shortcut `Ctrl + S` / `Cmd S` to save
-- **Fully responsive** — works on mobile (hamburger sidebar)
 
 **Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
 - Channel dropdown populated from `webpage-chat.chats[]`
@@ -1590,7 +1582,7 @@ Multiple modules can share a single port. Each module routes by URL path:
 | Feature | Description |
 |---|---|
 | **Persistent side panel** | Opens as a browser side panel (not a popup) — stays open while you browse other pages or click elsewhere |
-| **Chat UI** | Full chat UI matching the config-editor chat; markdown rendering, link/video embeds, toolcall display |
+| **Chat UI** | Full chat UI with markdown rendering, link/video embeds and toolcall display |
 | **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelID=<id>` every 800 ms (per-channel) |
 | **Options page** | `apiUrl`, `channelID`, `apiSecret` stored in `chrome.storage.sync` |
@@ -2382,6 +2374,8 @@ https://discord.com/oauth2/authorize?client_id=BARD_CLIENT_ID&permissions=8&scop
 - `GET /config/api/config` — returns current core.json as JSON
 - `POST /config/api/config` — accepts and writes updated core.json
 
+> The config editor (`webpage-config-editor`) replaced the old `config-editor` flow. All references to the old flow can be ignored.
+
 **Chat (port 3112, /chat):**
 - `GET /chat` — renders the chat SPA
 - `GET /chat/style.css` — serves shared CSS
@@ -2419,6 +2413,75 @@ https://discord.com/oauth2/authorize?client_id=BARD_CLIENT_ID&permissions=8&scop
   "refreshSeconds": 5
 }
 ```
+
+---
+
+## 16.4 Inpainting SPA (`/inpainting`, port 3113)
+
+The inpainting module provides a browser-based image editing tool that lets users load an image, paint a mask over areas they want to change, write a prompt, and submit the request to a Stable Diffusion inpainting backend.
+
+**File:** `modules/00049-webpage-inpainting.js`
+**Port:** 3113 (configured via `config["webpage-inpainting"].port`)
+**URL:** `/inpainting`
+
+> ⚠️ This file is **not tracked by git** — deploy it separately. See `assets/bard/library.xml.example` for a reference pattern.
+
+### How it works
+
+1. User loads an image (drag-and-drop, file picker, or `?src=` / `?image=` query parameter)
+2. User paints a mask (brush tool) over the region to inpaint
+3. User enters a prompt and clicks **Inpaint**
+4. The module proxies the request to the configured SD A1111 API endpoint
+5. The result image is displayed and can be downloaded or used further
+
+### Deep-link via URL parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `?src=<url>` | Pre-load an external image (converted to a proxy URL to bypass CORS) |
+| `?image=<url>` | Alias for `?src=` |
+| `?url=<url>` | Alias for `?src=` |
+| `?id=<channelID>` | Sets the callback channel ID for origin whitelisting |
+
+External images are automatically routed through `/inpainting/proxy?url=<encoded>` to bypass browser CORS restrictions.
+
+### Auth system
+
+Auth can be disabled for local-only setups (`"auth": { "enabled": false }`). When disabled:
+- All users are treated as logged in
+- Proxy bypasses the host whitelist
+- Upload accepts all requests
+
+When auth is enabled, users log in via the webpage-auth session cookie. The `imageWhitelist` config controls which external hosts are allowed as image sources.
+
+### core.json configuration
+
+```json
+"webpage-inpainting": {
+  "flow": ["webpage"],
+  "port": 3113,
+  "basePath": "/inpainting",
+  "allowedRoles": [],
+  "auth": {
+    "enabled": false,
+    "tokenTtlMinutes": 720,
+    "users": []
+  },
+  "imageWhitelist": {
+    "hosts": ["jenny.ralfreschke.de"],
+    "paths": ["/documents/"]
+  }
+}
+```
+
+### Caddy reverse proxy (required for `/documents` redirect)
+
+```caddy
+reverse_proxy /inpainting*  localhost:3113
+reverse_proxy /documents*   localhost:3113
+```
+
+Module `00045-webpage-inpaint.js` redirects `GET /documents/*.png` requests to the inpainting port so that images served by the bot can be opened directly in the editor.
 
 ---
 
@@ -2604,7 +2667,7 @@ See [§17 Web Module Permission Concept](#17-web-module-permission-concept) for 
 
 ### Overview
 
-Jenny the Bard is a second Discord bot that automatically plays mood-appropriate background music for tabletop RPG sessions. A cron job analyzes the chat context at every run using an LLM, generates 3 mood tags, and stores them in the registry. The bard bot polls the registry every 30 seconds and switches music when the current track no longer matches the active mood.
+Jenny the Bard is a second Discord bot that automatically plays mood-appropriate background music for tabletop RPG sessions. A cron job analyzes the chat context at every run using an LLM, generates 3 mood tags, and stores them in the registry. The bard bot polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active mood.
 
 ### Architecture
 
@@ -2636,7 +2699,7 @@ Cron job (every N minutes, flow: bard-label-gen)
      - parses wo.response into 3 valid tags (validated against library.xml tag set)
      - writes bard:labels:{guildId} to registry
 
-flows/bard.js (polls every 30 seconds) — Discord voice sessions only
+flows/bard.js (polls every 5 s by default, min 5 s) — Discord voice sessions only
   -> reloads library.xml from disk (picks up newly added tracks without restart)
   -> no active sessions: sets idle presence (core.json["bard"]["idlePresence"]) → stop
   -> reads bard:labels:{guildId} for current mood
@@ -2765,7 +2828,7 @@ The Bard bot's Discord status is controlled by two config keys in `core.json["ba
 
 | Situation | What is shown | Where to configure |
 |-----------|--------------|-------------------|
-| Music is playing | `Listening to <filename>` (MP3 filename without `.mp3`) | automatic, no config needed |
+| Music is playing | `Listening to <title>` (`title` field from `library.xml`; filename without extension as fallback) | set `title` attribute per track in the Bard Admin UI |
 | **Bot is not in any voice channel** | `Listening to <idlePresence>` | `core.json["bard"]["idlePresence"]` |
 | `idlePresence` is empty or not set | `Listening to ...` (built-in fallback) | — |
 
@@ -2774,9 +2837,17 @@ The Bard bot's Discord status is controlled by two config keys in `core.json["ba
 **Configuration:**
 ```json
 "bard": {
-  "idlePresence": "Waiting for adventure..."
+  "idlePresence":  "Waiting for adventure...",
+  "fadeDurationMs": 1200,
+  "joinMuted":      false
 }
 ```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `idlePresence` | `""` | Presence text shown when no voice session is active |
+| `fadeDurationMs` | `1200` | Fade duration in ms for track transitions. Used for fade-in on every new track (eliminates the silent gap between songs) and for fade-out when switching mid-song due to a label change (crossfade-style). Set to `0` to disable all fading. |
+| `joinMuted` | `false` | If `true`, the bard bot is **server-muted** immediately after joining a voice channel. An admin can then unmute it in Discord. Requires the bot to have the `MUTE_MEMBERS` permission in the guild. This is *not* a self-mute — Discord clients show it as a server mute (yellow microphone icon), and only an admin can lift it. |
 
 The Discord presence shows the `title` field from `library.xml` (e.g. title `"Battle March"` → **Listening to Battle March**). If no title is set the raw MP3 filename minus the extension is used as fallback.
 
@@ -2807,6 +2878,9 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 | Voice input silent (bot cannot hear users) | DAVE E2EE decryption not working | Run `npm install` on the server to install `@snazzah/davey` and the correct platform binary. Restart the bot after install. |
 | Idle presence not showing after `/bardleave` | `idlePresence` not configured | Set `core.json["bard"]["idlePresence"]` to the desired text |
 | Idle presence shows while music is playing | Should not happen — check logs | Presence is set by `setPlayTrack()`; if overridden, check for errors in the bard flow |
+| Gap of silence between tracks | `fadeDurationMs` too low or fading error | Check logs; ensure `fadeDurationMs` is ≥ 500. Fade-in starts immediately when the new track begins — if there's still a gap, check for audio resource errors. |
+| Bot joins but audio is muted and admin cannot unmute | `joinMuted=true` but bot lacks permissions | The bard bot needs `MUTE_MEMBERS` permission to server-mute itself. Grant the permission in Discord Server Settings → Roles. |
+| Bot joins muted but audio should play | `joinMuted=true` is set | An admin must server-unmute the bot in the voice channel (right-click the bot → Server Unmute). |
 
 ---
 

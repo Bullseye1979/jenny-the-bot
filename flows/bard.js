@@ -144,20 +144,73 @@ async function setIdlePresence(text) {
 }
 
 /************************************************************************************/
-/* functionSignature: setPlayTrack (session, track, musicDir, log)                   *
-/* Creates an audio resource and plays it on the session's player.                   *
+/* functionSignature: setFadeIn (resource, targetVol, durationMs)                   *
+/* Gradually increases resource volume from 0 to targetVol over durationMs ms.      *
+/* Fire-and-forget — caller does not need to await.                                 *
 /************************************************************************************/
-async function setPlayTrack(session, track, musicDir, log) {
+function setFadeIn(resource, targetVol, durationMs) {
+  if (!resource?.volume || !(durationMs > 0)) return;
+  try { resource.volume.setVolume(0); } catch {}
+  const steps = Math.min(40, Math.max(10, Math.round(durationMs / 50)));
+  const stepMs = durationMs / steps;
+  let step = 0;
+  const iv = setInterval(() => {
+    step++;
+    const v = Math.min(targetVol, (step / steps) * targetVol);
+    try { resource.volume.setVolume(v); } catch {}
+    if (step >= steps) clearInterval(iv);
+  }, stepMs);
+}
+
+/************************************************************************************/
+/* functionSignature: setFadeOut (resource, durationMs)                              *
+/* Gradually decreases resource volume to 0 over durationMs ms.                     *
+/* Returns a Promise that resolves when done.                                        *
+/************************************************************************************/
+function setFadeOut(resource, durationMs) {
+  return new Promise(resolve => {
+    if (!resource?.volume || !(durationMs > 0)) { resolve(); return; }
+    let startVol;
+    try { startVol = resource.volume.volume; } catch { resolve(); return; }
+    if (!(startVol > 0)) { resolve(); return; }
+    const steps = Math.min(40, Math.max(10, Math.round(durationMs / 50)));
+    const stepMs = durationMs / steps;
+    let step = 0;
+    const iv = setInterval(() => {
+      step++;
+      const v = Math.max(0, startVol * (1 - step / steps));
+      try { resource.volume.setVolume(v); } catch {}
+      if (step >= steps) { clearInterval(iv); resolve(); }
+    }, stepMs);
+  });
+}
+
+/************************************************************************************/
+/* functionSignature: setPlayTrack (session, track, musicDir, log, cfg, fadeOpts)   *
+/* Creates an audio resource and plays it on the session's player.                   *
+/* fadeOpts.fadeIn=true  → fade volume in from 0 (eliminates silence gap).          *
+/* fadeOpts.fadeOut=true → fade out current resource before switching (crossfade).  *
+/************************************************************************************/
+async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true, fadeOut = false } = {}) {
   try {
     const filePath = path.resolve(musicDir, track.file);
     if (!fs.existsSync(filePath)) {
       log(`audio file not found: ${filePath}`, "warn", { moduleName: MODULE_NAME });
       return false;
     }
+    const fadeMs = Number.isFinite(Number(cfg?.fadeDurationMs)) ? Math.max(0, Number(cfg.fadeDurationMs)) : 1200;
+    // Fade out the currently playing resource before switching (crossfade / label change)
+    if (fadeOut && session._currentResource && fadeMs > 0) {
+      await setFadeOut(session._currentResource, fadeMs);
+    }
     const resource = createAudioResource(filePath, { inputType: StreamType.Arbitrary, inlineVolume: true });
     const vol = Number.isFinite(track.volume) ? Math.max(0.1, Math.min(4.0, track.volume)) : 1.0;
-    if (resource.volume) resource.volume.setVolume(vol);
+    // Start silent if fading in so there is no gap between tracks
+    if (resource.volume) resource.volume.setVolume(fadeIn && fadeMs > 0 ? 0 : vol);
     session.player.play(resource);
+    session._currentResource = resource;
+    // Fade in the new track (fire-and-forget)
+    if (fadeIn && fadeMs > 0) setFadeIn(resource, vol, fadeMs);
     const nowTs = new Date().toISOString();
     const nowPlaying = {
       file: track.file,
@@ -194,7 +247,7 @@ async function setPlayTrack(session, track, musicDir, log) {
 /* reloads library.xml from disk and picks the next song. Sets idle presence when    *
 /* no matching track is found.                                                       *
 /************************************************************************************/
-function setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence) {
+function setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence, cfg) {
   if (session._playerBound) return;
   session._playerBound = true;
 
@@ -230,7 +283,8 @@ function setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence) 
         return;
       }
       liveSession._lastLabels = labels;
-      await setPlayTrack(liveSession, next, musicDir, log);
+      // Natural end-of-song: fade in only (nothing to fade out)
+      await setPlayTrack(liveSession, next, musicDir, log, cfg, { fadeIn: true, fadeOut: false });
     } catch (e) {
       log(`idle-handler error: ${e?.message}`, "error", { moduleName: MODULE_NAME });
     } finally {
@@ -290,7 +344,7 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
 
           log(`[label-debug] guild=${session.guildId} playerState=${playerState} labels=[${labels.join(",")}] labelsUpdatedAt=${labelsData?.updatedAt||"none"} currentFile=${currentFile||"none"}`, "info", { moduleName: MODULE_NAME });
 
-          setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence);
+          setBindSessionPlayer(session, sessionKey, musicDir, log, idlePresence, cfg);
 
           const isPlaying = playerState === AudioPlayerStatus.Playing ||
                             playerState === AudioPlayerStatus.Buffering;
@@ -316,7 +370,8 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
               continue;
             }
             session._lastLabels = labels;
-            await setPlayTrack(session, next, musicDir, log);
+            // Labels changed mid-song: fade out current, then fade in new (crossfade)
+            await setPlayTrack(session, next, musicDir, log, cfg, { fadeIn: true, fadeOut: true });
           } else {
             // Skip if the Idle-event handler is already picking the next track.
             // Only take over after it has been gone for more than 2 poll cycles
@@ -337,7 +392,8 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
               continue;
             }
             session._lastLabels = labels;
-            await setPlayTrack(session, next, musicDir, log);
+            // Player was idle (not playing): fade in new track, no fade-out needed
+            await setPlayTrack(session, next, musicDir, log, cfg, { fadeIn: true, fadeOut: false });
           }
         } catch (e) {
           log(`session scan error for ${sessionKey}: ${e?.message}`, "error", { moduleName: MODULE_NAME });
