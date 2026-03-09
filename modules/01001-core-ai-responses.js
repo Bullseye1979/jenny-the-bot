@@ -840,8 +840,8 @@ function getParsedResponsesOutput(raw) {
 /********************************************************************************
 /* functionSignature: getLooksCutOff (text)                                     *
 /* Returns true when text ends mid-sentence (no recognised closing punctuation).*
-/* Used as fallback when finish_reason is null (some local backends omit it).   *
-/* Not applied when finish_reason === "stop" to avoid false positives.          *
+/* Applied regardless of finish_reason — local backends often return "stop"     *
+/* even when truncated. maxLoops caps worst-case false-positive continuations.  *
 /********************************************************************************/
 function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
@@ -1397,7 +1397,7 @@ export default async function getCoreAi(coreData) {
       }
 
       const truncated = getWasTruncatedOutput(data);
-      const cutOff = truncated || (finish == null && getLooksCutOff(assistantText));
+      const cutOff = truncated || getLooksCutOff(assistantText);
       if (cutOff) {
         const cont = { role: "user", content: "continue" };
         messages.push(cont);

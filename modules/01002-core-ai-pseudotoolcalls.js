@@ -59,13 +59,26 @@ function getBool(value, def) { return typeof value === "boolean" ? value : def; 
 /*******************************************************************************/
 function getStr(value, def) { return (typeof value === "string" && value.length) ? value : def; }
 
-/******************************************************************************* 
+/*******************************************************************************
 /* functionSignature: getTryParseJSON (text, fallback)                         *
 /* Safely parses JSON with a fallback value on failure.                        *
 /*******************************************************************************/
 function getTryParseJSON(text, fallback = {}) { try { return JSON.parse(text); } catch { return fallback; } }
 
-/******************************************************************************* 
+/*******************************************************************************
+/* functionSignature: getLooksCutOff (text)                                    *
+/* Returns true when text ends mid-sentence (no recognised closing punctuation)*
+/* Applied regardless of finish_reason — local backends often return "stop"    *
+/* even when truncated. maxLoops caps worst-case false-positive continuations. *
+/*******************************************************************************/
+function getLooksCutOff(text) {
+  const s = String(text ?? "").trimEnd();
+  if (!s) return false;
+  const last = s[s.length - 1];
+  return !/[.!?:;*"»)\]>~`]/.test(last);
+}
+
+/*******************************************************************************
 /* functionSignature: getShouldRunForThisModule (wo)                           *
 /* Determines whether to process this request.                                 *
 /*******************************************************************************/
@@ -815,6 +828,14 @@ export default async function getCoreAi(coreData) {
 
       const extracted = msgText ? getExtractPseudoToolCall(msgText) : null;
 
+      wo.logging.push({
+        timestamp: new Date().toISOString(),
+        severity: "info",
+        module: MODULE_NAME,
+        exitStatus: "success",
+        message: `AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${msgText.length} pseudo_tool=${extracted ? extracted.name : "none"}`
+      });
+
       const assistantMsg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: msgText };
       if (assistantMsg.authorName == null) delete assistantMsg.authorName;
 
@@ -891,10 +912,18 @@ export default async function getCoreAi(coreData) {
         continue;
       }
 
-      if (finish === "length") {
+      const cutOff = finish === "length" || getLooksCutOff(cleanAssistantText);
+      if (cutOff) {
         const cont = { role: "user", content: "continue" };
         messages.push(cont);
         persistQueue.push(getWithTurnId(cont, wo));
+        wo.logging.push({
+          timestamp: new Date().toISOString(),
+          severity: "info",
+          module: MODULE_NAME,
+          exitStatus: "success",
+          message: `Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(cleanAssistantText)}`
+        });
         continue;
       }
 

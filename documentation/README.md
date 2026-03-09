@@ -602,14 +602,16 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 
 ### AI Processing (01xxx)
 
-Exactly **one** of the three AI modules below is activated per run, selected by `workingObject.useAiModule`.
+Exactly **one** of the four AI modules below is activated per run, selected by `workingObject.useAiModule`.
 
 | Module | Name | useAiModule value | Description |
 |---|---|---|---|
 | `01000` | core-ai-completions | `"completions"` | `chat/completions` runner with iterative tool calling and automatic cut-off continuation |
 | `01001` | core-ai-responses | `"responses"` | Full Responses API with iterative tool calling, reasoning accumulation, image persistence, finish_reason logging, and automatic cut-off continuation |
-| `01002` | core-ai-pseudotoolcalls | `"pseudotoolcalls"` | Text-based pseudo tool calling without native API tools |
+| `01002` | core-ai-pseudotoolcalls | `"pseudotoolcalls"` | Text-based pseudo tool calling for local models without native function-call support; finish_reason logging and cut-off continuation |
 | `01003` | core-ai-roleplay | `"roleplay"` | Two-pass generation (text + image prompt) with tool calling, finish_reason logging, and automatic cut-off continuation |
+
+All four modules share identical continue logic: `getLooksCutOff` fires regardless of `finish_reason` (local backends often return `"stop"` on truncation); `maxLoops` caps false-positive loops.
 
 #### core-ai-responses (01001) — Detail
 
@@ -619,8 +621,8 @@ This is the primary AI module. It runs a loop of up to `maxLoops` iterations:
 2. Calls the Responses API; on each turn:
    - **Tool calls present** → invokes each tool, appends results, loops.
    - **`status === "incomplete"` or `finish_reason === "length"`** → sends a continue turn and loops.
-   - **`finish_reason === null` AND output looks truncated** → heuristic continue (`getLooksCutOff`), loops.
-   - **Any other `finish_reason`** (e.g. `"stop"`) → exits loop.
+   - **Output looks truncated** (`getLooksCutOff`) → heuristic continue, regardless of `finish_reason`; loops.
+   - **Otherwise** → exits loop.
 3. Appends any reasoning tokens to `workingObject.reasoningSummary`.
 4. Persists images returned by tools to `./pub/documents/`.
 5. Sets `workingObject.response` to the accumulated text.

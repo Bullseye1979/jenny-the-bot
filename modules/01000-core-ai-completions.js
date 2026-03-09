@@ -66,9 +66,8 @@ function getStr(value, def) { return (typeof value === "string" && value.length)
 /********************************************************************************
 /* functionSignature: getLooksCutOff (text)                                     *
 /* Returns true when text appears to end mid-sentence (no closing punctuation). *
-/* Used as a fallback heuristic when finish_reason is null/undefined.           *
-/* Intentionally NOT applied when finish_reason === "stop" to avoid false       *
-/* positives on short structured outputs (e.g. bard label lists).               *
+/* Applied regardless of finish_reason — local backends often return "stop"     *
+/* even when truncated. maxLoops caps worst-case false-positive continuations.  *
 /********************************************************************************/
 function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
@@ -539,7 +538,7 @@ export default async function getCoreAi(coreData) {
       // output appears truncated (local backends like oobabooga sometimes return null
       // instead of "length" when hitting a stop token mid-sentence).
       // Not applied for finish === "stop" to avoid false positives on short outputs.
-      const cutOff = finish === "length" || (finish == null && getLooksCutOff(chunkText));
+      const cutOff = finish === "length" || getLooksCutOff(chunkText);
       if (cutOff) {
         const cont = {
           role: "user",

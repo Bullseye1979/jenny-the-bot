@@ -56,8 +56,8 @@ function getTryParseJSON(text, fallback = null) { try { return JSON.parse(text);
 /*******************************************************************************
 /* functionSignature: getLooksCutOff (text)                                    *
 /* Returns true when text ends mid-sentence (no recognised closing punctuation)*
-/* Used as fallback when finish_reason is null (some local backends omit it).  *
-/* Not applied when finish_reason === "stop" to avoid false positives.         *
+/* Applied regardless of finish_reason — local backends often return "stop"    *
+/* even when truncated, so the heuristic is the only reliable signal.          *
 /*******************************************************************************/
 function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
@@ -409,7 +409,7 @@ export default async function getCoreAi(coreData) {
     textOut += (textOut ? "\n" : "") + chunkText;
     pass1Messages.push({ role: "assistant", content: chunkText });
 
-    const cutOff = pass1.finish === "length" || (pass1.finish == null && getLooksCutOff(chunkText));
+    const cutOff = pass1.finish === "length" || getLooksCutOff(chunkText);
     if (cutOff) {
       pass1Messages.push({ role: "user", content: "continue" });
       wo.logging.push({
