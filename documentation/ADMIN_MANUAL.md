@@ -2844,7 +2844,7 @@ The Bard bot's Discord status is controlled by two config keys in `core.json["ba
 | Key | Default | Description |
 |-----|---------|-------------|
 | `idlePresence` | `""` | Presence text shown when no voice session is active |
-| `fadeDurationMs` | `1200` | Fade duration in ms for track transitions (Discord voice only). Fade-in ramps volume from 0 on every new track. Fade-out runs when switching mid-track due to a label change. A pre-emptive fade-out is also scheduled near the natural end of each track via `ffprobe`. Set to `0` to disable all fading. |
+| `fadeDurationMs` | `1200` | Fade duration in ms for track transitions (Discord voice only). Fade-in ramps volume from 0 on every new track. Fade-out runs when switching mid-track due to a label change. Set to `0` to disable all fading. |
 | `joinMuted` | `false` | If `true`, the bard bot is **server-muted** immediately after joining a voice channel. An admin can then unmute it in Discord. Requires the bot to have the `MUTE_MEMBERS` permission in the guild. This is *not* a self-mute — Discord clients show it as a server mute (yellow microphone icon), and only an admin can lift it. |
 
 The Discord presence shows the `title` field from `library.xml` (e.g. title `"Battle March"` → **Listening to Battle March**). If no title is set the raw MP3 filename minus the extension is used as fallback.
@@ -2876,7 +2876,7 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 | Voice input silent (bot cannot hear users) | DAVE E2EE decryption not working | Run `npm install` on the server to install `@snazzah/davey` and the correct platform binary. Restart the bot after install. |
 | Idle presence not showing after `/bardleave` | `idlePresence` not configured | Set `core.json["bard"]["idlePresence"]` to the desired text |
 | Idle presence shows while music is playing | Should not happen — check logs | Presence is set by `setPlayTrack()`; if overridden, check for errors in the bard flow |
-| Gap of silence between tracks | Pre-emptive fade-out failed or library empty | Song-end triggers an immediate poll to minimize silence. The pre-emptive fade-out requires `ffprobe` / `fluent-ffmpeg`; if it fails silently, no fade-out occurs but the next track still starts promptly. If the library has no matching tracks, idle presence is set and no track plays. |
+| Gap of silence between tracks | Library empty or no matching tracks | Song-end triggers an immediate poll cycle. If no matching track is found, idle presence is set and nothing plays until the next poll. |
 | Bot joins but audio is muted and admin cannot unmute | `joinMuted=true` but bot lacks permissions | The bard bot needs `MUTE_MEMBERS` permission to server-mute itself. Grant the permission in Discord Server Settings → Roles. |
 | Bot joins muted but audio should play | `joinMuted=true` is set | An admin must server-unmute the bot in the voice channel (right-click the bot → Server Unmute). |
 

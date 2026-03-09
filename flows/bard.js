@@ -189,37 +189,6 @@ function setFadeOut(session, resource, fromVol, durationMs) {
 }
 
 /************************************************************************************/
-/* functionSignature: setSchedulePreFade (session, resource, filePath, fadeMs, log) *
-/* Uses ffprobe to read the track duration, then schedules a pre-emptive fade-out   *
-/* fadeDurationMs before the song ends so natural transitions have a smooth fade.   *
-/* Fire-and-forget — errors are silently swallowed.                                 *
-/************************************************************************************/
-async function setSchedulePreFade(session, resource, filePath, fadeMs, log) {
-  try {
-    const { default: ffmpeg } = await import("fluent-ffmpeg");
-    const durationSec = await new Promise((resolve) => {
-      ffmpeg.ffprobe(filePath, (err, meta) => {
-        resolve(err ? 0 : (Number(meta?.format?.duration) || 0));
-      });
-    });
-    if (!(durationSec > 0)) return;
-    // Schedule fade-out to start (fadeDurationMs + 200ms margin) before track ends
-    const delayMs = Math.max(0, durationSec * 1000 - fadeMs - 200);
-    const timer = setTimeout(async () => {
-      // Only fade if this resource is still the active one (not already switched)
-      if (session._currentResource === resource) {
-        const fromVol = session._currentVolume ?? 1.0;
-        await setFadeOut(session, resource, fromVol, fadeMs).catch(() => {});
-      }
-    }, delayMs);
-    if (typeof timer?.unref === "function") timer.unref();
-    // Cancel previous timer and store the new one
-    if (session._preFadeTimer) clearTimeout(session._preFadeTimer);
-    session._preFadeTimer = timer;
-  } catch {}
-}
-
-/************************************************************************************/
 /* functionSignature: setPlayTrack (session, track, musicDir, log, cfg, fadeOpts)   *
 /* Creates an audio resource and plays it on the session's player.                   *
 /* fadeOpts.fadeIn=true  → fade volume in from 0 (eliminates silence gap).          *
@@ -233,8 +202,6 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
       return false;
     }
     const fadeMs = Number.isFinite(Number(cfg?.fadeDurationMs)) ? Math.max(0, Number(cfg.fadeDurationMs)) : 1200;
-    // Cancel any pending pre-fade timer from the previous track
-    if (session._preFadeTimer) { clearTimeout(session._preFadeTimer); session._preFadeTimer = null; }
     // Fade out the currently playing resource before switching (crossfade / label change).
     // Use the stored volume — never read from VolumeTransformer state which may be mid-fade-in.
     if (fadeOut && session._currentResource && fadeMs > 0) {
@@ -251,8 +218,6 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
     session._currentResource = resource;
     // Fade in the new track (cancels any leftover fade-in from the previous track)
     if (fadeIn && fadeMs > 0) setFadeIn(session, resource, vol, fadeMs);
-    // Schedule pre-emptive fade-out near the song's end (fire-and-forget)
-    if (fadeMs > 0) setSchedulePreFade(session, resource, filePath, fadeMs, log).catch(() => {});
     const nowTs = new Date().toISOString();
     const nowPlaying = {
       file: track.file,
@@ -294,17 +259,13 @@ function setBindSessionPlayer(session, sessionKey, log, triggerPoll) {
 
   const player = session.player;
 
-  player.on(AudioPlayerStatus.Idle, async () => {
-    try {
-      log("song ended, triggering next poll cycle", "info", { moduleName: MODULE_NAME, sessionKey });
-      // Clear playback state so the poll picks the next song cleanly.
-      try { await deleteItem(`bard:stream:${session.guildId}`); } catch {}
-      try { await deleteItem(`bard:nowplaying:${session.guildId}`); } catch {}
-    } catch (e) {
-      log(`idle-handler error: ${e?.message}`, "error", { moduleName: MODULE_NAME });
-    } finally {
-      triggerPoll();
-    }
+  player.on(AudioPlayerStatus.Idle, () => {
+    // Do NOT clear bard:stream or bard:nowplaying here — the browser polls /api/nowplaying
+    // which reads bard:stream, and clearing it mid-transition causes the browser player to
+    // abruptly stop the current song. The poll will overwrite bard:stream/bard:nowplaying
+    // atomically when the next song starts.
+    log("song ended, triggering next poll cycle", "info", { moduleName: MODULE_NAME, sessionKey });
+    triggerPoll();
   });
 
   player.on("error", (err) => {
