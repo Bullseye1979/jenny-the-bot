@@ -608,8 +608,14 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '  if(liveAudio.src)liveAudio.play().catch(function(){});\n' +
 '}\n' +
 '\n' +
-'/* Prevent pause — keep live stream running, but do not restart a naturally ended track */\n' +
-'liveAudio.addEventListener("pause",function(){if(playerUnlocked&&npFile&&!loadingNewTrack&&!liveAudio.ended)liveAudio.play().catch(function(){});});\n' +
+'/* Prevent pause — keep live stream running.\n' +
+'   Guard: pause fires BEFORE ended when a track finishes naturally, so !liveAudio.ended\n' +
+'   is true at that moment. Extra check: skip auto-resume if within 1 s of the end. */\n' +
+'liveAudio.addEventListener("pause",function(){\n' +
+'  var nearEnd=liveAudio.duration>0&&liveAudio.currentTime>=liveAudio.duration-1;\n' +
+'  if(playerUnlocked&&npFile&&!loadingNewTrack&&!liveAudio.ended&&!nearEnd)\n' +
+'    liveAudio.play().catch(function(){});\n' +
+'});\n' +
 '\n' +
 'function fmtTime(s){\n' +
 '  if(!isFinite(s)||s<0)return"0:00";\n' +

@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-03-08
+> **Version:** 1.0 · **Date:** 2026-03-09
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -2676,6 +2676,9 @@ Jenny the Bard is a second Discord bot that automatically plays mood-appropriate
   -> 00035-bard-admin-join.js
   -> joins voice channel (using bard bot token)
   -> stores bard:session:{guildId} in registry
+  -> writes bard:labels:{guildId} = { labels: ["default"] } — startup seed so tracks
+     tagged "default" are preferred on the very first song pick. The cron job will
+     overwrite this with real mood labels once it runs.
 
 /bardleave command
   -> 00035-bard-admin-join.js
@@ -2710,8 +2713,10 @@ flows/bard.js (polls every 5 s by default, min 5 s) — Discord voice sessions o
   -> no song found: clears bard:stream:{guildId}, sets idle presence
 
 player.on(AudioPlayerStatus.Idle) — Discord voice: song ended naturally
-  -> clears bard:stream:{guildId} and bard:nowplaying:{guildId}
   -> triggers an immediate poll cycle — the poll picks the next song
+  -> bard:stream:{guildId} and bard:nowplaying:{guildId} are NOT cleared here;
+     the poll overwrites them atomically when the next song starts. This prevents
+     the browser Now Playing card from briefly seeing null and interrupting audio.
 ```
 
 ### Registry Keys
@@ -2721,9 +2726,9 @@ player.on(AudioPlayerStatus.Idle) — Discord voice: song ended naturally
 | `bard:client` | Discord.js Client instance for the bard bot |
 | `bard:registry` | `{ list: ["bard:session:{guildId}"] }` |
 | `bard:session:{guildId}` | `{ guildId, voiceChannelId, textChannelId, connection, player }` |
-| `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], updatedAt, guildId }` |
+| `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], updatedAt, guildId }` — written by the cron job after each LLM classification. Initially seeded to `["default"]` on `/bardjoin` so tracks tagged `default` are played first. Deleted on `/bardleave`. |
 | `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
-| `bard:stream:{guildId}` | `{ guildId, file, title, labels, startedAt, musicDir }` — set when a track starts; cleared when idle. Read by the Now Playing card in `webpage-bard`. |
+| `bard:stream:{guildId}` | `{ guildId, file, title, labels, startedAt, musicDir }` — overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardleave` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
 | `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written before each LLM call so the next run reads context from exactly this point forward |
 
 ### Music Library (library.xml)
@@ -2753,6 +2758,7 @@ Fields:
 
 ### Tag Vocabulary (existing tracks)
 
+- **Special:** `default` — startup tag. Tracks with this tag are preferred on the very first song pick after `/bardjoin`, before the cron job has generated any mood labels. Has no special meaning after that; add it to tracks that make a good "welcome" impression.
 - Combat: `battle`, `fight`, `fast`, `intense`, `boss`
 - Epic: `epic`, `magic`
 - City: `city`, `people`, `buzzing`, `crowded`, `sneaky`, `searching`, `shady`
@@ -2761,13 +2767,14 @@ Fields:
 
 ### Song Selection Algorithm
 
-1. **No labels available yet** — keep the current song; do not switch until labels arrive from the cron job.
-2. **Current track still matches at least one active label** — keep playing (no change).
-3. **Current track no longer matches any active label** — switch immediately (mid-track):
+1. **Bot just joined** — `/bardjoin` seeds `bard:labels` with `["default"]`. Tracks tagged `default` get score 1; all others score 0. Weighted random picks from the `default` pool (or all tracks as fallback if none are tagged `default`). The cron job overwrites this with real mood labels on its next run.
+2. **Labels empty** (edge case — e.g. cron produced no valid tags and label state was cleared) — if a song is currently playing, it is kept unchanged. If no song is playing, a random track from the full library is picked.
+3. **Current track still matches at least one active label** — keep playing (no change).
+4. **Current track no longer matches any active label** — switch immediately (mid-track):
    - Score all tracks by count of matching labels
-   - Candidates = all tracks with the highest score (if score is 0 for all, all tracks are candidates)
-   - Pick a random track from candidates, excluding the track just interrupted
-4. **Song ends naturally** — the `AudioPlayerStatus.Idle` event clears playback state and triggers an immediate poll cycle. The poll then picks the next track based on current labels, excluding the finished track.
+   - Use **weighted random selection**: tracks with more matching labels are proportionally more likely to be chosen, but not guaranteed — prevents a single high-scoring track from looping indefinitely. Tracks with score 0 are only used as fallback when nothing matches any label.
+   - Excludes the just-interrupted track.
+5. **Song ends naturally** — the `AudioPlayerStatus.Idle` event triggers an immediate poll cycle. `bard:stream` and `bard:nowplaying` are **not** cleared on Idle — the poll overwrites them atomically when the next track starts. The last-played filename is stored in `session._lastPlayedFile` to ensure the just-finished track is excluded even before the new entry is written.
 
 ### Slash Commands
 
@@ -2906,4 +2913,4 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 ---
 
 *End of Administrator Manual*
-*Generated: 2026-03-08 · Jenny Discord AI Bot v1.3*
+*Generated: 2026-03-09 · Jenny Discord AI Bot v1.3*

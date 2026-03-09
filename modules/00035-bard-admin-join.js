@@ -271,6 +271,16 @@ export default async function getBardAdminJoin(coreData) {
     try { await putItem(liveSession, sessionKey); } catch {}
     await setAddBardSessionKey(sessionKey);
 
+    // Set startup labels to ["default"] so tracks tagged "default" are preferred
+    // on the first song pick. The cron job will overwrite this with real mood labels.
+    try {
+      await putItem(
+        { labels: ["default"], updatedAt: new Date().toISOString(), guildId },
+        `bard:labels:${guildId}`
+      );
+      log("bardjoin: startup labels set to [default]", "info", { moduleName: MODULE_NAME, guildId });
+    } catch {}
+
     // Server-mute the bard bot on join if configured (admin can unmute from Discord)
     const bardCfg = coreData?.config?.["bard"] || {};
     if (bardCfg.joinMuted) {
