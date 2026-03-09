@@ -608,8 +608,8 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '  if(liveAudio.src)liveAudio.play().catch(function(){});\n' +
 '}\n' +
 '\n' +
-'/* Prevent pause — keep live stream running */\n' +
-'liveAudio.addEventListener("pause",function(){if(playerUnlocked&&npFile&&!loadingNewTrack)liveAudio.play().catch(function(){});});\n' +
+'/* Prevent pause — keep live stream running, but do not restart a naturally ended track */\n' +
+'liveAudio.addEventListener("pause",function(){if(playerUnlocked&&npFile&&!loadingNewTrack&&!liveAudio.ended)liveAudio.play().catch(function(){});});\n' +
 '\n' +
 'function fmtTime(s){\n' +
 '  if(!isFinite(s)||s<0)return"0:00";\n' +
