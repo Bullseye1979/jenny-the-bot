@@ -144,11 +144,12 @@ async function setIdlePresence(text) {
 }
 
 /************************************************************************************/
-/* functionSignature: setFadeIn (resource, targetVol, durationMs)                   *
+/* functionSignature: setFadeIn (session, resource, targetVol, durationMs)          *
 /* Gradually increases resource volume from 0 to targetVol over durationMs ms.      *
-/* Fire-and-forget — caller does not need to await.                                 *
+/* Cancels any previously running fade-in. Stores interval on session._fadeInIv.    *
 /************************************************************************************/
-function setFadeIn(resource, targetVol, durationMs) {
+function setFadeIn(session, resource, targetVol, durationMs) {
+  if (session._fadeInIv) { clearInterval(session._fadeInIv); session._fadeInIv = null; }
   if (!resource?.volume || !(durationMs > 0)) return;
   try { resource.volume.setVolume(0); } catch {}
   const steps = Math.min(40, Math.max(10, Math.round(durationMs / 50)));
@@ -158,31 +159,63 @@ function setFadeIn(resource, targetVol, durationMs) {
     step++;
     const v = Math.min(targetVol, (step / steps) * targetVol);
     try { resource.volume.setVolume(v); } catch {}
-    if (step >= steps) clearInterval(iv);
+    if (step >= steps) { clearInterval(iv); if (session._fadeInIv === iv) session._fadeInIv = null; }
   }, stepMs);
+  session._fadeInIv = iv;
 }
 
 /************************************************************************************/
-/* functionSignature: setFadeOut (resource, durationMs)                              *
-/* Gradually decreases resource volume to 0 over durationMs ms.                     *
+/* functionSignature: setFadeOut (session, resource, fromVol, durationMs)            *
+/* Cancels any running fade-in, then gradually decreases resource volume to 0.      *
+/* fromVol must be the known current volume — do NOT read from the transformer.     *
 /* Returns a Promise that resolves when done.                                        *
 /************************************************************************************/
-function setFadeOut(resource, durationMs) {
+function setFadeOut(session, resource, fromVol, durationMs) {
+  // Stop any running fade-in first so they don't fight each other
+  if (session._fadeInIv) { clearInterval(session._fadeInIv); session._fadeInIv = null; }
   return new Promise(resolve => {
-    if (!resource?.volume || !(durationMs > 0)) { resolve(); return; }
-    let startVol;
-    try { startVol = resource.volume.volume; } catch { resolve(); return; }
-    if (!(startVol > 0)) { resolve(); return; }
+    if (!resource?.volume || !(durationMs > 0) || !(fromVol > 0)) { resolve(); return; }
     const steps = Math.min(40, Math.max(10, Math.round(durationMs / 50)));
     const stepMs = durationMs / steps;
     let step = 0;
     const iv = setInterval(() => {
       step++;
-      const v = Math.max(0, startVol * (1 - step / steps));
+      const v = Math.max(0, fromVol * (1 - step / steps));
       try { resource.volume.setVolume(v); } catch {}
       if (step >= steps) { clearInterval(iv); resolve(); }
     }, stepMs);
   });
+}
+
+/************************************************************************************/
+/* functionSignature: setSchedulePreFade (session, resource, filePath, fadeMs, log) *
+/* Uses ffprobe to read the track duration, then schedules a pre-emptive fade-out   *
+/* fadeDurationMs before the song ends so natural transitions have a smooth fade.   *
+/* Fire-and-forget — errors are silently swallowed.                                 *
+/************************************************************************************/
+async function setSchedulePreFade(session, resource, filePath, fadeMs, log) {
+  try {
+    const { default: ffmpeg } = await import("fluent-ffmpeg");
+    const durationSec = await new Promise((resolve) => {
+      ffmpeg.ffprobe(filePath, (err, meta) => {
+        resolve(err ? 0 : (Number(meta?.format?.duration) || 0));
+      });
+    });
+    if (!(durationSec > 0)) return;
+    // Schedule fade-out to start (fadeDurationMs + 200ms margin) before track ends
+    const delayMs = Math.max(0, durationSec * 1000 - fadeMs - 200);
+    const timer = setTimeout(async () => {
+      // Only fade if this resource is still the active one (not already switched)
+      if (session._currentResource === resource) {
+        const fromVol = session._currentVolume ?? 1.0;
+        await setFadeOut(session, resource, fromVol, fadeMs).catch(() => {});
+      }
+    }, delayMs);
+    if (typeof timer?.unref === "function") timer.unref();
+    // Cancel previous timer and store the new one
+    if (session._preFadeTimer) clearTimeout(session._preFadeTimer);
+    session._preFadeTimer = timer;
+  } catch {}
 }
 
 /************************************************************************************/
@@ -199,18 +232,25 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
       return false;
     }
     const fadeMs = Number.isFinite(Number(cfg?.fadeDurationMs)) ? Math.max(0, Number(cfg.fadeDurationMs)) : 1200;
-    // Fade out the currently playing resource before switching (crossfade / label change)
+    // Cancel any pending pre-fade timer from the previous track
+    if (session._preFadeTimer) { clearTimeout(session._preFadeTimer); session._preFadeTimer = null; }
+    // Fade out the currently playing resource before switching (crossfade / label change).
+    // Use the stored volume — never read from VolumeTransformer state which may be mid-fade-in.
     if (fadeOut && session._currentResource && fadeMs > 0) {
-      await setFadeOut(session._currentResource, fadeMs);
+      const fromVol = session._currentVolume ?? 1.0;
+      await setFadeOut(session, session._currentResource, fromVol, fadeMs);
     }
     const resource = createAudioResource(filePath, { inputType: StreamType.Arbitrary, inlineVolume: true });
     const vol = Number.isFinite(track.volume) ? Math.max(0.1, Math.min(4.0, track.volume)) : 1.0;
+    session._currentVolume = vol;   // remember for future fade-outs
     // Start silent if fading in so there is no gap between tracks
     if (resource.volume) resource.volume.setVolume(fadeIn && fadeMs > 0 ? 0 : vol);
     session.player.play(resource);
     session._currentResource = resource;
-    // Fade in the new track (fire-and-forget)
-    if (fadeIn && fadeMs > 0) setFadeIn(resource, vol, fadeMs);
+    // Fade in the new track (cancels any leftover fade-in from the previous track)
+    if (fadeIn && fadeMs > 0) setFadeIn(session, resource, vol, fadeMs);
+    // Schedule pre-emptive fade-out near the song's end (fire-and-forget)
+    if (fadeMs > 0) setSchedulePreFade(session, resource, filePath, fadeMs, log).catch(() => {});
     const nowTs = new Date().toISOString();
     const nowPlaying = {
       file: track.file,

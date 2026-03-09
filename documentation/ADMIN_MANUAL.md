@@ -2878,7 +2878,7 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 | Voice input silent (bot cannot hear users) | DAVE E2EE decryption not working | Run `npm install` on the server to install `@snazzah/davey` and the correct platform binary. Restart the bot after install. |
 | Idle presence not showing after `/bardleave` | `idlePresence` not configured | Set `core.json["bard"]["idlePresence"]` to the desired text |
 | Idle presence shows while music is playing | Should not happen — check logs | Presence is set by `setPlayTrack()`; if overridden, check for errors in the bard flow |
-| Gap of silence between tracks | `fadeDurationMs` too low or fading error | Check logs; ensure `fadeDurationMs` is ≥ 500. Fade-in starts immediately when the new track begins — if there's still a gap, check for audio resource errors. |
+| Gap of silence between tracks | `fadeDurationMs` too low or fading error | Check logs; ensure `fadeDurationMs` is ≥ 500. Fade-in starts at volume 0 immediately when the new track begins. The pre-emptive fade-out requires `ffprobe` / `fluent-ffmpeg` to read MP3 duration — if that fails silently, the fade-out is skipped. |
 | Bot joins but audio is muted and admin cannot unmute | `joinMuted=true` but bot lacks permissions | The bard bot needs `MUTE_MEMBERS` permission to server-mute itself. Grant the permission in Discord Server Settings → Roles. |
 | Bot joins muted but audio should play | `joinMuted=true` is set | An admin must server-unmute the bot in the voice channel (right-click the bot → Server Unmute). |
 
