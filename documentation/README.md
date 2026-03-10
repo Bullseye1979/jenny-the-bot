@@ -638,7 +638,7 @@ This is the primary AI module. It runs a loop of up to `maxLoops` iterations:
 | `08000` | discord-text-output | Formats and sends the response as a Discord embed; creates reasoning thread |
 | `08100` | discord-voice-tts | Synthesises TTS audio with speaker-tagged voice selection |
 | `08200` | discord-reaction-finish | Removes the progress reaction; adds a completion reaction |
-| `08300` | webpage-output | Sends the response back to the webpage flow caller |
+| `09300` | webpage-output | Sends the response back to the webpage flow caller |
 
 #### discord-text-output (08000) — Detail
 

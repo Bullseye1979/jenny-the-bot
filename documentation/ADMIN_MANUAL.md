@@ -1729,7 +1729,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow; writes validated tags to `bard:labels:{guildId}` |
 | 08100 | `discord-voice-tts` | Synthesises TTS audio with speaker-tagged voice selection |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
-| 08300 | `webpage-output` | Sends the response back to the webpage flow caller |
+| 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`) |
 
 #### discord-text-output (08000) — Details
 
@@ -2830,13 +2830,13 @@ Fields:
 
 ### Song Selection Algorithm
 
-1. **Bot just joined** — `/bardjoin` seeds `bard:labels` with `["default"]`. Tracks tagged `default` get score 1; all others score 0. Weighted random picks from the `default` pool (or all tracks as fallback if none are tagged `default`). The cron job overwrites this with real mood labels on its next run.
+1. **Bot just joined** — `/bardjoin` seeds `bard:labels` with `["default"]`. Tracks tagged `default` score 1; all others score 0. Best-fit selection picks from `default`-tagged tracks (or all tracks as fallback if none are tagged `default`). The cron job overwrites this with real mood labels on its next run.
 2. **Labels empty** (edge case — e.g. cron produced no valid tags and label state was cleared) — if a song is currently playing, it is kept unchanged. If no song is playing, a random track from the full library is picked.
 3. **Current track still matches at least one active label** — keep playing (no change).
 4. **Current track no longer matches any active label** — switch immediately (mid-track):
-   - Score all tracks by count of matching labels
-   - Use **weighted random selection**: tracks with more matching labels are proportionally more likely to be chosen, but not guaranteed — prevents a single high-scoring track from looping indefinitely. Tracks with score 0 are only used as fallback when nothing matches any label.
-   - Excludes the just-interrupted track.
+   - Score every track by count of matching labels.
+   - **Best fit always wins**: only tracks with the highest score are candidates. A track with 2 matches beats all tracks with 1 match, even if there is only one best-fit track.
+   - **Repeat-blocker** (exclude last-played) is only applied when more than one track shares the best score — if there is exactly one best-fit track it always plays regardless.
 5. **Song ends naturally** — the `AudioPlayerStatus.Idle` event triggers an immediate poll cycle. `bard:stream` and `bard:nowplaying` are **not** cleared on Idle — the poll overwrites them atomically when the next track starts. The last-played filename is stored in `session._lastPlayedFile` to ensure the just-finished track is excluded even before the new entry is written.
 
 ### Slash Commands

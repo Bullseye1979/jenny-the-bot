@@ -105,30 +105,25 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   }
 
   const excluded = excludeFile || currentFile;
-  const pool = excluded ? library.filter(t => t.file !== excluded) : library;
-  if (!pool.length) {
-    const single = library[0];
-    return single || null;
-  }
 
-  const scored = pool.map(track => ({
+  // Best fit wins: find the highest number of matching labels across all tracks.
+  // The repeat-blocker (exclude last-played) only applies when more than one
+  // track shares the best score — if there is only one best-fit track it always plays.
+  const scored = library.map(track => ({
     track,
     score: track.tags.filter(t => labelSet.has(t)).length
   }));
 
-  // Weighted random: tracks with more matching labels are proportionally more likely,
-  // but not guaranteed — avoids the same high-scoring song looping forever.
-  // Tracks with score 0 are only used as fallback when nothing matches any label.
-  const positiveScored = scored.filter(s => s.score > 0);
-  const candidates = positiveScored.length > 0 ? positiveScored : scored;
+  const maxScore = Math.max(...scored.map(s => s.score));
+  const best = scored.filter(s => s.score === maxScore);
 
-  const totalWeight = candidates.reduce((sum, s) => sum + Math.max(1, s.score), 0);
-  let r = Math.random() * totalWeight;
-  for (const s of candidates) {
-    r -= Math.max(1, s.score);
-    if (r <= 0) return s.track;
+  let candidates = best;
+  if (best.length > 1 && excluded) {
+    const filtered = best.filter(s => s.track.file !== excluded);
+    if (filtered.length > 0) candidates = filtered;
   }
-  return candidates[candidates.length - 1].track;
+
+  return candidates[Math.floor(Math.random() * candidates.length)].track;
 }
 
 /************************************************************************************/
@@ -207,7 +202,7 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
     // independent of the Discord VolumeTransformer — no need to wait for the fade to finish.
     if (fadeOut && session._currentResource && fadeMs > 0) {
       const earlyTs = new Date().toISOString();
-      await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], trackTags: Array.isArray(track.tags) ? track.tags : [], startedAt: earlyTs, musicDir }, `bard:stream:${session.guildId}`);
+      await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], trackTags: Array.isArray(track.tags) ? track.tags : [], rejectedLabels: session._lastRejectedLabels || [], startedAt: earlyTs, musicDir }, `bard:stream:${session.guildId}`);
       const fromVol = session._currentVolume ?? 1.0;
       await setFadeOut(session, session._currentResource, fromVol, fadeMs);
     }
@@ -230,7 +225,7 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
     };
     await putItem(nowPlaying, `bard:nowplaying:${session.guildId}`);
     // Also store stream entry (includes musicDir so webpage module can serve the file)
-    await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], trackTags: Array.isArray(track.tags) ? track.tags : [], startedAt: nowTs, musicDir }, `bard:stream:${session.guildId}`);
+    await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], trackTags: Array.isArray(track.tags) ? track.tags : [], rejectedLabels: session._lastRejectedLabels || [], startedAt: nowTs, musicDir }, `bard:stream:${session.guildId}`);
     try {
       const bardClient = await getItem("bard:client");
       if (bardClient?.user) {
@@ -327,6 +322,7 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
           const currentFile = nowPlaying?.file || null;
 
           let labels = Array.isArray(labelsData?.labels) ? labelsData.labels : [];
+          let rejected = Array.isArray(labelsData?.rejected) ? labelsData.rejected : [];
           if (labels.length === 0 && Array.isArray(nowPlaying?.labels) && nowPlaying.labels.length) {
             labels = nowPlaying.labels;
           }
@@ -359,6 +355,7 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
               continue;
             }
             session._lastLabels = labels;
+            session._lastRejectedLabels = rejected;
             // Labels changed mid-song: fade out current, then fade in new (crossfade)
             await setPlayTrack(session, next, musicDir, log, cfg, { fadeIn: true, fadeOut: true });
           } else {
@@ -371,6 +368,7 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
               continue;
             }
             session._lastLabels = labels;
+            session._lastRejectedLabels = rejected;
             // Player was idle (not playing): fade in new track, no fade-out needed
             await setPlayTrack(session, next, musicDir, log, cfg, { fadeIn: true, fadeOut: false });
           }

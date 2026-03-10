@@ -590,6 +590,7 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '.now-playing-label{color:#fff;border-radius:999px;padding:.1rem .6rem;font-size:.75rem;background:#6b7280}\n' +
 '.now-playing-label.match{background:#16a34a}\n' +
 '.now-playing-label.song-only{background:var(--acc,#3b82f6)}\n' +
+'.now-playing-label.rejected{background:#dc2626}\n' +
 '#live-player{display:flex;flex-direction:column;gap:8px}\n' +
 '#player-track{height:6px;background:var(--bdr);border-radius:3px;overflow:hidden;cursor:default;user-select:none}\n' +
 '#player-bar{height:100%;background:var(--acc);border-radius:3px;transition:width .8s linear;width:0%}\n' +
@@ -893,6 +894,8 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '    var npHtml="";\n' +
 '    trkTags.forEach(function(t){var cls=llmSet.has(t)?"match":"song-only";npHtml+=\'<span class="now-playing-label \'+cls+\'">\'+esc(t)+\'</span>\';});\n' +
 '    llmLbs.forEach(function(l){if(!tagSet.has(l))npHtml+=\'<span class="now-playing-label">\'+esc(l)+\'</span>\';});\n' +
+'    var rejLbs=Array.isArray(d.rejectedLabels)?d.rejectedLabels:[];\n' +
+'    rejLbs.forEach(function(l){npHtml+=\'<span class="now-playing-label rejected">\'+esc(l)+\'</span>\';});\n' +
 '    npLabels.innerHTML=npHtml;\n' +
 '    var gotNewTrack=d.file!==npFile;\n' +
 '    if(gotNewTrack){\n' +

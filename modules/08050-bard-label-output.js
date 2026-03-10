@@ -66,6 +66,7 @@ export default async function getBardLabelOutput(coreData) {
 
   const labelsEntry = {
     labels,
+    rejected,
     guildId,
     updatedAt: new Date().toISOString()
   };
