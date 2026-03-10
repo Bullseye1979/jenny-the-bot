@@ -390,9 +390,9 @@
       "tickMs": 15000,
       "jobs": [
         {
-          "__description": "Bard label generation — runs every 5 minutes, updates mood labels for active sessions. Set channelID to your D&D text channel ID.",
+          "__description": "Bard label generation — runs every minute, updates mood labels for active sessions. channelID must match the D&D text channel so core-channel-config can apply bard-label-gen flow overrides (model, endpoint, apiKey).",
           "id": "bard-label-gen",
-          "cron": "*/5 * * * *",
+          "cron": "* * * * *",
           "enabled": false,
           "channelID": "YOUR_DND_TEXT_CHANNEL_ID"
         }
@@ -731,7 +731,8 @@
         "discord-voice",
         "discord-admin",
         "discord-status",
-        "api"
+        "api",
+        "bard-label-gen"
       ],
       "channels": [
         {
@@ -754,6 +755,25 @@
               "getHistory"
             ]
           }
+        },
+        {
+          "__description": "Bard label-gen: isolated entry — channelID 'bard-label-gen' is a synthetic ID set on the cron job, not a real Discord channel. Keeps bard AI params separate from any Discord channel config.",
+          "channelMatch": [
+            "bard-label-gen"
+          ],
+          "overrides": {},
+          "flows": [
+            {
+              "flowMatch": [
+                "bard-label-gen"
+              ],
+              "overrides": {
+                "model": "gpt-4o-mini",
+                "temperature": 0.3,
+                "maxTokens": 60
+              }
+            }
+          ]
         },
         {
           "__description": "Browser extension channel — used by the Jenny Edge/Chrome extension",

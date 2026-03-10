@@ -94,6 +94,8 @@ export default async function getBardCron(coreData) {
   const config  = coreData?.config || {};
   const cfg     = config[MODULE_NAME] || {};
   const bardCfg = config["bard"] || {};
+  /* note: AI params (model, endpoint, apiKey) are applied by core-channel-config
+     from the bard-label-gen flow overrides — no need to read them here */
 
   // Discover active bard sessions
   let reg = null;
@@ -180,10 +182,9 @@ export default async function getBardCron(coreData) {
       wo._bardGuildId    = getStr(session.guildId);
       wo._bardValidTags  = [...validTags];
 
-      // Override AI params for label generation (low tokens, no history, no tools)
-      if (!wo.model)    wo.model    = getStr(cfg.model    || bardCfg.model    || "gpt-4o-mini");
-      if (!wo.endpoint) wo.endpoint = getStr(cfg.endpoint || bardCfg.endpoint);
-      if (!wo.apiKey)   wo.apiKey   = getStr(cfg.apiKey   || bardCfg.apiKey);
+      // AI params come from workingObject defaults + core-channel-config overrides (bard-label-gen flow).
+      // Only set a model fallback if nothing was applied from channel config.
+      if (!wo.model) wo.model = "gpt-4o-mini";
 
       wo.temperature       = 0.3;
       wo.maxTokens         = 60;
