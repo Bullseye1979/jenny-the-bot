@@ -19,11 +19,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 const DEFAULT_PROMPT_TEMPLATE =
-  "You are analyzing a D&D tabletop RPG session transcript. " +
-  "Choose exactly 3 tags that best describe the current atmosphere. " +
-  "You MUST use ONLY tags from this exact list — no other words allowed: {{TAGS}}. " +
-  "Each tag is a single word with no spaces. Use the exact tag words from the list. Do NOT invent similar words. " +
-  "Return ONLY the 3 chosen tags as a comma-separated list with no spaces. No explanation, no punctuation. " +
+  "You are a music mood classifier for a D&D tabletop RPG session. " +
+  "Read the transcript below and choose exactly 3 tags that best describe what is happening RIGHT NOW. " +
+  "You MUST pick from this exact list only: {{TAGS}}. " +
+  "RULES: " +
+  "1. Each tag is ONE word from the list above — never combine words, never add spaces. " +
+  "2. Base your choice solely on the transcript. Ignore any previously active tags. " +
+  "3. If combat is happening, pick combat tags. If exploration, pick exploration tags. " +
+  "4. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. " +
   "Example: battle,intense,danger";
 
 /************************************************************************************/
@@ -74,8 +77,8 @@ function buildSystemPrompt(template, tagSet, currentLabels) {
   const tagList = [...tagSet].sort().join(",");
   let prompt = template.replace("{{TAGS}}", tagList);
   if (currentLabels.length) {
-    prompt += `\n\nThe mood labels currently active are: ${currentLabels.join(",")}.` +
-              " You may return the same tags again if the atmosphere has not changed.";
+    prompt += `\n\nFYI: the previously active tags were: ${currentLabels.join(",")}.` +
+              " This is context only — your choice must be based entirely on the transcript above, not on these previous tags.";
   }
   return prompt;
 }
