@@ -26,7 +26,8 @@ const DEFAULT_PROMPT_TEMPLATE =
   "1. Each tag is ONE word from the list above — never combine words, never add spaces. " +
   "2. Base your choice solely on the transcript. Ignore any previously active tags. " +
   "3. If combat is happening, pick combat tags. If exploration, pick exploration tags. " +
-  "4. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. " +
+  "4. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. No apology. " +
+  "If the transcript is empty or unclear, pick the 3 most fitting tags anyway. " +
   "Example: battle,intense,danger";
 
 /************************************************************************************/
