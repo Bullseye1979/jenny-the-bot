@@ -73,14 +73,9 @@ function getLibraryTags(musicDir) {
 /* functionSignature: buildSystemPrompt(template, tagSet, currentLabels)           *
 /* Injects the dynamic tag list and current labels into the system prompt.         *
 /************************************************************************************/
-function buildSystemPrompt(template, tagSet, currentLabels) {
+function buildSystemPrompt(template, tagSet) {
   const tagList = [...tagSet].sort().join(",");
-  let prompt = template.replace("{{TAGS}}", tagList);
-  if (currentLabels.length) {
-    prompt += `\n\nFYI: the previously active tags were: ${currentLabels.join(",")}.` +
-              " This is context only — your choice must be based entirely on the transcript above, not on these previous tags.";
-  }
-  return prompt;
+  return template.replace("{{TAGS}}", tagList);
 }
 
 /************************************************************************************/
@@ -174,7 +169,7 @@ export default async function getBardCron(coreData) {
 
       // Build system prompt: template + tag list + current labels
       const promptTemplate = getStr(wo.prompt || cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
-      const systemPrompt = buildSystemPrompt(promptTemplate, validTags, currentLabels);
+      const systemPrompt = buildSystemPrompt(promptTemplate, validTags);
 
       // Set up the working object for the core-ai pipeline
       wo.systemPrompt = systemPrompt;

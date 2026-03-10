@@ -1726,7 +1726,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | 03000 | `discord-status-apply` | Applies the generated Discord presence status |
 | 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
-| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow; writes validated tags to `bard:labels:{guildId}` |
+| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow; splits by comma, strips non-alphanumeric chars, deduplicates, drops tokens longer than 25 chars; writes up to 3 validated tags and up to 5 rejected tokens to `bard:labels:{guildId}` |
 | 08100 | `discord-voice-tts` | Synthesises TTS audio with speaker-tagged voice selection |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
 | 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`) |
@@ -2755,7 +2755,7 @@ Cron job (every N minutes, flow: bard-label-gen)
      - reads chat context since that timestamp via getContextSince()
        (fallback: last 5 minutes on first run)
      - writes current timestamp to bard:lastrun:{guildId}
-     - builds wo.systemPrompt = prompt template + {{TAGS}} list + current labels info
+     - builds wo.systemPrompt = prompt template + {{TAGS}} list (no previous labels injected)
      - builds wo.payload = formatted conversation text
      - sets wo.useAiModule = "completions", wo.doNotWriteToContext = true, wo.includeHistory = false
   -> 01000-core-ai-completions.js  (shared AI pipeline, flow: bard-label-gen)
@@ -2789,9 +2789,9 @@ player.on(AudioPlayerStatus.Idle) — Discord voice: song ended naturally
 | `bard:client` | Discord.js Client instance for the bard bot |
 | `bard:registry` | `{ list: ["bard:session:{guildId}"] }` |
 | `bard:session:{guildId}` | `{ guildId, voiceChannelId, textChannelId, connection, player }` |
-| `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], updatedAt, guildId }` — written by the cron job after each LLM classification. Initially seeded to `["default"]` on `/bardjoin` so tracks tagged `default` are played first. Deleted on `/bardleave`. |
+| `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels` = validated tags (present in `library.xml`); `rejected` = tokens returned by the LLM that are not in the library (up to 5, deduplicated). Initially seeded to `["default"]` on `/bardjoin` so tracks tagged `default` are played first. Deleted on `/bardleave`. |
 | `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
-| `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`. Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardleave` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
+| `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, rejectedLabels, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`; `rejectedLabels` = LLM tokens not in the library (shown red in Now Playing). Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardleave` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
 | `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written before each LLM call so the next run reads context from exactly this point forward |
 
 ### Music Library (library.xml)
@@ -2853,7 +2853,7 @@ Accessible at `/bard-admin`. Features:
 - Delete tracks (removes both library entry and MP3 file)
 - **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
 - **Bulk Auto-Tag Upload** — drop multiple MP3 files at once and have tags generated automatically (see below)
-- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Labels are colour-coded: **green** = tag appears on both the track and the active mood; **blue** = track tag not in the current mood; **gray** = mood label not present on the current track. Sync behaviour:
+- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Labels are colour-coded: **green** = tag appears on both the track and the active mood; **blue** = track tag not in the current mood; **gray** = mood label not present on the current track; **red** = LLM token not found in library.xml (rejected). Sync behaviour:
   - **Regular polling:** every 2 seconds.
   - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 2-second cycle. This minimises the gap between tracks in the browser player.
   - **On crossfade (label change mid-song):** `bard:stream` is updated with the new track *before* the Discord fade-out starts. The browser therefore loads and plays the new track immediately at full volume; Discord fades out the old track in parallel. The two streams are intentionally not in sync during the Discord fade — this is by design since the browser and Discord audio are independent.
@@ -2924,7 +2924,7 @@ The LLM prompt used by `00036-bard-cron.js` to classify mood tags is resolved in
 
 The prompt template may contain the placeholder `{{TAGS}}`, which is replaced at runtime with the comma-separated list of all tags found in `library.xml`.
 
-**Current labels are also passed to the AI** (appended to the system prompt) so the model can consider whether to keep or change the current mood when new context is available.
+The LLM decides purely from the current transcript — no previous labels are injected into the prompt. This prevents the model from anchoring on old mood context and ensures the tags always reflect what is happening right now.
 
 ### bard-label-gen Flow (Pipeline Overview)
 
