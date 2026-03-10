@@ -38,6 +38,7 @@
    - 7.4 [Final Logging (10xxx)](#74-final-logging-10xxx)
 8. [Tools — LLM-callable Functions](#8-tools--llm-callable-functions)
    - [getGoogle](#getgoogle)
+   - [getTavily](#gettavily)
    - [getWebpage](#getwebpage)
    - [getImage](#getimage)
    - [getImageDescription](#getimagedescription)
@@ -1656,7 +1657,7 @@ export default async function myModule(coreData) {
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00045 | `webpage-inpaint` | Image inpainting redirect for web content |
-| 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard-admin`) — includes play-preview buttons and live Now Playing card |
+| 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard-admin`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /chat/api/chats`, `GET /chat/api/messages`, `POST /chat/api/messages` on the configured port. The `/chat/api/messages` endpoint filters out records with `internal_meta: true`, empty content, and lines starting with `META|` before returning them to the browser. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
@@ -1781,6 +1782,49 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | `lr` | string | — | Language restrict, e.g. `"lang_en"` |
 | `cr` | string | — | Country restrict, e.g. `"countryUS"` |
 | `gl` | string | — | Geolocation, e.g. `"us"` |
+
+---
+
+### getTavily
+
+**File:** `tools/getTavily.js`
+**Purpose:** Web search via [Tavily Search API](https://tavily.com) — AI-optimised results with topic and time-range filters. Complements `getGoogle`; useful when Google's CSE quota is exhausted or when news/finance-specific searches are needed.
+
+**LLM parameters (passed by the AI):**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | Yes | Search query |
+| `searchDepth` | string | — | `"basic"` (1 credit, default) · `"advanced"` (2 credits, more thorough) |
+| `maxResults` | integer (1–20) | — | Number of results (default from toolsconfig) |
+| `topic` | string | — | `"general"` · `"news"` · `"finance"` |
+| `timeRange` | string | — | `"day"` · `"week"` · `"month"` · `"year"` |
+| `includeAnswer` | boolean | — | Request a Tavily-generated answer alongside results |
+
+**Admin-only toolsconfig keys** (not exposed to the LLM):
+
+| Key | Description |
+|---|---|
+| `includeDomains` | Array of domains to restrict results to |
+| `excludeDomains` | Array of domains to exclude |
+| `country` | Boost results from a specific country (ISO code) |
+
+**Return value:**
+
+```json
+{
+  "ok": true,
+  "query": "...",
+  "total": 5,
+  "answer": "...",
+  "responseTime": 1.23,
+  "results": [
+    { "title": "...", "url": "...", "content": "...", "score": 0.97 }
+  ]
+}
+```
+
+**Setup:** Create a free account at [app.tavily.com](https://app.tavily.com), copy the API key, and set `toolsconfig.getTavily.apiKey` in `core.json`. Free tier includes 1 000 credits/month.
 
 ---
 
@@ -2414,7 +2458,7 @@ https://discord.com/oauth2/authorize?client_id=BARD_CLIENT_ID&permissions=8&scop
 - `GET /bard-admin` — renders the music library manager UI
 - `GET /bard-admin/style.css` — serves shared CSS
 - `GET /bard-admin/api/library` — returns `{tracks: [...], files: [...]}`
-- `POST /bard-admin/api/upload` — uploads an MP3 file and adds to library.xml
+- `POST /bard-admin/api/autotag-upload` — bulk upload: saves MP3, queries Tavily for song context, calls LLM to generate 5 tags, writes library.xml entry. Returns `{ok, filename, title, tags}`. Requires `config["webpage-bard"].autoTag.enabled = true`.
 - `POST /bard-admin/api/tags` — updates track metadata (title, tags, volume)
 - `DELETE /bard-admin/api/track` — deletes a track and its MP3 file
 
@@ -2806,10 +2850,10 @@ Fields:
 ### Bard Admin UI
 
 Accessible at `/bard-admin`. Features:
-- Upload MP3 files via drag-and-drop or file picker
 - Edit track title, tags (comma-separated), and volume per track
 - Delete tracks (removes both library entry and MP3 file)
 - **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
+- **Bulk Auto-Tag Upload** — drop multiple MP3 files at once and have tags generated automatically (see below)
 - **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Sync behaviour:
   - **Regular polling:** every 2 seconds.
   - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 2-second cycle. This minimises the gap between tracks in the browser player.
@@ -2817,6 +2861,56 @@ Accessible at `/bard-admin`. Features:
   - **On "▶ Zum Anhören klicken" (start button):** the elapsed position is recalculated at the exact moment the user clicks, so the stream is in sync even if the user waited on the page before pressing play. The catch-up seek happens at button-press time, not at the next track change.
 
 Filenames are preserved as-is, including spaces. Only characters outside `[a-zA-Z0-9 ._-]` are replaced with `_`.
+
+### Bulk Auto-Tag Upload
+
+The **Bulk Auto-Tag Upload** card lets you drop multiple MP3 files at once. For each file, the server:
+
+1. Derives the track title from the filename (strips `.mp3`, converts `_`/`-` to spaces, title-cases)
+2. Queries Tavily with `"<Title>" song music mood genre atmosphere RPG tabletop` to retrieve genre/mood context
+3. Sends title + search snippet + the list of tags already used in the library to an LLM
+4. LLM returns exactly 5 lowercase tags (e.g. `["combat","intense","drums","dark","medieval"]`)
+5. Saves the MP3 and writes/updates the entry in `library.xml`
+
+Files are processed **sequentially** (one at a time) to avoid library.xml write conflicts. The progress list shows per-file status and the assigned tags on completion.
+
+**Setup:**
+
+```json
+"webpage-bard": {
+  "autoTag": {
+    "enabled": true,
+    "tavilyApiKey": "tvly-…",
+    "tavilyMaxResults": 5,
+    "tavilyTimeoutMs": 15000,
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "apiKey": "sk-…",
+    "model": "gpt-4o-mini",
+    "temperature": 0.2,
+    "maxTokens": 200,
+    "llmTimeoutMs": 30000,
+    "systemPrompt": "You are a music tagging assistant …",
+    "userPrompt": "Track title: \"{title}\" …"
+  }
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Must be `true` for the endpoint to accept requests |
+| `tavilyApiKey` | `""` | Tavily API key (get one at tavily.com) |
+| `tavilyMaxResults` | `5` | Number of Tavily results to use for context (1–20) |
+| `tavilyTimeoutMs` | `15000` | Tavily request timeout in ms |
+| `endpoint` | OpenAI chat completions | LLM API endpoint (OpenAI-compatible) |
+| `apiKey` | `""` | LLM API key |
+| `model` | `"gpt-4o-mini"` | LLM model |
+| `temperature` | `0.2` | LLM temperature (lower = more consistent tags) |
+| `maxTokens` | `200` | Max tokens for LLM response |
+| `llmTimeoutMs` | `30000` | LLM request timeout in ms |
+| `systemPrompt` | *(built-in)* | LLM system prompt for tag generation. Overrides the built-in D&D tagging instruction when set to a non-empty string. |
+| `userPrompt` | *(built-in)* | LLM user prompt template. Available placeholders: `{title}` (track name), `{tavilySnippet}` (web search results), `{existingTags}` (comma-separated list of all tags already in the library). Falls back to the built-in template when empty. |
+
+> **Tip:** If Tavily fails or finds nothing for a track, the LLM still generates tags from the title alone — the feature degrades gracefully. Tags always come out as exactly 5 entries; if the LLM returns fewer, `"ambient"` is appended as padding.
 
 ### Label Generation Prompt
 

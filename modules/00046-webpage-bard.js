@@ -139,6 +139,178 @@ function getBasePath(cfg) {
 /**********************************************************************************/
 
 /**********************************************************************************/
+/* functionSignature: getMultipartBoundary (ct)                                   */
+/* Extracts the multipart boundary string from a Content-Type header.             */
+/**********************************************************************************/
+function getMultipartBoundary(ct) {
+  const m = /boundary=([^\s;]+)/i.exec(String(ct || ""));
+  return m ? m[1].replace(/^"|"$/g, "") : null;
+}
+
+/**********************************************************************************/
+/* functionSignature: parseMultipart (rawBytes, boundary)                         */
+/* Parses a multipart/form-data Buffer into { fields, files }.                    */
+/**********************************************************************************/
+function parseMultipart(rawBytes, boundary) {
+  const out = { fields: {}, files: {} };
+  if (!Buffer.isBuffer(rawBytes) || !boundary) return out;
+  const boundaryBuf = Buffer.from(`--${boundary}`);
+  let pos = rawBytes.indexOf(boundaryBuf);
+  if (pos < 0) return out;
+  pos += boundaryBuf.length;
+  while (pos < rawBytes.length) {
+    const next2 = rawBytes.slice(pos, pos + 2).toString();
+    if (next2 === "--") break;
+    if (next2 === "\r\n") pos += 2;
+    let headerEnd = -1;
+    for (let i = pos; i < rawBytes.length - 3; i++) {
+      if (rawBytes[i] === 0x0d && rawBytes[i+1] === 0x0a && rawBytes[i+2] === 0x0d && rawBytes[i+3] === 0x0a) { headerEnd = i; break; }
+    }
+    if (headerEnd < 0) break;
+    const headerSection = rawBytes.slice(pos, headerEnd).toString("utf8");
+    const bodyStart = headerEnd + 4;
+    const nextBoundary = rawBytes.indexOf(boundaryBuf, bodyStart);
+    const bodyEnd = nextBoundary < 0 ? rawBytes.length
+      : (rawBytes[nextBoundary - 2] === 0x0d && rawBytes[nextBoundary - 1] === 0x0a ? nextBoundary - 2 : nextBoundary);
+    const body = rawBytes.slice(bodyStart, bodyEnd);
+    const headers = {};
+    for (const line of headerSection.split("\r\n")) {
+      const ci = line.indexOf(":");
+      if (ci < 0) continue;
+      headers[line.slice(0, ci).toLowerCase().trim()] = line.slice(ci + 1).trim();
+    }
+    const cd = headers["content-disposition"] || "";
+    const nameMatch     = /name="([^"]*)"/.exec(cd);
+    const filenameMatch = /filename="([^"]*)"/.exec(cd);
+    if (nameMatch) {
+      const fieldName   = nameMatch[1];
+      const filename    = filenameMatch ? filenameMatch[1] : null;
+      const contentType = headers["content-type"] || "application/octet-stream";
+      if (filename !== null) out.files[fieldName] = { buffer: body, filename, contentType };
+      else out.fields[fieldName] = body.toString("utf8");
+    }
+    if (nextBoundary < 0) break;
+    pos = nextBoundary + boundaryBuf.length;
+  }
+  return out;
+}
+
+/**********************************************************************************/
+/* functionSignature: getTitleFromFilename (filename)                             */
+/* Converts a filename to a display title: strips extension, normalizes spaces.  */
+/**********************************************************************************/
+function getTitleFromFilename(filename) {
+  return filename
+    .replace(/\.mp3$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**********************************************************************************/
+/* functionSignature: getExistingTagSet (tracks)                                  */
+/* Returns a sorted array of all unique tags already used in the library.         */
+/**********************************************************************************/
+function getExistingTagSet(tracks) {
+  const seen = new Set();
+  for (const t of tracks) for (const tag of (t.tags || [])) seen.add(tag);
+  return [...seen].sort();
+}
+
+/**********************************************************************************/
+/* functionSignature: callTavily (title, atCfg)                                   */
+/* Queries Tavily for genre/mood info about a song. Returns a text snippet.      */
+/**********************************************************************************/
+async function callTavily(title, atCfg) {
+  const query = `"${title}" song music mood genre atmosphere RPG tabletop`;
+  const body = {
+    query,
+    search_depth: "basic",
+    max_results:  Number(atCfg.tavilyMaxResults) || 5,
+    topic:        "general",
+    include_answer: false
+  };
+  const timeoutMs = Number(atCfg.tavilyTimeoutMs) || 15000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let data = null;
+  try {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${atCfg.tavilyApiKey}` },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    const raw = await res.text();
+    try { data = JSON.parse(raw); } catch (_e) { data = null; }
+  } catch (_e) { /* timeout or network error — proceed without search context */ }
+  finally { clearTimeout(timer); }
+  if (!Array.isArray(data?.results) || !data.results.length) return "";
+  return data.results.slice(0, 3)
+    .map(r => `${r.title || ""}: ${(r.content || "").slice(0, 300)}`)
+    .join("\n\n");
+}
+
+/**********************************************************************************/
+/* functionSignature: callLlmForTags (title, tavilySnippet, existingTags, atCfg) */
+/* Calls an LLM to generate exactly 5 mood/atmosphere tags for a music track.    */
+/**********************************************************************************/
+async function callLlmForTags(title, tavilySnippet, existingTags, atCfg) {
+  const systemPrompt = (typeof atCfg.systemPrompt === "string" && atCfg.systemPrompt.trim())
+    ? atCfg.systemPrompt
+    : "You are a music tagging assistant for a tabletop RPG (D&D) ambient music library.\n" +
+      "Assign exactly 5 mood/atmosphere tags to a music track.\n" +
+      "Each tag must be a single lowercase word (only a-z, 0-9, hyphens allowed).\n" +
+      "Output ONLY a JSON array of exactly 5 strings. No explanation, no extra text.\n" +
+      "Example: [\"combat\",\"tension\",\"dark\",\"drums\",\"medieval\"]";
+  const userPromptTemplate = (typeof atCfg.userPrompt === "string" && atCfg.userPrompt.trim())
+    ? atCfg.userPrompt
+    : "Track title: \"{title}\"\n\n" +
+      "Web search results for this track:\n{tavilySnippet}\n\n" +
+      "Existing tags already used in this library (prefer these when applicable):\n{existingTags}\n\n" +
+      "Assign exactly 5 tags. Output only a JSON array of 5 strings.";
+  const userPrompt = userPromptTemplate
+    .replace("{title}",         title)
+    .replace("{tavilySnippet}", tavilySnippet || "No search results available.")
+    .replace("{existingTags}",  existingTags.length ? existingTags.join(", ") : "none yet");
+  const reqBody = {
+    model:       atCfg.model || "gpt-4o-mini",
+    messages:    [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+    temperature: Number.isFinite(Number(atCfg.temperature)) ? Number(atCfg.temperature) : 0.2,
+    max_tokens:  Number(atCfg.maxTokens) || 200
+  };
+  const timeoutMs = Number(atCfg.llmTimeoutMs) || 30000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let data = null;
+  try {
+    const res = await fetch(atCfg.endpoint || "https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${atCfg.apiKey}` },
+      body: JSON.stringify(reqBody),
+      signal: controller.signal
+    });
+    const raw = await res.text();
+    try { data = JSON.parse(raw); } catch (_e) { data = null; }
+  } catch (_e) { /* timeout or network error */ }
+  finally { clearTimeout(timer); }
+  const text = data?.choices?.[0]?.message?.content || "";
+  let tags = [];
+  try { tags = JSON.parse(text.trim()); } catch (_e) {
+    const matches = text.match(/"([a-z0-9_-]+)"/g) || [];
+    tags = matches.map(m => m.replace(/"/g, ""));
+  }
+  tags = tags
+    .filter(t => typeof t === "string" && t.trim())
+    .map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""))
+    .filter(Boolean)
+    .slice(0, 5);
+  while (tags.length < 5) tags.push("ambient");
+  return tags;
+}
+
+/**********************************************************************************/
 /**********************************************************************************/
 function getMusicDir(cfg, globalConfig) {
   const dir = getStr(cfg.musicDir || globalConfig?.bard?.musicDir || "assets/bard");
@@ -283,35 +455,6 @@ export default async function getWebpageBard(coreData) {
   }
 
   /**********************************************************************************/
-  if (method === "POST" && urlPath === basePath + "/api/upload") {
-    let reqData; try { reqData = JSON.parse(getBody(wo)); } catch (_) { setJsonResp(wo, 400, { error: "Invalid JSON" }); wo.jump = true; await setSendNow(wo); return coreData; }
-
-    const filename = path.basename(getStr(reqData?.filename)).replace(/[^a-zA-Z0-9 ._-]/g, "_");
-    const title    = getStr(reqData?.title || filename.replace(/\.mp3$/i, ""));
-    const tags     = Array.isArray(reqData?.tags) ? reqData.tags.map(t => getStr(t).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "")).filter(Boolean) : [];
-    const data     = getStr(reqData?.data);
-    const rawVol   = typeof reqData?.volume === "number" ? reqData.volume : parseFloat(reqData?.volume);
-    const volume   = Number.isFinite(rawVol) ? Math.max(0.1, Math.min(4.0, rawVol)) : 1.0;
-
-    if (!filename || !/\.mp3$/i.test(filename)) { setJsonResp(wo, 400, { error: "filename must end with .mp3" }); wo.jump = true; await setSendNow(wo); return coreData; }
-    if (!data) { setJsonResp(wo, 400, { error: "data (base64) required" }); wo.jump = true; await setSendNow(wo); return coreData; }
-
-    try {
-      if (!fs.existsSync(musicDir)) fs.mkdirSync(musicDir, { recursive: true });
-      fs.writeFileSync(path.join(musicDir, filename), Buffer.from(data, "base64"));
-      const tracks = readTracks(musicDir);
-      const existing = tracks.findIndex(t => t.file === filename);
-      if (existing >= 0) tracks[existing] = { file: filename, title, tags, volume };
-      else tracks.push({ file: filename, title, tags, volume });
-      writeTracks(musicDir, tracks);
-      setJsonResp(wo, 200, { ok: true, filename, title, tags, volume });
-    } catch (e) {
-      setJsonResp(wo, 500, { error: getStr(e?.message) });
-    }
-    wo.jump = true; await setSendNow(wo); return coreData;
-  }
-
-  /**********************************************************************************/
   if (method === "POST" && urlPath === basePath + "/api/tags") {
     let reqData; try { reqData = JSON.parse(getBody(wo)); } catch (_) { setJsonResp(wo, 400, { error: "Invalid JSON" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -332,6 +475,46 @@ export default async function getWebpageBard(coreData) {
       setJsonResp(wo, 200, { ok: true });
     } catch (e) {
       setJsonResp(wo, 500, { error: getStr(e?.message) });
+    }
+    wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  /**********************************************************************************/
+  if (method === "POST" && urlPath === basePath + "/api/autotag-upload") {
+    const atCfg = cfg.autoTag || {};
+    if (!atCfg.enabled) {
+      setJsonResp(wo, 403, { ok: false, error: "autoTag not enabled (set cfg.autoTag.enabled = true)" });
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+    if (!atCfg.tavilyApiKey || !atCfg.apiKey) {
+      setJsonResp(wo, 500, { ok: false, error: "autoTag not fully configured (tavilyApiKey or apiKey missing)" });
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+    const ct        = String(wo.http?.headers?.["content-type"] || "");
+    const boundary  = getMultipartBoundary(ct);
+    const rawBytes  = Buffer.isBuffer(wo.http?.rawBodyBytes) ? wo.http.rawBodyBytes : Buffer.from(String(wo.http?.rawBody ?? ""), "utf8");
+    const parsed    = parseMultipart(rawBytes, boundary);
+    const mp3File   = parsed.files?.file;
+    const rawFilename = path.basename(getStr(mp3File?.filename || parsed.fields?.filename || "")).replace(/[^a-zA-Z0-9 ._-]/g, "_");
+    if (!mp3File?.buffer?.length || !rawFilename || !/\.mp3$/i.test(rawFilename)) {
+      setJsonResp(wo, 400, { ok: false, error: "MP3 file required (multipart field name: 'file')" });
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+    try {
+      const title        = getTitleFromFilename(rawFilename);
+      const tracks       = readTracks(musicDir);
+      const existingTags = getExistingTagSet(tracks);
+      const tavilySnippet = await callTavily(title, atCfg);
+      const tags = await callLlmForTags(title, tavilySnippet, existingTags, atCfg);
+      if (!fs.existsSync(musicDir)) fs.mkdirSync(musicDir, { recursive: true });
+      fs.writeFileSync(path.join(musicDir, rawFilename), mp3File.buffer);
+      const idx   = tracks.findIndex(t => t.file === rawFilename);
+      const entry = { file: rawFilename, title, tags, volume: 1.0 };
+      if (idx >= 0) tracks[idx] = entry; else tracks.push(entry);
+      writeTracks(musicDir, tracks);
+      setJsonResp(wo, 200, { ok: true, filename: rawFilename, title, tags });
+    } catch (e) {
+      setJsonResp(wo, 500, { ok: false, error: getStr(e?.message) });
     }
     wo.jump = true; await setSendNow(wo); return coreData;
   }
@@ -367,20 +550,15 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
   const menuHtml = getMenuHtml(menu || [], activePath || base, role || "");
   const adminHtml =
 '<div class="card">\n' +
-'<h2>Upload MP3</h2>\n' +
-'<div id="drop-zone">\n' +
-'  <input type="file" id="file-input" accept=".mp3">\n' +
-'  <div id="drop-label">Drop MP3 here or <u style="cursor:pointer" onclick="document.getElementById(\'file-input\').click()">browse</u></div>\n' +
+'<h2>Bulk Auto-Tag Upload</h2>\n' +
+'<div id="bulk-drop-zone">\n' +
+'  <input type="file" id="bulk-file-input" accept=".mp3" multiple>\n' +
+'  <div id="bulk-drop-label">Drop multiple MP3 files here or <u style="cursor:pointer" onclick="document.getElementById(\'bulk-file-input\').click()">browse</u></div>\n' +
 '</div>\n' +
-'<div id="upload-form" class="hidden">\n' +
-'  <div class="upload-row"><span id="upload-filename"></span></div>\n' +
-'  <input class="inp" type="text" id="upload-title" placeholder="Title">\n' +
-'  <input class="inp" type="text" id="upload-tags" placeholder="Tags (comma-separated, e.g. battle,intense,fight)">\n' +
-'  <input class="inp" type="number" id="upload-vol" min="0.1" max="4" step="0.1" value="1.0" placeholder="Volume (1.0 = 100%)">\n' +
-'  <div style="display:flex;gap:8px">\n' +
-'    <button class="btn btn-p" onclick="doUpload()">Upload</button>\n' +
-'    <button class="btn btn-s" onclick="resetUpload()">Cancel</button>\n' +
-'  </div>\n' +
+'<div id="bulk-progress-list"></div>\n' +
+'<div id="bulk-start-row" style="display:none">\n' +
+'  <button class="btn btn-p" onclick="doBulkUpload()">Upload &amp; Auto-Tag All</button>\n' +
+'  <button class="btn btn-s" onclick="resetBulk()">Clear</button>\n' +
 '</div>\n' +
 '</div>\n' +
 '<div class="card">\n' +
@@ -397,15 +575,8 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '#bard-wrap{margin-top:var(--hh);height:calc(100vh - var(--hh));height:calc(100dvh - var(--hh));overflow-y:auto;padding:16px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px);display:flex;flex-direction:column;gap:16px;max-width:860px;margin-left:auto;margin-right:auto}\n' +
 '.card{background:#fff;border:1px solid var(--bdr);border-radius:8px;padding:14px}\n' +
 '.card h2{font-size:14px;font-weight:700;margin-bottom:12px;color:var(--txt)}\n' +
-'#drop-zone{border:2px dashed var(--bdr);border-radius:8px;padding:28px 16px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s;font-size:13px}\n' +
-'#drop-zone.over{border-color:var(--acc);background:#eff6ff}\n' +
-'#drop-zone input[type=file]{display:none}\n' +
-'#upload-form{display:none;margin-top:12px;display:flex;flex-direction:column;gap:8px}\n' +
-'#upload-form.hidden{display:none}\n' +
 '.inp{width:100%;padding:7px 10px;border:1px solid var(--bdr);border-radius:6px;font-size:13px}\n' +
 '.inp:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(59,130,246,.12)}\n' +
-'.upload-row{display:flex;gap:8px;align-items:center}\n' +
-'#upload-filename{font-size:12px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n' +
 '.track-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 0;border-bottom:1px solid var(--bdr)}\n' +
 '.track-row:last-child{border-bottom:none}\n' +
 '.track-file{font-size:12px;color:var(--muted);flex:0 0 100%;margin-bottom:2px}\n' +
@@ -427,6 +598,16 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '#player-vol{width:72px;accent-color:var(--acc);cursor:pointer}\n' +
 '#nowplaying-idle{color:var(--muted);font-size:13px;padding:4px 0}\n' +
 '#np-file{font-size:11px;color:var(--muted);margin-bottom:8px;word-break:break-all}\n' +
+'#bulk-drop-zone{border:2px dashed var(--bdr);border-radius:8px;padding:28px 16px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s;font-size:13px}\n' +
+'#bulk-drop-zone.over{border-color:var(--acc);background:#eff6ff}\n' +
+'#bulk-drop-zone input[type=file]{display:none}\n' +
+'.bulk-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bdr);font-size:13px}\n' +
+'.bulk-row:last-child{border-bottom:none}\n' +
+'.bulk-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}\n' +
+'.bulk-status{flex:0 0 110px;text-align:right;font-size:12px;color:var(--muted)}\n' +
+'.bulk-tags{flex:2;font-size:12px;color:var(--acc);margin-left:6px}\n' +
+'.bulk-status.ok{color:#16a34a}.bulk-status.err{color:#dc2626}\n' +
+'#bulk-start-row{margin-top:10px;display:flex;gap:8px}\n' +
 '</style>\n' +
 '</head>\n<body>\n' +
 '<header><h1>🎵 Bard</h1>' + (menuHtml ? menuHtml : "") + '</header>\n' +
@@ -458,60 +639,95 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 
 '<script>\n' +
 'var BASE="' + base + '";\n' +
-'var pendingFile=null;\n' +
 '\n' +
 'function toast(msg,ms){\n' +
 '  var t=document.getElementById("toast"); t.textContent=msg; t.classList.add("on");\n' +
 '  setTimeout(function(){t.classList.remove("on");},ms||2800);\n' +
 '}\n' +
 '\n' +
-'/**********************************************************************************/\n' +
-'var dz=document.getElementById("drop-zone");\n' +
-'if(dz){\n' +
-'  dz.addEventListener("dragover",function(e){e.preventDefault();dz.classList.add("over");});\n' +
-'  dz.addEventListener("dragleave",function(){dz.classList.remove("over");});\n' +
-'  dz.addEventListener("drop",function(e){\n' +
-'    e.preventDefault(); dz.classList.remove("over");\n' +
-'    var f=e.dataTransfer.files[0]; if(f) setFile(f);\n' +
+'/* ── Bulk Auto-Tag Upload ── */\n' +
+'var bulkFiles=[];\n' +
+'var _bulkRunning=false;\n' +
+'\n' +
+'var bdz=document.getElementById("bulk-drop-zone");\n' +
+'if(bdz){\n' +
+'  bdz.addEventListener("dragover",function(e){e.preventDefault();bdz.classList.add("over");});\n' +
+'  bdz.addEventListener("dragleave",function(){bdz.classList.remove("over");});\n' +
+'  bdz.addEventListener("drop",function(e){\n' +
+'    e.preventDefault(); bdz.classList.remove("over");\n' +
+'    setBulkFiles(Array.from(e.dataTransfer.files));\n' +
 '  });\n' +
-'  var fi=document.getElementById("file-input");\n' +
-'  if(fi) fi.addEventListener("change",function(){if(this.files[0]) setFile(this.files[0]);});\n' +
+'  var bfi=document.getElementById("bulk-file-input");\n' +
+'  if(bfi) bfi.addEventListener("change",function(){setBulkFiles(Array.from(this.files));});\n' +
 '}\n' +
 '\n' +
-'function setFile(f){\n' +
-'  if(!/\\.mp3$/i.test(f.name)){toast("Only MP3 files allowed",3000);return;}\n' +
-'  pendingFile=f;\n' +
-'  document.getElementById("upload-filename").textContent=f.name;\n' +
-'  document.getElementById("upload-title").value=f.name.replace(/\\.mp3$/i,"");\n' +
-'  document.getElementById("upload-tags").value="";\n' +
-'  document.getElementById("upload-form").classList.remove("hidden");\n' +
+'function setBulkFiles(files){\n' +
+'  bulkFiles=files.filter(function(f){return /\\.mp3$/i.test(f.name);});\n' +
+'  if(!bulkFiles.length){toast("No MP3 files found",3000);return;}\n' +
+'  renderBulkList();\n' +
+'  document.getElementById("bulk-start-row").style.display="";\n' +
 '}\n' +
 '\n' +
-'function resetUpload(){\n' +
-'  pendingFile=null;\n' +
-'  document.getElementById("upload-form").classList.add("hidden");\n' +
-'  document.getElementById("file-input").value="";\n' +
+'function resetBulk(){\n' +
+'  if(_bulkRunning)return;\n' +
+'  bulkFiles=[];\n' +
+'  document.getElementById("bulk-progress-list").innerHTML="";\n' +
+'  document.getElementById("bulk-start-row").style.display="none";\n' +
+'  var bfi=document.getElementById("bulk-file-input"); if(bfi)bfi.value="";\n' +
 '}\n' +
 '\n' +
-'function doUpload(){\n' +
-'  if(!pendingFile){toast("No file selected");return;}\n' +
-'  var title=document.getElementById("upload-title").value.trim();\n' +
-'  var tags=document.getElementById("upload-tags").value.split(",").map(function(t){return t.trim().toLowerCase().replace(/[^a-z0-9_-]/g,"");}).filter(Boolean);\n' +
-'  var vol=parseFloat(document.getElementById("upload-vol").value)||1.0;\n' +
-'  var btn=document.querySelector("#upload-form .btn-p"); btn.disabled=true; btn.textContent="Uploading…";\n' +
-'  var reader=new FileReader();\n' +
-'  reader.onload=function(){\n' +
-'    var b64=reader.result.split(",")[1];\n' +
-'    fetch(BASE+"/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},\n' +
-'      body:JSON.stringify({filename:pendingFile.name,title:title,tags:tags,volume:vol,data:b64})})\n' +
+'function renderBulkList(){\n' +
+'  var el=document.getElementById("bulk-progress-list");\n' +
+'  var html="";\n' +
+'  bulkFiles.forEach(function(f,i){\n' +
+'    html+=\'<div class="bulk-row" id="bulk-row-\'+i+\'">\'+\n' +
+'      \'<span class="bulk-name">\'+esc(f.name)+\'</span>\'+\n' +
+'      \'<span class="bulk-status" id="bulk-status-\'+i+\'">Pending</span>\'+\n' +
+'      \'<span class="bulk-tags" id="bulk-tags-\'+i+\'"></span>\'+\n' +
+'      \'</div>\';\n' +
+'  });\n' +
+'  el.innerHTML=html;\n' +
+'}\n' +
+'\n' +
+'function setBulkRowStatus(i,text,cls,tags){\n' +
+'  var s=document.getElementById("bulk-status-"+i);\n' +
+'  var t=document.getElementById("bulk-tags-"+i);\n' +
+'  if(s){s.textContent=text;s.className="bulk-status"+(cls?" "+cls:"");}\n' +
+'  if(t&&tags)t.textContent=Array.isArray(tags)?tags.join(", "):"";\n' +
+'}\n' +
+'\n' +
+'function doBulkUpload(){\n' +
+'  if(_bulkRunning||!bulkFiles.length)return;\n' +
+'  _bulkRunning=true;\n' +
+'  var startBtn=document.querySelector("#bulk-start-row .btn-p");\n' +
+'  if(startBtn){startBtn.disabled=true;startBtn.textContent="Processing…";}\n' +
+'  var idx=0;\n' +
+'  function nextFile(){\n' +
+'    if(idx>=bulkFiles.length){\n' +
+'      _bulkRunning=false;\n' +
+'      if(startBtn){startBtn.disabled=false;startBtn.textContent="Upload & Auto-Tag All";}\n' +
+'      loadLibrary();\n' +
+'      return;\n' +
+'    }\n' +
+'    var f=bulkFiles[idx]; var i=idx; idx++;\n' +
+'    setBulkRowStatus(i,"Uploading…","");\n' +
+'    var fd=new FormData();\n' +
+'    fd.append("file",f,f.name);\n' +
+'    fetch(BASE+"/api/autotag-upload",{method:"POST",body:fd})\n' +
 '    .then(function(r){return r.json();})\n' +
 '    .then(function(d){\n' +
-'      btn.disabled=false; btn.textContent="Upload";\n' +
-'      if(d.ok){toast("Uploaded: "+d.filename,3000); resetUpload(); loadLibrary();}\n' +
-'      else toast("Error: "+(d.error||"?"),5000);\n' +
-'    }).catch(function(e){btn.disabled=false;btn.textContent="Upload";toast("Error: "+e.message,5000);});\n' +
-'  };\n' +
-'  reader.readAsDataURL(pendingFile);\n' +
+'      if(d.ok){\n' +
+'        setBulkRowStatus(i,"Done","ok",d.tags);\n' +
+'      } else {\n' +
+'        setBulkRowStatus(i,"Error: "+(d.error||"?"),"err");\n' +
+'      }\n' +
+'      nextFile();\n' +
+'    }).catch(function(e){\n' +
+'      setBulkRowStatus(i,"Error: "+e.message,"err");\n' +
+'      nextFile();\n' +
+'    });\n' +
+'  }\n' +
+'  nextFile();\n' +
 '}\n' +
 '\n' +
 '/**********************************************************************************/\n' +

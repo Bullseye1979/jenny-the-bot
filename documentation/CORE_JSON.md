@@ -32,6 +32,7 @@ All key names follow **camelCase** throughout.
      - [getAnimatedPicture](#getanimatedpicture)
      - [getVideoFromText](#getvideofromtext)
      - [getGoogle](#getgoogle)
+     - [getTavily](#gettavily)
      - [getWebpage](#getwebpage)
      - [getYoutube](#getyoutube)
      - [getHistory](#gethistory)
@@ -48,6 +49,7 @@ All key names follow **camelCase** throughout.
    - [config-editor](#config-editor) *(deprecated)*
    - [webpage-config-editor](#webpage-config-editor)
    - [webpage-chat](#webpage-chat)
+   - [webpage-bard](#webpage-bard)
    - [cron](#cron)
    - [context](#context)
    - [webpage](#webpage)
@@ -299,6 +301,22 @@ Google Custom Search Engine.
 | `cr` | string | `"countryDE"` | Restrict results to country |
 | `gl` | string | `"de"` | Geolocation for results |
 | `timeoutMs` | number | `20000` | Request timeout |
+
+#### getTavily
+
+Tavily Search API — AI-optimised web search with topic and time-range filters.
+
+| Key | Type | Example | Description |
+|---|---|---|---|
+| `apiKey` | string | `"tvly-..."` | Tavily API key (get at [app.tavily.com](https://app.tavily.com)) |
+| `searchDepth` | string | `"basic"` | Default depth: `"basic"` (1 credit) · `"advanced"` (2 credits) |
+| `maxResults` | number | `5` | Default number of results (1–20) |
+| `topic` | string | `"general"` | Default topic: `"general"` · `"news"` · `"finance"` |
+| `timeoutMs` | number | `20000` | Request timeout |
+| `includeDomains` | array | `["example.com"]` | Restrict results to these domains (optional) |
+| `excludeDomains` | array | `["spam.com"]` | Exclude these domains from results (optional) |
+| `country` | string | `"de"` | Boost results from this country (optional) |
+| `includeAnswer` | boolean | `false` | Request a Tavily-generated LLM answer alongside results (optional) |
 
 #### getWebpage
 
@@ -570,6 +588,54 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on the same po
 | `chats[].channelID` | Channel ID passed to the API as context |
 | `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |
 | `chats[].apiUrl` | Per-chat API URL override; falls back to `apiUrl` if omitted |
+
+---
+
+### webpage-bard
+
+Bard music library manager SPA served as a **webpage-flow module** (`modules/00046`) on port 3114. Provides MP3 upload, tag editing, track deletion, and Bulk Auto-Tag upload.
+
+```jsonc
+"webpage-bard": {
+  "flow":         ["webpage"],
+  "port":         3114,
+  "basePath":     "/bard-admin",
+  "allowedRoles": ["admin"],
+  "autoTag": {
+    "enabled":          false,
+    "tavilyApiKey":     "tvly-…",
+    "tavilyMaxResults": 5,
+    "tavilyTimeoutMs":  15000,
+    "endpoint":         "https://api.openai.com/v1/chat/completions",
+    "apiKey":           "sk-…",
+    "model":            "gpt-4o-mini",
+    "temperature":      0.2,
+    "maxTokens":        200,
+    "llmTimeoutMs":     30000,
+    "systemPrompt":     "You are a music tagging assistant …",
+    "userPrompt":       "Track title: \"{title}\" …"
+  }
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3114`) — must also be in `config.webpage.ports` |
+| `basePath` | URL base path (default `"/bard-admin"`) |
+| `allowedRoles` | Roles allowed to access the UI (e.g. `["admin"]`). Set to `[]` for public access |
+| `autoTag.enabled` | Set to `true` to enable the Bulk Auto-Tag Upload endpoint |
+| `autoTag.tavilyApiKey` | Tavily API key — used to look up song genre/mood context |
+| `autoTag.tavilyMaxResults` | Number of Tavily results to use for context (default `5`) |
+| `autoTag.tavilyTimeoutMs` | Tavily request timeout in ms (default `15000`) |
+| `autoTag.endpoint` | LLM API endpoint (OpenAI-compatible); defaults to OpenAI chat completions |
+| `autoTag.apiKey` | LLM API key |
+| `autoTag.model` | LLM model for tag generation (default `"gpt-4o-mini"`) |
+| `autoTag.temperature` | LLM temperature (default `0.2`; lower = more consistent) |
+| `autoTag.maxTokens` | Max tokens for the LLM tag response (default `200`) |
+| `autoTag.llmTimeoutMs` | LLM request timeout in ms (default `30000`) |
+| `autoTag.systemPrompt` | LLM system prompt for tag generation. Overrides the built-in D&D tagging instruction when set to a non-empty string. Omit or leave empty to use the built-in default. |
+| `autoTag.userPrompt` | LLM user prompt template. Placeholders: `{title}` (track name), `{tavilySnippet}` (web search results), `{existingTags}` (all tags already in the library, comma-separated). Falls back to the built-in template when empty. |
 
 ---
 
@@ -931,6 +997,13 @@ Below is a minimal but functional `core.json` template with every section includ
         "cseId":     "<CSE_ID>",
         "num":       10,
         "timeoutMs": 20000
+      },
+      "getTavily": {
+        "apiKey":      "<TAVILY_API_KEY>",
+        "searchDepth": "basic",
+        "maxResults":  5,
+        "topic":       "general",
+        "timeoutMs":   20000
       },
       "getWebpage": {
         "timeoutMs":     30000,
