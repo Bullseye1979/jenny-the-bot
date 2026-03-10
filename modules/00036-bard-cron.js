@@ -74,8 +74,8 @@ function buildSystemPrompt(template, tagSet, currentLabels) {
   const tagList = [...tagSet].sort().join(",");
   let prompt = template.replace("{{TAGS}}", tagList);
   if (currentLabels.length) {
-    prompt += `\n\nCurrently active mood labels: ${currentLabels.join(",")}.` +
-              " Consider whether to keep or change them based on the conversation.";
+    prompt += `\n\nThe mood labels currently active are: ${currentLabels.join(",")}.` +
+              " You may return the same tags again if the atmosphere has not changed.";
   }
   return prompt;
 }

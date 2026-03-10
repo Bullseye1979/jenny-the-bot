@@ -47,10 +47,11 @@ export default async function getBardLabelOutput(coreData) {
   }
 
   // Parse: "battle,tension,dark" → ["battle", "tension", "dark"]
+  // Tokens longer than 25 chars are LLM error responses mangled into one string — discard them.
   const raw = response
     .split(",")
     .map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""))
-    .filter(Boolean);
+    .filter(t => t.length > 0 && t.length <= 25);
 
   const labels   = raw.filter(t => validTags.size === 0 || validTags.has(t)).slice(0, 3);
   const rejected = raw.filter(t => validTags.size > 0 && !validTags.has(t));
