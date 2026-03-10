@@ -106,7 +106,7 @@ export default async function getBardCron(coreData) {
 
   if (!sessionKeys.length) {
     log("no active bard sessions — skipping label generation", "info", { moduleName: MODULE_NAME });
-    wo.stop = true;
+    wo.jump = true;
     return coreData;
   }
 
@@ -170,8 +170,10 @@ export default async function getBardCron(coreData) {
         if (Array.isArray(labelsData?.labels)) currentLabels = labelsData.labels;
       } catch {}
 
-      // Build system prompt: template + tag list + current labels
-      const promptTemplate = getStr(wo.prompt || cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
+      // Build system prompt — always use DEFAULT_PROMPT_TEMPLATE as base;
+      // cfg.prompt or bardCfg.prompt can override via config, but workingObject.prompt is ignored
+      // to prevent the global systemPrompt from bleeding in.
+      const promptTemplate = getStr(cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
       const systemPrompt = buildSystemPrompt(promptTemplate, validTags);
 
       // Set up the working object for the core-ai pipeline
@@ -188,6 +190,7 @@ export default async function getBardCron(coreData) {
 
       wo.temperature       = 0.3;
       wo.maxTokens         = 60;
+      wo.maxLoops          = 1;
       wo.useAiModule       = "completions";
       wo.includeHistory    = false;
       wo.doNotWriteToContext = true;
@@ -209,7 +212,7 @@ export default async function getBardCron(coreData) {
 
   if (!targetSession) {
     log("no sessions with new context — nothing to do", "info", { moduleName: MODULE_NAME });
-    wo.stop = true;
+    wo.jump = true;
   }
 
   return coreData;
