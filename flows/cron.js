@@ -79,62 +79,55 @@ function getNextDue(job, log) {
 export default async function getCronFlow(baseCore, runFlow, createRunCore) {
   const cronCore = createRunCore();
   const log = getPrefixedLogger(cronCore?.workingObject || {}, import.meta.url);
-  const cfg = baseCore?.config?.[MODULE_NAME] || baseCore?.config?.cron || {};
 
-  const tickMs = Math.max(5000, getNum(cfg.tickMs, 15000));
-  const defaultTz =
-    getStr(cfg.timezone, "") ||
-    getStr(baseCore?.workingObject?.timezone, "") ||
-    "Europe/Berlin";
+  // Live job state — keyed by job id so reconciliation can preserve running/nextDueAt
+  const jobState = new Map(); // id → { running, nextDueAt }
 
-  const defaultChannelID = getStr(
-    cfg.channelID || cfg.channelId || cfg.channel,
-    "cron"
-  );
-
-  const jobsCfg = Array.isArray(cfg.jobs) ? cfg.jobs : [];
-  if (!jobsCfg.length) {
-    log("no cron jobs configured; cron flow idle", "info", { moduleName: MODULE_NAME });
-    return;
+  /************************************************************
+  /* functionSignature: getLiveCfg ()                         *
+  /* Re-reads cron config from baseCore on every tick so that *
+  /* hot-reloaded core.json changes take effect immediately.  *
+  /************************************************************/
+  function getLiveCfg() {
+    return baseCore?.config?.[MODULE_NAME] || baseCore?.config?.cron || {};
   }
 
-  const jobs = jobsCfg
-    .map((j, idx) => {
-      const id = getStr(j.id || j.cronId || j.cronID, `job-${idx + 1}`);
-      const expr = getStr(j.cron || j.schedule, "");
-      const enabled = getBool(j.enabled, true);
-      const timezone = getStr(j.timezone || j.tz, defaultTz);
-      const channelID = getStr(
-        j.channelID || j.channelId || j.channel,
-        defaultChannelID
-      );
-      if (!expr || !enabled) return null;
-      const flowName = id;
-      log(
-        `register cron job "${id}" expr="${expr}" → flow="${flowName}", channelID="${channelID}"`,
-        "info",
-        { moduleName: MODULE_NAME }
-      );
-      return {
-        id,
-        expr,
-        timezone,
-        flowName,
-        channelID,
-        enabled: true,
-        nextDueAt: 0,
-        running: false
-      };
-    })
-    .filter(Boolean);
-
-  if (!jobs.length) {
-    log("no enabled cron jobs after filtering", "info", { moduleName: MODULE_NAME });
-    return;
-  }
-
-  for (const job of jobs) {
-    job.nextDueAt = getNextDue(job, log);
+  /************************************************************
+  /* functionSignature: getLiveJobs (cfg)                     *
+  /* Parses the jobs array from the current config, merging   *
+  /* with existing running/nextDueAt state so in-flight jobs  *
+  /* are not interrupted.                                     *
+  /************************************************************/
+  function getLiveJobs(cfg) {
+    const defaultTz =
+      getStr(cfg.timezone, "") ||
+      getStr(baseCore?.workingObject?.timezone, "") ||
+      "Europe/Berlin";
+    const defaultChannelID = getStr(
+      cfg.channelID || cfg.channelId || cfg.channel,
+      "cron"
+    );
+    const jobsCfg = Array.isArray(cfg.jobs) ? cfg.jobs : [];
+    return jobsCfg
+      .map((j, idx) => {
+        const id = getStr(j.id || j.cronId || j.cronID, `job-${idx + 1}`);
+        const expr = getStr(j.cron || j.schedule, "");
+        const enabled = getBool(j.enabled, true);
+        if (!expr || !enabled) return null;
+        const prev = jobState.get(id);
+        const exprChanged = prev && prev.expr !== expr;
+        return {
+          id,
+          expr,
+          timezone: getStr(j.timezone || j.tz, defaultTz),
+          flowName: id,
+          channelID: getStr(j.channelID || j.channelId || j.channel, defaultChannelID),
+          enabled: true,
+          running: prev?.running ?? false,
+          nextDueAt: (prev && !exprChanged) ? (prev.nextDueAt ?? 0) : 0
+        };
+      })
+      .filter(Boolean);
   }
 
   /************************************************************
@@ -142,6 +135,20 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
   /* Internal scheduler loop that evaluates and triggers jobs *
   /************************************************************/
   async function setTickLoop() {
+    const cfg = getLiveCfg();
+    const tickMs = Math.max(5000, getNum(cfg.tickMs, 15000));
+    const jobs = getLiveJobs(cfg);
+
+    // Sync jobState with the live list
+    for (const job of jobs) {
+      const prev = jobState.get(job.id);
+      if (!prev || (prev.expr !== job.expr)) {
+        // New job or schedule changed — schedule it
+        if (!job.nextDueAt) job.nextDueAt = getNextDue(job, log);
+      }
+      jobState.set(job.id, job);
+    }
+
     const now = Date.now();
 
     for (const job of jobs) {
@@ -150,6 +157,7 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
 
       if (now + 500 >= job.nextDueAt) {
         job.running = true;
+        jobState.set(job.id, job);
 
         const rc = createRunCore();
 
@@ -163,7 +171,7 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
         rc.workingObject.timestamp = new Date().toISOString();
 
         const targetFlow = job.flowName;
-        const channelID = job.channelID || defaultChannelID;
+        const channelID = job.channelID;
 
         rc.workingObject.flow = targetFlow;
         rc.workingObject.channelID = channelID;
@@ -185,8 +193,11 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
               { moduleName: MODULE_NAME }
             );
           } finally {
-            job.running = false;
-            job.nextDueAt = getNextDue(job, log);
+            const s = jobState.get(job.id);
+            if (s) {
+              s.running = false;
+              s.nextDueAt = getNextDue(s, log);
+            }
           }
         })();
       }
@@ -195,5 +206,7 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
     setTimeout(setTickLoop, Math.max(1, tickMs));
   }
 
+  // Start after 1 s — if no jobs are configured yet, the tick loop
+  // will simply idle and pick them up on the next hot-reload.
   setTimeout(setTickLoop, 1000);
 }

@@ -350,7 +350,6 @@ export default async function getWebpageDocumentation(coreData) {
   const cfg = coreData?.config?.[MODULE_NAME] || {};
   const port = Number(cfg.port ?? 3116);
   if (Number(wo.http?.port) !== port) return coreData;
-  if (wo.jump) return coreData;
 
   const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
   const basePath = String(cfg.basePath ?? "/docs");

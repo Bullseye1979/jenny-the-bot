@@ -2592,7 +2592,6 @@ export default async function getWebpageInpainting(coreData) {
   const basePath = getBasePath(cfg);
 
   if (Number(wo.http?.port) !== port) return coreData;
-  if (wo.jump) return coreData;
 
   const method = String(wo.http?.method ?? "GET").toUpperCase();
   const urlPath = String(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];

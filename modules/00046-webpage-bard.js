@@ -383,7 +383,6 @@ export default async function getWebpageBard(coreData) {
   const musicDir     = getMusicDir(cfg, coreData?.config);
 
   if (Number(wo.http?.port) !== port) return coreData;
-  if (wo.jump) return coreData;
 
   const method  = getStr(wo.http?.method ?? "GET").toUpperCase();
   const urlPath = getStr(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
@@ -588,7 +587,9 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '.now-playing-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;min-height:28px}\n' +
 '.now-playing-title{font-weight:600;font-size:14px;flex:1}\n' +
 '.now-playing-labels{display:flex;gap:4px;flex-wrap:wrap}\n' +
-'.now-playing-label{background:var(--acc,#3b82f6);color:#fff;border-radius:999px;padding:.1rem .6rem;font-size:.75rem}\n' +
+'.now-playing-label{color:#fff;border-radius:999px;padding:.1rem .6rem;font-size:.75rem;background:#6b7280}\n' +
+'.now-playing-label.match{background:#16a34a}\n' +
+'.now-playing-label.song-only{background:var(--acc,#3b82f6)}\n' +
 '#live-player{display:flex;flex-direction:column;gap:8px}\n' +
 '#player-track{height:6px;background:var(--bdr);border-radius:3px;overflow:hidden;cursor:default;user-select:none}\n' +
 '#player-bar{height:100%;background:var(--acc);border-radius:3px;transition:width .8s linear;width:0%}\n' +
@@ -885,8 +886,14 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '    npIdle.style.display="none";npActive.style.display="";\n' +
 '    npTitle.textContent=d.title||d.file.replace(/\\.mp3$/i,"");\n' +
 '    if(npFileEl)npFileEl.textContent=d.file.toLowerCase();\n' +
-'    var lbs=Array.isArray(d.labels)?d.labels:[];\n' +
-'    npLabels.innerHTML=lbs.map(function(l){return\'<span class="now-playing-label">\'+esc(l)+\'</span>\';}).join("");\n' +
+'    var llmLbs=Array.isArray(d.labels)?d.labels:[];\n' +
+'    var trkTags=Array.isArray(d.trackTags)?d.trackTags:[];\n' +
+'    var llmSet=new Set(llmLbs);\n' +
+'    var tagSet=new Set(trkTags);\n' +
+'    var npHtml="";\n' +
+'    trkTags.forEach(function(t){var cls=llmSet.has(t)?"match":"song-only";npHtml+=\'<span class="now-playing-label \'+cls+\'">\'+esc(t)+\'</span>\';});\n' +
+'    llmLbs.forEach(function(l){if(!tagSet.has(l))npHtml+=\'<span class="now-playing-label">\'+esc(l)+\'</span>\';});\n' +
+'    npLabels.innerHTML=npHtml;\n' +
 '    var gotNewTrack=d.file!==npFile;\n' +
 '    if(gotNewTrack){\n' +
 '      npFile=d.file;\n' +

@@ -162,7 +162,6 @@ export default async function getWebpageChat(coreData) {
   const basePath = getBasePath(cfg);
 
   if (Number(wo.http?.port) !== port) return coreData;
-  if (wo.jump) return coreData;
 
   const method  = String(wo.http?.method ?? "GET").toUpperCase();
   const urlPath = String(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
@@ -689,7 +688,7 @@ function getChatHtml(opts) {
 '  if(!chatChannelID){ toast("Please select a channel first"); return; }\n' +
 '  var inp=document.getElementById("chat-input");\n' +
 '  var text=inp.value.trim(); if(!text) return;\n' +
-'  inp.value=""; inp.style.height="auto";\n' +
+'  inp.value="";\n' +
 '  appendMessage("user",text);\n' +
 '  chatSending=true;\n' +
 '  var btn=document.getElementById("chat-send-btn"); btn.disabled=true; btn.textContent="";\n' +
@@ -718,7 +717,7 @@ function getChatHtml(opts) {
 '    });\n' +
 '}\n' +
 'var chatInpEl=document.getElementById("chat-input");\n' +
-'chatInpEl.addEventListener("input",function(){ this.style.height="auto"; this.style.height=Math.min(this.scrollHeight,120)+"px"; });\n' +
+'' +
 'chatInpEl.addEventListener("keydown",function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendMessage(); } });\n' +
 'loadChats();\n' +
 '</script>\n' +

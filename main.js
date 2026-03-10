@@ -645,6 +645,9 @@ async function getRunFlow(flowName, coreDataForRun) {
       state.stopped = true;
       break;
     }
+    if (coreData?.workingObject?.jump === true) {
+      break;
+    }
   }
 
   const hasJump = !state.stopped && slots.some(s => s.num >= 9000 && getIsSubscribedNow(s));

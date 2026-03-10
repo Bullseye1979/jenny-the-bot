@@ -207,7 +207,7 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
     // independent of the Discord VolumeTransformer — no need to wait for the fade to finish.
     if (fadeOut && session._currentResource && fadeMs > 0) {
       const earlyTs = new Date().toISOString();
-      await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], startedAt: earlyTs, musicDir }, `bard:stream:${session.guildId}`);
+      await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], trackTags: Array.isArray(track.tags) ? track.tags : [], startedAt: earlyTs, musicDir }, `bard:stream:${session.guildId}`);
       const fromVol = session._currentVolume ?? 1.0;
       await setFadeOut(session, session._currentResource, fromVol, fadeMs);
     }
@@ -230,7 +230,7 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
     };
     await putItem(nowPlaying, `bard:nowplaying:${session.guildId}`);
     // Also store stream entry (includes musicDir so webpage module can serve the file)
-    await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], startedAt: nowTs, musicDir }, `bard:stream:${session.guildId}`);
+    await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], trackTags: Array.isArray(track.tags) ? track.tags : [], startedAt: nowTs, musicDir }, `bard:stream:${session.guildId}`);
     try {
       const bardClient = await getItem("bard:client");
       if (bardClient?.user) {

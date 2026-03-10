@@ -320,7 +320,6 @@ export default async function getWebpageDashboard(coreData) {
   const refreshSec   = Number(cfg.refreshSeconds ?? 5);
 
   if (Number(wo.http?.port) !== port) return coreData;
-  if (wo.jump) return coreData;
 
   const url     = getStr(wo.http?.url || "/");
   const method  = getStr(wo.http?.method || "GET").toUpperCase();

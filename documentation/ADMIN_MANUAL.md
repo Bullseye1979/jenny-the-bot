@@ -1518,7 +1518,8 @@ Also supports `*/N * * * *` (every N minutes).
 | `wo.http.requestKey` | string | Registry key where `{ req, res }` is stored |
 | `wo.http.response` | object | Set `{ status, headers, body }` here — `webpage-output` sends it |
 | `wo.web.menu` | array | Modules push `{ label, port, path }` here for nav cross-linking |
-| `wo.jump` | boolean | Set to `true` to skip AI modules; checked by modules to avoid double-handling |
+| `wo.jump` | boolean | Set to `true` to stop the normal pipeline loop and jump directly to the ≥9000 output phase (e.g. `core-output`). Use after `setSendNow()` in webpage modules. |
+| `wo.stop` | boolean | Hard stop — breaks the normal loop **and** skips the output phase (≥9000). Use when the flow should be aborted entirely with no logging. |
 
 ---
 
@@ -1563,10 +1564,9 @@ Multiple modules can share a single port. Each module routes by URL path:
 
 1. **Always push to `wo.web.menu`** — regardless of port and before any early returns, so cross-nav links work on all pages.
 2. **Check `wo.http.port !== port`** — return immediately if the request is on a different port.
-3. **Check `wo.jump`** — return immediately if a module earlier in the pipeline already handled this request.
-4. **Use `wo.http.path`** for URL routing — this is the path without query string.
-5. **Set `wo.jump = true`** when handling a route — this prevents subsequent modules from overriding the response.
-6. **Do not add a catch-all 404 fallback** — unrecognized paths should fall through (`return coreData`) so modules further down the pipeline can handle them.
+3. **Use `wo.http.path`** for URL routing — this is the path without query string.
+4. **Set `wo.jump = true`** when handling a route — the pipeline runner breaks the normal loop and jumps to the output phase; no further webpage modules run.
+5. **Do not add a catch-all 404 fallback** — unrecognized paths should fall through (`return coreData`) so modules further down the pipeline can handle them.
 
 ---
 
@@ -2665,7 +2665,6 @@ export default async function getWebpageMyModule(coreData) {
   const cfg = coreData?.config?.[MODULE_NAME] || {};
   const port = Number(cfg.port ?? 3116); // pick the next available port
   if (Number(wo.http?.port) !== port) return coreData;
-  if (wo.jump) return coreData;
 
   const method  = String(wo.http?.method ?? "GET").toUpperCase();
   const urlPath = String(wo.http?.path ?? "/").split("?")[0];
@@ -2792,7 +2791,7 @@ player.on(AudioPlayerStatus.Idle) — Discord voice: song ended naturally
 | `bard:session:{guildId}` | `{ guildId, voiceChannelId, textChannelId, connection, player }` |
 | `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], updatedAt, guildId }` — written by the cron job after each LLM classification. Initially seeded to `["default"]` on `/bardjoin` so tracks tagged `default` are played first. Deleted on `/bardleave`. |
 | `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
-| `bard:stream:{guildId}` | `{ guildId, file, title, labels, startedAt, musicDir }` — overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardleave` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
+| `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`. Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardleave` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
 | `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written before each LLM call so the next run reads context from exactly this point forward |
 
 ### Music Library (library.xml)
@@ -2854,7 +2853,7 @@ Accessible at `/bard-admin`. Features:
 - Delete tracks (removes both library entry and MP3 file)
 - **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
 - **Bulk Auto-Tag Upload** — drop multiple MP3 files at once and have tags generated automatically (see below)
-- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Sync behaviour:
+- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Labels are colour-coded: **green** = tag appears on both the track and the active mood; **blue** = track tag not in the current mood; **gray** = mood label not present on the current track. Sync behaviour:
   - **Regular polling:** every 2 seconds.
   - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 2-second cycle. This minimises the gap between tracks in the browser player.
   - **On crossfade (label change mid-song):** `bard:stream` is updated with the new track *before* the Discord fade-out starts. The browser therefore loads and plays the new track immediately at full volume; Discord fades out the old track in parallel. The two streams are intentionally not in sync during the Discord fade — this is by design since the browser and Discord audio are independent.
@@ -3034,4 +3033,4 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 ---
 
 *End of Administrator Manual*
-*Generated: 2026-03-09 · Jenny Discord AI Bot v1.3*
+*Generated: 2026-03-10 · Jenny Discord AI Bot v1.0*

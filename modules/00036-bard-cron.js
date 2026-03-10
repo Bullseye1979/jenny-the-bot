@@ -105,7 +105,7 @@ export default async function getBardCron(coreData) {
 
   if (!sessionKeys.length) {
     log("no active bard sessions — skipping label generation", "info", { moduleName: MODULE_NAME });
-    wo.jump = true;
+    wo.stop = true;
     return coreData;
   }
 
@@ -209,7 +209,7 @@ export default async function getBardCron(coreData) {
 
   if (!targetSession) {
     log("no sessions with new context — nothing to do", "info", { moduleName: MODULE_NAME });
-    wo.jump = true;
+    wo.stop = true;
   }
 
   return coreData;

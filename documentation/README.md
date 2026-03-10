@@ -499,7 +499,7 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - Large scrollable chat window with AI; loads the last 100 context entries from MySQL on channel select
 - Channel selector dropdown (configured via `chats[]` in `config["webpage-chat"]`)
 - Messages proxied server-side — `apiSecret` is never sent to the browser
-- Textarea auto-resizes; `Enter` sends, `Shift + Enter` adds a newline
+- Fixed-height textarea with internal scroll; `Enter` sends, `Shift + Enter` adds a newline
 - **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
 - **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel, no cross-channel interference)
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
@@ -526,9 +526,6 @@ export default async function getWebpageMyapp(coreData) {
 
   /* 2. Only handle our port */
   if (wo.http?.port !== port) return coreData;
-
-  /* 3. Skip if already handled */
-  if (wo.jump) return coreData;
 
   const urlPath = String(wo.http?.path ?? "/").split("?")[0];
 
