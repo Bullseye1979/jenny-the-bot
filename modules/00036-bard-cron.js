@@ -132,8 +132,11 @@ export default async function getBardCron(coreData) {
       const textChannelId = getStr(session.textChannelId);
       if (!textChannelId) continue;
 
-      // If a specific channelID is configured on the cron job, match it
-      if (woCh && woCh !== "cron" && woCh !== textChannelId) continue;
+      // If a specific channelID is configured on the cron job, match it.
+      // Only filter if woCh is a real Discord snowflake (numeric); synthetic IDs like
+      // "bard-label-gen" or "cron" mean "process all sessions".
+      const isSnowflake = /^\d{10,}$/.test(woCh);
+      if (isSnowflake && woCh !== textChannelId) continue;
 
       const lastRunKey = `bard:lastrun:${session.guildId}`;
       let lastRunData = null;
