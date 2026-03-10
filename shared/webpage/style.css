@@ -133,9 +133,11 @@ details[open].nav-more .nav-more-drop{display:flex}
 #chat-view{
   display:flex;
   flex-direction:column;
-  height:calc(100vh - var(--hh));
-  height:calc(100dvh - var(--hh));
-  margin-top:var(--hh);
+  position:fixed;
+  top:var(--hh);
+  left:0;
+  right:0;
+  bottom:0;
   overflow:hidden;
   background:var(--bg);
 }

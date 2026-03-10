@@ -22,8 +22,8 @@ const DEFAULT_PROMPT_TEMPLATE =
   "You are analyzing a D&D tabletop RPG session transcript. " +
   "Choose exactly 3 tags that best describe the current atmosphere. " +
   "You MUST use ONLY tags from this exact list — no other words allowed: {{TAGS}}. " +
-  "Use the exact tag words from the list. Do NOT invent similar words. " +
-  "Return ONLY the 3 chosen tags as a comma-separated list. No explanation, no punctuation. " +
+  "Each tag is a single word with no spaces. Use the exact tag words from the list. Do NOT invent similar words. " +
+  "Return ONLY the 3 chosen tags as a comma-separated list with no spaces. No explanation, no punctuation. " +
   "Example: battle,intense,danger";
 
 /************************************************************************************/
