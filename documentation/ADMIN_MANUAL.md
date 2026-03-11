@@ -2509,7 +2509,7 @@ The inpainting module provides a browser-based image editing tool that lets user
 **Port:** 3113 (configured via `config["webpage-inpainting"].port`)
 **URL:** `/inpainting`
 
-> ⚠️ This file is **not tracked by git** — deploy it separately. See `assets/bard/library.xml.example` for a reference pattern.
+> ⚠️ `modules/00049-webpage-inpainting.js` is **not tracked by git** — deploy it separately.
 
 ### How it works
 
