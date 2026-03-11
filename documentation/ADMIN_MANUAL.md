@@ -1087,7 +1087,7 @@ Starts a lightweight HTTP API server.
 
 #### config.webpage-config-editor
 
-Visual config editor served on a dedicated port. Objects in `core.json` render as collapsible cards, flat arrays as tag chips, secrets as password fields. Edits are tracked in memory and written atomically on save. The port must also appear in `config.webpage.ports`.
+Visual config editor served on a dedicated port. Objects render as collapsible cards, flat arrays as tag chips, secrets as password fields. Supports adding and removing attributes, sub-blocks and array items directly in the UI. Edits are tracked in memory and written atomically on save. The port must also appear in `config.webpage.ports`.
 
 ```json
 "webpage-config-editor": {
@@ -2429,7 +2429,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 
 | Module File | Port | URL Prefix | Config Key | Purpose |
 |---|---|---|---|---|
-| `00047-webpage-config-editor.js` | 3111 | `/config` | `webpage-config-editor` | Visual config editor — objects as collapsible cards, flat arrays as tag chips, secrets as password fields |
+| `00047-webpage-config-editor.js` | 3111 | `/config` | `webpage-config-editor` | Visual config editor — collapsible cards, tag chips, password fields, add/remove attributes and blocks |
 | `00048-webpage-chat.js` | 3112 | `/chat` | `webpage-chat` | Chat history viewer and message sender |
 | `00049-webpage-inpainting.js` | 3113 | `/inpainting` | `webpage-inpainting` | Image inpainting single-page app |
 | `00046-webpage-bard.js` | 3114 | `/bard-admin` | `webpage-bard` | Bard music library manager |
@@ -2453,6 +2453,19 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 - `POST /config/api/config` — accepts and atomically writes updated `core.json`
 
 The editor renders each object as a collapsible card. Object titles are derived from: `_title` field (if present) → well-known field names (`name`, `label`, `id`, …) → raw property key. Flat primitive arrays render as tag chips (click `×` to remove, Enter/comma to add). Fields whose key matches `key|secret|token|password|bearer` render as password inputs with a show/hide toggle. Strings longer than 120 characters or containing newlines render as textareas.
+
+**Editing features:**
+
+| UI Element | Location | Action |
+|---|---|---|
+| ✏ pencil icon | Object header (only when `_title` exists) | Inline-edit the title — click to open input, Enter/Blur to save, Escape to cancel |
+| `×` button | Object/array header | Delete the entire block or array (with confirmation) |
+| `×` button | Field row (right edge) | Delete the attribute (with confirmation) |
+| `+ Attribute` | Footer of every object block | Prompts for a key name, adds an empty string field |
+| `+ Block` | Footer of every object block | Prompts for a key name, adds an empty `{}` sub-object |
+| `+ Add item` | Footer of every object array | Appends an empty `{}` item to the array |
+
+All structural changes (add/remove) immediately re-render the tree and mark the config as dirty. The changes are not written to disk until **Save** is clicked (or Ctrl+S).
 
 > The config editor (`webpage-config-editor`) replaced the old `config-editor` flow. All references to the old flow can be ignored.
 

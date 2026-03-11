@@ -242,7 +242,16 @@ Module-specific settings live under `config.<module-name>`. The most important s
 
 > **Replaces the old `config-editor` standalone flow.** The config editor now runs as a **webpage-flow module** (`modules/00047-webpage-config-editor.js`) on a dedicated port within the webpage flow. Add the port to `config.webpage.ports`.
 
-Serves the **JSON config editor SPA** (`GET /`) — browse, add, edit, duplicate, and delete every value in `core.json` without touching a text editor. The AI chat has moved to the separate `webpage-chat` module (`GET /chat`).
+Serves the **JSON config editor SPA** (`GET /config`) — browse and edit every value in `core.json` without touching a text editor. Objects render as collapsible cards, flat arrays as tag chips, secrets as password fields.
+
+**UI controls:**
+- **✏ pencil** (in header, only when `_title` exists) — inline-edit the block title
+- **×** (in header) — delete an entire block or array (with confirmation)
+- **×** (on field row) — delete a single attribute (with confirmation)
+- **+ Attribute / + Block** (bottom of every object) — add a new string field or sub-object
+- **+ Add item** (bottom of every object array) — append an empty item
+
+Changes are held in memory until **Save** is clicked (or Ctrl+S). The AI chat has moved to the separate `webpage-chat` module (`GET /chat`).
 
 ```jsonc
 {

@@ -297,6 +297,20 @@ function getConfigHtml(opts) {
 .cfg-tag-del{background:none;border:none;color:rgba(255,255,255,.75);cursor:pointer;padding:0 5px;font-size:15px;line-height:1}
 .cfg-tag-del:hover{color:#fff}
 .cfg-tag-inp{border:none;background:none;outline:none;font-size:12px;min-width:60px;color:var(--txt);padding:0 2px}
+/* pencil edit */
+.cs-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;border-radius:4px;flex-shrink:0;opacity:.65}
+.cs-edit:hover{opacity:1;color:var(--accent,#5865f2)}
+.cs-title-inp{flex:1;border:1px solid var(--accent,#5865f2);border-radius:4px;padding:1px 6px;font-size:13px;font-weight:600;background:#fff;color:var(--txt);min-width:60px;outline:none}
+/* delete buttons */
+.cs-del{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0 2px;border-radius:4px;flex-shrink:0}
+.cs-del:hover{color:#c00;background:rgba(200,0,0,.08)}
+.cf-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0 4px;border-radius:4px;align-self:center}
+.cf-del:hover{color:#c00;background:rgba(200,0,0,.08)}
+.cf.cf-d{grid-template-columns:160px 1fr auto}
+/* add bar */
+.cs-add-bar{display:flex;gap:6px;padding:4px 0 0;margin-top:2px;border-top:1px dashed var(--bdr)}
+.cs-add-bar button{font-size:11px;padding:2px 8px;border:1px dashed var(--bdr);border-radius:5px;background:none;color:var(--muted);cursor:pointer}
+.cs-add-bar button:hover{color:var(--accent,#5865f2);border-color:var(--accent,#5865f2);background:rgba(88,101,242,.05)}
 </style>
 </head>
 <body>
@@ -352,6 +366,29 @@ function setAtPath(obj, path, val) {
   for (var i = 0; i < path.length - 1; i++) { cur = cur[path[i]]; }
   cur[path[path.length - 1]] = val;
 }
+function removeAtPath(path) {
+  if (!path || !path.length) return;
+  var parent = path.length > 1 ? getAtPath(DATA, path.slice(0, -1)) : DATA;
+  var key = path[path.length - 1];
+  if (Array.isArray(parent)) { parent.splice(key, 1); }
+  else if (parent && typeof parent === 'object') { delete parent[key]; }
+  setDirty(true);
+  render(DATA);
+}
+function addAttrToPath(path, name, isBlock) {
+  var obj = path.length ? getAtPath(DATA, path) : DATA;
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+  obj[name] = isBlock ? {} : '';
+  setDirty(true);
+  render(DATA);
+}
+function addItemToArray(path) {
+  var arr = path.length ? getAtPath(DATA, path) : DATA;
+  if (!Array.isArray(arr)) return;
+  arr.push({});
+  setDirty(true);
+  render(DATA);
+}
 /* Derive a readable title for an object block */
 function getTitle(key, obj) {
   if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
@@ -394,7 +431,7 @@ function mkSection(titleText, depth, defaultOpen) {
 /* Render a flat array (all primitives) as tag chips */
 function renderFlatArray(key, arr, path) {
   var wrap = document.createElement('div');
-  wrap.className = 'cf';
+  wrap.className = 'cf cf-d';
   var lbl = document.createElement('label');
   lbl.textContent = key;
   wrap.appendChild(lbl);
@@ -431,68 +468,152 @@ function renderFlatArray(key, arr, path) {
   }
   refresh();
   wrap.appendChild(tags);
+
+  var del = document.createElement('button');
+  del.className = 'cf-del'; del.type = 'button'; del.title = 'Remove';
+  del.innerHTML = '&#215;';
+  del.onclick = function() {
+    if (!confirm('Remove "' + key + '"?')) return;
+    removeAtPath(path);
+  };
+  wrap.appendChild(del);
   return wrap;
 }
 
 /* Render a single scalar field (string / number / boolean / null) */
 function renderField(key, value, path) {
   var wrap = document.createElement('div');
-  wrap.className = 'cf';
+  wrap.className = 'cf cf-d';
   var lbl = document.createElement('label');
   lbl.textContent = key;
   wrap.appendChild(lbl);
 
+  var ctrl;
   if (value === null || value === undefined) {
-    var inp = document.createElement('input');
-    inp.type = 'text'; inp.value = 'null';
-    inp.oninput = function() { setAtPath(DATA, path, inp.value === 'null' ? null : inp.value); setDirty(true); };
-    wrap.appendChild(inp); return wrap;
+    ctrl = document.createElement('input');
+    ctrl.type = 'text'; ctrl.value = 'null';
+    ctrl.oninput = function() { setAtPath(DATA, path, ctrl.value === 'null' ? null : ctrl.value); setDirty(true); };
+  } else if (typeof value === 'boolean') {
+    ctrl = document.createElement('input');
+    ctrl.type = 'checkbox'; ctrl.checked = value;
+    ctrl.onchange = function() { setAtPath(DATA, path, ctrl.checked); setDirty(true); };
+  } else if (typeof value === 'number') {
+    ctrl = document.createElement('input');
+    ctrl.type = 'number'; ctrl.value = String(value);
+    ctrl.step = Number.isInteger(value) ? '1' : 'any';
+    ctrl.onchange = function() { setAtPath(DATA, path, Number(ctrl.value)); setDirty(true); };
+  } else {
+    var s = String(value == null ? '' : value);
+    if (isPassword(key)) {
+      ctrl = document.createElement('div'); ctrl.className = 'cfg-pw-row';
+      var inp = document.createElement('input'); inp.type = 'password'; inp.value = s;
+      inp.oninput = function() { setAtPath(DATA, path, inp.value); setDirty(true); };
+      var eye = document.createElement('button'); eye.className = 'cfg-eye'; eye.type = 'button';
+      eye.innerHTML = '&#128065;'; eye.title = 'Show / hide';
+      eye.onclick = function() { inp.type = inp.type === 'password' ? 'text' : 'password'; };
+      ctrl.appendChild(inp); ctrl.appendChild(eye);
+    } else if (needsTextarea(s)) {
+      ctrl = document.createElement('textarea');
+      ctrl.value = s;
+      ctrl.rows = Math.min(Math.max((s.match(/\\n/g) || []).length + 2, 3), 14);
+      ctrl.oninput = function() { setAtPath(DATA, path, ctrl.value); setDirty(true); };
+    } else {
+      ctrl = document.createElement('input');
+      ctrl.type = 'text'; ctrl.value = s;
+      ctrl.oninput = function() { setAtPath(DATA, path, ctrl.value); setDirty(true); };
+    }
   }
-  if (typeof value === 'boolean') {
-    var inp = document.createElement('input');
-    inp.type = 'checkbox'; inp.checked = value;
-    inp.onchange = function() { setAtPath(DATA, path, inp.checked); setDirty(true); };
-    wrap.appendChild(inp); return wrap;
-  }
-  if (typeof value === 'number') {
-    var inp = document.createElement('input');
-    inp.type = 'number'; inp.value = String(value);
-    inp.step = Number.isInteger(value) ? '1' : 'any';
-    inp.onchange = function() { setAtPath(DATA, path, Number(inp.value)); setDirty(true); };
-    wrap.appendChild(inp); return wrap;
-  }
-  /* String */
-  var s = String(value == null ? '' : value);
-  if (isPassword(key)) {
-    var row = document.createElement('div'); row.className = 'cfg-pw-row';
-    var inp = document.createElement('input'); inp.type = 'password'; inp.value = s;
-    inp.oninput = function() { setAtPath(DATA, path, inp.value); setDirty(true); };
-    var eye = document.createElement('button'); eye.className = 'cfg-eye'; eye.type = 'button';
-    eye.innerHTML = '&#128065;'; eye.title = 'Show / hide';
-    eye.onclick = function() { inp.type = inp.type === 'password' ? 'text' : 'password'; };
-    row.appendChild(inp); row.appendChild(eye);
-    wrap.appendChild(row); return wrap;
-  }
-  if (needsTextarea(s)) {
-    var ta = document.createElement('textarea');
-    ta.value = s;
-    ta.rows = Math.min(Math.max((s.match(/\\n/g) || []).length + 2, 3), 14);
-    ta.oninput = function() { setAtPath(DATA, path, ta.value); setDirty(true); };
-    wrap.appendChild(ta); return wrap;
-  }
-  var inp = document.createElement('input');
-  inp.type = 'text'; inp.value = s;
-  inp.oninput = function() { setAtPath(DATA, path, inp.value); setDirty(true); };
-  wrap.appendChild(inp); return wrap;
+  wrap.appendChild(ctrl);
+
+  var del = document.createElement('button');
+  del.className = 'cf-del'; del.type = 'button'; del.title = 'Remove';
+  del.innerHTML = '&#215;';
+  del.onclick = function() {
+    if (!confirm('Remove "' + key + '"?')) return;
+    removeAtPath(path);
+  };
+  wrap.appendChild(del);
+  return wrap;
 }
 
 /* Render an object as a collapsible section */
 function renderObject(key, obj, path, depth) {
   var s = mkSection(getTitle(key, obj), depth, depth < 1);
+
+  /* ✏ pencil to edit _title inline */
+  if ('_title' in obj) {
+    var titleSpan = s.hdr.querySelector('.cs-title');
+    var pencil = document.createElement('button');
+    pencil.className = 'cs-edit'; pencil.type = 'button'; pencil.title = 'Edit title';
+    pencil.innerHTML = '&#9998;';
+    pencil.onclick = function(e) {
+      e.stopPropagation();
+      var cur = String(getAtPath(DATA, path.concat(['_title'])) != null ? getAtPath(DATA, path.concat(['_title'])) : '');
+      var inp = document.createElement('input');
+      inp.type = 'text'; inp.value = cur; inp.className = 'cs-title-inp';
+      titleSpan.replaceWith(inp);
+      pencil.style.display = 'none';
+      inp.focus(); inp.select();
+      var committed = false;
+      function commit() {
+        if (committed) return; committed = true;
+        setAtPath(DATA, path.concat(['_title']), inp.value);
+        setDirty(true);
+        var span = document.createElement('span');
+        span.className = 'cs-title'; span.textContent = getTitle(key, obj);
+        inp.replaceWith(span);
+        titleSpan = span;
+        pencil.style.display = '';
+      }
+      inp.onblur = commit;
+      inp.onkeydown = function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { inp.value = cur; commit(); }
+      };
+    };
+    s.hdr.appendChild(pencil);
+  }
+
+  /* × delete button in header */
+  if (path.length > 0) {
+    var del = document.createElement('button');
+    del.className = 'cs-del'; del.type = 'button'; del.title = 'Remove block';
+    del.innerHTML = '&#215;';
+    del.onclick = function(e) {
+      e.stopPropagation();
+      var label = key != null ? String(key) : getTitle(null, obj);
+      if (!confirm('Remove "' + label + '"?')) return;
+      removeAtPath(path);
+    };
+    s.hdr.appendChild(del);
+  }
+
   Object.keys(obj).forEach(function(k) {
     if (k === '__description' || k === '_title') return;
     s.body.appendChild(renderValue(k, obj[k], path.concat([k]), depth + 1));
   });
+
+  /* + add bar */
+  var addBar = document.createElement('div');
+  addBar.className = 'cs-add-bar';
+  var btnAttr = document.createElement('button');
+  btnAttr.type = 'button'; btnAttr.textContent = '+ Attribute';
+  btnAttr.onclick = function() {
+    var name = prompt('Attribute name:');
+    if (!name || !name.trim()) return;
+    addAttrToPath(path, name.trim(), false);
+  };
+  var btnBlock = document.createElement('button');
+  btnBlock.type = 'button'; btnBlock.textContent = '+ Block';
+  btnBlock.onclick = function() {
+    var name = prompt('Block name:');
+    if (!name || !name.trim()) return;
+    addAttrToPath(path, name.trim(), true);
+  };
+  addBar.appendChild(btnAttr);
+  addBar.appendChild(btnBlock);
+  s.body.appendChild(addBar);
+
   return s.section;
 }
 
@@ -502,6 +623,20 @@ function renderObjectArray(key, arr, path, depth) {
   var badge = document.createElement('span');
   badge.className = 'cs-badge'; badge.textContent = arr.length;
   s.hdr.appendChild(badge);
+
+  /* × delete button in header */
+  if (path.length > 0) {
+    var del = document.createElement('button');
+    del.className = 'cs-del'; del.type = 'button'; del.title = 'Remove array';
+    del.innerHTML = '&#215;';
+    del.onclick = function(e) {
+      e.stopPropagation();
+      if (!confirm('Remove "' + key + '"?')) return;
+      removeAtPath(path);
+    };
+    s.hdr.appendChild(del);
+  }
+
   arr.forEach(function(item, i) {
     var childPath = path.concat([i]);
     if (item && typeof item === 'object' && !Array.isArray(item)) {
@@ -510,6 +645,16 @@ function renderObjectArray(key, arr, path, depth) {
       s.body.appendChild(renderField('[' + i + ']', item, childPath));
     }
   });
+
+  /* + add item footer */
+  var addBar = document.createElement('div');
+  addBar.className = 'cs-add-bar';
+  var btnItem = document.createElement('button');
+  btnItem.type = 'button'; btnItem.textContent = '+ Add item';
+  btnItem.onclick = function() { addItemToArray(path); };
+  addBar.appendChild(btnItem);
+  s.body.appendChild(addBar);
+
   return s.section;
 }
 
