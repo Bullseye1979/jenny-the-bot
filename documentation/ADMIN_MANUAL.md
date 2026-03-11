@@ -247,7 +247,7 @@ Event source (Discord / HTTP API / Cron / Voice / Webpage)
 │   ├── discord-admin.js     # Slash command handler
 │   ├── discord-voice.js     # Voice channel handler
 │   ├── api.js               # HTTP API server
-│   ├── bard.js              # Bard music bot (second Discord client)
+│   ├── bard.js              # Bard music scheduler (headless, no Discord bot)
 │   ├── cron.js              # Scheduled jobs
 │   ├── toolcall.js          # Registry-triggered flow
 │   └── webpage.js           # Multi-port HTTP server for web tools
@@ -508,8 +508,8 @@ The `admin` array on a command or subcommand restricts execution to the listed u
 | `/gdpr` | No | Set GDPR consent flags |
 | `/join` | No | Join user's voice channel |
 | `/leave` | No | Leave voice channel |
-| `/bardjoin` | No | Bard bot joins voice channel and starts playing music |
-| `/bardleave` | No | Bard bot leaves voice channel |
+| `/bardstart` | No | Start the bard music scheduler for this server |
+| `/bardstop` | No | Stop the bard music scheduler for this server |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -1225,22 +1225,18 @@ Wires up the internal tool-call status tracking flow.
 
 #### config.bard
 
-Configuration for the Bard music bot.
+Configuration for the headless bard music scheduler.
 
 ```json
 "bard": {
-  "token":         "YOUR_BARD_BOT_TOKEN",
   "musicDir":      "assets/bard",
-  "idlePresence":  "Waiting for adventure...",
   "pollIntervalMs": 5000
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `token` | string | **Required.** Discord bot token for the Bard bot |
 | `musicDir` | string | Directory containing MP3 files and `library.xml` (default: `assets/bard`) |
-| `idlePresence` | string | Discord presence text shown when no track is playing (e.g. library empty or no matching tags). If empty or not set, falls back to `"..."`. Default: `""` |
 | `pollIntervalMs` | number | Poll interval in milliseconds (min 5000, default: 5000) |
 
 #### config.bard-cron
@@ -1648,14 +1644,13 @@ export default async function myModule(coreData) {
 |---|---|---|
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
-| 00019 | `bard-voice-gate` | Skips the discord-voice pipeline if the speaker is the Bard bot itself (prevents the bot from transcribing its own playback) |
 | 00020 | `discord-channel-gate` | Checks whether the bot is allowed to respond in this channel |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
 | 00025 | `discord-admin-gdpr` | Handles admin GDPR management commands |
 | 00030 | `discord-voice-transcribe` | Transcribes voice audio via Whisper API |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
-| 00035 | `bard-admin-join` | Processes `/bardjoin` and `/bardleave` commands for the Bard music bot |
+| 00035 | `bard-admin-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00045 | `webpage-inpaint` | Image inpainting redirect for web content |
@@ -2296,8 +2291,8 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 | `/gdpr voice <0\|1>` | No | Set GDPR consent for voice |
 | `/join` | No | Bot joins current voice channel |
 | `/leave` | No | Bot leaves voice channel |
-| `/bardjoin` | No | Bard bot joins voice channel and starts playing music |
-| `/bardleave` | No | Bard bot leaves voice channel |
+| `/bardstart` | No | Start the bard music scheduler for this server |
+| `/bardstop` | No | Stop the bard music scheduler for this server |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -2425,20 +2420,6 @@ Invite URL template:
 ```
 https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot+applications.commands
 ```
-
-### Jenny the Bard (second bot for music)
-
-- No privileged intents required.
-- Intents used: `Guilds`, `GuildVoiceStates`
-- Required bot permissions: Connect + Speak (minimum); Administrator recommended.
-- Token goes in `core.json["bard"]["token"]`.
-
-Invite URL:
-```
-https://discord.com/oauth2/authorize?client_id=BARD_CLIENT_ID&permissions=8&scope=bot+applications.commands
-```
-
-> **Important:** Missing SPEAK permission causes silent audio failure — the player shows "Playing" status but produces no sound. This failure is silent and not indicated in logs.
 
 ---
 
@@ -2765,24 +2746,24 @@ See [§17 Web Module Permission Concept](#17-web-module-permission-concept) for 
 
 ### Overview
 
-Jenny the Bard is a second Discord bot that automatically plays mood-appropriate background music for tabletop RPG sessions. A cron job analyzes the chat context at every run using an LLM, generates 3 mood tags, and stores them in the registry. The bard bot polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active mood.
+The bard music system automatically plays mood-appropriate background music for tabletop RPG sessions. It runs as a **headless scheduler** — no second Discord bot is required. A cron job analyzes the chat context at every run using an LLM, generates 3 mood tags, and stores them in the registry. `flows/bard.js` polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active mood. Audio is served to the browser via the web player at `/bard-admin` or `/bard-stream`.
 
 ### Architecture
 
 ```
-/bardjoin command
+/bardstart command
   -> 00035-bard-admin-join.js
-  -> joins voice channel (using bard bot token)
-  -> stores bard:session:{guildId} in registry
+  -> creates a headless session in the registry (no voice channel connection needed)
+  -> stores bard:session:{guildId} = { guildId, textChannelId, status: "ready", ... }
   -> writes bard:labels:{guildId} = { labels: ["default"] } — startup seed so tracks
      tagged "default" are preferred on the very first song pick. The cron job will
      overwrite this with real mood labels once it runs.
 
-/bardleave command
+/bardstop command
   -> 00035-bard-admin-join.js
-  -> stops player, destroys voice connection
-  -> removes bard:session:{guildId}, bard:nowplaying:{guildId}, bard:stream:{guildId} from registry
-  -> immediately sets idle presence (core.json["bard"]["idlePresence"]) or "..."
+  -> cancels the track advancement timer (session._trackTimer)
+  -> removes bard:session:{guildId}, bard:labels:{guildId}, bard:nowplaying:{guildId},
+     bard:stream:{guildId} from registry
 
 Cron job (every N minutes, flow: bard-label-gen)
   -> 00036-bard-cron.js (preparer)
@@ -2793,40 +2774,44 @@ Cron job (every N minutes, flow: bard-label-gen)
      - builds wo.systemPrompt = prompt template + {{TAGS}} list (no previous labels injected)
      - builds wo.payload = formatted conversation text
      - sets wo.useAiModule = "completions", wo.doNotWriteToContext = true, wo.includeHistory = false
-  -> 01000-core-ai-completions.js  (shared AI pipeline, flow: bard-label-gen)
+  -> 01000-core-ai-completions.js (shared AI pipeline, flow: bard-label-gen)
      - calls LLM with wo.systemPrompt + wo.payload
      - writes result to wo.response
   -> 08050-bard-label-output.js (output)
      - parses wo.response into 3 valid tags (validated against library.xml tag set)
      - writes bard:labels:{guildId} to registry
 
-flows/bard.js (polls every 5 s by default, min 5 s) — Discord voice sessions only
-  -> reloads library.xml from disk (picks up newly added tracks without restart)
-  -> no active sessions: sets idle presence (core.json["bard"]["idlePresence"]) → stop
-  -> reads bard:labels:{guildId} for current mood
-  -> reads bard:nowplaying:{guildId} for current track
-  -> if current track no longer matches labels: switches song mid-track
-  -> song found: plays track via Discord AudioPlayer, writes bard:stream:{guildId},
-     sets "Listening to <filename>" presence
-  -> no song found: clears bard:stream:{guildId}, sets idle presence
+flows/bard.js (polls every N seconds, min 5 s) — headless scheduler
+  -> reloads library.xml from disk on every cycle (picks up newly added tracks without restart)
+  -> no active sessions → stop
+  -> for each active session:
+     - reads bard:labels:{guildId} for current mood
+     - reads bard:nowplaying:{guildId} for current track
+     - checks session._trackEndAt: if Date.now() < _trackEndAt → track is still playing
+     - if current track still matches at least one active label → keep playing
+     - if labels changed and current track no longer fits: switch immediately
+     - if track ended (timer expired): select next track
+     - song found: writes bard:stream:{guildId} and bard:nowplaying:{guildId},
+       calls ffprobe to get duration, schedules setTimeout(triggerPoll, durationMs + 200)
+     - no song found: clears bard:stream:{guildId}
 
-player.on(AudioPlayerStatus.Idle) — Discord voice: song ended naturally
-  -> triggers an immediate poll cycle — the poll picks the next song
-  -> bard:stream:{guildId} and bard:nowplaying:{guildId} are NOT cleared here;
-     the poll overwrites them atomically when the next song starts. This prevents
-     the browser Now Playing card from briefly seeing null and interrupting audio.
+Track end timer — song ended naturally
+  -> setTimeout fires after ffprobe duration + 200 ms
+  -> clears session._trackEndAt, calls triggerPoll()
+  -> poll selects next track and overwrites bard:stream:{guildId} and bard:nowplaying:{guildId}
+     atomically. bard:stream is never cleared on song-end — the poll overwrites it when the
+     next track starts. This prevents the browser Now Playing card from briefly seeing null.
 ```
 
 ### Registry Keys
 
 | Key | Contents |
 |-----|---------|
-| `bard:client` | Discord.js Client instance for the bard bot |
 | `bard:registry` | `{ list: ["bard:session:{guildId}"] }` |
-| `bard:session:{guildId}` | `{ guildId, voiceChannelId, textChannelId, connection, player }` |
-| `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels` = validated tags (present in `library.xml`); `rejected` = tokens returned by the LLM that are not in the library (up to 5, deduplicated). Initially seeded to `["default"]` on `/bardjoin` so tracks tagged `default` are played first. Deleted on `/bardleave`. |
+| `bard:session:{guildId}` | `{ guildId, textChannelId, status, _trackEndAt, _trackTimer, _lastPlayedFile, _lastLabels }` |
+| `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels` = validated tags (present in `library.xml`); `rejected` = tokens returned by the LLM that are not in the library (up to 5, deduplicated). Initially seeded to `["default"]` on `/bardstart` so tracks tagged `default` are played first. Deleted on `/bardstop`. |
 | `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
-| `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, rejectedLabels, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`; `rejectedLabels` = LLM tokens not in the library (shown red in Now Playing). Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardleave` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
+| `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, rejectedLabels, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`; `rejectedLabels` = LLM tokens not in the library (shown red in Now Playing). Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardstop` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
 | `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written before each LLM call so the next run reads context from exactly this point forward |
 
 ### Music Library (library.xml)
@@ -2856,7 +2841,7 @@ Fields:
 
 ### Tag Vocabulary (existing tracks)
 
-- **Special:** `default` — startup tag. Tracks with this tag are preferred on the very first song pick after `/bardjoin`, before the cron job has generated any mood labels. Has no special meaning after that; add it to tracks that make a good "welcome" impression.
+- **Special:** `default` — startup tag. Tracks with this tag are preferred on the very first song pick after `/bardstart`, before the cron job has generated any mood labels. Has no special meaning after that; add it to tracks that make a good "welcome" impression.
 - Combat: `battle`, `fight`, `fast`, `intense`, `boss`
 - Epic: `epic`, `magic`
 - City: `city`, `people`, `buzzing`, `crowded`, `sneaky`, `searching`, `shady`
@@ -2865,21 +2850,21 @@ Fields:
 
 ### Song Selection Algorithm
 
-1. **Bot just joined** — `/bardjoin` seeds `bard:labels` with `["default"]`. Tracks tagged `default` score 1; all others score 0. Best-fit selection picks from `default`-tagged tracks (or all tracks as fallback if none are tagged `default`). The cron job overwrites this with real mood labels on its next run.
+1. **Scheduler started** — `/bardstart` seeds `bard:labels` with `["default"]`. Tracks tagged `default` score 1; all others score 0. Best-fit selection picks from `default`-tagged tracks (or all tracks as fallback if none are tagged `default`). The cron job overwrites this with real mood labels on its next run.
 2. **Labels empty** (edge case — e.g. cron produced no valid tags and label state was cleared) — if a song is currently playing, it is kept unchanged. If no song is playing, a random track from the full library is picked.
 3. **Current track still matches at least one active label** — keep playing (no change).
 4. **Current track no longer matches any active label** — switch immediately (mid-track):
    - Score every track by count of matching labels.
    - **Best fit always wins**: only tracks with the highest score are candidates. A track with 2 matches beats all tracks with 1 match, even if there is only one best-fit track.
    - **Repeat-blocker** (exclude last-played) is only applied when more than one track shares the best score — if there is exactly one best-fit track it always plays regardless.
-5. **Song ends naturally** — the `AudioPlayerStatus.Idle` event triggers an immediate poll cycle. `bard:stream` and `bard:nowplaying` are **not** cleared on Idle — the poll overwrites them atomically when the next track starts. The last-played filename is stored in `session._lastPlayedFile` to ensure the just-finished track is excluded even before the new entry is written.
+5. **Song ends naturally** — the track advancement timer fires (`ffprobe duration + 200 ms`), calls `triggerPoll()`, and an immediate poll cycle begins. `bard:stream` and `bard:nowplaying` are **not** cleared on track end — the poll overwrites them atomically when the next track starts. The last-played filename is stored in `session._lastPlayedFile` to ensure the just-finished track is excluded even before the new entry is written.
 
 ### Slash Commands
 
 | Command | Description |
 |---|---|
-| `/bardjoin` | Bard bot joins the voice channel of the command user and starts playing music |
-| `/bardleave` | Bard bot leaves the voice channel |
+| `/bardstart` | Start the bard music scheduler for this server |
+| `/bardstop` | Stop the bard music scheduler for this server |
 
 ### Bard Admin UI
 
@@ -2891,7 +2876,7 @@ Accessible at `/bard-admin`. Features:
 - **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Labels are colour-coded: **green** = tag appears on both the track and the active mood; **blue** = track tag not in the current mood; **gray** = mood label not present on the current track; **red** = LLM token not found in library.xml (rejected). Sync behaviour:
   - **Regular polling:** every 2 seconds.
   - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 2-second cycle. This minimises the gap between tracks in the browser player.
-  - **On crossfade (label change mid-song):** `bard:stream` is updated with the new track *before* the Discord fade-out starts. The browser therefore loads and plays the new track immediately at full volume; Discord fades out the old track in parallel. The two streams are intentionally not in sync during the Discord fade — this is by design since the browser and Discord audio are independent.
+  - **On label change mid-song:** When the mood changes and the current track no longer fits, `bard:stream` is updated immediately with the new track. The browser picks up the change on its next poll cycle.
   - **On "▶ Zum Anhören klicken" (start button):** the elapsed position is recalculated at the exact moment the user clicks, so the stream is in sync even if the user waited on the page before pressing play. The catch-up seek happens at button-press time, not at the next track change.
 
 Filenames are preserved as-is, including spaces. Only characters outside `[a-zA-Z0-9 ._-]` are replaced with `_`.
@@ -2986,47 +2971,12 @@ This means the label-gen AI call:
 
 **One guild per cron tick.** If the cron job's `channelID` matches a session's text channel ID, that guild is processed. Otherwise the first session with new context is chosen. For multi-guild setups, configure one cron job per guild with a different `channelID`.
 
-### Discord Presence
-
-The Bard bot's Discord status is controlled by two config keys in `core.json["bard"]`:
-
-| Situation | What is shown | Where to configure |
-|-----------|--------------|-------------------|
-| Music is playing | `Listening to <title>` (`title` field from `library.xml`; filename without extension as fallback) | set `title` attribute per track in the Bard Admin UI |
-| **Bot is not in any voice channel** | `Listening to <idlePresence>` | `core.json["bard"]["idlePresence"]` |
-| `idlePresence` is empty or not set | `Listening to ...` (built-in fallback) | — |
-
-**The primary use case for `idlePresence`** is when the bot is not joined to any voice channel — e.g. after `/bardleave` or before the first `/bardjoin`. This is the state that occurs in normal operation.
-
-**Configuration:**
-```json
-"bard": {
-  "idlePresence":  "Waiting for adventure...",
-  "fadeDurationMs": 1200,
-  "joinMuted":      false
-}
-```
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `idlePresence` | `""` | Presence text shown when no voice session is active |
-| `fadeDurationMs` | `1200` | Fade duration in ms for track transitions (Discord voice only). Fade-in ramps volume from 0 on every new track. Fade-out runs when switching mid-track due to a label change. Set to `0` to disable all fading. |
-| `joinMuted` | `false` | If `true`, the bard bot is **server-muted** immediately after joining a voice channel. An admin can then unmute it in Discord. Requires the bot to have the `MUTE_MEMBERS` permission in the guild. This is *not* a self-mute — Discord clients show it as a server mute (yellow microphone icon), and only an admin can lift it. |
-
-The Discord presence shows the `title` field from `library.xml` (e.g. title `"Battle March"` → **Listening to Battle March**). If no title is set the raw MP3 filename minus the extension is used as fallback.
-
----
-
 ### Setup
 
-1. Create a second Discord bot application in the Discord Developer Portal
-2. Add the bot token to `core.json["bard"]["token"]`
-3. Invite the bot with Connect + Speak permissions (or Administrator)
-4. Run `npm install` on the server — this installs `@snazzah/davey` (DAVE E2EE dispatcher) and the correct platform binary automatically (see §19)
-5. Start the main bot — the bard flow initializes automatically on startup
-6. On first start, `assets/bard/` and `library.xml` are created automatically if they do not exist
-7. Add MP3 files to `assets/bard/` and manage the track catalog via the Bard Admin UI at `/bard-admin`
-8. Use `/bardjoin` in a Discord server where both bots are members
+1. Start the main bot — the bard flow initializes automatically on startup
+2. On first start, `assets/bard/` and `library.xml` are created automatically if they do not exist
+3. Add MP3 files to `assets/bard/` and manage the track catalog via the Bard Admin UI at `/bard-admin`
+4. Use `/bardstart` in Discord to activate the scheduler for this server
 
 > **Note:** `assets/bard/` (music files and `library.xml`) is listed in `.gitignore` and is not tracked by git. Only `assets/bard/library.xml.example` is committed as a reference template. Copy it to `library.xml` to pre-populate the catalog, or let the bot create an empty one automatically.
 
@@ -3034,20 +2984,12 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| No audio in voice channel | Bot lacks SPEAK permission | Grant SPEAK (or Administrator) in Discord |
-| Bot does not join | Invalid or missing token | Check `core.json["bard"]["token"]` |
-| Labels not updating | Cron job disabled | Enable `bard-label-gen` job in core.json |
+| No audio in browser player | Scheduler not started | Use `/bardstart` in Discord |
+| Labels not updating | Cron job disabled | Enable `bard-label-gen` job in `core.json` |
 | Same song repeats | Only one track matches labels | Add more tracks or broaden their tags |
-| Bot joins but immediately leaves | Connection error | Check server logs for voice state errors |
-| Voice input silent (bot cannot hear users) | DAVE E2EE decryption not working | Run `npm install` on the server to install `@snazzah/davey` and the correct platform binary. Restart the bot after install. |
-| Idle presence not showing after `/bardleave` | `idlePresence` not configured | Set `core.json["bard"]["idlePresence"]` to the desired text |
-| Idle presence shows while music is playing | Should not happen — check logs | Presence is set by `setPlayTrack()`; if overridden, check for errors in the bard flow |
-| Gap of silence between tracks (Discord) | Library empty or no matching tracks | Song-end triggers an immediate server poll. If no matching track is found, idle presence is set and nothing plays until the next poll. |
-| First few seconds of next track missing (browser player, natural song end) | Browser detected the new track late (up to poll interval), causing an over-seek at load time, so the audio finishes early | Browser poll interval is 2 s; the browser retries every 500 ms (up to 10×) after `ended` until the server reports the new track. If the gap persists, check the browser console for errors in `pollNowPlaying`. |
-| Next track delayed in browser (crossfade / label change mid-song) | Was caused by browser waiting for Discord fade-out to complete before `bard:stream` was updated | Fixed: `bard:stream` is now written *before* `setFadeOut`, so the browser starts immediately. |
-| Stream out of sync after delayed play button press | Elapsed position was calculated at page-load time, not at button-press time | The catch-up seek is now recalculated at the moment the user clicks "▶ Zum Anhören klicken", so the stream is always in sync regardless of how long the user waited before pressing play. |
-| Bot joins but audio is muted and admin cannot unmute | `joinMuted=true` but bot lacks permissions | The bard bot needs `MUTE_MEMBERS` permission to server-mute itself. Grant the permission in Discord Server Settings → Roles. |
-| Bot joins muted but audio should play | `joinMuted=true` is set | An admin must server-unmute the bot in the voice channel (right-click the bot → Server Unmute). |
+| Gap between tracks | Library empty or no matching tracks | Song-end triggers an immediate server poll. If no matching track is found, `bard:stream` is cleared and nothing plays until the next poll. |
+| First few seconds of next track missing (browser player) | Browser detected the new track late | Browser poll interval is 2 s; the browser retries every 500 ms (up to 10×) after `ended` until the server reports the new track. If the gap persists, check the browser console for errors in `pollNowPlaying`. |
+| Stream out of sync after delayed play button press | Elapsed position was calculated at page-load time | The catch-up seek is recalculated at the moment the user clicks "▶ Zum Anhören klicken", so the stream is always in sync regardless of how long the user waited before pressing play. |
 
 ---
 
@@ -3056,14 +2998,14 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 | Package | Version | Purpose |
 |---|---|---|
 | `discord.js` | ^14.x | Discord client (messages, guilds, voice) |
-| `@discordjs/voice` | ^0.19.x | Voice connection and audio pipeline |
+| `@discordjs/voice` | ^0.19.x | Voice connection and audio pipeline (used for voice transcription) |
 | `@snazzah/davey` | ^0.1.x | DAVE E2EE dispatcher — required by `@discordjs/voice` 0.19+ for voice encryption/decryption. Install with `npm install`; the correct platform binary is selected automatically. |
 | `@snazzah/davey-linux-x64-gnu` | ^0.1.x | Linux x64 native binary for DAVE E2EE (`optionalDependency` — installed automatically on Linux) |
 | `@snazzah/davey-win32-x64-msvc` | ^0.1.x | Windows x64 native binary for DAVE E2EE (`optionalDependency` — installed automatically on Windows) |
 | `@discordjs/opus` | ^0.10.x | Opus audio codec |
 | `opusscript` | ^0.0.8 | Pure-JS Opus fallback |
 | `prism-media` | ^1.3.x | Audio transcoding (OggOpus -> MP3) |
-| `fluent-ffmpeg` | ^2.1.x | Audio processing |
+| `fluent-ffmpeg` | ^2.1.x | Audio processing; ffprobe used by bard scheduler for track duration |
 | `mysql2` | ^3.x | MySQL driver (Promise API) |
 | `axios` | ^1.x | HTTP client |
 | `node-fetch` | ^2.7.x | Fetch API polyfill |
@@ -3075,4 +3017,4 @@ The Discord presence shows the `title` field from `library.xml` (e.g. title `"Ba
 ---
 
 *End of Administrator Manual*
-*Generated: 2026-03-10 · Jenny Discord AI Bot v1.0*
+*Generated: 2026-03-11 · Jenny Discord AI Bot v1.0*

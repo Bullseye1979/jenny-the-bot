@@ -1031,8 +1031,8 @@ Jenny registers slash commands via the `discord-admin` flow. Commands are define
 | `/gdpr voice <0\|1>` | No | Toggle GDPR consent for voice processing |
 | `/join` | No | Bot joins your current voice channel |
 | `/leave` | No | Bot leaves the voice channel |
-| `/bardjoin` | No | Bard bot joins your current voice channel |
-| `/bardleave` | No | Bard bot leaves the voice channel |
+| `/bardstart` | No | Start the bard music scheduler for this server |
+| `/bardstop` | No | Stop the bard music scheduler for this server |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---

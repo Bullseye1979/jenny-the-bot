@@ -819,8 +819,8 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 'var _trackStartedAt=0;\n' +
 '\n' +
 'if(playerVol){\n' +
-'  liveAudio.volume=parseFloat(playerVol.value)||0.8;\n' +
-'  playerVol.addEventListener("input",function(){liveAudio.volume=parseFloat(playerVol.value)||0.8;});\n' +
+'  var _pv=parseFloat(playerVol.value);liveAudio.volume=Number.isFinite(_pv)?_pv:0.8;\n' +
+'  playerVol.addEventListener("input",function(){var v=parseFloat(playerVol.value);liveAudio.volume=Number.isFinite(v)?v:0.8;});\n' +
 '}\n' +
 '\n' +
 'function unlockPlayer(){\n' +

@@ -1,9 +1,9 @@
 /************************************************************************************/
 /* filename: bard.js                                                                 *
 /* Version 1.0                                                                       *
-/* Purpose: Bard Bot flow — initializes a second Discord client, polls bard:registry *
-/*          every 30 seconds, selects music from library.xml based on bard:labels,   *
-/*          and plays MP3s via @discordjs/voice.                                     *
+/* Purpose: Bard flow — polls bard:registry every N seconds, selects music from     *
+/*          library.xml based on bard:labels, and writes bard:stream for the web    *
+/*          audio player. No Discord voice bot required.                             *
 /************************************************************************************/
 
 /************************************************************************************/
@@ -13,15 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import discordJs from "discord.js";
-const { Client, GatewayIntentBits, ActivityType } = discordJs;
-import {
-  createAudioPlayer,
-  createAudioResource,
-  AudioPlayerStatus,
-  NoSubscriberBehavior,
-  StreamType
-} from "@discordjs/voice";
+import ffmpeg from "fluent-ffmpeg";
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
@@ -74,11 +66,8 @@ function getLoadLibrary(musicDir) {
       return [];
     }
     const xmlText = fs.readFileSync(xmlPath, "utf8");
-    const tracks = getParseLibraryXml(xmlText);
-    for (const t of tracks) {
-    }
-    return tracks;
-  } catch (e) {
+    return getParseLibraryXml(xmlText);
+  } catch {
     return [];
   }
 }
@@ -98,17 +87,12 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
     const current = library.find(t => t.file === currentFile);
     if (current) {
       const matches = current.tags.filter(t => labelSet.has(t)).length;
-      if (matches >= 1) {
-        return null;
-      }
+      if (matches >= 1) return null;
     }
   }
 
   const excluded = excludeFile || currentFile;
 
-  // Best fit wins: find the highest number of matching labels across all tracks.
-  // The repeat-blocker (exclude last-played) only applies when more than one
-  // track shares the best score — if there is only one best-fit track it always plays.
   const scored = library.map(track => ({
     track,
     score: track.tags.filter(t => labelSet.has(t)).length
@@ -127,113 +111,67 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
 }
 
 /************************************************************************************/
-/* functionSignature: setIdlePresence (text)                                         *
-/* Sets the bard client's Discord presence to the configured idle text.              *
-/* Clears all activities when text is empty.                                         *
+/* functionSignature: getTrackDurationMs (filePath)                                  *
+/* Returns the duration of an audio file in milliseconds via ffprobe.               *
+/* Falls back to 180000 ms (3 minutes) if ffprobe fails or duration is unavailable. *
 /************************************************************************************/
-async function setIdlePresence(text) {
-  try {
-    const bardClient = await getItem("bard:client");
-    if (!bardClient?.user) return;
-    bardClient.user.setPresence({ activities: [{ name: text || "...", type: ActivityType.Listening }], status: "online" });
-  } catch {}
-}
-
-/************************************************************************************/
-/* functionSignature: setFadeIn (session, resource, targetVol, durationMs)          *
-/* Gradually increases resource volume from 0 to targetVol over durationMs ms.      *
-/* Cancels any previously running fade-in. Stores interval on session._fadeInIv.    *
-/************************************************************************************/
-function setFadeIn(session, resource, targetVol, durationMs) {
-  if (session._fadeInIv) { clearInterval(session._fadeInIv); session._fadeInIv = null; }
-  if (!resource?.volume || !(durationMs > 0)) return;
-  try { resource.volume.setVolume(0); } catch {}
-  const steps = Math.min(40, Math.max(10, Math.round(durationMs / 50)));
-  const stepMs = durationMs / steps;
-  let step = 0;
-  const iv = setInterval(() => {
-    step++;
-    const v = Math.min(targetVol, (step / steps) * targetVol);
-    try { resource.volume.setVolume(v); } catch {}
-    if (step >= steps) { clearInterval(iv); if (session._fadeInIv === iv) session._fadeInIv = null; }
-  }, stepMs);
-  session._fadeInIv = iv;
-}
-
-/************************************************************************************/
-/* functionSignature: setFadeOut (session, resource, fromVol, durationMs)            *
-/* Cancels any running fade-in, then gradually decreases resource volume to 0.      *
-/* fromVol must be the known current volume — do NOT read from the transformer.     *
-/* Returns a Promise that resolves when done.                                        *
-/************************************************************************************/
-function setFadeOut(session, resource, fromVol, durationMs) {
-  // Stop any running fade-in first so they don't fight each other
-  if (session._fadeInIv) { clearInterval(session._fadeInIv); session._fadeInIv = null; }
-  return new Promise(resolve => {
-    if (!resource?.volume || !(durationMs > 0) || !(fromVol > 0)) { resolve(); return; }
-    const steps = Math.min(40, Math.max(10, Math.round(durationMs / 50)));
-    const stepMs = durationMs / steps;
-    let step = 0;
-    const iv = setInterval(() => {
-      step++;
-      const v = Math.max(0, fromVol * (1 - step / steps));
-      try { resource.volume.setVolume(v); } catch {}
-      if (step >= steps) { clearInterval(iv); resolve(); }
-    }, stepMs);
+async function getTrackDurationMs(filePath) {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err || !Number.isFinite(metadata?.format?.duration)) {
+        resolve(180000);
+        return;
+      }
+      resolve(Math.round(metadata.format.duration * 1000));
+    });
   });
 }
 
 /************************************************************************************/
-/* functionSignature: setPlayTrack (session, track, musicDir, log, cfg, fadeOpts)   *
-/* Creates an audio resource and plays it on the session's player.                   *
-/* fadeOpts.fadeIn=true  → fade volume in from 0 (eliminates silence gap).          *
-/* fadeOpts.fadeOut=true → fade out current resource before switching (crossfade).  *
+/* functionSignature: setPlayTrack (session, track, musicDir, log, triggerPoll)     *
+/* Writes bard:stream and bard:nowplaying for the given track. Gets the track       *
+/* duration via ffprobe and schedules a timer to trigger the next poll when done.   *
 /************************************************************************************/
-async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true, fadeOut = false } = {}) {
+async function setPlayTrack(session, track, musicDir, log, triggerPoll) {
   try {
     const filePath = path.resolve(musicDir, track.file);
     if (!fs.existsSync(filePath)) {
       log(`audio file not found: ${filePath}`, "warn", { moduleName: MODULE_NAME });
       return false;
     }
-    const fadeMs = Number.isFinite(Number(cfg?.fadeDurationMs)) ? Math.max(0, Number(cfg.fadeDurationMs)) : 1200;
-    // Crossfade: notify the browser about the new track immediately, then let Discord fade
-    // out the current resource. The browser loads MP3s directly at full volume and is
-    // independent of the Discord VolumeTransformer — no need to wait for the fade to finish.
-    if (fadeOut && session._currentResource && fadeMs > 0) {
-      const earlyTs = new Date().toISOString();
-      await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], trackTags: Array.isArray(track.tags) ? track.tags : [], rejectedLabels: session._lastRejectedLabels || [], startedAt: earlyTs, musicDir }, `bard:stream:${session.guildId}`);
-      const fromVol = session._currentVolume ?? 1.0;
-      await setFadeOut(session, session._currentResource, fromVol, fadeMs);
-    }
-    const resource = createAudioResource(filePath, { inputType: StreamType.Arbitrary, inlineVolume: true });
-    const vol = Number.isFinite(track.volume) ? Math.max(0.1, Math.min(4.0, track.volume)) : 1.0;
-    session._currentVolume = vol;   // remember for future fade-outs
-    session._lastPlayedFile = track.file; // remember for post-song exclusion
-    // Start silent if fading in so there is no gap between tracks
-    if (resource.volume) resource.volume.setVolume(fadeIn && fadeMs > 0 ? 0 : vol);
-    session.player.play(resource);
-    session._currentResource = resource;
-    // Fade in the new track (cancels any leftover fade-in from the previous track)
-    if (fadeIn && fadeMs > 0) setFadeIn(session, resource, vol, fadeMs);
+
+    session._lastPlayedFile = track.file;
+
     const nowTs = new Date().toISOString();
-    const nowPlaying = {
-      file: track.file,
-      title: track.title,
-      labels: session._lastLabels || [],
-      startedAt: nowTs
-    };
-    await putItem(nowPlaying, `bard:nowplaying:${session.guildId}`);
-    // Also store stream entry (includes musicDir so webpage module can serve the file)
-    await putItem({ guildId: session.guildId, file: track.file, title: track.title, labels: session._lastLabels || [], trackTags: Array.isArray(track.tags) ? track.tags : [], rejectedLabels: session._lastRejectedLabels || [], startedAt: nowTs, musicDir }, `bard:stream:${session.guildId}`);
-    try {
-      const bardClient = await getItem("bard:client");
-      if (bardClient?.user) {
-        const songName = track.title || path.basename(track.file, path.extname(track.file));
-        bardClient.user.setPresence({ activities: [{ name: songName, type: ActivityType.Listening }], status: "online" });
-      }
-    } catch {}
-    log(`now playing: "${track.title}" (${track.file})`, "info", {
+    await putItem(
+      {
+        guildId: session.guildId,
+        file: track.file,
+        title: track.title,
+        labels: session._lastLabels || [],
+        trackTags: Array.isArray(track.tags) ? track.tags : [],
+        rejectedLabels: session._lastRejectedLabels || [],
+        startedAt: nowTs,
+        musicDir
+      },
+      `bard:stream:${session.guildId}`
+    );
+    await putItem(
+      { file: track.file, title: track.title, labels: session._lastLabels || [], startedAt: nowTs },
+      `bard:nowplaying:${session.guildId}`
+    );
+
+    const durationMs = await getTrackDurationMs(filePath);
+    session._trackEndAt = Date.now() + durationMs;
+
+    if (session._trackTimer) clearTimeout(session._trackTimer);
+    session._trackTimer = setTimeout(() => {
+      session._trackEndAt = null;
+      session._trackTimer = null;
+      triggerPoll();
+    }, durationMs + 200);
+
+    log(`now playing: "${track.title}" (${track.file}), duration: ${Math.round(durationMs / 1000)}s`, "info", {
       moduleName: MODULE_NAME,
       guildId: session.guildId,
       labels: session._lastLabels || []
@@ -246,47 +184,12 @@ async function setPlayTrack(session, track, musicDir, log, cfg, { fadeIn = true,
 }
 
 /************************************************************************************/
-/* functionSignature: setBindSessionPlayer (session, sessionKey, log, triggerPoll)  *
-/* Binds the Idle event to the session player (once per session). On song end,      *
-/* clears stream/nowplaying state and triggers an immediate poll cycle so the poll  *
-/* loop is the sole authority for picking the next song.                            *
+/* functionSignature: getScanAndPlay (musicDir, pollMs, log, cfg)                   *
+/* Returns the polling function. Reads bard:registry on each cycle, selects and     *
+/* starts tracks for each active session. triggerPoll is passed to setPlayTrack so  *
+/* the track end timer can fire an immediate poll without racing a running cycle.   *
 /************************************************************************************/
-function setBindSessionPlayer(session, sessionKey, log, triggerPoll) {
-  if (session._playerBound) return;
-  session._playerBound = true;
-
-  const player = session.player;
-
-  player.on(AudioPlayerStatus.Idle, () => {
-    // Do NOT clear bard:stream or bard:nowplaying here — the browser polls /api/nowplaying
-    // which reads bard:stream, and clearing it mid-transition causes the browser player to
-    // abruptly stop the current song. The poll will overwrite bard:stream/bard:nowplaying
-    // atomically when the next song starts.
-    log("song ended, triggering next poll cycle", "info", { moduleName: MODULE_NAME, sessionKey });
-    triggerPoll();
-  });
-
-  player.on("error", (err) => {
-    log(`player error: ${err?.message}`, "warn", { moduleName: MODULE_NAME, sessionKey });
-  });
-
-  player.on(AudioPlayerStatus.Playing, () => {
-  });
-
-  player.on(AudioPlayerStatus.Buffering, () => {
-  });
-
-  player.on(AudioPlayerStatus.Paused, () => {
-  });
-}
-
-/************************************************************************************/
-/* functionSignature: getScanAndPlay (musicDir, pollMs, log, idlePresence, cfg)      *
-/* Returns the polling function. The poll loop is the sole authority for song        *
-/* selection. A triggerPoll() closure lets the Idle event handler fire an immediate  *
-/* poll without racing a currently-running cycle.                                    *
-/************************************************************************************/
-function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
+function getScanAndPlay(musicDir, pollMs, log, cfg) {
   let _running = false;
   let _pendingPoll = false;
 
@@ -303,20 +206,13 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
       const reg = await getItem("bard:registry");
       const keys = Array.isArray(reg?.list) ? reg.list : [];
 
-      if (!keys.length) {
-        await setIdlePresence(idlePresence);
-        return;
-      }
+      if (!keys.length) return;
 
       for (const sessionKey of keys) {
         try {
           const session = await getItem(sessionKey);
+          if (!session?.guildId) continue;
 
-          if (!session?.player || !session?.connection) {
-            continue;
-          }
-
-          const playerState = session.player?.state?.status;
           const labelsData = await getItem(`bard:labels:${session.guildId}`);
           const nowPlaying = await getItem(`bard:nowplaying:${session.guildId}`);
           const currentFile = nowPlaying?.file || null;
@@ -327,28 +223,18 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
             labels = nowPlaying.labels;
           }
 
-          log(`[label-debug] guild=${session.guildId} playerState=${playerState} labels=[${labels.join(",")}] labelsUpdatedAt=${labelsData?.updatedAt||"none"} currentFile=${currentFile||"none"}`, "info", { moduleName: MODULE_NAME });
+          const isPlaying = !!(session._trackEndAt && Date.now() < session._trackEndAt);
 
-          setBindSessionPlayer(session, sessionKey, log, triggerPoll);
-
-          const isPlaying = playerState === AudioPlayerStatus.Playing ||
-                            playerState === AudioPlayerStatus.Buffering;
+          log(`[label-debug] guild=${session.guildId} isPlaying=${isPlaying} labels=[${labels.join(",")}] labelsUpdatedAt=${labelsData?.updatedAt || "none"} currentFile=${currentFile || "none"}`, "info", { moduleName: MODULE_NAME });
 
           if (isPlaying) {
-            if (labels.length === 0) {
-              continue;
-            }
-            // Only react when labels actually changed since this track started.
+            if (labels.length === 0) continue;
             const trackLabels = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
             const sameLabels = [...labels].sort().join(",") === [...trackLabels].sort().join(",");
             log(`[label-debug] guild=${session.guildId} isPlaying=true trackLabels=[${trackLabels.join(",")}] sameLabels=${sameLabels}`, "info", { moduleName: MODULE_NAME });
-            if (sameLabels) {
-              continue;
-            }
-            // Labels changed — switch only if the current song no longer fits.
+            if (sameLabels) continue;
             const next = getSelectSong(labels, library, currentFile);
             if (next === null) {
-              // Song still fits; update stored labels to prevent re-check next poll.
               if (nowPlaying) {
                 await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
               }
@@ -356,21 +242,16 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
             }
             session._lastLabels = labels;
             session._lastRejectedLabels = rejected;
-            // Labels changed mid-song: fade out current, then fade in new (crossfade)
-            await setPlayTrack(session, next, musicDir, log, cfg, { fadeIn: true, fadeOut: true });
+            await setPlayTrack(session, next, musicDir, log, triggerPoll);
           } else {
-            // Use _lastPlayedFile as exclude fallback — nowplaying was cleared by the Idle handler
-            // so currentFile is null, but we still want to avoid immediately repeating the last song.
             const next = getSelectSong(labels, library, null, session._lastPlayedFile || currentFile);
             if (!next) {
               try { await deleteItem(`bard:stream:${session.guildId}`); } catch {}
-              await setIdlePresence(idlePresence);
               continue;
             }
             session._lastLabels = labels;
             session._lastRejectedLabels = rejected;
-            // Player was idle (not playing): fade in new track, no fade-out needed
-            await setPlayTrack(session, next, musicDir, log, cfg, { fadeIn: true, fadeOut: false });
+            await setPlayTrack(session, next, musicDir, log, triggerPoll);
           }
         } catch (e) {
           log(`session scan error for ${sessionKey}: ${e?.message}`, "error", { moduleName: MODULE_NAME });
@@ -393,20 +274,13 @@ function getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg) {
 
 /************************************************************************************/
 /* functionSignature: getBardFlow (baseCore, runFlow, createRunCore)                 *
-/* Initializes the Bard Discord client, caches the music library, and starts the     *
-/* playback poller.                                                                  *
+/* Loads the music library and starts the headless bard playback scheduler.          *
 /************************************************************************************/
 export default async function getBardFlow(baseCore, runFlow, createRunCore) {
   const rc = createRunCore();
   const log = getPrefixedLogger(rc.workingObject, import.meta.url);
 
   const cfg = baseCore?.config?.[MODULE_NAME] || {};
-
-  const PLACEHOLDER = "BARD_BOT_TOKEN_HERE";
-  if (!cfg.token || cfg.token === PLACEHOLDER) {
-    log("bard.token not set (still placeholder) — bard flow idle", "warn", { moduleName: MODULE_NAME });
-    return;
-  }
 
   const pollMs = Number.isFinite(Number(cfg.pollIntervalMs))
     ? Math.max(5000, Number(cfg.pollIntervalMs))
@@ -417,36 +291,9 @@ export default async function getBardFlow(baseCore, runFlow, createRunCore) {
     typeof cfg.musicDir === "string" ? cfg.musicDir : "assets/bard"
   );
 
-  const idlePresence = typeof cfg.idlePresence === "string" ? cfg.idlePresence : "";
-
-
   const startupLibrary = getLoadLibrary(musicDir);
   log(`library loaded: ${startupLibrary.length} track(s)`, "info", { moduleName: MODULE_NAME, musicDir });
 
-  let bardClient;
-  try {
-    bardClient = new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates
-      ]
-    });
-
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("bard bot login timeout after 15s")), 15000);
-      const done = (fn) => (...args) => { clearTimeout(timer); fn(...args); };
-      bardClient.once("clientReady", done(resolve));
-      bardClient.once("error", done(reject));
-      bardClient.login(cfg.token).catch(done(reject));
-    });
-
-    await putItem(bardClient, "bard:client");
-    log(`bard bot logged in as ${bardClient.user?.tag}`, "info", { moduleName: MODULE_NAME });
-  } catch (e) {
-    log(`bard bot login failed: ${e?.message}`, "error", { moduleName: MODULE_NAME });
-    return;
-  }
-
-  const scanAndPlay = getScanAndPlay(musicDir, pollMs, log, idlePresence, cfg);
+  const scanAndPlay = getScanAndPlay(musicDir, pollMs, log, cfg);
   setTimeout(scanAndPlay, 1000);
 }
