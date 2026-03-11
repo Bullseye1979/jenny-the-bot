@@ -1,5 +1,7 @@
 # Jenny — User Guide
 
+> **Version:** 1.0 · **Date:** 2026-03-11
+
 Jenny is an AI assistant that lives in your Discord server. She can chat, answer questions, generate images and videos, look things up on the web, read YouTube transcripts, manage Confluence and Jira, and even talk back to you in voice channels.
 
 This guide explains everything you need to know to use Jenny as a regular user.

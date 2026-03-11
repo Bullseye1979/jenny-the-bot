@@ -1,5 +1,7 @@
 # Jenny — Discord AI Bot
 
+> **Version:** 1.0 · **Date:** 2026-03-11
+
 Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management, and a live terminal dashboard with hot-reload.
 
 ---

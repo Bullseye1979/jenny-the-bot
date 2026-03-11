@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-03-09
+> **Version:** 1.0 · **Date:** 2026-03-11
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -1087,27 +1087,29 @@ Starts a lightweight HTTP API server.
 
 #### config.webpage-config-editor
 
-Served on a dedicated port listed in `config.webpage.ports`.
+Visual config editor served on a dedicated port. Objects in `core.json` render as collapsible cards, flat arrays as tag chips, secrets as password fields. Edits are tracked in memory and written atomically on save. The port must also appear in `config.webpage.ports`.
 
 ```json
 "webpage-config-editor": {
-  "flow":       ["webpage"],
-  "port":       3111,
-  "host":       "127.0.0.1",
-  "token":      "",
-  "configPath": "",
-  "label":      "Config"
+  "flow":         ["webpage"],
+  "port":         3111,
+  "basePath":     "/config",
+  "file":         "/absolute/path/to/core.json",
+  "allowedRoles": ["admin"],
+  "token":        "",
+  "label":        "⚙️ Config"
 }
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `flow` | array | `["webpage"]` | Must include `"webpage"` for the module to activate |
-| `port` | number | `3111` | HTTP port to listen on — must also be listed in `config.webpage.ports` |
-| `host` | string | `"127.0.0.1"` | Bind address (controlled by the webpage flow server, not this module) |
-| `token` | string | `""` | Optional auth token; sent as `Authorization: Bearer <token>` or as the Basic password |
-| `configPath` | string | `""` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
-| `label` | string | `"Config"` | Navigation menu label shown in other webpage tools |
+| `port` | number | `3111` | HTTP port — must also be listed in `config.webpage.ports` |
+| `basePath` | string | `"/config"` | URL prefix served by this module |
+| `file` | string | *(project root core.json)* | Absolute path to the JSON file to edit. Alias: `configPath` |
+| `allowedRoles` | array | `["admin"]` | Roles allowed to view and save the config. Empty array = public |
+| `token` | string | `""` | Optional bearer/basic auth token |
+| `label` | string | `"⚙️ Config"` | Navigation menu label |
 
 ---
 
@@ -2347,7 +2349,7 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 
 Jenny runs multiple HTTP servers on different ports. A reverse proxy such as Caddy consolidates them under a single domain with automatic HTTPS.
 
-**Example Caddyfile:**
+**Example Caddyfile (single domain):**
 
 ```
 jenny.example.com {
@@ -2365,6 +2367,37 @@ jenny.example.com {
 
 > **Local development:** Add `tls internal` inside the block to use a self-signed certificate.
 > **Production:** Caddy handles HTTPS automatically via Let's Encrypt when a public domain is used — no extra configuration needed.
+
+**Multiple domains (single Caddyfile block):**
+
+To serve the web UI on more than one hostname, list all domains in a single block separated by commas. Caddy will obtain a TLS certificate for each domain automatically after `systemctl reload caddy`.
+
+```
+jenny.example.com, jenny.example2.com {
+    encode gzip
+    reverse_proxy /config*       localhost:3111
+    reverse_proxy /chat*         localhost:3112
+    reverse_proxy /inpainting*   localhost:3113
+    reverse_proxy /documents*    localhost:3113
+    reverse_proxy /bard-admin*   localhost:3114
+    reverse_proxy /dashboard*    localhost:3115
+    reverse_proxy /auth*         localhost:3111
+    reverse_proxy *              localhost:3400
+}
+```
+
+**Multi-domain OAuth callback (`redirectUri`):**
+
+When `config["webpage-auth"].redirectUri` is set to an empty string `""`, the auth module derives the callback URL automatically from the HTTP `Host` header of each incoming request. This lets a single bot instance handle OAuth logins from multiple domains without any code changes.
+
+You must register **every callback URL** in the Discord Developer Portal (App → OAuth2 → Redirects) before users can log in from that domain:
+
+```
+https://jenny.example.com/auth/callback
+https://jenny.example2.com/auth/callback
+```
+
+If `redirectUri` is set to a specific URL, only that domain is used for all OAuth callbacks regardless of the request host.
 
 **Port mapping:**
 
@@ -2415,7 +2448,7 @@ https://discord.com/oauth2/authorize?client_id=BARD_CLIENT_ID&permissions=8&scop
 
 | Module File | Port | URL Prefix | Config Key | Purpose |
 |---|---|---|---|---|
-| `00047-webpage-config-editor.js` | 3111 | `/config` | `webpage-config-editor` | Live JSON editor for core.json |
+| `00047-webpage-config-editor.js` | 3111 | `/config` | `webpage-config-editor` | Visual config editor — objects as collapsible cards, flat arrays as tag chips, secrets as password fields |
 | `00048-webpage-chat.js` | 3112 | `/chat` | `webpage-chat` | Chat history viewer and message sender |
 | `00049-webpage-inpainting.js` | 3113 | `/inpainting` | `webpage-inpainting` | Image inpainting single-page app |
 | `00046-webpage-bard.js` | 3114 | `/bard-admin` | `webpage-bard` | Bard music library manager |
@@ -2433,10 +2466,12 @@ https://discord.com/oauth2/authorize?client_id=BARD_CLIENT_ID&permissions=8&scop
 ### HTTP Routes per Module
 
 **Config Editor (port 3111, /config):**
-- `GET /config` — renders the config editor UI (role-gated)
+- `GET /config` — renders the visual config editor UI (role-gated via `allowedRoles`)
 - `GET /config/style.css` — serves shared CSS
-- `GET /config/api/config` — returns current core.json as JSON
-- `POST /config/api/config` — accepts and writes updated core.json
+- `GET /config/api/config` — returns current `core.json` as JSON
+- `POST /config/api/config` — accepts and atomically writes updated `core.json`
+
+The editor renders each object as a collapsible card. Object titles are derived from: `_title` field (if present) → well-known field names (`name`, `label`, `id`, …) → raw property key. Flat primitive arrays render as tag chips (click `×` to remove, Enter/comma to add). Fields whose key matches `key|secret|token|password|bearer` render as password inputs with a show/hide toggle. Strings longer than 120 characters or containing newlines render as textareas.
 
 > The config editor (`webpage-config-editor`) replaced the old `config-editor` flow. All references to the old flow can be ignored.
 
@@ -2922,9 +2957,16 @@ The LLM prompt used by `00036-bard-cron.js` to classify mood tags is resolved in
 | 3 | `config["bard"].prompt` | Shared bard config fallback |
 | 4 (lowest) | Built-in default | Hardcoded in `00036-bard-cron.js` (`DEFAULT_PROMPT_TEMPLATE`) |
 
-The prompt template may contain the placeholder `{{TAGS}}`, which is replaced at runtime with the comma-separated list of all tags found in `library.xml`.
+The prompt template may contain two placeholders replaced at runtime:
 
-The LLM decides purely from the current transcript — no previous labels are injected into the prompt. This prevents the model from anchoring on old mood context and ensures the tags always reflect what is happening right now.
+| Placeholder | Replaced with |
+|---|---|
+| `{{TAGS}}` | Comma-separated list of all unique tags found in `library.xml` |
+| `{{CURRENT_LABELS}}` | The three labels currently active for this guild (e.g. `combat,intense,dark`), or `none` if no labels have been set yet |
+
+The built-in default prompt instructs the LLM to **normally keep the current labels** unless the transcript shows a clear and decisive mood shift. When a mood change is detected (e.g. calm → combat, combat → rest), the LLM is instructed to return **three labels with no overlap with the current labels**. The Bard player interprets a completely different label set as an immediate song-change signal.
+
+This design keeps music stable during gradual transitions while still reacting quickly to decisive narrative events.
 
 ### bard-label-gen Flow (Pipeline Overview)
 

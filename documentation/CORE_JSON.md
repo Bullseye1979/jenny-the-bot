@@ -1,5 +1,7 @@
 # core.json — Complete Reference
 
+> **Version:** 1.0 · **Date:** 2026-03-11
+
 `core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime — any change triggers an automatic hot-reload within seconds. No restart is required.
 
 The file has two top-level sections:
@@ -13,7 +15,7 @@ The file has two top-level sections:
 
 All key names follow **camelCase** throughout.
 
-> **Tip:** Use `__description` fields freely anywhere in the JSON. They are ignored by the bot and serve purely as inline comments.
+> **Tip:** Add a `_title` key to any object in `core.json` to give it a readable name in the Config Editor UI. The value is shown as the section header instead of the raw property key. `_title` is never sent to the bot at runtime and has no effect on bot behaviour.
 
 ---
 
@@ -531,27 +533,46 @@ The API flow is configured via command-line or defaults (host `0.0.0.0`, port `3
 
 ### webpage-config-editor
 
-JSON config editor SPA served as a **webpage-flow module** (`modules/00047`) on a dedicated port. The port must also appear in `config.webpage.ports`. The AI chat has moved to [`webpage-chat`](#webpage-chat).
+Visual config editor SPA served as a **webpage-flow module** (`modules/00047`) on a dedicated port. Renders `core.json` as a tree of collapsible sections — objects appear as cards, flat arrays as tag chips, secrets as password fields, long strings as textareas. Changes are tracked in-memory and saved atomically with Ctrl+S or the **Save** button.
+
+The port must also appear in `config.webpage.ports`. The AI chat has moved to [`webpage-chat`](#webpage-chat).
 
 ```jsonc
 "webpage-config-editor": {
-  "flow":       ["webpage"],
-  "port":       3111,
-  "host":       "127.0.0.1",
-  "token":      "",
-  "configPath": "",
-  "label":      "⚙️ Config"
+  "flow":         ["webpage"],
+  "port":         3111,
+  "basePath":     "/config",
+  "file":         "/absolute/path/to/core.json",
+  "allowedRoles": ["admin"],
+  "token":        "",
+  "label":        "⚙️ Config"
 }
 ```
 
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port to listen on (default `3111`) — also add to `config.webpage.ports` |
-| `host` | Bind address; `"127.0.0.1"` for localhost-only (the webpage flow server controls binding) |
-| `token` | Optional auth token; supply as `Authorization: Bearer <token>` or as the Basic password. Leave empty to disable auth |
-| `configPath` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
+| `port` | HTTP port (default `3111`) — also add to `config.webpage.ports` |
+| `basePath` | URL prefix served by this module (default `"/config"`) |
+| `file` | Absolute path to the JSON file to edit. Falls back to `core.json` in the project root if omitted. Alias: `configPath` |
+| `allowedRoles` | Array of roles allowed to view and save. Empty array `[]` = public. Example: `["admin"]` |
+| `token` | Optional bearer/basic auth token. Leave empty to disable |
 | `label` | Nav menu label for cross-linking from other webpage tools |
+
+#### _title — Readable Section Names
+
+Any object in `core.json` can have a `_title` key. The Config Editor uses this string as the section header instead of the raw property key.
+
+```jsonc
+"bard-admin-join": {
+  "_title": "Bard Join/Leave Commands",
+  "flow": ["discord-admin"]
+}
+```
+
+`_title` is skipped when the editor renders fields — it never appears as an editable input, and is ignored entirely at runtime.
+
+> All module config sections in `core.json` already have `_title` values pre-populated. Update them freely without side effects.
 
 ---
 
