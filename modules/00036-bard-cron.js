@@ -22,12 +22,16 @@ const DEFAULT_PROMPT_TEMPLATE =
   "You are a music mood classifier for a D&D tabletop RPG session. " +
   "Read the transcript below and choose exactly 3 tags that best describe what is happening RIGHT NOW. " +
   "You MUST pick from this exact list only: {{TAGS}}. " +
+  "The currently active tags are: {{CURRENT_LABELS}}. " +
   "RULES: " +
   "1. Each tag is ONE word from the list above — never combine words, never add spaces. " +
-  "2. Base your choice solely on the transcript. Ignore any previously active tags. " +
+  "2. Normally keep the current tags unless the mood has clearly shifted. " +
   "3. If combat is happening, pick combat tags. If exploration, pick exploration tags. " +
-  "4. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. No apology. " +
-  "If the transcript is empty or unclear, pick the 3 most fitting tags anyway. " +
+  "4. MOOD CHANGE: If the transcript shows a clear and decisive mood shift (e.g. calm → combat, " +
+  "combat → rest, tension → celebration), you MUST pick 3 tags that are completely different " +
+  "from the current tags — no overlap at all. This signals an immediate song change. " +
+  "5. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. No apology. " +
+  "If the transcript is empty or unclear, keep the current tags. " +
   "Example: battle,intense,danger";
 
 /************************************************************************************/
@@ -74,9 +78,14 @@ function getLibraryTags(musicDir) {
 /* functionSignature: buildSystemPrompt(template, tagSet, currentLabels)           *
 /* Injects the dynamic tag list and current labels into the system prompt.         *
 /************************************************************************************/
-function buildSystemPrompt(template, tagSet) {
+function buildSystemPrompt(template, tagSet, currentLabels) {
   const tagList = [...tagSet].sort().join(",");
-  return template.replace("{{TAGS}}", tagList);
+  const labelStr = Array.isArray(currentLabels) && currentLabels.length
+    ? currentLabels.join(",")
+    : "none";
+  return template
+    .replace("{{TAGS}}", tagList)
+    .replace("{{CURRENT_LABELS}}", labelStr);
 }
 
 /************************************************************************************/
@@ -177,7 +186,7 @@ export default async function getBardCron(coreData) {
       // cfg.prompt or bardCfg.prompt can override via config, but workingObject.prompt is ignored
       // to prevent the global systemPrompt from bleeding in.
       const promptTemplate = getStr(cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
-      const systemPrompt = buildSystemPrompt(promptTemplate, validTags);
+      const systemPrompt = buildSystemPrompt(promptTemplate, validTags, currentLabels);
 
       // Set up the working object for the core-ai pipeline
       wo.systemPrompt = systemPrompt;

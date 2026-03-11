@@ -676,6 +676,7 @@ export default {
 
 | Tool | Description |
 |---|---|
+| `getTavily` | Web search via Tavily Search API; supports depth, topic (`general`/`news`/`finance`), time range, and optional AI-generated answer |
 | `getGoogle` | Google Custom Search API; returns titles, snippets, and links |
 | `getWebpage` | Fetches and parses a web page; returns extracted text |
 | `getImage` | Generates images via OpenAI Images API; persists to `./pub/documents/` |
@@ -703,6 +704,13 @@ Tool-specific settings go under `workingObject.toolsconfig.<toolName>`:
 ```jsonc
 {
   "toolsconfig": {
+    "getTavily": {
+      "apiKey":      "<tavily-api-key>",
+      "searchDepth": "basic",
+      "maxResults":  5,
+      "topic":       "general",
+      "timeoutMs":   20000
+    },
     "getGoogle": {
       "apiKey": "<google-api-key>",
       "cseId":  "<custom-search-engine-id>",

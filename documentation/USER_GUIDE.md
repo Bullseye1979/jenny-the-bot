@@ -122,7 +122,7 @@ During a conversation Jenny can call tools automatically to fulfil your request.
 
 | What you ask for | Tool Jenny uses |
 |---|---|
-| Search the web | Google search + webpage reader |
+| Search the web | Tavily web search (current news, finance, general) or Google search + webpage reader |
 | Explain a website | Fetch & read the page |
 | Generate an image | DALL-E image generation |
 | Animate an image | WAN image-to-video |
