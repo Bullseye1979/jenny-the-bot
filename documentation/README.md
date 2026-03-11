@@ -248,7 +248,8 @@ Serves the **JSON config editor SPA** (`GET /config`) — browse and edit every 
 - **✏ pencil** (in header, only when `_title` exists) — inline-edit the block title
 - **×** (in header) — delete an entire block or array (with confirmation)
 - **×** (on field row) — delete a single attribute (with confirmation)
-- **+ Attribute / + Block** (bottom of every object) — add a new string field or sub-object
+- **+ Attribute** (bottom of every object) — prompts for name and initial value, adds a string field
+- **+ Block** (bottom of every object) — prompts for name, adds an empty `{}` sub-object
 - **+ Add item** (bottom of every object array) — append an empty item
 
 Changes are held in memory until **Save** is clicked (or Ctrl+S). The AI chat has moved to the separate `webpage-chat` module (`GET /chat`).
@@ -260,12 +261,11 @@ Changes are held in memory until **Save** is clicked (or Ctrl+S). The AI chat ha
     "ports": [3000, 3111]
   },
   "webpage-config-editor": {
-    "flow":       ["webpage"],
-    "port":       3111,
-    "host":       "127.0.0.1",
-    "token":      "",
-    "configPath": "",
-    "label":      "⚙️ Config"
+    "flow":         ["webpage"],
+    "port":         3111,
+    "basePath":     "/config",
+    "configPath":   "",
+    "allowedRoles": ["admin"]
   }
 }
 ```
@@ -274,10 +274,9 @@ Changes are held in memory until **Save** is clicked (or Ctrl+S). The AI chat ha
 |---|---|
 | `flow` | Must include `"webpage"` |
 | `port` | HTTP port to listen on (default `3111`) — also add to `config.webpage.ports` |
-| `host` | Bind address; use `"127.0.0.1"` for localhost-only or `"0.0.0.0"` for all interfaces |
-| `token` | Optional auth token; supply as `Authorization: Bearer <token>` or as the Basic password |
+| `basePath` | URL prefix (default `"/config"`) |
 | `configPath` | Absolute path to the JSON file to edit; defaults to `core.json` in the project root |
-| `label` | Navigation label shown in other webpage tools |
+| `allowedRoles` | Roles allowed to view and save. Empty array = public |
 
 #### config.webpage-chat
 
@@ -287,11 +286,9 @@ Serves the **AI chat SPA** (`GET /chat`) on the same port as `webpage-config-edi
 {
   "webpage-chat": {
     "flow":   ["webpage"],
-    "port":   3111,
+    "port":   3112,
     "host":   "127.0.0.1",
-    "token":  "",
     "apiUrl": "http://localhost:3400/api",
-    "label":  "💬 Chat",
     "chats": [
       { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
       { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
@@ -303,11 +300,9 @@ Serves the **AI chat SPA** (`GET /chat`) on the same port as `webpage-config-edi
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port to listen on (default `3111`) — must also be in `config.webpage.ports` |
+| `port` | HTTP port to listen on (default `3112`) — must also be in `config.webpage.ports` |
 | `host` | Bind address |
-| `token` | Optional auth token (Bearer or Basic) |
 | `apiUrl` | Default URL of the bot's HTTP API endpoint (default `http://localhost:3400/api`) |
-| `label` | Navigation label shown in other webpage tools |
 | `chats[].label` | Display name shown in the channel selector dropdown |
 | `chats[].channelID` | Channel ID passed to the API as context |
 | `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |

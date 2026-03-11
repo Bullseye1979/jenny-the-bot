@@ -373,21 +373,38 @@ function removeAtPath(path) {
   if (Array.isArray(parent)) { parent.splice(key, 1); }
   else if (parent && typeof parent === 'object') { delete parent[key]; }
   setDirty(true);
+  var sy = window.scrollY;
   render(DATA);
+  requestAnimationFrame(function() { window.scrollTo(0, sy); });
 }
-function addAttrToPath(path, name, isBlock) {
+function addToObject(path, name, value) {
   var obj = path.length ? getAtPath(DATA, path) : DATA;
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
-  obj[name] = isBlock ? {} : '';
+  obj[name] = value;
   setDirty(true);
-  render(DATA);
+  renderAndFocus(path);
 }
 function addItemToArray(path) {
   var arr = path.length ? getAtPath(DATA, path) : DATA;
   if (!Array.isArray(arr)) return;
   arr.push({});
   setDirty(true);
+  renderAndFocus(path);
+}
+function renderAndFocus(path) {
   render(DATA);
+  if (!path || !path.length) return;
+  var pathStr = JSON.stringify(path);
+  requestAnimationFrame(function() {
+    var sections = document.querySelectorAll('.cs[data-cfgpath]');
+    for (var i = 0; i < sections.length; i++) {
+      if (sections[i].getAttribute('data-cfgpath') === pathStr) {
+        sections[i].classList.add('open');
+        sections[i].scrollIntoView({ behavior: 'instant', block: 'nearest' });
+        break;
+      }
+    }
+  });
 }
 /* Derive a readable title for an object block */
 function getTitle(key, obj) {
@@ -539,6 +556,7 @@ function renderField(key, value, path) {
 /* Render an object as a collapsible section */
 function renderObject(key, obj, path, depth) {
   var s = mkSection(getTitle(key, obj), depth, depth < 1);
+  s.section.setAttribute('data-cfgpath', JSON.stringify(path));
 
   /* ✏ pencil to edit _title inline */
   if ('_title' in obj) {
@@ -601,14 +619,16 @@ function renderObject(key, obj, path, depth) {
   btnAttr.onclick = function() {
     var name = prompt('Attribute name:');
     if (!name || !name.trim()) return;
-    addAttrToPath(path, name.trim(), false);
+    var val = prompt('Value:', '');
+    if (val === null) return;
+    addToObject(path, name.trim(), val);
   };
   var btnBlock = document.createElement('button');
   btnBlock.type = 'button'; btnBlock.textContent = '+ Block';
   btnBlock.onclick = function() {
     var name = prompt('Block name:');
     if (!name || !name.trim()) return;
-    addAttrToPath(path, name.trim(), true);
+    addToObject(path, name.trim(), {});
   };
   addBar.appendChild(btnAttr);
   addBar.appendChild(btnBlock);
@@ -620,6 +640,7 @@ function renderObject(key, obj, path, depth) {
 /* Render an array whose items are objects */
 function renderObjectArray(key, arr, path, depth) {
   var s = mkSection(key, depth, false);
+  s.section.setAttribute('data-cfgpath', JSON.stringify(path));
   var badge = document.createElement('span');
   badge.className = 'cs-badge'; badge.textContent = arr.length;
   s.hdr.appendChild(badge);

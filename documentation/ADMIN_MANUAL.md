@@ -1095,9 +1095,7 @@ Visual config editor served on a dedicated port. Objects render as collapsible c
   "port":         3111,
   "basePath":     "/config",
   "file":         "/absolute/path/to/core.json",
-  "allowedRoles": ["admin"],
-  "token":        "",
-  "label":        "⚙️ Config"
+  "allowedRoles": ["admin"]
 }
 ```
 
@@ -1108,8 +1106,6 @@ Visual config editor served on a dedicated port. Objects render as collapsible c
 | `basePath` | string | `"/config"` | URL prefix served by this module |
 | `file` | string | *(project root core.json)* | Absolute path to the JSON file to edit. Alias: `configPath` |
 | `allowedRoles` | array | `["admin"]` | Roles allowed to view and save the config. Empty array = public |
-| `token` | string | `""` | Optional bearer/basic auth token |
-| `label` | string | `"⚙️ Config"` | Navigation menu label |
 
 ---
 
@@ -1122,9 +1118,7 @@ Serves the AI chat SPA (`GET /chat`). The `apiSecret` for each channel is inject
   "flow":   ["webpage"],
   "port":   3112,
   "host":   "127.0.0.1",
-  "token":  "",
   "apiUrl": "http://localhost:3400/api",
-  "label":  "Chat",
   "chats": [
     { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
     { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
@@ -1137,9 +1131,7 @@ Serves the AI chat SPA (`GET /chat`). The `apiSecret` for each channel is inject
 | `flow` | array | `["webpage"]` | Must include `"webpage"` for the module to activate |
 | `port` | number | `3112` | HTTP port to listen on — must also be listed in `config.webpage.ports` |
 | `host` | string | `"127.0.0.1"` | Bind address |
-| `token` | string | `""` | Optional auth token (Bearer or Basic). Leave empty to disable auth |
 | `apiUrl` | string | `"http://localhost:3400/api"` | Default URL of the bot's HTTP API flow used for all chats |
-| `label` | string | `"Chat"` | Navigation menu label shown in other webpage tools |
 | `chats[].label` | string | — | Display name shown in the channel dropdown |
 | `chats[].channelID` | string | — | Channel ID; injected into every API request for this chat |
 | `chats[].apiSecret` | string | `""` | Bearer secret for this channel's API requests (injected server-side, never sent to the browser) |
@@ -2461,11 +2453,11 @@ The editor renders each object as a collapsible card. Object titles are derived 
 | ✏ pencil icon | Object header (only when `_title` exists) | Inline-edit the title — click to open input, Enter/Blur to save, Escape to cancel |
 | `×` button | Object/array header | Delete the entire block or array (with confirmation) |
 | `×` button | Field row (right edge) | Delete the attribute (with confirmation) |
-| `+ Attribute` | Footer of every object block | Prompts for a key name, adds an empty string field |
+| `+ Attribute` | Footer of every object block | Prompts for key name then initial value; adds a string field |
 | `+ Block` | Footer of every object block | Prompts for a key name, adds an empty `{}` sub-object |
 | `+ Add item` | Footer of every object array | Appends an empty `{}` item to the array |
 
-All structural changes (add/remove) immediately re-render the tree and mark the config as dirty. The changes are not written to disk until **Save** is clicked (or Ctrl+S).
+All structural changes (add/remove) immediately re-render the tree and mark the config as dirty. After adding, the affected section automatically opens and scrolls into view. After deleting, the scroll position is preserved. Changes are not written to disk until **Save** is clicked (or Ctrl+S).
 
 > The config editor (`webpage-config-editor`) replaced the old `config-editor` flow. All references to the old flow can be ignored.
 
