@@ -23,7 +23,7 @@ Jenny is a modular, production-grade Discord AI assistant built on Node.js. It f
    - [api](#api-flow)
    - [cron](#cron-flow)
    - [toolcall](#toolcall-flow)
-   - [config-editor / webpage-config-editor](#config-editor-flow)
+   - [webpage / web modules](#webpage-flow--admin-modules)
    - [webpage](#webpage-flow)
 7. [Browser Extension](#browser-extension)
 7. [Module Pipeline](#module-pipeline)
@@ -180,7 +180,6 @@ These values serve as **runtime defaults** for every flow. They can be overridde
 | `payload` | string | `""` | The user's input message |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone for cron/time tools |
 | `baseUrl` | string | `""` | Public base URL for generated files (images, etc.) |
-| `allowArtifactGeneration` | boolean | `true` | **Currently not implemented** — reserved for a future global on/off switch for image and file generation. Setting this value has no effect. |
 | `requestTimeoutMs` | number | `1000000` | HTTP request timeout in milliseconds |
 | `triggerWordWindow` | number | `3` | Number of words at start of message to scan for trigger |
 | `doNotWriteToContext` | boolean | `false` | Skip writing this turn to MySQL context |
@@ -280,14 +279,15 @@ Changes are held in memory until **Save** is clicked (or Ctrl+S). The AI chat ha
 
 #### config.webpage-chat
 
-Serves the **AI chat SPA** (`GET /chat`) on the same port as `webpage-config-editor`. The `apiSecret` per channel is injected server-side and is never exposed to the browser.
+Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. The `apiSecret` per channel is injected server-side and is never exposed to the browser.
 
 ```jsonc
 {
   "webpage-chat": {
-    "flow":   ["webpage"],
-    "port":   3112,
-    "host":   "127.0.0.1",
+    "flow":         ["webpage"],
+    "port":         3112,
+    "basePath":     "/chat",
+    "allowedRoles": ["member", "admin"],
     "apiUrl": "http://localhost:3400/api",
     "chats": [
       { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
@@ -301,18 +301,13 @@ Serves the **AI chat SPA** (`GET /chat`) on the same port as `webpage-config-edi
 |---|---|
 | `flow` | Must include `"webpage"` |
 | `port` | HTTP port to listen on (default `3112`) — must also be in `config.webpage.ports` |
-| `host` | Bind address |
+| `basePath` | URL prefix (default `"/chat"`) |
+| `allowedRoles` | Roles allowed to view the chat. Empty array = public |
 | `apiUrl` | Default URL of the bot's HTTP API endpoint (default `http://localhost:3400/api`) |
 | `chats[].label` | Display name shown in the channel selector dropdown |
 | `chats[].channelID` | Channel ID passed to the API as context |
 | `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |
 | `chats[].apiUrl` | Per-chat API URL override; falls back to the global `apiUrl` if omitted |
-
-#### config.config-editor *(deprecated)*
-
-> **Deprecated.** `flows/config-editor.js` is now a no-op stub. Migrate config settings to `webpage-config-editor` and chat settings to `webpage-chat`, then remove this section.
-
----
 
 #### config.db / workingObject.db
 
@@ -481,25 +476,22 @@ Watches the `status:tool` registry key. When a tool-call result is deposited int
 
 ---
 
-### config-editor Flow
-
-> **Deprecated.** `flows/config-editor.js` is now a **no-op stub**. The admin UI has moved to `modules/00047-webpage-config-editor.js` and `modules/00048-webpage-chat.js`. Migrate `config["config-editor"]` → `config["webpage-config-editor"]` (editor) + `config["webpage-chat"]` (chat).
-
----
-
 ### webpage Flow + Admin Modules
 
-**Files:** `flows/webpage.js`, `modules/00047-webpage-config-editor.js`, `modules/00048-webpage-chat.js`
+**Files:** `flows/webpage.js` + all `modules/00041–00054-webpage-*.js`
 
-The webpage flow starts **one HTTP server per port** listed in `config.webpage.ports`. Each request exposes `wo.http.port`, allowing modules to route by port. Both admin modules share the configured port (default 3111) and route by URL path.
+The webpage flow starts **one HTTP server per port** listed in `config.webpage.ports`. Each request exposes `wo.http.port`, allowing modules to route by port.
 
-**⚙ Config Editor** (`modules/00047`, `GET /`)
-- Left sidebar tree: sections `{}` as expandable nodes; object arrays `[{…}]` as tree items at the same level
-- Right panel: inline editing of primitives, tag/chip editors for primitive arrays, navigation links for sub-sections
-- Add Attribute / Section / Object Array / Tag Array per section
-- Duplicate and Delete on every tree node and array item
-- Keyboard shortcut `Ctrl + S` / `⌘ S` to save
-- Fully responsive — works on mobile via a hamburger sidebar
+**⚙ Config Editor** (`modules/00047`, `GET /config`)
+- Collapsible cards per object section; flat arrays as tag chips; password fields for secrets; textareas for long strings
+- ✏ pencil in card header (when `_title` exists) — inline-edit the section title
+- × in header — delete an entire block or array
+- × on field row — delete a single attribute
+- **+ Attribute** (bottom of every object) — prompts for name and initial value, adds a string field
+- **+ Block** (bottom of every object) — prompts for name, adds an empty `{}` sub-object
+- **+ Add item** (bottom of every object array) — append an empty item
+- After adding, the affected section opens and scrolls into view; scroll position preserved on delete
+- `Ctrl + S` to save
 
 **💬 Chat** (`modules/00048`, `GET /chat`)
 - Large scrollable chat window with AI; loads the last 100 context entries from MySQL on channel select
@@ -509,8 +501,6 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
 - **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel, no cross-channel interference)
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
-
-Both modules support optional Bearer / Basic authentication via their respective `token` config key.
 
 **Configuration:** `config["webpage-config-editor"]` and `config["webpage-chat"]` — see the respective config sections above.
 

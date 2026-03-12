@@ -371,7 +371,6 @@ The live dashboard displays:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `showReactions` | boolean | `true` | Add progress emoji reactions to Discord messages |
-| `allowArtifactGeneration` | boolean | `true` | **Currently not implemented** — reserved for a future global on/off switch for image and file generation. Setting this value has no effect. |
 | `baseUrl` | string | `""` | Public base URL for file links, e.g. `https://myserver.com` |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone |
 
@@ -1115,10 +1114,11 @@ Serves the AI chat SPA (`GET /chat`). The `apiSecret` for each channel is inject
 
 ```json
 "webpage-chat": {
-  "flow":   ["webpage"],
-  "port":   3112,
-  "host":   "127.0.0.1",
-  "apiUrl": "http://localhost:3400/api",
+  "flow":         ["webpage"],
+  "port":         3112,
+  "basePath":     "/chat",
+  "allowedRoles": ["member", "admin"],
+  "apiUrl":       "http://localhost:3400/api",
   "chats": [
     { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
     { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
@@ -1130,7 +1130,8 @@ Serves the AI chat SPA (`GET /chat`). The `apiSecret` for each channel is inject
 |---|---|---|---|
 | `flow` | array | `["webpage"]` | Must include `"webpage"` for the module to activate |
 | `port` | number | `3112` | HTTP port to listen on — must also be listed in `config.webpage.ports` |
-| `host` | string | `"127.0.0.1"` | Bind address |
+| `basePath` | string | `"/chat"` | URL prefix served by this module |
+| `allowedRoles` | array | `[]` | Roles allowed to view the chat. Empty array = public |
 | `apiUrl` | string | `"http://localhost:3400/api"` | Default URL of the bot's HTTP API flow used for all chats |
 | `chats[].label` | string | — | Display name shown in the channel dropdown |
 | `chats[].channelID` | string | — | Channel ID; injected into every API request for this chat |
@@ -1244,6 +1245,86 @@ Configuration for the label-generation module. AI params (`endpoint`, `apiKey`, 
 
 ---
 
+#### config.discord-voice-transcribe
+
+Controls voice capture and Whisper transcription. Whisper keys (`whisperApiKey`, `whisperEndpoint`, `whisperModel`, `whisperLanguage`) fall back to their `workingObject` equivalents if omitted here.
+
+```json
+"discord-voice-transcribe": {
+  "flow":             ["discord-voice"],
+  "pollMs":           1000,
+  "silenceMs":        1500,
+  "maxCaptureMs":     25000,
+  "minVoicedMs":      1000,
+  "minWavBytes":      24000,
+  "snrDbThreshold":   3.8,
+  "frameMs":          20,
+  "startDebounceMs":  600,
+  "keepWav":          false,
+  "maxSegmentsPerRun": 32
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `pollMs` | number | `1000` | How often the voice receiver is polled (ms) |
+| `silenceMs` | number | `1500` | Silence duration that ends a capture segment (ms) |
+| `maxCaptureMs` | number | `25000` | Maximum capture duration per segment (ms) |
+| `minVoicedMs` | number | `1000` | Minimum voiced audio required to attempt transcription (ms) |
+| `minWavBytes` | number | `24000` | Minimum WAV file size to attempt transcription (bytes) |
+| `snrDbThreshold` | number | `3.8` | Signal-to-noise ratio threshold; segments below this are discarded |
+| `frameMs` | number | `20` | Opus frame duration (ms) |
+| `startDebounceMs` | number | `600` | Debounce before starting a new capture (ms) |
+| `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
+| `maxSegmentsPerRun` | number | `32` | Maximum segments processed per polling cycle |
+
+---
+
+#### config.webpage-auth
+
+Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 callback (`/auth/callback`), and logout (`/auth/logout`) exclusively on `loginPort`. Writes `wo.webAuth` for downstream modules.
+
+```json
+"webpage-auth": {
+  "flow":           ["webpage"],
+  "enabled":        true,
+  "loginPort":      3111,
+  "ports":          [3111, 3112, 3113, 3114, 3115, 3116],
+  "clientId":       "YOUR_DISCORD_APP_CLIENT_ID",
+  "clientSecret":   "YOUR_DISCORD_APP_CLIENT_SECRET",
+  "guildId":        "YOUR_DISCORD_GUILD_ID",
+  "sessionSecret":  "long_random_secret_string",
+  "redirectUri":    "",
+  "scope":          "identify guilds.members.read",
+  "sessionMaxAgeSec": 43200,
+  "defaultRole":    "member",
+  "allowRoleIds":   ["DISCORD_ROLE_ID_1", "DISCORD_ROLE_ID_2"],
+  "rolePriority":   ["DISCORD_ROLE_ID_1", "DISCORD_ROLE_ID_2"],
+  "roleMap":        { "DISCORD_ROLE_ID_1": "admin", "DISCORD_ROLE_ID_2": "member" },
+  "sameSite":       "Lax"
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Set to `false` to disable OAuth2 entirely (all users have no role) |
+| `loginPort` | number | `3111` | Port that handles `/auth/*` routes |
+| `ports` | array | `[loginPort]` | All ports where session cookies are validated |
+| `clientId` | string | — | Discord application Client ID |
+| `clientSecret` | string | — | Discord application Client Secret |
+| `guildId` | string | — | Discord Guild (server) ID to read member roles from |
+| `sessionSecret` | string | — | Secret used to sign session cookies |
+| `redirectUri` | string | `""` | OAuth2 callback URL; auto-derived from `Host` header if empty |
+| `scope` | string | `"identify"` | Discord OAuth2 scope |
+| `sessionMaxAgeSec` | number | `43200` | Session lifetime in seconds (default: 12 h) |
+| `defaultRole` | string | `"member"` | Role assigned to authenticated users not matched by `roleMap` |
+| `allowRoleIds` | array | `[]` | Discord Role IDs considered for role mapping |
+| `rolePriority` | array | `[]` | Order in which role IDs are checked; highest priority first |
+| `roleMap` | object | `{}` | Maps Discord Role ID → role label (`"admin"`, `"member"`, etc.) |
+| `sameSite` | string | `"Lax"` | Cookie `SameSite` attribute (`"Lax"`, `"Strict"`, or `"None"`) |
+
+---
+
 #### Module–Flow Assignment (Reference)
 
 Every module can be restricted to specific flows via its config block:
@@ -1276,6 +1357,8 @@ Every module can be restricted to specific flows via its config block:
 | `webpage-config-editor` | webpage |
 | `webpage-chat` | webpage |
 | `webpage-inpainting` | webpage |
+| `webpage-dashboard` | webpage |
+| `webpage-documentation` | webpage |
 
 ---
 
@@ -2347,6 +2430,7 @@ jenny.example.com {
     reverse_proxy /documents*    localhost:3113
     reverse_proxy /bard-admin*   localhost:3114
     reverse_proxy /dashboard*    localhost:3115
+    reverse_proxy /docs*         localhost:3116
     reverse_proxy /auth*         localhost:3111
     reverse_proxy *              localhost:3400
 }
@@ -2368,6 +2452,7 @@ jenny.example.com, jenny.example2.com {
     reverse_proxy /documents*    localhost:3113
     reverse_proxy /bard-admin*   localhost:3114
     reverse_proxy /dashboard*    localhost:3115
+    reverse_proxy /docs*         localhost:3116
     reverse_proxy /auth*         localhost:3111
     reverse_proxy *              localhost:3400
 }
@@ -2396,6 +2481,7 @@ If `redirectUri` is set to a specific URL, only that domain is used for all OAut
 | 3113 | Inpainting SPA (`/inpainting`) + document serving (`/documents`) |
 | 3114 | Bard Admin UI (`/bard-admin`) |
 | 3115 | Live Dashboard (`/dashboard`) |
+| 3116 | Documentation (`/docs`) |
 
 ---
 
@@ -2426,6 +2512,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00049-webpage-inpainting.js` | 3113 | `/inpainting` | `webpage-inpainting` | Image inpainting single-page app |
 | `00046-webpage-bard.js` | 3114 | `/bard-admin` | `webpage-bard` | Bard music library manager |
 | `00051-webpage-dashboard.js` | 3115 | `/dashboard` | `webpage-dashboard` | Live bot telemetry dashboard |
+| `00054-webpage-documentation.js` | 3116 | `/docs` | `webpage-documentation` | Renders the project documentation as HTML pages |
 
 ### How Web Modules Work
 
@@ -2458,8 +2545,6 @@ The editor renders each object as a collapsible card. Object titles are derived 
 | `+ Add item` | Footer of every object array | Appends an empty `{}` item to the array |
 
 All structural changes (add/remove) immediately re-render the tree and mark the config as dirty. After adding, the affected section automatically opens and scrolls into view. After deleting, the scroll position is preserved. Changes are not written to disk until **Save** is clicked (or Ctrl+S).
-
-> The config editor (`webpage-config-editor`) replaced the old `config-editor` flow. All references to the old flow can be ignored.
 
 **Chat (port 3112, /chat):**
 - `GET /chat` — renders the chat SPA
@@ -2496,6 +2581,21 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
   "basePath": "/dashboard",
   "allowedRoles": ["admin"],
   "refreshSeconds": 5
+}
+```
+
+**Documentation (port 3116, /docs):**
+- `GET /docs` — renders the project documentation index
+- `GET /docs/<page>` — renders individual documentation pages
+- `GET /docs/style.css` — serves shared CSS
+
+**core.json configuration:**
+```json
+"webpage-documentation": {
+  "flow": ["webpage"],
+  "port": 3116,
+  "basePath": "/docs",
+  "allowedRoles": []
 }
 ```
 

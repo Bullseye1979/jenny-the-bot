@@ -48,7 +48,6 @@ All key names follow **camelCase** throughout.
 2. [config](#config)
    - [discord](#discord)
    - [api](#api)
-   - [config-editor](#config-editor) *(deprecated)*
    - [webpage-config-editor](#webpage-config-editor)
    - [webpage-chat](#webpage-chat)
    - [webpage-bard](#webpage-bard)
@@ -96,7 +95,6 @@ All key names follow **camelCase** throughout.
 | `detailedContext` | boolean | `true` | Load full message JSON from MySQL (vs. text-only) |
 | `contextTokenBudget` | number | `60000` | Maximum tokens allocated for conversation history |
 | `contextSize` | number | `20` | Number of context rows to load from MySQL |
-| `allowArtifactGeneration` | boolean | `true` | **Currently not implemented** — reserved for a future global on/off switch for image and file generation. Setting this value has no effect. |
 | `requestTimeoutMs` | number | `1000000` | HTTP request timeout in milliseconds for LLM calls |
 | `triggerWordWindow` | number | `3` | Words scanned at the start of a message for the trigger word |
 | `trigger` | string | `"jenny"` | Trigger word that activates the bot (empty = always active) |
@@ -178,8 +176,8 @@ Each definition object contains `name`, `description`, optional `admin` (array o
 | `/gdpr` | No | Set GDPR consent flags |
 | `/join` | No | Join user's voice channel |
 | `/leave` | No | Leave voice channel |
-| `/bardjoin` | No | Bard bot joins user's voice channel |
-| `/bardleave` | No | Bard bot leaves the voice channel |
+| `/bardstart` | No | Start the bard music scheduler for this server |
+| `/bardstop` | No | Stop the bard music scheduler for this server |
 | `/error` | No | Simulate an internal error (testing) |
 
 ---
@@ -519,18 +517,6 @@ The API flow is configured via command-line or defaults (host `0.0.0.0`, port `3
 
 ---
 
-### config-editor
-
-> **Deprecated.** `flows/config-editor.js` is now a no-op stub. Migrate editor settings to [`webpage-config-editor`](#webpage-config-editor) and chat settings to [`webpage-chat`](#webpage-chat).
-
-```jsonc
-"config-editor": {
-  "port": 3111, "host": "127.0.0.1", "token": "", "configPath": "", "apiUrl": "", "chats": []
-}
-```
-
----
-
 ### webpage-config-editor
 
 Visual config editor SPA served as a **webpage-flow module** (`modules/00047`) on a dedicated port. Renders `core.json` as a tree of collapsible sections — objects appear as cards, flat arrays as tag chips, secrets as password fields, long strings as textareas. Changes are tracked in-memory and saved atomically with Ctrl+S or the **Save** button.
@@ -543,9 +529,7 @@ The port must also appear in `config.webpage.ports`. The AI chat has moved to [`
   "port":         3111,
   "basePath":     "/config",
   "file":         "/absolute/path/to/core.json",
-  "allowedRoles": ["admin"],
-  "token":        "",
-  "label":        "⚙️ Config"
+  "allowedRoles": ["admin"]
 }
 ```
 
@@ -556,8 +540,6 @@ The port must also appear in `config.webpage.ports`. The AI chat has moved to [`
 | `basePath` | URL prefix served by this module (default `"/config"`) |
 | `file` | Absolute path to the JSON file to edit. Falls back to `core.json` in the project root if omitted. Alias: `configPath` |
 | `allowedRoles` | Array of roles allowed to view and save. Empty array `[]` = public. Example: `["admin"]` |
-| `token` | Optional bearer/basic auth token. Leave empty to disable |
-| `label` | Nav menu label for cross-linking from other webpage tools |
 
 #### _title — Readable Section Names
 
@@ -578,16 +560,15 @@ Any object in `core.json` can have a `_title` key. The Config Editor uses this s
 
 ### webpage-chat
 
-AI chat SPA served as a **webpage-flow module** (`modules/00048`) on the same port as `webpage-config-editor`, routed via `GET /chat`. The API secret per channel is injected server-side — never exposed to the browser.
+AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, routed via `GET /chat`. The API secret per channel is injected server-side — never exposed to the browser.
 
 ```jsonc
 "webpage-chat": {
-  "flow":   ["webpage"],
-  "port":   3111,
-  "host":   "127.0.0.1",
-  "token":  "",
-  "apiUrl": "http://localhost:3400/api",
-  "label":  "💬 Chat",
+  "flow":         ["webpage"],
+  "port":         3112,
+  "basePath":     "/chat",
+  "allowedRoles": ["member", "admin"],
+  "apiUrl":       "http://localhost:3400/api",
   "chats": [
     { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
     { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
@@ -600,11 +581,10 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on the same po
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port to listen on (default `3111`) — must also be in `config.webpage.ports` |
-| `host` | Bind address |
-| `token` | Optional auth token (Bearer or Basic). Leave empty to disable auth |
+| `port` | HTTP port to listen on (default `3112`) — must also be in `config.webpage.ports` |
+| `basePath` | URL prefix (default `"/chat"`) |
+| `allowedRoles` | Roles allowed to view the chat. Empty array = public |
 | `apiUrl` | Default URL of the bot's HTTP API endpoint (default `http://localhost:3400/api`) |
-| `label` | Nav menu label for cross-linking from other webpage tools |
 | `chats[].label` | Display name shown in the channel selector dropdown |
 | `chats[].channelID` | Channel ID passed to the API as context |
 | `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |
@@ -943,7 +923,6 @@ Below is a minimal but functional `core.json` template with every section includ
     "trigger":                 "jenny",
     "triggerWordWindow":       3,
     "showReactions":           true,
-    "allowArtifactGeneration": true,
     "modAdmin":                "<ADMIN_DISCORD_USER_ID>",
     "modSilence":              "[silence]",
     "doNotWriteToContext":     false,
@@ -1127,7 +1106,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "discord-admin-macro":     { "flow": ["discord-admin"] },
     "discord-add-files":       { "flow": ["discord"] },
     "core-add-id":             { "flow": ["discord","discord-voice","api"], "servers": ["yourserver.example.com"] },
-    "discord-voice-transcribe":{ "flow": ["discord-voice"], "pollMs": 1000, "silenceMs": 1500, "maxCaptureMs": 25000 },
+    "discord-voice-transcribe":{ "flow": ["discord-voice"], "pollMs": 1000, "silenceMs": 1500, "maxCaptureMs": 25000, "minVoicedMs": 1000, "minWavBytes": 24000, "snrDbThreshold": 3.8, "frameMs": 20, "startDebounceMs": 600, "keepWav": false, "maxSegmentsPerRun": 32 },
     "webpage-output":          { "flow": ["webpage"] },
     "api-add-context":         { "flow": ["api"] },
 
