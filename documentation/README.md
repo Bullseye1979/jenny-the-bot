@@ -478,7 +478,7 @@ Watches the `status:tool` registry key. When a tool-call result is deposited int
 
 ### webpage Flow + Admin Modules
 
-**Files:** `flows/webpage.js` + all `modules/00041–00054-webpage-*.js`
+**Files:** `flows/webpage.js` + all `modules/00041–00054-webpage-*.js` (including `00052-webpage-wiki.js`)
 
 The webpage flow starts **one HTTP server per port** listed in `config.webpage.ports`. Each request exposes `wo.http.port`, allowing modules to route by port.
 
@@ -501,6 +501,35 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
 - **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel, no cross-channel interference)
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
+
+**📖 AI Wiki** (`modules/00052`, `GET /wiki`)
+- Per-channel Fandom-style wiki at `/wiki/{channelId}`; each channel has independent articles
+- Search → FULLTEXT MySQL lookup; 0 hits → LLM generates new article + optional DALL-E image
+- Single hit → redirect to article; 2+ hits → disambiguation list
+- Article page: two-column layout (content + infobox), TOC, categories, See Also links
+- Admin role (configurable) sees 🗑 Delete button on article page
+- Articles stored in MySQL (`wiki_articles` table, auto-created); images at `pub/wiki/{channelId}/images/`
+- `allowedRoles: []` = public wiki (no login required)
+
+```json
+"webpage-wiki": {
+  "flow":     ["webpage"],
+  "port":     3117,
+  "basePath": "/wiki",
+  "channels": [
+    {
+      "_title":       "My Channel Wiki",
+      "channelId":    "YOUR_CHANNEL_ID",
+      "allowedRoles": [],
+      "adminRoles":   ["admin"],
+      "ai": { "model": "gpt-4o-mini", "temperature": 0.7, "maxTokens": 4000, "timeoutMs": 60000 },
+      "image": { "enabled": false, "model": "gpt-image-1", "size": "1024x1024", "timeoutMs": 120000 }
+    }
+  ]
+}
+```
+
+Add `3117` to `config.webpage.ports[]`, `config.webpage-auth.ports[]`, and add `reverse_proxy /wiki* localhost:3117` to your Caddyfile.
 
 **Configuration:** `config["webpage-config-editor"]` and `config["webpage-chat"]` — see the respective config sections above.
 
@@ -582,6 +611,7 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 | `00045` | webpage-inpaint | Image inpainting for web content |
 | `00047` | webpage-config-editor | JSON config editor SPA; serves `GET /` and `GET\|POST /api/config` on the configured port |
 | `00048` | webpage-chat | AI chat SPA; serves `GET /chat`, context API, and chat proxy on the configured port |
+| `00052` | webpage-wiki | AI-driven wiki SPA; per-channel wiki at `/wiki/{channelId}`, MySQL article storage, DALL-E images |
 | `00050` | discord-admin-commands | Processes slash commands and DM admin commands |
 | `00055` | core-admin-commands | Core admin operations (purge, freeze, DB commands) |
 | `00060` | discord-admin-avatar | Generates or uploads a new bot avatar via DALL-E or URL |

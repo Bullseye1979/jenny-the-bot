@@ -51,6 +51,7 @@ All key names follow **camelCase** throughout.
    - [webpage-config-editor](#webpage-config-editor)
    - [webpage-chat](#webpage-chat)
    - [webpage-bard](#webpage-bard)
+   - [webpage-wiki](#webpage-wiki)
    - [cron](#cron)
    - [context](#context)
    - [webpage](#webpage)
@@ -640,6 +641,70 @@ Bard music library manager SPA served as a **webpage-flow module** (`modules/000
 
 ---
 
+### webpage-wiki
+
+AI-driven Fandom-style wiki served as a **webpage-flow module** (`modules/00052`) on port 3117. Each Discord channel gets its own wiki at `/wiki/{channelId}`. Articles are stored in MySQL (table `wiki_articles`, auto-created). Search uses MySQL FULLTEXT; on no match the **core-ai pipeline** generates a new article — the AI calls `getInformation` (mandatory) and `getTimeline` (mandatory) to build the article exclusively from channel history, plus optionally `getImage` for illustrations. Context is **not persisted** (`doNotWriteToContext: true`). Articles expire automatically after a configurable number of days (`maxAgeDays`, default 7). Admins can edit and delete articles via the web UI. System prompt is configurable per channel.
+
+```jsonc
+"webpage-wiki": {
+  "flow":     ["webpage"],
+  "port":     3117,
+  "basePath": "/wiki",
+  "channels": [
+    {
+      "_title":       "My Channel Wiki",
+      "channelId":    "YOUR_CHANNEL_ID",   // source channel for getInformation/getTimeline
+      "allowedRoles": [],                  // [] = public; ["member"] = role-gated
+      "adminRoles":   ["admin"],           // roles that see Edit + Delete buttons
+      "maxAgeDays":   7,                   // article TTL in days; 0 = never expire
+      "ai": {
+        "endpoint":        "",             // falls back to workingObject.endpoint
+        "apiKey":          "",             // falls back to workingObject.apiKey
+        "model":           "gpt-4o-mini",
+        "temperature":     0.7,
+        "maxTokens":       4000,
+        "maxLoops":        5,
+        "timeoutMs":       120000,
+        "tools":           ["getImage", "getTimeline", "getInformation"],
+        "contextMessages": 150,            // recent messages pre-loaded into prompt
+        "systemPrompt":    ""              // empty = built-in wiki prompt
+      }
+    }
+  ]
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3117`) — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `basePath` | URL base path (default `"/wiki"`) |
+| `channels` | Array of per-channel wiki configs |
+| `channels[].channelId` | Discord channel ID; forms `/wiki/{channelId}` and used as context source for `getInformation`/`getTimeline` |
+| `channels[].allowedRoles` | Roles allowed to read this wiki. `[]` = public access (no auth required) |
+| `channels[].adminRoles` | Roles that may edit and delete articles. Default `["admin"]` |
+| `channels[].maxAgeDays` | Article TTL in days. Articles older than this are hidden and deleted. `0` = never expire. Default `7` |
+| `channels[].ai.endpoint` | Chat-completions endpoint. Falls back to `workingObject.endpoint` |
+| `channels[].ai.apiKey` | API key. Falls back to `workingObject.apiKey` |
+| `channels[].ai.model` | LLM model for article generation (default `"gpt-4o-mini"`) |
+| `channels[].ai.temperature` | LLM temperature (default `0.7`) |
+| `channels[].ai.maxTokens` | Max tokens per pipeline turn (default `4000`) |
+| `channels[].ai.maxLoops` | Max tool-call loops per generation (default `5`) |
+| `channels[].ai.timeoutMs` | Pipeline request timeout in ms (default `120000`) |
+| `channels[].ai.tools` | Tools available to the AI. Default: `["getImage","getTimeline","getInformation"]` |
+| `channels[].ai.contextMessages` | Number of recent channel messages pre-loaded into the prompt (default `150`) |
+| `channels[].ai.systemPrompt` | Custom system prompt per channel; empty = built-in wiki prompt |
+
+- Channel not in `channels[]` → HTTP 404
+- AI uses **only tool results** as facts — `getInformation` and `getTimeline` are both mandatory steps in the built-in prompt; events are always presented in **chronological order**
+- Images uploaded via the Edit form are stored in `pub/wiki/{channelId}/images/`; AI-generated images from `getImage` are stored in `pub/documents/`
+- Expired articles are pruned passively (on each page request) and on direct access (returns 404)
+- Admins see an expiry badge on each article (green → yellow → orange as deadline approaches)
+- Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /wiki* localhost:3117` to your Caddyfile
+
+---
+
 ### cron
 
 ```jsonc
@@ -1058,7 +1123,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "api":           { "flowName": "api" },
     "discord-admin": { "flowName": "discord-admin" },
     "discord-voice": { "flowName": "discord-voice" },
-    "webpage":       { "flowName": "webpage" },
+    "webpage":       { "flowName": "webpage", "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116, 3117] },
     "cron": {
       "flowName": "cron",
       "timezone": "Europe/Berlin",
@@ -1108,6 +1173,20 @@ Below is a minimal but functional `core.json` template with every section includ
     "core-add-id":             { "flow": ["discord","discord-voice","api"], "servers": ["yourserver.example.com"] },
     "discord-voice-transcribe":{ "flow": ["discord-voice"], "pollMs": 1000, "silenceMs": 1500, "maxCaptureMs": 25000, "minVoicedMs": 1000, "minWavBytes": 24000, "snrDbThreshold": 3.8, "frameMs": 20, "startDebounceMs": 600, "keepWav": false, "maxSegmentsPerRun": 32 },
     "webpage-output":          { "flow": ["webpage"] },
+    "webpage-wiki": {
+      "flow":     ["webpage"],
+      "port":     3117,
+      "basePath": "/wiki",
+      "channels": [
+        {
+          "_title":       "My Channel Wiki",
+          "channelId":    "<DISCORD_CHANNEL_ID>",
+          "allowedRoles": [],
+          "adminRoles":   ["admin"],
+          "ai": { "endpoint": "", "apiKey": "", "model": "gpt-4o-mini", "temperature": 0.7, "maxTokens": 4000, "maxLoops": 10, "timeoutMs": 120000, "tools": ["getImage","getHistory","getTimeline","getInformation"], "systemPrompt": "" }
+        }
+      ]
+    },
     "api-add-context":         { "flow": ["api"] },
 
     // ── Channel overrides ─────────────────────────────────────────────────────

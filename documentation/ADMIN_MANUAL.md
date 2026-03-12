@@ -1289,7 +1289,7 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
   "flow":           ["webpage"],
   "enabled":        true,
   "loginPort":      3111,
-  "ports":          [3111, 3112, 3113, 3114, 3115, 3116],
+  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117],
   "clientId":       "YOUR_DISCORD_APP_CLIENT_ID",
   "clientSecret":   "YOUR_DISCORD_APP_CLIENT_SECRET",
   "guildId":        "YOUR_DISCORD_GUILD_ID",
@@ -1359,6 +1359,7 @@ Every module can be restricted to specific flows via its config block:
 | `webpage-inpainting` | webpage |
 | `webpage-dashboard` | webpage |
 | `webpage-documentation` | webpage |
+| `webpage-wiki` | webpage |
 
 ---
 
@@ -2431,6 +2432,7 @@ jenny.example.com {
     reverse_proxy /bard-admin*   localhost:3114
     reverse_proxy /dashboard*    localhost:3115
     reverse_proxy /docs*         localhost:3116
+    reverse_proxy /wiki*         localhost:3117
     reverse_proxy /auth*         localhost:3111
     reverse_proxy *              localhost:3400
 }
@@ -2453,6 +2455,7 @@ jenny.example.com, jenny.example2.com {
     reverse_proxy /bard-admin*   localhost:3114
     reverse_proxy /dashboard*    localhost:3115
     reverse_proxy /docs*         localhost:3116
+    reverse_proxy /wiki*         localhost:3117
     reverse_proxy /auth*         localhost:3111
     reverse_proxy *              localhost:3400
 }
@@ -2482,6 +2485,7 @@ If `redirectUri` is set to a specific URL, only that domain is used for all OAut
 | 3114 | Bard Admin UI (`/bard-admin`) |
 | 3115 | Live Dashboard (`/dashboard`) |
 | 3116 | Documentation (`/docs`) |
+| 3117 | AI Wiki (`/wiki`) |
 
 ---
 
@@ -2513,6 +2517,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00046-webpage-bard.js` | 3114 | `/bard-admin` | `webpage-bard` | Bard music library manager |
 | `00051-webpage-dashboard.js` | 3115 | `/dashboard` | `webpage-dashboard` | Live bot telemetry dashboard |
 | `00054-webpage-documentation.js` | 3116 | `/docs` | `webpage-documentation` | Renders the project documentation as HTML pages |
+| `00052-webpage-wiki.js` | 3117 | `/wiki` | `webpage-wiki` | AI-driven Fandom-style wiki, per-channel, with DALL-E images |
 
 ### How Web Modules Work
 
@@ -2598,6 +2603,78 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
   "allowedRoles": []
 }
 ```
+
+**AI Wiki (port 3117, /wiki):**
+- `GET /wiki` — lists all configured channel wikis (public ones visible without auth)
+- `GET /wiki/style.css` — shared CSS
+- `GET /wiki/{channelId}` — channel homepage (search bar + recent articles)
+- `GET /wiki/{channelId}/{slug}` — article page (Fandom-style layout)
+- `GET /wiki/{channelId}/{slug}/edit` — admin: edit form
+- `GET /wiki/{channelId}/search?q=` — search; single hit redirects, multiple hits shows list, no hit triggers generation
+- `GET /wiki/{channelId}/images/{filename}` — serves uploaded images
+- `POST /wiki/{channelId}/api/generate` — AJAX: search→generate; returns `{ok,slug}` or `{ok,results:[]}`
+- `POST /wiki/{channelId}/api/upload-image/{slug}` — admin: upload image for article (JSON `{base64,ext}`)
+- `POST /wiki/{channelId}/{slug}/edit` — admin: save edited article (JSON body)
+- `DELETE /wiki/{channelId}/api/article/{slug}` — admin: delete article row
+
+**core.json configuration:**
+```json
+"webpage-wiki": {
+  "flow": ["webpage"],
+  "port": 3117,
+  "basePath": "/wiki",
+  "channels": [
+    {
+      "_title": "My Channel Wiki",
+      "channelId": "YOUR_CHANNEL_ID",
+      "allowedRoles": [],
+      "adminRoles": ["admin"],
+      "maxAgeDays": 7,
+      "ai": {
+        "endpoint": "",
+        "apiKey": "",
+        "model": "gpt-4o-mini",
+        "temperature": 0.7,
+        "maxTokens": 4000,
+        "maxLoops": 5,
+        "timeoutMs": 120000,
+        "tools": ["getImage", "getTimeline", "getInformation"],
+        "contextMessages": 150,
+        "systemPrompt": ""
+      }
+    }
+  ]
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `port` | number | `3117` | HTTP port for the wiki server |
+| `basePath` | string | `"/wiki"` | URL base path |
+| `channels` | array | `[]` | List of channel wiki configs (one per Discord channel) |
+| `channels[].channelId` | string | — | Discord channel ID; used as wiki sub-path and context source |
+| `channels[].allowedRoles` | array | `[]` | Roles that may read the wiki; empty = public |
+| `channels[].adminRoles` | array | `["admin"]` | Roles that see Edit + Delete buttons and may modify articles |
+| `channels[].maxAgeDays` | number | `7` | Article TTL in days; articles older than this are hidden and auto-deleted. `0` = never expire |
+| `channels[].ai.endpoint` | string | `wo.endpoint` | Chat-completions endpoint (falls back to global) |
+| `channels[].ai.apiKey` | string | `wo.apiKey` | API key (falls back to global) |
+| `channels[].ai.model` | string | `"gpt-4o-mini"` | LLM model for article generation |
+| `channels[].ai.temperature` | number | `0.7` | LLM temperature |
+| `channels[].ai.maxTokens` | number | `4000` | Max tokens per pipeline turn |
+| `channels[].ai.maxLoops` | number | `5` | Max tool-call loops per article generation |
+| `channels[].ai.timeoutMs` | number | `120000` | Pipeline request timeout in ms |
+| `channels[].ai.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
+| `channels[].ai.contextMessages` | number | `150` | Recent messages pre-loaded into the prompt as additional context |
+| `channels[].ai.systemPrompt` | string | `""` | Custom system prompt; empty = built-in prompt |
+
+- Channel NOT listed in `channels[]` → 404
+- `allowedRoles: []` → publicly accessible (no login required)
+- Article generation uses the **core-ai pipeline**: `getInformation` and `getTimeline` are both **mandatory** in the built-in prompt; events are always presented in **chronological order**. The AI uses **only tool results** as facts — no general knowledge.
+- **Article expiry:** articles older than `maxAgeDays` days are deleted automatically on access and pruned in the background on each page request. Admins see a colour-coded expiry badge on every article.
+- **Edit form** (admin only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL. Includes drag-and-drop image upload (max 8 MB, stored in `pub/wiki/{channelId}/images/`).
+- AI-generated images (via `getImage` tool) are stored in `pub/documents/`; uploaded images in `pub/wiki/{channelId}/images/`
+- Articles stored in MySQL table `wiki_articles` (auto-created on first start)
+- Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 
 ---
 
