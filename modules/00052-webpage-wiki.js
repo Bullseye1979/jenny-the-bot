@@ -186,7 +186,7 @@ function getMaxAgeDays(channel) {
 async function dbPruneExpiredArticles(db, channelId, maxAgeDays) {
   if (!maxAgeDays || maxAgeDays <= 0) return;
   await db.execute(
-    "DELETE FROM wiki_articles WHERE channel_id = ? AND COALESCE(updated_at, created_at) < DATE_SUB(NOW(), INTERVAL ? DAY)",
+    "DELETE FROM wiki_articles WHERE channel_id = ? AND updated_at IS NULL AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
     [channelId, maxAgeDays]
   );
 }
@@ -198,7 +198,7 @@ async function dbPruneExpiredArticles(db, channelId, maxAgeDays) {
 async function dbGetRecentArticles(db, channelId, maxAgeDays = 0, limit = 10) {
   let sql = "SELECT slug, title, intro, categories, image_url, created_at FROM wiki_articles WHERE channel_id = ?";
   const params = [channelId];
-  if (maxAgeDays > 0) { sql += " AND COALESCE(updated_at, created_at) >= DATE_SUB(NOW(), INTERVAL ? DAY)"; params.push(maxAgeDays); }
+  if (maxAgeDays > 0) { sql += " AND (updated_at IS NOT NULL OR created_at >= DATE_SUB(NOW(), INTERVAL ? DAY))"; params.push(maxAgeDays); }
   sql += " ORDER BY created_at DESC LIMIT ?";
   params.push(limit);
   const [rows] = await db.execute(sql, params);
@@ -217,9 +217,8 @@ async function dbGetArticle(db, channelId, slug, maxAgeDays = 0) {
   );
   if (!Array.isArray(rows) || !rows.length) return null;
   const article = rows[0];
-  if (maxAgeDays > 0 && article.created_at) {
-    const baseDate = article.updated_at || article.created_at;
-    const ageDays = (Date.now() - new Date(baseDate).getTime()) / 86400000;
+  if (maxAgeDays > 0 && article.created_at && !article.updated_at) {
+    const ageDays = (Date.now() - new Date(article.created_at).getTime()) / 86400000;
     if (ageDays > maxAgeDays) {
       await dbDeleteArticle(db, channelId, slug).catch(() => {});
       return null;
@@ -235,7 +234,7 @@ async function dbGetArticle(db, channelId, slug, maxAgeDays = 0) {
 async function dbSearchArticles(db, channelId, query, maxAgeDays = 0) {
   const q = getStr(query).trim();
   if (!q) return [];
-  const ageClause = maxAgeDays > 0 ? " AND COALESCE(updated_at, created_at) >= DATE_SUB(NOW(), INTERVAL ? DAY)" : "";
+  const ageClause = maxAgeDays > 0 ? " AND (updated_at IS NOT NULL OR created_at >= DATE_SUB(NOW(), INTERVAL ? DAY))" : "";
   /* FULLTEXT for longer queries; LIKE fallback for short ones */
   if (q.length >= 3) {
     try {
@@ -759,19 +758,19 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
   const deleteBtn = isEditor
     ? `<button class="wiki-delete-btn" onclick="wikiDeleteArticle('${escHtml(chId)}','${escHtml(article.slug)}')">🗑 Delete</button>`
     : "";
+  /* Expiry badge: only for articles never edited (updated_at IS NULL); visible to all users */
   let expiryBadge = "";
-  if (isEditor && maxAgeDays > 0 && article.created_at) {
-    const baseDate     = article.updated_at || article.created_at;
-    const ageDays      = (Date.now() - new Date(baseDate).getTime()) / 86400000;
+  if (maxAgeDays > 0 && article.created_at && !article.updated_at) {
+    const ageDays       = (Date.now() - new Date(article.created_at).getTime()) / 86400000;
     const remainingDays = Math.ceil(maxAgeDays - ageDays);
     if (remainingDays <= 0) {
       expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expired</span>`;
     } else if (remainingDays <= 2) {
-      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expires tomorrow</span>`;
+      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expires in ${remainingDays <= 1 ? "1 day" : remainingDays + " days"}</span>`;
     } else if (remainingDays <= 5) {
       expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-warn">🕐 Expires in ${remainingDays} days</span>`;
     }
-    /* > 5 days remaining: no badge — nothing to warn about */
+    /* > 5 days: no badge */
   }
 
   const body = `<div class="wiki-breadcrumb">

@@ -2660,13 +2660,13 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 | `channels[].adminRoles` | array | `[]` | Full admin access (implicitly includes editor + creator). Empty = no admin |
 | `channels[].editorRoles` | array | `[]` | Roles that may edit and delete articles. Empty = only admins |
 | `channels[].creatorRoles` | array | `[]` | Roles that may generate new articles via search. Empty = only admins |
-| `channels[].maxAgeDays` | number | `7` | Article TTL in days. Editing an article resets the clock (`updated_at`). `0` = never expire |
+| `channels[].maxAgeDays` | number | `7` | Article TTL in days (applies only to unedited articles). Manually edited articles never expire. `0` = never expire |
 | `channels[].contextMessages` | number | `150` | Recent messages pre-loaded into the AI prompt |
 
 - Channel NOT listed in `channels[]` → 404
 - `allowedRoles: []` → publicly accessible (no login required)
 - `getInformation` and `getTimeline` are both **mandatory** in the built-in prompt; events always in **chronological order**; AI uses **only tool results** as facts
-- **Article expiry:** articles older than `maxAgeDays` (measured via `COALESCE(updated_at, created_at)`) are deleted on access and pruned in the background. Editing an article resets the TTL clock. Editors see a colour-coded expiry badge per article.
+- **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users see a colour-coded expiry badge on unedited articles (yellow ≤ 5 days, orange ≤ 2 days).
 - **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB)
 - **Search page:** non-creators see results only; auto-generation spinner only shown to creators
 - AI-generated images → `pub/documents/`; uploaded images → `pub/wiki/{channelId}/images/`

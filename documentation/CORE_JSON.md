@@ -686,16 +686,16 @@ AI settings (model, temperature, tools, system prompt) are fixed in the module �
 | `channels[].adminRoles` | Full admin access (implicitly includes editor + creator). `[]` = no admin |
 | `channels[].editorRoles` | Roles that may edit and delete articles. `[]` = only admins |
 | `channels[].creatorRoles` | Roles that may generate new articles via search. `[]` = only admins |
-| `channels[].maxAgeDays` | Article TTL in days. The clock resets on every edit (`updated_at`). `0` = never expire. Default `7` |
+| `channels[].maxAgeDays` | Article TTL in days (applies only to unedited articles). Manually edited articles never expire. `0` = never expire. Default `7` |
 | `channels[].contextMessages` | Recent channel messages pre-loaded into the AI prompt (default `150`) |
 
 - Channel not in `channels[]` → HTTP 404
 - AI uses **only tool results** as facts — `getInformation` and `getTimeline` are both mandatory; events always in **chronological order**
 - Non-creator users see search results but no generate button/spinner
 - Images uploaded via the Edit form are stored in `pub/wiki/{channelId}/images/`; AI-generated images in `pub/documents/`
-- Expiry is based on `COALESCE(updated_at, created_at)` — editing an article resets the TTL clock
+- Only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL; edited articles are permanently retained
 - Expired articles are pruned passively on each request; direct access returns 404
-- Editors see a colour-coded expiry badge per article (green → yellow → orange); badge counts from last edit if edited
+- All users see a colour-coded expiry badge on unedited articles (yellow ≤ 5 days, orange ≤ 2 days); no badge on edited articles
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /wiki* localhost:3117` to your Caddyfile
 
