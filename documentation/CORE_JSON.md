@@ -692,7 +692,7 @@ AI settings (model, temperature, tools, system prompt) are fixed in the module �
 - Channel not in `channels[]` → HTTP 404
 - AI uses **only tool results** as facts — `getInformation` and `getTimeline` are both mandatory; events always in **chronological order**
 - Non-creator users see search results but no generate button/spinner
-- Images uploaded via the Edit form are stored in `pub/wiki/{channelId}/images/`; AI-generated images in `pub/documents/`
+- **Image generation** is a required step in the AI prompt — every new article triggers a `getImage` call. AI-generated images are stored in `pub/documents/`; uploaded images in `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be set, otherwise the image URL in the DB is `null`.
 - Only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL; edited articles are permanently retained
 - Expired articles are pruned passively on each request; direct access returns 404
 - All users see a colour-coded expiry badge on unedited articles (yellow ≤ 5 days, orange ≤ 2 days); no badge on edited articles

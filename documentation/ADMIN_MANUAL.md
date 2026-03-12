@@ -2649,7 +2649,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 
 All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has that role. Admin automatically includes editor and creator rights — no need to add admin to those lists.
 
-**AI settings** are fixed in the module defaults (`gpt-4o-mini`, temperature 0.7, tools `getImage` + `getTimeline` + `getInformation`). The system prompt is built into the module and enforces tool usage and chronological ordering. No separate `core-channel-config` entry is needed.
+**AI settings** are fixed in the module defaults (`gpt-4o-mini`, temperature 0.7, tools `getImage` + `getTimeline` + `getInformation`). The system prompt is built into the module and enforces tool usage and chronological ordering. No separate `core-channel-config` entry is needed. Image generation requires `toolsconfig.getImage.publicBaseUrl` to be set — without it images are saved to disk but the URL stored in the DB is `null`.
 
 | Parameter (`webpage-wiki`) | Type | Default | Description |
 |---|---|---|---|
@@ -2669,7 +2669,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 - **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users see a colour-coded expiry badge on unedited articles (yellow ≤ 5 days, orange ≤ 2 days).
 - **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB)
 - **Search page:** non-creators see results only; auto-generation spinner only shown to creators
-- AI-generated images → `pub/documents/`; uploaded images → `pub/wiki/{channelId}/images/`
+- **Image generation** is mandatory per article (`getImage` is a required step in the AI prompt). AI-generated images → `pub/documents/`; uploaded images → `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be configured.
 - Articles stored in MySQL table `wiki_articles` (auto-created on first start)
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 

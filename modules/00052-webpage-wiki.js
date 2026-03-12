@@ -347,7 +347,7 @@ The user message contains:
 MANDATORY STEPS — follow in order, ALL required:
 1. REQUIRED: Call getInformation with the topic as search query. This is your PRIMARY factual source. Do this BEFORE writing anything.
 2. REQUIRED: Call getTimeline to retrieve the full chronological event history for this channel. You MUST do this regardless of the topic — the timeline provides the correct order of events.
-3. Optionally call getImage to generate an illustration for the article.
+3. REQUIRED: Call getImage to generate an illustration for the article. Use the imageAlt field from the infobox as the prompt. Put the URL from files[0].url into infobox.imageUrl.
 4. Combine the results from getInformation and getTimeline. Use the timeline to establish the correct chronological order of all events. Events MUST be presented in chronological order throughout the entire article — in the intro, in sections, and in the infobox. Never describe a later event before an earlier one.
 5. Write the article using ONLY what the tool results contain. Do NOT add facts from your training data.
 6. OUTPUT a single raw JSON object — no markdown fences, no prose before or after — using this schema:
@@ -369,7 +369,7 @@ CRITICAL RULES:
 - ALL events and developments MUST be in strict chronological order (earliest first).
 - Every sentence must be traceable to a tool result. If unsure, omit it.
 - Do NOT invent names, dates, stats, or lore not found in the tool results.
-- Final output MUST be raw JSON only. If getImage was called, put the returned URL in infobox.imageUrl. Otherwise null.`;
+- Final output MUST be raw JSON only. Always call getImage and put files[0].url in infobox.imageUrl. If getImage fails or returns no url, set infobox.imageUrl to null.`;
 
 /**********************************************************************************/
 /* functionSignature: getChannelContextSnippet (db, channelId, limit)             */
