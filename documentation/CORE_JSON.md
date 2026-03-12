@@ -695,7 +695,7 @@ AI settings (model, temperature, tools, system prompt) are fixed in the module �
 - **Image generation** is a required step in the AI prompt — every new article triggers a `getImage` call. AI-generated images are stored in `pub/documents/`; uploaded images in `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be set, otherwise the image URL in the DB is `null`.
 - Only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL; edited articles are permanently retained
 - Expired articles are pruned passively on each request; direct access returns 404
-- All users see a colour-coded expiry badge on unedited articles (yellow ≤ 5 days, orange ≤ 2 days); no badge on edited articles
+- All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /wiki* localhost:3117` to your Caddyfile
 

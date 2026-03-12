@@ -2666,7 +2666,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 - Channel NOT listed in `channels[]` → 404
 - `allowedRoles: []` → publicly accessible (no login required)
 - `getInformation` and `getTimeline` are both **mandatory** in the built-in prompt; events always in **chronological order**; AI uses **only tool results** as facts
-- **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users see a colour-coded expiry badge on unedited articles (yellow ≤ 5 days, orange ≤ 2 days).
+- **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles.
 - **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB)
 - **Search page:** non-creators see results only; auto-generation spinner only shown to creators
 - **Image generation** is mandatory per article (`getImage` is a required step in the AI prompt). AI-generated images → `pub/documents/`; uploaded images → `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be configured.

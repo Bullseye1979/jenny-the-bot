@@ -759,6 +759,7 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
     ? `<button class="wiki-delete-btn" onclick="wikiDeleteArticle('${escHtml(chId)}','${escHtml(article.slug)}')">🗑 Delete</button>`
     : "";
   /* Expiry badge: only for articles never edited (updated_at IS NULL); visible to all users */
+  /* Expiry badge: always shown for unedited articles (updated_at IS NULL); colour by urgency */
   let expiryBadge = "";
   if (maxAgeDays > 0 && article.created_at && !article.updated_at) {
     const ageDays       = (Date.now() - new Date(article.created_at).getTime()) / 86400000;
@@ -766,11 +767,12 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
     if (remainingDays <= 0) {
       expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expired</span>`;
     } else if (remainingDays <= 2) {
-      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expires in ${remainingDays <= 1 ? "1 day" : remainingDays + " days"}</span>`;
+      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expires in ${remainingDays === 1 ? "1 day" : remainingDays + " days"}</span>`;
     } else if (remainingDays <= 5) {
       expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-warn">🕐 Expires in ${remainingDays} days</span>`;
+    } else {
+      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-ok">🕐 Expires in ${remainingDays} days</span>`;
     }
-    /* > 5 days: no badge */
   }
 
   const body = `<div class="wiki-breadcrumb">
