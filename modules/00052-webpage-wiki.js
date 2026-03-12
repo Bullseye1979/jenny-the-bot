@@ -3,8 +3,8 @@
 /* Version 1.0                                                                    */
 /* Purpose: Fandom-style AI-driven wiki. Per-channel wiki at /wiki/{channelId}.  */
 /*          Articles stored in MySQL; AI generates article + DALL-E image on     */
-/*          first search. Per-channel access (allowedRoles) and admin             */
-/*          (adminRoles) configurable in core.json.                               */
+/*          first search. Roles: allowedRoles (read), creatorRoles (generate),   */
+/*          editorRoles (edit+delete), adminRoles (all — includes editor+creator).*/
 /**********************************************************************************/
 
 import fs   from "node:fs";
@@ -158,10 +158,15 @@ async function getWikiDb(coreData) {
       image_url   VARCHAR(512),
       image_prompt TEXT,
       created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at  TIMESTAMP NULL DEFAULT NULL,
       UNIQUE KEY ux_chan_slug (channel_id, slug),
       FULLTEXT KEY ft_search (title, intro, categories, related)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+  /* Migrate existing tables that predate updated_at */
+  await db.execute(
+    "ALTER TABLE wiki_articles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL DEFAULT NULL"
+  );
   return db;
 }
 
@@ -181,7 +186,7 @@ function getMaxAgeDays(channel) {
 async function dbPruneExpiredArticles(db, channelId, maxAgeDays) {
   if (!maxAgeDays || maxAgeDays <= 0) return;
   await db.execute(
-    "DELETE FROM wiki_articles WHERE channel_id = ? AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+    "DELETE FROM wiki_articles WHERE channel_id = ? AND COALESCE(updated_at, created_at) < DATE_SUB(NOW(), INTERVAL ? DAY)",
     [channelId, maxAgeDays]
   );
 }
@@ -193,7 +198,7 @@ async function dbPruneExpiredArticles(db, channelId, maxAgeDays) {
 async function dbGetRecentArticles(db, channelId, maxAgeDays = 0, limit = 10) {
   let sql = "SELECT slug, title, intro, categories, image_url, created_at FROM wiki_articles WHERE channel_id = ?";
   const params = [channelId];
-  if (maxAgeDays > 0) { sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)"; params.push(maxAgeDays); }
+  if (maxAgeDays > 0) { sql += " AND COALESCE(updated_at, created_at) >= DATE_SUB(NOW(), INTERVAL ? DAY)"; params.push(maxAgeDays); }
   sql += " ORDER BY created_at DESC LIMIT ?";
   params.push(limit);
   const [rows] = await db.execute(sql, params);
@@ -213,7 +218,8 @@ async function dbGetArticle(db, channelId, slug, maxAgeDays = 0) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const article = rows[0];
   if (maxAgeDays > 0 && article.created_at) {
-    const ageDays = (Date.now() - new Date(article.created_at).getTime()) / 86400000;
+    const baseDate = article.updated_at || article.created_at;
+    const ageDays = (Date.now() - new Date(baseDate).getTime()) / 86400000;
     if (ageDays > maxAgeDays) {
       await dbDeleteArticle(db, channelId, slug).catch(() => {});
       return null;
@@ -229,7 +235,7 @@ async function dbGetArticle(db, channelId, slug, maxAgeDays = 0) {
 async function dbSearchArticles(db, channelId, query, maxAgeDays = 0) {
   const q = getStr(query).trim();
   if (!q) return [];
-  const ageClause = maxAgeDays > 0 ? " AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)" : "";
+  const ageClause = maxAgeDays > 0 ? " AND COALESCE(updated_at, created_at) >= DATE_SUB(NOW(), INTERVAL ? DAY)" : "";
   /* FULLTEXT for longer queries; LIKE fallback for short ones */
   if (q.length >= 3) {
     try {
@@ -301,7 +307,7 @@ async function dbDeleteArticle(db, channelId, slug) {
 
 /**********************************************************************************/
 /* functionSignature: dbUpdateArticle (db, channelId, slug, updates)              */
-/* Updates an existing wiki article row (edit by admin).                          */
+/* Updates an existing wiki article row (edit by editor or admin).                */
 /**********************************************************************************/
 async function dbUpdateArticle(db, channelId, slug, updates) {
   const toJson = (v, fallback) => {
@@ -310,7 +316,8 @@ async function dbUpdateArticle(db, channelId, slug, updates) {
   };
   await db.execute(
     `UPDATE wiki_articles
-        SET title=?, intro=?, sections=?, infobox=?, categories=?, related=?, image_url=?
+        SET title=?, intro=?, sections=?, infobox=?, categories=?, related=?, image_url=?,
+            updated_at=NOW()
       WHERE channel_id=? AND slug=?`,
     [
       getStr(updates.title),
@@ -397,16 +404,7 @@ async function getChannelContextSnippet(db, channelId, limit = 150) {
 /* doNotWriteToContext=true: wiki turns are never saved to the channel context.   */
 /**********************************************************************************/
 async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "") {
-  const wo    = coreData?.workingObject || {};
-  const aiCfg = channel.ai || {};
-
-  const systemPrompt = (typeof aiCfg.systemPrompt === "string" && aiCfg.systemPrompt.trim())
-    ? aiCfg.systemPrompt
-    : DEFAULT_WIKI_SYSTEM_PROMPT;
-
-  const tools = Array.isArray(aiCfg.tools)
-    ? aiCfg.tools
-    : ["getImage", "getTimeline", "getInformation"];
+  const wo = coreData?.workingObject || {};
 
   /* Build payload: topic + pre-loaded channel history */
   const historyBlock = ctxSnippet.trim()
@@ -414,37 +412,25 @@ async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "")
     : "\n\n(No channel conversation history available for this topic.)";
 
   const syntheticWo = {
-    /* getHistory reads from this channelID if the AI calls it for older records */
-    flow:      "webpage",
-    channelID: channel.channelId,
-
-    /* AI pipeline */
-    useAiModule:      "completions",
-    endpoint:         getStr(aiCfg.endpoint || wo.endpoint || "https://api.openai.com/v1/chat/completions"),
-    apiKey:           getStr(aiCfg.apiKey   || wo.apiKey   || ""),
-    model:            getStr(aiCfg.model    || wo.model    || "gpt-4o-mini"),
-    temperature:      Number.isFinite(Number(aiCfg.temperature)) ? Number(aiCfg.temperature) : 0.7,
-    maxTokens:        Number(aiCfg.maxTokens)  || 4000,
-    maxLoops:         Number(aiCfg.maxLoops)   || 5,
-    requestTimeoutMs: Number(aiCfg.timeoutMs)  || 120000,
-
-    /* Prompt — history injected directly so the AI cannot ignore it */
-    systemPrompt,
-    payload: `Topic: ${query}${historyBlock}`,
-
-    tools,
-
-    /* Do NOT save wiki generation turns back to the channel context */
+    flow:                "webpage",
+    channelID:           channel.channelId,
+    useAiModule:         "completions",
+    endpoint:            getStr(wo.endpoint || ""),
+    apiKey:              getStr(wo.apiKey   || ""),
+    model:               "gpt-4o-mini",
+    temperature:         0.7,
+    maxTokens:           4000,
+    maxLoops:            5,
+    requestTimeoutMs:    120000,
+    systemPrompt:        DEFAULT_WIKI_SYSTEM_PROMPT,
+    tools:               ["getImage", "getTimeline", "getInformation"],
+    payload:             `Topic: ${query}${historyBlock}`,
     doNotWriteToContext: true,
-
-    /* History already in payload — no need for automatic prepend */
-    includeHistory: false,
-
-    /* Pass DB + tool configs from main workingObject */
-    db:          wo.db,
-    toolsconfig: wo.toolsconfig || {},
-    timezone:    wo.timezone    || "Europe/Berlin",
-    logging:     []
+    includeHistory:      false,
+    db:                  wo.db,
+    toolsconfig:         wo.toolsconfig || {},
+    timezone:            wo.timezone    || "Europe/Berlin",
+    logging:             []
   };
 
   const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
@@ -452,7 +438,12 @@ async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "")
   const responseText      = getStr(result?.workingObject?.response || "").trim();
 
   if (!responseText || responseText === "[Empty AI response]") {
-    throw new Error("Pipeline returned no response");
+    const logMsg = (syntheticWo.logging || [])
+      .filter(e => e.severity === "warn" || e.severity === "error")
+      .map(e => e.message || "")
+      .filter(Boolean)
+      .join(" | ");
+    throw new Error("Pipeline returned no response" + (logMsg ? ": " + logMsg : ""));
   }
 
   /* Parse the JSON article */
@@ -532,7 +523,7 @@ function buildWikiCss() {
   --wiki-chip-text: #b0b0d0;
 }
 * { box-sizing: border-box; }
-body { background: var(--wiki-bg); color: var(--wiki-text); font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; }
+body { background: var(--wiki-bg); color: var(--wiki-text); font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; overflow-y: auto; }
 a { color: var(--wiki-link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .wiki-header { background: var(--wiki-surface); border-bottom: 2px solid var(--wiki-accent); margin-bottom: 0; }
@@ -705,10 +696,10 @@ function buildChannelHomePage(channel, articles, basePath, menu, role) {
 }
 
 /**********************************************************************************/
-/* functionSignature: buildArticlePage (channel, article, basePath, isAdmin, menu, role, maxAgeDays) */
+/* functionSignature: buildArticlePage (channel, article, basePath, isEditor, menu, role, maxAgeDays) */
 /* Renders a full Fandom-style wiki article page.                                 */
 /**********************************************************************************/
-function buildArticlePage(channel, article, basePath, isAdmin, menu, role, maxAgeDays = 0) {
+function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxAgeDays = 0) {
   const chId    = channel.channelId;
   const chTitle = channel._title || `Wiki ${chId}`;
   const chPath  = `${basePath}/${chId}`;
@@ -761,16 +752,17 @@ function buildArticlePage(channel, article, basePath, isAdmin, menu, role, maxAg
     `<a href="${escHtml(chPath)}/search?q=${encodeURIComponent(r)}">${escHtml(r)}</a>`
   ).join(" · ");
 
-  /* --- Admin buttons + expiry badge --- */
-  const editBtn = isAdmin
+  /* --- Editor buttons + expiry badge --- */
+  const editBtn = isEditor
     ? `<a class="wiki-edit-btn" href="${escHtml(chPath)}/${escHtml(article.slug)}/edit">✏️ Edit</a>`
     : "";
-  const deleteBtn = isAdmin
+  const deleteBtn = isEditor
     ? `<button class="wiki-delete-btn" onclick="wikiDeleteArticle('${escHtml(chId)}','${escHtml(article.slug)}')">🗑 Delete</button>`
     : "";
   let expiryBadge = "";
-  if (isAdmin && maxAgeDays > 0 && article.created_at) {
-    const ageDays      = (Date.now() - new Date(article.created_at).getTime()) / 86400000;
+  if (isEditor && maxAgeDays > 0 && article.created_at) {
+    const baseDate     = article.updated_at || article.created_at;
+    const ageDays      = (Date.now() - new Date(baseDate).getTime()) / 86400000;
     const remainingDays = Math.ceil(maxAgeDays - ageDays);
     if (remainingDays <= 0) {
       expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expired</span>`;
@@ -778,9 +770,8 @@ function buildArticlePage(channel, article, basePath, isAdmin, menu, role, maxAg
       expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expires tomorrow</span>`;
     } else if (remainingDays <= 5) {
       expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-warn">🕐 Expires in ${remainingDays} days</span>`;
-    } else {
-      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-ok">🕐 Expires in ${remainingDays} days</span>`;
     }
+    /* > 5 days remaining: no badge — nothing to warn about */
   }
 
   const body = `<div class="wiki-breadcrumb">
@@ -801,7 +792,7 @@ function buildArticlePage(channel, article, basePath, isAdmin, menu, role, maxAg
     <div class="wiki-article-sidebar">${infoboxHtml}</div>
   </div>
 </div>
-${isAdmin ? `<script>
+${isEditor ? `<script>
 function wikiDeleteArticle(chId, slug) {
   if (!confirm('Delete this article permanently?')) return;
   fetch('/wiki/' + chId + '/api/article/' + slug, { method: 'DELETE' })
@@ -816,7 +807,7 @@ function wikiDeleteArticle(chId, slug) {
 
 /**********************************************************************************/
 /* functionSignature: buildEditPage (channel, article, basePath, menu, role)      */
-/* Renders the admin edit form for an existing wiki article.                      */
+/* Renders the edit form for an existing wiki article (editor or admin only).     */
 /**********************************************************************************/
 function buildEditPage(channel, article, basePath, menu, role) {
   const chId    = channel.channelId;
@@ -983,10 +974,11 @@ function buildEditPage(channel, article, basePath, menu, role) {
 }
 
 /**********************************************************************************/
-/* functionSignature: buildSearchPage (channel, query, results, basePath, menu, role) */
-/* Renders a search results page with a spinner for generating new articles.      */
+/* functionSignature: buildSearchPage (channel, query, results, basePath, menu, role, isCreator) */
+/* Renders a search results page. Creators see a generate button/spinner;         */
+/* non-creators see search results only.                                          */
 /**********************************************************************************/
-function buildSearchPage(channel, query, results, basePath, menu, role) {
+function buildSearchPage(channel, query, results, basePath, menu, role, isCreator = false) {
   const chId    = channel.channelId;
   const chTitle = channel._title || `Wiki ${chId}`;
   const chPath  = `${basePath}/${chId}`;
@@ -1013,16 +1005,18 @@ function buildSearchPage(channel, query, results, basePath, menu, role) {
       ? `<div class="wiki-search-results">${resultItems}</div>
          <div style="margin-top:16px;color:var(--wiki-text-muted);font-size:.9em">
            ${results.length} result${results.length !== 1 ? "s" : ""} found.
-           <a href="#" id="wiki-gen-link" onclick="wikiGenerate(event)">Generate new article for this topic</a>
+           ${isCreator ? `<a href="#" id="wiki-gen-link" onclick="wikiGenerate(event)">Generate new article for this topic</a>` : ""}
          </div>`
-      : `<div class="wiki-spinner-wrap" id="wiki-gen-spinner">
-           <div class="wiki-spinner"></div>
-           <div class="wiki-spinner-msg">Generating article… this may take a moment.</div>
-         </div>`}
+      : isCreator
+        ? `<div class="wiki-spinner-wrap" id="wiki-gen-spinner">
+             <div class="wiki-spinner"></div>
+             <div class="wiki-spinner-msg">Generating article… this may take a moment.</div>
+           </div>`
+        : `<div class="wiki-empty">No articles found for "<strong>${escHtml(query)}</strong>".</div>`}
     <div id="wiki-gen-results" style="display:none"></div>
   </div>
 </div>
-<script>
+${isCreator ? `<script>
 var WIKI_CHANNEL = ${JSON.stringify(chId)};
 var WIKI_QUERY   = ${JSON.stringify(query)};
 var WIKI_BASE    = ${JSON.stringify(chPath)};
@@ -1031,7 +1025,7 @@ var WIKI_HAS_RESULTS = ${results.length > 0 ? "true" : "false"};
 function wikiGenerate(e) {
   if (e) e.preventDefault();
   document.getElementById('wiki-results').innerHTML =
-    '<div class="wiki-spinner-wrap"><div class="wiki-spinner"></div><div class="wiki-spinner-msg">Generating article… this may take a moment.</div></div>';
+    '<div class="wiki-spinner-wrap"><div class="wiki-spinner"></div><div class="wiki-spinner-msg">Generating article\u2026 this may take a moment.</div></div>';
   wikiDoGenerate();
 }
 
@@ -1066,7 +1060,7 @@ function wikiDoGenerate() {
 }
 
 if (!WIKI_HAS_RESULTS) { wikiDoGenerate(); }
-</script>`;
+</script>` : ""}`;
 
   return buildFullPage({ head: `Search: ${query} – ${chTitle}`, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role });
 }
@@ -1081,12 +1075,40 @@ function safeParseJson(val, fallback) {
 }
 
 /**********************************************************************************/
+/* functionSignature: resolveChannelConfig (cfg, rawChannel)                      */
+/* Merges global defaults from the top-level webpage-wiki config onto a single    */
+/* channel entry, similar to how core-channel-config applies overrides.           */
+/* Arrays are replaced, plain objects are shallow-merged (channel wins).          */
+/**********************************************************************************/
+function resolveChannelConfig(cfg, rawChannel) {
+  const resolved = Object.assign({}, rawChannel);
+
+  /* Top-level scalar / array defaults (channel wins if present) */
+  const scalarKeys = ["maxAgeDays", "allowedRoles", "adminRoles", "editorRoles", "creatorRoles", "_title"];
+  for (const key of scalarKeys) {
+    if (resolved[key] === undefined && cfg[key] !== undefined) {
+      resolved[key] = cfg[key];
+    }
+  }
+
+  /* ai block: global defaults, channel overrides individual keys */
+  const globalAi  = (cfg.ai && typeof cfg.ai === "object") ? cfg.ai : {};
+  const channelAi = (rawChannel.ai && typeof rawChannel.ai === "object") ? rawChannel.ai : {};
+  resolved.ai = Object.assign({}, globalAi, channelAi);
+
+  return resolved;
+}
+
+/**********************************************************************************/
 /* functionSignature: getChannelConfig (cfg, channelId)                           */
-/* Finds the channel config entry by channelId.                                   */
+/* Finds and resolves the channel config entry by channelId (global defaults      */
+/* merged with channel-level overrides).                                          */
 /**********************************************************************************/
 function getChannelConfig(cfg, channelId) {
   const channels = Array.isArray(cfg.channels) ? cfg.channels : [];
-  return channels.find(c => getStr(c.channelId) === channelId) || null;
+  const raw = channels.find(c => getStr(c.channelId) === channelId);
+  if (!raw) return null;
+  return resolveChannelConfig(cfg, raw);
 }
 
 /**********************************************************************************/
@@ -1162,9 +1184,14 @@ export default async function getWebpageWiki(coreData) {
     return coreData;
   }
 
-  /* Admin check */
-  const adminRoles = Array.isArray(channel.adminRoles) ? channel.adminRoles : ["admin"];
-  const isAdmin    = getIsAllowed(wo, adminRoles);
+  /* Role checks: admin ⊇ editor ⊇ {}, admin ⊇ creator ⊇ {}
+     All three: empty array = nobody. No implicit defaults. */
+  const adminRoles   = Array.isArray(channel.adminRoles)   ? channel.adminRoles   : [];
+  const editorRoles  = Array.isArray(channel.editorRoles)  ? channel.editorRoles  : [];
+  const creatorRoles = Array.isArray(channel.creatorRoles) ? channel.creatorRoles : [];
+  const isAdmin   = adminRoles.length   > 0 && getIsAllowed(wo, adminRoles);
+  const isEditor  = isAdmin || (editorRoles.length  > 0 && getIsAllowed(wo, editorRoles));
+  const isCreator = isAdmin || (creatorRoles.length > 0 && getIsAllowed(wo, creatorRoles));
 
   /* Expiry config — 0 = no expiry */
   const maxAgeDays = getMaxAgeDays(channel);
@@ -1186,6 +1213,7 @@ export default async function getWebpageWiki(coreData) {
 
   /* ── POST /wiki/{ch}/api/generate ── */
   if (method === "POST" && seg1 === "api" && seg2 === "generate") {
+    if (!isCreator) { await sendJson(wo, 403, { ok: false, error: "Forbidden – creator role required" }); return coreData; }
     let query = "";
     try {
       const bodyJson = wo.http?.json || (wo.http?.rawBody ? JSON.parse(wo.http.rawBody) : {});
@@ -1209,7 +1237,7 @@ export default async function getWebpageWiki(coreData) {
 
     /* Generate new article — pre-load channel context, then run pipeline */
     try {
-      const ctxLimit   = Number(channel.ai?.contextMessages ?? 150);
+      const ctxLimit   = Number(channel.contextMessages ?? 150);
       const ctxSnippet = ctxLimit > 0
         ? await getChannelContextSnippet(db, channelId, ctxLimit)
         : "";
@@ -1225,7 +1253,7 @@ export default async function getWebpageWiki(coreData) {
 
   /* ── DELETE /wiki/{ch}/api/article/{slug} ── */
   if (method === "DELETE" && seg1 === "api" && seg2 === "article" && seg3) {
-    if (!isAdmin) { await sendJson(wo, 403, { ok: false, error: "Forbidden" }); return coreData; }
+    if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden" }); return coreData; }
     try {
       /* Images are stored in pub/documents/ (managed by getImage tool) — not deleted here */
       await dbDeleteArticle(db, channelId, seg3);
@@ -1273,14 +1301,14 @@ export default async function getWebpageWiki(coreData) {
       await setSendNow(wo);
       return coreData;
     }
-    const html = buildSearchPage(channel, query, results, basePath, menu, role);
+    const html = buildSearchPage(channel, query, results, basePath, menu, role, isCreator);
     await sendHtml(wo, 200, html);
     return coreData;
   }
 
   /* ── POST /wiki/{ch}/api/upload-image/{slug} — upload image for article ── */
   if (method === "POST" && seg1 === "api" && seg2 === "upload-image" && seg3) {
-    if (!isAdmin) { await sendJson(wo, 403, { ok: false, error: "Forbidden" }); return coreData; }
+    if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden" }); return coreData; }
     try {
       const bodyJson = wo.http?.json || (wo.http?.rawBody ? JSON.parse(wo.http.rawBody) : {});
       const b64 = getStr(bodyJson.base64 || "");
@@ -1315,9 +1343,9 @@ export default async function getWebpageWiki(coreData) {
     return coreData;
   }
 
-  /* ── GET /wiki/{ch}/{slug}/edit — admin edit form ── */
+  /* ── GET /wiki/{ch}/{slug}/edit — editor edit form ── */
   if (method === "GET" && seg2 === "edit" && seg1) {
-    if (!isAdmin) { await sendText(wo, 403, "403 Forbidden"); return coreData; }
+    if (!isEditor) { await sendText(wo, 403, "403 Forbidden"); return coreData; }
     let article = null;
     try { article = await dbGetArticle(db, channelId, seg1, maxAgeDays); } catch { /* ignore */ }
     if (!article) {
@@ -1335,7 +1363,7 @@ export default async function getWebpageWiki(coreData) {
 
   /* ── POST /wiki/{ch}/{slug}/edit — save edited article ── */
   if (method === "POST" && seg2 === "edit" && seg1) {
-    if (!isAdmin) { await sendJson(wo, 403, { ok: false, error: "Forbidden" }); return coreData; }
+    if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden" }); return coreData; }
     try {
       const bodyJson = wo.http?.json || (wo.http?.rawBody ? JSON.parse(wo.http.rawBody) : {});
       const updates = {
@@ -1368,7 +1396,7 @@ export default async function getWebpageWiki(coreData) {
       }));
       return coreData;
     }
-    const html = buildArticlePage(channel, article, basePath, isAdmin, menu, role, maxAgeDays);
+    const html = buildArticlePage(channel, article, basePath, isEditor, menu, role, maxAgeDays);
     await sendHtml(wo, 200, html);
     return coreData;
   }

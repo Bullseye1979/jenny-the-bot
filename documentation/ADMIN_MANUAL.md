@@ -2609,15 +2609,15 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /wiki/style.css` — shared CSS
 - `GET /wiki/{channelId}` — channel homepage (search bar + recent articles)
 - `GET /wiki/{channelId}/{slug}` — article page (Fandom-style layout)
-- `GET /wiki/{channelId}/{slug}/edit` — admin: edit form
-- `GET /wiki/{channelId}/search?q=` — search; single hit redirects, multiple hits shows list, no hit triggers generation
+- `GET /wiki/{channelId}/{slug}/edit` — editor/admin: edit form
+- `GET /wiki/{channelId}/search?q=` — search; single hit redirects, multiple hits shows list, no hit triggers generation (creator/admin only)
 - `GET /wiki/{channelId}/images/{filename}` — serves uploaded images
-- `POST /wiki/{channelId}/api/generate` — AJAX: search→generate; returns `{ok,slug}` or `{ok,results:[]}`
-- `POST /wiki/{channelId}/api/upload-image/{slug}` — admin: upload image for article (JSON `{base64,ext}`)
-- `POST /wiki/{channelId}/{slug}/edit` — admin: save edited article (JSON body)
-- `DELETE /wiki/{channelId}/api/article/{slug}` — admin: delete article row
+- `POST /wiki/{channelId}/api/generate` — AJAX: search→generate (creator/admin); returns `{ok,slug}` or `{ok,results:[]}`
+- `POST /wiki/{channelId}/api/upload-image/{slug}` — editor/admin: upload image for article (JSON `{base64,ext}`)
+- `POST /wiki/{channelId}/{slug}/edit` — editor/admin: save edited article (JSON body)
+- `DELETE /wiki/{channelId}/api/article/{slug}` — editor/admin: delete article row
 
-**core.json configuration:**
+**core.json — `webpage-wiki` section:**
 ```json
 "webpage-wiki": {
   "flow": ["webpage"],
@@ -2626,53 +2626,50 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
   "channels": [
     {
       "_title": "My Channel Wiki",
-      "channelId": "YOUR_CHANNEL_ID",
+      "channelId": "YOUR_DISCORD_CHANNEL_ID",
       "allowedRoles": [],
       "adminRoles": ["admin"],
+      "editorRoles": ["editor"],
+      "creatorRoles": ["creator"],
       "maxAgeDays": 7,
-      "ai": {
-        "endpoint": "",
-        "apiKey": "",
-        "model": "gpt-4o-mini",
-        "temperature": 0.7,
-        "maxTokens": 4000,
-        "maxLoops": 5,
-        "timeoutMs": 120000,
-        "tools": ["getImage", "getTimeline", "getInformation"],
-        "contextMessages": 150,
-        "systemPrompt": ""
-      }
+      "contextMessages": 150
     }
   ]
 }
 ```
 
-| Parameter | Type | Default | Description |
+**Role hierarchy (highest to lowest privilege):**
+
+| Role | Configured via | Can do |
+|---|---|---|
+| `admin` | `adminRoles` | Everything — implicitly includes all editor and creator rights |
+| `editor` | `editorRoles` | Edit and delete existing articles |
+| `creator` | `creatorRoles` | Generate new articles via search |
+| *(reader)* | `allowedRoles` | Read articles only |
+
+All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has that role. Admin automatically includes editor and creator rights — no need to add admin to those lists.
+
+**AI settings** are fixed in the module defaults (`gpt-4o-mini`, temperature 0.7, tools `getImage` + `getTimeline` + `getInformation`). The system prompt is built into the module and enforces tool usage and chronological ordering. No separate `core-channel-config` entry is needed.
+
+| Parameter (`webpage-wiki`) | Type | Default | Description |
 |---|---|---|---|
-| `port` | number | `3117` | HTTP port for the wiki server |
+| `port` | number | `3117` | HTTP port |
 | `basePath` | string | `"/wiki"` | URL base path |
-| `channels` | array | `[]` | List of channel wiki configs (one per Discord channel) |
-| `channels[].channelId` | string | — | Discord channel ID; used as wiki sub-path and context source |
-| `channels[].allowedRoles` | array | `[]` | Roles that may read the wiki; empty = public |
-| `channels[].adminRoles` | array | `["admin"]` | Roles that see Edit + Delete buttons and may modify articles |
-| `channels[].maxAgeDays` | number | `7` | Article TTL in days; articles older than this are hidden and auto-deleted. `0` = never expire |
-| `channels[].ai.endpoint` | string | `wo.endpoint` | Chat-completions endpoint (falls back to global) |
-| `channels[].ai.apiKey` | string | `wo.apiKey` | API key (falls back to global) |
-| `channels[].ai.model` | string | `"gpt-4o-mini"` | LLM model for article generation |
-| `channels[].ai.temperature` | number | `0.7` | LLM temperature |
-| `channels[].ai.maxTokens` | number | `4000` | Max tokens per pipeline turn |
-| `channels[].ai.maxLoops` | number | `5` | Max tool-call loops per article generation |
-| `channels[].ai.timeoutMs` | number | `120000` | Pipeline request timeout in ms |
-| `channels[].ai.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
-| `channels[].ai.contextMessages` | number | `150` | Recent messages pre-loaded into the prompt as additional context |
-| `channels[].ai.systemPrompt` | string | `""` | Custom system prompt; empty = built-in prompt |
+| `channels[].channelId` | string | — | Discord channel ID; wiki sub-path and tool-call source |
+| `channels[].allowedRoles` | array | `[]` | Roles that may read the wiki; `[]` = public |
+| `channels[].adminRoles` | array | `[]` | Full admin access (implicitly includes editor + creator). Empty = no admin |
+| `channels[].editorRoles` | array | `[]` | Roles that may edit and delete articles. Empty = only admins |
+| `channels[].creatorRoles` | array | `[]` | Roles that may generate new articles via search. Empty = only admins |
+| `channels[].maxAgeDays` | number | `7` | Article TTL in days. Editing an article resets the clock (`updated_at`). `0` = never expire |
+| `channels[].contextMessages` | number | `150` | Recent messages pre-loaded into the AI prompt |
 
 - Channel NOT listed in `channels[]` → 404
 - `allowedRoles: []` → publicly accessible (no login required)
-- Article generation uses the **core-ai pipeline**: `getInformation` and `getTimeline` are both **mandatory** in the built-in prompt; events are always presented in **chronological order**. The AI uses **only tool results** as facts — no general knowledge.
-- **Article expiry:** articles older than `maxAgeDays` days are deleted automatically on access and pruned in the background on each page request. Admins see a colour-coded expiry badge on every article.
-- **Edit form** (admin only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL. Includes drag-and-drop image upload (max 8 MB, stored in `pub/wiki/{channelId}/images/`).
-- AI-generated images (via `getImage` tool) are stored in `pub/documents/`; uploaded images in `pub/wiki/{channelId}/images/`
+- `getInformation` and `getTimeline` are both **mandatory** in the built-in prompt; events always in **chronological order**; AI uses **only tool results** as facts
+- **Article expiry:** articles older than `maxAgeDays` (measured via `COALESCE(updated_at, created_at)`) are deleted on access and pruned in the background. Editing an article resets the TTL clock. Editors see a colour-coded expiry badge per article.
+- **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB)
+- **Search page:** non-creators see results only; auto-generation spinner only shown to creators
+- AI-generated images → `pub/documents/`; uploaded images → `pub/wiki/{channelId}/images/`
 - Articles stored in MySQL table `wiki_articles` (auto-created on first start)
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 

@@ -102,7 +102,6 @@ export default async function getBardCron(coreData) {
 
   const config  = coreData?.config || {};
   const cfg     = config[MODULE_NAME] || {};
-  const bardCfg = config["bard"] || {};
   /* note: AI params (model, endpoint, apiKey) are applied by core-channel-config
      from the bard-label-gen flow overrides — no need to read them here */
 
@@ -122,7 +121,7 @@ export default async function getBardCron(coreData) {
   // Load tag list from library.xml
   const musicDir = path.resolve(
     __dirname, "..",
-    typeof bardCfg.musicDir === "string" ? bardCfg.musicDir : "assets/bard"
+    typeof cfg.musicDir === "string" ? cfg.musicDir : "assets/bard"
   );
   const validTags = getLibraryTags(musicDir);
 
@@ -183,9 +182,9 @@ export default async function getBardCron(coreData) {
       } catch {}
 
       // Build system prompt — always use DEFAULT_PROMPT_TEMPLATE as base;
-      // cfg.prompt or bardCfg.prompt can override via config, but workingObject.prompt is ignored
+      // cfg.prompt can override via config, but workingObject.prompt is ignored
       // to prevent the global systemPrompt from bleeding in.
-      const promptTemplate = getStr(cfg.prompt || bardCfg.prompt || DEFAULT_PROMPT_TEMPLATE);
+      const promptTemplate = getStr(cfg.prompt || DEFAULT_PROMPT_TEMPLATE);
       const systemPrompt = buildSystemPrompt(promptTemplate, validTags, currentLabels);
 
       // Set up the working object for the core-ai pipeline
