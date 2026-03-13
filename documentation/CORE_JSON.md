@@ -548,7 +548,7 @@ Any object in `core.json` can have a `_title` key. The Config Editor uses this s
 
 ```jsonc
 "bard-join": {
-  "_title": "Bard Join/Leave Commands",
+  "_title": "Bard Start/Stop Commands",
   "flow": ["discord-admin"]
 }
 ```
