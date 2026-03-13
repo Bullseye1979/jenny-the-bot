@@ -1,5 +1,5 @@
 /************************************************************************************/
-/* filename: bard-admin-join.js                                                      *
+/* filename: bard-join.js                                                            *
 /* Version 1.0                                                                       *
 /* Purpose: Handles /bardstart and /bardstop in the discord-admin flow.             *
 /*          Creates or removes headless bard sessions (no voice channel required).  *
@@ -12,7 +12,7 @@
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
-const MODULE_NAME = "bard-admin-join";
+const MODULE_NAME = "bard-join";
 
 /************************************************************************************/
 /* functionSignature: getBardRegistry ()                                             *

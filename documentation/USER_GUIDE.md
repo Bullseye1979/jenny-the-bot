@@ -1,6 +1,6 @@
 # Jenny — User Guide
 
-> **Version:** 1.0 · **Date:** 2026-03-11
+> **Version:** 1.1 · **Date:** 2026-03-13
 
 Jenny is an AI assistant that lives in your Discord server. She can chat, answer questions, generate images and videos, look things up on the web, read YouTube transcripts, manage Confluence and Jira, and even talk back to you in voice channels.
 
@@ -17,13 +17,14 @@ This guide explains everything you need to know to use Jenny as a regular user.
 5. [What Jenny Can Do — Tools](#what-jenny-can-do--tools)
 6. [Generating Images](#generating-images)
 7. [Generating Videos](#generating-videos)
-8. [Web Search & Pages](#web-search--pages)
-9. [YouTube](#youtube)
-10. [Conversation History](#conversation-history)
-11. [Creating Macros](#creating-macros)
-12. [Slash Commands Reference](#slash-commands-reference)
-13. [Tips & Tricks](#tips--tricks)
-14. [Troubleshooting](#troubleshooting)
+8. [Editing Images (Inpainting)](#editing-images-inpainting)
+9. [Web Search & Pages](#web-search--pages)
+10. [YouTube](#youtube)
+11. [Conversation History](#conversation-history)
+12. [Creating Macros](#creating-macros)
+13. [Slash Commands Reference](#slash-commands-reference)
+14. [Tips & Tricks](#tips--tricks)
+15. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -199,6 +200,48 @@ jenny, generate a short clip showing a time-lapse of a city at night
 ```
 
 Jenny uses Google's Veo-3 model via Replicate. Generation typically takes 5–15 minutes.
+
+---
+
+## Editing Images (Inpainting)
+
+The inpainting tool is a browser-based image editor that lets you load any image, paint a mask over the area you want to change, describe what should appear there, and submit it to AI for processing. It runs in your browser at **`/inpainting`**.
+
+### Opening the editor
+
+**From a generated image:**
+When Jenny generates an image with Stable Diffusion, the response includes an edit link. Click it to open the image directly in the inpainting editor.
+
+**From the browser:**
+Navigate to `https://jenny.ralfreschke.de/inpainting` and load an image manually.
+
+**With a URL parameter:**
+Append `?src=<image-url>` to open a specific image directly:
+```
+https://jenny.ralfreschke.de/inpainting?src=https://example.com/photo.png
+```
+
+---
+
+### How to use it
+
+1. **Load an image** — drag and drop an image file onto the canvas, use the file picker, or load via `?src=` URL parameter.
+2. **Paint a mask** — use the brush tool to paint over the area you want to replace. Painted areas appear as a coloured overlay.
+3. **Adjust the brush** — use the brush size slider to paint fine details or large regions.
+4. **Enter a prompt** — describe what should appear in the masked area (e.g. *"a glowing blue portal"*, *"remove the person"*).
+5. **Click Inpaint** — the editor sends the image and mask to the Stable Diffusion backend. Results appear on the canvas within a few seconds.
+6. **Download or continue** — save the result or paint a new mask to refine further.
+
+---
+
+### Tips
+
+| Tip | Detail |
+|-----|--------|
+| **Iterative editing** | After the first inpaint completes the result becomes the new canvas. Paint a new mask and inpaint again to refine. |
+| **Larger brush for rough areas** | Use a big brush to cover backgrounds; switch to a small brush for edges. |
+| **Be specific in prompts** | *"a wooden door with iron hinges, fantasy style"* works better than *"a door"*. |
+| **Negative prompt** | If the result keeps including something unwanted, add it to the negative prompt field. |
 
 ---
 

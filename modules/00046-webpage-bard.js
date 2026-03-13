@@ -132,8 +132,8 @@ function getIsAllowed(wo, allowedRoles) {
 }
 
 function getBasePath(cfg) {
-  const bp = getStr(cfg.basePath ?? "/bard-admin").trim();
-  return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/bard-admin";
+  const bp = getStr(cfg.basePath ?? "/bard").trim();
+  return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/bard";
 }
 
 /**********************************************************************************/

@@ -1350,7 +1350,7 @@ Every module can be restricted to specific flows via its config block:
 | `core-ai-completions` | discord-status, discord, discord-voice, api, **bard-label-gen** |
 | `core-ai-responses` | discord-status, discord, discord-voice, api |
 | `core-output` | all |
-| `bard-admin-join` | discord-admin |
+| `bard-join` | discord-admin |
 | `bard-cron` | bard-label-gen |
 | `bard-label-output` | bard-label-gen |
 | `webpage-bard` | webpage |
@@ -1726,11 +1726,11 @@ export default async function myModule(coreData) {
 | 00025 | `discord-admin-gdpr` | Handles admin GDPR management commands |
 | 00030 | `discord-voice-transcribe` | Transcribes voice audio via Whisper API |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
-| 00035 | `bard-admin-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
+| 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00045 | `webpage-inpaint` | Image inpainting redirect for web content |
-| 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard-admin`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
+| 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /chat/api/chats`, `GET /chat/api/messages`, `POST /chat/api/messages` on the configured port. The `/chat/api/messages` endpoint filters out records with `internal_meta: true`, empty content, and lines starting with `META|` before returning them to the browser. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
@@ -2429,7 +2429,7 @@ jenny.example.com {
     reverse_proxy /chat*         localhost:3112
     reverse_proxy /inpainting*   localhost:3113
     reverse_proxy /documents*    localhost:3113
-    reverse_proxy /bard-admin*   localhost:3114
+    reverse_proxy /bard*         localhost:3114
     reverse_proxy /dashboard*    localhost:3115
     reverse_proxy /docs*         localhost:3116
     reverse_proxy /wiki*         localhost:3117
@@ -2452,7 +2452,7 @@ jenny.example.com, jenny.example2.com {
     reverse_proxy /chat*         localhost:3112
     reverse_proxy /inpainting*   localhost:3113
     reverse_proxy /documents*    localhost:3113
-    reverse_proxy /bard-admin*   localhost:3114
+    reverse_proxy /bard*         localhost:3114
     reverse_proxy /dashboard*    localhost:3115
     reverse_proxy /docs*         localhost:3116
     reverse_proxy /wiki*         localhost:3117
@@ -2482,7 +2482,7 @@ If `redirectUri` is set to a specific URL, only that domain is used for all OAut
 | 3111 | Config Editor (`/config`) + auth (`/auth`) |
 | 3112 | Chat SPA (`/chat`) |
 | 3113 | Inpainting SPA (`/inpainting`) + document serving (`/documents`) |
-| 3114 | Bard Admin UI (`/bard-admin`) |
+| 3114 | Bard UI (`/bard`) |
 | 3115 | Live Dashboard (`/dashboard`) |
 | 3116 | Documentation (`/docs`) |
 | 3117 | AI Wiki (`/wiki`) |
@@ -2514,7 +2514,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00047-webpage-config-editor.js` | 3111 | `/config` | `webpage-config-editor` | Visual config editor — collapsible cards, tag chips, password fields, add/remove attributes and blocks |
 | `00048-webpage-chat.js` | 3112 | `/chat` | `webpage-chat` | Chat history viewer and message sender |
 | `00049-webpage-inpainting.js` | 3113 | `/inpainting` | `webpage-inpainting` | Image inpainting single-page app |
-| `00046-webpage-bard.js` | 3114 | `/bard-admin` | `webpage-bard` | Bard music library manager |
+| `00046-webpage-bard.js` | 3114 | `/bard` | `webpage-bard` | Bard music library manager |
 | `00051-webpage-dashboard.js` | 3115 | `/dashboard` | `webpage-dashboard` | Live bot telemetry dashboard |
 | `00054-webpage-documentation.js` | 3116 | `/docs` | `webpage-documentation` | Renders the project documentation as HTML pages |
 | `00052-webpage-wiki.js` | 3117 | `/wiki` | `webpage-wiki` | AI-driven Fandom-style wiki, per-channel, with DALL-E images |
@@ -2565,13 +2565,13 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /inpainting/auth/token` — generates auth token for deep links
 - `GET /documents/*.png` — redirected here by module 00045
 
-**Bard Admin (port 3114, /bard-admin):**
-- `GET /bard-admin` — renders the music library manager UI
-- `GET /bard-admin/style.css` — serves shared CSS
-- `GET /bard-admin/api/library` — returns `{tracks: [...], files: [...]}`
-- `POST /bard-admin/api/autotag-upload` — bulk upload: saves MP3, queries Tavily for song context, calls LLM to generate 5 tags, writes library.xml entry. Returns `{ok, filename, title, tags}`. Requires `config["webpage-bard"].autoTag.enabled = true`.
-- `POST /bard-admin/api/tags` — updates track metadata (title, tags, volume)
-- `DELETE /bard-admin/api/track` — deletes a track and its MP3 file
+**Bard (port 3114, /bard):**
+- `GET /bard` — renders the music library manager UI
+- `GET /bard/style.css` — serves shared CSS
+- `GET /bard/api/library` — returns `{tracks: [...], files: [...]}`
+- `POST /bard/api/autotag-upload` — bulk upload: saves MP3, queries Tavily for song context, calls LLM to generate 5 tags, writes library.xml entry. Returns `{ok, filename, title, tags}`. Requires `config["webpage-bard"].autoTag.enabled = true`.
+- `POST /bard/api/tags` — updates track metadata (title, tags, volume)
+- `DELETE /bard/api/track` — deletes a track and its MP3 file
 
 **Dashboard (port 3115, /dashboard):**
 - `GET /dashboard` — renders the live bot telemetry dashboard (role-gated)
@@ -2683,8 +2683,6 @@ The inpainting module provides a browser-based image editing tool that lets user
 **Port:** 3113 (configured via `config["webpage-inpainting"].port`)
 **URL:** `/inpainting`
 
-> ⚠️ `modules/00049-webpage-inpainting.js` is **not tracked by git** — deploy it separately.
-
 ### How it works
 
 1. User loads an image (drag-and-drop, file picker, or `?src=` / `?image=` query parameter)
@@ -2764,7 +2762,7 @@ Menu items are defined in `config["webpage-menu"].items[]`. Each item can have a
 
 ```json
 { "text": "⚙️ Config",    "link": "/config",    "roles": ["admin"] },
-{ "text": "🎵 Bard",      "link": "/bard-admin", "roles": ["admin"] }
+{ "text": "🎵 Bard",      "link": "/bard",       "roles": ["admin"] }
 ```
 
 **Menu visibility rules:**
@@ -2925,13 +2923,13 @@ See [§17 Web Module Permission Concept](#17-web-module-permission-concept) for 
 
 ### Overview
 
-The bard music system automatically plays mood-appropriate background music for tabletop RPG sessions. It runs as a **headless scheduler** — no second Discord bot is required. A cron job analyzes the chat context at every run using an LLM, generates 3 mood tags, and stores them in the registry. `flows/bard.js` polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active mood. Audio is served to the browser via the web player at `/bard-admin` or `/bard-stream`.
+The bard music system automatically plays mood-appropriate background music for tabletop RPG sessions. It runs as a **headless scheduler** — no second Discord bot is required. A cron job analyzes the chat context at every run using an LLM, generates 3 mood tags, and stores them in the registry. `flows/bard.js` polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active mood. Audio is served to the browser via the web player at `/bard` or `/bard-stream`.
 
 ### Architecture
 
 ```
 /bardstart command
-  -> 00035-bard-admin-join.js
+  -> 00035-bard-join.js
   -> creates a headless session in the registry (no voice channel connection needed)
   -> stores bard:session:{guildId} = { guildId, textChannelId, status: "ready", ... }
   -> writes bard:labels:{guildId} = { labels: ["default"] } — startup seed so tracks
@@ -2939,7 +2937,7 @@ The bard music system automatically plays mood-appropriate background music for 
      overwrite this with real mood labels once it runs.
 
 /bardstop command
-  -> 00035-bard-admin-join.js
+  -> 00035-bard-join.js
   -> cancels the track advancement timer (session._trackTimer)
   -> removes bard:session:{guildId}, bard:labels:{guildId}, bard:nowplaying:{guildId},
      bard:stream:{guildId} from registry
@@ -2997,7 +2995,7 @@ Track end timer — song ended naturally
 
 Located at: `assets/bard/library.xml` (configurable via `core.json["bard"]["musicDir"]`)
 
-**Auto-creation:** If `library.xml` (or the music directory itself) does not exist when the bard flow starts, both are created automatically. The new file contains an empty `<library>` element. No manual setup is required; simply drop MP3 files into the music directory and add tracks via the Bard Admin UI.
+**Auto-creation:** If `library.xml` (or the music directory itself) does not exist when the bard flow starts, both are created automatically. The new file contains an empty `<library>` element. No manual setup is required; simply drop MP3 files into the music directory and add tracks via the Bard UI.
 
 **Hot-reload:** `library.xml` is read from disk on every poll cycle. Song-end triggers an immediate poll, so newly added tracks are picked up within milliseconds after the current song finishes. No restart required.
 
@@ -3045,9 +3043,9 @@ Fields:
 | `/bardstart` | Start the bard music scheduler for this server |
 | `/bardstop` | Stop the bard music scheduler for this server |
 
-### Bard Admin UI
+### Bard UI
 
-Accessible at `/bard-admin`. Features:
+Accessible at `/bard`. Features:
 - Edit track title, tags (comma-separated), and volume per track
 - Delete tracks (removes both library entry and MP3 file)
 - **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
@@ -3154,7 +3152,7 @@ This means the label-gen AI call:
 
 1. Start the main bot — the bard flow initializes automatically on startup
 2. On first start, `assets/bard/` and `library.xml` are created automatically if they do not exist
-3. Add MP3 files to `assets/bard/` and manage the track catalog via the Bard Admin UI at `/bard-admin`
+3. Add MP3 files to `assets/bard/` and manage the track catalog via the Bard UI at `/bard`
 4. Use `/bardstart` in Discord to activate the scheduler for this server
 
 > **Note:** `assets/bard/` (music files and `library.xml`) is listed in `.gitignore` and is not tracked by git. Only `assets/bard/library.xml.example` is committed as a reference template. Copy it to `library.xml` to pre-populate the catalog, or let the bot create an empty one automatically.

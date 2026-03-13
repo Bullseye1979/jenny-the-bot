@@ -547,7 +547,7 @@ The port must also appear in `config.webpage.ports`. The AI chat has moved to [`
 Any object in `core.json` can have a `_title` key. The Config Editor uses this string as the section header instead of the raw property key.
 
 ```jsonc
-"bard-admin-join": {
+"bard-join": {
   "_title": "Bard Join/Leave Commands",
   "flow": ["discord-admin"]
 }
@@ -601,7 +601,7 @@ Bard music library manager SPA served as a **webpage-flow module** (`modules/000
 "webpage-bard": {
   "flow":         ["webpage"],
   "port":         3114,
-  "basePath":     "/bard-admin",
+  "basePath":     "/bard",
   "allowedRoles": ["admin"],
   "autoTag": {
     "enabled":          false,
@@ -624,7 +624,7 @@ Bard music library manager SPA served as a **webpage-flow module** (`modules/000
 |---|---|
 | `flow` | Must include `"webpage"` |
 | `port` | HTTP port (default `3114`) — must also be in `config.webpage.ports` |
-| `basePath` | URL base path (default `"/bard-admin"`) |
+| `basePath` | URL base path (default `"/bard"`) |
 | `allowedRoles` | Roles allowed to access the UI (e.g. `["admin"]`). Set to `[]` for public access |
 | `autoTag.enabled` | Set to `true` to enable the Bulk Auto-Tag Upload endpoint |
 | `autoTag.tavilyApiKey` | Tavily API key — used to look up song genre/mood context |
