@@ -82,15 +82,6 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   if (!Array.isArray(labels)) labels = [];
 
   const labelSet = new Set(labels.map(l => String(l).toLowerCase()));
-
-  if (currentFile) {
-    const current = library.find(t => t.file === currentFile);
-    if (current) {
-      const matches = current.tags.filter(t => labelSet.has(t)).length;
-      if (matches >= 1) return null;
-    }
-  }
-
   const excluded = excludeFile || currentFile;
 
   const scored = library.map(track => ({
@@ -99,15 +90,26 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   }));
 
   const maxScore = Math.max(...scored.map(s => s.score));
-  const best = scored.filter(s => s.score === maxScore);
 
-  let candidates = best;
-  if (best.length > 1 && excluded) {
-    const filtered = best.filter(s => s.track.file !== excluded);
-    if (filtered.length > 0) candidates = filtered;
+  // Only stay on the current track (return null = "no change") if it is the
+  // UNIQUE best match — no other track has the same top score.
+  // Old condition (matches >= 1) was too broad: with 3 AI labels and 1 tag per
+  // song, every track scores 1 → current always "qualifies" → song never changes.
+  if (currentFile) {
+    const currentEntry = scored.find(s => s.track.file === currentFile);
+    const currentScore = currentEntry?.score ?? 0;
+    if (maxScore >= 1 && currentScore === maxScore) {
+      const otherBest = scored.filter(s => s.score === maxScore && s.track.file !== currentFile);
+      if (otherBest.length === 0) return null; // current is uniquely best → stay
+    }
   }
 
-  return candidates[Math.floor(Math.random() * candidates.length)].track;
+  const best = scored.filter(s => s.score === maxScore);
+
+  // Always try to exclude the current/last-played file for variety.
+  const candidates = best.filter(s => s.track.file !== excluded);
+
+  return (candidates.length > 0 ? candidates : best)[Math.floor(Math.random() * (candidates.length > 0 ? candidates : best).length)].track;
 }
 
 /************************************************************************************/
