@@ -110,6 +110,19 @@ Jenny can join a voice channel, listen to what you say, transcribe it using Whis
 - She will transcribe your speech, process it through the same AI pipeline as text, and speak the response aloud.
 - Voice responses are kept short by default (your admin may configure a 3-sentence limit).
 
+### Multiple voices
+
+Jenny supports switching between different voices within a single response using `[speaker: <voice>]` tags. The AI can place these tags automatically when telling a story or roleplaying, or you can ask her to use them explicitly.
+
+**Syntax:**
+```
+[speaker: nova] Hello, I'm Nova.
+[speaker: echo] And I'm Echo.
+[speaker: default] Back to the default voice now.
+```
+
+Each tagged segment is rendered with its own voice and played back sequentially. Available voices depend on your admin's TTS configuration (typically OpenAI voices: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`). `default` or an empty tag always falls back to the configured default voice.
+
 ### Leaving the voice channel
 
 Type `/leave` and Jenny will disconnect.
