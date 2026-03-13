@@ -225,7 +225,7 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
 
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
         try {
-          const rawBuf = await getReadBody(req, 50e6);
+          const rawBuf = await getReadBody(req, 130e6);
           wo.http.rawBodyBytes = rawBuf;
           wo.http.rawBody = rawBuf.toString("utf8");
           try {
