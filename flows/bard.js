@@ -227,20 +227,14 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
 
           if (isPlaying) {
             if (labels.length === 0) continue;
-            // Keep playing if the current track shares at least 1 tag with the new AI labels.
-            // This avoids interrupting a track that is still partially appropriate.
-            // A full mood switch (all-different labels from the AI) triggers a song change.
-            const labelSet      = new Set(labels);
-            const currentTrack  = library.find(t => t.file === currentFile);
-            const currentTags   = Array.isArray(currentTrack?.tags) ? currentTrack.tags : [];
-            const hasOverlap    = currentTags.some(tag => labelSet.has(tag));
-            log(`[label-debug] guild=${session.guildId} isPlaying=true currentTags=[${currentTags.join(",")}] newLabels=[${labels.join(",")}] hasOverlap=${hasOverlap}`, "info", { moduleName: MODULE_NAME });
-            if (hasOverlap) {
-              if (nowPlaying) {
-                await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
-              }
-              continue;
-            }
+            // Only trigger a track switch if the AI labels have changed from when the
+            // track started (nowPlaying.labels). Identical labels → keep playing.
+            // When labels change, always select the best-fit track (no overlap check).
+            const trackStartLabels = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
+            const labelsChanged = [...labels].sort().join(",") !== [...trackStartLabels].sort().join(",");
+            log(`[label-debug] guild=${session.guildId} isPlaying=true trackStartLabels=[${trackStartLabels.join(",")}] newLabels=[${labels.join(",")}] labelsChanged=${labelsChanged}`, "info", { moduleName: MODULE_NAME });
+            if (!labelsChanged) continue; // labels unchanged → keep playing
+            // Labels changed → always pick best fit
             const next = getSelectSong(labels, library, currentFile);
             if (next === null) {
               if (nowPlaying) {

@@ -3036,8 +3036,9 @@ flows/bard.js (polls every N seconds, min 5 s) — headless scheduler
      - reads bard:labels:{guildId} for current mood
      - reads bard:nowplaying:{guildId} for current track
      - checks session._trackEndAt: if Date.now() < _trackEndAt → track is still playing
-     - if current track shares at least 1 tag with the new AI labels → keep playing (overlap check)
-     - if new labels have zero overlap with current track tags: switch immediately
+     - compares new AI labels to nowPlaying.labels (labels active when track started):
+       if identical → keep playing (no switch)
+       if changed → select best-fit track via getSelectSong; if current is already best fit → keep playing
      - if track ended (timer expired): select next track
      - song found: writes bard:stream:{guildId} and bard:nowplaying:{guildId},
        calls ffprobe to get duration, schedules setTimeout(triggerPoll, durationMs + 200)
@@ -3197,7 +3198,12 @@ The prompt template may contain two placeholders replaced at runtime:
 
 The built-in default prompt instructs the LLM to **always classify the current situation from the transcript** — the current labels are included only as **reference context**, not as a value to preserve. The LLM always picks the 3 tags that best describe what is happening right now.
 
-**Song-switch logic:** The bard scheduler keeps the currently playing track if at least **1 of the track's own tags** appears in the new AI labels (overlap check). Only when the AI labels have zero overlap with the current track's tags is a new track selected immediately. This avoids interrupting a song that is still partially appropriate.
+**Song-switch logic:** The bard scheduler uses **label-change detection** combined with **best-fit selection**:
+1. The new AI labels are compared to `nowPlaying.labels` (the labels that were active when the current track started).
+2. If the labels are **identical** → keep playing. No switch is triggered.
+3. If the labels **changed** → `getSelectSong` selects the best-fit track. If the current track is already the unique best match, it keeps playing; otherwise the new best-fit track starts immediately.
+
+This ensures that a track is never interrupted just because the AI repeats the same labels, and always switches to the most appropriate track as soon as the mood changes.
 
 ### bard-label-gen Flow (Pipeline Overview)
 
