@@ -151,12 +151,6 @@ function getParseRowForText(row, { stripCode }) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getEscRe (s)                                                 *
-/* Escapes a string for safe use in a RegExp pattern.                              *
-/**********************************************************************************/
-function getEscRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
-
-/**********************************************************************************/
 /* functionSignature: getNorm (s)                                                  *
 /* Lowercases and normalizes a string value.                                       *
 /**********************************************************************************/
@@ -257,19 +251,21 @@ function getAnalyzeClusterRows(rows, groups, { tokenWindow = DEFAULT_TOKEN_WINDO
   const gState = groups.map(() => ({ lvl: 0, partialLines: 0, hadFull: false }));
   let coverage = 0, sumEvidenceLevel = 0, fullformGroups = 0, totalHits = 0, rowsMulti = 0, rowsAny = 0;
 
-  const fullRe = groups.map(g =>
-    new RegExp(`(^|[^\\p{L}\\p{N}_])(?:${g.variants.map(getEscRe).join("|")})(?=[^\\p{L}\\p{N}_]|$)`, "iu")
-  );
-
+  let _dbgIdx = 0;
   for (const r of rows) {
     const { content } = getParseRowForText(r, { stripCode });
     const text = String(content || "");
+    if (_dbgIdx < 3) {
+      console.log(`[getInformation:analyze] row[${_dbgIdx}] textLen=${text.length} snip=${JSON.stringify(text.slice(0, 80))} variants=${JSON.stringify(groups.map(g => g.variants))}`);
+      _dbgIdx++;
+    }
     if (!text) continue;
+    const textLower = text.toLowerCase();
     const tokens = getTokenize(text);
     let distinctGroupsHere = 0;
 
     groups.forEach((g, gi) => {
-      if (fullRe[gi].test(text)) {
+      if (g.variants.some(v => textLower.includes(v))) {
         if (!gState[gi].hadFull) { totalHits += 1; gState[gi].hadFull = true; }
         if (gState[gi].lvl < 3) gState[gi].lvl = 3;
         distinctGroupsHere++;
@@ -518,6 +514,7 @@ async function getInformationInvoke(args, coreData) {
       ...likeParams
     ];
     const [hitRows] = await db.execute(hitsSQL, hitsParams);
+    console.log(`[getInformation] SQL hitRows=${hitRows?.length ?? 0} | channels=${channelIds.join(",")} | tokens=${sqlTokens.join(",")}`);
     if (!hitRows?.length) {
       return {
         items: [],
@@ -541,6 +538,7 @@ async function getInformationInvoke(args, coreData) {
     }
 
     const clustersAll = getBuildClustersFromHits(hitRows, rowsPerCluster);
+    console.log(`[getInformation] clusters=${clustersAll.length} | rowsPerCluster=${rowsPerCluster}`);
     const analyzed = [];
 
     for (const c of clustersAll) {
@@ -549,6 +547,7 @@ async function getInformationInvoke(args, coreData) {
         [c.channel_id, c.channel_id, c.start_rn, c.end_rn]
       );
       const metrics = getAnalyzeClusterRows(rowsInRange, groups, { tokenWindow, stripCode });
+      console.log(`[getInformation] cluster ${c.key} rowsInRange=${rowsInRange.length} coverage=${metrics.coverage} totalHits=${metrics.totalHits}`);
       let firstTs = null, lastTs = null;
       for (const r of rowsInRange) {
         const t = getParseTs(r.ts);
@@ -577,6 +576,7 @@ async function getInformationInvoke(args, coreData) {
     const blocks = [];
     let usedLines = 0;
 
+    console.log(`[getInformation] minCoverage=${minCoverage} | analyzed top3:`, analyzed.slice(0, 3).map(c => `${c.key} cov=${c.coverage} hits=${c.totalHits}`));
     for (const c of analyzed) {
       if (c.coverage < minCoverage) break;
 
