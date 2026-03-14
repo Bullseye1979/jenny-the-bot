@@ -481,21 +481,18 @@ function getStyleCss() {
 /* Returns the wiki page header HTML with search bar.                             */
 /**********************************************************************************/
 function buildPageHeader(title, basePath, channelId, menu, role) {
-  const menuHtml = getMenuHtml(menu, basePath + (channelId ? `/${channelId}` : ""), role);
   const chPath = channelId ? `${basePath}/${channelId}` : basePath;
+  const searchHtml = channelId
+    ? `<form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get"><input class="wiki-search-input" type="text" name="q" placeholder="Search or create…" autocomplete="off"><button class="wiki-search-btn" type="submit">Go</button></form>`
+    : "";
+  const menuHtml = getMenuHtml(menu, chPath, role, searchHtml);
   return `<div class="wiki-header">
   <div class="wiki-header-top">
-    ${menuHtml}
-  </div>
-  <div class="wiki-header-bar">
     <a class="wiki-logo-link" href="${escHtml(chPath)}">
       <span class="wiki-logo">🗺️</span>
       <span class="wiki-title">${escHtml(title)}</span>
     </a>
-    ${channelId ? `<form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get">
-      <input class="wiki-search-input" type="text" name="q" placeholder="Search or create…" autocomplete="off">
-      <button class="wiki-search-btn" type="submit">Go</button>
-    </form>` : ""}
+    ${menuHtml}
   </div>
 </div>`;
 }
@@ -526,11 +523,10 @@ body { background: var(--wiki-bg); color: var(--wiki-text); font-family: 'Segoe 
 a { color: var(--wiki-link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .wiki-header { background: var(--wiki-surface); border-bottom: 2px solid var(--wiki-accent); margin-bottom: 0; }
-.wiki-header-top { padding: 0 20px; }
-.wiki-header-bar { display: flex; align-items: center; gap: 16px; padding: 10px 20px; flex-wrap: wrap; }
+.wiki-header-top { display: flex; align-items: center; gap: 12px; padding: 0 20px; min-height: 52px; }
 .wiki-logo-link { display: flex; align-items: center; gap: 8px; color: var(--wiki-text); font-size: 1.3em; font-weight: bold; text-decoration: none; flex-shrink: 0; }
 .wiki-logo { font-size: 1.4em; }
-.wiki-search-form { display: flex; gap: 6px; margin-left: auto; }
+.wiki-search-form { display: flex; gap: 6px; }
 .wiki-search-input { background: var(--wiki-bg); border: 1px solid var(--wiki-border); color: var(--wiki-text); padding: 7px 12px; border-radius: 4px; width: 260px; font-size: 0.95em; }
 .wiki-search-input:focus { outline: none; border-color: var(--wiki-accent); }
 .wiki-search-btn { background: var(--wiki-accent); color: #fff; border: none; padding: 7px 16px; border-radius: 4px; cursor: pointer; font-size: 0.95em; }
