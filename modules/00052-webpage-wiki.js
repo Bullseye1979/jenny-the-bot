@@ -345,9 +345,7 @@ Your ONLY sources of information are the tool results you receive. Do NOT use yo
 Every fact in the article MUST come directly from what getInformation or getTimeline returns.
 If the tools return no relevant data, write a short stub article saying there is no information yet.
 
-The user message contains:
-1. The TOPIC to write about.
-2. A snapshot of recent channel messages — for context only, not a substitute for tool calls.
+The user message contains the TOPIC to write about.
 
 MANDATORY STEPS — follow in order, ALL required:
 1. REQUIRED: Call getInformation with the topic as search query. This is your PRIMARY factual source. Do this BEFORE writing anything.
@@ -410,7 +408,6 @@ async function callPipelineForArticle(query, channel, coreData) {
     systemPrompt:        getStr(overrides.systemPrompt) || DEFAULT_WIKI_SYSTEM_PROMPT,
     payload:             `Topic: ${query}`,
     doNotWriteToContext: true,
-    includeHistory:      true,
     db:                  wo.db,
     toolsconfig:         wo.toolsconfig || {},
     timezone:            wo.timezone    || "Europe/Berlin",

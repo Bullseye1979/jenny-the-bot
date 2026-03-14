@@ -695,7 +695,8 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
     "maxTokens":        4000,
     "maxLoops":         5,
     "requestTimeoutMs": 120000,               // AI request timeout in ms
-    "contextSize":      150,                  // recent channel messages loaded as context
+    "includeHistory":   false,                // true = load channel chat history; see note in ADMIN_MANUAL
+    "contextSize":      150,                  // messages to load when includeHistory=true
     "tools":            ["getImage", "getTimeline", "getInformation"],
     "systemPrompt":     "",                   // empty = use built-in prompt
     "persona":          "",
@@ -740,7 +741,8 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 | `overrides.maxTokens` | number | `4000` | Max tokens per article |
 | `overrides.maxLoops` | number | `5` | Max tool-call loops |
 | `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
-| `overrides.contextSize` | number | `150` | Recent channel messages loaded as context (native core-ai history) |
+| `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. Default `false` — see `includeHistory` note in ADMIN_MANUAL |
+| `overrides.contextSize` | number | `150` | Number of recent messages loaded when `includeHistory: true` |
 | `overrides.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona injected into the AI call |
@@ -1577,6 +1579,7 @@ Below is a minimal but functional `core.json` template with every section includ
         "maxTokens":        4000,
         "maxLoops":         5,
         "requestTimeoutMs": 120000,
+        "includeHistory":   false,
         "contextSize":      150,
         "tools":            ["getImage", "getTimeline", "getInformation"],
         "systemPrompt":     "",

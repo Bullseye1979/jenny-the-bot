@@ -2711,7 +2711,8 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 | `overrides.maxTokens` | number | `4000` | Max tokens per article |
 | `overrides.maxLoops` | number | `5` | Max tool-call loops |
 | `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
-| `overrides.contextSize` | number | `150` | Recent channel messages loaded as context (via native core-ai history) |
+| `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. **Default `false`** — see note below |
+| `overrides.contextSize` | number | `150` | Number of recent messages loaded when `includeHistory: true` |
 | `overrides.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona string injected into the AI call |
@@ -2748,6 +2749,12 @@ The wiki module does **not** use the main `workingObject` for its AI calls. Inst
 - `wo.flow = "webpage"` — tools like `getInformation` and `getTimeline` use `wo.channelID` directly
 
 This pattern allows the wiki to reuse the shared AI pipeline (with full tool-call support, multi-loop retries, etc.) without coupling its AI parameters to the global `workingObject` defaults.
+
+> **⚠️ `includeHistory: true` and JSON format**
+>
+> When `includeHistory: true` (the default), core-ai injects the channel's recent Discord conversation as message history into the AI context. This history consists of plain conversational turns (user/assistant chat). Some models pick up on this pattern and respond in conversational plain text instead of the required JSON — even though the system prompt mandates JSON output.
+>
+> If article generation fails with `"AI returned no valid JSON article"` and the response is plain prose, set `"includeHistory": false` in the channel `overrides`. The AI will then receive context only via `getInformation` and `getTimeline` tool calls, which is the safer default for JSON-format compliance.
 
 ### 16.9 Context Editor (`/context`, port 3118)
 

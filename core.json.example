@@ -627,6 +627,7 @@
         "maxTokens":        4000,
         "maxLoops":         5,
         "requestTimeoutMs": 120000,
+        "includeHistory":   false,
         "contextSize":      150,
         "tools":            ["getImage", "getTimeline", "getInformation"],
         "systemPrompt":     "",
