@@ -410,19 +410,24 @@ async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "")
     ? `\n\n--- Channel conversation history (primary source) ---\n${ctxSnippet.trim()}\n--- End of history ---`
     : "\n\n(No channel conversation history available for this topic.)";
 
+  /* Apply per-channel (or global) ai overrides from config */
+  const ai = (channel?.ai && typeof channel.ai === "object") ? channel.ai : {};
+
   const syntheticWo = {
     flow:                "webpage",
     channelID:           channel.channelId,
     useAiModule:         "completions",
     endpoint:            getStr(wo.endpoint || ""),
     apiKey:              getStr(wo.apiKey   || ""),
-    model:               "gpt-4o-mini",
-    temperature:         0.7,
-    maxTokens:           4000,
-    maxLoops:            5,
-    requestTimeoutMs:    120000,
-    systemPrompt:        DEFAULT_WIKI_SYSTEM_PROMPT,
-    tools:               ["getImage", "getTimeline", "getInformation"],
+    model:               getStr(ai.model    || "gpt-4o-mini"),
+    temperature:         ai.temperature !== undefined ? Number(ai.temperature) : 0.7,
+    maxTokens:           ai.maxTokens   !== undefined ? Number(ai.maxTokens)   : 4000,
+    maxLoops:            ai.maxLoops    !== undefined ? Number(ai.maxLoops)    : 5,
+    requestTimeoutMs:    ai.timeoutMs   !== undefined ? Number(ai.timeoutMs)   : 120000,
+    systemPrompt:        getStr(ai.systemPrompt)  || DEFAULT_WIKI_SYSTEM_PROMPT,
+    persona:             getStr(ai.persona        || ""),
+    instructions:        getStr(ai.instructions   || ""),
+    tools:               Array.isArray(ai.tools)  ? ai.tools : ["getImage", "getTimeline", "getInformation"],
     payload:             `Topic: ${query}${historyBlock}`,
     doNotWriteToContext: true,
     includeHistory:      false,

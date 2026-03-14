@@ -420,6 +420,19 @@ export default async function getWebpageBard(coreData) {
         if (streamEntry) break;
       } catch {}
     }
+    /* Always serve the latest AI-generated labels, not just the ones frozen at track start */
+    if (streamEntry?.guildId) {
+      try {
+        const latestLabels = await getItem(`bard:labels:${streamEntry.guildId}`);
+        if (Array.isArray(latestLabels?.labels) && latestLabels.labels.length > 0) {
+          streamEntry = Object.assign({}, streamEntry, {
+            labels:         latestLabels.labels,
+            rejectedLabels: Array.isArray(latestLabels.rejected) ? latestLabels.rejected : []
+          });
+        }
+      } catch { /* ignore — fall back to labels from track start */ }
+    }
+
     setJsonResp(wo, 200, streamEntry || null);
     wo.jump = true; await setSendNow(wo); return coreData;
   }
