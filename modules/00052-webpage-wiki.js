@@ -377,46 +377,16 @@ CRITICAL RULES:
 - Final output MUST be raw JSON only. Always call getImage and put files[0].url in infobox.imageUrl. If getImage fails or returns no url, set infobox.imageUrl to null.`;
 
 /**********************************************************************************/
-/* functionSignature: getChannelContextSnippet (db, channelId, limit)             */
-/* Returns the last N user/assistant messages from the channel's context table    */
-/* as a formatted text block, injected directly into the AI payload.              */
+/* functionSignature: callPipelineForArticle (query, channel, coreData)          */
+/* Generates a wiki article via core-ai pipeline. Context is loaded natively     */
+/* by core-ai via channelID + includeHistory. doNotWriteToContext=true: wiki     */
+/* turns are never saved to the channel context.                                 */
 /**********************************************************************************/
-async function getChannelContextSnippet(db, channelId, limit = 150) {
-  if (!channelId || limit <= 0) return "";
-  try {
-    const [rows] = await db.execute(
-      `SELECT role, text FROM context
-        WHERE id = ? AND role IN ('user', 'assistant') AND text IS NOT NULL AND text != ''
-        ORDER BY ctx_id DESC LIMIT ?`,
-      [channelId, limit]
-    );
-    if (!Array.isArray(rows) || !rows.length) return "";
-    return rows
-      .slice()
-      .reverse()
-      .map(r => `[${r.role}]: ${getStr(r.text).slice(0, 500)}`)
-      .join("\n");
-  } catch {
-    return "";
-  }
-}
-
-/**********************************************************************************/
-/* functionSignature: callPipelineForArticle (query, channel, coreData, ctxSnippet) */
-/* Generates a wiki article via core-ai pipeline. Channel context is pre-loaded   */
-/* and injected into the payload so the AI uses it as primary source.             */
-/* doNotWriteToContext=true: wiki turns are never saved to the channel context.   */
-/**********************************************************************************/
-async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "") {
+async function callPipelineForArticle(query, channel, coreData) {
   const wo = coreData?.workingObject || {};
 
-  /* Build payload: topic + pre-loaded channel history */
-  const historyBlock = ctxSnippet.trim()
-    ? `\n\n--- Channel conversation history (primary source) ---\n${ctxSnippet.trim()}\n--- End of history ---`
-    : "\n\n(No channel conversation history available for this topic.)";
-
   /* Read AI overrides: global config merged with optional per-channel overrides */
-  const cfg            = coreData?.config?.[MODULE_NAME] || {};
+  const cfg             = coreData?.config?.[MODULE_NAME] || {};
   const globalOverrides = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
   const chanOverrides   = (channel.overrides && typeof channel.overrides === "object") ? channel.overrides : {};
   const overrides       = { ...globalOverrides, ...chanOverrides };
@@ -427,24 +397,19 @@ async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "")
   const { default: getCoreAi } = await import(modulePath);
 
   const syntheticWo = {
+    /* All AI parameters come from overrides (global merged with channel-specific) */
+    ...overrides,
+    /* Connection settings: overrides take priority, fall back to parent wo */
+    endpoint:          getStr(overrides.endpoint          || wo.endpoint          || ""),
+    endpointResponses: getStr(overrides.endpointResponses || wo.endpointResponses || ""),
+    apiKey:            getStr(overrides.apiKey            || wo.apiKey            || ""),
+    /* Wiki-fixed values — always override whatever overrides may contain */
     flow:                "webpage",
     channelID:           channel.channelId,
-    useAiModule:         useAiModule,
-    endpoint:            getStr(overrides.endpoint          || wo.endpoint          || ""),
-    endpointResponses:   getStr(overrides.endpointResponses || wo.endpointResponses || ""),
-    apiKey:              getStr(overrides.apiKey            || wo.apiKey            || ""),
-    model:               getStr(overrides.model    || "gpt-4o-mini"),
-    temperature:         overrides.temperature !== undefined ? Number(overrides.temperature) : 0.7,
-    maxTokens:           overrides.maxTokens   !== undefined ? Number(overrides.maxTokens)   : 4000,
-    maxLoops:            overrides.maxLoops    !== undefined ? Number(overrides.maxLoops)    : 5,
-    requestTimeoutMs:    overrides.timeoutMs   !== undefined ? Number(overrides.timeoutMs)   : 120000,
-    systemPrompt:        getStr(overrides.systemPrompt)  || DEFAULT_WIKI_SYSTEM_PROMPT,
-    persona:             getStr(overrides.persona        || ""),
-    instructions:        getStr(overrides.instructions   || ""),
-    tools:               Array.isArray(overrides.tools)  ? overrides.tools : ["getImage", "getTimeline", "getInformation"],
-    payload:             `Topic: ${query}${historyBlock}`,
+    systemPrompt:        getStr(overrides.systemPrompt) || DEFAULT_WIKI_SYSTEM_PROMPT,
+    payload:             `Topic: ${query}`,
     doNotWriteToContext: true,
-    includeHistory:      false,
+    includeHistory:      true,
     db:                  wo.db,
     toolsconfig:         wo.toolsconfig || {},
     timezone:            wo.timezone    || "Europe/Berlin",
@@ -1247,13 +1212,9 @@ export default async function getWebpageWiki(coreData) {
       }
     }
 
-    /* Generate new article — pre-load channel context, then run pipeline */
+    /* Generate new article via pipeline (context loaded natively by core-ai) */
     try {
-      const ctxLimit   = Number(channel.contextMessages ?? 150);
-      const ctxSnippet = ctxLimit > 0
-        ? await getChannelContextSnippet(db, channelId, ctxLimit)
-        : "";
-      const article   = await callPipelineForArticle(query, channel, coreData, ctxSnippet);
+      const article   = await callPipelineForArticle(query, channel, coreData);
       const slug      = getSlug(article.title || query);
       const finalSlug = await dbSaveArticle(db, channelId, slug, article);
       await sendJson(wo, 200, { ok: true, slug: finalSlug, generated: true });
