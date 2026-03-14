@@ -2733,7 +2733,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 
 - Channel NOT listed in `channels[]` → 404
 - `allowedRoles: []` → publicly accessible (no login required)
-- `getInformation` and `getTimeline` are both **mandatory** in the built-in prompt; events always in **chronological order**; AI uses **only tool results** as facts
+- `getInformation`, `getTimeline`, and **`getImage`** are all **mandatory** in the built-in prompt; AI uses **only tool results** as facts; events always in **chronological order**
 - **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles.
 - **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB)
 - **Search page:** non-creators see results only; auto-generation spinner only shown to creators
@@ -2750,7 +2750,7 @@ The wiki module does **not** use the main `workingObject` for its AI calls. Inst
 - `wo.useAiModule` selects the AI backend (`completions` / `responses` / `pseudotoolcalls`)
 - `wo.channelID` is set to the wiki's channel ID for `getInformation` / `getTimeline` tool calls and for native context loading
 - `wo.doNotWriteToContext = true` — article generation never writes to the conversation context
-- `wo.includeHistory = true` — context is loaded natively by core-ai via `channelID`; controlled by `overrides.contextSize`
+- `wo.includeHistory` — controlled by `overrides.includeHistory` (default `false`); when `true`, core-ai loads recent channel messages as context via `channelID` (see warning below)
 - `wo.payload` = `"Topic: <query>"` (becomes the article subject)
 - `wo.flow = "webpage"` — tools like `getInformation` and `getTimeline` use `wo.channelID` directly
 
@@ -2758,9 +2758,72 @@ This pattern allows the wiki to reuse the shared AI pipeline (with full tool-cal
 
 > **⚠️ `includeHistory: true` and JSON format**
 >
-> When `includeHistory: true` (the default), core-ai injects the channel's recent Discord conversation as message history into the AI context. This history consists of plain conversational turns (user/assistant chat). Some models pick up on this pattern and respond in conversational plain text instead of the required JSON — even though the system prompt mandates JSON output.
+> When `includeHistory: true`, core-ai injects the channel's recent Discord conversation as message history into the AI context. This history consists of plain conversational turns (user/assistant chat). Some models pick up on this pattern and respond in conversational plain text instead of the required JSON — even though the system prompt mandates JSON output.
 >
-> If article generation fails with `"AI returned no valid JSON article"` and the response is plain prose, set `"includeHistory": false` in the channel `overrides`. The AI will then receive context only via `getInformation` and `getTimeline` tool calls, which is the safer default for JSON-format compliance.
+> The default is `includeHistory: false`. If you enable it and article generation fails with `"AI returned no valid JSON article"` and the response is plain prose, set it back to `false`. The AI will then receive context only via `getInformation` and `getTimeline` tool calls, which is the safer default for JSON-format compliance.
+
+#### System Prompt and Image Generation
+
+The built-in system prompt (`DEFAULT_WIKI_SYSTEM_PROMPT`) instructs the AI to call `getInformation`, `getTimeline`, and `getImage` — in that order — before writing the article. **`getImage` is mandatory**: the AI is explicitly told that an article without `imageUrl` is incomplete.
+
+**Why images are sometimes skipped:** The default prompt tells the AI to use `imageAlt` (an output field it has not yet written) as the `getImage` prompt. Under tight `maxLoops` budgets the AI may defer `getImage` to a later loop and then run out of budget. The fix is a custom `systemPrompt` that instructs `getImage` to be called in step 3 with an independently composed prompt — not tied to the output JSON.
+
+**Recommended channel override for reliable image generation:**
+
+```json
+"overrides": {
+  "maxLoops": 7,
+  "systemPrompt": "<paste custom prompt here>"
+}
+```
+
+The custom prompt should:
+1. Call `getInformation` first (up to 2 times with alternate keywords if needed)
+2. Call `getTimeline`
+3. Call `getImage` in step 3 — with a prompt composed directly from topic name + key traits found in steps 1–2 — **before writing any article text**
+4. Only then write and output the JSON article
+
+With `maxLoops: 7` there is enough budget for 2× `getInformation` + `getTimeline` + `getImage` + the final JSON response. At `maxLoops: 5`, if the AI uses two `getInformation` calls, `getImage` may be cut due to budget exhaustion.
+
+#### Article JSON Schema
+
+The AI **must** output a single raw JSON object (no markdown fences, no surrounding prose). This object is parsed and stored directly in the `wiki_articles` table. Any deviation from the schema causes a `"AI returned no valid JSON article"` error.
+
+```json
+{
+  "title": "Article Title",
+  "intro": "One to two paragraphs of introduction text.",
+  "sections": [
+    {
+      "heading": "Section Heading",
+      "level": 2,
+      "content": "Section body text. May use markdown."
+    }
+  ],
+  "infobox": {
+    "imageAlt": "Short description of the image (used as alt text)",
+    "imageUrl": "https://…/pub/documents/….png",
+    "fields": [
+      { "label": "Label", "value": "Value" }
+    ]
+  },
+  "categories": ["Category1", "Category2"],
+  "relatedTerms": ["Term1", "Term2", "Term3"]
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | yes | Article title shown in the header |
+| `intro` | string | yes | Introductory text (rendered as plain paragraphs) |
+| `sections` | array | yes | Body sections. Each has `heading` (string), `level` (2–4), and `content` (string, markdown supported) |
+| `infobox.imageAlt` | string | — | Alt text / short image description |
+| `infobox.imageUrl` | string\|null | yes | URL returned by `getImage` (`files[0].url`). **Must be set**; `null` only if `getImage` fails |
+| `infobox.fields` | array | — | Key–value pairs displayed in the sidebar infobox |
+| `categories` | array | — | Category tags (strings) |
+| `relatedTerms` | array | — | Related article slugs or search terms shown as links |
+
+`infobox.imageUrl` is also mapped to `article.image_url` in the DB (`wiki_articles.image_url`). If the AI returns the URL in `infobox.imageUrl` but not in a top-level `image_url`, the module copies it automatically.
 
 ### 16.9 Context Editor (`/context`, port 3118)
 
