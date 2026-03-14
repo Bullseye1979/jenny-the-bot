@@ -406,6 +406,7 @@ async function callPipelineForArticle(query, channel, coreData) {
     /* Wiki-fixed values — always override whatever overrides may contain */
     flow:                "webpage",
     channelID:           channel.channelId,
+    useAiModule:         useAiModule,
     systemPrompt:        getStr(overrides.systemPrompt) || DEFAULT_WIKI_SYSTEM_PROMPT,
     payload:             `Topic: ${query}`,
     doNotWriteToContext: true,

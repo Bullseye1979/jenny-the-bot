@@ -681,34 +681,40 @@ Bard music library manager SPA served as a **webpage-flow module** (`modules/000
 
 AI-driven Fandom-style wiki served as a **webpage-flow module** (`modules/00052`) on port 3117. Each Discord channel gets its own wiki at `/wiki/{channelId}`. Articles are stored in MySQL (table `wiki_articles`, auto-created). Search uses MySQL FULLTEXT; on no match a creator-role user triggers article generation via the **core-ai pipeline**.
 
-AI settings are configured via the optional `overrides` block in `config["webpage-wiki"]`. The module reads exclusively from its own config section — no `core-channel-config` entry is needed or supported for wiki AI settings.
+AI settings are configured via the `overrides` block in `config["webpage-wiki"]`. A **global `overrides`** block sets defaults for all channels; each channel entry may add its own `overrides` block that wins over the global defaults. The module reads exclusively from its own config section — no `core-channel-config` entry is needed or supported for wiki AI settings.
 
 ```jsonc
 "webpage-wiki": {
   "flow":     ["webpage"],
   "port":     3117,
   "basePath": "/wiki",
-  "overrides": {
-    "model":        "gpt-4o-mini",   // LLM model for article generation
-    "temperature":  0.7,
-    "maxTokens":    4000,
-    "maxLoops":     5,
-    "timeoutMs":    120000,
-    "tools":        ["getImage", "getTimeline", "getInformation"],
-    "systemPrompt": "",              // empty = use built-in prompt
-    "persona":      "",
-    "instructions": ""
+  "overrides": {                              // global defaults — apply to all channels
+    "useAiModule":      "completions",        // completions | responses | pseudotoolcalls
+    "model":            "gpt-4o-mini",        // LLM model for article generation
+    "temperature":      0.7,
+    "maxTokens":        4000,
+    "maxLoops":         5,
+    "requestTimeoutMs": 120000,               // AI request timeout in ms
+    "contextSize":      150,                  // recent channel messages loaded as context
+    "tools":            ["getImage", "getTimeline", "getInformation"],
+    "systemPrompt":     "",                   // empty = use built-in prompt
+    "persona":          "",
+    "instructions":     ""
   },
   "channels": [
     {
-      "_title":          "My Channel Wiki",
-      "channelId":       "YOUR_DISCORD_CHANNEL_ID", // source channel for getInformation/getTimeline
-      "allowedRoles":    [],                         // [] = public; ["member"] = role-gated
-      "adminRoles":      ["admin"],                  // full access; implicitly includes editor + creator; [] = no admin
-      "editorRoles":     ["editor"],                 // may edit and delete articles
-      "creatorRoles":    ["creator"],                // may generate new articles via search
-      "maxAgeDays":      7,                          // article TTL in days; 0 = never expire
-      "contextMessages": 150                         // recent messages pre-loaded into prompt
+      "_title":       "My Channel Wiki",
+      "channelId":    "YOUR_DISCORD_CHANNEL_ID", // source channel for getInformation/getTimeline
+      "allowedRoles": [],                         // [] = public; ["member"] = role-gated
+      "adminRoles":   ["admin"],                  // full access; implicitly includes editor + creator; [] = no admin
+      "editorRoles":  ["editor"],                 // may edit and delete articles
+      "creatorRoles": ["creator"],                // may generate new articles via search
+      "maxAgeDays":   7,                          // article TTL in days; 0 = never expire
+      "overrides": {                              // optional — channel-specific overrides; win over global
+        "maxTokens":    6000,
+        "contextSize":  200,
+        "instructions": "Always use getInformation to retrieve facts."
+      }
     }
   ]
 }
@@ -728,11 +734,13 @@ AI settings are configured via the optional `overrides` block in `config["webpag
 | `flow` | array | — | Must include `"webpage"` |
 | `port` | number | `3117` | HTTP port — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
 | `basePath` | string | `"/wiki"` | URL base path |
+| `overrides.useAiModule` | string | `"completions"` | AI module: `completions`, `responses`, or `pseudotoolcalls` |
 | `overrides.model` | string | `"gpt-4o-mini"` | LLM model for article generation |
 | `overrides.temperature` | number | `0.7` | Generation temperature |
 | `overrides.maxTokens` | number | `4000` | Max tokens per article |
 | `overrides.maxLoops` | number | `5` | Max tool-call loops |
-| `overrides.timeoutMs` | number | `120000` | AI request timeout in ms |
+| `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
+| `overrides.contextSize` | number | `150` | Recent channel messages loaded as context (native core-ai history) |
 | `overrides.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona injected into the AI call |
@@ -743,7 +751,7 @@ AI settings are configured via the optional `overrides` block in `config["webpag
 | `channels[].editorRoles` | array | `[]` | Roles that may edit and delete articles. `[]` = only admins |
 | `channels[].creatorRoles` | array | `[]` | Roles that may generate new articles via search. `[]` = only admins |
 | `channels[].maxAgeDays` | number | `7` | Article TTL in days (applies only to unedited articles). Manually edited articles never expire. `0` = never expire |
-| `channels[].contextMessages` | number | `150` | Recent channel messages pre-loaded into the AI prompt |
+| `channels[].overrides` | object | `{}` | Per-channel override block — same keys as global `overrides`; channel values take precedence |
 
 - Channel not in `channels[]` → HTTP 404
 - AI uses **only tool results** as facts — `getInformation` and `getTimeline` are both mandatory; events always in **chronological order**
@@ -1563,26 +1571,28 @@ Below is a minimal but functional `core.json` template with every section includ
       "port":     3117,
       "basePath": "/wiki",
       "overrides": {
-        "model":        "gpt-4o-mini",
-        "temperature":  0.7,
-        "maxTokens":    4000,
-        "maxLoops":     5,
-        "timeoutMs":    120000,
-        "tools":        ["getImage", "getTimeline", "getInformation"],
-        "systemPrompt": "",
-        "persona":      "",
-        "instructions": ""
+        "useAiModule":      "completions",
+        "model":            "gpt-4o-mini",
+        "temperature":      0.7,
+        "maxTokens":        4000,
+        "maxLoops":         5,
+        "requestTimeoutMs": 120000,
+        "contextSize":      150,
+        "tools":            ["getImage", "getTimeline", "getInformation"],
+        "systemPrompt":     "",
+        "persona":          "",
+        "instructions":     ""
       },
       "channels": [
         {
-          "_title":          "My Channel Wiki",
-          "channelId":       "<DISCORD_CHANNEL_ID>",
-          "allowedRoles":    [],
-          "adminRoles":      ["admin"],
-          "editorRoles":     ["editor"],
-          "creatorRoles":    ["creator"],
-          "maxAgeDays":      7,
-          "contextMessages": 150
+          "_title":       "My Channel Wiki",
+          "channelId":    "<DISCORD_CHANNEL_ID>",
+          "allowedRoles": [],
+          "adminRoles":   ["admin"],
+          "editorRoles":  ["editor"],
+          "creatorRoles": ["creator"],
+          "maxAgeDays":   7,
+          "overrides":    {}
         }
       ]
     },

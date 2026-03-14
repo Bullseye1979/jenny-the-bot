@@ -2655,21 +2655,34 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `DELETE /wiki/{channelId}/api/article/{slug}` — editor/admin: delete article row
 
 **core.json — `webpage-wiki` section:**
-```json
+```jsonc
 "webpage-wiki": {
   "flow": ["webpage"],
   "port": 3117,
   "basePath": "/wiki",
+  "overrides": {                              // global defaults — apply to all channels
+    "useAiModule":      "completions",
+    "model":            "gpt-4o-mini",
+    "temperature":      0.7,
+    "maxTokens":        4000,
+    "maxLoops":         5,
+    "requestTimeoutMs": 120000,
+    "contextSize":      150,
+    "tools":            ["getImage", "getTimeline", "getInformation"],
+    "systemPrompt":     "",
+    "persona":          "",
+    "instructions":     ""
+  },
   "channels": [
     {
-      "_title": "My Channel Wiki",
-      "channelId": "YOUR_DISCORD_CHANNEL_ID",
+      "_title":       "My Channel Wiki",
+      "channelId":    "YOUR_DISCORD_CHANNEL_ID",
       "allowedRoles": [],
-      "adminRoles": ["admin"],
-      "editorRoles": ["editor"],
+      "adminRoles":   ["admin"],
+      "editorRoles":  ["editor"],
       "creatorRoles": ["creator"],
-      "maxAgeDays": 7,
-      "contextMessages": 150
+      "maxAgeDays":   7,
+      "overrides":    {}                      // optional per-channel overrides; win over global
     }
   ]
 }
@@ -2686,33 +2699,19 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 
 All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has that role. Admin automatically includes editor and creator rights — no need to add admin to those lists.
 
-**AI settings** are configured via the `overrides` block in `config["webpage-wiki"]`. All keys are optional — values fall back to the built-in defaults. The module reads exclusively from its own config section and never from `core-channel-config`. Image generation requires `toolsconfig.getImage.publicBaseUrl` to be set — without it images are saved to disk but the URL stored in the DB is `null`.
-
-```jsonc
-"webpage-wiki": {
-  "overrides": {
-    "model":        "gpt-4o-mini",   // LLM model for article generation
-    "temperature":  0.7,             // Generation temperature
-    "maxTokens":    4000,            // Max tokens per article
-    "maxLoops":     5,               // Max tool-call loops
-    "timeoutMs":    120000,          // AI request timeout in ms
-    "tools":        ["getImage", "getTimeline", "getInformation"],
-    "systemPrompt": "",              // Empty = use built-in prompt
-    "persona":      "",              // Injected as persona field
-    "instructions": ""              // Injected as instructions field
-  }
-}
-```
+**AI settings** are configured via the `overrides` block in `config["webpage-wiki"]`. A **global `overrides`** block sets defaults for all channels; each channel may additionally define its own `overrides` block — channel values win. All keys are optional — unset values fall back to the built-in defaults. The module reads exclusively from its own config section and never from `core-channel-config`. Image generation requires `toolsconfig.getImage.publicBaseUrl` to be set — without it images are saved to disk but the URL stored in the DB is `null`.
 
 | Parameter (`webpage-wiki`) | Type | Default | Description |
 |---|---|---|---|
 | `port` | number | `3117` | HTTP port |
 | `basePath` | string | `"/wiki"` | URL base path |
+| `overrides.useAiModule` | string | `"completions"` | AI module: `completions`, `responses`, or `pseudotoolcalls` |
 | `overrides.model` | string | `"gpt-4o-mini"` | LLM model for article generation |
 | `overrides.temperature` | number | `0.7` | Generation temperature |
 | `overrides.maxTokens` | number | `4000` | Max tokens per article |
 | `overrides.maxLoops` | number | `5` | Max tool-call loops |
-| `overrides.timeoutMs` | number | `120000` | AI request timeout in ms |
+| `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
+| `overrides.contextSize` | number | `150` | Recent channel messages loaded as context (via native core-ai history) |
 | `overrides.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona string injected into the AI call |
@@ -2723,7 +2722,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 | `channels[].editorRoles` | array | `[]` | Roles that may edit and delete articles. Empty = only admins |
 | `channels[].creatorRoles` | array | `[]` | Roles that may generate new articles via search. Empty = only admins |
 | `channels[].maxAgeDays` | number | `7` | Article TTL in days (applies only to unedited articles). Manually edited articles never expire. `0` = never expire |
-| `channels[].contextMessages` | number | `150` | Recent messages pre-loaded into the AI prompt |
+| `channels[].overrides` | object | `{}` | Per-channel override block — same keys as global `overrides`; channel values take precedence |
 
 - Channel NOT listed in `channels[]` → 404
 - `allowedRoles: []` → publicly accessible (no login required)
@@ -2737,14 +2736,15 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 
 #### WorkingObject Handling (Article Generation)
 
-The wiki module does **not** use the main `workingObject` for its AI calls. Instead, `callPipelineForArticle` constructs a **synthetic `workingObject`** populated from the `overrides` block and passes it directly to `core-ai-completions`. This means:
+The wiki module does **not** use the main `workingObject` for its AI calls. Instead, `callPipelineForArticle` constructs a **synthetic `workingObject`** by spreading the merged overrides (global `overrides` + channel `overrides`, channel wins) and passing it directly to the selected core-ai module. This means:
 
 - The wiki AI call is fully isolated from the Discord/API flow context
-- `wo.systemPrompt`, `wo.model`, `wo.temperature`, `wo.tools`, `wo.persona`, `wo.instructions` are all set from `config["webpage-wiki"].overrides`
-- `wo.channelID` is set to the wiki's channel ID for `getInformation` / `getTimeline` tool calls (so they query the right channel's conversation history)
+- All AI parameters (`model`, `temperature`, `maxTokens`, `tools`, `systemPrompt`, `persona`, `instructions`, `contextSize`, …) come exclusively from the merged overrides
+- `wo.useAiModule` selects the AI backend (`completions` / `responses` / `pseudotoolcalls`)
+- `wo.channelID` is set to the wiki's channel ID for `getInformation` / `getTimeline` tool calls and for native context loading
 - `wo.doNotWriteToContext = true` — article generation never writes to the conversation context
-- `wo.includeHistory = false` — no chat history is injected; the AI works purely from tool results
-- `wo.payload` = the user's search query (becomes the article subject)
+- `wo.includeHistory = true` — context is loaded natively by core-ai via `channelID`; controlled by `overrides.contextSize`
+- `wo.payload` = `"Topic: <query>"` (becomes the article subject)
 - `wo.flow = "webpage"` — tools like `getInformation` and `getTimeline` use `wo.channelID` directly
 
 This pattern allows the wiki to reuse the shared AI pipeline (with full tool-call support, multi-loop retries, etc.) without coupling its AI parameters to the global `workingObject` defaults.

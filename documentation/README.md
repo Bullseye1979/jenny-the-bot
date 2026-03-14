@@ -540,19 +540,34 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - Articles stored in MySQL (`wiki_articles` table, auto-created); images at `pub/wiki/{channelId}/images/`
 - `allowedRoles: []` = public wiki (no login required)
 
-```json
+```jsonc
 "webpage-wiki": {
   "flow":     ["webpage"],
   "port":     3117,
   "basePath": "/wiki",
+  "overrides": {                              // global defaults for all channels
+    "useAiModule":      "completions",
+    "model":            "gpt-4o-mini",
+    "temperature":      0.7,
+    "maxTokens":        4000,
+    "maxLoops":         5,
+    "requestTimeoutMs": 120000,
+    "contextSize":      150,
+    "tools":            ["getImage", "getTimeline", "getInformation"],
+    "systemPrompt":     "",
+    "persona":          "",
+    "instructions":     ""
+  },
   "channels": [
     {
       "_title":       "My Channel Wiki",
       "channelId":    "YOUR_CHANNEL_ID",
       "allowedRoles": [],
       "adminRoles":   ["admin"],
-      "ai": { "model": "gpt-4o-mini", "temperature": 0.7, "maxTokens": 4000, "timeoutMs": 60000 },
-      "image": { "enabled": false, "model": "gpt-image-1", "size": "1024x1024", "timeoutMs": 120000 }
+      "editorRoles":  ["editor"],
+      "creatorRoles": ["creator"],
+      "maxAgeDays":   7,
+      "overrides":    {}                      // optional per-channel overrides; win over global
     }
   ]
 }

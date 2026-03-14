@@ -615,6 +615,37 @@
         }
       ]
     },
+    "webpage-wiki": {
+      "__description": "AI-driven Fandom-style wiki (port 3117, /wiki). One channel entry per Discord channel.",
+      "flow": ["webpage"],
+      "port": 3117,
+      "basePath": "/wiki",
+      "overrides": {
+        "useAiModule":      "completions",
+        "model":            "gpt-4o-mini",
+        "temperature":      0.7,
+        "maxTokens":        4000,
+        "maxLoops":         5,
+        "requestTimeoutMs": 120000,
+        "contextSize":      150,
+        "tools":            ["getImage", "getTimeline", "getInformation"],
+        "systemPrompt":     "",
+        "persona":          "",
+        "instructions":     ""
+      },
+      "channels": [
+        {
+          "_title":       "My Channel Wiki",
+          "channelId":    "YOUR_DISCORD_CHANNEL_ID",
+          "allowedRoles": [],
+          "adminRoles":   ["admin"],
+          "editorRoles":  ["editor"],
+          "creatorRoles": ["creator"],
+          "maxAgeDays":   7,
+          "overrides":    {}
+        }
+      ]
+    },
     "discord-trigger-gate": {
       "flow": [
         "discord",
