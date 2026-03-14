@@ -1,10 +1,12 @@
 /************************************************************************************/
-/* filename: bard-label-output.js                                                  *
-/* Version 1.0                                                                     *
-/* Purpose: Output module for the bard-label-gen flow. Reads wo.response from     *
-/*          core-ai-completions, parses the comma-separated tag list, validates    *
-/*          against wo._bardValidTags, and writes bard:labels:{guildId} to the    *
-/*          registry.                                                               *
+/* filename: bard-label-output.js                                                  */
+/* Version 1.0                                                                     */
+/* Purpose: Output module for the bard-label-gen flow. Reads wo.response from     */
+/*          core-ai-completions, parses the comma-separated tag list, validates    */
+/*          against wo._bardValidTags, and writes bard:labels:{guildId} to the    */
+/*          registry. Also writes bard:lastrun:{guildId} only on success, so that  */
+/*          a failed AI call does not advance the context window and cause the     */
+/*          system to get permanently stuck with no new context to process.        */
 /************************************************************************************/
 
 import { putItem } from "../core/registry.js";
@@ -82,6 +84,20 @@ export default async function getBardLabelOutput(coreData) {
     labels,
     guildId
   });
+
+  // Write lastrun timestamp only after a successful label write.
+  // bard-cron intentionally does NOT write this so that a failed AI call
+  // does not advance the context window — the next run would otherwise find
+  // no new messages and skip forever (stuck-lastrun bug).
+  const lastRunKey = getStr(wo._bardLastRunKey);
+  const lastRunTs  = getStr(wo._bardLastRunTs);
+  if (lastRunKey && lastRunTs) {
+    try {
+      await putItem({ ts: lastRunTs, guildId }, lastRunKey);
+    } catch (e) {
+      log(`failed to write lastrun for guild ${guildId}: ${e?.message}`, "warn", { moduleName: MODULE_NAME });
+    }
+  }
 
   return coreData;
 }

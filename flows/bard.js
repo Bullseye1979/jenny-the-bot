@@ -1,13 +1,9 @@
 /************************************************************************************/
-/* filename: bard.js                                                                 *
-/* Version 1.0                                                                       *
-/* Purpose: Bard flow — polls bard:registry every N seconds, selects music from     *
-/*          library.xml based on bard:labels, and writes bard:stream for the web    *
-/*          audio player. No Discord voice bot required.                             *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                   *
+/* filename: bard.js                                                                */
+/* Version 1.0                                                                      */
+/* Purpose: Bard flow — polls bard:registry every N seconds, selects music from    */
+/*          library.xml based on bard:labels, and writes bard:stream for the web   */
+/*          audio player. No Discord voice bot required.                            */
 /************************************************************************************/
 
 import fs from "node:fs";
@@ -231,10 +227,20 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
 
           if (isPlaying) {
             if (labels.length === 0) continue;
-            const trackLabels = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
-            const sameLabels = [...labels].sort().join(",") === [...trackLabels].sort().join(",");
-            log(`[label-debug] guild=${session.guildId} isPlaying=true trackLabels=[${trackLabels.join(",")}] sameLabels=${sameLabels}`, "info", { moduleName: MODULE_NAME });
-            if (sameLabels) continue;
+            // Keep playing if the current track shares at least 1 tag with the new AI labels.
+            // This avoids interrupting a track that is still partially appropriate.
+            // A full mood switch (all-different labels from the AI) triggers a song change.
+            const labelSet      = new Set(labels);
+            const currentTrack  = library.find(t => t.file === currentFile);
+            const currentTags   = Array.isArray(currentTrack?.tags) ? currentTrack.tags : [];
+            const hasOverlap    = currentTags.some(tag => labelSet.has(tag));
+            log(`[label-debug] guild=${session.guildId} isPlaying=true currentTags=[${currentTags.join(",")}] newLabels=[${labels.join(",")}] hasOverlap=${hasOverlap}`, "info", { moduleName: MODULE_NAME });
+            if (hasOverlap) {
+              if (nowPlaying) {
+                await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
+              }
+              continue;
+            }
             const next = getSelectSong(labels, library, currentFile);
             if (next === null) {
               if (nowPlaying) {

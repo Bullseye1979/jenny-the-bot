@@ -1804,7 +1804,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | 03000 | `discord-status-apply` | Applies the generated Discord presence status |
 | 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
-| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow; splits by comma, strips non-alphanumeric chars, deduplicates, drops tokens longer than 25 chars; writes up to 3 validated tags and up to 5 rejected tokens to `bard:labels:{guildId}` |
+| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow; splits by comma, strips non-alphanumeric chars, deduplicates, drops tokens longer than 25 chars; writes up to 3 validated tags and up to 5 rejected tokens to `bard:labels:{guildId}`; writes `bard:lastrun:{guildId}` only on success (prevents context window from advancing on AI failure) |
 | 08100 | `discord-voice-tts` | Synthesises TTS audio with speaker-tagged voice selection |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
 | 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`) |
@@ -2658,12 +2658,37 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 
 All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has that role. Admin automatically includes editor and creator rights — no need to add admin to those lists.
 
-**AI settings** are fixed in the module defaults (`gpt-4o-mini`, temperature 0.7, tools `getImage` + `getTimeline` + `getInformation`). The system prompt is built into the module and enforces tool usage and chronological ordering. No separate `core-channel-config` entry is needed. Image generation requires `toolsconfig.getImage.publicBaseUrl` to be set — without it images are saved to disk but the URL stored in the DB is `null`.
+**AI settings** are configured via the `overrides` block in `config["webpage-wiki"]`. All keys are optional — values fall back to the built-in defaults. The module reads exclusively from its own config section and never from `core-channel-config`. Image generation requires `toolsconfig.getImage.publicBaseUrl` to be set — without it images are saved to disk but the URL stored in the DB is `null`.
+
+```jsonc
+"webpage-wiki": {
+  "overrides": {
+    "model":        "gpt-4o-mini",   // LLM model for article generation
+    "temperature":  0.7,             // Generation temperature
+    "maxTokens":    4000,            // Max tokens per article
+    "maxLoops":     5,               // Max tool-call loops
+    "timeoutMs":    120000,          // AI request timeout in ms
+    "tools":        ["getImage", "getTimeline", "getInformation"],
+    "systemPrompt": "",              // Empty = use built-in prompt
+    "persona":      "",              // Injected as persona field
+    "instructions": ""              // Injected as instructions field
+  }
+}
+```
 
 | Parameter (`webpage-wiki`) | Type | Default | Description |
 |---|---|---|---|
 | `port` | number | `3117` | HTTP port |
 | `basePath` | string | `"/wiki"` | URL base path |
+| `overrides.model` | string | `"gpt-4o-mini"` | LLM model for article generation |
+| `overrides.temperature` | number | `0.7` | Generation temperature |
+| `overrides.maxTokens` | number | `4000` | Max tokens per article |
+| `overrides.maxLoops` | number | `5` | Max tool-call loops |
+| `overrides.timeoutMs` | number | `120000` | AI request timeout in ms |
+| `overrides.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
+| `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
+| `overrides.persona` | string | `""` | Persona string injected into the AI call |
+| `overrides.instructions` | string | `""` | Instructions injected into the AI call |
 | `channels[].channelId` | string | — | Discord channel ID; wiki sub-path and tool-call source |
 | `channels[].allowedRoles` | array | `[]` | Roles that may read the wiki; `[]` = public |
 | `channels[].adminRoles` | array | `[]` | Full admin access (implicitly includes editor + creator). Empty = no admin |
@@ -2991,8 +3016,9 @@ Cron job (every N minutes, flow: bard-label-gen)
      - reads bard:lastrun:{guildId} from registry
      - reads chat context since that timestamp via getContextSince()
        (fallback: last 5 minutes on first run)
-     - writes current timestamp to bard:lastrun:{guildId}
-     - builds wo.systemPrompt = prompt template + {{TAGS}} list (no previous labels injected)
+     - does NOT write lastrun yet — stores key+ts in wo._bardLastRunKey / wo._bardLastRunTs
+       (written only after successful label generation; prevents stuck-lastrun bug)
+     - builds wo.systemPrompt = prompt template + {{TAGS}} list + current labels (for reference)
      - builds wo.payload = formatted conversation text
      - sets wo.useAiModule = "completions", wo.doNotWriteToContext = true, wo.includeHistory = false
   -> 01000-core-ai-completions.js (shared AI pipeline, flow: bard-label-gen)
@@ -3001,6 +3027,7 @@ Cron job (every N minutes, flow: bard-label-gen)
   -> 08050-bard-label-output.js (output)
      - parses wo.response into 3 valid tags (validated against library.xml tag set)
      - writes bard:labels:{guildId} to registry
+     - writes bard:lastrun:{guildId} only on success (prevents context window from advancing on AI failure)
 
 flows/bard.js (polls every N seconds, min 5 s) — headless scheduler
   -> reloads library.xml from disk on every cycle (picks up newly added tracks without restart)
@@ -3009,8 +3036,8 @@ flows/bard.js (polls every N seconds, min 5 s) — headless scheduler
      - reads bard:labels:{guildId} for current mood
      - reads bard:nowplaying:{guildId} for current track
      - checks session._trackEndAt: if Date.now() < _trackEndAt → track is still playing
-     - if current track still matches at least one active label → keep playing
-     - if labels changed and current track no longer fits: switch immediately
+     - if current track shares at least 1 tag with the new AI labels → keep playing (overlap check)
+     - if new labels have zero overlap with current track tags: switch immediately
      - if track ended (timer expired): select next track
      - song found: writes bard:stream:{guildId} and bard:nowplaying:{guildId},
        calls ffprobe to get duration, schedules setTimeout(triggerPoll, durationMs + 200)
@@ -3033,7 +3060,7 @@ Track end timer — song ended naturally
 | `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels` = validated tags (present in `library.xml`); `rejected` = tokens returned by the LLM that are not in the library (up to 5, deduplicated). Initially seeded to `["default"]` on `/bardstart` so tracks tagged `default` are played first. Deleted on `/bardstop`. |
 | `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
 | `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, rejectedLabels, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`; `rejectedLabels` = LLM tokens not in the library (shown red in Now Playing). Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardstop` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
-| `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written before each LLM call so the next run reads context from exactly this point forward |
+| `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written by `bard-label-output` **only after a successful label write**. On AI failure the timestamp is not updated, so the next run retries from the same context window. |
 
 ### Music Library (library.xml)
 
@@ -3158,10 +3185,8 @@ The LLM prompt used by `00036-bard-cron.js` to classify mood tags is resolved in
 
 | Priority | Source | How to set |
 |----------|--------|-----------|
-| 1 (highest) | `wo.prompt` | Set via channel/flow/user override in `core.json` (see §5.8) — allows per-channel customization |
-| 2 | `config["bard-cron"].prompt` | Static fallback in `core.json` |
-| 3 | `config["bard"].prompt` | Shared bard config fallback |
-| 4 (lowest) | Built-in default | Hardcoded in `00036-bard-cron.js` (`DEFAULT_PROMPT_TEMPLATE`) |
+| 1 (highest) | `config["bard-cron"].prompt` | Set in `core.json` under `bard-cron` — static override for all sessions |
+| 2 (lowest) | Built-in default | Hardcoded in `00036-bard-cron.js` (`DEFAULT_PROMPT_TEMPLATE`) |
 
 The prompt template may contain two placeholders replaced at runtime:
 
@@ -3170,9 +3195,9 @@ The prompt template may contain two placeholders replaced at runtime:
 | `{{TAGS}}` | Comma-separated list of all unique tags found in `library.xml` |
 | `{{CURRENT_LABELS}}` | The three labels currently active for this guild (e.g. `combat,intense,dark`), or `none` if no labels have been set yet |
 
-The built-in default prompt instructs the LLM to **normally keep the current labels** unless the transcript shows a clear and decisive mood shift. When a mood change is detected (e.g. calm → combat, combat → rest), the LLM is instructed to return **three labels with no overlap with the current labels**. The Bard player interprets a completely different label set as an immediate song-change signal.
+The built-in default prompt instructs the LLM to **always classify the current situation from the transcript** — the current labels are included only as **reference context**, not as a value to preserve. The LLM always picks the 3 tags that best describe what is happening right now.
 
-This design keeps music stable during gradual transitions while still reacting quickly to decisive narrative events.
+**Song-switch logic:** The bard scheduler keeps the currently playing track if at least **1 of the track's own tags** appears in the new AI labels (overlap check). Only when the AI labels have zero overlap with the current track's tags is a new track selected immediately. This avoids interrupting a song that is still partially appropriate.
 
 ### bard-label-gen Flow (Pipeline Overview)
 
@@ -3186,7 +3211,7 @@ Cron trigger (bard-label-gen)
 ```
 
 This means the label-gen AI call:
-- Inherits `model`, `endpoint`, `apiKey` from `workingObject` (global defaults) unless overridden in `config["bard-cron"]` or `config["bard"]`
+- Inherits `model`, `endpoint`, `apiKey` from `workingObject` (global defaults) unless overridden in `config["bard-cron"]`
 - Runs with `temperature: 0.3`, `maxTokens: 60`, no tools, no history
 - Does **not** write to the conversation context (`doNotWriteToContext: true`)
 
@@ -3206,7 +3231,7 @@ This means the label-gen AI call:
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | No audio in browser player | Scheduler not started | Use `/bardstart` in Discord |
-| Labels not updating | Cron job disabled | Enable `bard-label-gen` job in `core.json` |
+| Labels not updating | Cron job disabled or AI failure | Enable `bard-label-gen` job in `core.json`. Check logs for AI errors — if the AI call fails, `bard:lastrun` is not advanced and the next run retries automatically. |
 | Same song repeats | Only one track matches labels | Add more tracks or broaden their tags |
 | Gap between tracks | Library empty or no matching tracks | Song-end triggers an immediate server poll. If no matching track is found, `bard:stream` is cleared and nothing plays until the next poll. |
 | First few seconds of next track missing (browser player) | Browser detected the new track late | Browser poll interval is 2 s; the browser retries every 500 ms (up to 10×) after `ended` until the server reports the new track. If the gap persists, check the browser console for errors in `pollNowPlaying`. |

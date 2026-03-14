@@ -1,41 +1,10 @@
 /**********************************************************************************/
 /* filename: 00046-webpage-bard.js                                                */
 /* Version 1.0                                                                    */
-/* Purpose: Bard music manager with MP3 upload and tag editor on its own port.    */
-/**********************************************************************************/
-
-/**********************************************************************************/
-/*                                                                                */
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
-
-/**********************************************************************************/
-
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
-
+/* Purpose: Bard music manager SPA (port 3114, /bard-admin). Provides MP3 upload */
+/*          with auto-tagging, tag editor, play-preview buttons, and a live Now  */
+/*          Playing card. Serves the audio stream for the browser player via      */
+/*          HTTP range requests. Reads config only from config["webpage-bard"].   */
 /**********************************************************************************/
 /**********************************************************************************/
 
@@ -48,11 +17,6 @@ import { getItem }     from "../core/registry.js";
 const MODULE_NAME = "webpage-bard";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
-
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
 
 async function setSendAudioStream(wo, filePath, rangeHeader) {
   const key = wo?.http?.requestKey;
@@ -135,8 +99,6 @@ function getBasePath(cfg) {
   const bp = getStr(cfg.basePath ?? "/bard").trim();
   return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/bard";
 }
-
-/**********************************************************************************/
 
 /**********************************************************************************/
 /* functionSignature: getMultipartBoundary (ct)                                   */
@@ -311,9 +273,11 @@ async function callLlmForTags(title, tavilySnippet, existingTags, atCfg) {
 }
 
 /**********************************************************************************/
+/* functionSignature: getMusicDir (cfg)                                           */
+/* Resolves the music directory from the module's own config section.             */
 /**********************************************************************************/
-function getMusicDir(cfg, globalConfig) {
-  const dir = getStr(cfg.musicDir || globalConfig?.bard?.musicDir || "assets/bard");
+function getMusicDir(cfg) {
+  const dir = getStr(cfg.musicDir || "assets/bard");
   return path.resolve(__dirname, "..", dir);
 }
 
@@ -364,13 +328,9 @@ function writeTracks(musicDir, tracks) {
 }
 
 /**********************************************************************************/
-
-/**********************************************************************************/
-/* functionSignature: getWebpageBard(coreData)                                    */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
-
-/**********************************************************************************/
+/* functionSignature: getWebpageBard (coreData)                                   */
+/* Main module entry point. Handles all /bard-admin/* routes: audio stream,       */
+/* track listing, library management, and the Now Playing API endpoint.           */
 /**********************************************************************************/
 export default async function getWebpageBard(coreData) {
   const wo = coreData?.workingObject || {};
@@ -380,7 +340,7 @@ export default async function getWebpageBard(coreData) {
   const port         = Number(cfg.port ?? 3114);
   const basePath     = getBasePath(cfg);
   const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
-  const musicDir     = getMusicDir(cfg, coreData?.config);
+  const musicDir     = getMusicDir(cfg);
 
   if (Number(wo.http?.port) !== port) return coreData;
 
@@ -388,14 +348,12 @@ export default async function getWebpageBard(coreData) {
   const urlPath = getStr(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
   const isAllowed = getIsAllowed(wo, allowedRoles);
 
-  /**********************************************************************************/
   if (method === "GET" && urlPath === basePath + "/style.css") {
     const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
     wo.http.response = { status: 200, headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" }, body: fs.readFileSync(cssFile, "utf-8") };
     wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /**********************************************************************************/
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     wo.http.response = {
       status: 200,
@@ -405,7 +363,6 @@ export default async function getWebpageBard(coreData) {
     wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /**********************************************************************************/
   if (method === "GET" && urlPath === basePath + "/api/nowplaying") {
     let reg = null;
     try { reg = await getItem("bard:registry"); } catch {}
@@ -420,7 +377,10 @@ export default async function getWebpageBard(coreData) {
         if (streamEntry) break;
       } catch {}
     }
+
+/**********************************************************************************/
     /* Always serve the latest AI-generated labels, not just the ones frozen at track start */
+/**********************************************************************************/
     if (streamEntry?.guildId) {
       try {
         const latestLabels = await getItem(`bard:labels:${streamEntry.guildId}`);
@@ -437,7 +397,6 @@ export default async function getWebpageBard(coreData) {
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /**********************************************************************************/
   if (method === "GET" && urlPath === basePath + "/api/audio") {
     const query    = wo.http?.query || {};
     const filename = path.basename(getStr(query.file || ""));
@@ -452,13 +411,11 @@ export default async function getWebpageBard(coreData) {
     return coreData;
   }
 
-  /**********************************************************************************/
   if (!isAllowed) {
     setJsonResp(wo, 403, { error: "forbidden" });
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /**********************************************************************************/
   if (method === "GET" && urlPath === basePath + "/api/library") {
     const tracks = readTracks(musicDir);
     const files  = fs.existsSync(musicDir) ? fs.readdirSync(musicDir).filter(f => /\.mp3$/i.test(f)) : [];
@@ -466,7 +423,6 @@ export default async function getWebpageBard(coreData) {
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /**********************************************************************************/
   if (method === "POST" && urlPath === basePath + "/api/tags") {
     let reqData; try { reqData = JSON.parse(getBody(wo)); } catch (_) { setJsonResp(wo, 400, { error: "Invalid JSON" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -491,7 +447,6 @@ export default async function getWebpageBard(coreData) {
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /**********************************************************************************/
   if (method === "POST" && urlPath === basePath + "/api/autotag-upload") {
     const atCfg = cfg.autoTag || {};
     if (!atCfg.enabled) {
@@ -552,11 +507,6 @@ export default async function getWebpageBard(coreData) {
 
   return coreData;
 }
-
-/**********************************************************************************/
-
-/**********************************************************************************/
-/**********************************************************************************/
 
 function getBardHtml({ menu, role, activePath, base, isAdmin }) {
   const menuHtml = getMenuHtml(menu || [], activePath || base, role || "");

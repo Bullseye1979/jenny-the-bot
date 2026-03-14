@@ -410,8 +410,9 @@ async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "")
     ? `\n\n--- Channel conversation history (primary source) ---\n${ctxSnippet.trim()}\n--- End of history ---`
     : "\n\n(No channel conversation history available for this topic.)";
 
-  /* Apply per-channel (or global) ai overrides from config */
-  const ai = (channel?.ai && typeof channel.ai === "object") ? channel.ai : {};
+  /* Read AI overrides from the module's own config section (webpage-wiki.overrides) */
+  const cfg       = coreData?.config?.[MODULE_NAME] || {};
+  const overrides = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
 
   const syntheticWo = {
     flow:                "webpage",
@@ -419,15 +420,15 @@ async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "")
     useAiModule:         "completions",
     endpoint:            getStr(wo.endpoint || ""),
     apiKey:              getStr(wo.apiKey   || ""),
-    model:               getStr(ai.model    || "gpt-4o-mini"),
-    temperature:         ai.temperature !== undefined ? Number(ai.temperature) : 0.7,
-    maxTokens:           ai.maxTokens   !== undefined ? Number(ai.maxTokens)   : 4000,
-    maxLoops:            ai.maxLoops    !== undefined ? Number(ai.maxLoops)    : 5,
-    requestTimeoutMs:    ai.timeoutMs   !== undefined ? Number(ai.timeoutMs)   : 120000,
-    systemPrompt:        getStr(ai.systemPrompt)  || DEFAULT_WIKI_SYSTEM_PROMPT,
-    persona:             getStr(ai.persona        || ""),
-    instructions:        getStr(ai.instructions   || ""),
-    tools:               Array.isArray(ai.tools)  ? ai.tools : ["getImage", "getTimeline", "getInformation"],
+    model:               getStr(overrides.model    || "gpt-4o-mini"),
+    temperature:         overrides.temperature !== undefined ? Number(overrides.temperature) : 0.7,
+    maxTokens:           overrides.maxTokens   !== undefined ? Number(overrides.maxTokens)   : 4000,
+    maxLoops:            overrides.maxLoops    !== undefined ? Number(overrides.maxLoops)    : 5,
+    requestTimeoutMs:    overrides.timeoutMs   !== undefined ? Number(overrides.timeoutMs)   : 120000,
+    systemPrompt:        getStr(overrides.systemPrompt)  || DEFAULT_WIKI_SYSTEM_PROMPT,
+    persona:             getStr(overrides.persona        || ""),
+    instructions:        getStr(overrides.instructions   || ""),
+    tools:               Array.isArray(overrides.tools)  ? overrides.tools : ["getImage", "getTimeline", "getInformation"],
     payload:             `Topic: ${query}${historyBlock}`,
     doNotWriteToContext: true,
     includeHistory:      false,
@@ -1079,24 +1080,19 @@ function safeParseJson(val, fallback) {
 /**********************************************************************************/
 /* functionSignature: resolveChannelConfig (cfg, rawChannel)                      */
 /* Merges global defaults from the top-level webpage-wiki config onto a single    */
-/* channel entry, similar to how core-channel-config applies overrides.           */
-/* Arrays are replaced, plain objects are shallow-merged (channel wins).          */
+/* channel entry. Arrays are replaced, scalars use channel value if present,      */
+/* otherwise fall back to global default. AI overrides live at cfg.overrides and  */
+/* are applied directly in callPipelineForArticle — not per channel.              */
 /**********************************************************************************/
 function resolveChannelConfig(cfg, rawChannel) {
   const resolved = Object.assign({}, rawChannel);
 
-  /* Top-level scalar / array defaults (channel wins if present) */
   const scalarKeys = ["maxAgeDays", "allowedRoles", "adminRoles", "editorRoles", "creatorRoles", "_title"];
   for (const key of scalarKeys) {
     if (resolved[key] === undefined && cfg[key] !== undefined) {
       resolved[key] = cfg[key];
     }
   }
-
-  /* ai block: global defaults, channel overrides individual keys */
-  const globalAi  = (cfg.ai && typeof cfg.ai === "object") ? cfg.ai : {};
-  const channelAi = (rawChannel.ai && typeof rawChannel.ai === "object") ? rawChannel.ai : {};
-  resolved.ai = Object.assign({}, globalAi, channelAi);
 
   return resolved;
 }

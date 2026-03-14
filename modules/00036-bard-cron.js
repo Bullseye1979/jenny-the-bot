@@ -1,10 +1,11 @@
 /************************************************************************************/
-/* filename: bard-cron.js                                                          *
-/* Version 1.0                                                                     *
-/* Purpose: Prepares the bard-label-gen flow payload for core-ai-completions.      *
-/*          Reads channel context, builds a system prompt (tag list + current       *
-/*          labels) and sets wo.payload so the shared AI pipeline can run.          *
-/*          bard-label-output (08050) picks up wo.response to write the labels.    *
+/* filename: bard-cron.js                                                          */
+/* Version 1.0                                                                     */
+/* Purpose: Prepares the bard-label-gen flow payload for core-ai-completions.     */
+/*          Reads channel context, builds a system prompt (tag list + current      */
+/*          labels as reference) and sets wo.payload so the shared AI pipeline     */
+/*          can run. bard-label-output (08050) picks up wo.response to write the  */
+/*          labels and stores the lastrun timestamp only on success.               */
 /************************************************************************************/
 
 import fs from "node:fs";
@@ -20,18 +21,16 @@ const __dirname  = path.dirname(__filename);
 
 const DEFAULT_PROMPT_TEMPLATE =
   "You are a music mood classifier for a D&D tabletop RPG session. " +
-  "Read the transcript below and choose exactly 3 tags that best describe what is happening RIGHT NOW. " +
-  "You MUST pick from this exact list only: {{TAGS}}. " +
-  "The currently active tags are: {{CURRENT_LABELS}}. " +
+  "Read the transcript below and classify what is happening RIGHT NOW. " +
+  "You MUST pick exactly 3 tags from this list: {{TAGS}}. " +
+  "Previous tags (for reference only): {{CURRENT_LABELS}}. " +
   "RULES: " +
-  "1. Each tag is ONE word from the list above — never combine words, never add spaces. " +
-  "2. Normally keep the current tags unless the mood has clearly shifted. " +
-  "3. If combat is happening, pick combat tags. If exploration, pick exploration tags. " +
-  "4. MOOD CHANGE: If the transcript shows a clear and decisive mood shift (e.g. calm → combat, " +
-  "combat → rest, tension → celebration), you MUST pick 3 tags that are completely different " +
-  "from the current tags — no overlap at all. This signals an immediate song change. " +
+  "1. Always base your answer ONLY on what the transcript says is happening now. " +
+  "2. Each tag is ONE word from the list — never combine words, never invent new ones. " +
+  "3. If combat or action is happening, pick matching tags. If calm or exploration, pick those. " +
+  "4. Do NOT default to the previous tags — pick what fits the transcript best right now. " +
   "5. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. No apology. " +
-  "If the transcript is empty or unclear, keep the current tags. " +
+  "If the transcript is empty or unclear, return default,ambient,exploration. " +
   "Example: battle,intense,danger";
 
 /************************************************************************************/
@@ -102,8 +101,6 @@ export default async function getBardCron(coreData) {
 
   const config  = coreData?.config || {};
   const cfg     = config[MODULE_NAME] || {};
-  /* note: AI params (model, endpoint, apiKey) are applied by core-channel-config
-     from the bard-label-gen flow overrides — no need to read them here */
 
   // Discover active bard sessions
   let reg = null;
@@ -167,8 +164,9 @@ export default async function getBardCron(coreData) {
       targetLastRunAt = lastRunAt;
       targetNowTs = getNowIso();
 
-      // Write lastrun timestamp immediately so the next run won't re-process
-      await putItem({ ts: targetNowTs, guildId: session.guildId }, lastRunKey);
+      // Do NOT write lastrun here — bard-label-output writes it after successful AI response.
+      // Writing it here would cause the system to get stuck if the AI call fails:
+      // the next run would find no new context (since lastrun > all messages) and skip forever.
 
       const userText = rows
         .map(r => `${r.role === "assistant" ? "Bot" : "Player"}: ${r.text}`)
@@ -191,9 +189,13 @@ export default async function getBardCron(coreData) {
       wo.systemPrompt = systemPrompt;
       wo.payload      = userText;
 
-      // Store bard-specific state so bard-label-output can use it
-      wo._bardGuildId    = getStr(session.guildId);
-      wo._bardValidTags  = [...validTags];
+      // Store bard-specific state so bard-label-output can use it.
+      // _bardLastRunKey and _bardLastRunTs are written to registry by bard-label-output
+      // only after a successful AI response — preventing the stuck-lastrun bug.
+      wo._bardGuildId     = getStr(session.guildId);
+      wo._bardValidTags   = [...validTags];
+      wo._bardLastRunKey  = lastRunKey;
+      wo._bardLastRunTs   = targetNowTs;
 
       // AI params come from workingObject defaults + core-channel-config overrides (bard-label-gen flow).
       // Only set a model fallback if nothing was applied from channel config.
