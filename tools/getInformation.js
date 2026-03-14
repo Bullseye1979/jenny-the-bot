@@ -1,13 +1,13 @@
 /**********************************************************************************/
 /* filename: getInformation.js                                                     *
-/* Version 1.2                                                                     *
+/* Version 1.1                                                                     *
 /* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
 /*          info snippets ranked by coverage then frequency.                       *
 /*                                                                                *
-/* Changes in 1.2                                                                  *
-/* - Added console logging for decision steps, inputs and returned data.           *
-/* - Logs channel setup, groups, SQL token generation, hit counts and selection.  *
-/* - Logs empty-return reasons and final output summary for easier diagnosis.      *
+/* Changes in 1.1                                                                  *
+/* - Removed hard minCoverage drop that could return no data despite real hits.    *
+/* - Added fallback selection to always return the best available cluster.         *
+/* - Added debug meta so empty results can be diagnosed more easily.              *
 /**********************************************************************************/
 
 /**********************************************************************************/
@@ -406,15 +406,6 @@ async function getInformationInvoke(args, coreData) {
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
 
-  console.log(`[${MODULE_NAME}] invoke:start`, {
-    hasArgs: !!args,
-    argKeys: Object.keys(args || {}),
-    primaryChannelID: String(wo?.channelID || "").trim() || null,
-    extraChannelCount: Array.isArray(wo?.channelIds) ? wo.channelIds.length : 0,
-    includeAnsweredTurnsCfg: wo?.toolsconfig?.getInformation?.includeAnsweredTurns === true
-  });
-  console.log(`[${MODULE_NAME}] invoke:args`, getSafeJsonPreview(args));
-
   const primaryChannelId = String(wo?.channelID || "").trim();
 
   const extraChannelIds = Array.isArray(wo?.channelIds)
@@ -426,14 +417,12 @@ async function getInformationInvoke(args, coreData) {
   for (const cid of extraChannelIds) channelIdSet.add(cid);
 
   const channelIds = [...channelIdSet];
-  console.log(`[${MODULE_NAME}] channels`, { mainChannelId: primaryChannelId || null, channelIds });
   if (!channelIds.length) {
     return { error: "ERROR: channel_id missing (wo.channelID / wo.channelIds)" };
   }
   const mainChannelId = primaryChannelId || channelIds[0];
 
   const groups = getNormalizeGroupsFromArgs(args);
-  console.log(`[${MODULE_NAME}] groups:normalized`, getSafeJsonPreview(groups));
   if (!Array.isArray(groups) || !groups.length) return { error: "ERROR: no keyword_groups or keywords" };
 
   const giCfg = wo?.toolsconfig?.getInformation || {};
@@ -448,35 +437,17 @@ async function getInformationInvoke(args, coreData) {
   const EVENT_GAP_MS = eventGapMinutes * 60 * 1000;
   const includeAnsweredTurns = giCfg.includeAnsweredTurns === true;
 
-  console.log(`[${MODULE_NAME}] config`, {
-    rowsPerCluster,
-    stripCode,
-    padRows,
-    tokenWindow,
-    maxLogChars,
-    maxOutputLines,
-    minCoverage,
-    eventGapMinutes,
-    includeAnsweredTurns
-  });
-
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
     return { error: "ERROR: workingObject.db incomplete" };
   }
 
   const sqlTokens = Array.from(new Set(groups.flatMap(g => g.variants)));
-  console.log(`[${MODULE_NAME}] sqlTokens`, { count: sqlTokens.length, tokens: sqlTokens });
   if (!sqlTokens.length) {
     return { error: "ERROR: no effective tokens (variants)" };
   }
 
   const { selectFlagsSQL, whereAnySQL } = getBuildLikeFlags(CONTENT_EXPR, sqlTokens);
   const likeParams = sqlTokens.map(k => `%${getEscapeLike(k)}%`);
-  console.log(`[${MODULE_NAME}] sqlSetup`, {
-    likeParamCount: likeParams.length,
-    whereAnyLength: whereAnySQL.length,
-    selectFlagsLength: selectFlagsSQL.length
-  });
 
   const idPlaceholders = channelIds.map(() => "?").join(", ");
 
@@ -565,11 +536,6 @@ async function getInformationInvoke(args, coreData) {
   try {
     const db = await getPool(wo);
     const maxTimelineToFetch = getMaxTimelineToFetch(wo, giCfg);
-    console.log(`[${MODULE_NAME}] db:connected`, {
-      database: wo?.db?.database || null,
-      host: wo?.db?.host || null,
-      maxTimelineToFetch
-    });
 
     let timelinePerChannel = {};
     try {
@@ -618,14 +584,9 @@ async function getInformationInvoke(args, coreData) {
           });
         }
       }
-    } catch (timelineError) {
-      console.log(`[${MODULE_NAME}] timeline:error`, timelineError?.message || String(timelineError));
+    } catch {
       timelinePerChannel = {};
     }
-
-    console.log(`[${MODULE_NAME}] timeline:loaded`, getSafeJsonPreview(
-      Object.fromEntries(Object.entries(timelinePerChannel).map(([cid, arr]) => [cid, Array.isArray(arr) ? arr.length : 0]))
-    ));
 
     const timelinePeriods = timelinePerChannel[mainChannelId] || [];
 
@@ -634,14 +595,7 @@ async function getInformationInvoke(args, coreData) {
       : [...channelIds, ...channelIds, ...likeParams, ...likeParams];
     const [hitRows] = await db.execute(hitsSQL, hitsParams);
 
-    console.log(`[${MODULE_NAME}] hits`, {
-      hitRowCount: Array.isArray(hitRows) ? hitRows.length : 0,
-      hitsParamCount: hitsParams.length,
-      sample: Array.isArray(hitRows) ? hitRows.slice(0, 5) : []
-    });
-
     if (!hitRows?.length) {
-      console.log(`[${MODULE_NAME}] return:empty`, { reason: "no_sql_hits", sqlTokens, channelIds });
       return {
         items: [],
         meta: {
@@ -670,10 +624,6 @@ async function getInformationInvoke(args, coreData) {
     }
 
     const clustersAll = getBuildClustersFromHits(hitRows, rowsPerCluster);
-    console.log(`[${MODULE_NAME}] clusters:built`, {
-      clusterCount: clustersAll.length,
-      clusters: clustersAll.slice(0, 10)
-    });
     const analyzed = [];
 
     for (const c of clustersAll) {
@@ -700,19 +650,6 @@ async function getInformationInvoke(args, coreData) {
       });
     }
 
-    console.log(`[${MODULE_NAME}] clusters:analyzed`, getSafeJsonPreview(analyzed.map(c => ({
-      channel_id: c.channel_id,
-      idx: c.idx,
-      start_rn: c.start_rn,
-      end_rn: c.end_rn,
-      hitCount: c.hitCount,
-      rowsInRangeCount: c.rowsInRangeCount,
-      coverage: c.coverage,
-      totalHits: c.totalHits,
-      rowsMulti: c.rowsMulti,
-      rowsAny: c.rowsAny
-    }))));
-
     analyzed.sort((a, b) => {
       if (b.coverage !== a.coverage) return b.coverage - a.coverage;
       if (b.totalHits !== a.totalHits) return b.totalHits - a.totalHits;
@@ -725,36 +662,12 @@ async function getInformationInvoke(args, coreData) {
     const selection = getPickClustersForOutput(analyzed, minCoverage);
     const candidateClusters = selection.selected;
 
-    console.log(`[${MODULE_NAME}] selection`, {
-      minCoverage,
-      selectionMode: selection.selectionMode,
-      fallbackClusterUsed: selection.fallbackClusterUsed,
-      eligibleClusters: selection.eligibleClusters,
-      candidateCount: candidateClusters.length,
-      candidates: candidateClusters.map(c => ({
-        channel_id: c.channel_id,
-        idx: c.idx,
-        start_rn: c.start_rn,
-        end_rn: c.end_rn,
-        coverage: c.coverage,
-        totalHits: c.totalHits
-      }))
-    });
-
     const blocks = [];
     let usedLines = 0;
 
     for (const c of candidateClusters) {
       const padStart = Math.max(1, c.start_rn - padRows);
       const padEnd = c.end_rn + padRows;
-      console.log(`[${MODULE_NAME}] block:fetch`, {
-        channel_id: c.channel_id,
-        idx: c.idx,
-        clusterStart: c.start_rn,
-        clusterEnd: c.end_rn,
-        padStart,
-        padEnd
-      });
       const [rowsFull] = await db.execute(
         fetchRangeSQL,
         includeAnsweredTurns
@@ -801,14 +714,6 @@ async function getInformationInvoke(args, coreData) {
         });
       }
 
-      console.log(`[${MODULE_NAME}] block:built`, {
-        channel_id: c.channel_id,
-        idx: c.idx,
-        fetchedRows: Array.isArray(rowsFull) ? rowsFull.length : 0,
-        producedLines: lines.length,
-        usedLinesBefore: usedLines
-      });
-
       if (usedLines + lines.length > maxOutputLines) {
         const remaining = Math.max(0, maxOutputLines - usedLines);
         if (remaining > 0) {
@@ -837,12 +742,6 @@ async function getInformationInvoke(args, coreData) {
     }
 
     if (!blocks.length) {
-      console.log(`[${MODULE_NAME}] return:empty`, {
-        reason: "no_blocks_after_selection",
-        selectionMode: selection.selectionMode,
-        analyzedCount: analyzed.length,
-        candidateCount: candidateClusters.length
-      });
       return {
         items: [],
         meta: {
@@ -942,22 +841,43 @@ async function getInformationInvoke(args, coreData) {
         "treat that snippet as belonging to that period."
     };
 
-    console.log(`[${MODULE_NAME}] return:success`, {
-      itemCount: compact.length,
-      clustersConsidered: meta.clusters_considered,
-      clustersSelected: meta.clusters_selected,
-      printedRows: meta.printed_rows,
-      rawHitRows: meta.raw_hit_rows,
-      rawClusterCount: meta.raw_cluster_count,
-      selectionMode: meta.selection_mode,
-      durationMs: meta.duration_ms
-    });
-
     return { items: compact, meta };
 
   } catch (e) {
-    console.log(`[${MODULE_NAME}] invoke:error`, e?.stack || e?.message || String(e));
-    return { error: e?.message || String(e) };
+    const errInfo = {
+      name: e?.name || "Error",
+      message: e?.message || String(e),
+      stack: e?.stack || null,
+      code: e?.code || null,
+      sqlMessage: e?.sqlMessage || null,
+      sqlState: e?.sqlState || null,
+      errno: e?.errno || null
+    };
+
+    try {
+      console.log("[getInformation] catch:error", errInfo);
+      console.log("[getInformation] catch:args", args);
+      console.log("[getInformation] catch:coreData", {
+        hasCoreData: !!coreData,
+        hasWorkingObject: !!coreData?.workingObject,
+        channelID: coreData?.workingObject?.channelID || null,
+        channelIds: coreData?.workingObject?.channelIds || [],
+        hasDb: !!coreData?.workingObject?.db,
+        dbHost: coreData?.workingObject?.db?.host || null,
+        dbUser: coreData?.workingObject?.db?.user || null,
+        dbDatabase: coreData?.workingObject?.db?.database || null,
+        toolsconfigKeys: Object.keys(coreData?.workingObject?.toolsconfig || {})
+      });
+    } catch (logError) {
+      console.log("[getInformation] catch:logging_failed", {
+        message: logError?.message || String(logError)
+      });
+    }
+
+    return {
+      error: errInfo.message,
+      debug: errInfo
+    };
   }
 }
 
