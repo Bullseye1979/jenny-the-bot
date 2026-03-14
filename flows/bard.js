@@ -70,27 +70,41 @@ function getLoadLibrary(musicDir) {
 
 /************************************************************************************/
 /* functionSignature: getSelectSong (labels, library, currentFile, excludeFile)      *
-/* Selects the best-matching song for the given labels. Returns null if currentFile  *
-/* still matches (no change needed) or if library is empty.                          *
+/* Selects the best-matching song using bidirectional position-weighted scoring.     *
+/* AI labels: 1st = highest weight (N), last = 1. Track tags: same principle.       *
+/* Score per matching pair = AI label weight × track tag weight.                    *
+/* Returns null if the current file is already the unique best match (no change).   *
 /************************************************************************************/
 function getSelectSong(labels, library, currentFile, excludeFile = null) {
   if (!Array.isArray(library) || !library.length) return null;
   if (!Array.isArray(labels)) labels = [];
 
-  const labelSet = new Set(labels.map(l => String(l).toLowerCase()));
+  // Build AI label weight map: 1st label = labels.length pts, each subsequent = -1.
+  // Example for ["combat","vampire","dungeon"]: combat=3, vampire=2, dungeon=1.
+  const labelWeights = {};
+  labels.forEach((label, index) => {
+    labelWeights[String(label).toLowerCase()] = labels.length - index;
+  });
+
   const excluded = excludeFile || currentFile;
 
+  // Bidirectional scoring: track tag positional weight × AI label weight.
+  // A tag that is the primary identity of a track (position 0) AND the top AI label
+  // scores highest. Both directions contribute to the final match quality.
   const scored = library.map(track => ({
     track,
-    score: track.tags.filter(t => labelSet.has(t)).length
+    score: track.tags.reduce((sum, tag, tagIndex) => {
+      const aiWeight = labelWeights[tag] || 0;
+      if (aiWeight === 0) return sum;
+      const trackWeight = track.tags.length - tagIndex; // primary tag = highest weight
+      return sum + aiWeight * trackWeight;
+    }, 0)
   }));
 
   const maxScore = Math.max(...scored.map(s => s.score));
 
   // Only stay on the current track (return null = "no change") if it is the
   // UNIQUE best match — no other track has the same top score.
-  // Old condition (matches >= 1) was too broad: with 3 AI labels and 1 tag per
-  // song, every track scores 1 → current always "qualifies" → song never changes.
   if (currentFile) {
     const currentEntry = scored.find(s => s.track.file === currentFile);
     const currentScore = currentEntry?.score ?? 0;

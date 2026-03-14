@@ -29,9 +29,11 @@ const DEFAULT_PROMPT_TEMPLATE =
   "2. Each tag is ONE word from the list — never combine words, never invent new ones. " +
   "3. If combat or action is happening, pick matching tags. If calm or exploration, pick those. " +
   "4. Do NOT default to the previous tags — pick what fits the transcript best right now. " +
-  "5. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. No apology. " +
+  "5. ORDER your 3 tags by importance: put the MOST fitting tag FIRST, the least fitting LAST. " +
+  "   The first tag carries the highest weight in music selection — rank carefully. " +
+  "6. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. No apology. " +
   "If the transcript is empty or unclear, return default,ambient,exploration. " +
-  "Example: battle,intense,danger";
+  "Example (combat scene): battle,intense,danger   Example (quiet scene): ambient,calm,exploration";
 
 /************************************************************************************/
 /* functionSignature: getNowIso()                                                  *

@@ -45,6 +45,9 @@ All key names follow **camelCase** throughout.
      - [getText](#gettext)
      - [getToken](#gettoken)
      - [getLocation](#getlocation)
+     - [getTime](#gettime)
+     - [getTimeline](#gettimeline)
+     - [getBan](#getban)
 2. [config](#config)
    - [discord](#discord)
    - [api](#api)
@@ -53,6 +56,14 @@ All key names follow **camelCase** throughout.
    - [webpage-bard](#webpage-bard)
    - [webpage-wiki](#webpage-wiki)
    - [webpage-context](#webpage-context)
+   - [webpage-auth](#webpage-auth)
+   - [webpage-menu](#webpage-menu)
+   - [webpage-dashboard](#webpage-dashboard)
+   - [webpage-documentation](#webpage-documentation)
+   - [webpage-inpainting](#webpage-inpainting)
+   - [bard](#bard)
+   - [bard-join](#bard-join)
+   - [bard-cron](#bard-cron)
    - [cron](#cron)
    - [context](#context)
    - [webpage](#webpage)
@@ -476,6 +487,30 @@ Google Maps and Street View.
 | `streetFov` | number | `90` | Street View field of view (degrees) |
 | `timeoutMs` | number | `20000` | API request timeout |
 
+#### getTime
+
+Returns the current UTC time as an ISO 8601 string. No admin configuration required.
+
+| Key | Type | Description |
+|---|---|---|
+| *(no keys)* | — | This tool requires no toolsconfig entry |
+
+#### getTimeline
+
+Returns stored timeline periods for the current channel.
+
+| Key | Type | Example | Description |
+|---|---|---|---|
+| *(no keys)* | — | Timeline periods are read from MySQL; no toolsconfig entry required | |
+
+#### getBan
+
+Sends a ban request DM to the configured admin user.
+
+| Key | Type | Example | Description |
+|---|---|---|---|
+| `adminUserId` | string | `"406901027665870848"` | Discord user ID to send ban DMs to. Falls back to `workingObject.modAdmin` if omitted. |
+
 ---
 
 ## config
@@ -764,6 +799,240 @@ Context DB editor SPA served as a **webpage-flow module** (`modules/00053`) on p
 
 ---
 
+### webpage-auth
+
+Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.webAuth` when a valid session cookie is present. Handles login/logout on `loginPort`.
+
+```jsonc
+"webpage-auth": {
+  "flow":           ["webpage"],
+  "clientId":       "<DISCORD_CLIENT_ID>",
+  "clientSecret":   "<DISCORD_CLIENT_SECRET>",
+  "redirectUri":    "",
+  "loginPort":      3111,
+  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118],
+  "sessionTtlMs":   86400000,
+  "users": [
+    { "discordId": "<YOUR_DISCORD_USER_ID>", "role": "admin" }
+  ]
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `clientId` | Discord application client ID (from the Discord Developer Portal) |
+| `clientSecret` | Discord application client secret |
+| `redirectUri` | OAuth2 callback URL. Set to `""` to auto-derive from the HTTP `Host` header (recommended for multi-domain setups). Otherwise set to the exact callback URL, e.g. `"https://yourserver.example.com/auth/callback"`. Must be registered in the Discord Developer Portal under OAuth2 → Redirects. |
+| `loginPort` | Port that handles `/auth/login`, `/auth/callback`, and `/auth/logout` routes. Typically the same port as `webpage-config-editor` (3111). |
+| `ports` | All ports where the module runs passively to set `wo.webAuth`. Must include every port where login state matters. |
+| `sessionTtlMs` | Session cookie lifetime in milliseconds (default: 86 400 000 = 24 h) |
+| `users[].discordId` | Discord user ID |
+| `users[].role` | Role assigned to this user (`"admin"`, `"editor"`, `"creator"`, etc.) |
+
+> **Multi-domain:** Set `redirectUri: ""` and register all domains in Discord Developer Portal. The module derives the callback URL automatically from the `Host` header.
+
+- Add all ports used by web modules to `ports`
+- Add `reverse_proxy /auth* localhost:3111` to your Caddyfile (before the catch-all)
+
+---
+
+### webpage-menu
+
+Global navigation menu for all web modules. Items are filtered by user role before rendering.
+
+```jsonc
+"webpage-menu": {
+  "flow": ["webpage"],
+  "items": [
+    { "text": "💬 Chat",       "link": "/chat"       },
+    { "text": "🖼 Inpainting", "link": "/inpainting" },
+    { "text": "📖 Wiki",       "link": "/wiki"       },
+    { "text": "📚 Docs",       "link": "/docs"       },
+    { "text": "🎵 Bard",       "link": "/bard",       "roles": ["admin"] },
+    { "text": "📊 Dashboard",  "link": "/dashboard",  "roles": ["admin"] },
+    { "text": "⚙️ Config",     "link": "/config",     "roles": ["admin"] },
+    { "text": "🗄 Context",    "link": "/context",    "roles": ["admin"] }
+  ]
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `items[].text` | Label shown in the navigation bar (supports emoji) |
+| `items[].link` | URL the item links to |
+| `items[].roles` | If set, item is only visible to users with a matching role. Omit or leave as `[]` for public items |
+
+---
+
+### webpage-dashboard
+
+Live bot telemetry dashboard. Displays flow status, memory usage, and per-module timing. Data is read from the `dashboard:state` registry key, written by `main.js` every 2 seconds.
+
+```jsonc
+"webpage-dashboard": {
+  "flow":           ["webpage"],
+  "port":           3115,
+  "basePath":       "/dashboard",
+  "allowedRoles":   ["admin"],
+  "refreshSeconds": 5
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3115`) — must also be in `config.webpage.ports` |
+| `basePath` | URL base path (default `"/dashboard"`) |
+| `allowedRoles` | Roles allowed to view the dashboard. Typically `["admin"]` |
+| `refreshSeconds` | Auto-refresh interval for the browser page in seconds (default `5`) |
+
+- Add `3115` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /dashboard* localhost:3115` to your Caddyfile
+
+---
+
+### webpage-documentation
+
+Markdown documentation browser. Reads `.md` files from `documentation/` and renders them as formatted HTML pages with a sidebar navigation.
+
+```jsonc
+"webpage-documentation": {
+  "flow":         ["webpage"],
+  "port":         3116,
+  "basePath":     "/docs",
+  "allowedRoles": []
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3116`) — must also be in `config.webpage.ports` |
+| `basePath` | URL base path (default `"/docs"`) |
+| `allowedRoles` | Roles allowed to view the docs. `[]` = public |
+
+- Add `3116` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /docs* localhost:3116` to your Caddyfile
+
+---
+
+### webpage-inpainting
+
+AI inpainting SPA. Users load an image, paint a mask, enter a prompt, and the backend calls a Stable Diffusion API to fill the masked region.
+
+```jsonc
+"webpage-inpainting": {
+  "flow":         ["webpage"],
+  "port":         3113,
+  "basePath":     "/inpainting",
+  "allowedRoles": [],
+  "auth": {
+    "enabled":         false,
+    "tokenTtlMinutes": 720,
+    "users":           []
+  },
+  "imageWhitelist": {
+    "hosts": ["yourserver.example.com"],
+    "paths": ["/documents/"]
+  }
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3113`) — must also be in `config.webpage.ports` |
+| `basePath` | URL base path (default `"/inpainting"`) |
+| `allowedRoles` | Roles allowed to access the editor. `[]` = public |
+| `auth.enabled` | Set to `false` to disable auth (proxy and upload accept all requests). `true` = enforce session auth. |
+| `auth.tokenTtlMinutes` | Deep-link token TTL in minutes (default `720` = 12 h) |
+| `auth.users` | Local user list for inpainting auth (separate from `webpage-auth`) |
+| `imageWhitelist.hosts` | Hosts allowed as image sources for the proxy |
+| `imageWhitelist.paths` | URL path prefixes that are whitelisted per host |
+
+- Add `3113` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add both routes to Caddyfile: `reverse_proxy /inpainting* localhost:3113` and `reverse_proxy /documents* localhost:3113`
+- Module `00045-webpage-inpaint.js` must also be subscribed to `flow: ["webpage"]`
+
+---
+
+### bard
+
+Headless music scheduler flow. Polls the registry every `pollIntervalMs` milliseconds, selects tracks from `library.xml` based on AI mood labels, and writes `bard:stream:{guildId}` for the browser player.
+
+```jsonc
+"bard": {
+  "flowName":       "bard",
+  "pollIntervalMs": 5000,
+  "musicDir":       "assets/bard"
+}
+```
+
+| Key | Description |
+|---|---|
+| `flowName` | Internal name (`"bard"`) |
+| `pollIntervalMs` | How often `flows/bard.js` polls for session state (milliseconds, min 5000) |
+| `musicDir` | Path to the directory containing MP3 files and `library.xml`. Relative to the project root. Default `"assets/bard"` |
+
+> **Note:** `assets/bard/` is in `.gitignore`. Use the Bard UI at `/bard` to manage the music library.
+
+---
+
+### bard-join
+
+Handles `/bardstart` and `/bardstop` slash commands in the `discord-admin` flow.
+
+```jsonc
+"bard-join": {
+  "_title": "Bard Start/Stop Commands",
+  "flow":   ["discord-admin"]
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"discord-admin"` |
+
+---
+
+### bard-cron
+
+Prepares the `bard-label-gen` cron flow by building the AI prompt and payload for `core-ai-completions`. Reads recent chat context and asks the LLM to classify the current RPG session mood as 3 priority-ordered mood tags.
+
+```jsonc
+"bard-cron": {
+  "_title": "Bard Mood Label Generator",
+  "flow":   ["bard-label-gen"],
+  "prompt": ""
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"bard-label-gen"` |
+| `prompt` | Custom system prompt template (overrides the built-in default). Supports `{{TAGS}}` (all library tags) and `{{CURRENT_LABELS}}` (current active labels) placeholders. Leave empty to use the built-in prompt |
+
+**Built-in prompt behaviour:**
+- Classifies the current session from the transcript (does not preserve previous labels)
+- Instructs the LLM to output tags in **priority order** (most fitting tag first)
+- The first tag carries the highest scoring weight in track selection
+
+To trigger bard label generation, add a cron job pointing to `"bard-label-gen"` as the flow:
+```jsonc
+{
+  "id":        "bard-label-gen",
+  "cron":      "*/3 * * * *",
+  "enabled":   true,
+  "channelID": "YOUR_TEXT_CHANNEL_ID"
+}
+```
+
+The `channelID` must match the text channel where your D&D session takes place (so the LLM reads the right conversation).
+
+---
+
 ### cron
 
 ```jsonc
@@ -910,6 +1179,17 @@ Every module has an entry under `config` that declares which flows it participat
 | `discord-status-apply` | `discord-status`, `toolcall` |
 | `core-channel-config` | `discord`, `discord-voice`, `discord-admin`, `discord-status`, `api` |
 | `core-add-id` | `discord`, `discord-voice`, `api` |
+| `bard-join` | `discord-admin` |
+| `bard-cron` | `bard-label-gen` |
+| `bard-label-output` | `bard-label-gen` |
+| `webpage-auth` | `webpage` |
+| `webpage-menu` | `webpage` |
+| `webpage-dashboard` | `webpage` |
+| `webpage-documentation` | `webpage` |
+| `webpage-inpainting` | `webpage` |
+| `webpage-wiki` | `webpage` |
+| `webpage-context` | `webpage` |
+| `api-add-context` | `api` |
 
 ---
 
@@ -1232,6 +1512,52 @@ Below is a minimal but functional `core.json` template with every section includ
     "core-add-id":             { "flow": ["discord","discord-voice","api"], "servers": ["yourserver.example.com"] },
     "discord-voice-transcribe":{ "flow": ["discord-voice"], "pollMs": 1000, "silenceMs": 1500, "maxCaptureMs": 25000, "minVoicedMs": 1000, "minWavBytes": 24000, "snrDbThreshold": 3.8, "frameMs": 20, "startDebounceMs": 600, "keepWav": false, "maxSegmentsPerRun": 32 },
     "webpage-output":          { "flow": ["webpage"] },
+    "webpage-auth": {
+      "flow":         ["webpage"],
+      "clientId":     "<DISCORD_CLIENT_ID>",
+      "clientSecret": "<DISCORD_CLIENT_SECRET>",
+      "redirectUri":  "",
+      "loginPort":    3111,
+      "ports":        [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118],
+      "sessionTtlMs": 86400000,
+      "users": [
+        { "discordId": "<YOUR_DISCORD_USER_ID>", "role": "admin" }
+      ]
+    },
+    "webpage-menu": {
+      "flow": ["webpage"],
+      "items": [
+        { "text": "💬 Chat",      "link": "/chat"      },
+        { "text": "📖 Wiki",      "link": "/wiki"      },
+        { "text": "📚 Docs",      "link": "/docs"      },
+        { "text": "🎵 Bard",      "link": "/bard",      "roles": ["admin"] },
+        { "text": "⚙️ Config",    "link": "/config",    "roles": ["admin"] },
+        { "text": "📊 Dashboard", "link": "/dashboard", "roles": ["admin"] },
+        { "text": "🗄 Context",   "link": "/context",   "roles": ["admin"] }
+      ]
+    },
+    "webpage-dashboard": {
+      "flow": ["webpage"], "port": 3115, "basePath": "/dashboard",
+      "allowedRoles": ["admin"], "refreshSeconds": 5
+    },
+    "webpage-documentation": {
+      "flow": ["webpage"], "port": 3116, "basePath": "/docs", "allowedRoles": []
+    },
+    "webpage-inpainting": {
+      "flow": ["webpage"], "port": 3113, "basePath": "/inpainting",
+      "allowedRoles": [],
+      "auth": { "enabled": false },
+      "imageWhitelist": { "hosts": [], "paths": ["/documents/"] }
+    },
+    "bard": {
+      "flowName": "bard", "pollIntervalMs": 5000, "musicDir": "assets/bard"
+    },
+    "bard-join": {
+      "flow": ["discord-admin"]
+    },
+    "bard-cron": {
+      "flow": ["bard-label-gen"], "prompt": ""
+    },
     "webpage-wiki": {
       "flow":     ["webpage"],
       "port":     3117,
@@ -1294,4 +1620,4 @@ Below is a minimal but functional `core.json` template with every section includ
 
 ---
 
-*Documentation generated 2026-03-09.*
+*Documentation updated 2026-03-14.*

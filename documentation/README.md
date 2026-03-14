@@ -23,27 +23,29 @@ Jenny is a modular, production-grade Discord AI assistant built on Node.js. It f
    - [api](#api-flow)
    - [cron](#cron-flow)
    - [toolcall](#toolcall-flow)
+   - [bard](#bard-flow)
    - [webpage / web modules](#webpage-flow--admin-modules)
    - [webpage](#webpage-flow)
 7. [Browser Extension](#browser-extension)
-7. [Module Pipeline](#module-pipeline)
+8. [Bard Music System](#bard-music-system)
+9. [Module Pipeline](#module-pipeline)
    - [Pre-Processing (00xxx)](#pre-processing-00xxx)
    - [AI Processing (01xxx)](#ai-processing-01xxx)
    - [Output & Post-Processing (02xxx–08xxx)](#output--post-processing-02xxx08xxx)
    - [Final Output (10000)](#final-output-10000)
-8. [Tools](#tools)
-9. [Core Infrastructure](#core-infrastructure)
+10. [Tools](#tools)
+11. [Core Infrastructure](#core-infrastructure)
    - [main.js — Runner & Dashboard](#mainjs--runner--dashboard)
    - [core/context.js — Conversation Storage](#corecontextjs--conversation-storage)
    - [core/registry.js — In-Memory Store](#coreregistryjs--in-memory-store)
    - [core/logging.js — Structured Logging](#coreloggingjs--structured-logging)
-10. [GDPR & Consent](#gdpr--consent)
-11. [Macro System](#macro-system)
-12. [Channel Configuration & Overrides](#channel-configuration--overrides)
-13. [Adding a New Module](#adding-a-new-module)
-14. [Adding a New Tool](#adding-a-new-tool)
-15. [Slash Commands](#slash-commands)
-16. [Dependencies](#dependencies)
+12. [GDPR & Consent](#gdpr--consent)
+13. [Macro System](#macro-system)
+14. [Channel Configuration & Overrides](#channel-configuration--overrides)
+15. [Adding a New Module](#adding-a-new-module)
+16. [Adding a New Tool](#adding-a-new-tool)
+17. [Slash Commands](#slash-commands)
+18. [Dependencies](#dependencies)
 
 ---
 
@@ -355,6 +357,12 @@ Settings for conversation summarisation (used by `core/context.js`):
         "cron":      "0 8 * * *",
         "enabled":   true,
         "channelID": "123456789012345678"
+      },
+      {
+        "id":        "bard-label-gen",
+        "cron":      "*/3 * * * *",
+        "enabled":   true,
+        "channelID": "YOUR_TEXT_CHANNEL_ID"
       }
     ]
   }
@@ -473,6 +481,27 @@ Runs scheduled jobs defined in `config.cron.jobs`. On each tick (default every 1
 **File:** `flows/toolcall.js`
 
 Watches the `status:tool` registry key. When a tool-call result is deposited into the registry, this flow triggers, allowing deferred or async tool execution to feed back into the pipeline.
+
+---
+
+### bard Flow
+
+**File:** `flows/bard.js`
+
+Headless music scheduler that runs continuously (polling every `pollIntervalMs` ms). No Discord voice connection required.
+
+1. Reads `bard:registry` for active sessions.
+2. For each session: reads `bard:labels:{guildId}` (AI mood tags) and `bard:nowplaying:{guildId}`.
+3. Compares AI labels to labels active when the track started — switches track if changed.
+4. On track end: selects best-fit track using bidirectional position-weighted scoring.
+5. Writes `bard:stream:{guildId}` for the browser audio player.
+
+**workingObject fields set:**
+
+| Field | Value |
+|---|---|
+| `flow` | `"bard"` |
+| `guildId` | Guild ID of the session |
 
 ---
 
@@ -599,20 +628,30 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 
 | Module | Name | Description |
 |---|---|---|
-| `00005` | discord-status-prepare | Reads current Discord status; prepares status update payload |
+| `00005` | discord-status-prepare | Reads current Discord status; prepares AI-generated presence payload |
 | `00010` | core-channel-config | Applies hierarchical channel/flow/user config overrides (deep merge) |
+| `00019` | bard-voice-gate | Gates discord-voice: halts pipeline when the speaking user is the Bard bot itself (prevents self-transcription) |
 | `00020` | discord-channel-gate | Checks if the bot is permitted to respond in this channel |
-| `00021` | api-token-gate | Two-stage API gate: blocks channel when `apiEnabled=0`; verifies Bearer token when `apiSecret` is set |
-| `00022` | discord-gdpr-gate | Enforces GDPR consent; sends disclaimer on first contact |
-| `00025` | discord-admin-gdpr | Handles admin GDPR management commands |
-| `00030` | discord-voice-transcribe | Transcribes voice audio using the Whisper API |
-| `00032` | discord-add-files | Extracts file attachments and URLs from the Discord message |
-| `00040` | discord-admin-join | Handles bot join/leave commands |
-| `00045` | webpage-inpaint | Image inpainting for web content |
-| `00047` | webpage-config-editor | JSON config editor SPA; serves `GET /` and `GET\|POST /api/config` on the configured port |
-| `00048` | webpage-chat | AI chat SPA; serves `GET /chat`, context API, and chat proxy on the configured port |
-| `00052` | webpage-wiki | AI-driven wiki SPA; per-channel wiki at `/wiki/{channelId}`, MySQL article storage, DALL-E images |
+| `00021` | api-token-gate | Two-stage API gate: blocks when `apiEnabled=0`; verifies Bearer token when `apiSecret` is set |
+| `00022` | discord-gdpr-gate | Enforces GDPR consent; sends disclaimer DM on first contact |
+| `00025` | discord-admin-gdpr | Handles `/gdpr` management commands |
+| `00030` | discord-voice-transcribe | Captures voice audio with VAD filtering; transcribes via Whisper API |
+| `00032` | discord-add-files | Extracts file attachment URLs from the Discord message into `wo.fileUrls` |
+| `00035` | bard-join | Handles `/bardstart` and `/bardstop` — creates or removes headless bard sessions in the registry |
+| `00036` | bard-cron | Prepares the `bard-label-gen` flow: reads chat context, builds priority-ordered tag prompt, passes to `core-ai-completions` |
+| `00040` | discord-admin-join | Handles `/join` and `/leave` voice channel commands |
+| `00041` | webpage-auth | Discord OAuth2 SSO — passive module; sets `wo.webAuth` (role, userId, username) on every webpage request |
+| `00043` | webpage-menu | Sets `wo.web.menu` from `config["webpage-menu"].items[]`, filtered by `wo.webAuth.role` |
+| `00045` | webpage-inpaint | Redirects `GET /documents/*.png` to the inpainting port so AI images open directly in the editor |
+| `00046` | webpage-bard | Bard library manager SPA (port 3114, `/bard`) — tag editor, preview, Now Playing, Bulk Auto-Tag upload |
+| `00047` | webpage-config-editor | Config editor SPA (port 3111, `/config`) — collapsible cards, tag chips, password fields |
+| `00048` | webpage-chat | Chat SPA (port 3112, `/chat`) — markdown, media embeds, toolcall indicator, server-side secret injection |
+| `00049` | webpage-inpainting | Inpainting SPA (port 3113, `/inpainting`) — brush mask editor, SD proxy, auth gate |
 | `00050` | discord-admin-commands | Processes slash commands and DM admin commands |
+| `00051` | webpage-dashboard | Live telemetry dashboard (port 3115, `/dashboard`) — flow status, memory, per-module timing |
+| `00052` | webpage-wiki | AI-driven Fandom-style wiki (port 3117, `/wiki`) — per-channel articles, DALL-E images, role-based access |
+| `00053` | webpage-context | Context DB editor SPA (port 3118, `/context`) — browse, search, search & replace, bulk delete |
+| `00054` | webpage-documentation | Documentation browser (port 3116, `/docs`) — renders Markdown files as HTML |
 | `00055` | core-admin-commands | Core admin operations (purge, freeze, DB commands) |
 | `00060` | discord-admin-avatar | Generates or uploads a new bot avatar via DALL-E or URL |
 | `00065` | discord-admin-macro | Personal text-macro management (create, list, delete, run) |
@@ -1134,6 +1173,67 @@ And add the chat to `webpage-chat.chats[]` so the admin panel can monitor it:
 ```jsonc
 { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
 ```
+
+---
+
+## Bard Music System
+
+The Bard is a **headless background music scheduler** for tabletop RPG sessions. It requires no second Discord bot — music is served directly to a browser player.
+
+### How it works
+
+```
+/bardstart command
+  → Creates a session in the registry (bard:session:{guildId})
+  → Seeds bard:labels with ["default"]
+
+Cron job (every N minutes, flow: bard-label-gen)
+  → bard-cron: reads chat context, builds AI prompt
+  → core-ai-completions: LLM classifies mood as 3 priority-ordered tags
+  → bard-label-output: validates tags, writes bard:labels:{guildId}
+    (also writes bard:lastrun:{guildId} only on success)
+
+flows/bard.js (polls every 5 s)
+  → Reads bard:labels and bard:nowplaying
+  → If labels changed → selects best-fit track (bidirectional scoring)
+  → Writes bard:stream:{guildId} → browser player picks up change
+  → Schedules next poll (ffprobe duration + 200 ms)
+```
+
+### Track selection
+
+`getSelectSong` uses **bidirectional position-weighted scoring**:
+
+- AI labels have descending weights: 1st label = N pts, 2nd = N−1, …, last = 1 pt
+- Track tags also have descending weights: primary tag = highest weight
+- Score = sum of (AI label weight × track tag weight) for each matching pair
+
+This means a track whose primary tag is also the top AI label scores highest.
+
+### Setup
+
+1. Add MP3 files to `assets/bard/` and manage the library at `/bard`
+2. Run `/bardstart` in Discord
+3. Add a cron job for `bard-label-gen` in `core.json`
+4. Open `/bard` in the browser to hear the music
+
+### Slash commands
+
+| Command | Description |
+|---|---|
+| `/bardstart` | Start the music scheduler for this server |
+| `/bardstop` | Stop the music scheduler |
+
+### Registry keys
+
+| Key | Purpose |
+|---|---|
+| `bard:registry` | List of active session keys |
+| `bard:session:{guildId}` | Session state (status, track timer, last played) |
+| `bard:labels:{guildId}` | Current AI mood tags |
+| `bard:nowplaying:{guildId}` | Track info at time of song start |
+| `bard:stream:{guildId}` | Current stream data for browser player |
+| `bard:lastrun:{guildId}` | Last successful label-gen timestamp |
 
 ---
 

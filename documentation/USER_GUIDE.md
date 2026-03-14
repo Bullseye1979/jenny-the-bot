@@ -22,9 +22,12 @@ This guide explains everything you need to know to use Jenny as a regular user.
 10. [YouTube](#youtube)
 11. [Conversation History](#conversation-history)
 12. [Creating Macros](#creating-macros)
-13. [Slash Commands Reference](#slash-commands-reference)
-14. [Tips & Tricks](#tips--tricks)
-15. [Troubleshooting](#troubleshooting)
+13. [Bard Music System](#bard-music-system)
+14. [Web Interface](#web-interface)
+15. [AI Wiki](#ai-wiki)
+16. [Slash Commands Reference](#slash-commands-reference)
+17. [Tips & Tricks](#tips--tricks)
+18. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -213,12 +216,12 @@ The inpainting tool is a browser-based image editor that lets you load any image
 When Jenny generates an image with Stable Diffusion, the response includes an edit link. Click it to open the image directly in the inpainting editor.
 
 **From the browser:**
-Navigate to `https://jenny.ralfreschke.de/inpainting` and load an image manually.
+Navigate to `https://yourserver.example.com/inpainting` and load an image manually.
 
 **With a URL parameter:**
 Append `?src=<image-url>` to open a specific image directly:
 ```
-https://jenny.ralfreschke.de/inpainting?src=https://example.com/photo.png
+https://yourserver.example.com/inpainting?src=https://example.com/photo.png
 ```
 
 ---
@@ -329,6 +332,81 @@ Jenny expands the macro before processing — the bot receives the full macro te
 
 ---
 
+## Bard Music System
+
+The Bard is Jenny's background music system for tabletop RPG sessions. It plays mood-appropriate music through a browser-based audio player — no second Discord bot required.
+
+### Starting and stopping
+
+| Command | Effect |
+|---|---|
+| `/bardstart` | Start the music scheduler for this server. Jenny begins analysing the chat and playing music. |
+| `/bardstop` | Stop the music scheduler. Music stops immediately. |
+
+Once started, the scheduler:
+1. Reads the current chat context every few minutes.
+2. Asks an AI to classify the session mood as 3 mood tags (e.g. `combat, intense, danger`).
+3. Selects the best-matching track from the music library and plays it.
+4. Switches tracks automatically when the mood changes.
+
+### Browser audio player
+
+Open **`/bard`** in your browser to hear the music. The page shows a **Now Playing** card with:
+- The current track title and mood tags
+- Colour-coded label indicators (green = active mood match, blue = track tag only, grey = mood label not on track)
+- A stream player — click **▶ Zum Anhören klicken** to start playback
+
+The player syncs automatically when the track changes. If a song ends, the next track starts within a few seconds.
+
+### Music library management
+
+Admins can manage the music library at **`/bard`**:
+- Edit track title, tags, and volume
+- Delete tracks
+- Preview any track with the ▶ button
+- Upload MP3 files with automatic AI-generated tags (if configured)
+
+---
+
+## Web Interface
+
+Jenny provides several browser-based tools. Your server admin decides which are accessible and who can log in.
+
+| URL | What it does |
+|---|---|
+| `/chat` | AI chat in the browser — same as Discord chat but accessible from any device |
+| `/inpainting` | Image editor for AI inpainting (see [Editing Images](#editing-images-inpainting)) |
+| `/bard` | Bard music player and library manager |
+| `/wiki` | AI-generated wiki for your channel — articles written from conversation history |
+| `/docs` | Project documentation viewer |
+| `/config` | Config editor (admin only) |
+| `/dashboard` | Live bot status dashboard (admin only) |
+| `/context` | Conversation context editor (admin only) |
+
+To log in, navigate to any of these pages and you will be redirected to Discord OAuth2 login if authentication is required. Once logged in, your access is determined by the role your server admin assigned to your Discord account.
+
+---
+
+## AI Wiki
+
+If your admin has set up the wiki, you can browse it at **`/wiki`**. Each channel has its own wiki at `/wiki/{channelId}`.
+
+### Reading articles
+
+Browse directly or use the search bar on the channel wiki page. Articles are generated from the channel's conversation history using AI.
+
+### Searching and generating
+
+1. Type a search term (e.g. a character name, location, or event from your campaign).
+2. If a matching article exists, it appears immediately.
+3. If you have **creator** or **admin** rights and no article exists, Jenny generates one automatically using the channel's conversation history.
+
+### Article expiry
+
+Unedited articles expire after a configurable number of days (shown with a colour-coded badge). Once an article has been manually edited by an editor or admin, it is retained permanently.
+
+---
+
 ## Slash Commands Reference
 
 These commands are available to all users (unless marked **Admin**).
@@ -345,6 +423,8 @@ These commands are available to all users (unless marked **Admin**).
 | `/macro run <name>` | Everyone | Run a macro immediately (without a message) |
 | `/join` | Everyone | Jenny joins your current voice channel |
 | `/leave` | Everyone | Jenny leaves the voice channel |
+| `/bardstart` | Everyone | Start the Bard music scheduler for this server |
+| `/bardstop` | Everyone | Stop the Bard music scheduler |
 | `/avatar url <url>` | **Admin** | Set Jenny's avatar from an image URL |
 | `/avatar prompt <text>` | **Admin** | Add text to the avatar prompt and regenerate |
 | `/avatar regen` | **Admin** | Regenerate avatar using the current prompt |
@@ -424,6 +504,13 @@ Run `/gdpr text 1` in the channel. Jenny will send you a DM with the privacy not
 
 Ask your server admin to run `/purgedb` to clear Jenny's conversation database for the channel.
 
+**Bard music doesn't play**
+
+- Make sure `/bardstart` has been used in the server.
+- Open `/bard` in your browser and click **▶ Zum Anhören klicken** to start the stream.
+- If the Now Playing card shows no track, the music library may be empty. Ask your admin to add MP3 files.
+- If labels are shown as grey, the AI hasn't classified the session yet — this happens on the first run. It will update within a few minutes.
+
 ---
 
-*User guide generated 2026-02-26.*
+*User guide updated 2026-03-14.*

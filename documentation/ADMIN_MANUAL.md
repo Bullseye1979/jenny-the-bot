@@ -68,10 +68,21 @@
 14. [Reverse Proxy (Caddy)](#14-reverse-proxy-caddy)
 15. [Discord Bot Permissions](#15-discord-bot-permissions)
 16. [Web Modules](#16-web-modules)
-17. [Web Module Permission Concept](#17-web-module-permission-concept)
-18. [Creating a New Web Module](#18-creating-a-new-web-module)
-19. [Bard Music System](#19-bard-music-system)
-20. [Dependencies](#20-dependencies)
+   - 16.1 [Overview](#161-overview)
+   - 16.2 [Config Editor (`/config`)](#162-config-editor-config)
+   - 16.3 [Chat SPA (`/chat`)](#163-chat-spa-chat)
+   - 16.4 [Inpainting SPA (`/inpainting`)](#164-inpainting-spa-inpainting)
+   - 16.5 [Bard Library Manager (`/bard`)](#165-bard-library-manager-bard)
+   - 16.6 [Live Dashboard (`/dashboard`)](#166-live-dashboard-dashboard)
+   - 16.7 [Documentation Browser (`/docs`)](#167-documentation-browser-docs)
+   - 16.8 [AI Wiki (`/wiki`)](#168-ai-wiki-wiki)
+   - 16.9 [Context Editor (`/context`)](#169-context-editor-context)
+   - 16.10 [Authentication & SSO (`/auth`)](#1610-authentication--sso-auth)
+   - 16.11 [Navigation Menu](#1611-navigation-menu)
+   - 16.12 [Permission Concept](#1612-permission-concept)
+   - 16.13 [Creating a New Web Module](#1613-creating-a-new-web-module)
+17. [Bard Music System](#17-bard-music-system)
+18. [Dependencies](#18-dependencies)
 
 ---
 
@@ -1612,7 +1623,7 @@ Use a number between `00045` and `00049` to run before AI processing, or higher 
 
 **Step 2 — Module skeleton**
 
-See [Section 17: Creating a New Web Module](#17-creating-a-new-web-module) for the full template and guidelines.
+See [Section 16.13: Creating a New Web Module](#1613-creating-a-new-web-module) for the full template and guidelines.
 
 **Step 3 — Add config section to `core.json`**
 
@@ -1721,6 +1732,7 @@ export default async function myModule(coreData) {
 |---|---|---|
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
+| 00019 | `bard-voice-gate` | Gates the discord-voice flow: if the speaking user is the Bard bot itself (detected by matching user ID against a configured bot ID), the pipeline is stopped so the bot's own music audio is not transcribed |
 | 00020 | `discord-channel-gate` | Checks whether the bot is allowed to respond in this channel |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
@@ -1730,6 +1742,8 @@ export default async function myModule(coreData) {
 | 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
+| 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, role, roles). Login/logout routes handled on the configured `loginPort`. Handles OAuth2 callback and session cookie lifecycle. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports` |
+| 00043 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
 | 00045 | `webpage-inpaint` | Image inpainting redirect for web content |
 | 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
@@ -2515,7 +2529,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 
 ## 16. Web Modules
 
-### Web Module Overview
+### 16.1 Overview
 
 | Module File | Port | URL Prefix | Config Key | Purpose |
 |---|---|---|---|---|
@@ -2539,6 +2553,8 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 
 ### HTTP Routes per Module
 
+### 16.2 Config Editor (`/config`, port 3111)
+
 **Config Editor (port 3111, /config):**
 - `GET /config` — renders the visual config editor UI (role-gated via `allowedRoles`)
 - `GET /config/style.css` — serves shared CSS
@@ -2560,12 +2576,16 @@ The editor renders each object as a collapsible card. Object titles are derived 
 
 All structural changes (add/remove) immediately re-render the tree and mark the config as dirty. After adding, the affected section automatically opens and scrolls into view. After deleting, the scroll position is preserved. Changes are not written to disk until **Save** is clicked (or Ctrl+S).
 
+### 16.3 Chat SPA (`/chat`, port 3112)
+
 **Chat (port 3112, /chat):**
 - `GET /chat` — renders the chat SPA
 - `GET /chat/style.css` — serves shared CSS
 - `GET /chat/api/chats` — returns list of available chat channels (role-filtered)
 - `GET /chat/api/messages?channelID=xxx` — fetches message history for a channel
 - `POST /chat/api/messages` — sends a message to a Discord channel
+
+### 16.4 Inpainting SPA (`/inpainting`, port 3113)
 
 **Inpainting (port 3113, /inpainting):**
 - `GET /inpainting` — renders the inpainting SPA
@@ -2574,6 +2594,8 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /inpainting/auth/token` — generates auth token for deep links
 - `GET /documents/*.png` — redirected here by module 00045
 
+### 16.5 Bard Library Manager (`/bard`, port 3114)
+
 **Bard (port 3114, /bard):**
 - `GET /bard` — renders the music library manager UI
 - `GET /bard/style.css` — serves shared CSS
@@ -2581,6 +2603,8 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `POST /bard/api/autotag-upload` — bulk upload: saves MP3, queries Tavily for song context, calls LLM to generate 5 tags, writes library.xml entry. Returns `{ok, filename, title, tags}`. Requires `config["webpage-bard"].autoTag.enabled = true`.
 - `POST /bard/api/tags` — updates track metadata (title, tags, volume)
 - `DELETE /bard/api/track` — deletes a track and its MP3 file
+
+### 16.6 Live Dashboard (`/dashboard`, port 3115)
 
 **Dashboard (port 3115, /dashboard):**
 - `GET /dashboard` — renders the live bot telemetry dashboard (role-gated)
@@ -2598,6 +2622,8 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 }
 ```
 
+### 16.7 Documentation Browser (`/docs`, port 3116)
+
 **Documentation (port 3116, /docs):**
 - `GET /docs` — renders the project documentation index
 - `GET /docs/<page>` — renders individual documentation pages
@@ -2612,6 +2638,8 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
   "allowedRoles": []
 }
 ```
+
+### 16.8 AI Wiki (`/wiki`, port 3117)
 
 **AI Wiki (port 3117, /wiki):**
 - `GET /wiki` — lists all configured channel wikis (public ones visible without auth)
@@ -2707,6 +2735,22 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 - Articles stored in MySQL table `wiki_articles` (auto-created on first start)
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 
+#### WorkingObject Handling (Article Generation)
+
+The wiki module does **not** use the main `workingObject` for its AI calls. Instead, `callPipelineForArticle` constructs a **synthetic `workingObject`** populated from the `overrides` block and passes it directly to `core-ai-completions`. This means:
+
+- The wiki AI call is fully isolated from the Discord/API flow context
+- `wo.systemPrompt`, `wo.model`, `wo.temperature`, `wo.tools`, `wo.persona`, `wo.instructions` are all set from `config["webpage-wiki"].overrides`
+- `wo.channelID` is set to the wiki's channel ID for `getInformation` / `getTimeline` tool calls (so they query the right channel's conversation history)
+- `wo.doNotWriteToContext = true` — article generation never writes to the conversation context
+- `wo.includeHistory = false` — no chat history is injected; the AI works purely from tool results
+- `wo.payload` = the user's search query (becomes the article subject)
+- `wo.flow = "webpage"` — tools like `getInformation` and `getTimeline` use `wo.channelID` directly
+
+This pattern allows the wiki to reuse the shared AI pipeline (with full tool-call support, multi-loop retries, etc.) without coupling its AI parameters to the global `workingObject` defaults.
+
+### 16.9 Context Editor (`/context`, port 3118)
+
 **Context Editor (port 3118, /context):**
 - `GET /context` — renders the Context DB editor SPA (admin only)
 - `GET /context/style.css` — serves CSS
@@ -2744,7 +2788,7 @@ Add `3118` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`.
 
 ---
 
-## 16.4 Inpainting SPA (`/inpainting`, port 3113)
+#### Inpainting SPA — Extended Details
 
 The inpainting module provides a browser-based image editing tool that lets users load an image, paint a mask over areas they want to change, write a prompt, and submit the request to a Stable Diffusion inpainting backend.
 
@@ -2811,7 +2855,94 @@ Module `00045-webpage-inpaint.js` redirects `GET /documents/*.png` requests to t
 
 ---
 
-## 17. Web Module Permission Concept
+### 16.10 Authentication & SSO (`/auth`)
+
+**File:** `modules/00041-webpage-auth.js`
+**Config key:** `webpage-auth`
+
+Provides Discord OAuth2 SSO (Single Sign-On) for all web modules. Runs as a **passive module** — it processes every request on listed ports, sets `wo.webAuth` if a valid session cookie is present, and lets the request continue normally. It does not block or respond unless the URL is an `/auth/*` route.
+
+**Routes:**
+- `GET /auth/login` — redirects to Discord OAuth2 authorize URL
+- `GET /auth/callback` — handles OAuth2 code exchange, sets session cookie, redirects to `/`
+- `GET /auth/logout` — clears session cookie, redirects to `/`
+
+**`wo.webAuth` object (set on authenticated requests):**
+```json
+{ "username": "alice", "userId": "123456789", "role": "admin", "roles": ["admin", "staff"] }
+```
+
+If no valid session exists, `wo.webAuth` is not set.
+
+**core.json configuration:**
+```json
+"webpage-auth": {
+  "flow":        ["webpage"],
+  "clientId":    "YOUR_DISCORD_CLIENT_ID",
+  "clientSecret": "YOUR_DISCORD_CLIENT_SECRET",
+  "redirectUri": "",
+  "loginPort":   3111,
+  "ports":       [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118],
+  "sessionTtlMs": 86400000,
+  "users": [
+    { "discordId": "YOUR_DISCORD_USER_ID", "role": "admin" }
+  ]
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `clientId` | string | Discord application client ID |
+| `clientSecret` | string | Discord application client secret |
+| `redirectUri` | string | OAuth2 callback URL. Empty string = auto-derived from HTTP `Host` header (supports multiple domains) |
+| `loginPort` | number | The port that handles `/auth/*` routes (login, callback, logout) |
+| `ports` | array | All ports where the module runs passively to set `wo.webAuth` |
+| `sessionTtlMs` | number | Session cookie lifetime in milliseconds (default: 24 h) |
+| `users[].discordId` | string | Discord user ID |
+| `users[].role` | string | Role string (`"admin"`, `"editor"`, etc.) assigned to this user |
+
+> **Multi-domain setup:** Set `redirectUri: ""` to auto-detect the callback URL from the `Host` header. Register every domain's callback URL in the Discord Developer Portal under OAuth2 → Redirects.
+
+---
+
+### 16.11 Navigation Menu
+
+**File:** `modules/00043-webpage-menu.js`
+**Config key:** `webpage-menu`
+
+Sets `wo.web.menu` for every webpage request. Menu items are defined globally in `config["webpage-menu"].items[]` and filtered by the user's role before being passed to individual modules. Each module calls `getMenuHtml(wo)` to render the nav bar.
+
+**core.json configuration:**
+```json
+"webpage-menu": {
+  "flow": ["webpage"],
+  "items": [
+    { "text": "💬 Chat",          "link": "/chat"      },
+    { "text": "🖼 Inpainting",    "link": "/inpainting"},
+    { "text": "🎵 Bard",          "link": "/bard",       "roles": ["admin"] },
+    { "text": "📊 Dashboard",     "link": "/dashboard",  "roles": ["admin"] },
+    { "text": "⚙️ Config",         "link": "/config",     "roles": ["admin"] },
+    { "text": "📚 Docs",           "link": "/docs"       },
+    { "text": "📖 Wiki",           "link": "/wiki"       },
+    { "text": "🗄 Context",        "link": "/context",    "roles": ["admin"] }
+  ]
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `items[].text` | string | Display label for the menu item (supports emoji) |
+| `items[].link` | string | URL path the item links to |
+| `items[].roles` | array | If set, only users with a matching role see this item. Omit or leave empty for public items |
+
+**Visibility rules:**
+- Items without `roles` → always shown
+- Items with `roles` → only shown if `wo.webAuth.role` matches one of the listed roles
+- Unauthenticated users see only items without role restrictions
+
+---
+
+### 16.12 Permission Concept
 
 Jenny's web modules use a layered permission system. Three independent components decide what a user can see and access:
 
@@ -2901,7 +3032,7 @@ function getIsAllowed(wo, allowedRoles) {
 
 ---
 
-## 18. Creating a New Web Module
+### 16.13 Creating a New Web Module
 
 The following template shows the standard pattern for a new webpage module.
 
@@ -2984,11 +3115,11 @@ export default async function getWebpageMyModule(coreData) {
    - `"allowedRoles": []` — page is public (no login required)
    - `"allowedRoles": ["admin"]` — only users with the `admin` role can access the page
 
-See [§17 Web Module Permission Concept](#17-web-module-permission-concept) for the full rules.
+See [§16.12 Permission Concept](#1612-permission-concept) for the full rules.
 
 ---
 
-## 19. Bard Music System
+## 17. Bard Music System
 
 ### Overview
 
@@ -3065,7 +3196,7 @@ Track end timer — song ended naturally
 
 ### Music Library (library.xml)
 
-Located at: `assets/bard/library.xml` (configurable via `core.json["bard"]["musicDir"]`)
+Located at: `assets/bard/library.xml` (configurable via `config["webpage-bard"].musicDir` in `core.json`)
 
 **Auto-creation:** If `library.xml` (or the music directory itself) does not exist when the bard flow starts, both are created automatically. The new file contains an empty `<library>` element. No manual setup is required; simply drop MP3 files into the music directory and add tracks via the Bard UI.
 
@@ -3099,14 +3230,33 @@ Fields:
 
 ### Song Selection Algorithm
 
-1. **Scheduler started** — `/bardstart` seeds `bard:labels` with `["default"]`. Tracks tagged `default` score 1; all others score 0. Best-fit selection picks from `default`-tagged tracks (or all tracks as fallback if none are tagged `default`). The cron job overwrites this with real mood labels on its next run.
-2. **Labels empty** (edge case — e.g. cron produced no valid tags and label state was cleared) — if a song is currently playing, it is kept unchanged. If no song is playing, a random track from the full library is picked.
-3. **Current track still matches at least one active label** — keep playing (no change).
-4. **Current track no longer matches any active label** — switch immediately (mid-track):
-   - Score every track by count of matching labels.
-   - **Best fit always wins**: only tracks with the highest score are candidates. A track with 2 matches beats all tracks with 1 match, even if there is only one best-fit track.
-   - **Repeat-blocker** (exclude last-played) is only applied when more than one track shares the best score — if there is exactly one best-fit track it always plays regardless.
-5. **Song ends naturally** — the track advancement timer fires (`ffprobe duration + 200 ms`), calls `triggerPoll()`, and an immediate poll cycle begins. `bard:stream` and `bard:nowplaying` are **not** cleared on track end — the poll overwrites them atomically when the next track starts. The last-played filename is stored in `session._lastPlayedFile` to ensure the just-finished track is excluded even before the new entry is written.
+`getSelectSong` uses **bidirectional position-weighted scoring** to find the best track for the current AI labels.
+
+**Scoring:**
+- AI labels carry descending weights: 1st label = N points, 2nd = N−1, …, last = 1 point.
+  Example: `["combat","vampire","dungeon"]` → combat=3, vampire=2, dungeon=1
+- Track tags also carry descending weights: 1st tag = highest weight (most characteristic), last = lowest.
+  Example: track with tags `["combat","dungeon","exploration"]` → combat=3, dungeon=2, exploration=1
+- A matching pair scores: **AI label weight × track tag weight**.
+  Example: combat(AI=3) × combat(track=3) = 9; dungeon(AI=1) × dungeon(track=2) = 2 → total = 11
+
+This means a track where the primary AI mood (e.g. "combat") is also the track's primary tag (position 0) scores highest — both dimensions reinforce each other.
+
+**Selection process:**
+1. Score all tracks in the library.
+2. Find `maxScore`.
+3. If the **current track is already the unique best match** (no other track ties or exceeds it) → return `null` (no change, keep playing).
+4. From all tracks with `maxScore`: exclude the `excludeFile` (= recently played file) for variety, unless all best-fit tracks are the same file.
+5. Return a **random pick** from the remaining candidates.
+
+**Full lifecycle:**
+1. **Scheduler started** (`/bardstart`) — seeds `bard:labels` with `["default"]`. Tracks tagged `default` score highest; the cron job overwrites this with real mood labels on its first run.
+2. **Labels empty** (edge case) — if a song is playing, keep it unchanged. If nothing plays, pick a random track.
+3. **Labels unchanged** (new AI labels identical to `nowPlaying.labels`) — keep playing. No switch.
+4. **Labels changed** — call `getSelectSong`; if current is already best fit → keep playing. Otherwise switch to best-fit track immediately.
+5. **Song ends naturally** — `setTimeout` fires (ffprobe duration + 200 ms), calls `triggerPoll()`. Poll overwrites `bard:stream` and `bard:nowplaying` atomically when the next track starts.
+
+**Prompt ordering:** The LLM is instructed to output the 3 tags **in priority order** (most fitting first). This means the first label always carries the highest weight in scoring — rank carefully.
 
 ### Slash Commands
 
@@ -3196,7 +3346,9 @@ The prompt template may contain two placeholders replaced at runtime:
 | `{{TAGS}}` | Comma-separated list of all unique tags found in `library.xml` |
 | `{{CURRENT_LABELS}}` | The three labels currently active for this guild (e.g. `combat,intense,dark`), or `none` if no labels have been set yet |
 
-The built-in default prompt instructs the LLM to **always classify the current situation from the transcript** — the current labels are included only as **reference context**, not as a value to preserve. The LLM always picks the 3 tags that best describe what is happening right now.
+The built-in default prompt instructs the LLM to:
+1. **Always classify the current situation from the transcript** — the current labels are included only as **reference context**, not as a value to preserve.
+2. **Order the 3 tags by importance** — the most fitting tag comes first. This matters because the scoring system assigns the highest weight to the first label, so ranking affects which track is selected.
 
 **Song-switch logic:** The bard scheduler uses **label-change detection** combined with **best-fit selection**:
 1. The new AI labels are compared to `nowPlaying.labels` (the labels that were active when the current track started).
@@ -3245,7 +3397,7 @@ This means the label-gen AI call:
 
 ---
 
-## 20. Dependencies
+## 18. Dependencies
 
 | Package | Version | Purpose |
 |---|---|---|
