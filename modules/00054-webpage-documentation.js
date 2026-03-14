@@ -322,7 +322,7 @@ document.addEventListener("click", function(e) {
 </head>
 <body>
 <header>
-  <h1>Docs</h1>
+  <h1>📖 Docs</h1>
   ${menuHtml}
 </header>
 <div class="doc-layout">

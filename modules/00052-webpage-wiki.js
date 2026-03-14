@@ -489,7 +489,7 @@ function buildPageHeader(title, basePath, channelId, menu, role) {
   </div>
   <div class="wiki-header-bar">
     <a class="wiki-logo-link" href="${escHtml(chPath)}">
-      <span class="wiki-logo">📖</span>
+      <span class="wiki-logo">🗺️</span>
       <span class="wiki-title">${escHtml(title)}</span>
     </a>
     ${channelId ? `<form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get">
