@@ -2619,9 +2619,9 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /wiki/{channelId}` — channel homepage (search bar + recent articles)
 - `GET /wiki/{channelId}/{slug}` — article page (Fandom-style layout)
 - `GET /wiki/{channelId}/{slug}/edit` — editor/admin: edit form
-- `GET /wiki/{channelId}/search?q=` — search; single hit redirects, multiple hits shows list, no hit triggers generation (creator/admin only)
+- `GET /wiki/{channelId}/search?q=` — search; always shows results overview (even with a single hit); no hit triggers generation automatically for creator/admin
 - `GET /wiki/{channelId}/images/{filename}` — serves uploaded images
-- `POST /wiki/{channelId}/api/generate` — AJAX: search→generate (creator/admin); returns `{ok,slug}` or `{ok,results:[]}`
+- `POST /wiki/{channelId}/api/generate` — AJAX generate (creator/admin); body `{query, force?}`; without `force`: returns `{ok,slug,existing:true}` or `{ok,results:[]}` if matches found; with `force:true`: always generates a new article, ignoring existing matches; returns `{ok,slug,generated:true}`
 - `POST /wiki/{channelId}/api/upload-image/{slug}` — editor/admin: upload image for article (JSON `{base64,ext}`)
 - `POST /wiki/{channelId}/{slug}/edit` — editor/admin: save edited article (JSON body)
 - `DELETE /wiki/{channelId}/api/article/{slug}` — editor/admin: delete article row

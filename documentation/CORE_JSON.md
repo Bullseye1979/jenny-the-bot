@@ -692,6 +692,8 @@ AI settings (model, temperature, tools, system prompt) are fixed in the module �
 
 - Channel not in `channels[]` → HTTP 404
 - AI uses **only tool results** as facts — `getInformation` and `getTimeline` are both mandatory; events always in **chronological order**
+- Search always shows the results overview — even a single match never auto-redirects to the article
+- The "Generate new article" button passes `force: true` to `/api/generate`, bypassing the existing-article check and always creating a new article
 - Non-creator users see search results but no generate button/spinner
 - **Image generation** is a required step in the AI prompt — every new article triggers a `getImage` call. AI-generated images are stored in `pub/documents/`; uploaded images in `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be set, otherwise the image URL in the DB is `null`.
 - Only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL; edited articles are permanently retained

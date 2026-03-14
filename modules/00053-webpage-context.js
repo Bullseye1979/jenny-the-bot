@@ -467,6 +467,8 @@ var isSearchMode = false;
 var lastQ = '';
 var selectedIds = new Set();
 var srMatches = [];
+var srDone = new Set();
+var srSkippedSet = new Set();
 var editCtxId = null;
 var editOrig = {};
 
@@ -781,6 +783,8 @@ async function findMatches() {
   document.getElementById('sr-count').textContent = 'Searching…';
   document.getElementById('sr-results-list').innerHTML = '';
   srMatches = [];
+  srDone.clear();
+  srSkippedSet.clear();
   try {
     var data = await api('/api/replace/find', 'POST', { search: q, channel: currentChannel, fields: getSrFields() });
     srMatches = data.matches || [];
@@ -803,6 +807,8 @@ function renderSrMatches(q) {
       ? (mode === 'full' ? trunc(rep, 300) : trunc(String(m.value || '').split(q).join(rep), 300))
       : '';
     var afterH = rep ? escHtml(afterText) : '<span style="color:#555">(Enter replacement text)</span>';
+    var isDone    = srDone.has(i);
+    var isSkipped = srSkippedSet.has(i);
     item.innerHTML =
       '<div class="sr-item-info">' +
         '<div class="sr-item-meta">ID: ' + escHtml(String(m.ctx_id)) + ' &nbsp;|&nbsp; ch: ' + escHtml(m.channel) + ' &nbsp;|&nbsp; field: ' + escHtml(m.field) + '</div>' +
@@ -810,9 +816,13 @@ function renderSrMatches(q) {
         '<div class="sr-item-after">→ ' + afterH + '</div>' +
       '</div>' +
       '<div class="sr-item-actions">' +
-        '<button class="btn-primary btn-apply" data-i="' + i + '">Replace</button>' +
-        '<button class="btn-secondary btn-skip" data-i="' + i + '">Skip</button>' +
+        (isDone
+          ? '<span class="sr-status">✓ Done</span>'
+          : '<button class="btn-primary btn-apply" data-i="' + i + '">Replace</button>' +
+            '<button class="btn-secondary btn-skip" data-i="' + i + '">Skip</button>') +
       '</div>';
+    if (isDone)    item.classList.add('replaced');
+    if (isSkipped) item.classList.add('skipped');
     list.appendChild(item);
   });
   list.querySelectorAll('.btn-apply').forEach(function (btn) {
@@ -820,7 +830,9 @@ function renderSrMatches(q) {
   });
   list.querySelectorAll('.btn-skip').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var el = document.getElementById('sr-item-' + this.dataset.i);
+      var idx = parseInt(this.dataset.i, 10);
+      srSkippedSet.add(idx);
+      var el = document.getElementById('sr-item-' + idx);
       if (el) el.classList.add('skipped');
     });
   });
@@ -834,6 +846,7 @@ async function applySingle(i) {
   if (!search) { alert('Search text is empty.'); return; }
   try {
     await api('/api/replace/apply', 'POST', { ctx_id: m.ctx_id, field: m.field, search: search, replace: replace, mode: mode });
+    srDone.add(i);
     var el = document.getElementById('sr-item-' + i);
     if (el) {
       el.classList.add('replaced');

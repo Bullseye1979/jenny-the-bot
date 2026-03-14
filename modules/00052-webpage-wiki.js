@@ -1027,14 +1027,14 @@ function wikiGenerate(e) {
   if (e) e.preventDefault();
   document.getElementById('wiki-results').innerHTML =
     '<div class="wiki-spinner-wrap"><div class="wiki-spinner"></div><div class="wiki-spinner-msg">Generating article\u2026 this may take a moment.</div></div>';
-  wikiDoGenerate();
+  wikiDoGenerate(true);
 }
 
-function wikiDoGenerate() {
+function wikiDoGenerate(force) {
   fetch(WIKI_BASE + '/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: WIKI_QUERY })
+    body: JSON.stringify({ query: WIKI_QUERY, force: force === true })
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
@@ -1223,17 +1223,20 @@ export default async function getWebpageWiki(coreData) {
 
     if (!query) { await sendJson(wo, 400, { ok: false, error: "Missing query" }); return coreData; }
 
-    /* Search first */
-    let results = [];
-    try { results = await dbSearchArticles(db, channelId, query, maxAgeDays); } catch { results = []; }
+    const force = bodyJson.force === true;
 
-    if (results.length === 1) {
-      await sendJson(wo, 200, { ok: true, slug: results[0].slug, existing: true });
-      return coreData;
-    }
-    if (results.length > 1) {
-      await sendJson(wo, 200, { ok: true, results: results.map(r => ({ slug: r.slug, title: r.title })) });
-      return coreData;
+    /* Search first — skip if user explicitly requested generation */
+    if (!force) {
+      let results = [];
+      try { results = await dbSearchArticles(db, channelId, query, maxAgeDays); } catch { results = []; }
+      if (results.length === 1) {
+        await sendJson(wo, 200, { ok: true, slug: results[0].slug, existing: true });
+        return coreData;
+      }
+      if (results.length > 1) {
+        await sendJson(wo, 200, { ok: true, results: results.map(r => ({ slug: r.slug, title: r.title })) });
+        return coreData;
+      }
     }
 
     /* Generate new article — pre-load channel context, then run pipeline */
@@ -1292,16 +1295,6 @@ export default async function getWebpageWiki(coreData) {
     }
     let results = [];
     try { results = await dbSearchArticles(db, channelId, query, maxAgeDays); } catch { results = []; }
-    if (results.length === 1) {
-      /* Single match → redirect directly to article */
-      wo.http.response = {
-        status: 302,
-        headers: { "Location": `${basePath}/${channelId}/${results[0].slug}`, "Content-Type": "text/plain" },
-        body: ""
-      };
-      await setSendNow(wo);
-      return coreData;
-    }
     const html = buildSearchPage(channel, query, results, basePath, menu, role, isCreator);
     await sendHtml(wo, 200, html);
     return coreData;
