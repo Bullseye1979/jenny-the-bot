@@ -1,6 +1,6 @@
 /************************************************************************************/
 /* filename: bard-cron.js                                                          *
-/* Version 2.0                                                                     *
+/* Version 1.0                                                                     *
 /* Purpose: Prepares the bard-label-gen flow payload for core-ai-completions.      *
 /*          Reads channel context, builds a system prompt (tag list + current       *
 /*          labels) and sets wo.payload so the shared AI pipeline can run.          *

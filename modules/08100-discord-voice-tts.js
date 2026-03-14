@@ -1,6 +1,6 @@
 /**************************************************************/
 /* filename: "discord-voice-tts.js"                            */
-/* Version: 1.0                                                */
+/* Version 1.0                                                 */
 /* Purpose: Speak wo.response with optional [Speaker: <voice>]  */
 /*          tags, prerender segments, and play sequentially     */
 /* Notes:                                                      */

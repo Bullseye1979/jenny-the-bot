@@ -1,50 +1,23 @@
-/************************************************************************************
-/* filename: webpage-menu.js                                                       *
-/* Version 1.0                                                                     *
-/* Purpose: Global menu provider for webpage flows; filters items by webAuth role. *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-/* filename: "webpage-menu.js"                                */
-/* Version 1.3                                                */
-/* Purpose: Global menu provider. Sets wo.web.menu from config */
-/*          and filters by wo.webAuth.role (if present).       */
-/*          Fallback: if role is missing => build all items    */
-/*          and ignore role restrictions.                      */
-/**************************************************************/
+/**********************************************************************************/
+/* filename: 00043-webpage-menu.js                                                */
+/* Version 1.0                                                                    */
+/* Purpose: Global menu provider for webpage flows. Sets wo.web.menu from config  */
+/*          and filters items by wo.webAuth.role (if present).                    */
+/*          If no role is set, all items without role restriction are shown.       */
+/**********************************************************************************/
 
 "use strict";
 
 const MODULE_NAME = "webpage-menu";
 
-/**************************************************************/
-/* functionSignature: getNormFlow (wo)                        */
-/**************************************************************/
 function getNormFlow(wo) {
   return String(wo?.flow || "").trim().toLowerCase();
 }
 
-/************************************************************************************/
-/* functionSignature: getNormRoleOrEmpty (wo)                                      *
-/* the normalized role string or empty string when not set.                        *
-/************************************************************************************/
 function getNormRoleOrEmpty(wo) {
   return String(wo?.webAuth?.role || "").trim().toLowerCase();
 }
 
-/**************************************************************/
-/* functionSignature: getIsAllowed (role, rolesArr)           */
-/**************************************************************/
 function getIsAllowed(role, rolesArr) {
   const roles = Array.isArray(rolesArr)
     ? rolesArr.map(r => String(r || "").trim().toLowerCase()).filter(Boolean)
@@ -63,9 +36,6 @@ function getIsAllowed(role, rolesArr) {
   return roles.includes(role);
 }
 
-/**************************************************************/
-/* functionSignature: getWebpageMenu (coreData)               */
-/**************************************************************/
 export default async function getWebpageMenu(coreData) {
   const wo = coreData?.workingObject || {};
 

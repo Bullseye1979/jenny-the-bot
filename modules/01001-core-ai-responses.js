@@ -1,6 +1,6 @@
 /********************************************************************************
 /* filename: "core-ai-responses.js"                                             *
-/* Version 1                                                                    *
+/* Version 1.0                                                                  *
 /* Purpose: Responses runner (GPT-5) with context translation, real tool        *
 /*          handling, image persistence, and file-based logging (no console).   *
 /*          Accumulates reasoning summaries across iterations (incl. tool calls)*

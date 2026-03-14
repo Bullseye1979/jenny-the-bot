@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-03-11
+> **Version:** 1.0 · **Date:** 2026-03-14
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -1289,7 +1289,7 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
   "flow":           ["webpage"],
   "enabled":        true,
   "loginPort":      3111,
-  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117],
+  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118],
   "clientId":       "YOUR_DISCORD_APP_CLIENT_ID",
   "clientSecret":   "YOUR_DISCORD_APP_CLIENT_SECRET",
   "guildId":        "YOUR_DISCORD_GUILD_ID",
@@ -1360,6 +1360,7 @@ Every module can be restricted to specific flows via its config block:
 | `webpage-dashboard` | webpage |
 | `webpage-documentation` | webpage |
 | `webpage-wiki` | webpage |
+| `webpage-context` | webpage |
 
 ---
 
@@ -1735,6 +1736,10 @@ export default async function myModule(coreData) {
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /chat/api/chats`, `GET /chat/api/messages`, `POST /chat/api/messages` on the configured port. The `/chat/api/messages` endpoint filters out records with `internal_meta: true`, empty content, and lines starting with `META|` before returning them to the browser. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
+| 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
+| 00052 | `webpage-wiki` | AI-driven Fandom-style wiki (port 3117, `/wiki`) |
+| 00053 | `webpage-context` | Context DB editor SPA (port 3118, `/context`) — channel browser, field selector, search, search & replace, bulk delete |
+| 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) |
 | 00055 | `core-admin-commands` | Core admin operations (purge, freeze, DB commands) |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
@@ -2433,6 +2438,7 @@ jenny.example.com {
     reverse_proxy /dashboard*    localhost:3115
     reverse_proxy /docs*         localhost:3116
     reverse_proxy /wiki*         localhost:3117
+    reverse_proxy /context*      localhost:3118
     reverse_proxy /auth*         localhost:3111
     reverse_proxy *              localhost:3400
 }
@@ -2456,6 +2462,7 @@ jenny.example.com, jenny.example2.com {
     reverse_proxy /dashboard*    localhost:3115
     reverse_proxy /docs*         localhost:3116
     reverse_proxy /wiki*         localhost:3117
+    reverse_proxy /context*      localhost:3118
     reverse_proxy /auth*         localhost:3111
     reverse_proxy *              localhost:3400
 }
@@ -2486,6 +2493,7 @@ If `redirectUri` is set to a specific URL, only that domain is used for all OAut
 | 3115 | Live Dashboard (`/dashboard`) |
 | 3116 | Documentation (`/docs`) |
 | 3117 | AI Wiki (`/wiki`) |
+| 3118 | Context Editor (`/context`) |
 
 ---
 
@@ -2518,6 +2526,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00051-webpage-dashboard.js` | 3115 | `/dashboard` | `webpage-dashboard` | Live bot telemetry dashboard |
 | `00054-webpage-documentation.js` | 3116 | `/docs` | `webpage-documentation` | Renders the project documentation as HTML pages |
 | `00052-webpage-wiki.js` | 3117 | `/wiki` | `webpage-wiki` | AI-driven Fandom-style wiki, per-channel, with DALL-E images |
+| `00053-webpage-context.js` | 3118 | `/context` | `webpage-context` | Context DB editor — browse, search, search & replace, bulk-delete conversation rows |
 
 ### How Web Modules Work
 
@@ -2672,6 +2681,41 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 - **Image generation** is mandatory per article (`getImage` is a required step in the AI prompt). AI-generated images → `pub/documents/`; uploaded images → `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be configured.
 - Articles stored in MySQL table `wiki_articles` (auto-created on first start)
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+
+**Context Editor (port 3118, /context):**
+- `GET /context` — renders the Context DB editor SPA (admin only)
+- `GET /context/style.css` — serves CSS
+- `GET /context/api/channels` — returns `{channels: [{id, cnt}]}` — all distinct channel IDs with row counts, via SQL `GROUP BY`
+- `GET /context/api/columns` — returns `{columns: [{name, type}]}` — column names and types from `INFORMATION_SCHEMA.COLUMNS`
+- `GET /context/api/records?channel=&page=&limit=&fields=` — paginated record list; returns `{rows, total, page, pages}`
+- `GET /context/api/search?q=&channel=&fields=&searchFields=` — full-text search in `text` and/or `json` column; paginated
+- `DELETE /context/api/delete` — bulk-delete records; body: `{ids: [ctx_id, ...]}`; returns `{ok, deleted}`
+- `POST /context/api/replace/find` — find all records matching a search string; body: `{search, channel?, fields}`; returns `{matches: [{ctx_id, channel, field, value}]}`
+- `POST /context/api/replace/apply` — replace in a single record; body: `{ctx_id, field, search, replace, mode?}`; `mode` is `"partial"` (default, replaces matched substring) or `"full"` (overwrites entire field value); returns `{ok, affected}`
+- `POST /context/api/replace/all` — replace all matches at once; body: `{search, replace, channel?, fields, mode?}`; same `mode` values; returns `{ok, updated}`
+
+**SPA features:**
+
+| Feature | Description |
+|---|---|
+| Channel sidebar | Lists all distinct `id` values from the `context` table with row counts. Click to filter records to that channel, or select "All channels". |
+| Field selector | Dropdown showing all DB columns (fetched live via `INFORMATION_SCHEMA`). Toggle checkboxes to show/hide columns. Defaults: `ctx_id`, `ts`, `id`, `role`, `text`. |
+| Record table | Paginated, 50 rows per page. Clicking long `text` or `json` cells opens a full-content expand overlay. |
+| Multi-select delete | Checkbox per row + "Select All". Delete button enabled when ≥ 1 row selected. Confirmation required. |
+| Search | Searches the `text` column (default). Results replace the normal record list in-place with a "Clear" button to return. |
+| Search & Replace | Modal with separate "Find Matches" (preview per record with Replace/Skip buttons) and "Replace All (no confirm)" paths. Fields `text` and `json` selectable. Mode toggle: **Replace matched text only** (default, substring replace) or **Replace entire field value** (overwrites the whole field with the replacement). ⚠ `json` replacement operates on raw JSON strings. |
+
+**core.json configuration:**
+```json
+"webpage-context": {
+  "flow": ["webpage"],
+  "port": 3118,
+  "basePath": "/context",
+  "allowedRoles": ["admin"]
+}
+```
+
+Add `3118` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`.
 
 ---
 

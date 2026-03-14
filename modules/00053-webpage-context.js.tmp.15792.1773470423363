@@ -1,0 +1,1102 @@
+/**********************************************************************************/
+/* filename: 00053-webpage-context.js                                             */
+/* Version 1.3                                                                    */
+/* Purpose: Context DB editor SPA — browse (paginated), search, edit,            */
+/*          search & replace, and bulk-delete conversation context rows.          */
+/*          Served on its own port with role-based access control.                */
+/**********************************************************************************/
+
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { getMenuHtml, getDb } from "../shared/webpage/interface.js";
+import { getItem } from "../core/registry.js";
+
+const MODULE_NAME = "webpage-context";
+const __filename   = fileURLToPath(import.meta.url);
+const __dirname    = path.dirname(__filename);
+const CTX_TABLE    = "context";
+const PAGE_SIZE    = 50;
+const SHARED_CSS   = path.join(__dirname, "..", "shared", "webpage", "style.css");
+
+/**********************************************************************************/
+/* Helpers                                                                        */
+/**********************************************************************************/
+function getStr(v) { return typeof v === "string" ? v : v == null ? "" : String(v); }
+function getInt(v, def = 0) { const n = parseInt(v, 10); return isNaN(n) ? def : n; }
+
+function getBasePath(cfg) {
+  const bp = getStr(cfg?.basePath ?? "/context").trim();
+  return bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/context";
+}
+
+function setJsonResp(wo, status, data) {
+  wo.http.response = { status, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify(data) };
+}
+
+function setHtmlResp(wo, html) {
+  wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: html };
+}
+
+function setCssResp(wo, css) {
+  wo.http.response = { status: 200, headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" }, body: css };
+}
+
+async function setSendNow(wo) {
+  const key = wo?.http?.requestKey;
+  if (!key) return;
+  const entry = await Promise.resolve(getItem(key)).catch(() => null);
+  if (!entry?.res) return;
+  const { res } = entry;
+  const r = wo.http?.response || {};
+  res.writeHead(Number(r.status ?? 200), r.headers ?? { "Content-Type": "application/json" });
+  const body = r.body ?? "";
+  res.end(typeof body === "string" ? body : JSON.stringify(body));
+}
+
+function getIsAllowed(wo, allowedRoles) {
+  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
+  if (!req.length) return true;
+  const have = new Set();
+  const primary = getStr(wo?.webAuth?.role).trim().toLowerCase();
+  if (primary) have.add(primary);
+  if (Array.isArray(wo?.webAuth?.roles)) {
+    wo.webAuth.roles.forEach(r => { const v = getStr(r).trim().toLowerCase(); if (v) have.add(v); });
+  }
+  return req.some(r => have.has(getStr(r).trim().toLowerCase()));
+}
+
+function escLike(s) {
+  return getStr(s).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+/**********************************************************************************/
+/* DB queries                                                                     */
+/**********************************************************************************/
+async function dbChannels(pool) {
+  const [rows] = await pool.execute(
+    `SELECT id, COUNT(*) AS cnt FROM ${CTX_TABLE} GROUP BY id ORDER BY id ASC`
+  );
+  return rows.map(r => ({ id: getStr(r.id), cnt: Number(r.cnt) }));
+}
+
+async function dbColumns(pool) {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+       ORDER BY ORDINAL_POSITION`,
+      [CTX_TABLE]
+    );
+    if (rows.length) return rows.map(r => ({ name: getStr(r.COLUMN_NAME), type: getStr(r.DATA_TYPE) }));
+  } catch (_) { /* fall through to defaults */ }
+  /* Fallback: default context table columns */
+  return [
+    { name: "ctx_id",   type: "bigint"   },
+    { name: "ts",       type: "datetime" },
+    { name: "id",       type: "varchar"  },
+    { name: "role",     type: "varchar"  },
+    { name: "turn_id",  type: "varchar"  },
+    { name: "text",     type: "text"     },
+    { name: "json",     type: "text"     }
+  ];
+}
+
+function safeFields(rawFields, fallback) {
+  const safe = rawFields.filter(f => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(f));
+  return safe.length ? safe : fallback;
+}
+
+async function dbRecords(pool, { channel, page, limit, fields }) {
+  const cols = ["ctx_id", ...fields.filter(f => f !== "ctx_id")];
+  const colSql = safeFields(cols, ["ctx_id", "ts", "id", "role", "text"]).join(", ");
+  const offset = (page - 1) * limit;
+  const where  = channel ? "WHERE id = ?" : "";
+  const wParams = channel ? [channel] : [];
+
+  const [[{ total }]] = await pool.execute(
+    `SELECT COUNT(*) AS total FROM ${CTX_TABLE} ${where}`, wParams
+  );
+  const [rows] = await pool.execute(
+    `SELECT ${colSql} FROM ${CTX_TABLE} ${where} ORDER BY ctx_id DESC LIMIT ? OFFSET ?`,
+    [...wParams, limit, offset]
+  );
+  return { rows, total: Number(total), page, pages: Math.ceil(Number(total) / limit) };
+}
+
+async function dbSearch(pool, { channel, q, page, limit, fields, searchFields }) {
+  const cols = ["ctx_id", ...fields.filter(f => f !== "ctx_id")];
+  const colSql  = safeFields(cols, ["ctx_id", "ts", "id", "role", "text"]).join(", ");
+  const sfSafe  = searchFields.filter(f => ["text", "json", "role", "turn_id", "id"].includes(f));
+  if (!sfSafe.length) sfSafe.push("text");
+  const like    = `%${escLike(q)}%`;
+  const offset  = (page - 1) * limit;
+  const chanCond = channel ? "id = ? AND " : "";
+  const srCond   = sfSafe.map(f => `${f} LIKE ?`).join(" OR ");
+  const where    = `WHERE ${chanCond}(${srCond})`;
+  const wParams  = [...(channel ? [channel] : []), ...sfSafe.map(() => like)];
+
+  const [[{ total }]] = await pool.execute(
+    `SELECT COUNT(*) AS total FROM ${CTX_TABLE} ${where}`, wParams
+  );
+  const [rows] = await pool.execute(
+    `SELECT ${colSql} FROM ${CTX_TABLE} ${where} ORDER BY ctx_id DESC LIMIT ? OFFSET ?`,
+    [...wParams, limit, offset]
+  );
+  return { rows, total: Number(total), page, pages: Math.ceil(Number(total) / limit) };
+}
+
+async function dbDelete(pool, ids) {
+  if (!ids.length) return 0;
+  const ph = ids.map(() => "?").join(",");
+  const [r] = await pool.execute(`DELETE FROM ${CTX_TABLE} WHERE ctx_id IN (${ph})`, ids);
+  return r.affectedRows;
+}
+
+async function dbGetRecord(pool, ctx_id) {
+  const [rows] = await pool.execute(`SELECT * FROM ${CTX_TABLE} WHERE ctx_id = ?`, [ctx_id]);
+  return rows[0] || null;
+}
+
+async function dbUpdateRecord(pool, { ctx_id, field, value }) {
+  const allowed = ["text", "json", "role", "id", "turn_id"];
+  if (!allowed.includes(field)) throw new Error("Field not editable: " + field);
+  const [r] = await pool.execute(
+    `UPDATE ${CTX_TABLE} SET \`${field}\` = ? WHERE ctx_id = ?`,
+    [value, ctx_id]
+  );
+  return r.affectedRows;
+}
+
+async function dbFindReplace(pool, { search, channel, searchFields }) {
+  const sf   = searchFields.filter(f => ["text", "json"].includes(f));
+  if (!sf.length) sf.push("text");
+  const like = `%${escLike(search)}%`;
+  const chanCond = channel ? "id = ? AND " : "";
+  const srCond   = sf.map(f => `${f} LIKE ?`).join(" OR ");
+  const where    = `WHERE ${chanCond}(${srCond})`;
+  const wParams  = [...(channel ? [channel] : []), ...sf.map(() => like)];
+
+  const [rows] = await pool.execute(
+    `SELECT ctx_id, id, text, \`json\` FROM ${CTX_TABLE} ${where} ORDER BY ctx_id DESC LIMIT 200`,
+    wParams
+  );
+  const matches = [];
+  for (const row of rows) {
+    for (const field of sf) {
+      const val = getStr(row[field]);
+      if (val.includes(search)) {
+        matches.push({ ctx_id: row.ctx_id, channel: getStr(row.id), field, value: val });
+      }
+    }
+  }
+  return matches;
+}
+
+async function dbApplyReplace(pool, { ctx_id, field, search, replace }) {
+  if (!["text", "json"].includes(field)) throw new Error("Invalid field");
+  const [r] = await pool.execute(
+    `UPDATE ${CTX_TABLE} SET \`${field}\` = REPLACE(\`${field}\`, ?, ?) WHERE ctx_id = ?`,
+    [search, replace, ctx_id]
+  );
+  return r.affectedRows;
+}
+
+async function dbReplaceAll(pool, { search, replace, channel, searchFields }) {
+  const sf = searchFields.filter(f => ["text", "json"].includes(f));
+  if (!sf.length) sf.push("text");
+  const like = `%${escLike(search)}%`;
+  let total = 0;
+  for (const field of sf) {
+    let sql, params;
+    if (channel) {
+      sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = REPLACE(\`${field}\`, ?, ?) WHERE id = ? AND \`${field}\` LIKE ?`;
+      params = [search, replace, channel, like];
+    } else {
+      sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = REPLACE(\`${field}\`, ?, ?) WHERE \`${field}\` LIKE ?`;
+      params = [search, replace, like];
+    }
+    const [r] = await pool.execute(sql, params);
+    total += r.affectedRows;
+  }
+  return total;
+}
+
+/**********************************************************************************/
+/* Module-specific CSS (appended after shared stylesheet)                         */
+/**********************************************************************************/
+function getContextCss() {
+  return `
+/* ── Dark-theme overrides ─────────────────────────────── */
+body{background:#111;color:#e0e0e0;font-size:13px;height:100vh;overflow:hidden}
+header{background:#1e293b;color:#f1f5f9;height:52px;display:flex;align-items:center;padding:0 16px;gap:14px;flex-shrink:0;position:relative;z-index:auto}
+header h1{font-size:15px;font-weight:600;color:#f1f5f9;white-space:nowrap;margin:0;flex-shrink:0}
+.nav-wrap{flex:1;min-width:0}
+/* ── Layout ───────────────────────────────────────────── */
+.page-wrap{display:flex;flex-direction:column;height:calc(100vh - 52px)}
+.ctx-layout{display:flex;flex:1;overflow:hidden}
+/* ── Sidebar ──────────────────────────────────────────── */
+.ctx-sidebar{width:220px;min-width:160px;background:#1a1a1a;border-right:1px solid #252525;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.sidebar-title{padding:9px 12px;font-weight:600;color:#777;border-bottom:1px solid #222;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+#channel-list{overflow-y:auto;flex:1}
+.channel-item{padding:7px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid #1e1e1e;user-select:none}
+.channel-item:hover{background:#222}
+.channel-item.active{background:#1a2f4a;color:#7db8f7}
+.ch-id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:12px}
+.ch-cnt{color:#555;font-size:11px;flex-shrink:0}
+/* ── Main area ────────────────────────────────────────── */
+.ctx-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.toolbar{display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:#181818;border-bottom:1px solid #222;align-items:center}
+#search-input{flex:1;min-width:180px;padding:5px 8px;background:#222;border:1px solid #333;color:#e0e0e0;border-radius:4px;font-size:13px;outline:none}
+#search-input:focus{border-color:#1e5fa0}
+button{padding:5px 10px;border:1px solid transparent;border-radius:4px;cursor:pointer;font-size:12px;font-weight:500;transition:background .15s}
+.btn-primary{background:#1e5fa0;color:#fff}
+.btn-primary:hover{background:#2570b8}
+.btn-secondary{background:#252525;color:#ccc;border:1px solid #333}
+.btn-secondary:hover{background:#2d2d2d}
+.btn-danger{background:#7b1515;color:#fff}
+.btn-danger:hover{background:#9b2020}
+button:disabled{opacity:.4;cursor:not-allowed}
+/* ── Field dropdown ───────────────────────────────────── */
+.field-toggle{position:relative}
+.field-panel{position:absolute;top:calc(100% + 4px);right:0;z-index:100;background:#1e1e1e;border:1px solid #333;border-radius:6px;padding:10px 12px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.6)}
+.field-panel.hidden{display:none}
+.field-panel label{display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer;white-space:nowrap;font-size:12px}
+.field-panel label:hover{color:#7db8f7}
+/* ── Status bar ───────────────────────────────────────── */
+#status-bar{padding:4px 10px;font-size:12px;color:#888;background:#141414;border-bottom:1px solid #1e1e1e;min-height:22px}
+/* ── Table ────────────────────────────────────────────── */
+.table-wrap{flex:1;overflow:auto}
+#records-table{width:100%;border-collapse:collapse;table-layout:auto}
+#records-table th{background:#181818;padding:6px 8px;text-align:left;border-bottom:2px solid #252525;white-space:nowrap;position:sticky;top:0;z-index:1;font-size:11px;text-transform:uppercase;color:#777;letter-spacing:.05em}
+#records-table td{padding:4px 8px;border-bottom:1px solid #1c1c1c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:350px;font-size:12px}
+#records-table tbody tr:hover td{background:#1a1a1a}
+#records-table tbody tr.row-selected td{background:#1a2a3a}
+.null-cell{color:#444;font-style:italic}
+.cell-expandable{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.btn-edit-row{background:transparent;color:#555;border:none;padding:2px 5px;cursor:pointer;font-size:13px;line-height:1;border-radius:3px}
+.btn-edit-row:hover{color:#7db8f7;background:#1e1e1e}
+/* ── Pagination ───────────────────────────────────────── */
+#pagination{padding:6px 10px;display:flex;gap:6px;align-items:center;background:#181818;border-top:1px solid #222;flex-shrink:0}
+#page-info{flex:1;color:#555;font-size:11px}
+#page-num{font-size:12px;color:#888}
+/* ── Modals ───────────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:center;justify-content:center}
+.modal-overlay.hidden{display:none}
+.modal-box{background:#1e1e1e;border:1px solid #333;border-radius:8px;width:740px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.modal-box.modal-narrow{width:580px}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #2a2a2a;font-weight:600;font-size:14px}
+.btn-icon{background:transparent;color:#666;font-size:16px;padding:2px 6px;border:none}
+.btn-icon:hover{color:#fff;background:transparent}
+.modal-body{padding:16px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px}
+.form-row{display:flex;flex-direction:column;gap:4px}
+.form-row>span{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em}
+.form-row input[type="text"]{padding:6px 9px;background:#222;border:1px solid #333;color:#e0e0e0;border-radius:4px;font-size:13px;outline:none;width:100%}
+.form-row input[type="text"]:focus{border-color:#1e5fa0}
+.form-row input[readonly]{opacity:.5;cursor:default}
+.form-row textarea{padding:6px 9px;background:#222;border:1px solid #333;color:#e0e0e0;border-radius:4px;font-size:12px;outline:none;width:100%;resize:vertical;font-family:monospace;line-height:1.5}
+.form-row textarea:focus{border-color:#1e5fa0}
+.checkbox-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:#aaa}
+.checkbox-row label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+/* ── S&R ──────────────────────────────────────────────── */
+.sr-count{font-size:12px;color:#888;margin-left:auto}
+.sr-warn{font-size:11px;color:#9a7a30;padding:4px 0}
+#sr-results-list{display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:300px;padding-right:4px}
+.sr-item{background:#161616;border:1px solid #252525;border-radius:4px;padding:8px 10px;display:flex;gap:10px;align-items:flex-start}
+.sr-item.replaced{opacity:.5;border-color:#1a3a1a}
+.sr-item.skipped{opacity:.4}
+.sr-item-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.sr-item-meta{font-size:10px;color:#555}
+.sr-item-before{font-family:monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#ccc;line-height:1.5}
+.sr-item-after{font-family:monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#80b880;line-height:1.5}
+.sr-item-actions{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+.sr-item-actions button{font-size:11px;padding:3px 8px}
+.sr-status{font-size:11px;color:#5a8a5a;font-weight:600;padding:2px 0}
+.sr-msg{color:#666;font-size:12px;padding:8px 0}
+mark{background:#5a4000;color:#ffd070;border-radius:2px;padding:0 1px}
+/* ── Expand overlay ───────────────────────────────────── */
+.expand-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;display:flex;align-items:center;justify-content:center}
+.expand-overlay.hidden{display:none}
+.expand-box{background:#1e1e1e;border:1px solid #333;border-radius:6px;max-width:80vw;max-height:75vh;overflow:auto;padding:16px;white-space:pre-wrap;word-break:break-all;font-family:monospace;font-size:12px;line-height:1.6;position:relative;min-width:400px}
+.expand-close{position:sticky;top:0;float:right;margin-left:8px}
+`.trim();
+}
+
+/**********************************************************************************/
+/* HTML / SPA                                                                     */
+/**********************************************************************************/
+function getContextHtml({ menu, role, activePath, base, dbStatus, dbInfo }) {
+  const menuHtml = getMenuHtml(menu, activePath, role);
+  const dbBanner = dbStatus === "error"
+    ? `<div id="db-banner" style="background:#7b1515;color:#fca5a5;padding:10px 16px;font-size:13px;font-weight:600;border-bottom:2px solid #ef4444;flex-shrink:0">
+        ⛔ Datenbankfehler — Context-Tabelle nicht erreichbar: <span style="font-weight:400;font-family:monospace">${dbInfo.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</span>
+       </div>`
+    : `<div id="db-banner" style="display:none" data-count="${dbInfo}"></div>`;
+  return `<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Context Editor</title>
+<link rel="stylesheet" href="${base}/style.css">
+</head>
+<body>
+<header><h1>🗃 Context</h1>${menuHtml}</header>
+${dbBanner}
+<div class="page-wrap">
+  <div class="ctx-layout">
+    <div class="ctx-sidebar">
+      <div class="sidebar-title">Channels</div>
+      <div id="channel-list"></div>
+    </div>
+    <div class="ctx-main">
+      <div class="toolbar">
+        <input id="search-input" type="text" placeholder="Suchen…">
+        <button class="btn-primary" id="btn-search">Suchen</button>
+        <button class="btn-secondary" id="btn-clear-search">Zurücksetzen</button>
+        <button class="btn-secondary" id="btn-replace-open">Suchen &amp; Ersetzen</button>
+        <div style="flex:1"></div>
+        <div class="field-toggle">
+          <button class="btn-secondary" id="btn-fields">Felder ▾</button>
+          <div id="field-panel" class="field-panel hidden"></div>
+        </div>
+        <button class="btn-danger" id="btn-delete-sel" disabled>Auswahl löschen</button>
+      </div>
+      <div id="status-bar"></div>
+      <div class="table-wrap">
+        <table id="records-table">
+          <thead><tr id="table-head"></tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div id="pagination">
+        <span id="page-info"></span>
+        <button class="btn-secondary" id="btn-prev" disabled>← Zurück</button>
+        <span id="page-num"></span>
+        <button class="btn-secondary" id="btn-next" disabled>Weiter →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Search & Replace modal -->
+<div id="modal-replace" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-header">Suchen &amp; Ersetzen <button class="btn-icon" id="modal-close">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><span>Suchen</span><input type="text" id="sr-search" placeholder="Text suchen…"></div>
+      <div class="form-row"><span>Ersetzen durch</span><input type="text" id="sr-replace" placeholder="Ersatztext…"></div>
+      <div class="checkbox-row">
+        <span>Felder:</span>
+        <label><input type="checkbox" name="sr-field" value="text" checked> text</label>
+        <label><input type="checkbox" name="sr-field" value="json"> json</label>
+      </div>
+      <p class="sr-warn">⚠ Ersetzen in <em>json</em> modifiziert rohe JSON-Strings — mit Vorsicht verwenden.</p>
+      <div class="modal-actions">
+        <button class="btn-primary" id="btn-find-matches">Treffer suchen</button>
+        <button class="btn-danger" id="btn-replace-all">Alles ersetzen (ohne Bestätigung)</button>
+        <span class="sr-count" id="sr-count"></span>
+      </div>
+      <div id="sr-results-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit modal -->
+<div id="modal-edit" class="modal-overlay hidden">
+  <div class="modal-box modal-narrow">
+    <div class="modal-header">Eintrag bearbeiten <button class="btn-icon" id="edit-close">✕</button></div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-row"><span>ctx_id</span><input type="text" id="edit-ctx-id" readonly></div>
+        <div class="form-row"><span>Timestamp (ts)</span><input type="text" id="edit-ts" readonly></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-row"><span>Channel (id)</span><input type="text" id="edit-channel"></div>
+        <div class="form-row"><span>Role</span><input type="text" id="edit-role"></div>
+      </div>
+      <div class="form-row"><span>Turn ID</span><input type="text" id="edit-turn-id"></div>
+      <div class="form-row"><span>Text</span><textarea id="edit-text" style="height:110px"></textarea></div>
+      <div class="form-row"><span>JSON</span><textarea id="edit-json" style="height:80px"></textarea></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="edit-save">Speichern</button>
+        <button class="btn-secondary" id="edit-cancel">Abbrechen</button>
+        <span id="edit-status" style="font-size:11px;color:#888;margin-left:auto"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Expand overlay -->
+<div id="expand-overlay" class="expand-overlay hidden">
+  <div class="expand-box">
+    <button class="btn-icon expand-close" id="expand-close">✕</button>
+    <div id="expand-content"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+var BASE = '${base}';
+var currentChannel = null;
+var currentPage = 1;
+var pageSize = ${PAGE_SIZE};
+var allCols = [];
+var visibleCols = ['ctx_id', 'ts', 'id', 'role', 'text'];
+var isSearchMode = false;
+var lastQ = '';
+var selectedIds = new Set();
+var srMatches = [];
+var editCtxId = null;
+var editOrig = {};
+
+/* ---- API ---- */
+async function api(path, method, body) {
+  var opts = { method: method || 'GET', headers: {} };
+  if (body != null) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  var r = await fetch(BASE + path, opts);
+  if (!r.ok) { var t = await r.text(); throw new Error(t || r.status); }
+  return r.json();
+}
+
+/* ---- Utils ---- */
+function escHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function highlight(text, q) {
+  if (!q) return escHtml(text);
+  var esc = escHtml(q);
+  return escHtml(text).split(esc).join('<mark>' + esc + '</mark>');
+}
+function trunc(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+function setStatus(msg, isError) {
+  var el = document.getElementById('status-bar');
+  el.textContent = msg || '';
+  el.style.color = isError ? '#f87171' : '';
+}
+function updateDeleteBtn() { document.getElementById('btn-delete-sel').disabled = selectedIds.size === 0; }
+
+/* ---- Channels ---- */
+async function loadChannels() {
+  try {
+    var data = await api('/api/channels');
+    console.log('[Context] /api/channels ->', data);
+    renderChannels(data.channels || []);
+  } catch (e) {
+    console.error('[Context] /api/channels error:', e);
+    document.getElementById('channel-list').innerHTML =
+      '<div style="padding:10px 12px;color:#f87171;font-size:13px;font-weight:600;background:#2a0a0a;border-bottom:1px solid #5a1a1a">' +
+      '⛔ Fehler<br><span style="font-weight:400;font-size:11px;font-family:monospace">' + escHtml(e.message) + '</span></div>';
+  }
+}
+function renderChannels(channels) {
+  var list = document.getElementById('channel-list');
+  list.innerHTML = '';
+  var total = channels.reduce(function (s, c) { return s + c.cnt; }, 0);
+  addChannelItem(list, null, 'Alle Channels', total);
+  channels.forEach(function (ch) { addChannelItem(list, ch.id, ch.id, ch.cnt); });
+  if (!channels.length) {
+    var hint = document.createElement('div');
+    hint.style.cssText = 'padding:8px 12px;color:#555;font-size:11px;font-style:italic';
+    hint.textContent = total === 0 ? 'Keine Daten in der DB' : '';
+    list.appendChild(hint);
+  }
+}
+function addChannelItem(container, id, label, cnt) {
+  var div = document.createElement('div');
+  div.className = 'channel-item' + (currentChannel === id ? ' active' : '');
+  div.innerHTML = '<span class="ch-id">' + escHtml(label) + '</span><span class="ch-cnt">' + cnt + '</span>';
+  div.addEventListener('click', function () {
+    currentChannel = id; currentPage = 1; isSearchMode = false;
+    document.getElementById('search-input').value = ''; lastQ = '';
+    loadAll();
+  });
+  container.appendChild(div);
+}
+
+/* ---- Columns ---- */
+async function loadColumns() {
+  var data = await api('/api/columns');
+  allCols = data.columns;
+  renderFieldPanel();
+}
+function renderFieldPanel() {
+  var panel = document.getElementById('field-panel');
+  panel.innerHTML = '';
+  allCols.forEach(function (col) {
+    var lbl = document.createElement('label');
+    var chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.value = col.name; chk.checked = visibleCols.includes(col.name);
+    chk.addEventListener('change', function () {
+      if (this.checked) { if (!visibleCols.includes(col.name)) visibleCols.push(col.name); }
+      else { visibleCols = visibleCols.filter(function (c) { return c !== col.name; }); }
+      currentPage = 1; loadPage();
+    });
+    lbl.appendChild(chk);
+    lbl.appendChild(document.createTextNode(' ' + col.name + ' '));
+    var typeSpan = document.createElement('span');
+    typeSpan.style.cssText = 'color:#555;font-size:10px';
+    typeSpan.textContent = col.type;
+    lbl.appendChild(typeSpan);
+    panel.appendChild(lbl);
+  });
+}
+
+/* ---- Records ---- */
+async function loadPage() {
+  selectedIds.clear(); updateDeleteBtn();
+  var p = new URLSearchParams({ page: currentPage, limit: pageSize, fields: visibleCols.join(',') });
+  if (currentChannel) p.set('channel', currentChannel);
+  var endpoint = '/api/records';
+  if (isSearchMode && lastQ) { endpoint = '/api/search'; p.set('q', lastQ); }
+  setStatus('Laden…');
+  try {
+    var data = await api(endpoint + '?' + p);
+    console.log('[Context] ' + endpoint + ' ->', data);
+    renderTable(data.rows || []);
+    renderPagination(data.total, data.page, data.pages);
+    if ((data.total || 0) === 0) {
+      setStatus(isSearchMode ? 'Keine Treffer für "' + lastQ + '".' : 'Tabelle ist leer (0 Einträge in der DB).');
+    } else {
+      setStatus((isSearchMode ? 'Suche: ' : 'Einträge: ') + data.total + ' gesamt — Seite ' + data.page + ' von ' + Math.max(1, data.pages));
+    }
+  } catch (e) {
+    console.error('[Context] loadPage error:', e);
+    setStatus('⛔ Fehler beim Laden: ' + e.message, true);
+  }
+}
+
+function renderTable(rows) {
+  var thead = document.getElementById('table-head');
+  var tbody = document.getElementById('table-body');
+  thead.innerHTML = ''; tbody.innerHTML = '';
+
+  /* Checkbox header */
+  var thChk = document.createElement('th');
+  thChk.style.cssText = 'width:28px;padding:6px 4px';
+  var chkAll = document.createElement('input'); chkAll.type = 'checkbox'; chkAll.id = 'chk-all';
+  chkAll.addEventListener('change', function () {
+    document.querySelectorAll('.row-check').forEach(function (c) {
+      c.checked = chkAll.checked;
+      var id = Number(c.dataset.id);
+      if (chkAll.checked) selectedIds.add(id); else selectedIds.delete(id);
+    });
+    updateDeleteBtn();
+  });
+  thChk.appendChild(chkAll); thead.appendChild(thChk);
+
+  /* Edit header */
+  var thEdit = document.createElement('th');
+  thEdit.style.cssText = 'width:28px;padding:6px 4px';
+  thead.appendChild(thEdit);
+
+  /* Data column headers */
+  visibleCols.forEach(function (col) {
+    var th = document.createElement('th'); th.textContent = col; thead.appendChild(th);
+  });
+
+  /* Empty state */
+  if (!rows.length) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = visibleCols.length + 2;
+    td.style.cssText = 'padding:24px;text-align:center;color:#555;font-size:13px;font-style:italic';
+    td.textContent = isSearchMode ? 'Keine Treffer.' : 'Keine Einträge in der Datenbank.';
+    tr.appendChild(td); tbody.appendChild(tr);
+    return;
+  }
+
+  /* Rows */
+  rows.forEach(function (row) {
+    var tr = document.createElement('tr');
+
+    /* Checkbox cell */
+    var tdChk = document.createElement('td');
+    tdChk.style.cssText = 'padding:4px;';
+    var chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.className = 'row-check';
+    var rowId = row.ctx_id != null ? row.ctx_id : '';
+    chk.dataset.id = rowId;
+    if (selectedIds.has(Number(rowId))) { chk.checked = true; tr.classList.add('row-selected'); }
+    chk.addEventListener('change', function () {
+      var id = Number(this.dataset.id);
+      if (this.checked) selectedIds.add(id); else selectedIds.delete(id);
+      tr.classList.toggle('row-selected', this.checked);
+      updateDeleteBtn();
+    });
+    tdChk.appendChild(chk); tr.appendChild(tdChk);
+
+    /* Edit button cell */
+    var tdEdit = document.createElement('td');
+    tdEdit.style.cssText = 'padding:2px 4px;';
+    var btnEdit = document.createElement('button');
+    btnEdit.className = 'btn-edit-row'; btnEdit.title = 'Bearbeiten'; btnEdit.textContent = '✏';
+    (function (cid) {
+      btnEdit.addEventListener('click', function () { openEditModal(cid); });
+    })(row.ctx_id);
+    tdEdit.appendChild(btnEdit); tr.appendChild(tdEdit);
+
+    /* Data cells */
+    visibleCols.forEach(function (col) {
+      var td = document.createElement('td'); td.dataset.col = col;
+      var val = row[col];
+      if (val == null) { td.className = 'null-cell'; td.textContent = 'NULL'; }
+      else if (col === 'json') {
+        var s = String(val);
+        td.textContent = trunc(s, 120); td.className = 'cell-expandable'; td.title = 'Click to expand';
+        td.addEventListener('click', function () { expandShow(s, 'json'); });
+      } else if (col === 'text') {
+        var t = String(val);
+        td.textContent = trunc(t, 200);
+        if (t.length > 200) { td.className = 'cell-expandable'; td.title = 'Click to expand'; td.addEventListener('click', function () { expandShow(t, 'text'); }); }
+      } else { td.textContent = String(val); }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+function renderPagination(total, page, pages) {
+  document.getElementById('page-info').textContent = total + ' Einträge';
+  document.getElementById('page-num').textContent = 'Seite ' + page + ' / ' + Math.max(1, pages);
+  document.getElementById('btn-prev').disabled = page <= 1;
+  document.getElementById('btn-next').disabled = page >= pages;
+}
+
+/* ---- Delete ---- */
+async function doDelete() {
+  if (!selectedIds.size) return;
+  var ids = Array.from(selectedIds);
+  if (!confirm('Löschen: ' + ids.length + ' Einträge? Nicht rückgängig machbar.')) return;
+  try {
+    var data = await api('/api/delete', 'DELETE', { ids: ids });
+    setStatus('Gelöscht: ' + data.deleted + ' Einträge.');
+    selectedIds.clear(); updateDeleteBtn(); loadAll();
+  } catch (e) { alert('Fehler beim Löschen: ' + e.message); }
+}
+
+/* ---- Search ---- */
+function doSearch() {
+  var q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  lastQ = q; isSearchMode = true; currentPage = 1; loadPage();
+}
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  lastQ = ''; isSearchMode = false; currentPage = 1; loadPage();
+}
+
+/* ---- Edit ---- */
+async function openEditModal(ctx_id) {
+  document.getElementById('edit-status').textContent = 'Laden…';
+  document.getElementById('modal-edit').classList.remove('hidden');
+  try {
+    var data = await api('/api/record?ctx_id=' + encodeURIComponent(ctx_id));
+    var row = data.record;
+    editCtxId = ctx_id;
+    editOrig = {
+      id: String(row.id || ''), role: String(row.role || ''),
+      text: String(row.text || ''), json: String(row.json || ''),
+      turn_id: String(row.turn_id || '')
+    };
+    document.getElementById('edit-ctx-id').value = String(row.ctx_id || '');
+    document.getElementById('edit-ts').value = String(row.ts || '');
+    document.getElementById('edit-channel').value = editOrig.id;
+    document.getElementById('edit-role').value = editOrig.role;
+    document.getElementById('edit-turn-id').value = editOrig.turn_id;
+    document.getElementById('edit-text').value = editOrig.text;
+    document.getElementById('edit-json').value = editOrig.json;
+    document.getElementById('edit-status').textContent = '';
+  } catch (e) {
+    document.getElementById('edit-status').textContent = 'Fehler: ' + e.message;
+  }
+}
+
+async function saveEdit() {
+  if (!editCtxId) return;
+  var fields = [
+    { elId: 'edit-channel', field: 'id' },
+    { elId: 'edit-role',    field: 'role' },
+    { elId: 'edit-turn-id', field: 'turn_id' },
+    { elId: 'edit-text',    field: 'text' },
+    { elId: 'edit-json',    field: 'json' }
+  ];
+  var changes = fields.filter(function (f) {
+    return document.getElementById(f.elId).value !== editOrig[f.field];
+  });
+  if (!changes.length) {
+    document.getElementById('edit-status').textContent = 'Keine Änderungen.';
+    return;
+  }
+  document.getElementById('edit-status').textContent = 'Speichern…';
+  var errors = [];
+  for (var i = 0; i < changes.length; i++) {
+    var f = changes[i];
+    try {
+      await api('/api/record', 'PATCH', { ctx_id: editCtxId, field: f.field, value: document.getElementById(f.elId).value });
+    } catch (e) { errors.push(f.field + ': ' + e.message); }
+  }
+  if (errors.length) {
+    document.getElementById('edit-status').textContent = 'Fehler: ' + errors.join(', ');
+  } else {
+    document.getElementById('edit-status').textContent = '✓ Gespeichert';
+    setTimeout(function () {
+      document.getElementById('modal-edit').classList.add('hidden');
+      loadPage();
+    }, 700);
+  }
+}
+
+/* ---- Search & Replace ---- */
+function getSrFields() {
+  return Array.from(document.querySelectorAll('input[name="sr-field"]:checked')).map(function (c) { return c.value; });
+}
+async function findMatches() {
+  var q = document.getElementById('sr-search').value.trim();
+  if (!q) { alert('Suchtext eingeben.'); return; }
+  document.getElementById('sr-count').textContent = 'Suche…';
+  document.getElementById('sr-results-list').innerHTML = '';
+  srMatches = [];
+  try {
+    var data = await api('/api/replace/find', 'POST', { search: q, channel: currentChannel, fields: getSrFields() });
+    srMatches = data.matches || [];
+    document.getElementById('sr-count').textContent = srMatches.length + ' Treffer';
+    renderSrMatches(q);
+  } catch (e) { alert('Fehler: ' + e.message); }
+}
+
+function renderSrMatches(q) {
+  var rep = document.getElementById('sr-replace').value;
+  var list = document.getElementById('sr-results-list');
+  list.innerHTML = '';
+  if (!srMatches.length) { list.innerHTML = '<div class="sr-msg">Keine Treffer.</div>'; return; }
+  srMatches.forEach(function (m, i) {
+    var item = document.createElement('div');
+    item.className = 'sr-item'; item.id = 'sr-item-' + i;
+    var beforeH = highlight(trunc(m.value, 300), q);
+    var afterText = rep ? trunc(String(m.value || '').split(q).join(rep), 300) : '';
+    var afterH = rep ? escHtml(afterText) : '<span style="color:#555">(Ersatztext eingeben)</span>';
+    item.innerHTML =
+      '<div class="sr-item-info">' +
+        '<div class="sr-item-meta">ID: ' + escHtml(String(m.ctx_id)) + ' &nbsp;|&nbsp; ch: ' + escHtml(m.channel) + ' &nbsp;|&nbsp; field: ' + escHtml(m.field) + '</div>' +
+        '<div class="sr-item-before">' + beforeH + '</div>' +
+        '<div class="sr-item-after">→ ' + afterH + '</div>' +
+      '</div>' +
+      '<div class="sr-item-actions">' +
+        '<button class="btn-primary btn-apply" data-i="' + i + '">Ersetzen</button>' +
+        '<button class="btn-secondary btn-skip" data-i="' + i + '">Überspringen</button>' +
+      '</div>';
+    list.appendChild(item);
+  });
+  list.querySelectorAll('.btn-apply').forEach(function (btn) {
+    btn.addEventListener('click', function () { applySingle(parseInt(this.dataset.i, 10)); });
+  });
+  list.querySelectorAll('.btn-skip').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.getElementById('sr-item-' + this.dataset.i);
+      if (el) el.classList.add('skipped');
+    });
+  });
+}
+
+async function applySingle(i) {
+  var m = srMatches[i]; if (!m) return;
+  var search = document.getElementById('sr-search').value;
+  var replace = document.getElementById('sr-replace').value;
+  if (!search) { alert('Suchtext ist leer.'); return; }
+  try {
+    await api('/api/replace/apply', 'POST', { ctx_id: m.ctx_id, field: m.field, search: search, replace: replace });
+    var el = document.getElementById('sr-item-' + i);
+    if (el) {
+      el.classList.add('replaced');
+      var actions = el.querySelector('.sr-item-actions');
+      if (actions) actions.innerHTML = '<span class="sr-status">✓ Erledigt</span>';
+    }
+  } catch (e) { alert('Fehler: ' + e.message); }
+}
+
+async function replaceAll() {
+  var search = document.getElementById('sr-search').value.trim();
+  var replace = document.getElementById('sr-replace').value;
+  var fields = getSrFields();
+  if (!search) { alert('Suchtext eingeben.'); return; }
+  var scope = currentChannel ? ' in Channel "' + currentChannel + '"' : ' in ALLEN Channels';
+  if (!confirm('Alle "' + search + '" durch "' + replace + '" ersetzen' + scope + '?\nNicht rückgängig machbar.')) return;
+  try {
+    var data = await api('/api/replace/all', 'POST', { search: search, replace: replace, channel: currentChannel, fields: fields });
+    alert('Ersetzt in ' + data.updated + ' Zeile(n).');
+    document.getElementById('modal-replace').classList.add('hidden');
+    loadAll();
+  } catch (e) { alert('Fehler: ' + e.message); }
+}
+
+/* ---- Expand ---- */
+function expandShow(content, type) {
+  var box = document.getElementById('expand-content');
+  if (type === 'json') {
+    try { box.textContent = JSON.stringify(JSON.parse(content), null, 2); } catch (_) { box.textContent = content; }
+  } else { box.textContent = content; }
+  document.getElementById('expand-overlay').classList.remove('hidden');
+}
+
+/* ---- Events ---- */
+function setupEvents() {
+  document.getElementById('btn-search').addEventListener('click', doSearch);
+  document.getElementById('search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
+  document.getElementById('btn-clear-search').addEventListener('click', clearSearch);
+  document.getElementById('btn-delete-sel').addEventListener('click', doDelete);
+  document.getElementById('btn-prev').addEventListener('click', function () { if (currentPage > 1) { currentPage--; loadPage(); } });
+  document.getElementById('btn-next').addEventListener('click', function () { currentPage++; loadPage(); });
+  /* S&R modal */
+  document.getElementById('btn-replace-open').addEventListener('click', function () {
+    document.getElementById('modal-replace').classList.remove('hidden');
+  });
+  document.getElementById('modal-close').addEventListener('click', function () {
+    document.getElementById('modal-replace').classList.add('hidden');
+  });
+  document.getElementById('modal-replace').addEventListener('click', function (e) {
+    if (e.target === this) this.classList.add('hidden');
+  });
+  document.getElementById('btn-find-matches').addEventListener('click', findMatches);
+  document.getElementById('btn-replace-all').addEventListener('click', replaceAll);
+  document.getElementById('sr-replace').addEventListener('input', function () {
+    var q = document.getElementById('sr-search').value;
+    if (srMatches.length && q) renderSrMatches(q);
+  });
+  /* Edit modal */
+  document.getElementById('edit-close').addEventListener('click', function () {
+    document.getElementById('modal-edit').classList.add('hidden');
+  });
+  document.getElementById('edit-cancel').addEventListener('click', function () {
+    document.getElementById('modal-edit').classList.add('hidden');
+  });
+  document.getElementById('edit-save').addEventListener('click', saveEdit);
+  document.getElementById('modal-edit').addEventListener('click', function (e) {
+    if (e.target === this) this.classList.add('hidden');
+  });
+  /* Field panel */
+  document.getElementById('btn-fields').addEventListener('click', function (e) {
+    e.stopPropagation();
+    document.getElementById('field-panel').classList.toggle('hidden');
+  });
+  document.addEventListener('click', function () { document.getElementById('field-panel').classList.add('hidden'); });
+  document.getElementById('field-panel').addEventListener('click', function (e) { e.stopPropagation(); });
+  /* Expand */
+  document.getElementById('expand-close').addEventListener('click', function () { document.getElementById('expand-overlay').classList.add('hidden'); });
+  document.getElementById('expand-overlay').addEventListener('click', function (e) { if (e.target === this) this.classList.add('hidden'); });
+}
+
+/* ---- Init ---- */
+async function loadAll() {
+  await loadChannels();
+  await loadPage();
+}
+(async function () {
+  setupEvents();
+  /* Show server-side DB status if there was an error at page-load time */
+  var banner = document.getElementById('db-banner');
+  if (banner && banner.style.display !== 'none') {
+    /* DB error banner is already visible in HTML; skip loading */
+    setStatus('⛔ Datenbankfehler — Seite ohne DB gestartet. Bitte Bot-Logs prüfen.', true);
+    return;
+  }
+  /* If DB is OK, show total count from server-side ping */
+  if (banner && banner.dataset.count !== undefined) {
+    console.log('[Context] Server-side DB ping OK, total rows:', banner.dataset.count);
+  }
+  try { await loadAll(); } catch (e) {
+    console.error('[Context] loadAll error:', e);
+    setStatus('⛔ Ladefehler: ' + e.message, true);
+  }
+  loadColumns().catch(function (e) { console.error('[Context] loadColumns:', e); });
+})();
+})();
+</script>
+</body></html>`;
+}
+
+/**********************************************************************************/
+/* Module export                                                                   */
+/**********************************************************************************/
+export default async function getWebpageContext(coreData) {
+  const wo = coreData?.workingObject || {};
+  if (wo?.flow !== "webpage") return coreData;
+
+  const cfg          = coreData?.config?.[MODULE_NAME] || {};
+  const port         = Number(cfg.port ?? 3118);
+  const basePath     = getBasePath(cfg);
+  const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : ["admin"];
+
+  if (Number(wo.http?.port) !== port) return coreData;
+
+  const method  = getStr(wo.http?.method).toUpperCase();
+  const urlPath = getStr(wo.http?.path);
+  const query   = wo.http?.query || {};
+
+  /* CSS — shared stylesheet + module overrides, no auth required */
+  if (method === "GET" && urlPath === basePath + "/style.css") {
+    let sharedCss = "";
+    try { sharedCss = fs.readFileSync(SHARED_CSS, "utf-8"); } catch { /* ignore */ }
+    setCssResp(wo, sharedCss + "\n" + getContextCss());
+    wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  /* Auth */
+  const isAllowed = getIsAllowed(wo, allowedRoles);
+
+  /* Main SPA */
+  if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
+    if (!isAllowed) {
+      setHtmlResp(wo, "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:2rem;background:#111;color:#e0e0e0'><h2>Zugriff verweigert</h2></body></html>");
+    } else {
+      /* Quick server-side DB ping so the client knows immediately if DB works */
+      let dbStatus = "ok";
+      let dbInfo = "";
+      try {
+        const p = await getDb(coreData);
+        const [[r]] = await p.execute(`SELECT COUNT(*) AS n FROM ${CTX_TABLE}`);
+        dbInfo = String(r?.n ?? "?");
+      } catch (e) {
+        dbStatus = "error";
+        dbInfo = String(e?.message || e);
+      }
+      setHtmlResp(wo, getContextHtml({
+        menu: wo.web?.menu || [],
+        role: wo.webAuth?.role || "",
+        activePath: urlPath,
+        base: basePath,
+        dbStatus,
+        dbInfo
+      }));
+    }
+    wo.web = wo.web || {}; wo.web.useLayout = false;
+    wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  /* All API routes require auth */
+  if (!isAllowed) {
+    setJsonResp(wo, 403, { error: "forbidden" });
+    wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  /* DB pool */
+  let pool;
+  try { pool = await getDb(coreData); } catch (e) {
+    setJsonResp(wo, 503, { error: "DB nicht verfügbar: " + e.message });
+    wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  try {
+    /* GET /api/channels */
+    if (method === "GET" && urlPath === basePath + "/api/channels") {
+      const channels = await dbChannels(pool);
+      setJsonResp(wo, 200, { channels });
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* GET /api/columns */
+    if (method === "GET" && urlPath === basePath + "/api/columns") {
+      const columns = await dbColumns(pool);
+      setJsonResp(wo, 200, { columns });
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* GET /api/records */
+    if (method === "GET" && urlPath === basePath + "/api/records") {
+      const page    = Math.max(1, getInt(query.page, 1));
+      const limit   = Math.min(200, Math.max(1, getInt(query.limit, PAGE_SIZE)));
+      const channel = getStr(query.channel) || null;
+      const fields  = getStr(query.fields).split(",").map(s => s.trim()).filter(Boolean);
+      const result  = await dbRecords(pool, { channel, page, limit, fields });
+      setJsonResp(wo, 200, result);
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* GET /api/search */
+    if (method === "GET" && urlPath === basePath + "/api/search") {
+      const q            = getStr(query.q);
+      const page         = Math.max(1, getInt(query.page, 1));
+      const limit        = Math.min(200, Math.max(1, getInt(query.limit, PAGE_SIZE)));
+      const channel      = getStr(query.channel) || null;
+      const fields       = getStr(query.fields).split(",").map(s => s.trim()).filter(Boolean);
+      const searchFields = getStr(query.searchFields).split(",").map(s => s.trim()).filter(Boolean);
+      const result = await dbSearch(pool, { channel, q, page, limit, fields, searchFields: searchFields.length ? searchFields : ["text"] });
+      setJsonResp(wo, 200, result);
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* GET /api/record?ctx_id=N */
+    if (method === "GET" && urlPath === basePath + "/api/record") {
+      const ctx_id = getInt(query.ctx_id, 0);
+      if (!ctx_id) { setJsonResp(wo, 400, { error: "ctx_id erforderlich" }); wo.jump = true; await setSendNow(wo); return coreData; }
+      const record = await dbGetRecord(pool, ctx_id);
+      if (!record) { setJsonResp(wo, 404, { error: "Eintrag nicht gefunden" }); wo.jump = true; await setSendNow(wo); return coreData; }
+      setJsonResp(wo, 200, { record });
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* PATCH /api/record */
+    if (method === "PATCH" && urlPath === basePath + "/api/record") {
+      const body   = wo.http?.json || {};
+      const ctx_id = getInt(body.ctx_id, 0);
+      const field  = getStr(body.field);
+      const value  = body.value !== undefined && body.value !== null ? String(body.value) : "";
+      if (!ctx_id || !field) { setJsonResp(wo, 400, { error: "ctx_id und field erforderlich" }); wo.jump = true; await setSendNow(wo); return coreData; }
+      const affected = await dbUpdateRecord(pool, { ctx_id, field, value });
+      setJsonResp(wo, 200, { ok: true, affected });
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* DELETE /api/delete */
+    if (method === "DELETE" && urlPath === basePath + "/api/delete") {
+      const body = wo.http?.json || {};
+      const ids  = Array.isArray(body.ids) ? body.ids.map(Number).filter(n => Number.isFinite(n) && n > 0) : [];
+      if (!ids.length) { setJsonResp(wo, 400, { error: "Keine IDs angegeben" }); }
+      else { const deleted = await dbDelete(pool, ids); setJsonResp(wo, 200, { ok: true, deleted }); }
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* POST /api/replace/find */
+    if (method === "POST" && urlPath === basePath + "/api/replace/find") {
+      const body    = wo.http?.json || {};
+      const search  = getStr(body.search);
+      const channel = getStr(body.channel) || null;
+      const fields  = Array.isArray(body.fields) ? body.fields : ["text"];
+      if (!search) { setJsonResp(wo, 400, { error: "search erforderlich" }); }
+      else {
+        const matches = await dbFindReplace(pool, { search, channel, searchFields: fields });
+        setJsonResp(wo, 200, { matches });
+      }
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* POST /api/replace/apply */
+    if (method === "POST" && urlPath === basePath + "/api/replace/apply") {
+      const body    = wo.http?.json || {};
+      const ctx_id  = getInt(body.ctx_id, 0);
+      const field   = getStr(body.field);
+      const search  = getStr(body.search);
+      const replace = getStr(body.replace);
+      if (!ctx_id || !field || !search) { setJsonResp(wo, 400, { error: "ctx_id, field und search erforderlich" }); }
+      else { const affected = await dbApplyReplace(pool, { ctx_id, field, search, replace }); setJsonResp(wo, 200, { ok: true, affected }); }
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    /* POST /api/replace/all */
+    if (method === "POST" && urlPath === basePath + "/api/replace/all") {
+      const body    = wo.http?.json || {};
+      const search  = getStr(body.search);
+      const replace = getStr(body.replace);
+      const channel = getStr(body.channel) || null;
+      const fields  = Array.isArray(body.fields) ? body.fields : ["text"];
+      if (!search) { setJsonResp(wo, 400, { error: "search erforderlich" }); }
+      else { const updated = await dbReplaceAll(pool, { search, replace, channel, searchFields: fields }); setJsonResp(wo, 200, { ok: true, updated }); }
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+  } catch (e) {
+    setJsonResp(wo, 500, { error: e.message });
+    wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  return coreData;
+}

@@ -1,6 +1,6 @@
 # core.json — Complete Reference
 
-> **Version:** 1.0 · **Date:** 2026-03-11
+> **Version:** 1.0 · **Date:** 2026-03-14
 
 `core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime — any change triggers an automatic hot-reload within seconds. No restart is required.
 
@@ -52,6 +52,7 @@ All key names follow **camelCase** throughout.
    - [webpage-chat](#webpage-chat)
    - [webpage-bard](#webpage-bard)
    - [webpage-wiki](#webpage-wiki)
+   - [webpage-context](#webpage-context)
    - [cron](#cron)
    - [context](#context)
    - [webpage](#webpage)
@@ -698,6 +699,46 @@ AI settings (model, temperature, tools, system prompt) are fixed in the module �
 - All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /wiki* localhost:3117` to your Caddyfile
+
+---
+
+### webpage-context
+
+Context DB editor SPA served as a **webpage-flow module** (`modules/00053`) on port 3118. Provides a browser-based interface to browse, search, and bulk-manage conversation context rows stored in MySQL.
+
+```jsonc
+"webpage-context": {
+  "flow":         ["webpage"],
+  "port":         3118,
+  "basePath":     "/context",
+  "allowedRoles": ["admin"]
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3118`) — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `basePath` | URL base path (default `"/context"`) |
+| `allowedRoles` | Roles allowed to access the editor. `[]` = no restriction. Default: `["admin"]` |
+
+**HTTP routes:**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/context` | Renders the SPA |
+| `GET` | `/context/style.css` | CSS (no auth) |
+| `GET` | `/context/api/channels` | All distinct channel IDs with row counts |
+| `GET` | `/context/api/columns` | Column names + types from `INFORMATION_SCHEMA` |
+| `GET` | `/context/api/records` | Paginated records; params: `channel`, `page`, `limit`, `fields` |
+| `GET` | `/context/api/search` | Search; params: `q`, `channel`, `fields`, `searchFields` |
+| `DELETE` | `/context/api/delete` | Bulk delete; body: `{ids: [...]}` |
+| `POST` | `/context/api/replace/find` | Find matches for preview; body: `{search, channel?, fields}` |
+| `POST` | `/context/api/replace/apply` | Replace in single record; body: `{ctx_id, field, search, replace, mode?}` (`mode`: `"partial"` or `"full"`) |
+| `POST` | `/context/api/replace/all` | Replace all matches; body: `{search, replace, channel?, fields, mode?}` (`mode`: `"partial"` or `"full"`) |
+
+- Add `3118` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /context* localhost:3118` to your Caddyfile
 
 ---
 

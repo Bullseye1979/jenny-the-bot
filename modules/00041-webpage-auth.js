@@ -1,30 +1,11 @@
-/************************************************************************************
-/* filename: webpage-auth.js                                                       *
-/* Version 1.0                                                                     *
-/* Purpose: Discord OAuth2 SSO for webpage ports. Handles login, callback,         *
-/*          and logout. Writes wo.webAuth; non-auth requests pass through.         *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-/* filename: "webpage-auth.js"                                *
-/* Version 1.2                                                *
-/* Purpose: Discord OAuth2 SSO for selected webpage ports.    *
-/*          Scope is controlled strictly via cfg.ports.       *
-/*          Login routes handled ONLY on cfg.loginPort.       *
-/*          Writes ONLY wo.webAuth (role label).              *
-/*          Non-/auth/* requests are NOT blocked (passive).   *
-/*          Gate redirects use PUBLIC baseUrl (no :loginPort) *
-/**************************************************************/
+/**********************************************************************************/
+/* filename: 00041-webpage-auth.js                                                */
+/* Version 1.0                                                                    */
+/* Purpose: Discord OAuth2 SSO for webpage ports. Scope controlled via cfg.ports. */
+/*          Login routes handled only on cfg.loginPort. Writes wo.webAuth (role). */
+/*          Non-/auth/* requests pass through unchanged (passive module).          */
+/*          Gate redirects use the public baseUrl (without :loginPort).            */
+/**********************************************************************************/
 
 "use strict";
 
