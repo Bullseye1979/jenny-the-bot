@@ -2136,9 +2136,15 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `query` | string | Search query / topic |
-| `channel_id` | string | Channel ID (optional) |
-| `max_results` | number | Max results |
+| `keyword_groups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE; parts are used for proximity scoring and are also included in the initial candidate search. |
+| `keywords` | array | Fallback: plain search phrases. Each phrase is used as a full-form LIKE token. |
+
+**Search behaviour:**
+
+- The initial SQL candidate scan (`LIKE '%token%'`) searches **both `variants` and `parts`** — rows that contain only parts of a compound term are still selected as hit candidates.
+- `CONTENT_EXPR` uses `NULLIF(…, '')` in `COALESCE` so that an empty `text` column correctly falls through to the JSON fallback fields (`$.content`, `$.message.content`, etc.).
+- Assistant rows and fully-answered turns (same `turn_id` has both a user/agent row and an assistant row) are excluded from results. Raw transcriptions that were never answered are always returned.
+- Results are ranked by coverage (distinct keyword groups found) → frequency (total hits), then sorted chronologically per channel for output.
 
 ---
 

@@ -25,11 +25,11 @@ const DEFAULT_EVENT_GAP_MINUTES = 45;
 const CONTENT_EXPR = `
   (
     COALESCE(
-      \`text\`,
-      JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.content')),
-      JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.message.content')),
-      JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.data.content')),
-      JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.delta.content')),
+      NULLIF(\`text\`, ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.content')), ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.message.content')), ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.data.content')), ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.delta.content')), ''),
       ''
     ) COLLATE utf8mb4_general_ci
   )
@@ -378,7 +378,7 @@ async function getInformationInvoke(args, coreData) {
     return { error: "ERROR: workingObject.db incomplete" };
   }
 
-  const sqlTokens = Array.from(new Set(groups.flatMap(g => g.variants)));
+  const sqlTokens = Array.from(new Set(groups.flatMap(g => [...g.variants, ...g.parts])));
   if (!sqlTokens.length) {
     return { error: "ERROR: no effective tokens (variants)" };
   }
