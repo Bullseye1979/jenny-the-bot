@@ -409,7 +409,13 @@ async function callPipelineForArticle(query, channel, coreData) {
     payload:             `Topic: ${query}`,
     doNotWriteToContext: true,
     db:                  wo.db,
-    toolsconfig:         wo.toolsconfig || {},
+    toolsconfig:         {
+      ...(wo.toolsconfig || {}),
+      getInformation: {
+        ...((wo.toolsconfig || {}).getInformation || {}),
+        includeAnsweredTurns: true
+      }
+    },
     timezone:            wo.timezone    || "Europe/Berlin",
     logging:             []
   };

@@ -545,6 +545,10 @@ async function getInformationInvoke(args, coreData) {
           printed_rows: 0,
           timeline_periods: timelinePeriods,
           timeline_per_channel: timelinePerChannel,
+          selection_mode: analyzed.length ? "no_blocks_after_budget" : "none",
+          min_coverage_requested: minCoverage,
+          eligible_clusters: 0,
+          fallback_cluster_used: false,
           duration_ms: Date.now() - startedAt,
           note:
             "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
@@ -590,12 +594,13 @@ async function getInformationInvoke(args, coreData) {
       return a.start_rn - b.start_rn;
     });
 
+    const eligible = analyzed.filter(c => c.coverage >= minCoverage);
+    const selectedClusters = eligible.length ? eligible : analyzed.slice(0, 1);
+    const selectionMode = eligible.length ? "threshold" : "fallback_best_available";
     const blocks = [];
     let usedLines = 0;
 
-    for (const c of analyzed) {
-      if (c.coverage < minCoverage) break;
-
+    for (const c of selectedClusters) {
       const padStart = Math.max(1, c.start_rn - padRows);
       const padEnd = c.end_rn + padRows;
       const [rowsFull] = await db.execute(
@@ -613,7 +618,7 @@ async function getInformationInvoke(args, coreData) {
         rn: c.start_rn - 0.0001,
         ts: null,
         sender: "meta",
-        content: `[[ CLUSTER channel=${c.channel_id} idx=${c.idx} rows=${c.start_rn}-${c.end_rn} coverage=${c.coverage} hits=${c.totalHits} ]]`
+        content: `[[ CLUSTER channel=${c.channel_id} idx=${c.idx} rows=${c.start_rn}-${c.end_rn} coverage=${c.coverage} hits=${c.totalHits} mode=${selectionMode} ]]`
       });
 
       let firstTs = null, lastTs = null;
@@ -750,6 +755,10 @@ async function getInformationInvoke(args, coreData) {
       printed_rows: allPrinted.length,
       timeline_periods: timelinePeriods,
       timeline_per_channel: timelinePerChannel,
+      selection_mode: selectionMode,
+      min_coverage_requested: minCoverage,
+      eligible_clusters: eligible.length,
+      fallback_cluster_used: !eligible.length && analyzed.length > 0,
       duration_ms: Date.now() - startedAt,
       note:
         "These snippets are DETAIL views from the global rolling timeline over one or multiple channels. " +
