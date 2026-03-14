@@ -12,7 +12,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getDb } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
-import getCoreAi from "./01000-core-ai-completions.js";
+/* AI module is selected dynamically per request based on overrides.useAiModule */
+const AI_MODULE_MAP = {
+  "completions":     "./01000-core-ai-completions.js",
+  "responses":       "./01001-core-ai-responses.js",
+  "pseudotoolcalls": "./01002-core-ai-pseudotoolcalls.js",
+};
 
 const MODULE_NAME = "webpage-wiki";
 const __filename = fileURLToPath(import.meta.url);
@@ -410,16 +415,24 @@ async function callPipelineForArticle(query, channel, coreData, ctxSnippet = "")
     ? `\n\n--- Channel conversation history (primary source) ---\n${ctxSnippet.trim()}\n--- End of history ---`
     : "\n\n(No channel conversation history available for this topic.)";
 
-  /* Read AI overrides from the module's own config section (webpage-wiki.overrides) */
-  const cfg       = coreData?.config?.[MODULE_NAME] || {};
-  const overrides = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
+  /* Read AI overrides: global config merged with optional per-channel overrides */
+  const cfg            = coreData?.config?.[MODULE_NAME] || {};
+  const globalOverrides = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
+  const chanOverrides   = (channel.overrides && typeof channel.overrides === "object") ? channel.overrides : {};
+  const overrides       = { ...globalOverrides, ...chanOverrides };
+
+  /* Resolve which AI module to use and dynamically import it */
+  const useAiModule = getStr(overrides.useAiModule || "completions");
+  const modulePath  = AI_MODULE_MAP[useAiModule] || AI_MODULE_MAP["completions"];
+  const { default: getCoreAi } = await import(modulePath);
 
   const syntheticWo = {
     flow:                "webpage",
     channelID:           channel.channelId,
-    useAiModule:         "completions",
-    endpoint:            getStr(wo.endpoint || ""),
-    apiKey:              getStr(wo.apiKey   || ""),
+    useAiModule:         useAiModule,
+    endpoint:            getStr(overrides.endpoint          || wo.endpoint          || ""),
+    endpointResponses:   getStr(overrides.endpointResponses || wo.endpointResponses || ""),
+    apiKey:              getStr(overrides.apiKey            || wo.apiKey            || ""),
     model:               getStr(overrides.model    || "gpt-4o-mini"),
     temperature:         overrides.temperature !== undefined ? Number(overrides.temperature) : 0.7,
     maxTokens:           overrides.maxTokens   !== undefined ? Number(overrides.maxTokens)   : 4000,
