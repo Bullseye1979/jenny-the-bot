@@ -25,11 +25,11 @@ const DEFAULT_EVENT_GAP_MINUTES = 45;
 const CONTENT_EXPR = `
   (
     COALESCE(
-      NULLIF(\`text\`, ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.content')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.message.content')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.data.content')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.delta.content')), ''),
+      JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.content')),
+      JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.message.content')),
+      JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.data.content')),
+      JSON_UNQUOTE(JSON_EXTRACT(\`json\`, '$.delta.content')),
+      \`text\`,
       ''
     ) COLLATE utf8mb4_general_ci
   )
