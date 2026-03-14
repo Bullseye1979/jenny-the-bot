@@ -131,7 +131,7 @@ function getMdToHtml(md) {
     text = text.replace(/`([^`]+)`/g, (_, c) => `<code>${escHtml(c)}</code>`);
     text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
       const safeHref = href.startsWith("#") ? href : escHtml(href);
-      return `<a href="${safeHref}">${escHtml(label)}</a>`;
+      return `<a href="${safeHref}">${label}</a>`;
     });
     return text;
   }

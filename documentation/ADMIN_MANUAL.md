@@ -2136,12 +2136,13 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `keyword_groups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE; parts are used for proximity scoring and are also included in the initial candidate search. |
+| `keyword_groups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE for initial candidate selection; parts are used only for proximity scoring within selected clusters. |
 | `keywords` | array | Fallback: plain search phrases. Each phrase is used as a full-form LIKE token. |
 
 **Search behaviour:**
 
-- The initial SQL candidate scan (`LIKE '%token%'`) searches **both `variants` and `parts`** — rows that contain only parts of a compound term are still selected as hit candidates.
+- The initial SQL candidate scan (`LIKE '%token%'`) searches **only `variants`** — parts are intentionally excluded from the SQL scan to avoid false-positive noise from short substrings.
+- `parts` are used exclusively in `getAnalyzeClusterRows` for proximity scoring: two parts found within `tokenWindow` tokens of each other score as a full hit.
 - `CONTENT_EXPR` uses `NULLIF(…, '')` in `COALESCE` so that an empty `text` column correctly falls through to the JSON fallback fields (`$.content`, `$.message.content`, etc.).
 - Assistant rows and fully-answered turns (same `turn_id` has both a user/agent row and an assistant row) are excluded from results. Raw transcriptions that were never answered are always returned.
 - Results are ranked by coverage (distinct keyword groups found) → frequency (total hits), then sorted chronologically per channel for output.
@@ -2559,7 +2560,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 
 ### HTTP Routes per Module
 
-### 16.2 Config Editor (`/config`, port 3111)
+### 16.2 Config Editor (`/config`)
 
 **Config Editor (port 3111, /config):**
 - `GET /config` — renders the visual config editor UI (role-gated via `allowedRoles`)
@@ -2582,7 +2583,7 @@ The editor renders each object as a collapsible card. Object titles are derived 
 
 All structural changes (add/remove) immediately re-render the tree and mark the config as dirty. After adding, the affected section automatically opens and scrolls into view. After deleting, the scroll position is preserved. Changes are not written to disk until **Save** is clicked (or Ctrl+S).
 
-### 16.3 Chat SPA (`/chat`, port 3112)
+### 16.3 Chat SPA (`/chat`)
 
 **Chat (port 3112, /chat):**
 - `GET /chat` — renders the chat SPA
@@ -2591,7 +2592,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /chat/api/messages?channelID=xxx` — fetches message history for a channel
 - `POST /chat/api/messages` — sends a message to a Discord channel
 
-### 16.4 Inpainting SPA (`/inpainting`, port 3113)
+### 16.4 Inpainting SPA (`/inpainting`)
 
 **Inpainting (port 3113, /inpainting):**
 - `GET /inpainting` — renders the inpainting SPA
@@ -2600,7 +2601,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /inpainting/auth/token` — generates auth token for deep links
 - `GET /documents/*.png` — redirected here by module 00045
 
-### 16.5 Bard Library Manager (`/bard`, port 3114)
+### 16.5 Bard Library Manager (`/bard`)
 
 **Bard (port 3114, /bard):**
 - `GET /bard` — renders the music library manager UI
@@ -2610,7 +2611,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `POST /bard/api/tags` — updates track metadata (title, tags, volume)
 - `DELETE /bard/api/track` — deletes a track and its MP3 file
 
-### 16.6 Live Dashboard (`/dashboard`, port 3115)
+### 16.6 Live Dashboard (`/dashboard`)
 
 **Dashboard (port 3115, /dashboard):**
 - `GET /dashboard` — renders the live bot telemetry dashboard (role-gated)
@@ -2628,7 +2629,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 }
 ```
 
-### 16.7 Documentation Browser (`/docs`, port 3116)
+### 16.7 Documentation Browser (`/docs`)
 
 **Documentation (port 3116, /docs):**
 - `GET /docs` — renders the project documentation index
@@ -2645,7 +2646,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 }
 ```
 
-### 16.8 AI Wiki (`/wiki`, port 3117)
+### 16.8 AI Wiki (`/wiki`)
 
 **AI Wiki (port 3117, /wiki):**
 - `GET /wiki` — lists all configured channel wikis (public ones visible without auth)
@@ -2825,7 +2826,7 @@ The AI **must** output a single raw JSON object (no markdown fences, no surround
 
 `infobox.imageUrl` is also mapped to `article.image_url` in the DB (`wiki_articles.image_url`). If the AI returns the URL in `infobox.imageUrl` but not in a top-level `image_url`, the module copies it automatically.
 
-### 16.9 Context Editor (`/context`, port 3118)
+### 16.9 Context Editor (`/context`)
 
 **Context Editor (port 3118, /context):**
 - `GET /context` — renders the Context DB editor SPA (admin only)

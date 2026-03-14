@@ -373,12 +373,13 @@ async function getInformationInvoke(args, coreData) {
   const minCoverage = Math.max(0, Math.floor(giCfg.minCoverage ?? DEFAULT_MIN_COVERAGE));
   const eventGapMinutes = Math.max(1, Math.floor(giCfg.eventGapMinutes ?? DEFAULT_EVENT_GAP_MINUTES));
   const EVENT_GAP_MS = eventGapMinutes * 60 * 1000;
+  const includeAnsweredTurns = giCfg.includeAnsweredTurns === true;
 
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
     return { error: "ERROR: workingObject.db incomplete" };
   }
 
-  const sqlTokens = Array.from(new Set(groups.flatMap(g => [...g.variants, ...g.parts])));
+  const sqlTokens = Array.from(new Set(groups.flatMap(g => g.variants)));
   if (!sqlTokens.length) {
     return { error: "ERROR: no effective tokens (variants)" };
   }
@@ -388,7 +389,20 @@ async function getInformationInvoke(args, coreData) {
 
   const idPlaceholders = channelIds.map(() => "?").join(", ");
 
-  const hitsSQL = `
+  const hitsSQL = includeAnsweredTurns ? `
+    WITH ordered AS (
+      SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
+             ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
+        FROM \`context\`
+       WHERE \`id\` IN (${idPlaceholders})
+    )
+    SELECT o.\`ts\`, o.\`id\`, o.rn,
+           ${selectFlagsSQL}
+      FROM ordered o
+     WHERE (${whereAnySQL})
+       AND o.\`role\` <> 'assistant'
+     ORDER BY o.\`id\` ASC, o.rn ASC
+  `.trim() : `
     WITH ordered AS (
       SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
              ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
@@ -421,7 +435,19 @@ async function getInformationInvoke(args, coreData) {
      ORDER BY o.\`id\` ASC, o.rn ASC
   `.trim();
 
-  const fetchRangeSQL = `
+  const fetchRangeSQL = includeAnsweredTurns ? `
+    WITH ordered AS (
+      SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
+             ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
+        FROM \`context\`
+       WHERE \`id\` = ?
+    )
+    SELECT o.\`ts\`, o.\`id\`, o.\`json\`, o.\`text\`, o.\`role\`, o.rn
+      FROM ordered o
+     WHERE o.rn BETWEEN ? AND ?
+       AND o.\`role\` <> 'assistant'
+     ORDER BY o.rn ASC
+  `.trim() : `
     WITH ordered AS (
       SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
              ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
@@ -502,12 +528,9 @@ async function getInformationInvoke(args, coreData) {
 
     const timelinePeriods = timelinePerChannel[mainChannelId] || [];
 
-    const hitsParams = [
-      ...channelIds,
-      ...channelIds,
-      ...likeParams,
-      ...likeParams
-    ];
+    const hitsParams = includeAnsweredTurns
+      ? [...channelIds, ...likeParams, ...likeParams]
+      : [...channelIds, ...channelIds, ...likeParams, ...likeParams];
     const [hitRows] = await db.execute(hitsSQL, hitsParams);
     if (!hitRows?.length) {
       return {
@@ -537,7 +560,9 @@ async function getInformationInvoke(args, coreData) {
     for (const c of clustersAll) {
       const [rowsInRange] = await db.execute(
         fetchRangeSQL,
-        [c.channel_id, c.channel_id, c.start_rn, c.end_rn]
+        includeAnsweredTurns
+          ? [c.channel_id, c.start_rn, c.end_rn]
+          : [c.channel_id, c.channel_id, c.start_rn, c.end_rn]
       );
       const metrics = getAnalyzeClusterRows(rowsInRange, groups, { tokenWindow, stripCode });
       let firstTs = null, lastTs = null;
@@ -575,7 +600,9 @@ async function getInformationInvoke(args, coreData) {
       const padEnd = c.end_rn + padRows;
       const [rowsFull] = await db.execute(
         fetchRangeSQL,
-        [c.channel_id, c.channel_id, padStart, padEnd]
+        includeAnsweredTurns
+          ? [c.channel_id, padStart, padEnd]
+          : [c.channel_id, c.channel_id, padStart, padEnd]
       );
 
       const lines = [];
