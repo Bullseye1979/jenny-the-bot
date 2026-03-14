@@ -1216,14 +1216,12 @@ export default async function getWebpageWiki(coreData) {
   if (method === "POST" && seg1 === "api" && seg2 === "generate") {
     if (!isCreator) { await sendJson(wo, 403, { ok: false, error: "Forbidden – creator role required" }); return coreData; }
     let query = "";
+    let force = false;
     try {
       const bodyJson = wo.http?.json || (wo.http?.rawBody ? JSON.parse(wo.http.rawBody) : {});
       query = getStr(bodyJson.query || "").trim();
+      force = bodyJson.force === true;
     } catch { query = ""; }
-
-    if (!query) { await sendJson(wo, 400, { ok: false, error: "Missing query" }); return coreData; }
-
-    const force = bodyJson.force === true;
 
     /* Search first — skip if user explicitly requested generation */
     if (!force) {
