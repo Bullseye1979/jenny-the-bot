@@ -1,12 +1,17 @@
 /**********************************************************************************/
 /* filename: getInformation.js                                                     *
-/* Version 1.0                                                                     *
+/* Version 1.1                                                                     *
 /* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
 /*          info snippets ranked by coverage then frequency.                       *
+/*                                                                                *
+/* Changes in 1.1                                                                  *
+/* - Removed hard minCoverage drop that could return no data despite real hits.    *
+/* - Added fallback selection to always return the best available cluster.         *
+/* - Added debug meta so empty results can be diagnosed more easily.              *
 /**********************************************************************************/
 
 /**********************************************************************************/
-/*                                                                                 *
+/*                                                                                 */
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
@@ -38,8 +43,8 @@ const CONTENT_EXPR = `
 const ESCAPE_CLAUSE = "ESCAPE '\\\\'";
 
 /**********************************************************************************/
-/* functionSignature: getPool (wo)                                                 *
-/* Returns or creates a pooled DB connection for given config.                     *
+/* functionSignature: getPool (wo)                                                 */
+/* Returns or creates a pooled DB connection for given config.                     */
 /**********************************************************************************/
 async function getPool(wo) {
   const key = JSON.stringify({ h: wo?.db?.host, u: wo?.db?.user, d: wo?.db?.database });
@@ -59,8 +64,8 @@ async function getPool(wo) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getMaxTimelineToFetch (wo, giCfg)                            *
-/* Resolves the maximum number of timeline periods to fetch.                       *
+/* functionSignature: getMaxTimelineToFetch (wo, giCfg)                            */
+/* Resolves the maximum number of timeline periods to fetch.                       */
 /**********************************************************************************/
 function getMaxTimelineToFetch(wo, giCfg) {
   if (Number.isFinite(giCfg?.maxTimelinePeriods)) {
@@ -74,8 +79,8 @@ function getMaxTimelineToFetch(wo, giCfg) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getNormalizePhrasesToWords (arr)                             *
-/* Normalizes phrases into a capped list of unique words.                          *
+/* functionSignature: getNormalizePhrasesToWords (arr)                             */
+/* Normalizes phrases into a capped list of unique words.                          */
 /**********************************************************************************/
 function getNormalizePhrasesToWords(arr) {
   if (!Array.isArray(arr)) return [];
@@ -98,8 +103,8 @@ function getNormalizePhrasesToWords(arr) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getStripLargeCodeBlocks (text)                               *
-/* Collapses large triple-backtick blocks with a placeholder.                      *
+/* functionSignature: getStripLargeCodeBlocks (text)                               */
+/* Collapses large triple-backtick blocks with a placeholder.                      */
 /**********************************************************************************/
 function getStripLargeCodeBlocks(text) {
   return String(text || "").replace(/```[\s\S]*?```/g, (m) => {
@@ -109,14 +114,14 @@ function getStripLargeCodeBlocks(text) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getEscapeLike (s)                                            *
-/* Escapes %, _ and \ for SQL LIKE expressions.                                    *
+/* functionSignature: getEscapeLike (s)                                            */
+/* Escapes %, _ and \ for SQL LIKE expressions.                                    */
 /**********************************************************************************/
 function getEscapeLike(s) { return String(s).replace(/[\\%_]/g, m => '\\' + m); }
 
 /**********************************************************************************/
-/* functionSignature: getPickFirstString (...vals)                                 *
-/* Returns the first non-empty trimmed string value.                               *
+/* functionSignature: getPickFirstString (...vals)                                 */
+/* Returns the first non-empty trimmed string value.                               */
 /**********************************************************************************/
 function getPickFirstString(...vals) {
   for (const v of vals) if (typeof v === "string" && v.trim()) return v.trim();
@@ -124,8 +129,8 @@ function getPickFirstString(...vals) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getParseRowForText (row, opts)                               *
-/* Extracts sender tag and content text from a DB row.                             *
+/* functionSignature: getParseRowForText (row, opts)                               */
+/* Extracts sender tag and content text from a DB row.                             */
 /**********************************************************************************/
 function getParseRowForText(row, { stripCode }) {
   const role = (typeof row.role === "string" && row.role.trim()) ? row.role.trim() : "unknown";
@@ -151,28 +156,28 @@ function getParseRowForText(row, { stripCode }) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getNorm (s)                                                  *
-/* Lowercases and normalizes a string value.                                       *
+/* functionSignature: getNorm (s)                                                  */
+/* Lowercases and normalizes a string value.                                       */
 /**********************************************************************************/
 function getNorm(s) { return String(s || "").toLowerCase(); }
 
 /**********************************************************************************/
-/* functionSignature: getUniqueArr (a)                                             *
-/* Returns a unique array with falsy values removed.                               *
+/* functionSignature: getUniqueArr (a)                                             */
+/* Returns a unique array with falsy values removed.                               */
 /**********************************************************************************/
 function getUniqueArr(a) { return [...new Set((a || []).filter(Boolean))]; }
 
 /**********************************************************************************/
-/* functionSignature: getTokenize (text)                                           *
-/* Tokenizes text into lowercase alphanumeric tokens.                              *
+/* functionSignature: getTokenize (text)                                           */
+/* Tokenizes text into lowercase alphanumeric tokens.                              */
 /**********************************************************************************/
 function getTokenize(text) {
   return String(text || "").toLowerCase().split(/\W+/).filter(Boolean);
 }
 
 /**********************************************************************************/
-/* functionSignature: getParseTs (ts)                                              *
-/* Parses a timestamp string to milliseconds or null.                              *
+/* functionSignature: getParseTs (ts)                                              */
+/* Parses a timestamp string to milliseconds or null.                              */
 /**********************************************************************************/
 function getParseTs(ts) {
   if (!ts) return null;
@@ -181,8 +186,8 @@ function getParseTs(ts) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getFmtDelta (ms)                                             *
-/* Formats a duration in ms as human-readable h/m string.                          *
+/* functionSignature: getFmtDelta (ms)                                             */
+/* Formats a duration in ms as human-readable h/m string.                          */
 /**********************************************************************************/
 function getFmtDelta(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -193,8 +198,8 @@ function getFmtDelta(ms) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getNormalizeGroupsFromArgs (args)                            *
-/* Builds normalized keyword groups from args.                                     *
+/* functionSignature: getNormalizeGroupsFromArgs (args)                            */
+/* Builds normalized keyword groups from args.                                     */
 /**********************************************************************************/
 function getNormalizeGroupsFromArgs(args) {
   if (Array.isArray(args?.keyword_groups) && args.keyword_groups.length) {
@@ -218,8 +223,8 @@ function getNormalizeGroupsFromArgs(args) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getPartsInWindow (tokens, parts, K)                          *
-/* Detects proximity of distinct parts within a token window.                      *
+/* functionSignature: getPartsInWindow (tokens, parts, K)                          */
+/* Detects proximity of distinct parts within a token window.                      */
 /**********************************************************************************/
 function getPartsInWindow(tokens, parts, K = DEFAULT_TOKEN_WINDOW) {
   if (!parts?.length) return 0;
@@ -244,8 +249,8 @@ function getPartsInWindow(tokens, parts, K = DEFAULT_TOKEN_WINDOW) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getAnalyzeClusterRows (rows, groups, opts)                   *
-/* Computes coverage, hits, and evidence metrics per cluster.                      *
+/* functionSignature: getAnalyzeClusterRows (rows, groups, opts)                   */
+/* Computes coverage, hits, and evidence metrics per cluster.                      */
 /**********************************************************************************/
 function getAnalyzeClusterRows(rows, groups, { tokenWindow = DEFAULT_TOKEN_WINDOW, stripCode = false } = {}) {
   const gState = groups.map(() => ({ lvl: 0, partialLines: 0, hadFull: false }));
@@ -295,8 +300,8 @@ function getAnalyzeClusterRows(rows, groups, { tokenWindow = DEFAULT_TOKEN_WINDO
 }
 
 /**********************************************************************************/
-/* functionSignature: getBuildClustersFromHits (hitRows, rowsPerCluster)           *
-/* Builds fixed-size clusters from hit row numbers per channel.                    *
+/* functionSignature: getBuildClustersFromHits (hitRows, rowsPerCluster)           */
+/* Builds fixed-size clusters from hit row numbers per channel.                    */
 /**********************************************************************************/
 function getBuildClustersFromHits(hitRows, rowsPerCluster) {
   const R = Math.max(1, Math.floor(rowsPerCluster));
@@ -324,8 +329,8 @@ function getBuildClustersFromHits(hitRows, rowsPerCluster) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getBuildLikeFlags (contentExpr, tokens)                      *
-/* Produces SELECT flag columns and a WHERE-any SQL fragment.                      *
+/* functionSignature: getBuildLikeFlags (contentExpr, tokens)                      */
+/* Produces SELECT flag columns and a WHERE-any SQL fragment.                      */
 /**********************************************************************************/
 function getBuildLikeFlags(contentExpr, tokens) {
   const flagExprs = tokens.map(() =>
@@ -337,8 +342,65 @@ function getBuildLikeFlags(contentExpr, tokens) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getInformationInvoke (args, coreData)                        *
-/* Executes clustered search and returns snippets with meta.                       *
+/* functionSignature: getGetEmptyMetaBase (opts)                                   */
+/* Builds common meta fields for empty-return scenarios.                           */
+/**********************************************************************************/
+function getGetEmptyMetaBase(opts) {
+  return {
+    channel_id: opts.mainChannelId,
+    channel_ids: opts.channelIds,
+    groups: opts.groups.map(g => ({ base: g.base, parts: g.parts })),
+    rows_per_cluster: opts.rowsPerCluster,
+    timeline_periods: opts.timelinePeriods,
+    timeline_per_channel: opts.timelinePerChannel,
+    duration_ms: Date.now() - opts.startedAt,
+    raw_sql_tokens: opts.sqlTokens,
+    raw_hit_rows: opts.rawHitRows,
+    raw_cluster_count: opts.rawClusterCount,
+    min_coverage_requested: opts.minCoverage,
+    include_answered_turns: opts.includeAnsweredTurns,
+    note:
+      "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
+      "You can align each item.rn to the rolling timeline via meta.timeline_per_channel[channel_id] " +
+      "(rn ∈ [start_idx..end_idx])."
+  };
+}
+
+/**********************************************************************************/
+/* functionSignature: getPickClustersForOutput (analyzed, minCoverage)             */
+/* Picks clusters for output with minCoverage preference and best-hit fallback.    */
+/**********************************************************************************/
+function getPickClustersForOutput(analyzed, minCoverage) {
+  const eligible = analyzed.filter(c => c.coverage >= minCoverage);
+  if (eligible.length) {
+    return {
+      selected: eligible,
+      selectionMode: "eligible_only",
+      fallbackClusterUsed: false,
+      eligibleClusters: eligible.length
+    };
+  }
+
+  if (analyzed.length) {
+    return {
+      selected: [analyzed[0]],
+      selectionMode: "fallback_best_available",
+      fallbackClusterUsed: true,
+      eligibleClusters: 0
+    };
+  }
+
+  return {
+    selected: [],
+    selectionMode: "no_clusters",
+    fallbackClusterUsed: false,
+    eligibleClusters: 0
+  };
+}
+
+/**********************************************************************************/
+/* functionSignature: getInformationInvoke (args, coreData)                        */
+/* Executes clustered search and returns snippets with meta.                       */
 /**********************************************************************************/
 async function getInformationInvoke(args, coreData) {
   const startedAt = Date.now();
@@ -532,28 +594,31 @@ async function getInformationInvoke(args, coreData) {
       ? [...channelIds, ...likeParams, ...likeParams]
       : [...channelIds, ...channelIds, ...likeParams, ...likeParams];
     const [hitRows] = await db.execute(hitsSQL, hitsParams);
+
     if (!hitRows?.length) {
       return {
         items: [],
         meta: {
-          channel_id: mainChannelId,
-          channel_ids: channelIds,
-          groups: groups.map(g => ({ base: g.base, parts: g.parts })),
-          rows_per_cluster: rowsPerCluster,
+          ...getGetEmptyMetaBase({
+            startedAt,
+            mainChannelId,
+            channelIds,
+            groups,
+            rowsPerCluster,
+            timelinePeriods,
+            timelinePerChannel,
+            sqlTokens,
+            rawHitRows: 0,
+            rawClusterCount: 0,
+            minCoverage,
+            includeAnsweredTurns
+          }),
           clusters_considered: 0,
           clusters_selected: 0,
           printed_rows: 0,
-          timeline_periods: timelinePeriods,
-          timeline_per_channel: timelinePerChannel,
-          selection_mode: analyzed.length ? "no_blocks_after_budget" : "none",
-          min_coverage_requested: minCoverage,
-          eligible_clusters: 0,
+          selection_mode: "no_sql_hits",
           fallback_cluster_used: false,
-          duration_ms: Date.now() - startedAt,
-          note:
-            "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
-            "You can align each item.rn to the rolling timeline via meta.timeline_per_channel[channel_id] " +
-            "(rn ∈ [start_idx..end_idx])."
+          eligible_clusters: 0
         }
       };
     }
@@ -594,13 +659,13 @@ async function getInformationInvoke(args, coreData) {
       return a.start_rn - b.start_rn;
     });
 
-    const eligible = analyzed.filter(c => c.coverage >= minCoverage);
-    const selectedClusters = eligible.length ? eligible : analyzed.slice(0, 1);
-    const selectionMode = eligible.length ? "threshold" : "fallback_best_available";
+    const selection = getPickClustersForOutput(analyzed, minCoverage);
+    const candidateClusters = selection.selected;
+
     const blocks = [];
     let usedLines = 0;
 
-    for (const c of selectedClusters) {
+    for (const c of candidateClusters) {
       const padStart = Math.max(1, c.start_rn - padRows);
       const padEnd = c.end_rn + padRows;
       const [rowsFull] = await db.execute(
@@ -618,7 +683,7 @@ async function getInformationInvoke(args, coreData) {
         rn: c.start_rn - 0.0001,
         ts: null,
         sender: "meta",
-        content: `[[ CLUSTER channel=${c.channel_id} idx=${c.idx} rows=${c.start_rn}-${c.end_rn} coverage=${c.coverage} hits=${c.totalHits} mode=${selectionMode} ]]`
+        content: `[[ CLUSTER channel=${c.channel_id} idx=${c.idx} rows=${c.start_rn}-${c.end_rn} coverage=${c.coverage} hits=${c.totalHits} ]]`
       });
 
       let firstTs = null, lastTs = null;
@@ -663,37 +728,43 @@ async function getInformationInvoke(args, coreData) {
         }
         usedLines = maxOutputLines;
         break;
-      } else {
-        blocks.push({
-          channel_id: c.channel_id,
-          start_rn: c.start_rn,
-          idx: c.idx,
-          lines,
-          firstTs,
-          lastTs
-        });
-        usedLines += lines.length;
       }
+
+      blocks.push({
+        channel_id: c.channel_id,
+        start_rn: c.start_rn,
+        idx: c.idx,
+        lines,
+        firstTs,
+        lastTs
+      });
+      usedLines += lines.length;
     }
 
     if (!blocks.length) {
       return {
         items: [],
         meta: {
-          channel_id: mainChannelId,
-          channel_ids: channelIds,
-          groups: groups.map(g => ({ base: g.base, parts: g.parts })),
-          rows_per_cluster: rowsPerCluster,
+          ...getGetEmptyMetaBase({
+            startedAt,
+            mainChannelId,
+            channelIds,
+            groups,
+            rowsPerCluster,
+            timelinePeriods,
+            timelinePerChannel,
+            sqlTokens,
+            rawHitRows: hitRows.length,
+            rawClusterCount: clustersAll.length,
+            minCoverage,
+            includeAnsweredTurns
+          }),
           clusters_considered: analyzed.length,
           clusters_selected: 0,
           printed_rows: 0,
-          timeline_periods: timelinePeriods,
-          timeline_per_channel: timelinePerChannel,
-          duration_ms: Date.now() - startedAt,
-          note:
-            "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
-            "You can align each item.rn to the rolling timeline via meta.timeline_per_channel[channel_id] " +
-            "(rn ∈ [start_idx..end_idx])."
+          selection_mode: selection.selectionMode,
+          fallback_cluster_used: selection.fallbackClusterUsed,
+          eligible_clusters: selection.eligibleClusters
         }
       };
     }
@@ -755,11 +826,14 @@ async function getInformationInvoke(args, coreData) {
       printed_rows: allPrinted.length,
       timeline_periods: timelinePeriods,
       timeline_per_channel: timelinePerChannel,
-      selection_mode: selectionMode,
-      min_coverage_requested: minCoverage,
-      eligible_clusters: eligible.length,
-      fallback_cluster_used: !eligible.length && analyzed.length > 0,
       duration_ms: Date.now() - startedAt,
+      raw_sql_tokens: sqlTokens,
+      raw_hit_rows: hitRows.length,
+      raw_cluster_count: clustersAll.length,
+      min_coverage_requested: minCoverage,
+      selection_mode: selection.selectionMode,
+      fallback_cluster_used: selection.fallbackClusterUsed,
+      eligible_clusters: selection.eligibleClusters,
       note:
         "These snippets are DETAIL views from the global rolling timeline over one or multiple channels. " +
         "Each item has a channel_id and rn. To place a snippet on the timeline: " +
@@ -775,8 +849,8 @@ async function getInformationInvoke(args, coreData) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getDefaultExport ()                                          *
-/* Returns the tool definition object and invoke function.                         *
+/* functionSignature: getDefaultExport ()                                          */
+/* Returns the tool definition object and invoke function.                         */
 /**********************************************************************************/
 function getDefaultExport() {
   return {
