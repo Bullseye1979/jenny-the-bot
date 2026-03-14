@@ -2547,6 +2547,7 @@ ${toolCss}
 body{padding:0;margin:0;background:var(--bg,#f0f2f5);color:var(--txt,#1e293b);display:block}
 .app{max-width:980px;margin:0 auto;padding:12px;margin-top:var(--hh)}
 .app h1{display:none}
+header h1{margin:0}
 </style>
 </head>
 <body>

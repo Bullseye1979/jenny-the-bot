@@ -524,8 +524,8 @@ a { color: var(--wiki-link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .wiki-header { background: var(--wiki-surface); border-bottom: 2px solid var(--wiki-accent); margin-bottom: 0; }
 .wiki-header-top { display: flex; align-items: center; gap: 12px; padding: 0 20px; min-height: 52px; }
-.wiki-logo-link { display: flex; align-items: center; gap: 8px; color: var(--wiki-text); font-size: 1.3em; font-weight: bold; text-decoration: none; flex-shrink: 0; }
-.wiki-logo { font-size: 1.4em; }
+.wiki-logo-link { display: flex; align-items: center; gap: 6px; color: var(--wiki-text); font-size: 15px; font-weight: 700; white-space: nowrap; letter-spacing: -.2px; text-decoration: none; flex-shrink: 0; }
+.wiki-logo { font-size: 1em; }
 .wiki-search-form { display: flex; gap: 6px; }
 .wiki-search-input { background: var(--wiki-bg); border: 1px solid var(--wiki-border); color: var(--wiki-text); padding: 7px 12px; border-radius: 4px; width: 260px; font-size: 0.95em; }
 .wiki-search-input:focus { outline: none; border-color: var(--wiki-accent); }
