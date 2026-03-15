@@ -421,28 +421,14 @@ async function callPipelineForArticle(query, channel, coreData) {
   const responseText      = getStr(result?.workingObject?.response || "").trim();
 
   if (!responseText || responseText === "[Empty AI response]") {
-    const logEntries = (syntheticWo.logging || [])
-      .filter(e => e.severity === "warn" || e.severity === "error");
-    const logMsg = logEntries
-      .map(e => {
-        let s = e.message || "";
-        if (e.details && typeof e.details === "object") {
-          try { s += " " + JSON.stringify(e.details); } catch { /* ignore */ }
-        }
-        return s;
-      })
-      .filter(Boolean)
-      .join(" | ");
-    /* Full pipeline log for deeper diagnosis */
     const fullLog = (syntheticWo.logging || []).map(e => {
       let s = `[${e.severity || "?"}] ${e.module || "?"}: ${e.message || ""}`;
       if (e.details && typeof e.details === "object") {
         try { s += " " + JSON.stringify(e.details); } catch { /* ignore */ }
       }
       return s;
-    });
-    console.error("[wiki] Pipeline returned no response. Full log:\n" + fullLog.join("\n"));
-    throw new Error("Pipeline returned no response" + (logMsg ? ": " + logMsg : ""));
+    }).join("\n");
+    throw new Error("Pipeline returned no response" + (fullLog ? "\n" + fullLog : ""));
   }
 
   /* Parse the JSON article */
