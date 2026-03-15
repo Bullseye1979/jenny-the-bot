@@ -328,7 +328,10 @@ function parseTracks(xmlText) {
     const volumeM = /<volume>([^<]*)<\/volume>/i.exec(inner);
     const file  = fileM  ? fileM[1]  : "";
     const title = titleM ? titleM[1] : "";
-    const tags  = tagsM  ? tagsM[1].split(",").map(t => t.trim()).filter(Boolean) : [];
+    // Preserve empty positions (wildcard slots). Trim trailing empty entries only.
+    const rawTagParts = tagsM ? tagsM[1].split(",").map(t => t.trim().toLowerCase().replace(/[^a-z0-9_*-]/g, "").replace(/^\*$/, "")) : [];
+    while (rawTagParts.length > 0 && rawTagParts[rawTagParts.length - 1] === "") rawTagParts.pop();
+    const tags = rawTagParts;
     const rawVol = volumeM ? parseFloat(volumeM[1]) : NaN;
     const volume = Number.isFinite(rawVol) ? Math.max(0.1, Math.min(4.0, rawVol)) : 1.0;
     if (file) tracks.push({ file, title, tags, volume });
@@ -462,7 +465,10 @@ export default async function getWebpageBard(coreData) {
 
     const filename = getStr(reqData?.file);
     const title    = getStr(reqData?.title);
-    const tags     = Array.isArray(reqData?.tags) ? reqData.tags.map(t => getStr(t).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "")).filter(Boolean) : [];
+    // Preserve positional empty slots (* = wildcard → empty string). Trim trailing empties.
+    const rawInTags = Array.isArray(reqData?.tags) ? reqData.tags.map(t => { const s = getStr(t).trim().toLowerCase().replace(/[^a-z0-9_*-]/g, ""); return s === "*" ? "" : s; }) : [];
+    while (rawInTags.length > 0 && rawInTags[rawInTags.length - 1] === "") rawInTags.pop();
+    const tags = rawInTags;
     const rawVol   = typeof reqData?.volume === "number" ? reqData.volume : parseFloat(reqData?.volume);
     const volume   = Number.isFinite(rawVol) ? Math.max(0.1, Math.min(4.0, rawVol)) : null;
 
@@ -745,7 +751,7 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '    html+=\'<div class="track-row" data-i="\'+i+\'">\'+\n' +
 '      \'<span class="track-file">\'+esc(t.file)+\'</span>\'+\n' +
 '      \'<input class="inp track-title" type="text" value="\'+esc(t.title)+\'" placeholder="Title" data-file="\'+esc(t.file)+\'">\'+\n' +
-'      \'<input class="inp track-tags" type="text" value="\'+esc((t.tags||[]).join(","))+\'" placeholder="Tags" data-file="\'+esc(t.file)+\'">\'+\n' +
+'      \'<input class="inp track-tags" type="text" value="\'+esc((t.tags||[]).map(function(v,i){return(i<2&&v===""?"*":v);}).join(","))+\'" placeholder="Tags" data-file="\'+esc(t.file)+\'">\'+\n' +
 '      \'<input class="inp track-vol" type="number" min="0.1" max="4" step="0.1" value="\'+parseFloat(t.volume||1).toFixed(1)+\'" title="Volume" data-file="\'+esc(t.file)+\'">\'+\n' +
 '      \'<div class="track-actions">\'+\n' +
 '      \'<button class="btn btn-s" onclick="previewTrack(this)" data-file="\'+esc(t.file)+\'" title="Preview">▶</button>\'+\n' +
@@ -760,7 +766,9 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '  var row=btn.closest(".track-row");\n' +
 '  var file=btn.getAttribute("data-file");\n' +
 '  var title=row.querySelector(".track-title").value.trim();\n' +
-'  var tags=row.querySelector(".track-tags").value.split(",").map(function(t){return t.trim().toLowerCase().replace(/[^a-z0-9_-]/g,"");}).filter(Boolean);\n' +
+'  var rawT=row.querySelector(".track-tags").value.split(",").map(function(t){var s=t.trim().toLowerCase().replace(/[^a-z0-9_*-]/g,"");return s==="*"?"":s;});\n' +
+'  while(rawT.length>0&&rawT[rawT.length-1]==="")rawT.pop();\n' +
+'  var tags=rawT;\n' +
 '  var vol=parseFloat(row.querySelector(".track-vol").value)||1.0;\n' +
 '  btn.disabled=true;\n' +
 '  fetch(BASE+"/api/tags",{method:"POST",headers:{"Content-Type":"application/json"},\n' +

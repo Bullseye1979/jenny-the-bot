@@ -3341,6 +3341,7 @@ Fields:
   - Positions 2–5 (moods): atmosphere words — e.g. `dark`, `tense`, `calm`, `epic`
   - **Empty position** = wildcard — the track matches any AI value for that slot
   - A track with `,,calm,peaceful` matches any location and any situation
+  - In the **Bard UI**, wildcard positions are displayed as `*` and must be entered as `*`. Example: entering `*,*,released,free,joy` leaves positions 0 and 1 empty (wildcard) and sets three moods. Raw XML uses leading commas (`,,released,free,joy`); the UI converts between the two automatically.
 - `volume`: Playback volume multiplier, 0.1–4.0 (default: 1.0)
 
 ### Tag Vocabulary
@@ -3422,7 +3423,7 @@ Empty library tag = wildcard → always satisfies the match condition for that p
 ### Bard UI
 
 Accessible at `/bard`. Features:
-- Edit track title, tags (comma-separated), and volume per track
+- Edit track title, tags, and volume per track. Tags are entered as comma-separated values in the fixed 6-position schema: `location,situation,mood1,mood2,mood3,mood4`. Use `*` for any position that should be a wildcard (matches any AI value). Example: `*,combat,dark,tense,intense,battle` = any location, combat situation, four moods.
 - Delete tracks (removes both library entry and MP3 file)
 - **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
 - **Bulk Auto-Tag Upload** — drop multiple MP3 files at once and have tags generated automatically (see below)
