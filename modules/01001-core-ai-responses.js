@@ -1409,6 +1409,8 @@ export default async function getCoreAi(coreData) {
           exitStatus: "success",
           message: `Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(assistantText)}`
         });
+        /* Disable tools for the continuation pass — model should resume output, not call more tools */
+        wo.__forceNoTools = true;
         continue;
       }
 
