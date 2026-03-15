@@ -3331,29 +3331,20 @@ Fields:
 - Exploration: `exploration`, `adventure`, `travel`, `forest`, `peaceful`, `calm`
 - Mystery: `mystery`, `underdark`, `creepy`, `suspense`, `whimsical`
 
-### Song Switch Logic (`getShouldSwitch`)
+### Song Switch Logic
 
-Called on every poll while a track is playing. Compares the new AI labels against the current track's own tags.
+**Songs are never interrupted mid-playback.** A switch only happens when the current track ends naturally (duration expired). This prevents oscillation between equally-scored tracks and ensures uninterrupted listening.
 
 **Two distinct "empty" semantics:**
 
 | Source | Empty means |
 |--------|-------------|
-| `library.xml` track tag | **Wildcard** — the track fits any value for that position |
-| AI output label | **Unknown** — the AI has no opinion → skip that rule entirely |
+| `library.xml` track tag | **Wildcard** — the track fits any location/situation |
+| AI output label | **Unknown** — the AI has no opinion for this cycle |
 
-**AI label carry-forward** (`bard-label-output`): When the AI returns an empty location or situation slot, the previous known value is carried forward so the label state doesn't regress. Mood slots are **not** carried forward — empty mood = "unknown this cycle."
+**AI label carry-forward** (`bard-label-output`): When the AI returns an empty location or situation slot, the previous known value is carried forward so the label state doesn't regress between cycles. Mood slots are **not** carried forward — empty mood = "unknown this cycle."
 
-A switch is triggered when **any** of these rules fires:
-
-| Rule | Condition | Notes |
-|------|-----------|-------|
-| **Location** | AI `labels[0]` is non-empty AND track `tags[0]` is non-empty AND they differ | Track empty = wildcard → no switch. AI empty = unknown → skip. |
-| **Situation** | AI `labels[1]` is non-empty AND track `tags[1]` is non-empty AND they differ | Same semantics. |
-| **Mood — awakened slots** | AI has moods that were NOT in the previous cycle's labels (new/first-time moods) AND none of them match any track mood | 50% rule does not apply for newly awakened slots. Any single awakened-mood match → keep playing. |
-| **Mood — known slots** | Moods that were already present in the previous cycle → >50% of track's moods absent from these known moods → switch | Classic drift rule; only checked when prior moods existed. |
-
-If no rule fires: keep playing, update `nowPlaying.labels` to the latest AI labels (UI refresh only).
+While a track is playing, the scheduler **only** refreshes `nowPlaying.labels` so the UI always shows the current mood context. No selection logic runs until the track ends.
 
 ### Song Selection Algorithm (`getSelectSong`)
 
@@ -3385,9 +3376,8 @@ Used to find the best-matching track whenever a switch is triggered or a new tra
 
 **Full lifecycle:**
 1. **Scheduler started** (`/bardstart`) — no labels written. First poll picks a random track. The cron job writes real structured labels on its first run.
-2. **Labels empty** — if playing, keep it unchanged. If nothing plays, pick a random track.
-3. **Track playing, labels present** — run `getShouldSwitch`; if no rule fires, refresh `nowPlaying.labels` for the UI and continue. If a rule fires, run `getSelectSong` and switch.
-4. **Song ends naturally** — `setTimeout` fires (ffprobe duration + 200 ms), calls `triggerPoll()`. Poll overwrites `bard:stream` and `bard:nowplaying` atomically when the next track starts.
+2. **Track playing** — scheduler refreshes `nowPlaying.labels` for the UI every poll. No other action is taken; the track plays to completion.
+3. **Song ends naturally** — `setTimeout` fires (ffprobe duration + 200 ms), calls `triggerPoll()` immediately. The next poll runs `getSelectSong` with the current labels and starts the best-matching track.
 
 **Mood ordering:** The LLM outputs moods in priority order (most fitting first). Earlier mood labels carry higher weight — the order matters for scoring.
 
@@ -3519,16 +3509,7 @@ location,situation,mood1,mood2,mood3,mood4
 
 Tracks excluded by location or situation don't compete in the primary round. If **all** tracks are excluded (e.g. AI says `city` but the library has no city tracks), the hard filter is dropped and all tracks compete on mood score alone. If no moods match either, all tracks score 0 and one is picked at random.
 
-**Song-switch logic:** The bard scheduler compares the new AI labels against the current track's own tags. Track empty = wildcard (track fits anywhere). AI empty = unknown (skip that rule).
-
-1. **Location changed** — AI `labels[0]` non-empty AND track `tags[0]` non-empty AND they differ → switch. (Track with no location = wildcard, no switch.)
-2. **Situation changed** — same rule applied to `labels[1]` / `track.tags[1]`.
-3. **Mood — per slot:**
-   - **Awakened slots** (moods new this cycle, not in previous AI output): 50% rule does not apply. Any single awakened mood matching the track = keep; zero matches = switch.
-   - **Known slots** (moods already present in previous cycle): >50% of track's moods absent from known moods → switch.
-   - Both sub-rules skipped when AI returned no moods this cycle ("unknown").
-
-If no rule fires, the track keeps playing and `nowPlaying.labels` is updated for UI display. AI label carry-forward: if the AI returns empty location/situation, the last known value is retained automatically so context doesn't degrade between cycles.
+**Song-switch logic:** Songs are **never interrupted mid-playback**. When the current track ends, `getSelectSong` selects the next track based on the current AI labels at that moment. Empty positions in `library.xml` are wildcards — they auto-match any AI value (neither excluded nor given a bonus).
 
 ### bard-label-gen Flow (Pipeline Overview)
 
