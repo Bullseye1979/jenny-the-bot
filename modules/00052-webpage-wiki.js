@@ -412,16 +412,29 @@ async function callPipelineForArticle(query, channel, coreData) {
     db:                  wo.db,
     toolsconfig:         {
       ...(wo.toolsconfig || {}),
-      getInformation: {
-        /* Wiki-safe defaults — prevent context overflow; user config overrides these */
-        maxOutputLines:       250,
-        maxLogChars:          1500,
-        stripCode:            true,
-        /* User config from core.json overrides the above defaults */
-        ...((wo.toolsconfig || {}).getInformation || {}),
-        /* Always forced for wiki — voice transcripts must be found regardless of answered_turns */
-        includeAnsweredTurns: true
-      }
+      getInformation: (() => {
+        const giUser = (wo.toolsconfig || {}).getInformation || {};
+        /* Wiki hard caps — user config is respected but clamped to wiki-safe maximums */
+        const WIKI_GI_MAX_LINES = 150;
+        const WIKI_GI_MAX_CHARS = 800;
+        return {
+          ...giUser,
+          maxOutputLines:       Math.min(giUser.maxOutputLines ?? WIKI_GI_MAX_LINES, WIKI_GI_MAX_LINES),
+          maxLogChars:          Math.min(giUser.maxLogChars     ?? WIKI_GI_MAX_CHARS, WIKI_GI_MAX_CHARS),
+          stripCode:            true,
+          /* Always forced for wiki — voice transcripts must be found */
+          includeAnsweredTurns: true
+        };
+      })(),
+      getTimeline: (() => {
+        const tlUser = (wo.toolsconfig || {}).getTimeline || {};
+        /* Wiki hard cap — prevents getTimeline from returning hundreds of periods */
+        const WIKI_TL_MAX_TIMELINE = 10;
+        return {
+          ...tlUser,
+          maxTimelinePeriods: Math.min(tlUser.maxTimelinePeriods ?? WIKI_TL_MAX_TIMELINE, WIKI_TL_MAX_TIMELINE)
+        };
+      })()
     },
     timezone:            wo.timezone    || "Europe/Berlin",
     logging:             []

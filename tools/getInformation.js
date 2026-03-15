@@ -58,20 +58,6 @@ async function getPool(wo) {
   return pool;
 }
 
-/**********************************************************************************/
-/* functionSignature: getMaxTimelineToFetch (wo, giCfg)                            */
-/* Resolves the maximum number of timeline periods to fetch.                       */
-/**********************************************************************************/
-function getMaxTimelineToFetch(wo, giCfg) {
-  if (Number.isFinite(giCfg?.maxTimelinePeriods)) {
-    return Math.max(1, Number(giCfg.maxTimelinePeriods));
-  }
-  const cfgCtx = wo?.config?.context;
-  if (Number.isFinite(cfgCtx?.maxTimelinePeriods)) {
-    return Math.max(1, Number(cfgCtx.maxTimelinePeriods));
-  }
-  return null;
-}
 
 /**********************************************************************************/
 /* functionSignature: getNormalizePhrasesToWords (arr)                             */
@@ -495,60 +481,6 @@ async function getInformationInvoke(args, coreData) {
 
   try {
     const db = await getPool(wo);
-    const maxTimelineToFetch = getMaxTimelineToFetch(wo, giCfg);
-
-    let timelinePerChannel = {};
-    try {
-      if (maxTimelineToFetch) {
-        for (const cid of channelIds) {
-          const [tlRowsDesc] = await db.execute(
-            `
-              SELECT start_idx, end_idx, start_ts, end_ts, summary
-                FROM timeline_periods
-               WHERE channel_id = ?
-               ORDER BY start_idx DESC
-               LIMIT ?
-            `,
-            [cid, maxTimelineToFetch]
-          );
-          timelinePerChannel[cid] = (tlRowsDesc || [])
-            .map(r => ({
-              start_idx: Number(r.start_idx),
-              end_idx: Number(r.end_idx),
-              start_ts: r.start_ts || null,
-              end_ts: r.end_ts || null,
-              summary: r.summary || ""
-            }))
-            .reverse();
-        }
-      } else {
-        const [tlRows] = await db.execute(
-          `
-            SELECT channel_id, start_idx, end_idx, start_ts, end_ts, summary
-              FROM timeline_periods
-             WHERE channel_id IN (${idPlaceholders})
-             ORDER BY channel_id ASC, start_idx ASC
-          `,
-          channelIds
-        );
-        timelinePerChannel = {};
-        for (const r of tlRows || []) {
-          const cid = String(r.channel_id || "");
-          if (!timelinePerChannel[cid]) timelinePerChannel[cid] = [];
-          timelinePerChannel[cid].push({
-            start_idx: Number(r.start_idx),
-            end_idx: Number(r.end_idx),
-            start_ts: r.start_ts || null,
-            end_ts: r.end_ts || null,
-            summary: r.summary || ""
-          });
-        }
-      }
-    } catch {
-      timelinePerChannel = {};
-    }
-
-    const timelinePeriods = timelinePerChannel[mainChannelId] || [];
 
     const hitsParams = includeAnsweredTurns
       ? [...channelIds, ...likeParams, ...likeParams]
@@ -566,15 +498,11 @@ async function getInformationInvoke(args, coreData) {
           clusters_considered: 0,
           clusters_selected: 0,
           printed_rows: 0,
-          timeline_periods: timelinePeriods,
-          timeline_per_channel: timelinePerChannel,
           duration_ms: Date.now() - startedAt,
           include_assistant_turns: includeAssistantTurns,
           include_answered_turns: includeAnsweredTurns,
           note:
-            "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
-            "You can align each item.rn to the rolling timeline via meta.timeline_per_channel[channel_id] " +
-            "(rn ∈ [start_idx..end_idx])."
+            "No matching rows found. Call getTimeline separately if a chronological overview is needed."
         }
       };
     }
@@ -707,15 +635,11 @@ async function getInformationInvoke(args, coreData) {
           clusters_considered: analyzed.length,
           clusters_selected: 0,
           printed_rows: 0,
-          timeline_periods: timelinePeriods,
-          timeline_per_channel: timelinePerChannel,
           duration_ms: Date.now() - startedAt,
           include_assistant_turns: includeAssistantTurns,
           include_answered_turns: includeAnsweredTurns,
           note:
-            "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
-            "You can align each item.rn to the rolling timeline via meta.timeline_per_channel[channel_id] " +
-            "(rn ∈ [start_idx..end_idx])."
+            "Hits found but no cluster met minCoverage. Call getTimeline separately if a chronological overview is needed."
         }
       };
     }
@@ -775,16 +699,12 @@ async function getInformationInvoke(args, coreData) {
       clusters_considered: analyzed.length,
       clusters_selected: blocks.length,
       printed_rows: allPrinted.length,
-      timeline_periods: timelinePeriods,
-      timeline_per_channel: timelinePerChannel,
       duration_ms: Date.now() - startedAt,
       include_assistant_turns: includeAssistantTurns,
       include_answered_turns: includeAnsweredTurns,
       note:
-        "These snippets are DETAIL views from the global rolling timeline over one or multiple channels. " +
-        "Each item has a channel_id and rn. To place a snippet on the timeline: " +
-        "find meta.timeline_per_channel[channel_id] and then the period whose [start_idx..end_idx] contains rn; " +
-        "treat that snippet as belonging to that period."
+        "These are detail snippets ranked by keyword coverage. " +
+        "Call getTimeline separately to get the full chronological event history."
     };
 
     return { items: compact, meta };
@@ -806,21 +726,17 @@ function getDefaultExport() {
       function: {
         name: MODULE_NAME,
         description:
-          "Use this function to get historical data based on keywords and answer the question." +
-          "Search one or multiple channels (context.id / workingObject.channelID plus optional workingObject.channelIds) " +
+          "Search the conversation log for historical data using keywords. " +
+          "Searches one or multiple channels (workingObject.channelID + optional workingObject.channelIds) " +
           "using fixed-size clusters (400 rows). " +
           "By default excludes assistant messages and 'answered' turns (role/turn_id). " +
-          "toolsconfig.getInformation.includeAssistantTurns=true disables both exclusions for lore/entity recall. " +
-          "Prefers AI-provided 'keyword_groups' (with 'variants' and optional 'parts'). " +
-          "If only 'keywords' are provided, uses FULL FORMS only (no internal splitting). " +
-          "Ranking strictly by coverage (number of distinct keyword groups) → frequency (totalHits). " +
-          "Output: start with the most relevant cluster(s), then append further relevant info snippets " +
-          "until none remain or the output budget is reached. Afterwards, blocks are sorted chronologically " +
-          "and per channel. A 'NEW EVENT' separator is emitted only if a large time gap exists between clusters. " +
-          "Each returned item includes: channel_id, rn (row number within that channel), ts (timestamp), " +
-          "sender (speaker), content (verbatim or lightly code-collapsed). " +
-          "Additionally, meta.timeline_per_channel[channel_id] contains a (possibly truncated) rolling timeline " +
-          "for each used channel, so the LLM can align detail snippets via rn ∈ [start_idx..end_idx]. " +
+          "Set toolsconfig.getInformation.includeAssistantTurns=true to include all rows. " +
+          "Prefers 'keyword_groups' (with 'variants' and optional 'parts'); " +
+          "falls back to 'keywords' as full-form LIKE tokens (no internal splitting). " +
+          "Ranking: coverage (distinct keyword groups) → totalHits → chronological order. " +
+          "Each returned item includes: channel_id, rn, ts, sender, content. " +
+          "Does NOT return timeline data. " +
+          "Call getTimeline separately to get the full chronological event history. " +
           "Only tell the provided facts. Do not invent stories.",
         parameters: {
           type: "object",

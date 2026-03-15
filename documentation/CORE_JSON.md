@@ -398,7 +398,6 @@ Information clustering and retrieval from the context log.
 | `maxOutputLines` | number | `1000` | Maximum output lines |
 | `minCoverage` | number | `1` | Minimum coverage threshold |
 | `eventGapMinutes` | number | `45` | Minutes between events before a new cluster starts |
-| `maxTimelinePeriods` | number | `30` | Maximum number of timeline periods |
 | `stripCode` | boolean | `false` | Strip code blocks from context before clustering |
 
 #### getConfluence

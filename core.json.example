@@ -340,15 +340,16 @@
       },
       "getInformation": {
         "__description": "Information clustering — no API configuration required",
-        "cluster_rows": 200,
-        "pad_rows": 20,
-        "token_window": 5,
-        "max_log_chars": 6000,
-        "max_output_lines": 500,
-        "min_coverage": 1,
-        "event_gap_minutes": 45,
-        "max_timeline_periods": 20,
-        "strip_code": false
+        "clusterRows": 200,
+        "padRows": 20,
+        "tokenWindow": 5,
+        "maxLogChars": 6000,
+        "maxOutputLines": 500,
+        "minCoverage": 1,
+        "eventGapMinutes": 45,
+        "stripCode": false,
+        "includeAnsweredTurns": false,
+        "includeAssistantTurns": false
       },
       "getImageDescription": {
         "__description": "Vision model for image descriptions — requires apiKey",

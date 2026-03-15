@@ -955,7 +955,6 @@ Semantic cluster search over the stored conversation log.
   "maxOutputLines":        800,
   "minCoverage":           1,
   "eventGapMinutes":       45,
-  "maxTimelinePeriods":    null,
   "stripCode":             false,
   "includeAnsweredTurns":  false,
   "includeAssistantTurns": false
@@ -971,7 +970,6 @@ Semantic cluster search over the stored conversation log.
 | `maxOutputLines` | number | `800` | Total output line budget across all clusters |
 | `minCoverage` | number | `1` | Minimum distinct keyword groups required for a cluster to be included |
 | `eventGapMinutes` | number | `45` | Minimum gap (minutes) between clusters to emit a `NEW EVENT` separator |
-| `maxTimelinePeriods` | number | `null` | Limit timeline entries returned in `meta`; `null` = all periods |
 | `stripCode` | boolean | `false` | Collapse large triple-backtick code blocks (>30 lines) to `«code N lines»` |
 | `includeAnsweredTurns` | boolean | `false` | When `true`, skips the `answered_turns` filter — returns ALL user/agent rows including those that already received a bot reply. Required for voice transcripts (discord-voice always generates bot replies). |
 | `includeAssistantTurns` | boolean | `false` | When `true`, also includes `role=assistant` rows. Implies `includeAnsweredTurns`. |
@@ -980,7 +978,11 @@ Semantic cluster search over the stored conversation log.
 > ```json
 > "getInformation": { "maxOutputLines": 250, "maxLogChars": 1500, "stripCode": true }
 > ```
-> The wiki flow (`00052-webpage-wiki.js`) automatically applies `maxOutputLines: 250`, `maxLogChars: 1500`, `stripCode: true` as defaults, overridable via `toolsconfig.getInformation` in `core.json`.
+> The wiki flow applies **hard caps** — values from `core.json` are clamped to wiki-safe maximums:
+> - `getInformation`: `maxOutputLines` ≤ 150, `maxLogChars` ≤ 800, `stripCode: true`
+> - `getTimeline`: `maxTimelinePeriods` ≤ 10
+>
+> `getInformation` no longer returns timeline data. Call `getTimeline` separately to get the chronological event history.
 
 ---
 
@@ -2157,10 +2159,11 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 - **`answered_turns` filter** (default `on`): excludes user/agent rows whose `turn_id` also has a matching `assistant` row in the same channel. This keeps the result set focused on raw, unprocessed transcriptions. Set `includeAnsweredTurns: true` (or `includeAssistantTurns: true`) to disable this filter — required when searching voice transcriptions in channels where the bot always produces a reply.
 - **Results ranking:** coverage (distinct keyword groups found) → total hits → multi-group rows → any-group rows; then sorted chronologically per channel for output.
 - **Output budget:** controlled by `maxOutputLines` and `maxLogChars`. Clusters below `minCoverage` are silently dropped. A `NEW EVENT` separator is emitted between clusters with a time gap ≥ `eventGapMinutes`.
+- **No timeline data** — `getInformation` does not return timeline periods. Call `getTimeline` separately to get the full chronological event history.
 
 **Wiki usage note:**
 
-The wiki flow forces `includeAnsweredTurns: true` and applies conservative defaults (`maxOutputLines: 250`, `maxLogChars: 1500`, `stripCode: true`) to avoid AI context overflow. These defaults can be overridden via `toolsconfig.getInformation` in `core.json`. See [toolsconfig.getInformation](#toolsconfiggetinformation) for all available parameters.
+The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOutputLines` ≤ 150, `maxLogChars` ≤ 800, `stripCode: true`) to avoid AI context overflow. User config values are clamped to these maximums. See [toolsconfig.getInformation](#toolsconfiggetinformation) for all parameters.
 
 ---
 
