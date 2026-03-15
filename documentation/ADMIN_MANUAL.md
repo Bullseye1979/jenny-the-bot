@@ -3339,8 +3339,8 @@ A switch is triggered when **any** of these rules fires:
 
 | Rule | Condition | Notes |
 |------|-----------|-------|
-| **Location** | AI `labels[0]` ≠ track `tags[0]`, both non-empty | Empty on either side = wildcard → skip rule |
-| **Situation** | AI `labels[1]` ≠ track `tags[1]`, both non-empty | Empty on either side = wildcard → skip rule |
+| **Location** | AI `labels[0]` is non-empty AND differs from track `tags[0]` | Also fires when the track has no location (generic track) but the AI now knows a concrete one. Skipped only when AI location is empty ("unknown"). |
+| **Situation** | AI `labels[1]` is non-empty AND differs from track `tags[1]` | Same as location rule — also fires when track has no situation tag. Skipped only when AI situation is empty. |
 | **Mood drift** | >50% of track's mood tags (`tags[2+]`) absent from new AI moods | Only evaluated when AI returned ≥ 1 mood tag; empty AI moods = "unknown" → skip rule |
 
 If no rule fires: keep playing, update `nowPlaying.labels` to the latest AI labels (UI refresh only).
@@ -3357,12 +3357,21 @@ Used to find the best-matching track whenever a switch is triggered or a new tra
 - A matching pair scores: **AI mood weight × track mood weight**.
 - Location match bonus: +100; situation match bonus: +50.
 
+**Fallback chain (when no tracks survive the hard filter):**
+
+| Situation | Behaviour |
+|-----------|-----------|
+| AI has location/situation but no track in library matches | Drop location/situation filter entirely; score by mood only |
+| No moods match either (or AI has no moods) | All tracks score 0 → random pick |
+| Library is empty | Return `null` → silence until library is populated |
+
 **Selection process:**
 1. Score all tracks; exclude hard-filter failures (`score = -1`).
-2. Find `maxScore`.
-3. If the **current track is already the unique best match** → return `null` (keep playing).
-4. From all `maxScore` tracks: exclude the recently played file for variety.
-5. Return a **random pick** from the remaining candidates.
+2. If all tracks were excluded → fall back to mood-only scoring (ignoring location/situation).
+3. Find `maxScore`.
+4. If the **current track is already the unique best match** → return `null` (keep playing).
+5. From all `maxScore` tracks: exclude the recently played file for variety.
+6. Return a **random pick** from the remaining candidates.
 
 **Full lifecycle:**
 1. **Scheduler started** (`/bardstart`) — no labels written. First poll picks a random track. The cron job writes real structured labels on its first run.
@@ -3498,12 +3507,12 @@ location,situation,mood1,mood2,mood3,mood4
 | Empty location or situation (either side) | neutral (no penalty, no bonus) |
 | Mood match | position-weighted: `(aiMoodIdx weight) × (trackMoodIdx weight)` |
 
-Tracks excluded by location or situation don't compete at all. Universal tracks (empty location/situation) compete on mood score alone and serve as fallback when no location/situation-specific track is available.
+Tracks excluded by location or situation don't compete in the primary round. If **all** tracks are excluded (e.g. AI says `city` but the library has no city tracks), the hard filter is dropped and all tracks compete on mood score alone. If no moods match either, all tracks score 0 and one is picked at random.
 
 **Song-switch logic:** The bard scheduler evaluates three conditions by comparing the **new AI labels directly against the current track's own tags** (not against any stored "start labels"):
 
-1. **Location changed** — `labels[0]` and `track.tags[0]` are both non-empty and differ → immediate switch.
-2. **Situation changed** — `labels[1]` and `track.tags[1]` are both non-empty and differ → immediate switch.
+1. **Location changed** — AI `labels[0]` is non-empty AND differs from `track.tags[0]` (including: track has no location but AI now knows one) → immediate switch. Skipped only when AI location is empty ("unknown").
+2. **Situation changed** — same rule applied to `labels[1]` / `track.tags[1]`.
 3. **Mood threshold exceeded** — more than 50% of the track's own mood tags (`tags[2+]`) are absent from the new AI moods → switch. Only evaluated when the AI returned ≥ 1 mood tag; empty AI moods = "unknown" → rule skipped.
 
 If none of the three conditions is met, the track keeps playing and `nowPlaying.labels` is updated to the latest AI labels (UI refresh only). This means minor fluctuations (e.g. `tavern,rest,cozy,calm` → `tavern,rest,cozy,warm`) do not interrupt playback.

@@ -93,40 +93,48 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   const aiLocation  = (labels[0] || "").trim().toLowerCase();
   const aiSituation = (labels[1] || "").trim().toLowerCase();
   const aiMoods     = labels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
-  const aiMoodSet   = new Set(aiMoods);
 
   const excluded = excludeFile || currentFile;
+
+  // Compute mood-only score for a track (used in full scoring and in fallback).
+  function getMoodScore(track) {
+    const trackMoods = track.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
+    let score = 0;
+    trackMoods.forEach((mood, trackIdx) => {
+      const aiIdx = aiMoods.indexOf(mood);
+      if (aiIdx === -1) return;
+      score += (aiMoods.length - aiIdx) * (trackMoods.length - trackIdx);
+    });
+    return score;
+  }
 
   const scored = library.map(track => {
     const trackLocation  = (track.tags[0] || "").trim().toLowerCase();
     const trackSituation = (track.tags[1] || "").trim().toLowerCase();
-    const trackMoods     = track.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
 
     // Hard filter: if both track and AI specify location/situation they must match.
     // Empty on either side = wildcard (no penalty, no bonus).
     if (trackLocation && aiLocation && trackLocation !== aiLocation) return { track, score: -1 };
     if (trackSituation && aiSituation && trackSituation !== aiSituation) return { track, score: -1 };
 
-    let score = 0;
+    let score = getMoodScore(track);
 
     // Bonus for explicit location/situation match (beats wildcard tracks).
     if (trackLocation && aiLocation && trackLocation === aiLocation) score += 100;
     if (trackSituation && aiSituation && trackSituation === aiSituation) score += 50;
 
-    // Mood scoring: bidirectional position-weighted.
-    // Earlier in AI mood list = higher AI weight; earlier in track moods = higher track weight.
-    trackMoods.forEach((mood, trackIdx) => {
-      const aiIdx = aiMoods.indexOf(mood);
-      if (aiIdx === -1) return;
-      const aiWeight    = aiMoods.length - aiIdx;
-      const trackWeight = trackMoods.length - trackIdx;
-      score += aiWeight * trackWeight;
-    });
-
     return { track, score };
   });
 
-  const validScored = scored.filter(s => s.score >= 0);
+  let validScored = scored.filter(s => s.score >= 0);
+
+  // Fallback 1 — location/situation in AI labels but no track in library matches:
+  // drop the location/situation hard filter and score by mood only.
+  // Fallback 2 — no moods match either: all tracks score 0 → random pick.
+  if (!validScored.length) {
+    validScored = library.map(track => ({ track, score: getMoodScore(track) }));
+  }
+
   if (!validScored.length) return null;
 
   const maxScore = Math.max(...validScored.map(s => s.score));
@@ -155,8 +163,10 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
 /* Compares AI labels directly against the current track's own tag positions —       *
 /* NOT against the labels that were active when the track started.                   *
 /* Switch is triggered when ANY of these conditions is met:                          *
-/*   1. Track has a non-empty location AND AI has a different non-empty location.    *
-/*   2. Track has a non-empty situation AND AI has a different non-empty situation.  *
+/*   1. AI knows the location (non-empty) AND it differs from the track's location   *
+/*      — this includes the case where the track has no location (generic track)     *
+/*      but the AI now knows a concrete location.                                    *
+/*   2. Same as rule 1, applied to situation.                                        *
 /*   3. >50% of the track's mood tags (pos 2+) are absent from the new AI moods     *
 /*      (order-independent set comparison).                                          *
 /* An empty AI value means "unknown/unclear" — that position is skipped entirely.   *
@@ -175,14 +185,15 @@ function getShouldSwitch(newLabels, currentTrack) {
   const trackSit   = (currentTrack.tags[1] || "").trim().toLowerCase();
   const trackMoods = currentTrack.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
 
-  // Rule 1: location mismatch (both non-empty, different)
-  if (newLoc && trackLoc && newLoc !== trackLoc) {
-    return { reason: "location", detail: `track:${trackLoc}≠ai:${newLoc}` };
+  // Rule 1: AI knows location AND the current track doesn't match it
+  // (covers both: track has wrong location, and track has no location but AI now knows one)
+  if (newLoc && newLoc !== trackLoc) {
+    return { reason: "location", detail: `track:${trackLoc || "any"}→ai:${newLoc}` };
   }
 
-  // Rule 2: situation mismatch (both non-empty, different)
-  if (newSit && trackSit && newSit !== trackSit) {
-    return { reason: "situation", detail: `track:${trackSit}≠ai:${newSit}` };
+  // Rule 2: AI knows situation AND the current track doesn't match it
+  if (newSit && newSit !== trackSit) {
+    return { reason: "situation", detail: `track:${trackSit || "any"}→ai:${newSit}` };
   }
 
   // Rule 3: >50% of the track's mood tags are no longer in the new AI moods.
