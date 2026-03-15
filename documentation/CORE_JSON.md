@@ -671,8 +671,8 @@ Bard music library manager SPA served as a **webpage-flow module** (`modules/000
 | `autoTag.temperature` | LLM temperature (default `0.2`; lower = more consistent) |
 | `autoTag.maxTokens` | Max tokens for the LLM tag response (default `200`) |
 | `autoTag.llmTimeoutMs` | LLM request timeout in ms (default `30000`) |
-| `autoTag.systemPrompt` | LLM system prompt for tag generation. Overrides the built-in 6-tag instruction when set to a non-empty string. Must instruct the LLM to output a JSON array of exactly 6 strings: `[location, situation, mood1, mood2, mood3, mood4]`. Omit or leave empty to use the built-in default. |
-| `autoTag.userPrompt` | LLM user prompt template. Placeholders: `{title}` (track name), `{tavilySnippet}` (web search results), `{existingTags}` (all tags already in the library, comma-separated). Falls back to the built-in template when empty. |
+| `autoTag.systemPrompt` | LLM system prompt for tag generation. Overrides the built-in instruction when set to a non-empty string. The built-in prompt automatically injects the known locations, situations and moods from `library.xml` per position, so the LLM reuses existing tags rather than inventing new ones. Custom prompts must instruct the LLM to output a JSON array of exactly 6 strings: `[location, situation, mood1, mood2, mood3, mood4]`. Omit or leave empty to use the built-in default. |
+| `autoTag.userPrompt` | LLM user prompt template. Placeholders: `{title}` (track name), `{tavilySnippet}` (web search results). Falls back to the built-in template when empty. |
 
 ---
 

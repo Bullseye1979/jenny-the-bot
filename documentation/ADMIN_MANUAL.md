@@ -3425,8 +3425,8 @@ Files are processed **sequentially** (one at a time) to avoid library.xml write 
 | `temperature` | `0.2` | LLM temperature (lower = more consistent tags) |
 | `maxTokens` | `200` | Max tokens for LLM response |
 | `llmTimeoutMs` | `30000` | LLM request timeout in ms |
-| `systemPrompt` | *(built-in)* | LLM system prompt for tag generation. Overrides the built-in 6-tag instruction when set to a non-empty string. Must instruct the LLM to output a JSON array of exactly 6 strings: `[location, situation, mood1, mood2, mood3, mood4]`. |
-| `userPrompt` | *(built-in)* | LLM user prompt template. Available placeholders: `{title}` (track name), `{tavilySnippet}` (web search results), `{existingTags}` (comma-separated list of all tags already in the library). Falls back to the built-in template when empty. |
+| `systemPrompt` | *(built-in)* | LLM system prompt for tag generation. Overrides the built-in instruction when set to a non-empty string. The built-in prompt automatically injects the known locations, situations and moods from `library.xml` into the prompt (per position), so the LLM reuses existing tags. Custom prompts must instruct the LLM to output a JSON array of exactly 6 strings: `[location, situation, mood1, mood2, mood3, mood4]`. |
+| `userPrompt` | *(built-in)* | LLM user prompt template. Available placeholders: `{title}` (track name), `{tavilySnippet}` (web search results). Falls back to the built-in template when empty. |
 
 > **Tip:** If Tavily fails or finds nothing for a track, the LLM still generates tags from the title alone — the feature degrades gracefully. Tags always come out as exactly 6 entries (`[location, situation, mood1–4]`); empty mood slots are padded with `"ambient"`.
 

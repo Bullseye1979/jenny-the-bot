@@ -171,13 +171,24 @@ function getTitleFromFilename(filename) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getExistingTagSet (tracks)                                  */
-/* Returns a sorted array of all unique tags already used in the library.         */
+/* functionSignature: getExistingTagCategories (tracks)                           */
+/* Returns {locations, situations, moods} — sorted arrays of unique tags from     */
+/* each structural position across all library tracks (position 0 = location,     */
+/* position 1 = situation, positions 2+ = moods). Empty strings are excluded.    */
 /**********************************************************************************/
-function getExistingTagSet(tracks) {
-  const seen = new Set();
-  for (const t of tracks) for (const tag of (t.tags || [])) seen.add(tag);
-  return [...seen].sort();
+function getExistingTagCategories(tracks) {
+  const locs = new Set(), sits = new Set(), moods = new Set();
+  for (const t of tracks) {
+    const tags = t.tags || [];
+    if (tags[0]) locs.add(tags[0]);
+    if (tags[1]) sits.add(tags[1]);
+    for (let i = 2; i < tags.length; i++) if (tags[i]) moods.add(tags[i]);
+  }
+  return {
+    locations:  [...locs].sort(),
+    situations: [...sits].sort(),
+    moods:      [...moods].sort()
+  };
 }
 
 /**********************************************************************************/
@@ -215,22 +226,30 @@ async function callTavily(title, atCfg) {
 }
 
 /**********************************************************************************/
-/* functionSignature: callLlmForTags (title, tavilySnippet, existingTags, atCfg) */
+/* functionSignature: callLlmForTags (title, tavilySnippet, tagCats, atCfg)      */
 /* Calls an LLM to generate 6 structured tags for a music track:                 */
 /* [location, situation, mood1, mood2, mood3, mood4]                             */
 /* location and situation may be empty strings (= fits any location/situation).  */
+/* tagCats = {locations:[], situations:[], moods:[]} from the current library.   */
 /**********************************************************************************/
-async function callLlmForTags(title, tavilySnippet, existingTags, atCfg) {
+async function callLlmForTags(title, tavilySnippet, tagCats, atCfg) {
+  const locList  = tagCats.locations.length  ? tagCats.locations.join(", ")  : "tavern, dungeon, forest, city, camp";
+  const sitList  = tagCats.situations.length ? tagCats.situations.join(", ") : "combat, exploration, rest, dialogue, travel";
+  const moodList = tagCats.moods.length      ? tagCats.moods.join(", ")      : "dark, tense, calm, epic, eerie, intense, cozy, warm, dramatic, mysterious";
+
   const systemPrompt = (typeof atCfg.systemPrompt === "string" && atCfg.systemPrompt.trim())
     ? atCfg.systemPrompt
     : "You are a music tagging assistant for a tabletop RPG (D&D) ambient music library.\n" +
       "Assign exactly 6 structured tags to a music track in this exact order:\n" +
-      "  1. LOCATION  — one lowercase word for where this music fits best (tavern, dungeon, forest, city, camp, …).\n" +
+      "  1. LOCATION  — one word for where this music fits best.\n" +
+      `                 Known locations in this library: ${locList}.\n` +
       "                 Use empty string \"\" if the track suits any location.\n" +
-      "  2. SITUATION — one lowercase word for the type of scene (combat, exploration, rest, dialogue, travel, …).\n" +
+      "  2. SITUATION — one word for the type of scene.\n" +
+      `                 Known situations in this library: ${sitList}.\n` +
       "                 Use empty string \"\" if the track suits any situation.\n" +
       "  3-6. MOOD    — exactly 4 mood/atmosphere words ordered by fit: most fitting first.\n" +
-      "                 Examples: dark, tense, calm, epic, eerie, intense, cozy, warm, dramatic, mysterious.\n" +
+      `                 Known moods in this library: ${moodList}.\n` +
+      "                 Prefer existing mood words; only invent a new one if nothing fits.\n" +
       "Each non-empty tag must be a single lowercase word (only a-z, 0-9, hyphens allowed).\n" +
       "Output ONLY a JSON array of exactly 6 strings. No explanation, no extra text.\n" +
       "Example (tavern rest music):  [\"tavern\",\"rest\",\"cozy\",\"calm\",\"warm\",\"ambient\"]\n" +
@@ -240,13 +259,11 @@ async function callLlmForTags(title, tavilySnippet, existingTags, atCfg) {
     ? atCfg.userPrompt
     : "Track title: \"{title}\"\n\n" +
       "Web search results for this track:\n{tavilySnippet}\n\n" +
-      "Tags already used in this library (prefer these when applicable):\n{existingTags}\n\n" +
       "Output a JSON array of exactly 6 strings: [location, situation, mood1, mood2, mood3, mood4].\n" +
       "Use empty string \"\" for location and/or situation if the track fits any.";
   const userPrompt = userPromptTemplate
     .replace("{title}",         title)
-    .replace("{tavilySnippet}", tavilySnippet || "No search results available.")
-    .replace("{existingTags}",  existingTags.length ? existingTags.join(", ") : "none yet");
+    .replace("{tavilySnippet}", tavilySnippet || "No search results available.");
   const reqBody = {
     model:       atCfg.model || "gpt-4o-mini",
     messages:    [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
@@ -484,9 +501,9 @@ export default async function getWebpageBard(coreData) {
     try {
       const title        = getTitleFromFilename(rawFilename);
       const tracks       = readTracks(musicDir);
-      const existingTags = getExistingTagSet(tracks);
+      const tagCats = getExistingTagCategories(tracks);
       const tavilySnippet = await callTavily(title, atCfg);
-      const tags = await callLlmForTags(title, tavilySnippet, existingTags, atCfg);
+      const tags = await callLlmForTags(title, tavilySnippet, tagCats, atCfg);
       if (!fs.existsSync(musicDir)) fs.mkdirSync(musicDir, { recursive: true });
       fs.writeFileSync(path.join(musicDir, rawFilename), mp3File.buffer);
       const idx   = tracks.findIndex(t => t.file === rawFilename);
