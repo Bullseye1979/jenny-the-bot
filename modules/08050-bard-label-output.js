@@ -61,38 +61,50 @@ export default async function getBardLabelOutput(coreData) {
 
   const sanitized = rawParts.map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""));
 
-  // Position rescue: scan ALL 6 positions and assign each value to the correct
-  // slot purely by category membership, regardless of where the AI placed it.
-  // Example: ['', 'dungeon', 'joy', 'fun', 'tense', 'battle']
-  //   → 'dungeon' ∈ locationSet  → loc = 'dungeon'
-  //   → 'battle'  ∈ situationSet → sit = 'battle'
-  //   → result:   ['dungeon', 'battle', 'joy', 'fun', 'tense', '']
+  // Position rescue — three passes:
+  //
+  // Pass 1 (category rescue): scan ALL 6 positions for known location/situation words.
+  //   First location word found (anywhere) → loc slot.
+  //   First situation word found (anywhere) → sit slot.
+  //   Positions 0–1 are RESERVED: they are NEVER added to mood slots.
+  //
+  // Pass 2 (mood assignment): positions 2–5 only, pure mood words only
+  //   (words in locationSet or situationSet are excluded — they belong in pass 1).
+  //
+  // Pass 3 (position-based fallback): if loc/sit still empty, accept whatever
+  //   the AI wrote at position 0/1 as-is (handles novel words not yet in library).
   let loc = "";
   let sit = "";
-  const moodValues   = [];
-  const usedIndices  = new Set();
+  const moodValues  = [];
+  const usedIndices = new Set();
 
+  // Pass 1 — category rescue
   for (let i = 0; i < sanitized.length; i++) {
     const v = sanitized[i];
     if (!v || v.length > 25) continue;
     if (!loc && locationSet.size > 0 && locationSet.has(v)) {
-      loc = v;
-      usedIndices.add(i);
+      loc = v; usedIndices.add(i);
       if (i !== 0) log(`rescued location "${loc}" from position ${i} for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
     } else if (!sit && situationSet.size > 0 && situationSet.has(v)) {
-      sit = v;
-      usedIndices.add(i);
+      sit = v; usedIndices.add(i);
       if (i !== 1) log(`rescued situation "${sit}" from position ${i} for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
-    } else if (moodValues.length < 4 && validTags.size > 0 && validTags.has(v)) {
-      moodValues.push(v);
-      usedIndices.add(i);
     }
   }
 
-  // Fallback: unknown words at original positions 0/1 accepted as-is
-  // (AI invented a new location/situation word not yet in the library)
-  if (!loc && sanitized[0] && !usedIndices.has(0)) loc = sanitized[0];
-  if (!sit && sanitized[1] && !usedIndices.has(1)) sit = sanitized[1];
+  // Pass 2 — mood assignment (positions 2–5 only, never loc/sit words)
+  for (let i = 2; i < sanitized.length; i++) {
+    if (usedIndices.has(i)) continue;
+    const v = sanitized[i];
+    if (!v || v.length > 25) continue;
+    if (moodValues.length < 4 && validTags.size > 0 && validTags.has(v)
+        && !locationSet.has(v) && !situationSet.has(v)) {
+      moodValues.push(v); usedIndices.add(i);
+    }
+  }
+
+  // Pass 3 — position-based fallback for novel words at positions 0/1
+  if (!loc && sanitized[0] && !usedIndices.has(0)) { loc = sanitized[0]; usedIndices.add(0); }
+  if (!sit && sanitized[1] && !usedIndices.has(1)) { sit = sanitized[1]; usedIndices.add(1); }
 
   // Fill empty location/situation slots with a three-level fallback chain:
   //   1. Previous active labels (carry-forward: AI is uncertain, assume unchanged)
