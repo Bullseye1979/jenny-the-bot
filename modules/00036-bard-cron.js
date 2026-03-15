@@ -47,10 +47,7 @@ const DEFAULT_PROMPT_TEMPLATE =
   "5. Output EXACTLY 6 comma-separated values. No spaces around commas. No explanation. No apology.\n" +
   "\n" +
   "Current labels (reference only — do not copy blindly): {{CURRENT_LABELS}}\n" +
-  "Example (tavern, rest scene):            tavern,rest,cozy,calm,warm,ambient\n" +
-  "Example (combat, location unclear):      ,combat,intense,dark,battle,danger\n" +
-  "Example (forest, situation unknown):     forest,,eerie,mysterious,calm,ambient\n" +
-  "Example (empty transcript/unclear):      ,,,ambient,calm,exploration";
+  "{{EXAMPLE_LINES}}";
 
 /************************************************************************************/
 /* functionSignature: getNowIso()                                                  *
@@ -101,20 +98,42 @@ function getLibraryTagCategories(musicDir) {
 
 /************************************************************************************/
 /* functionSignature: buildSystemPrompt(template, tagCategories, currentLabels)    *
-/* Injects categorised tag lists and current labels into the prompt template.      *
+/* Injects categorised tag lists, current labels and dynamic example lines built   *
+/* from actual library tags into the prompt template.                              *
 /************************************************************************************/
 function buildSystemPrompt(template, tagCategories, currentLabels) {
-  const locList  = [...tagCategories.locations].sort().join(",")  || "tavern,dungeon,forest,city,camp";
-  const sitList  = [...tagCategories.situations].sort().join(",") || "combat,exploration,rest,dialogue";
-  const moodList = [...tagCategories.moods].sort().join(",")      || "dark,tense,calm,ambient,intense,eerie";
+  const locs  = [...tagCategories.locations].sort();
+  const sits  = [...tagCategories.situations].sort();
+  const moodsSorted = [...tagCategories.moods].sort();
+
+  const locList  = locs.join(",")       || "tavern,dungeon,forest,city,camp";
+  const sitList  = sits.join(",")       || "combat,exploration,rest,dialogue";
+  const moodList = moodsSorted.join(",") || "dark,tense,calm,ambient,intense,eerie";
+
+  // Build 4 illustrative examples from real library tags.
+  // Fallback values are used only when the library is still empty.
+  const L0 = locs[0]       || "tavern";
+  const L1 = locs[1]       || "forest";
+  const S0 = sits[0]       || "combat";
+  const S1 = sits[1]       || "rest";
+  const M  = (moodsSorted.length >= 4 ? moodsSorted : ["ambient","calm","dark","intense"]).slice(0, 4);
+
+  const exampleLines =
+    `Example (${L0}/${S1} scene):          ${L0},${S1},${M[0]},${M[1]},${M[2]},${M[3]}\n` +
+    `Example (${S0}, location unclear):    ,${S0},${M[0]},${M[1]},${M[2]},${M[3]}\n` +
+    `Example (${L1}, situation unknown):   ${L1},,${M[0]},${M[1]},${M[2]},${M[3]}\n` +
+    `Example (unclear/empty transcript):   ,,,${M[0]},${M[1]},${M[2]},${M[3]}`;
+
   const labelStr = Array.isArray(currentLabels) && currentLabels.length
     ? currentLabels.join(",")
     : "none";
+
   return template
     .replace("{{LOCATION_TAGS}}",  locList)
     .replace("{{SITUATION_TAGS}}", sitList)
     .replace("{{MOOD_TAGS}}",      moodList)
-    .replace("{{CURRENT_LABELS}}", labelStr);
+    .replace("{{CURRENT_LABELS}}", labelStr)
+    .replace("{{EXAMPLE_LINES}}",  exampleLines);
 }
 
 /************************************************************************************/

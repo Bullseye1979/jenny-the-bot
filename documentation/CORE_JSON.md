@@ -1021,7 +1021,7 @@ Prepares the `bard-label-gen` cron flow by building the AI prompt and payload fo
 | Key | Description |
 |---|---|
 | `flow` | Must include `"bard-label-gen"` |
-| `prompt` | Custom system prompt template (overrides the built-in default). Supports `{{LOCATION_TAGS}}`, `{{SITUATION_TAGS}}`, `{{MOOD_TAGS}}` (categorised tag lists from `library.xml`), and `{{CURRENT_LABELS}}` (current active labels) placeholders. Leave empty to use the built-in prompt |
+| `prompt` | Custom system prompt template (overrides the built-in default). Supports `{{LOCATION_TAGS}}`, `{{SITUATION_TAGS}}`, `{{MOOD_TAGS}}` (categorised tag lists from `library.xml`), `{{CURRENT_LABELS}}` (current active labels), and `{{EXAMPLE_LINES}}` (four dynamically generated example lines using real library tags) placeholders. The built-in default uses all five placeholders; custom templates that omit `{{EXAMPLE_LINES}}` will not show dynamic examples. Leave empty to use the built-in prompt |
 
 **Built-in prompt behaviour:**
 - Always classifies from the transcript — does not preserve previous labels

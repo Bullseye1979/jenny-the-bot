@@ -3439,7 +3439,7 @@ The LLM prompt used by `00036-bard-cron.js` to classify mood tags is resolved in
 | 1 (highest) | `config["bard-cron"].prompt` | Set in `core.json` under `bard-cron` — static override for all sessions |
 | 2 (lowest) | Built-in default | Hardcoded in `00036-bard-cron.js` (`DEFAULT_PROMPT_TEMPLATE`) |
 
-The prompt template may contain four placeholders replaced at runtime:
+The prompt template may contain five placeholders replaced at runtime:
 
 | Placeholder | Replaced with |
 |---|---|
@@ -3447,6 +3447,7 @@ The prompt template may contain four placeholders replaced at runtime:
 | `{{SITUATION_TAGS}}` | Comma-separated list of all unique situation tags found in `library.xml` (position 1) |
 | `{{MOOD_TAGS}}` | Comma-separated list of all unique mood tags found in `library.xml` (positions 2+) |
 | `{{CURRENT_LABELS}}` | The 6 labels currently active for this guild, or `none` if no labels have been set yet |
+| `{{EXAMPLE_LINES}}` | Four dynamically generated example lines built from real library tags (first two known locations/situations + first four moods). Falls back to generic placeholder values when the library is empty. This prevents the LLM from learning made-up tags from hardcoded examples. |
 
 The built-in default prompt instructs the LLM to output **exactly 6 comma-separated values** in this fixed structure:
 
