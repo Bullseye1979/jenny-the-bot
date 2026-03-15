@@ -1200,7 +1200,7 @@ The Bard is a **headless background music scheduler** for tabletop RPG sessions.
 ```
 /bardstart command
   → Creates a session in the registry (bard:session:{guildId})
-  → Seeds bard:labels with ["default"]
+  → Does not write bard:labels — first poll picks a random track
 
 Cron job (every N minutes, flow: bard-label-gen)
   → bard-cron: reads chat context, builds AI prompt

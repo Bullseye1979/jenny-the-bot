@@ -110,15 +110,11 @@ export default async function getBardAdminJoin(coreData) {
     try { await putItem(liveSession, sessionKey); } catch {}
     await setAddBardSessionKey(sessionKey);
 
-    // Set startup labels to ["default"] so tracks tagged "default" are preferred
-    // on the first song pick. The cron job will overwrite this with real mood labels.
-    try {
-      await putItem(
-        { labels: ["default"], updatedAt: new Date().toISOString(), guildId },
-        `bard:labels:${guildId}`
-      );
-      log("bardstart: startup labels set to [default]", "info", { moduleName: MODULE_NAME, guildId });
-    } catch {}
+    // Do NOT write startup labels — empty labels make getSelectSong pick a random track,
+    // which is the correct behaviour for the first song. The bard-label-gen cron will
+    // write real structured labels (location/situation/moods) after the first transcript run.
+    // Writing a legacy flat label like ["default"] here would be misread as location="default"
+    // by the new 6-position schema and cause all explicitly-located tracks to be filtered out.
 
     log("bardstart: bard session created", "info", {
       moduleName: MODULE_NAME,

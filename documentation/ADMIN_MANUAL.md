@@ -3229,9 +3229,9 @@ The bard music system automatically plays mood-appropriate background music for 
   -> 00035-bard-join.js
   -> creates a headless session in the registry (no voice channel connection needed)
   -> stores bard:session:{guildId} = { guildId, textChannelId, status: "ready", ... }
-  -> writes bard:labels:{guildId} = { labels: ["default"] } — startup seed so tracks
-     tagged "default" are preferred on the very first song pick. The cron job will
-     overwrite this with real mood labels once it runs.
+  -> does NOT write bard:labels — empty labels cause getSelectSong to pick a random
+     track on the first poll, which is the correct startup behaviour. The cron job
+     writes real structured labels (location/situation/moods) on its first run.
 
 /bardstop command
   -> 00035-bard-join.js
@@ -3286,7 +3286,7 @@ Track end timer — song ended naturally
 |-----|---------|
 | `bard:registry` | `{ list: ["bard:session:{guildId}"] }` |
 | `bard:session:{guildId}` | `{ guildId, textChannelId, status, _trackEndAt, _trackTimer, _lastPlayedFile, _lastLabels }` |
-| `bard:labels:{guildId}` | `{ labels: ["combat","tension","dark"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels` = validated tags (present in `library.xml`); `rejected` = tokens returned by the LLM that are not in the library (up to 5, deduplicated). Initially seeded to `["default"]` on `/bardstart` so tracks tagged `default` are played first. Deleted on `/bardstop`. |
+| `bard:labels:{guildId}` | `{ labels: ["tavern","combat","dark","tense","intense","battle"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels[0]` = location, `labels[1]` = situation, `labels[2–5]` = 4 mood tags; empty string = wildcard. `rejected` = mood tokens returned by the LLM that are not in the library (up to 5). **Not written on `/bardstart`** — absence of labels causes the first poll to pick a random track. Deleted on `/bardstop`. |
 | `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
 | `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, rejectedLabels, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`; `rejectedLabels` = LLM tokens not in the library (shown red in Now Playing). Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardstop` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
 | `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written by `bard-label-output` **only after a successful label write**. On AI failure the timestamp is not updated, so the next run retries from the same context window. |
@@ -3318,7 +3318,6 @@ Fields:
 
 ### Tag Vocabulary (existing tracks)
 
-- **Special:** `default` — startup tag. Tracks with this tag are preferred on the very first song pick after `/bardstart`, before the cron job has generated any mood labels. Has no special meaning after that; add it to tracks that make a good "welcome" impression.
 - Combat: `battle`, `fight`, `fast`, `intense`, `boss`
 - Epic: `epic`, `magic`
 - City: `city`, `people`, `buzzing`, `crowded`, `sneaky`, `searching`, `shady`
@@ -3347,8 +3346,8 @@ This means a track where the primary AI mood (e.g. "combat") is also the track's
 5. Return a **random pick** from the remaining candidates.
 
 **Full lifecycle:**
-1. **Scheduler started** (`/bardstart`) — seeds `bard:labels` with `["default"]`. Tracks tagged `default` score highest; the cron job overwrites this with real mood labels on its first run.
-2. **Labels empty** (edge case) — if a song is playing, keep it unchanged. If nothing plays, pick a random track.
+1. **Scheduler started** (`/bardstart`) — no labels are written. The first poll finds empty labels and picks a random track. The cron job writes real structured labels on its first run.
+2. **Labels empty** — if a song is playing, keep it unchanged. If nothing plays, pick a random track.
 3. **Labels unchanged** (new AI labels identical to `nowPlaying.labels`) — keep playing. No switch.
 4. **Labels changed** — call `getSelectSong`; if current is already best fit → keep playing. Otherwise switch to best-fit track immediately.
 5. **Song ends naturally** — `setTimeout` fires (ffprobe duration + 200 ms), calls `triggerPoll()`. Poll overwrites `bard:stream` and `bard:nowplaying` atomically when the next track starts.
