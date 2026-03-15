@@ -36,10 +36,12 @@ export default async function getBardLabelOutput(coreData) {
 
   if (getStr(wo?.flow) !== "bard-label-gen") return coreData;
 
-  const guildId   = getStr(wo._bardGuildId);
-  const validList = Array.isArray(wo._bardValidTags) ? wo._bardValidTags : [];
-  const validTags = new Set(validList);
-  const response  = getStr(wo.response).trim();
+  const guildId      = getStr(wo._bardGuildId);
+  const validList    = Array.isArray(wo._bardValidTags)   ? wo._bardValidTags   : [];
+  const validTags    = new Set(validList);
+  const locationSet  = new Set(Array.isArray(wo._bardLocations)  ? wo._bardLocations  : []);
+  const situationSet = new Set(Array.isArray(wo._bardSituations) ? wo._bardSituations : []);
+  const response     = getStr(wo.response).trim();
 
   if (!guildId) {
     log("no _bardGuildId on workingObject — skipping label write", "warn", { moduleName: MODULE_NAME });
@@ -57,18 +59,47 @@ export default async function getBardLabelOutput(coreData) {
   const rawParts = response.split(",").slice(0, 6);
   while (rawParts.length < 6) rawParts.push(""); // pad to 6 if AI returned fewer
 
-  const labels = rawParts.map((t, i) => {
-    const clean = t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
-    if (i < 2) return clean; // location + situation: accept any sanitized value (or empty)
-    if (!clean || clean.length > 25) return ""; // malformed or empty mood → blank
-    if (validTags.size > 0 && !validTags.has(clean)) return ""; // unknown mood tag → blank
-    return clean;
-  });
+  const sanitized = rawParts.map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""));
 
-  const rejected = rawParts.slice(2).map(t => {
-    const clean = t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
-    return (clean && clean.length <= 25 && validTags.size > 0 && !validTags.has(clean)) ? clean : null;
-  }).filter(Boolean).slice(0, 5);
+  // Position rescue: scan ALL 6 positions and assign each value to the correct
+  // slot purely by category membership, regardless of where the AI placed it.
+  // Example: ['', 'dungeon', 'joy', 'fun', 'tense', 'battle']
+  //   → 'dungeon' ∈ locationSet  → loc = 'dungeon'
+  //   → 'battle'  ∈ situationSet → sit = 'battle'
+  //   → result:   ['dungeon', 'battle', 'joy', 'fun', 'tense', '']
+  let loc = "";
+  let sit = "";
+  const moodValues   = [];
+  const usedIndices  = new Set();
+
+  for (let i = 0; i < sanitized.length; i++) {
+    const v = sanitized[i];
+    if (!v || v.length > 25) continue;
+    if (!loc && locationSet.size > 0 && locationSet.has(v)) {
+      loc = v;
+      usedIndices.add(i);
+      if (i !== 0) log(`rescued location "${loc}" from position ${i} for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+    } else if (!sit && situationSet.size > 0 && situationSet.has(v)) {
+      sit = v;
+      usedIndices.add(i);
+      if (i !== 1) log(`rescued situation "${sit}" from position ${i} for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+    } else if (moodValues.length < 4 && validTags.size > 0 && validTags.has(v)) {
+      moodValues.push(v);
+      usedIndices.add(i);
+    }
+  }
+
+  // Fallback: unknown words at original positions 0/1 accepted as-is
+  // (AI invented a new location/situation word not yet in the library)
+  if (!loc && sanitized[0] && !usedIndices.has(0)) loc = sanitized[0];
+  if (!sit && sanitized[1] && !usedIndices.has(1)) sit = sanitized[1];
+
+  while (moodValues.length < 4) moodValues.push("");
+  const labels = [loc, sit, ...moodValues];
+
+  const rejected = sanitized.slice(2)
+    .filter((v, i) => v && !usedIndices.has(i + 2) && validTags.size > 0 && !validTags.has(v) && v.length <= 25)
+    .slice(0, 5);
 
   if (rejected.length) {
     log(`rejected invalid mood tags for guild ${guildId}: ${rejected.join(",")}`, "warn", { moduleName: MODULE_NAME });

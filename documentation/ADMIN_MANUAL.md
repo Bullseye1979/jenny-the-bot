@@ -1830,7 +1830,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | 03000 | `discord-status-apply` | Applies the generated Discord presence status |
 | 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
-| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow; splits by comma, strips non-alphanumeric chars, deduplicates, drops tokens longer than 25 chars; writes up to 3 validated tags and up to 5 rejected tokens to `bard:labels:{guildId}`; writes `bard:lastrun:{guildId}` only on success (prevents context window from advancing on AI failure) |
+| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow into a **6-position structured label array** `[location, situation, mood1, mood2, mood3, mood4]`. Applies **category-based position rescue**: scans all 6 AI values and assigns each to the correct slot by checking `wo._bardLocations` / `wo._bardSituations` regardless of where the AI placed them (e.g. `'',dungeon,joy,fun,tense,battle` → `dungeon,battle,joy,fun,tense,''`). Unknown words at positions 0/1 are accepted as fallback. Mood slots are validated against `wo._bardValidTags`; invalid entries are replaced with empty string. Writes `bard:labels:{guildId}` and `bard:lastrun:{guildId}` only on success (prevents context window from advancing on AI failure). |
 | 08100 | `discord-voice-tts` | Synthesises TTS audio with speaker-tagged voice selection |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
 | 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`) |
@@ -3253,7 +3253,10 @@ Cron job (every N minutes, flow: bard-label-gen)
      - calls LLM with wo.systemPrompt + wo.payload
      - writes result to wo.response
   -> 08050-bard-label-output.js (output)
-     - parses wo.response into 3 valid tags (validated against library.xml tag set)
+     - parses wo.response into a 6-position label array [location, situation, mood1, mood2, mood3, mood4]
+     - category-based rescue: scans all 6 AI values, assigns each to correct slot by membership in
+       wo._bardLocations / wo._bardSituations, regardless of AI output position
+     - unknown words at positions 0/1 accepted as-is (new library words); mood slots validated against wo._bardValidTags
      - writes bard:labels:{guildId} to registry
      - writes bard:lastrun:{guildId} only on success (prevents context window from advancing on AI failure)
 
@@ -3497,13 +3500,13 @@ location,situation,mood1,mood2,mood3,mood4
 
 Tracks excluded by location or situation don't compete at all. Universal tracks (empty location/situation) compete on mood score alone and serve as fallback when no location/situation-specific track is available.
 
-**Song-switch logic:** The bard scheduler evaluates three conditions against the labels from `nowPlaying` (the labels active when the current track started):
+**Song-switch logic:** The bard scheduler evaluates three conditions by comparing the **new AI labels directly against the current track's own tags** (not against any stored "start labels"):
 
-1. **Location changed** — both old and new location are non-empty and differ → immediate switch.
-2. **Situation changed** — both old and new situation are non-empty and differ → immediate switch.
-3. **Mood threshold exceeded** — more than 50% of the current track's mood tags that **previously** matched the AI mood labels no longer match the new mood labels → switch.
+1. **Location changed** — `labels[0]` and `track.tags[0]` are both non-empty and differ → immediate switch.
+2. **Situation changed** — `labels[1]` and `track.tags[1]` are both non-empty and differ → immediate switch.
+3. **Mood threshold exceeded** — more than 50% of the track's own mood tags (`tags[2+]`) are absent from the new AI moods → switch. Only evaluated when the AI returned ≥ 1 mood tag; empty AI moods = "unknown" → rule skipped.
 
-If none of the three conditions is met, the track keeps playing and `nowPlaying.labels` is silently updated to reflect the new AI labels. This means minor scoring fluctuations (e.g. `tavern,rest,cozy,calm` → `tavern,rest,cozy,warm`) do not interrupt playback.
+If none of the three conditions is met, the track keeps playing and `nowPlaying.labels` is updated to the latest AI labels (UI refresh only). This means minor fluctuations (e.g. `tavern,rest,cozy,calm` → `tavern,rest,cozy,warm`) do not interrupt playback.
 
 ### bard-label-gen Flow (Pipeline Overview)
 

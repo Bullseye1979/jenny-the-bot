@@ -1204,8 +1204,9 @@ The Bard is a **headless background music scheduler** for tabletop RPG sessions.
 
 Cron job (every N minutes, flow: bard-label-gen)
   → bard-cron: reads chat context, builds AI prompt
-  → core-ai-completions: LLM classifies mood as 3 priority-ordered tags
-  → bard-label-output: validates tags, writes bard:labels:{guildId}
+  → core-ai-completions: LLM returns 6-position label string (location,situation,mood×4)
+  → bard-label-output: category-based rescue (fixes AI position errors), validates moods,
+    writes bard:labels:{guildId} as [location,situation,mood1,mood2,mood3,mood4]
     (also writes bard:lastrun:{guildId} only on success)
 
 flows/bard.js (polls every 5 s)

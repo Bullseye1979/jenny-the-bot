@@ -117,17 +117,19 @@ function buildSystemPrompt(template, tagCategories, currentLabels) {
 
   // Build 4 illustrative examples from real library tags.
   // Fallback values are used only when the library is still empty.
-  const L0 = locs[0]       || "tavern";
-  const L1 = locs[1]       || "forest";
+  // L0 appears in examples 1 AND 2 so the LLM sees it as a location value both
+  // when situation is known and when situation is unknown. This prevents the LLM
+  // from learning that empty fields always appear at the very beginning.
+  const L0 = locs[0]       || "dungeon";
   const S0 = sits[0]       || "combat";
   const S1 = sits[1]       || "rest";
   const M  = (moodsSorted.length >= 4 ? moodsSorted : ["ambient","calm","dark","intense"]).slice(0, 4);
 
   const exampleLines =
-    `Example (${L0}/${S1} scene):          ${L0},${S1},${M[0]},${M[1]},${M[2]},${M[3]}\n` +
-    `Example (${S0}, location unclear):    ,${S0},${M[0]},${M[1]},${M[2]},${M[3]}\n` +
-    `Example (${L1}, situation unknown):   ${L1},,${M[0]},${M[1]},${M[2]},${M[3]}\n` +
-    `Example (unclear/empty transcript):   ,,,${M[0]},${M[1]},${M[2]},${M[3]}`;
+    `Example (${L0}/${S0}, both known):       ${L0},${S0},${M[0]},${M[1]},${M[2]},${M[3]}\n` +
+    `Example (${L0}, situation unclear):      ${L0},,${M[0]},${M[1]},${M[2]},${M[3]}\n` +
+    `Example (${S1}, location unclear):       ,${S1},${M[0]},${M[1]},${M[2]},${M[3]}\n` +
+    `Example (unclear/empty transcript):      ,,,${M[0]},${M[1]},${M[2]},${M[3]}`;
 
   const labelStr = Array.isArray(currentLabels) && currentLabels.length
     ? currentLabels.join(",")
@@ -247,7 +249,9 @@ export default async function getBardCron(coreData) {
       // _bardLastRunKey and _bardLastRunTs are written to registry by bard-label-output
       // only after a successful AI response — preventing the stuck-lastrun bug.
       wo._bardGuildId     = getStr(session.guildId);
-      wo._bardValidTags   = [...tagCategories.all];    // flat list for mood validation in output module
+      wo._bardValidTags   = [...tagCategories.all];       // full set — mood validation in output module
+      wo._bardLocations   = [...tagCategories.locations]; // for position rescue in output module
+      wo._bardSituations  = [...tagCategories.situations];// for position rescue in output module
       wo._bardLastRunKey  = lastRunKey;
       wo._bardLastRunTs   = targetNowTs;
 
