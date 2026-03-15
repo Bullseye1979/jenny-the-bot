@@ -94,10 +94,11 @@ export default async function getBardLabelOutput(coreData) {
   if (!loc && sanitized[0] && !usedIndices.has(0)) loc = sanitized[0];
   if (!sit && sanitized[1] && !usedIndices.has(1)) sit = sanitized[1];
 
-  // Carry-forward: if the AI left location/situation empty ("I don't know"),
-  // inherit the last known value from the stored labels so the label state
-  // doesn't degrade to empty when the AI is uncertain.
-  // Mood slots are NOT carried forward — empty mood = "unknown this cycle".
+  // Fill empty location/situation slots with a three-level fallback chain:
+  //   1. Previous active labels (carry-forward: AI is uncertain, assume unchanged)
+  //   2. Current song's tag at that position (best known ground truth)
+  //   3. Random value from the allowed list (initialization when no history exists)
+  // Mood slots are NOT filled — empty mood = "unknown this cycle".
   if (!loc || !sit) {
     try {
       const prev = await getItem(`bard:labels:${guildId}`);
@@ -105,6 +106,24 @@ export default async function getBardLabelOutput(coreData) {
       if (!loc && prevLabels[0]) loc = String(prevLabels[0]);
       if (!sit && prevLabels[1]) sit = String(prevLabels[1]);
     } catch {}
+  }
+  if (!loc || !sit) {
+    try {
+      const stream = await getItem(`bard:stream:${guildId}`);
+      const songTags = Array.isArray(stream?.trackTags) ? stream.trackTags : [];
+      if (!loc && songTags[0]) { loc = String(songTags[0]); log(`location fallback from current song: "${loc}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME }); }
+      if (!sit && songTags[1]) { sit = String(songTags[1]); log(`situation fallback from current song: "${sit}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME }); }
+    } catch {}
+  }
+  if (!loc && locationSet.size > 0) {
+    const locs = [...locationSet];
+    loc = locs[Math.floor(Math.random() * locs.length)];
+    log(`location initialized to random value "${loc}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+  }
+  if (!sit && situationSet.size > 0) {
+    const sits = [...situationSet];
+    sit = sits[Math.floor(Math.random() * sits.length)];
+    log(`situation initialized to random value "${sit}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
   }
 
   while (moodValues.length < 4) moodValues.push("");

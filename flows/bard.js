@@ -78,83 +78,52 @@ function getLoadLibrary(musicDir) {
 
 /************************************************************************************/
 /* functionSignature: getSelectSong (labels, library, currentFile, excludeFile)      *
-/* Selects the best-matching song using structured tag scoring.                      *
+/* Selects the best-matching song using a tiered pool approach.                      *
 /* labels[0]=location, labels[1]=situation, labels[2-5]=moods.                      *
 /* track.tags[0]=location, track.tags[1]=situation, track.tags[2+]=moods.           *
-/* Empty tag = wildcard (matches any). Mismatched non-empty location/situation      *
-/* → score=-1 (track excluded). Location match: +100, situation match: +50.         *
-/* Mood scoring: bidirectional position-weighted (earlier = more weight).           *
-/* Returns null if the current file is already the unique best match (no change).   *
+/*                                                                                   *
+/* Empty library tag = wildcard (matches any AI value, including empty AI label).   *
+/*                                                                                   *
+/* Pool tiers (first non-empty tier is used):                                        *
+/*   Tier 1 — songs matching BOTH location AND situation                             *
+/*   Tier 2 — songs matching location OR situation                                   *
+/*   Tier 3 — all songs                                                              *
+/*                                                                                   *
+/* Within the tier, best mood match wins. Tie-with-current → return null (stay).    *
+/* excludeFile is excluded from variety rotation but not from tie-break stays.      *
 /************************************************************************************/
 function getSelectSong(labels, library, currentFile, excludeFile = null) {
   if (!Array.isArray(library) || !library.length) return null;
   if (!Array.isArray(labels)) labels = [];
 
-  const aiLocation  = (labels[0] || "").trim().toLowerCase();
-  const aiSituation = (labels[1] || "").trim().toLowerCase();
-  const aiMoods     = labels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
+  const aiLoc     = (labels[0] || "").trim().toLowerCase();
+  const aiSit     = (labels[1] || "").trim().toLowerCase();
+  const aiMoods   = labels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
+  const aiMoodSet = new Set(aiMoods);
 
-  const excluded = excludeFile || currentFile;
+  // Library empty tag = wildcard: matches any AI value (including empty).
+  const locMatches = t => { const tl = (t.tags[0] || "").toLowerCase(); return !tl || !aiLoc || tl === aiLoc; };
+  const sitMatches = t => { const ts = (t.tags[1] || "").toLowerCase(); return !ts || !aiSit || ts === aiSit; };
+  const getMoodScore = t => t.tags.slice(2).map(x => x.toLowerCase()).filter(Boolean)
+    .filter(m => aiMoodSet.has(m)).length;
 
-  // Compute mood-only score for a track (used in full scoring and in fallback).
-  function getMoodScore(track) {
-    const trackMoods = track.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
-    let score = 0;
-    trackMoods.forEach((mood, trackIdx) => {
-      const aiIdx = aiMoods.indexOf(mood);
-      if (aiIdx === -1) return;
-      score += (aiMoods.length - aiIdx) * (trackMoods.length - trackIdx);
-    });
-    return score;
-  }
+  // Build candidate pool (exclude variety-rotation file, not current for tie check).
+  const pool = library.filter(t => t.file !== excludeFile);
 
-  const scored = library.map(track => {
-    const trackLocation  = (track.tags[0] || "").trim().toLowerCase();
-    const trackSituation = (track.tags[1] || "").trim().toLowerCase();
+  let candidates = pool.filter(t => locMatches(t) && sitMatches(t));           // Tier 1
+  if (!candidates.length) candidates = pool.filter(t => locMatches(t) || sitMatches(t)); // Tier 2
+  if (!candidates.length) candidates = [...pool];                                         // Tier 3
+  if (!candidates.length) return null;
 
-    // Hard filter: if both track and AI specify location/situation they must match.
-    // Empty on either side = wildcard (no penalty, no bonus).
-    if (trackLocation && aiLocation && trackLocation !== aiLocation) return { track, score: -1 };
-    if (trackSituation && aiSituation && trackSituation !== aiSituation) return { track, score: -1 };
+  // Sort by mood score; pick the highest tier.
+  const maxScore = Math.max(...candidates.map(getMoodScore));
+  const best = candidates.filter(t => getMoodScore(t) === maxScore);
 
-    let score = getMoodScore(track);
+  // Tie with currently playing song → stay (no switch needed).
+  if (currentFile && best.some(t => t.file === currentFile)) return null;
 
-    // Bonus for explicit location/situation match (beats wildcard tracks).
-    if (trackLocation && aiLocation && trackLocation === aiLocation) score += 100;
-    if (trackSituation && aiSituation && trackSituation === aiSituation) score += 50;
-
-    return { track, score };
-  });
-
-  let validScored = scored.filter(s => s.score >= 0);
-
-  // Fallback 1 — location/situation in AI labels but no track in library matches:
-  // drop the location/situation hard filter and score by mood only.
-  // Fallback 2 — no moods match either: all tracks score 0 → random pick.
-  if (!validScored.length) {
-    validScored = library.map(track => ({ track, score: getMoodScore(track) }));
-  }
-
-  if (!validScored.length) return null;
-
-  const maxScore = Math.max(...validScored.map(s => s.score));
-
-  // Only stay on the current track if it is the UNIQUE best match.
-  if (currentFile) {
-    const currentEntry = validScored.find(s => s.track.file === currentFile);
-    const currentScore = currentEntry?.score ?? -1;
-    if (maxScore >= 0 && currentScore === maxScore) {
-      const otherBest = validScored.filter(s => s.score === maxScore && s.track.file !== currentFile);
-      if (otherBest.length === 0) return null; // current is uniquely best → stay
-    }
-  }
-
-  const best = validScored.filter(s => s.score === maxScore);
-
-  // Always try to exclude the current/last-played file for variety.
-  const candidates = best.filter(s => s.track.file !== excluded);
-  const pool = candidates.length > 0 ? candidates : best;
-  return pool[Math.floor(Math.random() * pool.length)].track;
+  // Random pick among best (variety: prefer not to repeat excludeFile).
+  return best[Math.floor(Math.random() * best.length)];
 }
 
 
@@ -276,9 +245,54 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
           log(`[label-debug] guild=${session.guildId} isPlaying=${isPlaying} labels=[${labels.join(",")}] labelsUpdatedAt=${labelsData?.updatedAt || "none"} currentFile=${currentFile || "none"}`, "info", { moduleName: MODULE_NAME });
 
           if (isPlaying) {
-            // Track is still playing — never interrupt mid-song.
-            // Update nowPlaying.labels so the UI always shows the latest mood context.
+            // Detect scene changes by comparing new AI labels vs previous active labels
+            // (stored in nowPlaying.labels from the last poll).
+            // Carry-forward in bard-label-output ensures empty AI slots retain the
+            // previous value, so only genuine AI changes produce a mismatch here.
+            //
+            // Rules (all three can trigger a mid-song switch):
+            //   1. Location changed   — both non-empty and different
+            //   2. Situation changed  — both non-empty and different
+            //   3. Mood drift >50%    — >50% of new moods are not in previous moods
+            //      (skipped if either new or previous mood list is empty)
+            const prevLabels  = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
+            const newLoc      = (labels[0] || "").trim().toLowerCase();
+            const prevLoc     = (prevLabels[0] || "").trim().toLowerCase();
+            const newSit      = (labels[1] || "").trim().toLowerCase();
+            const prevSit     = (prevLabels[1] || "").trim().toLowerCase();
+            const newMoods    = labels.slice(2).filter(Boolean).map(m => m.trim().toLowerCase());
+            const prevMoods   = prevLabels.slice(2).filter(Boolean).map(m => m.trim().toLowerCase());
+            const prevMoodSet = new Set(prevMoods);
+
+            let switchReason = null;
+            if (newLoc && prevLoc && newLoc !== prevLoc)
+              switchReason = `location:${prevLoc}→${newLoc}`;
+            else if (newSit && prevSit && newSit !== prevSit)
+              switchReason = `situation:${prevSit}→${newSit}`;
+            else if (newMoods.length > 0 && prevMoods.length > 0) {
+              const changed = newMoods.filter(m => !prevMoodSet.has(m)).length;
+              if (changed / newMoods.length > 0.5)
+                switchReason = `mood:${changed}/${newMoods.length} changed`;
+            }
+
+            if (switchReason) {
+              log(`mid-song switch (${switchReason}) for guild ${session.guildId}`, "info", { moduleName: MODULE_NAME });
+              const next = getSelectSong(labels, library, currentFile);
+              if (next !== null) {
+                session._lastLabels = labels;
+                session._lastRejectedLabels = rejected;
+                await setPlayTrack(session, next, musicDir, log, triggerPoll);
+                continue;
+              }
+              // getSelectSong returned null = current track is tied-best → stay, update UI only.
+            }
+
+            // No switch — refresh UI labels so the page always shows current mood context.
             if (nowPlaying) await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
+            try {
+              const currentStream = await getItem(`bard:stream:${session.guildId}`);
+              if (currentStream) await putItem({ ...currentStream, labels }, `bard:stream:${session.guildId}`);
+            } catch {}
             continue;
           } else {
             const next = getSelectSong(labels, library, null, session._lastPlayedFile || currentFile);
