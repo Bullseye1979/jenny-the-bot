@@ -120,7 +120,10 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   const best = candidates.filter(t => getMoodScore(t) === maxScore);
 
   // Tie with currently playing song → stay (no switch needed).
-  if (currentFile && best.some(t => t.file === currentFile)) return null;
+  // Only when labels carry meaningful data. With empty labels (startup / first cron
+  // cycle) every song scores 0 and "tie with current" is meaningless — pick directly.
+  const hasMatchData = !!(aiLoc || aiSit || aiMoods.length);
+  if (hasMatchData && currentFile && best.some(t => t.file === currentFile)) return null;
 
   // Random pick among best (variety: prefer not to repeat excludeFile).
   return best[Math.floor(Math.random() * best.length)];
