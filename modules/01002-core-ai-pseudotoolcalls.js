@@ -914,7 +914,8 @@ export default async function getCoreAi(coreData) {
 
       const cutOff = finish === "length" || getLooksCutOff(cleanAssistantText);
       if (cutOff) {
-        const cont = { role: "user", content: "continue" };
+        /* Instruct model not to embed new tool calls in the continuation pass */
+        const cont = { role: "user", content: "Continue exactly where you stopped. Do not call any more tools. Output only the missing text continuation." };
         messages.push(cont);
         persistQueue.push(getWithTurnId(cont, wo));
         wo.logging.push({

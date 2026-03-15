@@ -452,13 +452,14 @@ export default async function getCoreAi(coreData) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
     try {
+      const toolsDisabled = wo.__forceNoTools === true;
       const body = {
         model: wo.model,
         messages,
         temperature: kiCfg.temperature,
         max_tokens: kiCfg.maxTokens,
-        tools: toolDefs.length ? toolDefs : undefined,
-        tool_choice: toolDefs.length ? kiCfg.toolChoice : undefined
+        tools: (!toolsDisabled && toolDefs.length) ? toolDefs : undefined,
+        tool_choice: (!toolsDisabled && toolDefs.length) ? kiCfg.toolChoice : undefined
       };
       const res = await fetch(wo.endpoint, {
         method: "POST",
@@ -553,6 +554,8 @@ export default async function getCoreAi(coreData) {
           exitStatus: "success",
           message: `Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`
         });
+        /* Disable tools for the continuation pass — model should resume output, not call more tools */
+        wo.__forceNoTools = true;
         continue;
       }
       break;
