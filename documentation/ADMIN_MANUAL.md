@@ -3220,7 +3220,7 @@ See [§16.12 Permission Concept](#1612-permission-concept) for the full rules.
 
 ### Overview
 
-The bard music system automatically plays mood-appropriate background music for tabletop RPG sessions. It runs as a **headless scheduler** — no second Discord bot is required. A cron job analyzes the chat context at every run using an LLM, generates 3 mood tags, and stores them in the registry. `flows/bard.js` polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active mood. Audio is served to the browser via the web player at `/bard` or `/bard-stream`.
+The bard music system automatically plays mood-appropriate background music for tabletop RPG sessions. It runs as a **headless scheduler** — no second Discord bot is required. A cron job analyzes the chat context at every run using an LLM, generates 6 structured labels (`location, situation, mood1–4`), and stores them in the registry. `flows/bard.js` polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active labels. Audio is served to the browser via the web player at `/bard` or `/bard-stream`.
 
 ### Architecture
 
@@ -3264,9 +3264,13 @@ flows/bard.js (polls every N seconds, min 5 s) — headless scheduler
      - reads bard:labels:{guildId} for current mood
      - reads bard:nowplaying:{guildId} for current track
      - checks session._trackEndAt: if Date.now() < _trackEndAt → track is still playing
-     - compares new AI labels to nowPlaying.labels (labels active when track started):
-       if identical → keep playing (no switch)
-       if changed → select best-fit track via getSelectSong; if current is already best fit → keep playing
+     - compares new AI labels directly against the current track's own tags (getShouldSwitch):
+       · location changed (both non-empty, different) → switch
+       · situation changed (both non-empty, different) → switch
+       · >50% of track's mood tags absent from new AI moods (set comparison) → switch
+       · empty AI value for a position = "unknown" → that position is skipped
+       · if no switch rule fires → keep playing, refresh nowPlaying.labels for the UI
+       if switch triggered → select best-fit track via getSelectSong; if current is already unique best fit → keep playing
      - if track ended (timer expired): select next track
      - song found: writes bard:stream:{guildId} and bard:nowplaying:{guildId},
        calls ffprobe to get duration, schedules setTimeout(triggerPoll, durationMs + 200)
@@ -3324,35 +3328,46 @@ Fields:
 - Exploration: `exploration`, `adventure`, `travel`, `forest`, `peaceful`, `calm`
 - Mystery: `mystery`, `underdark`, `creepy`, `suspense`, `whimsical`
 
-### Song Selection Algorithm
+### Song Switch Logic (`getShouldSwitch`)
 
-`getSelectSong` uses **bidirectional position-weighted scoring** to find the best track for the current AI labels.
+Called on every poll while a track is playing. Compares the new AI labels **directly against the current track's own tags** (not against the labels active at track start).
 
-**Scoring:**
-- AI labels carry descending weights: 1st label = N points, 2nd = N−1, …, last = 1 point.
-  Example: `["combat","vampire","dungeon"]` → combat=3, vampire=2, dungeon=1
-- Track tags also carry descending weights: 1st tag = highest weight (most characteristic), last = lowest.
-  Example: track with tags `["combat","dungeon","exploration"]` → combat=3, dungeon=2, exploration=1
-- A matching pair scores: **AI label weight × track tag weight**.
-  Example: combat(AI=3) × combat(track=3) = 9; dungeon(AI=1) × dungeon(track=2) = 2 → total = 11
+A switch is triggered when **any** of these rules fires:
 
-This means a track where the primary AI mood (e.g. "combat") is also the track's primary tag (position 0) scores highest — both dimensions reinforce each other.
+| Rule | Condition | Notes |
+|------|-----------|-------|
+| **Location** | AI `labels[0]` ≠ track `tags[0]`, both non-empty | Empty on either side = wildcard → skip rule |
+| **Situation** | AI `labels[1]` ≠ track `tags[1]`, both non-empty | Empty on either side = wildcard → skip rule |
+| **Mood drift** | >50% of track's mood tags (`tags[2+]`) absent from new AI moods | Only evaluated when AI returned ≥ 1 mood tag; empty AI moods = "unknown" → skip rule |
+
+If no rule fires: keep playing, update `nowPlaying.labels` to the latest AI labels (UI refresh only).
+
+### Song Selection Algorithm (`getSelectSong`)
+
+Used to find the best-matching track whenever a switch is triggered or a new track is needed.
+
+**Hard filter (location/situation):** Tracks with a non-empty location/situation that conflicts with the AI labels get `score = -1` and are excluded entirely. Empty on either side = wildcard (passes filter, no bonus/penalty).
+
+**Scoring (mood positions 2–5):**
+- AI mood labels carry descending weights: position 2 = highest, position 5 = lowest.
+- Track mood tags also carry descending weights: earlier tag = more characteristic.
+- A matching pair scores: **AI mood weight × track mood weight**.
+- Location match bonus: +100; situation match bonus: +50.
 
 **Selection process:**
-1. Score all tracks in the library.
+1. Score all tracks; exclude hard-filter failures (`score = -1`).
 2. Find `maxScore`.
-3. If the **current track is already the unique best match** (no other track ties or exceeds it) → return `null` (no change, keep playing).
-4. From all tracks with `maxScore`: exclude the `excludeFile` (= recently played file) for variety, unless all best-fit tracks are the same file.
+3. If the **current track is already the unique best match** → return `null` (keep playing).
+4. From all `maxScore` tracks: exclude the recently played file for variety.
 5. Return a **random pick** from the remaining candidates.
 
 **Full lifecycle:**
-1. **Scheduler started** (`/bardstart`) — no labels are written. The first poll finds empty labels and picks a random track. The cron job writes real structured labels on its first run.
-2. **Labels empty** — if a song is playing, keep it unchanged. If nothing plays, pick a random track.
-3. **Labels unchanged** (new AI labels identical to `nowPlaying.labels`) — keep playing. No switch.
-4. **Labels changed** — call `getSelectSong`; if current is already best fit → keep playing. Otherwise switch to best-fit track immediately.
-5. **Song ends naturally** — `setTimeout` fires (ffprobe duration + 200 ms), calls `triggerPoll()`. Poll overwrites `bard:stream` and `bard:nowplaying` atomically when the next track starts.
+1. **Scheduler started** (`/bardstart`) — no labels written. First poll picks a random track. The cron job writes real structured labels on its first run.
+2. **Labels empty** — if playing, keep it unchanged. If nothing plays, pick a random track.
+3. **Track playing, labels present** — run `getShouldSwitch`; if no rule fires, refresh `nowPlaying.labels` for the UI and continue. If a rule fires, run `getSelectSong` and switch.
+4. **Song ends naturally** — `setTimeout` fires (ffprobe duration + 200 ms), calls `triggerPoll()`. Poll overwrites `bard:stream` and `bard:nowplaying` atomically when the next track starts.
 
-**Prompt ordering:** The LLM is instructed to output the 3 tags **in priority order** (most fitting first). This means the first label always carries the highest weight in scoring — rank carefully.
+**Mood ordering:** The LLM outputs moods in priority order (most fitting first). Earlier mood labels carry higher weight — the order matters for scoring.
 
 ### Slash Commands
 
@@ -3371,7 +3386,7 @@ Accessible at `/bard`. Features:
 - **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Labels are colour-coded: **green** = tag appears on both the track and the active mood; **blue** = track tag not in the current mood; **gray** = mood label not present on the current track; **red** = LLM token not found in library.xml (rejected). Sync behaviour:
   - **Regular polling:** every 2 seconds.
   - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 2-second cycle. This minimises the gap between tracks in the browser player.
-  - **On label change mid-song:** When the mood changes and the current track no longer fits (and the replacement has different tags), `bard:stream` is updated immediately with the new track. The browser picks up the change on its next poll cycle. If the replacement would have the same tags as the current track (same-tags guard), playback continues and only `nowPlaying.labels` is refreshed.
+  - **On label change mid-song:** When `getShouldSwitch` fires (location, situation or mood drift), `bard:stream` is updated immediately with the new track. The browser picks up the change on its next poll cycle. If no switch rule fires, playback continues and only `nowPlaying.labels` is refreshed (UI update only).
   - **On "▶ Zum Anhören klicken" (start button):** the elapsed position is recalculated at the exact moment the user clicks, so the stream is in sync even if the user waited on the page before pressing play. The catch-up seek happens at button-press time, not at the next track change.
 
 Filenames are preserved as-is, including spaces. Only characters outside `[a-zA-Z0-9 ._-]` are replaced with `_`.

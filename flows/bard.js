@@ -150,47 +150,52 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
 }
 
 /************************************************************************************/
-/* functionSignature: getShouldSwitch (newLabels, oldLabels, currentTrack)           *
-/* Decides whether a track switch is warranted based on structured label comparison. *
+/* functionSignature: getShouldSwitch (newLabels, currentTrack)                      *
+/* Decides whether the current track still fits the new AI labels.                   *
+/* Compares AI labels directly against the current track's own tag positions —       *
+/* NOT against the labels that were active when the track started.                   *
 /* Switch is triggered when ANY of these conditions is met:                          *
-/*   1. Location changed (both non-empty and different).                             *
-/*   2. Situation changed (both non-empty and different).                            *
-/*   3. >50% of the current track's previously-matching mood tags no longer match.  *
+/*   1. Track has a non-empty location AND AI has a different non-empty location.    *
+/*   2. Track has a non-empty situation AND AI has a different non-empty situation.  *
+/*   3. >50% of the track's mood tags (pos 2+) are absent from the new AI moods     *
+/*      (order-independent set comparison).                                          *
+/* An empty AI value means "unknown/unclear" — that position is skipped entirely.   *
+/* Rule 3 is only evaluated when the AI returned at least one mood tag.             *
 /* Returns {reason, detail} on switch, null on no-switch.                           *
 /************************************************************************************/
-function getShouldSwitch(newLabels, oldLabels, currentTrack) {
-  const newLoc   = (newLabels[0] || "").trim().toLowerCase();
-  const newSit   = (newLabels[1] || "").trim().toLowerCase();
-  const newMoods = newLabels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
-  const oldLoc   = (oldLabels[0] || "").trim().toLowerCase();
-  const oldSit   = (oldLabels[1] || "").trim().toLowerCase();
-  const oldMoods = oldLabels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
+function getShouldSwitch(newLabels, currentTrack) {
+  if (!currentTrack) return null;
 
-  // Rule 1: location changed (both non-empty, ignore empty = "unknown")
-  if (newLoc && oldLoc && newLoc !== oldLoc) {
-    return { reason: "location", detail: `${oldLoc}→${newLoc}` };
+  const newLoc     = (newLabels[0] || "").trim().toLowerCase();
+  const newSit     = (newLabels[1] || "").trim().toLowerCase();
+  const newMoods   = newLabels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
+  const newMoodSet = new Set(newMoods);
+
+  const trackLoc   = (currentTrack.tags[0] || "").trim().toLowerCase();
+  const trackSit   = (currentTrack.tags[1] || "").trim().toLowerCase();
+  const trackMoods = currentTrack.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
+
+  // Rule 1: location mismatch (both non-empty, different)
+  if (newLoc && trackLoc && newLoc !== trackLoc) {
+    return { reason: "location", detail: `track:${trackLoc}≠ai:${newLoc}` };
   }
 
-  // Rule 2: situation changed (both non-empty)
-  if (newSit && oldSit && newSit !== oldSit) {
-    return { reason: "situation", detail: `${oldSit}→${newSit}` };
+  // Rule 2: situation mismatch (both non-empty, different)
+  if (newSit && trackSit && newSit !== trackSit) {
+    return { reason: "situation", detail: `track:${trackSit}≠ai:${newSit}` };
   }
 
-  // Rule 3: >50% of previously matching mood tags on current track are gone
-  if (currentTrack) {
-    const trackMoods = currentTrack.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
-    if (trackMoods.length > 0) {
-      const oldMoodSet    = new Set(oldMoods);
-      const newMoodSet    = new Set(newMoods);
-      const oldMatchCount = trackMoods.filter(m => oldMoodSet.has(m)).length;
-      const newMatchCount = trackMoods.filter(m => newMoodSet.has(m)).length;
-      if (oldMatchCount > 0 && (oldMatchCount - newMatchCount) / oldMatchCount > 0.5) {
-        return { reason: "mood", detail: `matches:${oldMatchCount}→${newMatchCount}/${trackMoods.length}` };
-      }
+  // Rule 3: >50% of the track's mood tags are no longer in the new AI moods.
+  // Only evaluated when the AI actually returned mood tags — empty newMoods means
+  // "unknown/unclear", not "no match", so we don't switch on missing information.
+  if (trackMoods.length > 0 && newMoods.length > 0) {
+    const matchCount = trackMoods.filter(m => newMoodSet.has(m)).length;
+    if ((trackMoods.length - matchCount) / trackMoods.length > 0.5) {
+      return { reason: "mood", detail: `matches:${matchCount}/${trackMoods.length}` };
     }
   }
 
-  return null; // no switch needed
+  return null; // track still fits — no switch needed
 }
 
 /************************************************************************************/
@@ -312,15 +317,12 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
 
           if (isPlaying) {
             if (labels.length === 0) continue;
-            const trackStartLabels = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
-            const currentTrack     = library.find(t => t.file === currentFile);
-            const switchReason     = getShouldSwitch(labels, trackStartLabels, currentTrack);
-            log(`[label-debug] guild=${session.guildId} isPlaying=true trackStartLabels=[${trackStartLabels.join(",")}] newLabels=[${labels.join(",")}] switch=${switchReason ? switchReason.reason + ":" + switchReason.detail : "no"}`, "info", { moduleName: MODULE_NAME });
+            const currentTrack = library.find(t => t.file === currentFile);
+            const switchReason = getShouldSwitch(labels, currentTrack);
+            log(`[label-debug] guild=${session.guildId} isPlaying=true trackTags=[${currentTrack?.tags?.join(",") || "none"}] newLabels=[${labels.join(",")}] switch=${switchReason ? switchReason.reason + ":" + switchReason.detail : "no"}`, "info", { moduleName: MODULE_NAME });
             if (!switchReason) {
-              // No switch — silently refresh labels in nowPlaying if they changed
-              if (labels.join(",") !== trackStartLabels.join(",") && nowPlaying) {
-                await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
-              }
+              // No switch — refresh labels in nowPlaying so the UI always shows current labels
+              if (nowPlaying) await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
               continue;
             }
             // Switch triggered — pick best-fit track for the new labels

@@ -492,7 +492,7 @@ Headless music scheduler that runs continuously (polling every `pollIntervalMs` 
 
 1. Reads `bard:registry` for active sessions.
 2. For each session: reads `bard:labels:{guildId}` (AI mood tags) and `bard:nowplaying:{guildId}`.
-3. Compares AI labels to labels active when the track started — switches track if changed.
+3. Compares AI labels directly against the current track's own tags (`getShouldSwitch`): switches if location/situation changed or >50% of the track's mood tags are gone. Empty AI values = "unknown" → that position skipped.
 4. On track end: selects best-fit track using bidirectional position-weighted scoring.
 5. Writes `bard:stream:{guildId}` for the browser audio player.
 
