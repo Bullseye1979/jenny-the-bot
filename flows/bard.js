@@ -158,22 +158,28 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
 }
 
 /************************************************************************************/
-/* functionSignature: getShouldSwitch (newLabels, currentTrack)                      *
+/* functionSignature: getShouldSwitch (newLabels, currentTrack, prevLabels)          *
 /* Decides whether the current track still fits the new AI labels.                   *
-/* Compares AI labels directly against the current track's own tag positions —       *
-/* NOT against the labels that were active when the track started.                   *
-/* Switch is triggered when ANY of these conditions is met:                          *
-/*   1. AI knows the location (non-empty) AND it differs from the track's location   *
-/*      — this includes the case where the track has no location (generic track)     *
-/*      but the AI now knows a concrete location.                                    *
-/*   2. Same as rule 1, applied to situation.                                        *
-/*   3. >50% of the track's mood tags (pos 2+) are absent from the new AI moods     *
-/*      (order-independent set comparison).                                          *
-/* An empty AI value means "unknown/unclear" — that position is skipped entirely.   *
-/* Rule 3 is only evaluated when the AI returned at least one mood tag.             *
+/* Compares AI labels directly against the current track's own tag positions.        *
+/*                                                                                   *
+/* Two different "empty" semantics must be distinguished:                            *
+/*   Library empty  (track.tags[0/1] = "")  → wildcard: track fits any value.       *
+/*   AI empty       (newLabels[0/1] = "")   → unknown: AI has no opinion → skip.    *
+/*                                                                                   *
+/* Switch rules:                                                                     *
+/*   1. Location — fires when AI knows location (non-empty) AND track has a          *
+/*      different non-empty location. Track empty = wildcard → no switch.            *
+/*   2. Situation — identical rule applied to position 1.                            *
+/*   3. Mood — only evaluated when AI returned ≥ 1 mood:                            *
+/*      a) "Awakening": prevLabels had NO moods at all (all empty/missing) →         *
+/*         50% rule does not apply. Any single match = keep; zero matches = switch.  *
+/*      b) Normal: prevLabels already had ≥ 1 mood →                                *
+/*         >50% of track's mood tags absent from new AI moods → switch.             *
+/*                                                                                   *
+/* prevLabels: the AI labels stored in nowPlaying (last known AI output).            *
 /* Returns {reason, detail} on switch, null on no-switch.                           *
 /************************************************************************************/
-function getShouldSwitch(newLabels, currentTrack) {
+function getShouldSwitch(newLabels, currentTrack, prevLabels) {
   if (!currentTrack) return null;
 
   const newLoc     = (newLabels[0] || "").trim().toLowerCase();
@@ -185,24 +191,60 @@ function getShouldSwitch(newLabels, currentTrack) {
   const trackSit   = (currentTrack.tags[1] || "").trim().toLowerCase();
   const trackMoods = currentTrack.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
 
-  // Rule 1: AI knows location AND the current track doesn't match it
-  // (covers both: track has wrong location, and track has no location but AI now knows one)
-  if (newLoc && newLoc !== trackLoc) {
-    return { reason: "location", detail: `track:${trackLoc || "any"}→ai:${newLoc}` };
+  // Rule 1: location mismatch.
+  // Track empty = wildcard in the library → valid everywhere → no switch.
+  // AI empty = unknown → skip.
+  if (newLoc && trackLoc && newLoc !== trackLoc) {
+    return { reason: "location", detail: `track:${trackLoc}≠ai:${newLoc}` };
   }
 
-  // Rule 2: AI knows situation AND the current track doesn't match it
-  if (newSit && newSit !== trackSit) {
-    return { reason: "situation", detail: `track:${trackSit || "any"}→ai:${newSit}` };
+  // Rule 2: situation mismatch — same semantics as Rule 1.
+  if (newSit && trackSit && newSit !== trackSit) {
+    return { reason: "situation", detail: `track:${trackSit}≠ai:${newSit}` };
   }
 
-  // Rule 3: >50% of the track's mood tags are no longer in the new AI moods.
-  // Only evaluated when the AI actually returned mood tags — empty newMoods means
-  // "unknown/unclear", not "no match", so we don't switch on missing information.
-  if (trackMoods.length > 0 && newMoods.length > 0) {
-    const matchCount = trackMoods.filter(m => newMoodSet.has(m)).length;
-    if ((trackMoods.length - matchCount) / trackMoods.length > 0.5) {
-      return { reason: "mood", detail: `matches:${matchCount}/${trackMoods.length}` };
+  // Rule 3: mood evaluation.
+  // Skip entirely when AI has no mood output this cycle ("unknown").
+  if (newMoods.length === 0) return null;
+
+  if (trackMoods.length > 0) {
+    const prevMoodSet = new Set(
+      (Array.isArray(prevLabels) ? prevLabels : [])
+        .slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean)
+    );
+
+    // Split the new AI moods into two groups per slot:
+    //   "known"   — moods that were already present in the previous cycle
+    //   "awakened"— moods that are new this cycle (slot was empty / not output before)
+    //
+    // Awakening slots: the 50% drift rule does NOT apply.
+    //   Any single match between an awakened mood and the track is enough to keep playing.
+    //   No match at all among awakened moods → switch.
+    //
+    // Known slots: normal drift rule.
+    //   >50% of the track's mood tags absent from the known moods → switch.
+    const knownMoods    = newMoods.filter(m => prevMoodSet.has(m));
+    const awakenedMoods = newMoods.filter(m => !prevMoodSet.has(m));
+
+    if (awakenedMoods.length > 0) {
+      // Check awakened slots: at least one must match a track mood.
+      const awakenedSet = new Set(awakenedMoods);
+      const anyAwakenedMatch = trackMoods.some(m => awakenedSet.has(m));
+      if (!anyAwakenedMatch) {
+        return {
+          reason: "mood-awakening",
+          detail: `no match from track:[${trackMoods.join(",")}] in awakened:[${awakenedMoods.join(",")}]`
+        };
+      }
+    }
+
+    if (knownMoods.length > 0) {
+      // Normal drift on the known (stable) mood slots only.
+      const knownSet   = new Set(knownMoods);
+      const matchCount = trackMoods.filter(m => knownSet.has(m)).length;
+      if ((trackMoods.length - matchCount) / trackMoods.length > 0.5) {
+        return { reason: "mood", detail: `matches:${matchCount}/${trackMoods.length} (known moods)` };
+      }
     }
   }
 
@@ -329,7 +371,8 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
           if (isPlaying) {
             if (labels.length === 0) continue;
             const currentTrack = library.find(t => t.file === currentFile);
-            const switchReason = getShouldSwitch(labels, currentTrack);
+            const prevLabels   = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
+            const switchReason = getShouldSwitch(labels, currentTrack, prevLabels);
             log(`[label-debug] guild=${session.guildId} isPlaying=true trackTags=[${currentTrack?.tags?.join(",") || "none"}] newLabels=[${labels.join(",")}] switch=${switchReason ? switchReason.reason + ":" + switchReason.detail : "no"}`, "info", { moduleName: MODULE_NAME });
             if (!switchReason) {
               // No switch — refresh labels in nowPlaying so the UI always shows current labels

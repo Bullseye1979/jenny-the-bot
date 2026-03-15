@@ -9,7 +9,7 @@
 /*          system to get permanently stuck with no new context to process.        */
 /************************************************************************************/
 
-import { putItem } from "../core/registry.js";
+import { getItem, putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "bard-label-output";
@@ -93,6 +93,19 @@ export default async function getBardLabelOutput(coreData) {
   // (AI invented a new location/situation word not yet in the library)
   if (!loc && sanitized[0] && !usedIndices.has(0)) loc = sanitized[0];
   if (!sit && sanitized[1] && !usedIndices.has(1)) sit = sanitized[1];
+
+  // Carry-forward: if the AI left location/situation empty ("I don't know"),
+  // inherit the last known value from the stored labels so the label state
+  // doesn't degrade to empty when the AI is uncertain.
+  // Mood slots are NOT carried forward — empty mood = "unknown this cycle".
+  if (!loc || !sit) {
+    try {
+      const prev = await getItem(`bard:labels:${guildId}`);
+      const prevLabels = Array.isArray(prev?.labels) ? prev.labels : [];
+      if (!loc && prevLabels[0]) loc = String(prevLabels[0]);
+      if (!sit && prevLabels[1]) sit = String(prevLabels[1]);
+    } catch {}
+  }
 
   while (moodValues.length < 4) moodValues.push("");
   const labels = [loc, sit, ...moodValues];
