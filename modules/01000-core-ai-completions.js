@@ -474,7 +474,7 @@ export default async function getCoreAi(coreData) {
           severity: "warn",
           module: MODULE_NAME,
           exitStatus: "failed",
-          message: `HTTP ${res.status} ${res.statusText} ${typeof raw === "string" ? raw.slice(0,300) : ""}`
+          message: `HTTP ${res.status} ${res.statusText}`
         });
         return coreData;
       }

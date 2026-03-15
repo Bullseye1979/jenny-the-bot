@@ -3254,9 +3254,15 @@ Cron job (every N minutes, flow: bard-label-gen)
      - writes result to wo.response
   -> 08050-bard-label-output.js (output)
      - parses wo.response into a 6-position label array [location, situation, mood1, mood2, mood3, mood4]
-     - category-based rescue: scans all 6 AI values, assigns each to correct slot by membership in
-       wo._bardLocations / wo._bardSituations, regardless of AI output position
-     - unknown words at positions 0/1 accepted as-is (new library words); mood slots validated against wo._bardValidTags
+     - three-pass rescue:
+         Pass 1 (category rescue): scans ALL positions; first known location word → loc slot,
+           first known situation word → sit slot. Positions 0–1 never go to mood slots.
+         Change-preference: if the first-found loc/sit equals the previous known value, scans for
+           a DIFFERENT known word elsewhere in the output — the AI may have repeated the old value
+           from the prompt while signalling a scene change with a new word later.
+         Pass 2 (mood assignment): positions 2–5 only, pure mood words (not loc/sit words).
+         Pass 3 (position fallback): novel words at positions 0/1 accepted as-is.
+     - carry-forward for empty slots: prev labels → current song's trackTags → random from allowed list
      - writes bard:labels:{guildId} to registry
      - writes bard:lastrun:{guildId} only on success (prevents context window from advancing on AI failure)
 
@@ -3267,13 +3273,14 @@ flows/bard.js (polls every N seconds, min 5 s) — headless scheduler
      - reads bard:labels:{guildId} for current mood
      - reads bard:nowplaying:{guildId} for current track
      - checks session._trackEndAt: if Date.now() < _trackEndAt → track is still playing
-     - compares new AI labels directly against the current track's own tags (getShouldSwitch):
+     - compares new AI labels vs previous active labels (nowPlaying.labels):
        · location changed (both non-empty, different) → switch
        · situation changed (both non-empty, different) → switch
-       · >50% of track's mood tags absent from new AI moods (set comparison) → switch
-       · empty AI value for a position = "unknown" → that position is skipped
-       · if no switch rule fires → keep playing, refresh nowPlaying.labels for the UI
-       if switch triggered → select best-fit track via getSelectSong; if current is already unique best fit → keep playing
+       · >50% of new mood labels are not in previous mood labels → switch
+       · either list is empty → skip that rule
+       · if no switch rule fires → keep playing, refresh nowPlaying.labels + bard:stream.labels for UI
+       if switch triggered → getSelectSong selects best-fit track by tier+mood; if current is already
+         tied-best → stay (null returned), update UI only
      - if track ended (timer expired): select next track
      - song found: writes bard:stream:{guildId} and bard:nowplaying:{guildId},
        calls ffprobe to get duration, schedules setTimeout(triggerPoll, durationMs + 200)
@@ -3311,8 +3318,16 @@ Format:
 <?xml version="1.0" encoding="UTF-8"?>
 <library>
   <track file="Battle1.mp3" title="Battle March">
-    <tags>battle,fight,fast,intense</tags>
+    <tags>battlefield,battle,dark,intense,tense,epic</tags>
     <volume>0.8</volume>
+  </track>
+  <track file="Tavern.mp3" title="Tavern Evening">
+    <tags>tavern,rest,calm,cozy,warm,relaxing</tags>
+    <volume>1.0</volume>
+  </track>
+  <track file="Ambient.mp3" title="Ambient Drift">
+    <tags>,,ambient,calm,peaceful,mysterious</tags>
+    <volume>0.9</volume>
   </track>
 </library>
 ```
@@ -3320,16 +3335,19 @@ Format:
 Fields:
 - `file`: MP3 filename, relative to musicDir
 - `title`: Display name shown in logs and now-playing info
-- `tags`: Comma-separated mood tags (lowercase, no spaces)
+- `tags`: **6-position** comma-separated list: `location,situation,mood1,mood2,mood3,mood4`
+  - Position 0 (location): WHERE the scene takes place — e.g. `tavern`, `dungeon`, `battlefield`
+  - Position 1 (situation): WHAT is happening — e.g. `combat`, `rest`, `exploration`
+  - Positions 2–5 (moods): atmosphere words — e.g. `dark`, `tense`, `calm`, `epic`
+  - **Empty position** = wildcard — the track matches any AI value for that slot
+  - A track with `,,calm,peaceful` matches any location and any situation
 - `volume`: Playback volume multiplier, 0.1–4.0 (default: 1.0)
 
-### Tag Vocabulary (existing tracks)
+### Tag Vocabulary
 
-- Combat: `battle`, `fight`, `fast`, `intense`, `boss`
-- Epic: `epic`, `magic`
-- City: `city`, `people`, `buzzing`, `crowded`, `sneaky`, `searching`, `shady`
-- Exploration: `exploration`, `adventure`, `travel`, `forest`, `peaceful`, `calm`
-- Mystery: `mystery`, `underdark`, `creepy`, `suspense`, `whimsical`
+The allowed-list sets (`locationSet`, `situationSet`, `moodSet`) are built dynamically from `library.xml` at cron runtime — position 0 of each track feeds `locationSet`, position 1 feeds `situationSet`, positions 2–5 feed `moodSet`. No manual list is maintained.
+
+**For the rescue logic to work correctly**, every concept the AI might use as a location should appear at position 0 in at least one track, and every situation concept at position 1. If a word is only ever used as a mood (positions 2–5), the rescue cannot identify it as a location/situation.
 
 ### Song Switch Logic
 
@@ -3340,12 +3358,20 @@ Fields:
 | `library.xml` track tag | **Wildcard** — the track fits any location/situation |
 | AI output label | **Unknown** — treated as unchanged (carry-forward applied) |
 
-**AI label carry-forward** (`bard-label-output`): When the AI returns an empty location or situation slot, a three-level fallback fills it:
-1. Previous active labels (assume scene is unchanged)
-2. Current song's own tag at that position
-3. Random value from the allowed list (initialization only — no previous history)
+**Label processing pipeline** (`bard-label-output`):
 
-Mood slots are **not** filled — empty mood = "unknown this cycle."
+1. **Position rescue** — three passes over the raw 6-value AI response:
+   - *Pass 1*: scans all positions for known library location/situation words (by set membership). First location word found → slot 0; first situation word found → slot 1. Positions 0–1 are never added to mood slots.
+   - *Change-preference*: if the rescued location/situation equals the **previous** known value, the rescue continues scanning for a **different** known word elsewhere. This handles the common AI pattern of repeating the old value (from `{{CURRENT_LABELS}}` in the prompt) while signalling a change later in the output.
+   - *Pass 2*: positions 2–5 only; pure mood words (not in locationSet/situationSet).
+   - *Pass 3*: novel words at AI positions 0/1 accepted as-is (new concepts not yet in library).
+
+2. **Carry-forward** for empty slots (three-level):
+   - Previous active labels (`bard:labels`) — AI uncertain, assume unchanged
+   - Current song's own tag (`bard:stream.trackTags`) — ground truth fallback
+   - Random from allowed list — initialization only, no prior history
+
+   Mood slots are **not** filled — empty mood = "unknown this cycle."
 
 **Mid-song switch detection** compares the new AI labels (after carry-forward) against the previous active labels (`nowPlaying.labels`). Carry-forward ensures empty AI slots are never different from the previous value, so only genuine changes trigger a switch.
 

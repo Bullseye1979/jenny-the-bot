@@ -1026,8 +1026,9 @@ Prepares the `bard-label-gen` cron flow by building the AI prompt and payload fo
 **Built-in prompt behaviour:**
 - Always classifies from the transcript — does not preserve previous labels
 - Outputs **exactly 6 comma-separated values**: `location,situation,mood1,mood2,mood3,mood4`
-- Empty value for location or situation = "unknown / unchanged" (wildcard in track selection)
-- Mood tags ordered by importance; the first mood tag carries the highest scoring weight
+- Empty value for a slot = "unknown this cycle": location/situation fall back to carry-forward; mood slots are left blank
+- Mood tags ordered by importance; the first mood tag carries the highest weight in mood scoring
+- The output module applies a **change-preference rescue**: if the AI repeated the previous location/situation from `{{CURRENT_LABELS}}` while mentioning a different known word elsewhere, the different word is preferred (scene-change detection)
 
 To trigger bard label generation, add a cron job pointing to `"bard-label-gen"` as the flow:
 ```jsonc

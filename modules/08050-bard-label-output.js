@@ -73,6 +73,15 @@ export default async function getBardLabelOutput(coreData) {
   //
   // Pass 3 (position-based fallback): if loc/sit still empty, accept whatever
   //   the AI wrote at position 0/1 as-is (handles novel words not yet in library).
+  // Read previous active labels upfront — used for change-preference logic and carry-forward.
+  let prevLabels = [];
+  try {
+    const prev = await getItem(`bard:labels:${guildId}`);
+    prevLabels = Array.isArray(prev?.labels) ? prev.labels : [];
+  } catch {}
+  const prevLoc = (prevLabels[0] || "").toLowerCase();
+  const prevSit = (prevLabels[1] || "").toLowerCase();
+
   let loc = "";
   let sit = "";
   const moodValues  = [];
@@ -88,6 +97,37 @@ export default async function getBardLabelOutput(coreData) {
     } else if (!sit && situationSet.size > 0 && situationSet.has(v)) {
       sit = v; usedIndices.add(i);
       if (i !== 1) log(`rescued situation "${sit}" from position ${i} for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+    }
+  }
+
+  // Change-preference: if the first-found location/situation matches the PREVIOUS value,
+  // check whether a DIFFERENT known location/situation word also appears in the AI output.
+  // If yes, prefer the different word — the AI is signalling a scene change but repeated
+  // the old value first (common when the old value appears in the prompt as {{CURRENT_LABELS}}).
+  if (loc && loc === prevLoc && locationSet.size > 0) {
+    for (let i = 0; i < sanitized.length; i++) {
+      if (usedIndices.has(i)) continue;
+      const v = sanitized[i];
+      if (!v || v.length > 25) continue;
+      if (locationSet.has(v) && v !== loc) {
+        log(`location scene-change: "${loc}" → "${v}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+        usedIndices.delete(sanitized.indexOf(loc)); // release old index
+        loc = v; usedIndices.add(i);
+        break;
+      }
+    }
+  }
+  if (sit && sit === prevSit && situationSet.size > 0) {
+    for (let i = 0; i < sanitized.length; i++) {
+      if (usedIndices.has(i)) continue;
+      const v = sanitized[i];
+      if (!v || v.length > 25) continue;
+      if (situationSet.has(v) && v !== sit) {
+        log(`situation scene-change: "${sit}" → "${v}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+        usedIndices.delete(sanitized.indexOf(sit));
+        sit = v; usedIndices.add(i);
+        break;
+      }
     }
   }
 
@@ -111,14 +151,8 @@ export default async function getBardLabelOutput(coreData) {
   //   2. Current song's tag at that position (best known ground truth)
   //   3. Random value from the allowed list (initialization when no history exists)
   // Mood slots are NOT filled — empty mood = "unknown this cycle".
-  if (!loc || !sit) {
-    try {
-      const prev = await getItem(`bard:labels:${guildId}`);
-      const prevLabels = Array.isArray(prev?.labels) ? prev.labels : [];
-      if (!loc && prevLabels[0]) loc = String(prevLabels[0]);
-      if (!sit && prevLabels[1]) sit = String(prevLabels[1]);
-    } catch {}
-  }
+  if (!loc && prevLabels[0]) loc = String(prevLabels[0]);
+  if (!sit && prevLabels[1]) sit = String(prevLabels[1]);
   if (!loc || !sit) {
     try {
       const stream = await getItem(`bard:stream:${guildId}`);

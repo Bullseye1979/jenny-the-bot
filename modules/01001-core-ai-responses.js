@@ -1298,7 +1298,7 @@ export default async function getCoreAi(coreData) {
         const retryable = (res.status >= 500 && res.status <= 599) || res.status === 429;
         if (retryable && attempts < maxAttempts) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "retry", message: `Retrying due to HTTP ${res.status}` }); continue; }
         wo.response = "[Empty AI response]";
-        wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "failed", message: `HTTP ${res.status} ${res.statusText} ${rawText.slice(0, 300)}` });
+        wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "failed", message: `HTTP ${res.status} ${res.statusText}` });
         return coreData;
       }
 
