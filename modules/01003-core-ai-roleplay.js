@@ -63,7 +63,7 @@ function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
   if (!s) return false;
   const last = s[s.length - 1];
-  return !/[.!?:;*"»)\]>~`]/.test(last);
+  return !/[.!?:;*"»)\]}>~`]/.test(last);
 }
 
 /*******************************************************************************
