@@ -378,8 +378,7 @@ async function getSystemContent(wo, kiCfg) {
     "- If the latest user message asks you to continue your previous response, continue exactly where you stopped — do not repeat, summarize, or restart.",
     "- If tools are available, use them only when necessary.",
     "- When you emit a tool call, do not include extra prose in the same turn.",
-    "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
-    "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"
+    "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format"
   ].join("\n");
   const multiChannelNote = (() => {
     const raw = Array.isArray(wo?.contextIDs) ? wo.contextIDs : [];
