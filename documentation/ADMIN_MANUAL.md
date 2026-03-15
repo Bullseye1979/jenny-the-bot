@@ -948,29 +948,39 @@ Semantic cluster search over the stored conversation log.
 
 ```json
 "getInformation": {
-  "clusterRows":       200,
-  "padRows":           20,
-  "tokenWindow":       5,
-  "maxLogChars":       6000,
-  "maxOutputLines":    1000,
-  "minCoverage":       1,
-  "eventGapMinutes":   45,
-  "maxTimelinePeriods": 30,
-  "stripCode":         false
+  "clusterRows":           400,
+  "padRows":               20,
+  "tokenWindow":           5,
+  "maxLogChars":           6000,
+  "maxOutputLines":        800,
+  "minCoverage":           1,
+  "eventGapMinutes":       45,
+  "maxTimelinePeriods":    null,
+  "stripCode":             false,
+  "includeAnsweredTurns":  false,
+  "includeAssistantTurns": false
 }
 ```
 
-| Parameter | Type | Description |
-|---|---|---|
-| `clusterRows` | number | Rows per cluster |
-| `padRows` | number | Context rows around matching hits |
-| `tokenWindow` | number | Search window for token matching |
-| `maxLogChars` | number | Max characters in log output |
-| `maxOutputLines` | number | Max output lines |
-| `minCoverage` | number | Minimum coverage for a cluster |
-| `eventGapMinutes` | number | Time gap in minutes between events |
-| `maxTimelinePeriods` | number | Max timeline periods |
-| `stripCode` | boolean | Strip code blocks from log |
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `clusterRows` | number | `400` | Rows per cluster window |
+| `padRows` | number | `20` | Extra context rows to fetch above/below each cluster |
+| `tokenWindow` | number | `5` | Token-proximity window for `parts` scoring |
+| `maxLogChars` | number | `6000` | Hard per-line character limit (truncates longer content) |
+| `maxOutputLines` | number | `800` | Total output line budget across all clusters |
+| `minCoverage` | number | `1` | Minimum distinct keyword groups required for a cluster to be included |
+| `eventGapMinutes` | number | `45` | Minimum gap (minutes) between clusters to emit a `NEW EVENT` separator |
+| `maxTimelinePeriods` | number | `null` | Limit timeline entries returned in `meta`; `null` = all periods |
+| `stripCode` | boolean | `false` | Collapse large triple-backtick code blocks (>30 lines) to `«code N lines»` |
+| `includeAnsweredTurns` | boolean | `false` | When `true`, skips the `answered_turns` filter — returns ALL user/agent rows including those that already received a bot reply. Required for voice transcripts (discord-voice always generates bot replies). |
+| `includeAssistantTurns` | boolean | `false` | When `true`, also includes `role=assistant` rows. Implies `includeAnsweredTurns`. |
+
+> **Context overflow warning:** The defaults (`maxOutputLines: 800`, `maxLogChars: 6000`) can produce very large tool results when a topic appears frequently in the context log. If the AI pipeline hits a context-length error (HTTP 400, 128k tokens exceeded), reduce these values:
+> ```json
+> "getInformation": { "maxOutputLines": 250, "maxLogChars": 1500, "stripCode": true }
+> ```
+> The wiki flow (`00052-webpage-wiki.js`) automatically applies `maxOutputLines: 250`, `maxLogChars: 1500`, `stripCode: true` as defaults, overridable via `toolsconfig.getInformation` in `core.json`.
 
 ---
 
@@ -2130,22 +2140,27 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 ### getInformation
 
 **File:** `tools/getInformation.js`
-**Purpose:** Cluster and retrieve information from the context log
+**Purpose:** Cluster-based keyword search over the stored conversation log. Returns ranked snippets from fixed-size context windows.
 
 **LLM parameters:**
 
 | Parameter | Type | Description |
 |---|---|---|
 | `keyword_groups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE for initial candidate selection; parts are used only for proximity scoring within selected clusters. |
-| `keywords` | array | Fallback: plain search phrases. Each phrase is used as a full-form LIKE token. |
+| `keywords` | array | Fallback: plain search phrases. Each phrase is used as a full-form LIKE token (no internal splitting). |
 
 **Search behaviour:**
 
-- The initial SQL candidate scan (`LIKE '%token%'`) searches **only `variants`** — parts are intentionally excluded from the SQL scan to avoid false-positive noise from short substrings.
-- `parts` are used exclusively in `getAnalyzeClusterRows` for proximity scoring: two parts found within `tokenWindow` tokens of each other score as a full hit.
-- `CONTENT_EXPR` uses `NULLIF(…, '')` in `COALESCE` so that an empty `text` column correctly falls through to the JSON fallback fields (`$.content`, `$.message.content`, etc.).
-- Assistant rows and fully-answered turns (same `turn_id` has both a user/agent row and an assistant row) are excluded from results. Raw transcriptions that were never answered are always returned.
-- Results are ranked by coverage (distinct keyword groups found) → frequency (total hits), then sorted chronologically per channel for output.
+- **SQL candidate scan** (`LIKE '%token%'`) uses **only `variants`** — `parts` are excluded from the SQL scan to avoid false-positive noise from short substrings.
+- **`parts`** are used exclusively in `getAnalyzeClusterRows` for proximity scoring: two parts found within `tokenWindow` tokens of each other score as a full hit.
+- **`CONTENT_EXPR`** uses JSON-first `COALESCE`: tries `$.content`, `$.message.content`, `$.data.content`, `$.delta.content` from the `json` column, then falls back to the `text` column. This ensures full content is searched, not just the truncated `text` column (which is capped at 500 chars by the indexer).
+- **`answered_turns` filter** (default `on`): excludes user/agent rows whose `turn_id` also has a matching `assistant` row in the same channel. This keeps the result set focused on raw, unprocessed transcriptions. Set `includeAnsweredTurns: true` (or `includeAssistantTurns: true`) to disable this filter — required when searching voice transcriptions in channels where the bot always produces a reply.
+- **Results ranking:** coverage (distinct keyword groups found) → total hits → multi-group rows → any-group rows; then sorted chronologically per channel for output.
+- **Output budget:** controlled by `maxOutputLines` and `maxLogChars`. Clusters below `minCoverage` are silently dropped. A `NEW EVENT` separator is emitted between clusters with a time gap ≥ `eventGapMinutes`.
+
+**Wiki usage note:**
+
+The wiki flow forces `includeAnsweredTurns: true` and applies conservative defaults (`maxOutputLines: 250`, `maxLogChars: 1500`, `stripCode: true`) to avoid AI context overflow. These defaults can be overridden via `toolsconfig.getInformation` in `core.json`. See [toolsconfig.getInformation](#toolsconfiggetinformation) for all available parameters.
 
 ---
 

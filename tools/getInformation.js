@@ -1,13 +1,8 @@
 /**********************************************************************************/
 /* filename: getInformation.js                                                     *
-/* Version 1.1                                                                     *
+/* Version 1.0                                                                     *
 /* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
 /*          info snippets ranked by coverage then frequency.                       *
-/*                                                                                *
-/* Changes in 1.1                                                                  *
-/* - Removed hard minCoverage drop that could return no data despite real hits.    *
-/* - Added fallback selection to always return the best available cluster.         *
-/* - Added debug meta so empty results can be diagnosed more easily.              *
 /**********************************************************************************/
 
 /**********************************************************************************/
@@ -342,60 +337,105 @@ function getBuildLikeFlags(contentExpr, tokens) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getGetEmptyMetaBase (opts)                                   */
-/* Builds common meta fields for empty-return scenarios.                           */
+/* functionSignature: getBuildHitsSQL (idPlaceholders, selectFlagsSQL, whereAnySQL, opts) */
+/* Builds the SQL used to discover hit rows depending on filtering mode.           */
 /**********************************************************************************/
-function getGetEmptyMetaBase(opts) {
-  return {
-    channel_id: opts.mainChannelId,
-    channel_ids: opts.channelIds,
-    groups: opts.groups.map(g => ({ base: g.base, parts: g.parts })),
-    rows_per_cluster: opts.rowsPerCluster,
-    timeline_periods: opts.timelinePeriods,
-    timeline_per_channel: opts.timelinePerChannel,
-    duration_ms: Date.now() - opts.startedAt,
-    raw_sql_tokens: opts.sqlTokens,
-    raw_hit_rows: opts.rawHitRows,
-    raw_cluster_count: opts.rawClusterCount,
-    min_coverage_requested: opts.minCoverage,
-    include_answered_turns: opts.includeAnsweredTurns,
-    note:
-      "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
-      "You can align each item.rn to the rolling timeline via meta.timeline_per_channel[channel_id] " +
-      "(rn ∈ [start_idx..end_idx])."
-  };
+function getBuildHitsSQL(idPlaceholders, selectFlagsSQL, whereAnySQL, { includeAssistantTurns, includeAnsweredTurns }) {
+  const assistantFilter = includeAssistantTurns ? "" : `\n       AND o.\`role\` <> 'assistant'`;
+
+  if (includeAnsweredTurns) {
+    return `
+      WITH ordered AS (
+        SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
+               ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
+          FROM \`context\`
+         WHERE \`id\` IN (${idPlaceholders})
+      )
+      SELECT o.\`ts\`, o.\`id\`, o.rn,
+             ${selectFlagsSQL}
+        FROM ordered o
+       WHERE (${whereAnySQL})${assistantFilter}
+       ORDER BY o.\`id\` ASC, o.rn ASC
+    `.trim();
+  }
+
+  return `
+    WITH ordered AS (
+      SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
+             ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
+        FROM \`context\`
+       WHERE \`id\` IN (${idPlaceholders})
+    ),
+    answered_turns AS (
+      SELECT \`id\`, \`turn_id\`
+        FROM \`context\`
+       WHERE \`id\` IN (${idPlaceholders})
+         AND \`turn_id\` IS NOT NULL
+       GROUP BY \`id\`, \`turn_id\`
+      HAVING SUM(\`role\` = 'assistant') > 0
+         AND SUM(\`role\` IN ('user','agent')) > 0
+    )
+    SELECT o.\`ts\`, o.\`id\`, o.rn,
+           ${selectFlagsSQL}
+      FROM ordered o
+     WHERE (${whereAnySQL})${assistantFilter}
+       AND (
+         o.\`turn_id\` IS NULL
+         OR NOT EXISTS (
+           SELECT 1
+             FROM answered_turns at
+            WHERE at.\`id\` = o.\`id\`
+              AND at.\`turn_id\` = o.\`turn_id\`
+         )
+       )
+     ORDER BY o.\`id\` ASC, o.rn ASC
+  `.trim();
 }
 
 /**********************************************************************************/
-/* functionSignature: getPickClustersForOutput (analyzed, minCoverage)             */
-/* Picks clusters for output with minCoverage preference and best-hit fallback.    */
+/* functionSignature: getBuildFetchRangeSQL (includeAssistantTurns, includeAnsweredTurns) */
+/* Builds the SQL used to fetch cluster windows depending on filtering mode.       */
 /**********************************************************************************/
-function getPickClustersForOutput(analyzed, minCoverage) {
-  const eligible = analyzed.filter(c => c.coverage >= minCoverage);
-  if (eligible.length) {
-    return {
-      selected: eligible,
-      selectionMode: "eligible_only",
-      fallbackClusterUsed: false,
-      eligibleClusters: eligible.length
-    };
+function getBuildFetchRangeSQL(includeAssistantTurns, includeAnsweredTurns) {
+  const assistantFilter = includeAssistantTurns ? "" : `\n       AND o.\`role\` <> 'assistant'`;
+
+  if (includeAnsweredTurns) {
+    return `
+      WITH ordered AS (
+        SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
+               ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
+          FROM \`context\`
+         WHERE \`id\` = ?
+      )
+      SELECT o.\`ts\`, o.\`id\`, o.\`json\`, o.\`text\`, o.\`role\`, o.rn
+        FROM ordered o
+       WHERE o.rn BETWEEN ? AND ?${assistantFilter}
+       ORDER BY o.rn ASC
+    `.trim();
   }
 
-  if (analyzed.length) {
-    return {
-      selected: [analyzed[0]],
-      selectionMode: "fallback_best_available",
-      fallbackClusterUsed: true,
-      eligibleClusters: 0
-    };
-  }
-
-  return {
-    selected: [],
-    selectionMode: "no_clusters",
-    fallbackClusterUsed: false,
-    eligibleClusters: 0
-  };
+  return `
+    WITH ordered AS (
+      SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
+             ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
+        FROM \`context\`
+       WHERE \`id\` = ?
+    ),
+    answered_turns AS (
+      SELECT \`turn_id\`
+        FROM \`context\`
+       WHERE \`id\` = ?
+         AND \`turn_id\` IS NOT NULL
+       GROUP BY \`turn_id\`
+      HAVING SUM(\`role\` = 'assistant') > 0
+         AND SUM(\`role\` IN ('user','agent')) > 0
+    )
+    SELECT o.\`ts\`, o.\`id\`, o.\`json\`, o.\`text\`, o.\`role\`, o.rn
+      FROM ordered o
+     WHERE o.rn BETWEEN ? AND ?${assistantFilter}
+       AND (o.\`turn_id\` IS NULL OR o.\`turn_id\` NOT IN (SELECT \`turn_id\` FROM answered_turns))
+     ORDER BY o.rn ASC
+  `.trim();
 }
 
 /**********************************************************************************/
@@ -435,7 +475,8 @@ async function getInformationInvoke(args, coreData) {
   const minCoverage = Math.max(0, Math.floor(giCfg.minCoverage ?? DEFAULT_MIN_COVERAGE));
   const eventGapMinutes = Math.max(1, Math.floor(giCfg.eventGapMinutes ?? DEFAULT_EVENT_GAP_MINUTES));
   const EVENT_GAP_MS = eventGapMinutes * 60 * 1000;
-  const includeAnsweredTurns = giCfg.includeAnsweredTurns === true;
+  const includeAssistantTurns = giCfg.includeAssistantTurns === true;
+  const includeAnsweredTurns = includeAssistantTurns || giCfg.includeAnsweredTurns === true;
 
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
     return { error: "ERROR: workingObject.db incomplete" };
@@ -448,90 +489,9 @@ async function getInformationInvoke(args, coreData) {
 
   const { selectFlagsSQL, whereAnySQL } = getBuildLikeFlags(CONTENT_EXPR, sqlTokens);
   const likeParams = sqlTokens.map(k => `%${getEscapeLike(k)}%`);
-
   const idPlaceholders = channelIds.map(() => "?").join(", ");
-
-  const hitsSQL = includeAnsweredTurns ? `
-    WITH ordered AS (
-      SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
-             ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
-        FROM \`context\`
-       WHERE \`id\` IN (${idPlaceholders})
-    )
-    SELECT o.\`ts\`, o.\`id\`, o.rn,
-           ${selectFlagsSQL}
-      FROM ordered o
-     WHERE (${whereAnySQL})
-       AND o.\`role\` <> 'assistant'
-     ORDER BY o.\`id\` ASC, o.rn ASC
-  `.trim() : `
-    WITH ordered AS (
-      SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
-             ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
-        FROM \`context\`
-       WHERE \`id\` IN (${idPlaceholders})
-    ),
-    answered_turns AS (
-      SELECT \`id\`, \`turn_id\`
-        FROM \`context\`
-       WHERE \`id\` IN (${idPlaceholders})
-         AND \`turn_id\` IS NOT NULL
-       GROUP BY \`id\`, \`turn_id\`
-      HAVING SUM(\`role\` = 'assistant') > 0
-         AND SUM(\`role\` IN ('user','agent')) > 0
-    )
-    SELECT o.\`ts\`, o.\`id\`, o.rn,
-           ${selectFlagsSQL}
-      FROM ordered o
-     WHERE (${whereAnySQL})
-       AND o.\`role\` <> 'assistant'
-       AND (
-         o.\`turn_id\` IS NULL
-         OR NOT EXISTS (
-           SELECT 1
-             FROM answered_turns at
-            WHERE at.\`id\` = o.\`id\`
-              AND at.\`turn_id\` = o.\`turn_id\`
-         )
-       )
-     ORDER BY o.\`id\` ASC, o.rn ASC
-  `.trim();
-
-  const fetchRangeSQL = includeAnsweredTurns ? `
-    WITH ordered AS (
-      SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
-             ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
-        FROM \`context\`
-       WHERE \`id\` = ?
-    )
-    SELECT o.\`ts\`, o.\`id\`, o.\`json\`, o.\`text\`, o.\`role\`, o.rn
-      FROM ordered o
-     WHERE o.rn BETWEEN ? AND ?
-       AND o.\`role\` <> 'assistant'
-     ORDER BY o.rn ASC
-  `.trim() : `
-    WITH ordered AS (
-      SELECT \`ts\`, \`id\`, \`json\`, \`text\`, \`role\`, \`turn_id\`,
-             ROW_NUMBER() OVER (PARTITION BY \`id\` ORDER BY \`ts\` ASC) AS rn
-        FROM \`context\`
-       WHERE \`id\` = ?
-    ),
-    answered_turns AS (
-      SELECT \`turn_id\`
-        FROM \`context\`
-       WHERE \`id\` = ?
-         AND \`turn_id\` IS NOT NULL
-       GROUP BY \`turn_id\`
-      HAVING SUM(\`role\` = 'assistant') > 0
-         AND SUM(\`role\` IN ('user','agent')) > 0
-    )
-    SELECT o.\`ts\`, o.\`id\`, o.\`json\`, o.\`text\`, o.\`role\`, o.rn
-      FROM ordered o
-     WHERE o.rn BETWEEN ? AND ?
-       AND o.\`role\` <> 'assistant'
-       AND (o.\`turn_id\` IS NULL OR o.\`turn_id\` NOT IN (SELECT \`turn_id\` FROM answered_turns))
-     ORDER BY o.rn ASC
-  `.trim();
+  const hitsSQL = getBuildHitsSQL(idPlaceholders, selectFlagsSQL, whereAnySQL, { includeAssistantTurns, includeAnsweredTurns });
+  const fetchRangeSQL = getBuildFetchRangeSQL(includeAssistantTurns, includeAnsweredTurns);
 
   try {
     const db = await getPool(wo);
@@ -599,26 +559,22 @@ async function getInformationInvoke(args, coreData) {
       return {
         items: [],
         meta: {
-          ...getGetEmptyMetaBase({
-            startedAt,
-            mainChannelId,
-            channelIds,
-            groups,
-            rowsPerCluster,
-            timelinePeriods,
-            timelinePerChannel,
-            sqlTokens,
-            rawHitRows: 0,
-            rawClusterCount: 0,
-            minCoverage,
-            includeAnsweredTurns
-          }),
+          channel_id: mainChannelId,
+          channel_ids: channelIds,
+          groups: groups.map(g => ({ base: g.base, parts: g.parts })),
+          rows_per_cluster: rowsPerCluster,
           clusters_considered: 0,
           clusters_selected: 0,
           printed_rows: 0,
-          selection_mode: "no_sql_hits",
-          fallback_cluster_used: false,
-          eligible_clusters: 0
+          timeline_periods: timelinePeriods,
+          timeline_per_channel: timelinePerChannel,
+          duration_ms: Date.now() - startedAt,
+          include_assistant_turns: includeAssistantTurns,
+          include_answered_turns: includeAnsweredTurns,
+          note:
+            "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
+            "You can align each item.rn to the rolling timeline via meta.timeline_per_channel[channel_id] " +
+            "(rn ∈ [start_idx..end_idx])."
         }
       };
     }
@@ -659,13 +615,12 @@ async function getInformationInvoke(args, coreData) {
       return a.start_rn - b.start_rn;
     });
 
-    const selection = getPickClustersForOutput(analyzed, minCoverage);
-    const candidateClusters = selection.selected;
-
     const blocks = [];
     let usedLines = 0;
 
-    for (const c of candidateClusters) {
+    for (const c of analyzed) {
+      if (c.coverage < minCoverage) break;
+
       const padStart = Math.max(1, c.start_rn - padRows);
       const padEnd = c.end_rn + padRows;
       const [rowsFull] = await db.execute(
@@ -745,26 +700,22 @@ async function getInformationInvoke(args, coreData) {
       return {
         items: [],
         meta: {
-          ...getGetEmptyMetaBase({
-            startedAt,
-            mainChannelId,
-            channelIds,
-            groups,
-            rowsPerCluster,
-            timelinePeriods,
-            timelinePerChannel,
-            sqlTokens,
-            rawHitRows: hitRows.length,
-            rawClusterCount: clustersAll.length,
-            minCoverage,
-            includeAnsweredTurns
-          }),
+          channel_id: mainChannelId,
+          channel_ids: channelIds,
+          groups: groups.map(g => ({ base: g.base, parts: g.parts })),
+          rows_per_cluster: rowsPerCluster,
           clusters_considered: analyzed.length,
           clusters_selected: 0,
           printed_rows: 0,
-          selection_mode: selection.selectionMode,
-          fallback_cluster_used: selection.fallbackClusterUsed,
-          eligible_clusters: selection.eligibleClusters
+          timeline_periods: timelinePeriods,
+          timeline_per_channel: timelinePerChannel,
+          duration_ms: Date.now() - startedAt,
+          include_assistant_turns: includeAssistantTurns,
+          include_answered_turns: includeAnsweredTurns,
+          note:
+            "Returned snippets are detail information. Each item is tied to a specific channel_id. " +
+            "You can align each item.rn to the rolling timeline via meta.timeline_per_channel[channel_id] " +
+            "(rn ∈ [start_idx..end_idx])."
         }
       };
     }
@@ -827,13 +778,8 @@ async function getInformationInvoke(args, coreData) {
       timeline_periods: timelinePeriods,
       timeline_per_channel: timelinePerChannel,
       duration_ms: Date.now() - startedAt,
-      raw_sql_tokens: sqlTokens,
-      raw_hit_rows: hitRows.length,
-      raw_cluster_count: clustersAll.length,
-      min_coverage_requested: minCoverage,
-      selection_mode: selection.selectionMode,
-      fallback_cluster_used: selection.fallbackClusterUsed,
-      eligible_clusters: selection.eligibleClusters,
+      include_assistant_turns: includeAssistantTurns,
+      include_answered_turns: includeAnsweredTurns,
       note:
         "These snippets are DETAIL views from the global rolling timeline over one or multiple channels. " +
         "Each item has a channel_id and rn. To place a snippet on the timeline: " +
@@ -844,40 +790,7 @@ async function getInformationInvoke(args, coreData) {
     return { items: compact, meta };
 
   } catch (e) {
-    const errInfo = {
-      name: e?.name || "Error",
-      message: e?.message || String(e),
-      stack: e?.stack || null,
-      code: e?.code || null,
-      sqlMessage: e?.sqlMessage || null,
-      sqlState: e?.sqlState || null,
-      errno: e?.errno || null
-    };
-
-    try {
-      console.log("[getInformation] catch:error", errInfo);
-      console.log("[getInformation] catch:args", args);
-      console.log("[getInformation] catch:coreData", {
-        hasCoreData: !!coreData,
-        hasWorkingObject: !!coreData?.workingObject,
-        channelID: coreData?.workingObject?.channelID || null,
-        channelIds: coreData?.workingObject?.channelIds || [],
-        hasDb: !!coreData?.workingObject?.db,
-        dbHost: coreData?.workingObject?.db?.host || null,
-        dbUser: coreData?.workingObject?.db?.user || null,
-        dbDatabase: coreData?.workingObject?.db?.database || null,
-        toolsconfigKeys: Object.keys(coreData?.workingObject?.toolsconfig || {})
-      });
-    } catch (logError) {
-      console.log("[getInformation] catch:logging_failed", {
-        message: logError?.message || String(logError)
-      });
-    }
-
-    return {
-      error: errInfo.message,
-      debug: errInfo
-    };
+    return { error: e?.message || String(e) };
   }
 }
 
@@ -893,10 +806,11 @@ function getDefaultExport() {
       function: {
         name: MODULE_NAME,
         description:
-          "Use this function to get historical data based on keywords " +
+          "Use this function to get historical data based on keywords and answer the question." +
           "Search one or multiple channels (context.id / workingObject.channelID plus optional workingObject.channelIds) " +
           "using fixed-size clusters (400 rows). " +
-          "Excludes assistant messages and 'answered' turns (role/turn_id). " +
+          "By default excludes assistant messages and 'answered' turns (role/turn_id). " +
+          "toolsconfig.getInformation.includeAssistantTurns=true disables both exclusions for lore/entity recall. " +
           "Prefers AI-provided 'keyword_groups' (with 'variants' and optional 'parts'). " +
           "If only 'keywords' are provided, uses FULL FORMS only (no internal splitting). " +
           "Ranking strictly by coverage (number of distinct keyword groups) → frequency (totalHits). " +

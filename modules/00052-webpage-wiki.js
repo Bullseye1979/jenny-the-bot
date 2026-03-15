@@ -408,11 +408,18 @@ async function callPipelineForArticle(query, channel, coreData) {
     systemPrompt:        getStr(overrides.systemPrompt) || DEFAULT_WIKI_SYSTEM_PROMPT,
     payload:             `Topic: ${query}`,
     doNotWriteToContext: true,
+    includeHistory:      false,
     db:                  wo.db,
     toolsconfig:         {
       ...(wo.toolsconfig || {}),
       getInformation: {
+        /* Wiki-safe defaults — prevent context overflow; user config overrides these */
+        maxOutputLines:       250,
+        maxLogChars:          1500,
+        stripCode:            true,
+        /* User config from core.json overrides the above defaults */
         ...((wo.toolsconfig || {}).getInformation || {}),
+        /* Always forced for wiki — voice transcripts must be found regardless of answered_turns */
         includeAnsweredTurns: true
       }
     },
