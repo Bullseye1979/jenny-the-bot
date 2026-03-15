@@ -410,32 +410,8 @@ async function callPipelineForArticle(query, channel, coreData) {
     doNotWriteToContext: true,
     includeHistory:      false,
     db:                  wo.db,
-    toolsconfig:         {
-      ...(wo.toolsconfig || {}),
-      getInformation: (() => {
-        const giUser = (wo.toolsconfig || {}).getInformation || {};
-        /* Wiki hard caps — user config is respected but clamped to wiki-safe maximums */
-        const WIKI_GI_MAX_LINES = 150;
-        const WIKI_GI_MAX_CHARS = 800;
-        return {
-          ...giUser,
-          maxOutputLines:       Math.min(giUser.maxOutputLines ?? WIKI_GI_MAX_LINES, WIKI_GI_MAX_LINES),
-          maxLogChars:          Math.min(giUser.maxLogChars     ?? WIKI_GI_MAX_CHARS, WIKI_GI_MAX_CHARS),
-          stripCode:            true,
-          /* Always forced for wiki — voice transcripts must be found */
-          includeAnsweredTurns: true
-        };
-      })(),
-      getTimeline: (() => {
-        const tlUser = (wo.toolsconfig || {}).getTimeline || {};
-        /* Wiki hard cap — prevents getTimeline from returning hundreds of periods */
-        const WIKI_TL_MAX_TIMELINE = 10;
-        return {
-          ...tlUser,
-          maxTimelinePeriods: Math.min(tlUser.maxTimelinePeriods ?? WIKI_TL_MAX_TIMELINE, WIKI_TL_MAX_TIMELINE)
-        };
-      })()
-    },
+    /* toolsconfig: global base, overrides always win (shallow merge — overrides replace entire sub-blocks) */
+    toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
     timezone:            wo.timezone    || "Europe/Berlin",
     logging:             []
   };
