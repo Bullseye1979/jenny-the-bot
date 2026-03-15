@@ -3469,9 +3469,11 @@ The built-in default prompt instructs the LLM to output **exactly 6 comma-separa
 location,situation,mood1,mood2,mood3,mood4
 ```
 
-- **Position 1 (location):** physical place — e.g. `tavern`, `dungeon`, `forest`. Empty string if the location is unclear or unchanged in the transcript.
-- **Position 2 (situation):** type of activity — e.g. `combat`, `exploration`, `rest`. Empty string if unclear.
-- **Positions 3-6 (mood × 4):** always exactly 4 mood words, ordered by fit (most fitting first). Empty mood slots fall back to `ambient`.
+- **Position 1 (location):** physical place — e.g. `tavern`, `dungeon`, `forest`. Empty if unclear. **Never** a situation or mood word.
+- **Position 2 (situation):** type of activity — e.g. `combat`, `exploration`, `rest`. Empty if unclear. **Never** a location or mood word.
+- **Positions 3-6 (mood × 4):** always exactly 4 mood words ordered by fit (most fitting first). **Never** a location or situation word. Empty mood slots fall back to `ambient`.
+
+> **Important:** The 6 positions are **fixed and independent**. An empty position 1 does **not** shift position 2 left — each position is decided separately. The prompt explicitly enforces this to prevent the LLM from placing location words (e.g. `dungeon`) into the situation slot when the location is uncertain.
 
 **Track tag format** in `library.xml` mirrors this structure: `location,situation,mood1,mood2,...`. An empty slot (leading/trailing comma) means "matches any value" (wildcard):
 

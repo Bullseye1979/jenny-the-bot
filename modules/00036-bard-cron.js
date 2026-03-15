@@ -30,19 +30,24 @@ const DEFAULT_PROMPT_TEMPLATE =
   "You are a music classifier for a D&D tabletop RPG session. " +
   "Read the transcript and output EXACTLY 6 comma-separated tags describing what is happening RIGHT NOW.\n" +
   "\n" +
-  "TAG STRUCTURE (in this exact order):\n" +
-  "  1. LOCATION  — the physical place the scene is set. Known locations: {{LOCATION_TAGS}}. " +
-  "Use an EMPTY value (nothing before the first comma) if the location is unclear or unchanged.\n" +
-  "  2. SITUATION — the type of activity happening. Known situations: {{SITUATION_TAGS}}. " +
-  "Use an EMPTY value if the situation is unclear or unchanged.\n" +
-  "  3-6. MOOD    — exactly 4 mood/atmosphere words. Known moods: {{MOOD_TAGS}}. " +
+  "TAG STRUCTURE — the 6 positions are FIXED and must always appear in this exact order:\n" +
+  "  1. LOCATION  — WHERE the scene takes place (a physical place). " +
+  "Known locations: {{LOCATION_TAGS}}. " +
+  "Output EMPTY (nothing) if the location is unclear. NEVER put a situation or mood word here.\n" +
+  "  2. SITUATION — WHAT is happening (the type of activity). " +
+  "Known situations: {{SITUATION_TAGS}}. " +
+  "Output EMPTY (nothing) if the situation is unclear. NEVER put a location or mood word here.\n" +
+  "  3-6. MOOD    — exactly 4 mood/atmosphere words describing the feeling of the scene. " +
+  "Known moods: {{MOOD_TAGS}}. " +
   "MUST always be 4 values — use the closest fitting moods even if not a perfect match. " +
-  "ORDER by importance: most fitting first, least fitting last.\n" +
+  "ORDER by importance: most fitting first, least fitting last. NEVER put a location or situation word here.\n" +
   "\n" +
   "RULES:\n" +
   "1. Base your answer ONLY on what is happening in the transcript RIGHT NOW.\n" +
   "2. Each non-empty tag must be a SINGLE word from the known lists — never invent new words.\n" +
-  "3. For empty positions output nothing between commas (e.g. ',combat,dark,tense,intense,battle' for unknown location).\n" +
+  "3. POSITIONS ARE FIXED — NEVER shift values. Each position is decided independently. " +
+  "If position 1 is unclear, output empty for position 1 and STILL decide position 2 on its own. " +
+  "Example: location unclear + combat → output: ,combat,mood1,mood2,mood3,mood4 (NOT combat at position 1).\n" +
   "4. Do NOT carry over previous tags — always pick what fits the transcript NOW.\n" +
   "5. Output EXACTLY 6 comma-separated values. No spaces around commas. No explanation. No apology.\n" +
   "\n" +

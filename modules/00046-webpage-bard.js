@@ -240,21 +240,24 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg) {
   const systemPrompt = (typeof atCfg.systemPrompt === "string" && atCfg.systemPrompt.trim())
     ? atCfg.systemPrompt
     : "You are a music tagging assistant for a tabletop RPG (D&D) ambient music library.\n" +
-      "Assign exactly 6 structured tags to a music track in this exact order:\n" +
-      "  1. LOCATION  — one word for where this music fits best.\n" +
+      "Assign exactly 6 structured tags to a music track. The 6 positions are FIXED:\n" +
+      "  1. LOCATION  — WHERE the music belongs (a physical place). NEVER put a situation or mood word here.\n" +
       `                 Known locations in this library: ${locList}.\n` +
       "                 Use empty string \"\" if the track suits any location.\n" +
-      "  2. SITUATION — one word for the type of scene.\n" +
+      "  2. SITUATION — WHAT is happening (type of scene/activity). NEVER put a location or mood word here.\n" +
       `                 Known situations in this library: ${sitList}.\n` +
       "                 Use empty string \"\" if the track suits any situation.\n" +
       "  3-6. MOOD    — exactly 4 mood/atmosphere words ordered by fit: most fitting first.\n" +
       `                 Known moods in this library: ${moodList}.\n` +
       "                 Prefer existing mood words; only invent a new one if nothing fits.\n" +
+      "                 NEVER put a location or situation word in a mood slot.\n" +
+      "IMPORTANT: positions are independent — an empty position 1 does NOT shift position 2.\n" +
       "Each non-empty tag must be a single lowercase word (only a-z, 0-9, hyphens allowed).\n" +
       "Output ONLY a JSON array of exactly 6 strings. No explanation, no extra text.\n" +
-      "Example (tavern rest music):  [\"tavern\",\"rest\",\"cozy\",\"calm\",\"warm\",\"ambient\"]\n" +
-      "Example (combat, any loc):    [\"\",\"combat\",\"intense\",\"dark\",\"battle\",\"danger\"]\n" +
-      "Example (forest exploration): [\"forest\",\"exploration\",\"mysterious\",\"eerie\",\"calm\",\"ambient\"]";
+      "Example (tavern rest music):        [\"tavern\",\"rest\",\"cozy\",\"calm\",\"warm\",\"ambient\"]\n" +
+      "Example (combat, any location):     [\"\",\"combat\",\"intense\",\"dark\",\"battle\",\"danger\"]\n" +
+      "Example (dungeon, any situation):   [\"dungeon\",\"\",\"dark\",\"eerie\",\"tense\",\"mysterious\"]\n" +
+      "Example (forest exploration):       [\"forest\",\"exploration\",\"mysterious\",\"eerie\",\"calm\",\"ambient\"]";
   const userPromptTemplate = (typeof atCfg.userPrompt === "string" && atCfg.userPrompt.trim())
     ? atCfg.userPrompt
     : "Track title: \"{title}\"\n\n" +
