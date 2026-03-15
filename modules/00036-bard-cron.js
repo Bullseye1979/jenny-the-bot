@@ -19,21 +19,38 @@ const MODULE_NAME = "bard-cron";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
+// Default prompt template for 6-label structured output:
+//   position 1 = location, position 2 = situation, positions 3-6 = 4 mood tags.
+// Placeholders filled by buildSystemPrompt():
+//   {{LOCATION_TAGS}}  — comma list of known location tags from library
+//   {{SITUATION_TAGS}} — comma list of known situation tags from library
+//   {{MOOD_TAGS}}      — comma list of known mood tags from library
+//   {{CURRENT_LABELS}} — current active labels for reference
 const DEFAULT_PROMPT_TEMPLATE =
-  "You are a music mood classifier for a D&D tabletop RPG session. " +
-  "Read the transcript below and classify what is happening RIGHT NOW. " +
-  "You MUST pick exactly 3 tags from this list: {{TAGS}}. " +
-  "Previous tags (for reference only): {{CURRENT_LABELS}}. " +
-  "RULES: " +
-  "1. Always base your answer ONLY on what the transcript says is happening now. " +
-  "2. Each tag is ONE word from the list — never combine words, never invent new ones. " +
-  "3. If combat or action is happening, pick matching tags. If calm or exploration, pick those. " +
-  "4. Do NOT default to the previous tags — pick what fits the transcript best right now. " +
-  "5. ORDER your 3 tags by importance: put the MOST fitting tag FIRST, the least fitting LAST. " +
-  "   The first tag carries the highest weight in music selection — rank carefully. " +
-  "6. Return ONLY the 3 tags as a comma-separated list. No spaces. No explanation. No apology. " +
-  "If the transcript is empty or unclear, return default,ambient,exploration. " +
-  "Example (combat scene): battle,intense,danger   Example (quiet scene): ambient,calm,exploration";
+  "You are a music classifier for a D&D tabletop RPG session. " +
+  "Read the transcript and output EXACTLY 6 comma-separated tags describing what is happening RIGHT NOW.\n" +
+  "\n" +
+  "TAG STRUCTURE (in this exact order):\n" +
+  "  1. LOCATION  — the physical place the scene is set. Known locations: {{LOCATION_TAGS}}. " +
+  "Use an EMPTY value (nothing before the first comma) if the location is unclear or unchanged.\n" +
+  "  2. SITUATION — the type of activity happening. Known situations: {{SITUATION_TAGS}}. " +
+  "Use an EMPTY value if the situation is unclear or unchanged.\n" +
+  "  3-6. MOOD    — exactly 4 mood/atmosphere words. Known moods: {{MOOD_TAGS}}. " +
+  "MUST always be 4 values — use the closest fitting moods even if not a perfect match. " +
+  "ORDER by importance: most fitting first, least fitting last.\n" +
+  "\n" +
+  "RULES:\n" +
+  "1. Base your answer ONLY on what is happening in the transcript RIGHT NOW.\n" +
+  "2. Each non-empty tag must be a SINGLE word from the known lists — never invent new words.\n" +
+  "3. For empty positions output nothing between commas (e.g. ',combat,dark,tense,intense,battle' for unknown location).\n" +
+  "4. Do NOT carry over previous tags — always pick what fits the transcript NOW.\n" +
+  "5. Output EXACTLY 6 comma-separated values. No spaces around commas. No explanation. No apology.\n" +
+  "\n" +
+  "Current labels (reference only — do not copy blindly): {{CURRENT_LABELS}}\n" +
+  "Example (tavern, rest scene):            tavern,rest,cozy,calm,warm,ambient\n" +
+  "Example (combat, location unclear):      ,combat,intense,dark,battle,danger\n" +
+  "Example (forest, situation unknown):     forest,,eerie,mysterious,calm,ambient\n" +
+  "Example (empty transcript/unclear):      ,,,ambient,calm,exploration";
 
 /************************************************************************************/
 /* functionSignature: getNowIso()                                                  *
@@ -52,40 +69,51 @@ function getStr(v) {
 }
 
 /************************************************************************************/
-/* functionSignature: getLibraryTags(musicDir)                                     *
-/* Reads library.xml and returns a Set of all unique tags used across all tracks.  *
+/* functionSignature: getLibraryTagCategories(musicDir)                            *
+/* Reads library.xml and returns {locations, situations, moods, all} Sets.        *
+/* tags[0]=location, tags[1]=situation, tags[2+]=moods — empty strings ignored.   *
 /************************************************************************************/
-function getLibraryTags(musicDir) {
+function getLibraryTagCategories(musicDir) {
+  const empty = { locations: new Set(), situations: new Set(), moods: new Set(), all: new Set() };
   try {
     const xmlPath = path.join(musicDir, "library.xml");
-    if (!fs.existsSync(xmlPath)) return new Set();
+    if (!fs.existsSync(xmlPath)) return empty;
     const xmlText = fs.readFileSync(xmlPath, "utf8");
-    const tagSet = new Set();
+    const { locations, situations, moods, all } = empty;
     const re = /<tags>([^<]*)<\/tags>/gi;
     let m;
     while ((m = re.exec(xmlText)) !== null) {
-      m[1].split(",").forEach(t => {
+      const parts = m[1].split(",");
+      const loc = (parts[0] || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      const sit = (parts[1] || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      if (loc) { locations.add(loc); all.add(loc); }
+      if (sit) { situations.add(sit); all.add(sit); }
+      parts.slice(2).forEach(t => {
         const clean = t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
-        if (clean) tagSet.add(clean);
+        if (clean) { moods.add(clean); all.add(clean); }
       });
     }
-    return tagSet;
+    return { locations, situations, moods, all };
   } catch {
-    return new Set();
+    return empty;
   }
 }
 
 /************************************************************************************/
-/* functionSignature: buildSystemPrompt(template, tagSet, currentLabels)           *
-/* Injects the dynamic tag list and current labels into the system prompt.         *
+/* functionSignature: buildSystemPrompt(template, tagCategories, currentLabels)    *
+/* Injects categorised tag lists and current labels into the prompt template.      *
 /************************************************************************************/
-function buildSystemPrompt(template, tagSet, currentLabels) {
-  const tagList = [...tagSet].sort().join(",");
+function buildSystemPrompt(template, tagCategories, currentLabels) {
+  const locList  = [...tagCategories.locations].sort().join(",")  || "tavern,dungeon,forest,city,camp";
+  const sitList  = [...tagCategories.situations].sort().join(",") || "combat,exploration,rest,dialogue";
+  const moodList = [...tagCategories.moods].sort().join(",")      || "dark,tense,calm,ambient,intense,eerie";
   const labelStr = Array.isArray(currentLabels) && currentLabels.length
     ? currentLabels.join(",")
     : "none";
   return template
-    .replace("{{TAGS}}", tagList)
+    .replace("{{LOCATION_TAGS}}",  locList)
+    .replace("{{SITUATION_TAGS}}", sitList)
+    .replace("{{MOOD_TAGS}}",      moodList)
     .replace("{{CURRENT_LABELS}}", labelStr);
 }
 
@@ -122,7 +150,7 @@ export default async function getBardCron(coreData) {
     __dirname, "..",
     typeof cfg.musicDir === "string" ? cfg.musicDir : "assets/bard"
   );
-  const validTags = getLibraryTags(musicDir);
+  const tagCategories = getLibraryTagCategories(musicDir);
 
   // Find the target session: prefer the one whose textChannelId matches wo.channelID,
   // otherwise use the first session that has new context.
@@ -185,7 +213,7 @@ export default async function getBardCron(coreData) {
       // cfg.prompt can override via config, but workingObject.prompt is ignored
       // to prevent the global systemPrompt from bleeding in.
       const promptTemplate = getStr(cfg.prompt || DEFAULT_PROMPT_TEMPLATE);
-      const systemPrompt = buildSystemPrompt(promptTemplate, validTags, currentLabels);
+      const systemPrompt = buildSystemPrompt(promptTemplate, tagCategories, currentLabels);
 
       // Set up the working object for the core-ai pipeline
       wo.systemPrompt = systemPrompt;
@@ -195,7 +223,7 @@ export default async function getBardCron(coreData) {
       // _bardLastRunKey and _bardLastRunTs are written to registry by bard-label-output
       // only after a successful AI response — preventing the stuck-lastrun bug.
       wo._bardGuildId     = getStr(session.guildId);
-      wo._bardValidTags   = [...validTags];
+      wo._bardValidTags   = [...tagCategories.all];    // flat list for mood validation in output module
       wo._bardLastRunKey  = lastRunKey;
       wo._bardLastRunTs   = targetNowTs;
 
@@ -204,7 +232,7 @@ export default async function getBardCron(coreData) {
       if (!wo.model) wo.model = "gpt-4o-mini";
 
       wo.temperature       = 0.3;
-      wo.maxTokens         = 60;
+      wo.maxTokens         = 80; // 6 labels ~ 50 chars, 80 tokens is ample
       wo.maxLoops          = 1;
       wo.useAiModule       = "completions";
       wo.includeHistory    = false;
@@ -215,7 +243,9 @@ export default async function getBardCron(coreData) {
         moduleName: MODULE_NAME,
         guildId: session.guildId,
         textChannelId,
-        tagCount: validTags.size,
+        locations: tagCategories.locations.size,
+        situations: tagCategories.situations.size,
+        moods: tagCategories.moods.size,
         currentLabels
       });
 

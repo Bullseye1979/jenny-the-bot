@@ -1,6 +1,6 @@
 # Jenny — Discord AI Bot
 
-> **Version:** 1.0 · **Date:** 2026-03-14
+> **Version:** 1.0 · **Date:** 2026-03-15
 
 Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management, and a live terminal dashboard with hot-reload.
 
@@ -537,7 +537,7 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - Single hit → redirect to article; 2+ hits → disambiguation list
 - Article page: two-column layout (content + infobox), TOC, categories, See Also links
 - Admin role (configurable) sees 🗑 Delete button on article page
-- Articles stored in MySQL (`wiki_articles` table, auto-created); images at `pub/wiki/{channelId}/images/`
+- Articles stored in MySQL (`wiki_articles` table, auto-created; `model` column added via migration); the generating LLM model is shown at the bottom of each article page; images at `pub/wiki/{channelId}/images/`
 - `allowedRoles: []` = public wiki (no login required)
 
 ```jsonc

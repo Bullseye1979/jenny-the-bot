@@ -33,11 +33,19 @@ function getParseLibraryXml(xmlText) {
     const tagsM   = /<tags>([^<]*)<\/tags>/.exec(inner);
     const volumeM = /<volume>([^<]*)<\/volume>/.exec(inner);
     if (fileM && tagsM) {
-      const rawVol = volumeM ? parseFloat(volumeM[1]) : NaN;
+      const rawVol   = volumeM ? parseFloat(volumeM[1]) : NaN;
+      // Structured tag format: tags[0]=location, tags[1]=situation, tags[2+]=moods.
+      // Positions 0-1 may be empty strings (wildcard = matches any).
+      const rawParts = tagsM[1].split(",");
+      const tLoc     = (rawParts[0] || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      const tSit     = (rawParts[1] || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      const tMoods   = rawParts.slice(2)
+        .map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""))
+        .filter(Boolean);
       tracks.push({
         file:   fileM[1].trim(),
         title:  titleM ? titleM[1].trim() : fileM[1].trim(),
-        tags:   tagsM[1].split(",").map(t => t.trim().toLowerCase()).filter(Boolean),
+        tags:   [tLoc, tSit, ...tMoods],
         volume: Number.isFinite(rawVol) ? Math.max(0.1, Math.min(4.0, rawVol)) : 1.0
       });
     }
@@ -70,56 +78,119 @@ function getLoadLibrary(musicDir) {
 
 /************************************************************************************/
 /* functionSignature: getSelectSong (labels, library, currentFile, excludeFile)      *
-/* Selects the best-matching song using bidirectional position-weighted scoring.     *
-/* AI labels: 1st = highest weight (N), last = 1. Track tags: same principle.       *
-/* Score per matching pair = AI label weight × track tag weight.                    *
+/* Selects the best-matching song using structured tag scoring.                      *
+/* labels[0]=location, labels[1]=situation, labels[2-5]=moods.                      *
+/* track.tags[0]=location, track.tags[1]=situation, track.tags[2+]=moods.           *
+/* Empty tag = wildcard (matches any). Mismatched non-empty location/situation      *
+/* → score=-1 (track excluded). Location match: +100, situation match: +50.         *
+/* Mood scoring: bidirectional position-weighted (earlier = more weight).           *
 /* Returns null if the current file is already the unique best match (no change).   *
 /************************************************************************************/
 function getSelectSong(labels, library, currentFile, excludeFile = null) {
   if (!Array.isArray(library) || !library.length) return null;
   if (!Array.isArray(labels)) labels = [];
 
-  // Build AI label weight map: 1st label = labels.length pts, each subsequent = -1.
-  // Example for ["combat","vampire","dungeon"]: combat=3, vampire=2, dungeon=1.
-  const labelWeights = {};
-  labels.forEach((label, index) => {
-    labelWeights[String(label).toLowerCase()] = labels.length - index;
-  });
+  const aiLocation  = (labels[0] || "").trim().toLowerCase();
+  const aiSituation = (labels[1] || "").trim().toLowerCase();
+  const aiMoods     = labels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
+  const aiMoodSet   = new Set(aiMoods);
 
   const excluded = excludeFile || currentFile;
 
-  // Bidirectional scoring: track tag positional weight × AI label weight.
-  // A tag that is the primary identity of a track (position 0) AND the top AI label
-  // scores highest. Both directions contribute to the final match quality.
-  const scored = library.map(track => ({
-    track,
-    score: track.tags.reduce((sum, tag, tagIndex) => {
-      const aiWeight = labelWeights[tag] || 0;
-      if (aiWeight === 0) return sum;
-      const trackWeight = track.tags.length - tagIndex; // primary tag = highest weight
-      return sum + aiWeight * trackWeight;
-    }, 0)
-  }));
+  const scored = library.map(track => {
+    const trackLocation  = (track.tags[0] || "").trim().toLowerCase();
+    const trackSituation = (track.tags[1] || "").trim().toLowerCase();
+    const trackMoods     = track.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
 
-  const maxScore = Math.max(...scored.map(s => s.score));
+    // Hard filter: if both track and AI specify location/situation they must match.
+    // Empty on either side = wildcard (no penalty, no bonus).
+    if (trackLocation && aiLocation && trackLocation !== aiLocation) return { track, score: -1 };
+    if (trackSituation && aiSituation && trackSituation !== aiSituation) return { track, score: -1 };
 
-  // Only stay on the current track (return null = "no change") if it is the
-  // UNIQUE best match — no other track has the same top score.
+    let score = 0;
+
+    // Bonus for explicit location/situation match (beats wildcard tracks).
+    if (trackLocation && aiLocation && trackLocation === aiLocation) score += 100;
+    if (trackSituation && aiSituation && trackSituation === aiSituation) score += 50;
+
+    // Mood scoring: bidirectional position-weighted.
+    // Earlier in AI mood list = higher AI weight; earlier in track moods = higher track weight.
+    trackMoods.forEach((mood, trackIdx) => {
+      const aiIdx = aiMoods.indexOf(mood);
+      if (aiIdx === -1) return;
+      const aiWeight    = aiMoods.length - aiIdx;
+      const trackWeight = trackMoods.length - trackIdx;
+      score += aiWeight * trackWeight;
+    });
+
+    return { track, score };
+  });
+
+  const validScored = scored.filter(s => s.score >= 0);
+  if (!validScored.length) return null;
+
+  const maxScore = Math.max(...validScored.map(s => s.score));
+
+  // Only stay on the current track if it is the UNIQUE best match.
   if (currentFile) {
-    const currentEntry = scored.find(s => s.track.file === currentFile);
-    const currentScore = currentEntry?.score ?? 0;
-    if (maxScore >= 1 && currentScore === maxScore) {
-      const otherBest = scored.filter(s => s.score === maxScore && s.track.file !== currentFile);
+    const currentEntry = validScored.find(s => s.track.file === currentFile);
+    const currentScore = currentEntry?.score ?? -1;
+    if (maxScore >= 0 && currentScore === maxScore) {
+      const otherBest = validScored.filter(s => s.score === maxScore && s.track.file !== currentFile);
       if (otherBest.length === 0) return null; // current is uniquely best → stay
     }
   }
 
-  const best = scored.filter(s => s.score === maxScore);
+  const best = validScored.filter(s => s.score === maxScore);
 
   // Always try to exclude the current/last-played file for variety.
   const candidates = best.filter(s => s.track.file !== excluded);
+  const pool = candidates.length > 0 ? candidates : best;
+  return pool[Math.floor(Math.random() * pool.length)].track;
+}
 
-  return (candidates.length > 0 ? candidates : best)[Math.floor(Math.random() * (candidates.length > 0 ? candidates : best).length)].track;
+/************************************************************************************/
+/* functionSignature: getShouldSwitch (newLabels, oldLabels, currentTrack)           *
+/* Decides whether a track switch is warranted based on structured label comparison. *
+/* Switch is triggered when ANY of these conditions is met:                          *
+/*   1. Location changed (both non-empty and different).                             *
+/*   2. Situation changed (both non-empty and different).                            *
+/*   3. >50% of the current track's previously-matching mood tags no longer match.  *
+/* Returns {reason, detail} on switch, null on no-switch.                           *
+/************************************************************************************/
+function getShouldSwitch(newLabels, oldLabels, currentTrack) {
+  const newLoc   = (newLabels[0] || "").trim().toLowerCase();
+  const newSit   = (newLabels[1] || "").trim().toLowerCase();
+  const newMoods = newLabels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
+  const oldLoc   = (oldLabels[0] || "").trim().toLowerCase();
+  const oldSit   = (oldLabels[1] || "").trim().toLowerCase();
+  const oldMoods = oldLabels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
+
+  // Rule 1: location changed (both non-empty, ignore empty = "unknown")
+  if (newLoc && oldLoc && newLoc !== oldLoc) {
+    return { reason: "location", detail: `${oldLoc}→${newLoc}` };
+  }
+
+  // Rule 2: situation changed (both non-empty)
+  if (newSit && oldSit && newSit !== oldSit) {
+    return { reason: "situation", detail: `${oldSit}→${newSit}` };
+  }
+
+  // Rule 3: >50% of previously matching mood tags on current track are gone
+  if (currentTrack) {
+    const trackMoods = currentTrack.tags.slice(2).map(t => t.trim().toLowerCase()).filter(Boolean);
+    if (trackMoods.length > 0) {
+      const oldMoodSet    = new Set(oldMoods);
+      const newMoodSet    = new Set(newMoods);
+      const oldMatchCount = trackMoods.filter(m => oldMoodSet.has(m)).length;
+      const newMatchCount = trackMoods.filter(m => newMoodSet.has(m)).length;
+      if (oldMatchCount > 0 && (oldMatchCount - newMatchCount) / oldMatchCount > 0.5) {
+        return { reason: "mood", detail: `matches:${oldMatchCount}→${newMatchCount}/${trackMoods.length}` };
+      }
+    }
+  }
+
+  return null; // no switch needed
 }
 
 /************************************************************************************/
@@ -241,19 +312,21 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
 
           if (isPlaying) {
             if (labels.length === 0) continue;
-            // Only trigger a track switch if the AI labels have changed from when the
-            // track started (nowPlaying.labels). Identical labels → keep playing.
-            // When labels change, always select the best-fit track (no overlap check).
             const trackStartLabels = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
-            const labelsChanged = [...labels].sort().join(",") !== [...trackStartLabels].sort().join(",");
-            log(`[label-debug] guild=${session.guildId} isPlaying=true trackStartLabels=[${trackStartLabels.join(",")}] newLabels=[${labels.join(",")}] labelsChanged=${labelsChanged}`, "info", { moduleName: MODULE_NAME });
-            if (!labelsChanged) continue; // labels unchanged → keep playing
-            // Labels changed → always pick best fit
-            const next = getSelectSong(labels, library, currentFile);
-            if (next === null) {
-              if (nowPlaying) {
+            const currentTrack     = library.find(t => t.file === currentFile);
+            const switchReason     = getShouldSwitch(labels, trackStartLabels, currentTrack);
+            log(`[label-debug] guild=${session.guildId} isPlaying=true trackStartLabels=[${trackStartLabels.join(",")}] newLabels=[${labels.join(",")}] switch=${switchReason ? switchReason.reason + ":" + switchReason.detail : "no"}`, "info", { moduleName: MODULE_NAME });
+            if (!switchReason) {
+              // No switch — silently refresh labels in nowPlaying if they changed
+              if (labels.join(",") !== trackStartLabels.join(",") && nowPlaying) {
                 await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
               }
+              continue;
+            }
+            // Switch triggered — pick best-fit track for the new labels
+            const next = getSelectSong(labels, library, currentFile);
+            if (next === null) {
+              if (nowPlaying) await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
               continue;
             }
             session._lastLabels = labels;

@@ -24,8 +24,11 @@ function getStr(v) {
 
 /************************************************************************************/
 /* functionSignature: getBardLabelOutput(coreData)                                 *
-/* Parses the AI response into up to 3 valid mood labels and writes them to        *
-/* bard:labels:{guildId} in the registry.                                          *
+/* Parses the AI response into a 6-position structured label array and writes it   *
+/* to bard:labels:{guildId} in the registry.                                       *
+/* Label structure: [location, situation, mood1, mood2, mood3, mood4]              *
+/* Positions 0-1 (location/situation) may be empty strings.                        *
+/* Positions 2-5 (moods) are validated against validTags; invalid = blanked.      *
 /************************************************************************************/
 export default async function getBardLabelOutput(coreData) {
   const wo  = coreData?.workingObject || {};
@@ -48,24 +51,30 @@ export default async function getBardLabelOutput(coreData) {
     return coreData;
   }
 
-  // Parse: "battle,tension,dark" → ["battle", "tension", "dark"]
-  // Tokens longer than 25 chars are LLM error responses mangled into one string — discard them.
-  // Deduplicate to avoid repeated tokens from malformed LLM output.
-  const raw = [...new Set(
-    response
-      .split(",")
-      .map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""))
-      .filter(t => t.length > 0 && t.length <= 25)
-  )];
+  // Parse structured 6-position response: "tavern,combat,dark,tense,intense,battle"
+  // Positions 0-1 (location, situation) may be empty strings → wildcard.
+  // Positions 2-5 (moods) are validated against validTags; invalid or overlong tags → blank.
+  const rawParts = response.split(",").slice(0, 6);
+  while (rawParts.length < 6) rawParts.push(""); // pad to 6 if AI returned fewer
 
-  const labels   = raw.filter(t => validTags.size === 0 || validTags.has(t)).slice(0, 3);
-  const rejected = raw.filter(t => validTags.size > 0 && !validTags.has(t)).slice(0, 5);
+  const labels = rawParts.map((t, i) => {
+    const clean = t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (i < 2) return clean; // location + situation: accept any sanitized value (or empty)
+    if (!clean || clean.length > 25) return ""; // malformed or empty mood → blank
+    if (validTags.size > 0 && !validTags.has(clean)) return ""; // unknown mood tag → blank
+    return clean;
+  });
+
+  const rejected = rawParts.slice(2).map(t => {
+    const clean = t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    return (clean && clean.length <= 25 && validTags.size > 0 && !validTags.has(clean)) ? clean : null;
+  }).filter(Boolean).slice(0, 5);
 
   if (rejected.length) {
-    log(`rejected invalid tags for guild ${guildId}: ${rejected.join(",")}`, "warn", { moduleName: MODULE_NAME });
+    log(`rejected invalid mood tags for guild ${guildId}: ${rejected.join(",")}`, "warn", { moduleName: MODULE_NAME });
   }
 
-  if (!labels.length) {
+  if (!labels.some(Boolean)) {
     log(`AI returned no valid labels for guild ${guildId} (raw: "${response}")`, "warn", { moduleName: MODULE_NAME });
     return coreData;
   }

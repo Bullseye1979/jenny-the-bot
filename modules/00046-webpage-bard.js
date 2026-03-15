@@ -216,22 +216,33 @@ async function callTavily(title, atCfg) {
 
 /**********************************************************************************/
 /* functionSignature: callLlmForTags (title, tavilySnippet, existingTags, atCfg) */
-/* Calls an LLM to generate exactly 5 mood/atmosphere tags for a music track.    */
+/* Calls an LLM to generate 6 structured tags for a music track:                 */
+/* [location, situation, mood1, mood2, mood3, mood4]                             */
+/* location and situation may be empty strings (= fits any location/situation).  */
 /**********************************************************************************/
 async function callLlmForTags(title, tavilySnippet, existingTags, atCfg) {
   const systemPrompt = (typeof atCfg.systemPrompt === "string" && atCfg.systemPrompt.trim())
     ? atCfg.systemPrompt
     : "You are a music tagging assistant for a tabletop RPG (D&D) ambient music library.\n" +
-      "Assign exactly 5 mood/atmosphere tags to a music track.\n" +
-      "Each tag must be a single lowercase word (only a-z, 0-9, hyphens allowed).\n" +
-      "Output ONLY a JSON array of exactly 5 strings. No explanation, no extra text.\n" +
-      "Example: [\"combat\",\"tension\",\"dark\",\"drums\",\"medieval\"]";
+      "Assign exactly 6 structured tags to a music track in this exact order:\n" +
+      "  1. LOCATION  — one lowercase word for where this music fits best (tavern, dungeon, forest, city, camp, …).\n" +
+      "                 Use empty string \"\" if the track suits any location.\n" +
+      "  2. SITUATION — one lowercase word for the type of scene (combat, exploration, rest, dialogue, travel, …).\n" +
+      "                 Use empty string \"\" if the track suits any situation.\n" +
+      "  3-6. MOOD    — exactly 4 mood/atmosphere words ordered by fit: most fitting first.\n" +
+      "                 Examples: dark, tense, calm, epic, eerie, intense, cozy, warm, dramatic, mysterious.\n" +
+      "Each non-empty tag must be a single lowercase word (only a-z, 0-9, hyphens allowed).\n" +
+      "Output ONLY a JSON array of exactly 6 strings. No explanation, no extra text.\n" +
+      "Example (tavern rest music):  [\"tavern\",\"rest\",\"cozy\",\"calm\",\"warm\",\"ambient\"]\n" +
+      "Example (combat, any loc):    [\"\",\"combat\",\"intense\",\"dark\",\"battle\",\"danger\"]\n" +
+      "Example (forest exploration): [\"forest\",\"exploration\",\"mysterious\",\"eerie\",\"calm\",\"ambient\"]";
   const userPromptTemplate = (typeof atCfg.userPrompt === "string" && atCfg.userPrompt.trim())
     ? atCfg.userPrompt
     : "Track title: \"{title}\"\n\n" +
       "Web search results for this track:\n{tavilySnippet}\n\n" +
-      "Existing tags already used in this library (prefer these when applicable):\n{existingTags}\n\n" +
-      "Assign exactly 5 tags. Output only a JSON array of 5 strings.";
+      "Tags already used in this library (prefer these when applicable):\n{existingTags}\n\n" +
+      "Output a JSON array of exactly 6 strings: [location, situation, mood1, mood2, mood3, mood4].\n" +
+      "Use empty string \"\" for location and/or situation if the track fits any.";
   const userPrompt = userPromptTemplate
     .replace("{title}",         title)
     .replace("{tavilySnippet}", tavilySnippet || "No search results available.")
@@ -258,17 +269,20 @@ async function callLlmForTags(title, tavilySnippet, existingTags, atCfg) {
   } catch (_e) { /* timeout or network error */ }
   finally { clearTimeout(timer); }
   const text = data?.choices?.[0]?.message?.content || "";
-  let tags = [];
-  try { tags = JSON.parse(text.trim()); } catch (_e) {
-    const matches = text.match(/"([a-z0-9_-]+)"/g) || [];
-    tags = matches.map(m => m.replace(/"/g, ""));
+  // Parse JSON array; fall back to regex extraction if JSON parse fails.
+  let parsed = [];
+  try { parsed = JSON.parse(text.trim()); } catch (_e) {
+    const matches = text.match(/"([^"]*)"/g) || [];
+    parsed = matches.map(m => m.replace(/"/g, ""));
   }
-  tags = tags
-    .filter(t => typeof t === "string" && t.trim())
-    .map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""))
-    .filter(Boolean)
-    .slice(0, 5);
-  while (tags.length < 5) tags.push("ambient");
+  // Ensure exactly 6 elements: positions 0-1 may be "", positions 2-5 default to "ambient".
+  while (parsed.length < 6) parsed.push("");
+  parsed = parsed.slice(0, 6);
+  const tags = parsed.map((t, i) => {
+    const clean = String(t || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (i >= 2 && !clean) return "ambient"; // fallback for empty mood slots
+    return clean; // location/situation: keep empty as empty
+  });
   return tags;
 }
 
