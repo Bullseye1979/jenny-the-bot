@@ -1202,8 +1202,7 @@ export default async function getCoreAi(coreData) {
       "- NEVER ANSWER TO OLDER USER REQUESTS",
       "- Use tools only when necessary.",
       "- When you emit a tool call, do not include extra prose in the same turn.",
-      "- ALWAYS answer in human readable plain text, unless explicitly told to use a different format.",
-      "- NEVER answer with JSON unless explicitly asked. Do not imitate JSON-like formats from context."
+      "- ALWAYS answer in human readable plain text, unless explicitly told to use a different format."
     ].join("\n");
 
     const multiChannelNote = (() => {
@@ -1254,6 +1253,11 @@ export default async function getCoreAi(coreData) {
   let totalToolCalls = 0;
   let attempts = 0;
   const maxAttempts = Math.max(1, getNum(wo?.MaxAttempts, Math.min(3, maxLoops)));
+  /* Tracks consecutive iterations with no visible output but truncated=true.
+   * Reasoning models (e.g. GPT-5) can exhaust max_output_tokens with reasoning tokens,
+   * producing empty visible text every iteration → infinite loop.
+   * After 2 such iterations we break the loop to avoid spinning. */
+  let emptyOutputConsec = 0;
 
   for (let iter = 0; iter < maxLoops; iter++) {
     attempts++;
@@ -1397,8 +1401,27 @@ export default async function getCoreAi(coreData) {
       }
 
       const truncated = getWasTruncatedOutput(data);
-      const cutOff = truncated || getLooksCutOff(assistantText);
+      const looksCutOff = getLooksCutOff(assistantText);
+      const cutOff = truncated || looksCutOff;
       if (cutOff) {
+        /* Guard against reasoning models exhausting max_output_tokens with no visible output.
+         * If the model produced no visible text AND the API says truncated (reasoning ate all tokens),
+         * continuing blindly loops forever. After 2 consecutive empty-output truncated iterations, break. */
+        if (truncated && !assistantText.trim()) {
+          emptyOutputConsec++;
+          if (emptyOutputConsec >= 2) {
+            wo.logging.push({
+              timestamp: new Date().toISOString(),
+              severity: "warn",
+              module: MODULE_NAME,
+              exitStatus: "success",
+              message: `Empty-output loop guard: ${emptyOutputConsec} consecutive truncated iterations with no visible text — stopping loop. Increase maxTokens for reasoning models.`
+            });
+            break;
+          }
+        } else {
+          emptyOutputConsec = 0;
+        }
         const cont = { role: "user", content: "continue" };
         messages.push(cont);
         persistQueue.push(getWithTurnId(cont, wo));
@@ -1407,12 +1430,13 @@ export default async function getCoreAi(coreData) {
           severity: "info",
           module: MODULE_NAME,
           exitStatus: "success",
-          message: `Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(assistantText)}`
+          message: `Continue triggered: finish_reason="${finish ?? "null"}" truncated=${truncated} looks_cut_off=${looksCutOff}`
         });
         /* Disable tools for the continuation pass — model should resume output, not call more tools */
         wo.__forceNoTools = true;
         continue;
       }
+      emptyOutputConsec = 0;
 
       const primaryText = [(accumulatedText || assistantText || "")].filter(Boolean).join("\n\n");
       const linkText = allHostedLinks.length ? allHostedLinks.map(u => `- ${u}`).join("\n") : "";
