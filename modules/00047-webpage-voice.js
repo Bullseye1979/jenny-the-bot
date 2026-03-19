@@ -351,7 +351,7 @@ function stopVAD() {
   if (vadTimer) { clearInterval(vadTimer); vadTimer = null; }
   if (analyser) { try { analyser.disconnect(); } catch(e) {} analyser = null; }
   if (audioCtx) { audioCtx.close().catch(function(){}); audioCtx = null; }
-  clearVolume();
+  if (!recActive) clearVolume(); /* keep bar alive if rec is still running */
 }
 
 async function startRecording() {
@@ -434,7 +434,6 @@ var recAnalyser  = null;
 var recVolTimer  = null;
 
 function startRecVAD(src) {
-  if (alwaysOn) return; /* always-on VAD already drives the volume bar */
   try {
     var AC = window.AudioContext || window.webkitAudioContext;
     recAudioCtx = new AC();
@@ -465,20 +464,18 @@ btnRec.addEventListener('click', async function() {
     /* Start meeting recording */
     recActive = true;
     recChunks = [];
-    /* Reuse voice stream if currently active, otherwise open own */
-    var src = stream;
-    if (!src) {
-      var deviceId = micSelect.value;
-      var audioCfg = { echoCancellation: true, noiseSuppression: true };
-      if (deviceId) audioCfg.deviceId = { exact: deviceId };
-      try {
-        recOwnStream = await navigator.mediaDevices.getUserMedia({ audio: audioCfg, video: false });
-        src = recOwnStream;
-      } catch(e) {
-        setError('Mic access denied: ' + e.message);
-        recActive = false; return;
-      }
+    /* Always open a dedicated stream for rec — never reuse the voice stream,
+       so stopping voice mid-recording does not kill the rec media source. */
+    var deviceId = micSelect.value;
+    var audioCfg = { echoCancellation: true, noiseSuppression: true };
+    if (deviceId) audioCfg.deviceId = { exact: deviceId };
+    try {
+      recOwnStream = await navigator.mediaDevices.getUserMedia({ audio: audioCfg, video: false });
+    } catch(e) {
+      setError('Mic access denied: ' + e.message);
+      recActive = false; return;
     }
+    var src = recOwnStream;
     var mt = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg']
       .find(function(m) { return MediaRecorder.isTypeSupported(m); }) || '';
     recRecorder = new MediaRecorder(src, mt ? { mimeType: mt } : {});

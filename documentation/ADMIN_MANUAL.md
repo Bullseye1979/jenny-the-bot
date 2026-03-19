@@ -3181,7 +3181,9 @@ Add `3118` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`.
 **Port:** 3119
 **Config key:** `webpage-voice`
 
-A browser-based voice interface with two modes: **always-on continuous listening** and a **meeting recorder**. Both modes use the same `POST /voice/audio` endpoint. Always-on runs the full transcription → AI → TTS pipeline and returns spoken audio; the meeting recorder uses `?transcribeOnly=1` to skip AI/TTS and return only the diarized transcript.
+A browser-based voice interface with two modes: **always-on continuous listening** and a **meeting recorder**. Both modes can run simultaneously. Both use the same `POST /voice/audio` endpoint. Always-on runs the full transcription → AI → TTS pipeline and returns spoken audio; the meeting recorder uses `?transcribeOnly=1` to skip AI/TTS and return only the diarized transcript.
+
+**Concurrent use:** When both modes are active, each uses its own independent microphone stream so that stopping one mode never interrupts the other. The volume meter is driven by whichever mode is currently active (rec takes over when always-on is stopped).
 
 #### HTTP Routes
 
@@ -3196,7 +3198,7 @@ A browser-based voice interface with two modes: **always-on continuous listening
 | Button | Behaviour |
 |---|---|
 | **Mic button** (always-on) | Click once to start continuous listening mode. Jenny sends audio automatically after silence and plays the response back. Click again to stop. Pulsing animation and volume meter indicate active state. |
-| **REC button** (meeting recorder) | Click to start recording. Click again to stop and trigger transcription. Volume meter is active during recording. The spinner shows while the transcript is being processed. The diarized transcript is stored in the channel context DB — one entry per speaker paragraph, with `userId` set to the speaker label (`A`, `B`, …) and `content` containing only the spoken text. |
+| **REC button** (meeting recorder) | Click to start recording. Click again to stop and trigger transcription. The recorder always opens its own microphone stream independently of the always-on mic, so both modes can run simultaneously without interfering. The volume meter stays active as long as either mode is recording. The spinner shows while the transcript is being processed. The diarized transcript is stored in the channel context DB — one entry per speaker paragraph, with `userId` = speaker label (`A`, `B`, `A_2` for uncertain cross-chunk speakers, …) and `content` = spoken text. |
 
 #### WorkingObject fields set by this module
 
