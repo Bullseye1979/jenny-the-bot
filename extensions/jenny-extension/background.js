@@ -77,6 +77,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       : { active: true, windowType: "normal" };
 
     chrome.tabs.query(queryOpts, function (tabs) {
+      if (chrome.runtime.lastError) { sendResponse({ url: "" }); return; }
       var tab = tabs && tabs[0];
       var url = (tab && tab.url) || "";
       /* Cache the result for next time */

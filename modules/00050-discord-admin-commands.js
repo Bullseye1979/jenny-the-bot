@@ -4,10 +4,6 @@
 /* Purpose: Slash admin commands for "discord-admin" flow    *
 /*          plus DM-only text commands for purge and DB      *
 /**************************************************************/
-/**************************************************************
-/*                                                          *
-/**************************************************************/
-
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
 import { setPurgeContext, setFreezeContext } from "../core/context.js";

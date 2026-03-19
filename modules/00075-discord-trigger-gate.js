@@ -3,10 +3,6 @@
 /* Version 1.0                                                *
 /* Purpose: Block if trigger not in first N words             *
 /**************************************************************/
-/**************************************************************
-/*                                                            *
-/**************************************************************/
-
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-trigger-gate";

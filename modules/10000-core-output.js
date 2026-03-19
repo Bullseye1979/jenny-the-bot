@@ -5,10 +5,6 @@
 /*          per-flow object logs and per-flow last-object file *
 /*          without mutating workingObject.                   *
 /**************************************************************/
-/**************************************************************
-/*                                                          *
-/**************************************************************/
-
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

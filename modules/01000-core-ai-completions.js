@@ -4,10 +4,6 @@
 /* Purpose: Platform-agnostic AI runner for chat completions with real tool     *
 /*          calls only                                                          *
 /********************************************************************************/
-/********************************************************************************
-/*                                                                              *
-/********************************************************************************/
-
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 
@@ -424,6 +420,10 @@ export default async function getCoreAi(coreData) {
   }
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
+  if (!userPromptRaw.trim()) {
+    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: "Skipped: empty payload" });
+    return coreData;
+  }
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "AI request started" });
   let snapshot = [];
   try { snapshot = await getContext(wo); }

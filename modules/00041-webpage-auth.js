@@ -297,7 +297,6 @@ function getRoleFromMember(cfg, member) {
   return { role: primary, roles: uniq, roleIds };
 }
 
-
 /**************************************************************/
 /* functionSignature: getIsAllowedByRole (cfg, roles)         */
 /**************************************************************/

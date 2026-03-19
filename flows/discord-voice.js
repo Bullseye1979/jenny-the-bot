@@ -5,9 +5,6 @@
 /*          seed workingObject (incl. turn_id), and trigger   *
 /*          the configured flowName (default "discord-voice").*
 /**************************************************************/
-/**************************************************************
-/*                                                          *
-/**************************************************************/
 
 import { entersState, VoiceConnectionStatus } from "@discordjs/voice";
 import { getItem } from "../core/registry.js";

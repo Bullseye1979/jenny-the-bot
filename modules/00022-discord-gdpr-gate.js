@@ -5,27 +5,6 @@
 /*          once, enforces consent, and skips DMs and bot users.                   *
 /************************************************************************************/
 
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-/* filename: "discord-gdpr-gate.js"                           */
-/* Version 1.0                                                */
-/* Purpose: GDPR gate for "discord" (text) and "discord-voice"*/
-/*          Sends disclaimer DM exactly once and enforces     */
-/*          consent checks; skips DMs and bot users.          */
-/**************************************************************/
-/**************************************************************/
-/*                                                            */
-/**************************************************************/
-
 import mysql from "mysql2/promise";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
@@ -37,13 +16,8 @@ const MODULE_NAME = "gdpr-gate";
 /* the consent table name resolved from configuration.                             *
 /************************************************************************************/
 function getTableName(coreData) {
-  const t1 = coreData?.config?.["discord-gdpr-gate"]?.table;
-  if (typeof t1 === "string" && t1.trim()) return t1.trim();
-  const t2 = coreData?.config?.["discord-admin-gdpr"]?.table;
-  if (typeof t2 === "string" && t2.trim()) return t2.trim();
-  const t3 = coreData?.config?.["gdpr-gate"]?.table;
-  if (typeof t3 === "string" && t3.trim()) return t3.trim();
-  return "gdpr_consent";
+  const t = coreData?.config?.[MODULE_NAME]?.table;
+  return (typeof t === "string" && t.trim()) ? t.trim() : "gdpr";
 }
 
 /************************************************************************************/

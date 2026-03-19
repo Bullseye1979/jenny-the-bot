@@ -142,7 +142,6 @@ function getSlug(title) {
     .slice(0, 80);
 }
 
-
 /**********************************************************************************/
 /* functionSignature: getWikiDb (coreData)                                        */
 /* Returns the db pool, auto-creating the wiki_articles table if needed.          */
@@ -479,15 +478,13 @@ function buildPageHeader(title, basePath, channelId, menu, role) {
     ? `<form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get"><input class="wiki-search-input" type="text" name="q" placeholder="Search or create…" autocomplete="off"><button class="wiki-search-btn" type="submit">Go</button></form>`
     : "";
   const menuHtml = getMenuHtml(menu, chPath, role, searchHtml);
-  return `<div class="wiki-header">
-  <div class="wiki-header-top">
-    <a class="wiki-logo-link" href="${escHtml(chPath)}">
-      <span class="wiki-logo">🗺️</span>
-      <span class="wiki-title">${escHtml(title)}</span>
-    </a>
-    ${menuHtml}
-  </div>
-</div>`;
+  return `<header>
+  <a class="wiki-logo-link" href="${escHtml(chPath)}">
+    <span class="wiki-logo">🗺️</span>
+    <span class="wiki-title">${escHtml(title)}</span>
+  </a>
+  ${menuHtml}
+</header>`;
 }
 
 /**********************************************************************************/
@@ -512,12 +509,10 @@ function buildWikiCss() {
   --wiki-chip-text: #b0b0d0;
 }
 * { box-sizing: border-box; }
-body { background: var(--wiki-bg); color: var(--wiki-text); font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; overflow-y: auto; }
+body { background: var(--wiki-bg); color: var(--wiki-text); font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; overflow-y: auto; padding-top: var(--hh); }
 a { color: var(--wiki-link); text-decoration: none; }
 a:hover { text-decoration: underline; }
-.wiki-header { background: var(--wiki-surface); border-bottom: 2px solid var(--wiki-accent); margin-bottom: 0; }
-.wiki-header-top { display: flex; align-items: center; gap: 12px; padding: 0 20px; min-height: 52px; }
-.wiki-logo-link { display: flex; align-items: center; gap: 6px; color: var(--wiki-text); font-size: 15px; font-weight: 700; white-space: nowrap; letter-spacing: -.2px; text-decoration: none; flex-shrink: 0; }
+.wiki-logo-link { display: flex; align-items: center; gap: 6px; color: #f1f5f9; font-size: 15px; font-weight: 700; white-space: nowrap; letter-spacing: -.2px; text-decoration: none; flex-shrink: 0; }
 .wiki-logo { font-size: 1em; }
 .wiki-search-form { display: flex; gap: 6px; }
 .wiki-search-input { background: var(--wiki-bg); border: 1px solid var(--wiki-border); color: var(--wiki-text); padding: 7px 12px; border-radius: 4px; width: 260px; font-size: 0.95em; }
@@ -1103,7 +1098,7 @@ function getChannelConfig(cfg, channelId) {
 /**********************************************************************************/
 export default async function getWebpageWiki(coreData) {
   const wo = coreData?.workingObject || {};
-  if (wo?.flow !== "webpage") return coreData;
+  if (wo?.flow !== "webpage" && wo?.flow !== "webpage-wiki") return coreData;
 
   const cfg      = coreData?.config?.[MODULE_NAME] || {};
   const port     = Number(cfg.port ?? 3117);

@@ -94,6 +94,9 @@ details[open].nav-more .nav-more-drop{display:flex}
   .nav-primary{display:none!important}
   .nav-more{display:block!important}
   .nav-more-primary{display:block}
+  .nav-role{display:none}
+  .nav-right{max-width:calc(100% - 52px);overflow:hidden}
+  .nav-right>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
 
 #status-lbl{font-size:12px;opacity:.55;white-space:nowrap;flex:1;text-align:right}

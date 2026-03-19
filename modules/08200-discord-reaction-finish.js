@@ -4,10 +4,6 @@
 /* Purpose: Clear hourglass and add check/cross reaction;     *
 /*          DM-safe by removing only own hourglass in DMs.    *
 /***************************************************************/
-/***************************************************************
-/*                                                             *
-/***************************************************************/
-
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "discord-reaction-finish";

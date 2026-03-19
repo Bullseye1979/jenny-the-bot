@@ -1,6 +1,6 @@
 # core.json — Complete Reference
 
-> **Version:** 1.0 · **Date:** 2026-03-15
+> **Version:** 1.0 · **Date:** 2026-03-19
 
 `core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime — any change triggers an automatic hot-reload within seconds. No restart is required.
 
@@ -69,6 +69,13 @@ All key names follow **camelCase** throughout.
    - [webpage](#webpage)
    - [discord-admin](#discord-admin)
    - [discord-voice](#discord-voice)
+   - [discord-voice-capture](#discord-voice-capture)
+   - [core-voice-transcribe](#core-voice-transcribe)
+   - [core-voice-tts](#core-voice-tts)
+   - [discord-voice-tts-play](#discord-voice-tts-play)
+   - [webpage-router](#webpage-router)
+   - [webpage-voice](#webpage-voice)
+   - [webpage-voice-output](#webpage-voice-output)
    - [toolcall](#toolcall)
    - [Module Flow Subscriptions](#module-flow-subscriptions)
    - [core-channel-config — Channel Overrides](#core-channel-config--channel-overrides)
@@ -136,10 +143,10 @@ All key names follow **camelCase** throughout.
 | `ttsVoice` | string | `"nova"` | TTS voice name |
 | `ttsEndpoint` | string | `"https://api.openai.com/v1/audio/speech"` | TTS API endpoint |
 | `ttsApiKey` | string | `"sk-proj-..."` | API key for TTS calls |
-| `whisperApiKey` | string | `"sk-proj-..."` | API key for Whisper transcription |
-| `whisperModel` | string | `"whisper-1"` | Whisper model identifier |
+| `whisperApiKey` | string | `"sk-proj-..."` | API key for Whisper/transcription. Used as fallback by `core-voice-transcribe` |
+| `whisperModel` | string | `"whisper-1"` | Whisper model identifier (legacy fallback). `core-voice-transcribe` defaults to `"gpt-4o-mini-transcribe"` unless overridden via `transcribeModel` in its config block |
 | `whisperLanguage` | string | `""` | Force a specific transcription language (ISO 639-1, or empty for auto) |
-| `whisperEndpoint` | string | `"https://api.openai.com"` | Base URL for the Whisper API |
+| `whisperEndpoint` | string | `"https://api.openai.com"` | Base URL for the Whisper/transcription API |
 
 ---
 
@@ -819,7 +826,7 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
   "clientSecret":   "<DISCORD_CLIENT_SECRET>",
   "redirectUri":    "",
   "loginPort":      3111,
-  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118],
+  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
   "sessionTtlMs":   86400000,
   "users": [
     { "discordId": "<YOUR_DISCORD_USER_ID>", "role": "admin" }
@@ -1133,6 +1140,213 @@ Declares the voice flow.
 
 ---
 
+### discord-voice-capture
+
+Controls PCM capture and VAD from the Discord voice receiver. Produces a 16kHz mono WAV and writes `wo.transcribeAudio = true` for the transcription module to pick up.
+
+```jsonc
+"discord-voice-capture": {
+  "flow":              ["discord-voice"],
+  "pollMs":            1000,
+  "silenceMs":         1500,
+  "maxCaptureMs":      25000,
+  "minWavBytes":       24000,
+  "frameMs":           20,
+  "startDebounceMs":   600,
+  "maxSegmentsPerRun": 32,
+  "keepWav":           false
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"discord-voice"` |
+| `pollMs` | number | `1000` | Voice receiver poll interval (ms) |
+| `silenceMs` | number | `1500` | Silence duration that ends a capture segment (ms) |
+| `maxCaptureMs` | number | `25000` | Maximum capture duration per segment (ms) |
+| `minWavBytes` | number | `24000` | Minimum WAV size (bytes); segments below this are skipped |
+| `frameMs` | number | `20` | Opus frame duration (ms) |
+| `startDebounceMs` | number | `600` | Debounce before starting a new capture (ms) |
+| `maxSegmentsPerRun` | number | `32` | Maximum segments processed per polling cycle |
+| `keepWav` | boolean | `false` | Retain WAV files on disk after processing (for debugging) |
+
+---
+
+### core-voice-transcribe
+
+Source-agnostic transcription module. Runs in `discord-voice` and `webpage` flows when `wo.transcribeAudio === true`. Applies a quality gate when `wo.audioStats` is set. API credentials fall back to `workingObject.whisperApiKey` / `workingObject.apiKey` if not set here.
+
+```jsonc
+"core-voice-transcribe": {
+  "flow":               ["discord-voice", "webpage"],
+  "minVoicedMs":        1000,
+  "snrDbThreshold":     3.8,
+  "keepWav":            false,
+  "transcribeModel":    "gpt-4o-mini-transcribe",
+  "transcribeLanguage": "",
+  "transcribeEndpoint": "",
+  "transcribeApiKey":   ""
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include the flows where transcription is needed |
+| `minVoicedMs` | number | `1000` | Minimum voiced audio (ms) required to attempt transcription; checked against `wo.audioStats.usefulMs` when set |
+| `snrDbThreshold` | number | `3.8` | SNR threshold; segments below this are discarded; checked against `wo.audioStats.snrDb` when set |
+| `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
+| `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model. Overridable per-turn via `wo.transcribeModel`. Alias: `whisperModel` |
+| `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect. Alias: `whisperLanguage` |
+| `transcribeEndpoint` | string | `""` | Base URL for the transcription API. Falls back to `workingObject.whisperEndpoint`. Alias: `whisperEndpoint` |
+| `transcribeApiKey` | string | `""` | API key for transcription. Falls back to `workingObject.whisperApiKey` then `workingObject.apiKey`. Alias: `whisperApiKey` |
+
+---
+
+### core-voice-tts
+
+Source-agnostic TTS renderer. Runs in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to support multi-voice segments. Calls the OpenAI TTS API for each segment in parallel (concurrency 2). Output format is controlled by `wo.ttsFormat` or `cfg.ttsFormat` — default `"opus"` for Discord, `"mp3"` for webpage voice. TTS credentials fall back to `workingObject.ttsApiKey` / `workingObject.apiKey` if not set here.
+
+```jsonc
+"core-voice-tts": {
+  "flow":              ["discord-voice", "webpage"],
+  "ttsModel":          "gpt-4o-mini-tts",
+  "ttsVoice":          "alloy",
+  "ttsEndpoint":       "",
+  "ttsApiKey":         "",
+  "ttsFormat":         "opus",
+  "TTSFetchTimeoutMs": 30000
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include the flows where TTS is needed |
+| `ttsModel` | string | `"gpt-4o-mini-tts"` | TTS model. Falls back to `workingObject.ttsModel` if not set |
+| `ttsVoice` | string | `"alloy"` | Default TTS voice. Falls back to `workingObject.ttsVoice` if not set |
+| `ttsEndpoint` | string | `""` | TTS API endpoint. Falls back to `workingObject.ttsEndpoint` |
+| `ttsApiKey` | string | `""` | API key for TTS. Falls back to `workingObject.ttsApiKey` then `workingObject.apiKey` |
+| `ttsFormat` | string | `"opus"` | Audio format. Use `"mp3"` for the webpage voice interface; `"opus"` for Discord playback |
+| `TTSFetchTimeoutMs` | number | `30000` | HTTP timeout for TTS API calls (ms) |
+
+---
+
+### discord-voice-tts-play
+
+Discord-specific TTS playback. Plays `wo.ttsSegments` sequentially into the active voice channel using the @discordjs/voice AudioPlayer. Manages a guild-level lock to prevent overlapping speech. Only active in `discord-voice`.
+
+```jsonc
+"discord-voice-tts-play": {
+  "flow": ["discord-voice"]
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"discord-voice"` |
+
+---
+
+### webpage-router
+
+Maps HTTP requests (by port + path prefix) to a named flow and sets `wo.channelID`. Runs before `core-channel-config` so that flow-specific overrides apply to web requests. Active in the `webpage` flow only.
+
+**Why use it:** Without `webpage-router`, all web requests have `wo.flow = "webpage"`. By routing `/voice` to `"webpage-voice"` and `/wiki` to `"webpage-wiki"`, `core-channel-config` `flows[].flowMatch` entries can apply different AI settings per web endpoint.
+
+```jsonc
+"webpage-router": {
+  "flow": ["webpage"],
+  "routes": [
+    {
+      "port":            3117,
+      "pathPrefix":      "/wiki",
+      "flow":            "webpage-wiki",
+      "channelIdSource": "path:0"
+    },
+    {
+      "port":            3119,
+      "pathPrefix":      "/voice",
+      "flow":            "webpage-voice",
+      "channelIdSource": "query:channelId"
+    }
+  ]
+}
+```
+
+| Key | Type | Description |
+|---|---|---|
+| `flow` | array | Must include `"webpage"` |
+| `routes[].port` | number | HTTP port to match |
+| `routes[].pathPrefix` | string | URL path prefix to match |
+| `routes[].flow` | string | Value written to `wo.flow` |
+| `routes[].channelIdSource` | string | How `wo.channelID` is derived: `"query:<param>"` reads a URL query parameter; `"path:<N>"` reads path segment N after the prefix (0-based); any other string is used as a literal static channel ID |
+
+> `webpage-router` only changes `wo.flow` — the module pipeline is already assembled based on the initial `"webpage"` flow. The new flow name is consumed by `core-channel-config` and logging only.
+
+---
+
+### webpage-voice
+
+Browser-based voice interface with two modes: **always-on continuous listening** (Mic button) and **meeting recorder** (REC button). Serves a self-contained SPA at `GET /voice`, accepts always-on audio at `POST /voice/audio`, and accepts full meeting recordings at `POST /voice/record`.
+
+**Always-on (`POST /voice/audio`):** Audio is converted to 16kHz mono WAV via ffmpeg, handed to `core-voice-transcribe` → AI pipeline → `core-voice-tts` → `webpage-voice-output`. Returns MP3 audio with `X-Transcript` and `X-Response` headers.
+
+**Meeting recorder (`POST /voice/record`):** Transcribes the full recording using `recordModel` with optional speaker diarization. Optionally clears the channel context before storing the transcript. Returns `{ ok, words, speakers }`.
+
+```jsonc
+"webpage-voice": {
+  "flow":                            ["webpage"],
+  "port":                            3119,
+  "basePath":                        "/voice",
+  "silenceTimeoutMs":                2500,
+  "maxDurationMs":                   30000,
+  "recordModel":                     "gpt-4o-transcribe",
+  "diarize":                         true,
+  "clearContextBeforeTranscription": false,
+  "allowedRoles":                    [],
+  "channels": [
+    { "id": "YOUR_CHANNEL_ID", "label": "General" }
+  ]
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"webpage"` |
+| `port` | number | `3119` | HTTP port — must also be in `config.webpage.ports` |
+| `basePath` | string | `"/voice"` | URL prefix for this module |
+| `silenceTimeoutMs` | number | `2500` | Silence duration (ms) before the always-on mic auto-sends audio |
+| `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
+| `recordModel` | string | `"gpt-4o-transcribe"` | Transcription model for meeting recordings |
+| `diarize` | boolean | `true` | Request speaker diarization for meeting recordings |
+| `clearContextBeforeTranscription` | boolean | `false` | Purge non-frozen context rows before storing the meeting transcript |
+| `allowedRoles` | array | `[]` | Roles that may access `/voice`. Empty = public |
+| `channels` | array | `[]` | Channel list for the SPA dropdown: `[{ "id": "...", "label": "..." }]`. If empty, a free-text input is shown. |
+
+- Add `3119` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /voice* localhost:3119` to your Caddyfile
+- Optionally add a `webpage-router` route to assign the `"webpage-voice"` flow for `core-channel-config` flow overrides
+
+---
+
+### webpage-voice-output
+
+Sends TTS audio back to the webpage voice caller. Must run in the output phase (≥9000). Triggered unconditionally when `wo.isWebpageVoice === true` — ignores `wo.stop` so a response is always sent.
+
+- **Success:** HTTP 200, `Content-Type: audio/mpeg`, concatenated MP3 buffers from `wo.ttsSegments`. Also sets `X-Transcript` (transcribed user text) and `X-Response` (AI response text) headers.
+- **Error:** HTTP 400, `Content-Type: application/json`, `{error: "<reason>"}`.
+
+```jsonc
+"webpage-voice-output": {
+  "flow": ["webpage"]
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+
+---
+
 ### toolcall
 
 ```jsonc
@@ -1173,32 +1387,38 @@ Every module has an entry under `config` that declares which flows it participat
 
 | Module key | Flows |
 |---|---|
-| `core-ai-completions` | `discord`, `discord-voice`, `api`, `discord-status` |
-| `core-ai-responses` | `discord`, `discord-voice`, `api`, `discord-status` |
-| `core-ai-pseudotoolcalls` | `discord`, `discord-voice`, `api`, `discord-status` |
-| `discord-voice-tts` | `discord-voice` |
-| `discord-voice-transcribe` | `discord-voice` |
+| `core-ai-completions` | `discord`, `discord-voice`, `api`, `discord-status`, `webpage` |
+| `core-ai-responses` | `discord`, `discord-voice`, `api`, `discord-status`, `webpage` |
+| `core-ai-pseudotoolcalls` | `discord`, `discord-voice`, `api`, `discord-status`, `webpage` |
+| `core-ai-roleplay` | `discord`, `discord-voice`, `api`, `discord-status`, `webpage` |
+| `discord-voice-capture` | `discord-voice` |
+| `core-voice-transcribe` | `discord-voice`, `webpage` |
+| `core-voice-tts` | `discord-voice`, `webpage` |
+| `discord-voice-tts-play` | `discord-voice` |
 | `discord-add-context` | `discord`, `discord-voice` |
 | `discord-text-output` | `all` |
 | `core-output` | `all` |
 | `moderation-output` | `discord` |
-| `discord-gdpr-gate` | `discord`, `discord-voice`, `discord-admin` |
+| `discord-gdpr-gate` | `discord`, `discord-voice`, `discord-admin`, `webpage` |
 | `discord-channel-gate` | `discord`, `discord-voice`, `discord-admin`, `api` |
-| `discord-trigger-gate` | `discord`, `discord-voice` |
+| `discord-trigger-gate` | `discord`, `discord-voice`, `webpage` |
 | `discord-admin-commands` | `discord-admin`, `discord` |
 | `discord-status-prepare` | `discord-status` |
 | `discord-status-apply` | `discord-status`, `toolcall` |
-| `core-channel-config` | `discord`, `discord-voice`, `discord-admin`, `discord-status`, `api` |
+| `core-channel-config` | `discord`, `discord-voice`, `discord-admin`, `discord-status`, `api`, `webpage` |
 | `core-add-id` | `discord`, `discord-voice`, `api` |
 | `bard-join` | `discord-admin` |
 | `bard-cron` | `bard-label-gen` |
 | `bard-label-output` | `bard-label-gen` |
+| `webpage-router` | `webpage` |
 | `webpage-auth` | `webpage` |
 | `webpage-menu` | `webpage` |
 | `webpage-dashboard` | `webpage` |
 | `webpage-documentation` | `webpage` |
 | `webpage-inpainting` | `webpage` |
 | `webpage-wiki` | `webpage` |
+| `webpage-voice` | `webpage` |
+| `webpage-voice-output` | `webpage` |
 | `webpage-context` | `webpage` |
 | `api-add-context` | `api` |
 
@@ -1473,7 +1693,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "api":           { "flowName": "api" },
     "discord-admin": { "flowName": "discord-admin" },
     "discord-voice": { "flowName": "discord-voice" },
-    "webpage":       { "flowName": "webpage", "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116, 3117] },
+    "webpage":       { "flowName": "webpage", "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119] },
     "cron": {
       "flowName": "cron",
       "timezone": "Europe/Berlin",
@@ -1498,17 +1718,17 @@ Below is a minimal but functional `core.json` template with every section includ
     },
 
     // ── Module flow subscriptions ─────────────────────────────────────────────
-    "core-ai-responses":       { "flow": ["discord","discord-voice","api","discord-status"] },
-    "core-ai-completions":     { "flow": ["discord","discord-voice","api","discord-status"] },
-    "core-ai-pseudotoolcalls": { "flow": ["discord","discord-voice","api","discord-status"] },
+    "core-ai-responses":       { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
+    "core-ai-completions":     { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
+    "core-ai-pseudotoolcalls": { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
+    "core-ai-roleplay":        { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "discord-add-context":     { "flow": ["discord","discord-voice"] },
     "discord-text-output":     { "flow": ["all"] },
-    "discord-voice-tts":       { "flow": ["discord-voice"] },
     "core-output":             { "flow": ["all"] },
     "moderation-output":       { "flow": ["discord"] },
-    "discord-gdpr-gate":       { "flow": ["discord","discord-voice","discord-admin"], "table": "gdpr" },
+    "discord-gdpr-gate":       { "flow": ["discord","discord-voice","discord-admin","webpage"], "table": "gdpr" },
     "discord-channel-gate":    { "flow": ["discord","discord-voice","discord-admin","api"] },
-    "discord-trigger-gate":    { "flow": ["discord","discord-voice"] },
+    "discord-trigger-gate":    { "flow": ["discord","discord-voice","webpage"] },
     "discord-admin-commands":  { "flow": ["discord-admin","discord"] },
     "core-admin-commands":     { "flow": ["api"] },
     "discord-status-prepare":  { "flow": ["discord-status"], "allowedChannels": ["<STATUS_CHANNEL_ID>"] },
@@ -1521,15 +1741,39 @@ Below is a minimal but functional `core.json` template with every section includ
     "discord-admin-macro":     { "flow": ["discord-admin"] },
     "discord-add-files":       { "flow": ["discord"] },
     "core-add-id":             { "flow": ["discord","discord-voice","api"], "servers": ["yourserver.example.com"] },
-    "discord-voice-transcribe":{ "flow": ["discord-voice"], "pollMs": 1000, "silenceMs": 1500, "maxCaptureMs": 25000, "minVoicedMs": 1000, "minWavBytes": 24000, "snrDbThreshold": 3.8, "frameMs": 20, "startDebounceMs": 600, "keepWav": false, "maxSegmentsPerRun": 32 },
+    "core-channel-config":     { "flow": ["discord","discord-voice","discord-admin","discord-status","api","webpage"] },
+    "discord-voice-capture":   { "flow": ["discord-voice"], "pollMs": 1000, "silenceMs": 1500, "maxCaptureMs": 25000, "minWavBytes": 24000, "frameMs": 20, "startDebounceMs": 600, "keepWav": false, "maxSegmentsPerRun": 32 },
+    "core-voice-transcribe":   { "flow": ["discord-voice","webpage"], "minVoicedMs": 1000, "snrDbThreshold": 3.8, "keepWav": false, "transcribeModel": "gpt-4o-mini-transcribe" },
+    "core-voice-tts":          { "flow": ["discord-voice","webpage"], "ttsModel": "gpt-4o-mini-tts", "ttsVoice": "alloy", "ttsFormat": "opus", "TTSFetchTimeoutMs": 30000 },
+    "discord-voice-tts-play":  { "flow": ["discord-voice"] },
     "webpage-output":          { "flow": ["webpage"] },
+    "webpage-router": {
+      "flow": ["webpage"],
+      "routes": [
+        { "port": 3117, "pathPrefix": "/wiki",  "flow": "webpage-wiki",  "channelIdSource": "path:0" },
+        { "port": 3119, "pathPrefix": "/voice", "flow": "webpage-voice", "channelIdSource": "query:channelId" }
+      ]
+    },
+    "webpage-voice": {
+      "flow":                            ["webpage"],
+      "port":                            3119,
+      "basePath":                        "/voice",
+      "silenceTimeoutMs":                2500,
+      "maxDurationMs":                   30000,
+      "recordModel":                     "gpt-4o-transcribe",
+      "diarize":                         true,
+      "clearContextBeforeTranscription": false,
+      "allowedRoles":                    [],
+      "channels":                        []
+    },
+    "webpage-voice-output":    { "flow": ["webpage"] },
     "webpage-auth": {
       "flow":         ["webpage"],
       "clientId":     "<DISCORD_CLIENT_ID>",
       "clientSecret": "<DISCORD_CLIENT_SECRET>",
       "redirectUri":  "",
       "loginPort":    3111,
-      "ports":        [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118],
+      "ports":        [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
       "sessionTtlMs": 86400000,
       "users": [
         { "discordId": "<YOUR_DISCORD_USER_ID>", "role": "admin" }

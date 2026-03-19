@@ -6,10 +6,6 @@
 /*          the configured flowName from config.             *
 /**************************************************************/
 
-/**************************************************************
-/*                                                          *
-/**************************************************************/
-
 import { getItem, putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import discordJs from "discord.js";

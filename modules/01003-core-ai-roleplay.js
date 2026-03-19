@@ -12,10 +12,6 @@
 /*          the Pass-1 text on its own line.                                   *
 /* Persistence: Only persist the Pass-1 assistant text (NOT the prompt pass). *
 /*******************************************************************************/
-/******************************************************************************* 
-/*                                                                             *
-/*******************************************************************************/
-
 import { getContext, setContext } from "../core/context.js";
 
 const MODULE_NAME = "core-ai-roleplay";
@@ -361,6 +357,10 @@ export default async function getCoreAi(coreData) {
   const skipContextWrites = wo?.doNotWriteToContext === true;
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
+  if (!userPromptRaw.trim()) {
+    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: "Skipped: empty payload" });
+    return coreData;
+  }
 
   let snapshot = [];
   try { snapshot = await getContext(wo); } catch {}

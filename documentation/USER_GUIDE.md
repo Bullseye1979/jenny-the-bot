@@ -99,39 +99,48 @@ Jenny: The sequel, Dune Messiah, was published in 1969.
 
 ## Voice Chat
 
-Jenny can join a voice channel, listen to what you say, transcribe it using Whisper, and reply with a synthesised voice.
+Jenny supports voice in two ways: inside Discord voice channels, and in the browser via the `/voice` web interface.
 
-### Joining a voice channel
+### Discord voice channel
 
 1. Join a voice channel yourself.
 2. Type `/join` in any text channel (Jenny needs to be in the same server).
 3. Jenny will join your current voice channel.
 
-### Speaking to Jenny in voice
+Once in the channel Jenny listens continuously. Say her trigger word (usually "Jenny") followed by your question or request. She will transcribe your speech, process it through the same AI pipeline as text, and speak the response aloud. Voice responses are kept short by default.
 
-- Jenny listens continuously.
-- Say her trigger word (usually "Jenny") followed by your question or request.
-- She will transcribe your speech, process it through the same AI pipeline as text, and speak the response aloud.
-- Voice responses are kept short by default (your admin may configure a 3-sentence limit).
+Type `/leave` and Jenny will disconnect.
 
-### Multiple voices
+> **Note:** You need separate GDPR consent for voice processing (`/gdpr voice 1`).
 
-Jenny supports switching between different voices within a single response using `[speaker: <voice>]` tags. The AI can place these tags automatically when telling a story or roleplaying, or you can ask her to use them explicitly.
+### Browser voice interface (`/voice`)
 
-**Syntax:**
+The `/voice` page lets you talk to Jenny directly from any device with a microphone — no Discord required.
+
+**Mic button (always-on mode):**
+- Click once to start continuous listening. Jenny sends audio automatically when you stop speaking, transcribes it, and plays the AI response back through your browser's speaker.
+- Click again to stop always-on mode.
+- A pulsing animation and volume meter show that the mic is active.
+
+**REC button (meeting recorder):**
+- Click to start recording the full meeting/session.
+- Click again to stop. The recording is then transcribed using `gpt-4o-transcribe` with speaker diarization, and the resulting transcript (with speaker labels and timestamps) is stored in the configured channel's conversation context so Jenny can reference it later.
+- Returns a word-level transcript with speaker identifications.
+
+**Channel selector:**
+- Choose a Discord channel from the dropdown (or type a channel ID). All conversation context and AI settings for that channel apply to your voice session.
+
+### Multiple voices (Discord and browser)
+
+Jenny supports switching voices mid-response using `[speaker: <voice>]` tags:
+
 ```
 [speaker: nova] Hello, I'm Nova.
 [speaker: echo] And I'm Echo.
 [speaker: default] Back to the default voice now.
 ```
 
-Each tagged segment is rendered with its own voice and played back sequentially. Available voices depend on your admin's TTS configuration (typically OpenAI voices: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`). `default` or an empty tag always falls back to the configured default voice.
-
-### Leaving the voice channel
-
-Type `/leave` and Jenny will disconnect.
-
-> **Note:** You need separate GDPR consent for voice processing (`/gdpr voice 1`).
+Available voices depend on your admin's TTS configuration (typically OpenAI voices: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`). `default` always falls back to the configured default voice.
 
 ---
 
@@ -375,6 +384,7 @@ Jenny provides several browser-based tools. Your server admin decides which are 
 | URL | What it does |
 |---|---|
 | `/chat` | AI chat in the browser — same as Discord chat but accessible from any device |
+| `/voice` | Browser-based voice interface — talk to Jenny from any device with a mic |
 | `/inpainting` | Image editor for AI inpainting (see [Editing Images](#editing-images-inpainting)) |
 | `/bard` | Bard music player and library manager |
 | `/wiki` | AI-generated wiki for your channel — articles written from conversation history |
@@ -515,6 +525,13 @@ Ask your server admin to run `/purgedb` to clear Jenny's conversation database f
 - If the Now Playing card shows no track, the music library may be empty. Ask your admin to add MP3 files.
 - If labels are shown as grey, the AI hasn't classified the session yet — this happens on the first run. It will update within a few minutes.
 
+**Browser voice isn't working**
+
+- Make sure your browser has granted microphone access to the site.
+- Check that you have selected the correct channel ID in the channel dropdown.
+- If the REC button is in processing state for a long time, transcription of a long recording can take a minute — wait for it to finish.
+- If you hear no audio response, check that your browser's audio isn't muted.
+
 ---
 
-*User guide updated 2026-03-15.*
+*User guide updated 2026-03-19.*

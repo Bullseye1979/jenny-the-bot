@@ -4,15 +4,13 @@
 /* Purpose: Core with hot-reload and live multi-flow progress *
 /*          dashboard (1/s); single-screen UI; telemetry      *
 /**************************************************************/
-/**************************************************************
-/*                                                          *
-/**************************************************************/
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { putItem } from "./core/registry.js";
+import { startSetupWizard } from "./core/setup.js";
 
 const MODULE_NAME = "main";
 
@@ -385,6 +383,13 @@ function getInitCurrentBase() {
   if (typeof base.workingObject !== "object" || !base.workingObject) base.workingObject = {};
   if (typeof base.config !== "object" || !base.config) base.config = {};
   return base;
+}
+
+/* First-run: if core.json is missing, start setup wizard and exit */
+if (!fs.existsSync(CORE_PATH)) {
+  await startSetupWizard(CORE_PATH, 3400);
+  console.log("\n\x1b[32m[main] core.json created — please restart the bot.\x1b[0m\n");
+  process.exit(0);
 }
 
 let currentBase = getInitCurrentBase();

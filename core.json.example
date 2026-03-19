@@ -415,7 +415,30 @@
         3113,
         3114,
         3115,
-        3116
+        3116,
+        3117,
+        3118,
+        3119
+      ]
+    },
+    "webpage-router": {
+      "__description": "Maps HTTP port+path to a named flow and sets wo.channelID. Runs before core-channel-config so flow-specific overrides apply to web endpoints.",
+      "flow": ["webpage"],
+      "routes": [
+        {
+          "__description": "Route /wiki requests to flow 'webpage-wiki'; channelId from first path segment after /wiki",
+          "port": 3117,
+          "pathPrefix": "/wiki",
+          "flow": "webpage-wiki",
+          "channelIdSource": "path:0"
+        },
+        {
+          "__description": "Route /voice requests to flow 'webpage-voice'; channelId from ?channelId= query param",
+          "port": 3119,
+          "pathPrefix": "/voice",
+          "flow": "webpage-voice",
+          "channelIdSource": "query:channelId"
+        }
       ]
     },
     "webpage-menu": {
@@ -756,6 +779,51 @@
       "port": 3116,
       "allowedRoles": [],
       "label": "🎶 Bard Stream"
+    },
+    "webpage-voice": {
+      "__description": "Browser voice interface (always-on mic + meeting recorder). Requires port 3119 in webpage.ports. Add reverse_proxy /voice* localhost:3119 to your Caddyfile.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3119,
+      "basePath": "/voice",
+      "silenceTimeoutMs": 2500,
+      "maxDurationMs": 30000,
+      "allowedRoles": [],
+      "channels": [
+        {
+          "__description": "Add one entry per channel you want in the voice interface dropdown",
+          "id": "YOUR_CHANNEL_ID",
+          "label": "General"
+        }
+      ]
+    },
+    "webpage-voice-add-context": {
+      "__description": "Writes each voice transcription turn to the context DB. One DB entry per speaker paragraph. clearContextBeforeTranscription purges non-frozen rows for the channel before storing (useful for start-of-session mode).",
+      "flow": [
+        "webpage"
+      ],
+      "clearContextBeforeTranscription": false
+    },
+    "webpage-voice-output": {
+      "__description": "Sends TTS MP3 audio back to the browser voice caller. Must be active in webpage flow.",
+      "flow": [
+        "webpage"
+      ]
+    },
+    "core-voice-transcribe": {
+      "__description": "Source-agnostic transcription module. Active in discord-voice and webpage flows. transcribeModelDiarize is used automatically when wo.transcribeOnly=true (meeting recorder). overlapDurationS controls the overlap between chunks used for cross-chunk speaker stitching.",
+      "flow": [
+        "discord-voice",
+        "webpage"
+      ],
+      "transcribeModel": "gpt-4o-mini-transcribe",
+      "transcribeModelDiarize": "gpt-4o-transcribe-diarize",
+      "chunkDurationS": 300,
+      "overlapDurationS": 60,
+      "transcribeLanguage": "",
+      "transcribeEndpoint": "",
+      "transcribeApiKey": ""
     },
     "core-channel-config": {
       "__description": "Optional per-channel overrides — leave channels array empty to disable, or add entries as shown below",

@@ -3,10 +3,6 @@
 /* Version 1.0                                                *
 /* Purpose: Trigger-based moderation on AI output (silence only)*
 /**************************************************************/
-/**************************************************************
-/*                                                            *
-/**************************************************************/
-
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "moderation-output";

@@ -129,7 +129,6 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   return best[Math.floor(Math.random() * best.length)];
 }
 
-
 /************************************************************************************/
 /* functionSignature: getTrackDurationMs (filePath)                                  *
 /* Returns the duration of an audio file in milliseconds via ffprobe.               *

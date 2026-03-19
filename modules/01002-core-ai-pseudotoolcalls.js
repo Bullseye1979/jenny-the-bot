@@ -9,10 +9,6 @@
 /*          - Extracts URL(s) from tool results and injects plain-text hints   *
 /*            so the follow-up assistant turn reliably appends the link.       *
 /*******************************************************************************/
-/******************************************************************************* 
-/*                                                                             *
-/*******************************************************************************/
-
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 
@@ -756,6 +752,10 @@ export default async function getCoreAi(coreData) {
 
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
+  if (!userPromptRaw.trim()) {
+    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: "Skipped: empty payload" });
+    return coreData;
+  }
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "AI request started" });
 
   let snapshot = [];

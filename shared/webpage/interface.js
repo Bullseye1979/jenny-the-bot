@@ -167,7 +167,7 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt) {
 
   const rightHtml = String(rightHtmlOpt || "");
   const right =
-    '<div class="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:10px;white-space:nowrap;flex-shrink:0">' +
+    '<div class="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:10px;white-space:nowrap;flex-shrink:1;min-width:0;overflow:hidden">' +
       (rightHtml ? rightHtml : "") +
       '<span class="nav-role">👤 ' + escHtml(r ? r : "guest") + '</span>' +
       (r
@@ -176,7 +176,7 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt) {
     '</div>';
 
   return (
-    '<div class="nav-wrap" style="display:flex;align-items:center;gap:12px;width:100%">' +
+    '<div class="nav-wrap" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;overflow:visible">' +
       nav +
       right +
     '</div>'

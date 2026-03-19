@@ -5,9 +5,6 @@
 /*          workingObject (incl. turn_id ULID), and trigger  *
 /*          the configured flow.                             *
 /**************************************************************/
-/**************************************************************
-/*                                                          *
-/**************************************************************/
 
 import discordJs from "discord.js";
 const { Client, GatewayIntentBits, Partials, ChannelType } = discordJs;

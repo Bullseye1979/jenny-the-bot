@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-03-15
+> **Version:** 1.0 · **Date:** 2026-03-19
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -77,6 +77,7 @@
    - 16.7 [Documentation Browser (`/docs`)](#167-documentation-browser-docs)
    - 16.8 [AI Wiki (`/wiki`)](#168-ai-wiki-wiki)
    - 16.9 [Context Editor (`/context`)](#169-context-editor-context)
+   - 16.9a [Webpage Voice Interface (`/voice`)](#169a-webpage-voice-interface-voice)
    - 16.10 [Authentication & SSO (`/auth`)](#1610-authentication--sso-auth)
    - 16.11 [Navigation Menu](#1611-navigation-menu)
    - 16.12 [Permission Concept](#1612-permission-concept)
@@ -147,7 +148,7 @@ CREATE TABLE timeline_periods (
 );
 
 -- GDPR consent table
-CREATE TABLE gdpr_consent (
+CREATE TABLE gdpr (
   user_id    VARCHAR(64) NOT NULL,
   channel_id VARCHAR(128) NOT NULL,
   chat       TINYINT(1) NOT NULL DEFAULT 0,
@@ -158,7 +159,23 @@ CREATE TABLE gdpr_consent (
 );
 ```
 
-### Step 3: Create and Fill core.json
+### Step 3: Create core.json (or use the Setup Wizard)
+
+#### Option A — Setup Wizard (recommended for first-time installs)
+
+If `core.json` does not exist when the bot starts, a **first-run setup wizard** is automatically launched instead of the normal bot. It serves a web form at **`http://localhost:3400/setup`** that collects the minimum required values:
+
+- OpenAI API key
+- MySQL database credentials (host, user, password, database name)
+- Bot name
+- Trigger word
+- Discord bot token
+
+After submitting the form the wizard writes a starter `core.json` and the process exits with instructions to restart. On the next start the full bot initializes normally.
+
+**No manual file editing is needed for the initial configuration.** Once the bot is running you can edit `core.json` via the `/config` web editor or directly in the file.
+
+#### Option B — Manual setup
 
 The following fields are **mandatory** for the bot to start:
 
@@ -436,7 +453,7 @@ The live dashboard displays:
 | `ttsVoice` | string | `"nova"` | TTS voice name |
 | `ttsEndpoint` | string | OpenAI URL | TTS API endpoint |
 | `ttsApiKey` | string | — | API key for TTS (if different from `apiKey`) |
-| `whisperModel` | string | `"whisper-1"` | Speech-to-text model |
+| `whisperModel` | string | `"whisper-1"` | Speech-to-text model used as fallback default; `core-voice-transcribe` uses `gpt-4o-mini-transcribe` by default (overridable via `transcribeModel` in module config) |
 | `whisperLanguage` | string | `""` | Force language (ISO 639-1; empty = auto-detect) |
 | `whisperEndpoint` | string | OpenAI base URL | Whisper API base URL |
 | `whisperApiKey` | string | — | API key for Whisper (if different from `apiKey`) |
@@ -1268,23 +1285,21 @@ Configuration for the label-generation module. AI params (`endpoint`, `apiKey`, 
 
 ---
 
-#### config.discord-voice-transcribe
+#### config.discord-voice-capture
 
-Controls voice capture and Whisper transcription. Whisper keys (`whisperApiKey`, `whisperEndpoint`, `whisperModel`, `whisperLanguage`) fall back to their `workingObject` equivalents if omitted here.
+Controls PCM capture and VAD from the Discord voice receiver. Produces a 16kHz mono WAV file and writes `wo.transcribeAudio = true` for the transcription module. Does not make quality decisions — those are handled by `core-voice-transcribe`.
 
 ```json
-"discord-voice-transcribe": {
-  "flow":             ["discord-voice"],
-  "pollMs":           1000,
-  "silenceMs":        1500,
-  "maxCaptureMs":     25000,
-  "minVoicedMs":      1000,
-  "minWavBytes":      24000,
-  "snrDbThreshold":   3.8,
-  "frameMs":          20,
-  "startDebounceMs":  600,
-  "keepWav":          false,
-  "maxSegmentsPerRun": 32
+"discord-voice-capture": {
+  "flow":              ["discord-voice"],
+  "pollMs":            1000,
+  "silenceMs":         1500,
+  "maxCaptureMs":      25000,
+  "minWavBytes":       24000,
+  "frameMs":           20,
+  "startDebounceMs":   600,
+  "maxSegmentsPerRun": 32,
+  "keepWav":           false
 }
 ```
 
@@ -1293,13 +1308,215 @@ Controls voice capture and Whisper transcription. Whisper keys (`whisperApiKey`,
 | `pollMs` | number | `1000` | How often the voice receiver is polled (ms) |
 | `silenceMs` | number | `1500` | Silence duration that ends a capture segment (ms) |
 | `maxCaptureMs` | number | `25000` | Maximum capture duration per segment (ms) |
-| `minVoicedMs` | number | `1000` | Minimum voiced audio required to attempt transcription (ms) |
-| `minWavBytes` | number | `24000` | Minimum WAV file size to attempt transcription (bytes) |
-| `snrDbThreshold` | number | `3.8` | Signal-to-noise ratio threshold; segments below this are discarded |
+| `minWavBytes` | number | `24000` | Minimum WAV size (bytes); segments below this are skipped |
 | `frameMs` | number | `20` | Opus frame duration (ms) |
 | `startDebounceMs` | number | `600` | Debounce before starting a new capture (ms) |
-| `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
 | `maxSegmentsPerRun` | number | `32` | Maximum segments processed per polling cycle |
+| `keepWav` | boolean | `false` | Retain WAV files on disk after processing (for debugging) |
+
+---
+
+#### config.core-voice-transcribe
+
+Source-agnostic transcription module. Active in `discord-voice` and `webpage` flows. When `wo.audioStats` is present, applies a quality gate before calling the transcription API. Large audio files (>20 MB) are automatically split into overlapping chunks and transcribed sequentially.
+
+**Speaker stitching (diarize mode):** Each chunk after the first starts `overlapDurationS` seconds earlier than its logical boundary. After transcription, speakers that appear in the overlap region are matched to the global labels from the previous chunk by order of first appearance. Matched speakers keep their global label (A, B, …); unmatched speakers receive an offset label (e.g. `C_2`) to signal uncertain identity. The overlap region is excluded from the final output so that no text appears twice.
+
+API credentials fall back to `workingObject.whisperApiKey` / `workingObject.apiKey` if not set here.
+
+**Diarize support:** When the model name contains `"diarize"` (e.g. `gpt-4o-transcribe-diarize`), the module sets `response_format: "diarized_json"` and `chunking_strategy: "auto"`. The API returns a structured response with per-segment speaker labels; the module converts these to `A: text\nB: text` lines in `wo.payload` (using whatever label the API provides — typically single letters like `A`, `B`).
+
+```json
+"core-voice-transcribe": {
+  "flow":                   ["discord-voice", "webpage"],
+  "minVoicedMs":            1000,
+  "snrDbThreshold":         3.8,
+  "keepWav":                false,
+  "transcribeModel":        "gpt-4o-mini-transcribe",
+  "transcribeModelDiarize": "gpt-4o-transcribe-diarize",
+  "chunkDurationS":         300,
+  "overlapDurationS":       60,
+  "transcribeLanguage":     "",
+  "transcribeEndpoint":     "",
+  "transcribeApiKey":       ""
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `minVoicedMs` | number | `1000` | Minimum voiced audio (ms) required; checked against `wo.audioStats.usefulMs` when set |
+| `snrDbThreshold` | number | `3.8` | SNR threshold; segments below this are discarded; checked against `wo.audioStats.snrDb` when set |
+| `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
+| `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model used for always-on voice turns. Overridable per-turn via `wo.transcribeModel`. Alias: `whisperModel` |
+| `transcribeModelDiarize` | string | `"gpt-4o-transcribe-diarize"` | Model used when `wo.transcribeOnly === true` (meeting recorder). Used when `wo.transcribeModel` is not set explicitly. |
+| `chunkDurationS` | number | `300` | Duration (seconds) of each chunk when splitting large audio files. Files >20 MB are split automatically. |
+| `overlapDurationS` | number | `60` | Seconds of audio overlap between consecutive chunks when splitting large files in diarize mode. The overlap is used to match speaker labels across chunks; the overlapping audio is excluded from the final transcript to avoid duplicate text. |
+| `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect. Alias: `whisperLanguage` |
+| `transcribeEndpoint` | string | `""` | Base URL for the transcription API. Falls back to `workingObject.whisperEndpoint`. Alias: `whisperEndpoint` |
+| `transcribeApiKey` | string | `""` | API key for transcription. Falls back to `workingObject.whisperApiKey` then `workingObject.apiKey`. Alias: `whisperApiKey` |
+
+---
+
+#### config.core-voice-tts
+
+Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Splits `wo.response` on `[speaker: <voice>]` tags for multi-voice output. Calls the OpenAI TTS API for each segment in parallel (concurrency 2). TTS credentials fall back to `workingObject.ttsApiKey` / `workingObject.apiKey` if not set here.
+
+```json
+"core-voice-tts": {
+  "flow":              ["discord-voice", "webpage"],
+  "ttsModel":          "gpt-4o-mini-tts",
+  "ttsVoice":          "alloy",
+  "ttsEndpoint":       "",
+  "ttsApiKey":         "",
+  "ttsFormat":         "opus",
+  "TTSFetchTimeoutMs": 30000
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `ttsModel` | string | `"gpt-4o-mini-tts"` | TTS model. Falls back to `workingObject.ttsModel` if not set |
+| `ttsVoice` | string | `"alloy"` | Default TTS voice. Falls back to `workingObject.ttsVoice` if not set |
+| `ttsEndpoint` | string | `""` | TTS API endpoint. Falls back to `workingObject.ttsEndpoint` |
+| `ttsApiKey` | string | `""` | API key for TTS. Falls back to `workingObject.ttsApiKey` then `workingObject.apiKey` |
+| `ttsFormat` | string | `"opus"` | Audio format. Use `"mp3"` for webpage voice; `"opus"` for Discord playback |
+| `TTSFetchTimeoutMs` | number | `30000` | HTTP timeout for TTS API calls (ms) |
+
+---
+
+#### config.discord-voice-tts-play
+
+Discord-specific TTS playback. Plays `wo.ttsSegments` into the active voice channel using the @discordjs/voice AudioPlayer. Manages a guild-level lock to prevent overlapping speech. Only active in `discord-voice`.
+
+```json
+"discord-voice-tts-play": {
+  "flow": ["discord-voice"]
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `flow` | array | Must include `"discord-voice"` |
+
+---
+
+#### config.webpage-voice
+
+Browser-based always-on voice interface with meeting recorder. Serves the SPA at `GET /voice` and accepts audio at `POST /voice/audio` (both always-on turns and meeting recordings). The meeting recorder uses `?transcribeOnly=1` to skip AI/TTS and return only the transcript.
+
+```json
+"webpage-voice": {
+  "flow":                          ["webpage"],
+  "port":                          3119,
+  "basePath":                      "/voice",
+  "silenceTimeoutMs":              2500,
+  "maxDurationMs":                 30000,
+  "allowedRoles":                  [],
+  "channels": [
+    { "id": "YOUR_CHANNEL_ID", "label": "General" }
+  ]
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"webpage"` |
+| `port` | number | `3119` | HTTP port — must also be in `config.webpage.ports` |
+| `basePath` | string | `"/voice"` | URL prefix for this module |
+| `silenceTimeoutMs` | number | `2500` | Silence duration (ms) before the always-on mic auto-sends audio |
+| `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
+| `allowedRoles` | array | `[]` | Roles that may access the voice interface. Empty array = public |
+| `channels` | array | `[]` | Channel list shown in the SPA dropdown. Each entry: `{ "id": "...", "label": "..." }`. If empty, a free-text input is shown instead. |
+
+---
+
+#### config.webpage-voice-add-context
+
+Writes the voice transcription to the context DB immediately after transcription (position 00031, before the pipeline stop at 00032). Reads config from `config["webpage-voice-add-context"]`.
+
+```json
+"webpage-voice-add-context": {
+  "flow": ["webpage"],
+  "clearContextBeforeTranscription": false
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"webpage"` |
+| `clearContextBeforeTranscription` | boolean | `false` | When `true`, purges all non-frozen context rows for the channel before storing the transcript. Useful for start-of-session recording. |
+
+---
+
+#### config.webpage-voice-output
+
+Sends TTS audio back to the webpage voice caller. Triggered unconditionally when `wo.isWebpageVoice === true`.
+
+```json
+"webpage-voice-output": {
+  "flow": ["webpage"]
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `flow` | array | Must include `"webpage"` |
+
+---
+
+#### config.webpage-router
+
+Maps HTTP endpoints (by port + path prefix) to named flows and sets `wo.channelID` from the request. This runs before `core-channel-config` (module 00010), allowing per-flow `core-channel-config` overrides to apply to web endpoints the same way they apply to Discord channels.
+
+**Use case:** Give `/voice` or `/wiki` requests their own named flow so that `core-channel-config` can apply a `flows[].flowMatch` override for that specific flow (e.g. a different trigger word on the voice page).
+
+```json
+"webpage-router": {
+  "flow": ["webpage"],
+  "routes": [
+    {
+      "port":            3117,
+      "pathPrefix":      "/wiki",
+      "flow":            "webpage-wiki",
+      "channelIdSource": "path:0"
+    },
+    {
+      "port":            3119,
+      "pathPrefix":      "/voice",
+      "flow":            "webpage-voice",
+      "channelIdSource": "query:channelId"
+    }
+  ]
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `flow` | array | Must include `"webpage"` |
+| `routes[].port` | number | HTTP port to match |
+| `routes[].pathPrefix` | string | URL path prefix to match (e.g. `"/voice"`, `"/wiki"`) |
+| `routes[].flow` | string | Value written to `wo.flow` (used by `core-channel-config` `flowMatch`) |
+| `routes[].channelIdSource` | string | How `wo.channelID` is derived. Strategies: `"query:<param>"` — from URL query string param; `"path:<N>"` — path segment N after the prefix (0-based); any other string — treated as a literal static channel ID |
+
+**`core-channel-config` flow overrides example:**
+
+```json
+{
+  "channelMatch": ["YOUR_VOICE_CHANNEL_ID"],
+  "overrides": {},
+  "flows": [
+    {
+      "flowMatch": ["webpage-voice"],
+      "overrides": {
+        "trigger": "jenny",
+        "triggerWordWindow": 3
+      }
+    }
+  ]
+}
+```
+
+> **Note:** `webpage-router` changes `wo.flow` on the existing workingObject. The module pipeline is already assembled at this point (based on the initial `wo.flow = "webpage"`). The new `wo.flow` value is used exclusively by `core-channel-config` for its `flowMatch` logic — it does not affect which modules run.
 
 ---
 
@@ -1312,7 +1529,7 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
   "flow":           ["webpage"],
   "enabled":        true,
   "loginPort":      3111,
-  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118],
+  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
   "clientId":       "YOUR_DISCORD_APP_CLIENT_ID",
   "clientSecret":   "YOUR_DISCORD_APP_CLIENT_SECRET",
   "guildId":        "YOUR_DISCORD_GUILD_ID",
@@ -1360,18 +1577,23 @@ Every module can be restricted to specific flows via its config block:
 
 | Module | Active flows |
 |---|---|
-| `core-channel-config` | discord, discord-voice, discord-admin, discord-status, api |
+| `webpage-router` | webpage |
+| `core-channel-config` | discord, discord-voice, discord-admin, discord-status, api, webpage |
 | `discord-channel-gate` | discord, discord-voice, discord-admin, api |
 | `api-token-gate` | api |
-| `discord-gdpr-gate` | discord, discord-voice, discord-admin |
+| `discord-gdpr-gate` | discord, discord-voice, discord-admin, webpage |
 | `discord-add-context` | discord, discord-voice |
-| `discord-trigger-gate` | discord, discord-voice |
+| `discord-trigger-gate` | discord, discord-voice, webpage |
 | `discord-reaction-start/finish` | discord |
 | `discord-text-output` | all |
-| `discord-voice-tts` | discord-voice |
-| `discord-voice-transcribe` | discord-voice |
-| `core-ai-completions` | discord-status, discord, discord-voice, api, **bard-label-gen** |
-| `core-ai-responses` | discord-status, discord, discord-voice, api |
+| `discord-voice-capture` | discord-voice |
+| `core-voice-transcribe` | discord-voice, webpage |
+| `core-voice-tts` | discord-voice, webpage |
+| `discord-voice-tts-play` | discord-voice |
+| `core-ai-completions` | discord-status, discord, discord-voice, api, **bard-label-gen**, webpage |
+| `core-ai-responses` | discord-status, discord, discord-voice, api, webpage |
+| `core-ai-pseudotoolcalls` | discord-status, discord, discord-voice, api, webpage |
+| `core-ai-roleplay` | discord-status, discord, discord-voice, api, webpage |
 | `core-output` | all |
 | `bard-join` | discord-admin |
 | `bard-cron` | bard-label-gen |
@@ -1383,6 +1605,8 @@ Every module can be restricted to specific flows via its config block:
 | `webpage-dashboard` | webpage |
 | `webpage-documentation` | webpage |
 | `webpage-wiki` | webpage |
+| `webpage-voice` | webpage |
+| `webpage-voice-output` | webpage |
 | `webpage-context` | webpage |
 
 ---
@@ -1438,6 +1662,24 @@ Channel override
 - User matching: **case-sensitive**
 
 **channelMatch:** Can contain channel IDs or channel names. The special value `"browser"` matches all API requests. The special value `"DM"` matches Direct Messages sent to the bot — add a channel entry with `"channelMatch": ["DM"]` to enable DM support (without it the channel-gate blocks all DMs).
+
+**Flow overrides with `webpage-router`:** When `webpage-router` is configured, web requests get a named flow (e.g. `"webpage-voice"`, `"webpage-wiki"`). Add `flows[]` entries to `core-channel-config` to apply overrides only when that flow is active:
+
+```json
+{
+  "channelMatch": ["YOUR_VOICE_CHANNEL_ID"],
+  "overrides": {},
+  "flows": [
+    {
+      "flowMatch": ["webpage-voice"],
+      "overrides": {
+        "trigger":           "jenny",
+        "triggerWordWindow": 3
+      }
+    }
+  ]
+}
+```
 
 **All `workingObject` parameters can be used in overrides**, including `toolsconfig`.
 
@@ -1500,12 +1742,22 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 **Purpose:** Processes audio frames from voice channels
 
 **Pipeline:**
-1. Record audio frames into voice session (stored in registry)
-2. Transcribe audio via Whisper API (module `00030`)
-3. Run the full module pipeline
-4. Synthesise TTS reply (module `08100`)
+1. Capture PCM audio from the Discord voice receiver, apply VAD, produce a 16kHz mono WAV (`00029-discord-voice-capture`)
+2. Transcribe the WAV via the OpenAI Audio Transcriptions API (`00030-core-voice-transcribe`)
+3. Run the full module pipeline (AI + tools)
+4. Render TTS audio segments (`08100-core-voice-tts`)
+5. Play TTS audio back into the voice channel (`08110-discord-voice-tts-play`)
 
 **Activation:** User runs `/join`, bot enters the voice channel.
+
+**Handoff fields between capture and transcription:**
+
+| Field | Set by | Description |
+|---|---|---|
+| `wo.audioFile` | `discord-voice-capture` | Path to the voiced WAV file |
+| `wo._audioCaptureDir` | `discord-voice-capture` | Temp directory (cleaned up by transcription module) |
+| `wo.audioStats` | `discord-voice-capture` | `{snrDb, usefulMs}` — quality metrics |
+| `wo.transcribeAudio` | `discord-voice-capture` | `true` — signals transcription module to run |
 
 ---
 
@@ -1743,13 +1995,17 @@ export default async function myModule(coreData) {
 | No. | File | Purpose |
 |---|---|---|
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
+| 00007 | `webpage-router` | Maps HTTP port + path to a named flow and sets `wo.channelID`. Runs before `core-channel-config` so that flow-specific overrides (e.g. different trigger word for `/voice`) can be applied. Config key: `webpage-router`. Active only in `webpage` flow. |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
 | 00019 | `bard-voice-gate` | Gates the discord-voice flow: if the speaking user is the Bard bot itself (detected by matching user ID against a configured bot ID), the pipeline is stopped so the bot's own music audio is not transcribed |
 | 00020 | `discord-channel-gate` | Checks whether the bot is allowed to respond in this channel |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
 | 00025 | `discord-admin-gdpr` | Handles admin GDPR management commands |
-| 00030 | `discord-voice-transcribe` | Transcribes voice audio via Whisper API |
+| 00029 | `discord-voice-capture` | Captures PCM from the Discord voice receiver (Opus → PCM via prism-media), applies RMS/ZCR-based VAD, extracts voiced frames, and combines them into a single 16kHz mono WAV. Outputs `wo.audioFile`, `wo.audioStats = {snrDb, usefulMs}`, and `wo.transcribeAudio = true`. Does not make quality decisions — deferred to the transcription module. Only runs when `wo.voiceIntent.action === "describe_and_transcribe"` |
+| 00030 | `core-voice-transcribe` | Source-agnostic transcription module. Runs when `wo.transcribeAudio === true`. When `wo.audioStats` is set, applies a quality gate before calling the API. Large files (>20 MB) are split into overlapping chunks (`overlapDurationS` seconds overlap, default 60s); for diarize models, speaker labels are stitched across chunk boundaries by matching speakers in the overlap region to global labels from the previous chunk — matched speakers keep their label (A, B, …), unmatched speakers receive an offset label (e.g. `C_2`). The overlap region is excluded from the output to prevent duplicate text. When `wo.transcribeOnly === true`, uses `transcribeModelDiarize` (default `gpt-4o-transcribe-diarize`). Active in `discord-voice` and `webpage` flows |
+| 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB immediately after transcription (before 00032 stops the pipeline). Active when `wo.isWebpageVoice === true` and `wo.payload` is set. Reads config from `config["webpage-voice-add-context"]`. Diarized transcripts (`A: text`, `A_2: text`, or legacy `speaker_N: text` lines) are parsed into one DB entry per speaker turn with `role: "user"`, plain text `content`, `userId` = speaker label, `authorName: ""`, `source: "voice-transcribe"`. Offset labels (`A_2`) are stored as-is. When `clearContextBeforeTranscription === true`, purges non-frozen context for the channel first. |
+| 00032 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends the HTTP 200 JSON response with the transcript directly, then sets `wo.stop = true` so AI and TTS never run. This module runs before `discord-add-files` (which also has prefix 00032 but gates on Discord messages). Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
 | 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
@@ -1831,9 +2087,11 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
 | 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow into a **6-position structured label array** `[location, situation, mood1, mood2, mood3, mood4]`. Applies **category-based position rescue**: scans all 6 AI values and assigns each to the correct slot by checking `wo._bardLocations` / `wo._bardSituations` regardless of where the AI placed them (e.g. `'',dungeon,joy,fun,tense,battle` → `dungeon,battle,joy,fun,tense,''`). Unknown words at positions 0/1 are accepted as fallback. Mood slots are validated against `wo._bardValidTags`; invalid entries are replaced with empty string. Writes `bard:labels:{guildId}` and `bard:lastrun:{guildId}` only on success (prevents context window from advancing on AI failure). |
-| 08100 | `discord-voice-tts` | Synthesises TTS audio with speaker-tagged voice selection |
+| 08100 | `core-voice-tts` | Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to split into voice segments, sanitizes text, calls the OpenAI TTS API for each segment (parallel, concurrency 2). Output format is controlled by `wo.ttsFormat` / `cfg.ttsFormat` (default `"opus"` for Discord, `"mp3"` for webpage). Outputs `wo.ttsSegments = [{voice, text, buffer}]` and `wo.ttsDefaultVoice` |
+| 08110 | `discord-voice-tts-play` | Discord-specific TTS playback. Runs when `wo.ttsSegments` exists and a voice session is usable. Manages guild-level lock to prevent overlapping speech; plays each segment buffer sequentially via the @discordjs/voice AudioPlayer. Active only in `discord-voice` flow |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
 | 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`) |
+| 09320 | `webpage-voice-output` | Sends TTS audio back to the webpage voice caller. Triggered when `wo.isWebpageVoice === true` — runs regardless of `wo.stop`. Success: HTTP 200 with `Content-Type: audio/mpeg`, concatenated MP3 buffers from `wo.ttsSegments`, plus `X-Transcript` and `X-Response` headers. Error: HTTP 400 JSON |
 
 #### discord-text-output (08000) — Details
 
@@ -2361,7 +2619,7 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 | `/gdpr voice 1` | Enable voice processing |
 | `/gdpr voice 0` | Disable voice processing |
 
-**MySQL table `gdpr_consent`:**
+**MySQL table `gdpr`:**
 
 | Column | Description |
 |---|---|
@@ -2447,7 +2705,7 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 | `checksum` | CHAR(64) | SHA256 of the original messages |
 | `frozen` | TINYINT(1) | 1 = protected from deletion |
 
-### Table: gdpr_consent
+### Table: gdpr
 
 | Column | Type | Description |
 |---|---|---|
@@ -2462,50 +2720,80 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 
 ## 14. Reverse Proxy (Caddy)
 
-Jenny runs multiple HTTP servers on different ports. A reverse proxy such as Caddy consolidates them under a single domain with automatic HTTPS.
+Jenny runs multiple HTTP servers on different ports. A reverse proxy (Caddy) consolidates them under a single domain with automatic HTTPS.
 
-**Example Caddyfile (single domain):**
+The Caddyfile lives at `/etc/caddy/Caddyfile` (Linux) or `W:\etc\caddy\Caddyfile` (Windows dev). Reload with `systemctl reload caddy` after changes.
+
+### Virtual host: jenny.ralfreschke.de / jenny.xbullseyegaming.de
+
+Both domains share a single Caddyfile block. Caddy obtains a TLS certificate for each domain automatically via Let's Encrypt.
+
+**Path routing table:**
+
+| Path | Port | Module |
+|---|---|---|
+| `/auth`, `/auth/*` | 3111 | `webpage-auth` |
+| `/config`, `/config/*` | 3111 | `webpage-config-editor` |
+| `/chat`, `/chat/*` | 3112 | `webpage-chat` |
+| `/inpainting`, `/inpainting/*` | 3113 | `webpage-inpainting` |
+| `/bard`, `/bard/*` | 3114 | `webpage-bard` |
+| `/dashboard`, `/dashboard/*` | 3115 | `webpage-dashboard` |
+| `/docs`, `/docs/*` | 3116 | `webpage-documentation` |
+| `/wiki`, `/wiki/*` | 3117 | `webpage-wiki` |
+| `/context`, `/context/*` | 3118 | `webpage-context` |
+| `/voice`, `/voice/*` | 3119 | `webpage-voice` |
+| `/` (root) | — | redirects to `/chat` (302) |
+
+**Access control for unknown paths:**
+
+- Requests from known VPN/LAN IP ranges (`10.99.0.0/24`, `10.99.1.0/24`, `192.168.178.0/24`, `127.0.0.1/8`) receive a `404 Not Found` response for any path not matched above.
+- All other requests (public internet) receive an HTTP Basic Auth challenge (`401`) for any unmatched path. Only after successful Basic Auth do they receive `404 Not Found`.
+
+**Caddyfile structure (jenny.* block):**
 
 ```
-jenny.example.com {
-    encode gzip
-    reverse_proxy /config*       localhost:3111
-    reverse_proxy /chat*         localhost:3112
-    reverse_proxy /inpainting*   localhost:3113
-    reverse_proxy /documents*    localhost:3113
-    reverse_proxy /bard*         localhost:3114
-    reverse_proxy /dashboard*    localhost:3115
-    reverse_proxy /docs*         localhost:3116
-    reverse_proxy /wiki*         localhost:3117
-    reverse_proxy /context*      localhost:3118
-    reverse_proxy /auth*         localhost:3111
-    reverse_proxy *              localhost:3400
+jenny.ralfreschke.de, jenny.xbullseyegaming.de {
+    header -Alt-Svc
+
+    @allowed remote_ip 10.99.0.0/24 10.99.1.0/24 192.168.178.0/24 127.0.0.1/8
+
+    @auth      { path /auth /auth/* }
+    @config    { path /config /config/* }
+    @chat      { path /chat /chat/* }
+    @inpainting{ path /inpainting /inpainting/* }
+    @bard      { path /bard /bard/* }
+    @dashboard { path /dashboard /dashboard/* }
+    @docs      { path /docs /docs/* }
+    @wiki      { path /wiki /wiki/* }
+    @context   { path /context /context/* }
+    @voice     { path /voice /voice/* }
+
+    handle @auth       { reverse_proxy 127.0.0.1:3111 }
+    handle @config     { reverse_proxy 127.0.0.1:3111 }
+    handle @chat       { reverse_proxy 127.0.0.1:3112 }
+    handle @inpainting { reverse_proxy 127.0.0.1:3113 }
+    handle @bard       { reverse_proxy 127.0.0.1:3114 }
+    handle @dashboard  { reverse_proxy 127.0.0.1:3115 }
+    handle @docs       { reverse_proxy 127.0.0.1:3116 }
+    handle @wiki       { reverse_proxy 127.0.0.1:3117 }
+    handle @context    { reverse_proxy 127.0.0.1:3118 }
+    handle @voice      { reverse_proxy 127.0.0.1:3119 }
+
+    redir / /chat 302
+
+    handle @allowed {
+        respond "Not Found" 404
+    }
+
+    handle {
+        basicauth { ralf <bcrypt-hash> }
+        respond "Not Found" 404
+    }
 }
 ```
 
 > **Local development:** Add `tls internal` inside the block to use a self-signed certificate.
-> **Production:** Caddy handles HTTPS automatically via Let's Encrypt when a public domain is used — no extra configuration needed.
-
-**Multiple domains (single Caddyfile block):**
-
-To serve the web UI on more than one hostname, list all domains in a single block separated by commas. Caddy will obtain a TLS certificate for each domain automatically after `systemctl reload caddy`.
-
-```
-jenny.example.com, jenny.example2.com {
-    encode gzip
-    reverse_proxy /config*       localhost:3111
-    reverse_proxy /chat*         localhost:3112
-    reverse_proxy /inpainting*   localhost:3113
-    reverse_proxy /documents*    localhost:3113
-    reverse_proxy /bard*         localhost:3114
-    reverse_proxy /dashboard*    localhost:3115
-    reverse_proxy /docs*         localhost:3116
-    reverse_proxy /wiki*         localhost:3117
-    reverse_proxy /context*      localhost:3118
-    reverse_proxy /auth*         localhost:3111
-    reverse_proxy *              localhost:3400
-}
-```
+> **Production:** Caddy handles HTTPS automatically via Let's Encrypt — no extra configuration needed.
 
 **Multi-domain OAuth callback (`redirectUri`):**
 
@@ -2514,25 +2802,26 @@ When `config["webpage-auth"].redirectUri` is set to an empty string `""`, the au
 You must register **every callback URL** in the Discord Developer Portal (App → OAuth2 → Redirects) before users can log in from that domain:
 
 ```
-https://jenny.example.com/auth/callback
-https://jenny.example2.com/auth/callback
+https://jenny.ralfreschke.de/auth/callback
+https://jenny.xbullseyegaming.de/auth/callback
 ```
 
 If `redirectUri` is set to a specific URL, only that domain is used for all OAuth callbacks regardless of the request host.
 
-**Port mapping:**
+**Full port mapping:**
 
 | Port | Service |
 |---|---|
-| 3400 | Main API + health endpoint |
-| 3111 | Config Editor (`/config`) + auth (`/auth`) |
+| 3400 | Main API + health endpoint (`ralfreschke.de/api`, `/health`, `/toolcall`) |
+| 3111 | Config Editor (`/config`) + Auth (`/auth`) |
 | 3112 | Chat SPA (`/chat`) |
-| 3113 | Inpainting SPA (`/inpainting`) + document serving (`/documents`) |
-| 3114 | Bard UI (`/bard`) |
+| 3113 | Inpainting SPA (`/inpainting`) + document serving |
+| 3114 | Bard UI (`/bard`, `/bard-admin`) |
 | 3115 | Live Dashboard (`/dashboard`) |
 | 3116 | Documentation (`/docs`) |
 | 3117 | AI Wiki (`/wiki`) |
 | 3118 | Context Editor (`/context`) |
+| 3119 | Webpage Voice Interface (`/voice`) |
 
 ---
 
@@ -2565,6 +2854,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00051-webpage-dashboard.js` | 3115 | `/dashboard` | `webpage-dashboard` | Live bot telemetry dashboard |
 | `00054-webpage-documentation.js` | 3116 | `/docs` | `webpage-documentation` | Renders the project documentation as HTML pages |
 | `00052-webpage-wiki.js` | 3117 | `/wiki` | `webpage-wiki` | AI-driven Fandom-style wiki, per-channel, with DALL-E images |
+| `00047-webpage-voice.js` | 3119 | `/voice` | `webpage-voice` | Browser push-to-talk voice interface |
 | `00053-webpage-context.js` | 3118 | `/context` | `webpage-context` | Context DB editor — browse, search, search & replace, bulk-delete conversation rows |
 
 ### How Web Modules Work
@@ -2885,6 +3175,101 @@ Add `3118` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`.
 
 ---
 
+### 16.9a Webpage Voice Interface (`/voice`)
+
+**File:** `modules/00047-webpage-voice.js`
+**Port:** 3119
+**Config key:** `webpage-voice`
+
+A browser-based voice interface with two modes: **always-on continuous listening** and a **meeting recorder**. Both modes use the same `POST /voice/audio` endpoint. Always-on runs the full transcription → AI → TTS pipeline and returns spoken audio; the meeting recorder uses `?transcribeOnly=1` to skip AI/TTS and return only the diarized transcript.
+
+#### HTTP Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/voice` | Serves the SPA (embedded HTML/CSS/JS, no external dependencies) |
+| `POST` | `/voice/audio?channelId=<id>` | Always-on turn: receives a short audio segment (webm/ogg/mp3), converts to 16kHz mono WAV, runs the full transcription → AI → TTS pipeline, returns MP3 with `X-Transcript` and `X-Response` headers |
+| `POST` | `/voice/audio?channelId=<id>&transcribeOnly=1` | Meeting recorder: receives the full meeting audio, transcribes with `transcribeModelDiarize` (default `gpt-4o-transcribe-diarize`), writes speaker-labelled transcript to context DB, returns `{ "transcript": "A: ...\nB: ..." }` |
+
+#### SPA buttons
+
+| Button | Behaviour |
+|---|---|
+| **Mic button** (always-on) | Click once to start continuous listening mode. Jenny sends audio automatically after silence and plays the response back. Click again to stop. Pulsing animation and volume meter indicate active state. |
+| **REC button** (meeting recorder) | Click to start recording. Click again to stop and trigger transcription. Volume meter is active during recording. The spinner shows while the transcript is being processed. The diarized transcript is stored in the channel context DB — one entry per speaker paragraph, with `userId` set to the speaker label (`A`, `B`, …) and `content` containing only the spoken text. |
+
+#### WorkingObject fields set by this module
+
+| Field | Value | Description |
+|---|---|---|
+| `wo.channelID` | from `?channelId=` query param | Channel for AI context |
+| `wo.audioFile` | path to converted WAV | Input for `core-voice-transcribe` |
+| `wo.transcribeAudio` | `true` | Triggers transcription |
+| `wo.synthesizeSpeech` | `true` | Triggers TTS rendering (always set; 00032 stops the pipeline before TTS runs for `transcribeOnly`) |
+| `wo.ttsFormat` | `"mp3"` | Overrides the default `"opus"` — browser playback requires MP3 |
+| `wo.isWebpageVoice` | `true` | Triggers voice pipeline modules |
+| `wo.transcribeOnly` | `true` | Set when `?transcribeOnly=1`; stops pipeline after transcription |
+| `wo.isAlwaysOn` | `true` | Set when `?alwaysOn=1` (always-on mic mode) |
+
+#### Full always-on pipeline
+
+```
+POST /voice/audio?channelId=<id>
+ → 00028-webpage-voice-input    (set wo.audioFile, wo.channelID, wo.synthesizeSpeech, etc.)
+ → 00030-core-voice-transcribe  (transcribe WAV → wo.payload, model: transcribeModel)
+ → 00031-webpage-voice-add-context  (write one DB entry per speaker turn to context DB)
+ → 00070-discord-add-context    (load context window for AI)
+ → core-ai-completions          (generate response → wo.response)
+ → 08100-core-voice-tts         (render TTS → wo.ttsSegments, format: mp3)
+ → 09320-webpage-voice-output   (send MP3 audio as HTTP response)
+```
+
+#### Meeting recorder pipeline
+
+```
+POST /voice/audio?channelId=<id>&transcribeOnly=1
+ → 00028-webpage-voice-input    (set wo.audioFile, wo.channelID, wo.transcribeOnly=true)
+ → 00030-core-voice-transcribe  (transcribe WAV → wo.payload, model: transcribeModelDiarize)
+ → 00031-webpage-voice-add-context  (purge if configured, write one DB entry per speaker turn)
+ → 00032-webpage-voice-transcribe-gate  (send HTTP 200 {transcript: ...}, set wo.stop=true)
+ [AI and TTS skipped]
+```
+
+#### core.json configuration
+
+```json
+"webpage-voice": {
+  "flow":                            ["webpage"],
+  "port":                            3119,
+  "basePath":                        "/voice",
+  "silenceTimeoutMs":                2500,
+  "maxDurationMs":                   30000,
+  "clearContextBeforeTranscription": false,
+  "allowedRoles":                    [],
+  "channels": [
+    { "id": "YOUR_CHANNEL_ID", "label": "General" }
+  ]
+},
+"core-voice-transcribe": {
+  "flow":                   ["discord-voice", "webpage"],
+  "transcribeModel":        "gpt-4o-mini-transcribe",
+  "transcribeModelDiarize": "gpt-4o-transcribe-diarize",
+  "chunkDurationS":         300,
+  "transcribeApiKey":       ""
+},
+"webpage-voice-output": {
+  "flow": ["webpage"]
+}
+```
+
+- Add `3119` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /voice* localhost:3119` to your Caddyfile
+- See `config.webpage-router` to assign flow-specific `core-channel-config` overrides to `/voice` requests
+- `clearContextBeforeTranscription: true` purges all non-frozen context rows for the channel before the meeting transcript is stored — useful for "start-of-session" mode
+- The diarize model (`gpt-4o-transcribe-diarize`) is used automatically when `?transcribeOnly=1`; the regular model is used for always-on turns
+
+---
+
 #### Inpainting SPA — Extended Details
 
 The inpainting module provides a browser-based image editing tool that lets users load an image, paint a mask over areas they want to change, write a prompt, and submit the request to a Stable Diffusion inpainting backend.
@@ -2979,7 +3364,7 @@ If no valid session exists, `wo.webAuth` is not set.
   "clientSecret": "YOUR_DISCORD_CLIENT_SECRET",
   "redirectUri": "",
   "loginPort":   3111,
-  "ports":       [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118],
+  "ports":       [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
   "sessionTtlMs": 86400000,
   "users": [
     { "discordId": "YOUR_DISCORD_USER_ID", "role": "admin" }

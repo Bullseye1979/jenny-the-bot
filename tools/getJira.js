@@ -5,10 +5,6 @@
 /*          for requests and payloads.                                             *
 /**********************************************************************************/
 
-/**********************************************************************************/
-/*                                                                                 *
-/**********************************************************************************/
-
 const MODULE_NAME = "getJira";
 
 /**********************************************************************************/
@@ -311,7 +307,6 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   const meta = (reqIn.meta && typeof reqIn.meta === "object") ? reqIn.meta : {};
   const allowCross = meta.allowCrossProject === true;
   const onlyKeySummary = meta.onlyKeySummary === true;
-
 
   if (onlyKeySummary){
     const hasFields =

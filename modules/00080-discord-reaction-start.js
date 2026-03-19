@@ -4,10 +4,6 @@
 /* Purpose: Add ⏳ reaction to the triggering Discord message *
 /*          (only if wo.showReactions === true)               *
 /**************************************************************/
-/**************************************************************
-/*                                                            *
-/**************************************************************/
-
 import { getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 

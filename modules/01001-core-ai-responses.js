@@ -19,10 +19,6 @@
 /*      misclassified as images by restricting image extraction to explicit     *
 /*      image nodes + likely image URLs/mime only.                              *
 /********************************************************************************/
-/********************************************************************************
-/*                                                                              *
-/********************************************************************************/
-
 import { getContext, setContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import fs from "node:fs";
@@ -303,7 +299,6 @@ function getReasoningEffort(wo) {
 
   return null;
 }
-
 
 /********************************************************************************
 /* functionSignature: getResponseToolsRaw (wo)                                  *
@@ -1188,7 +1183,6 @@ export default async function getCoreAi(coreData) {
       typeof wo2.instructions === "string" ? wo2.instructions.trim() : ""
     ].filter(Boolean).join("\n\n");
 
-
     const runtimeInfo = [
       "Runtime info:",
       `- current_time_iso: ${nowIso}`,
@@ -1229,6 +1223,10 @@ export default async function getCoreAi(coreData) {
   const sys = getSystemContent(wo);
   const fromDb = getSnapshotMappedToChat(Array.isArray(snapshot) ? snapshot : []);
   const userPayloadRaw = getToString(wo?.payload ?? "");
+  if (!userPayloadRaw.trim()) {
+    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: "Skipped: empty payload" });
+    return coreData;
+  }
   const runtimeCtx = getRuntimeContextFromLast(wo, snapshot);
   const userContent = getAppendRuntimeContextToUserContent(userPayloadRaw, runtimeCtx);
 

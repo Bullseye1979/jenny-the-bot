@@ -6,7 +6,6 @@
 /*          Playing card. Serves the audio stream for the browser player via      */
 /*          HTTP range requests. Reads config only from config["webpage-bard"].   */
 /**********************************************************************************/
-/**********************************************************************************/
 
 import fs   from "node:fs";
 import path from "node:path";

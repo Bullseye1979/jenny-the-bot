@@ -5,10 +5,6 @@
 /*          Creates or removes headless bard sessions (no voice channel required).  *
 /************************************************************************************/
 
-/************************************************************************************/
-/*                                                                                   *
-/************************************************************************************/
-
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 

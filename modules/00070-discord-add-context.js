@@ -4,10 +4,6 @@
 /* Purpose: Append the current user payload to the DB context with role=user    *
 /*          and preserved turn_id when present.                                 *
 /********************************************************************************/
-/********************************************************************************
-/*                                                                              *
-/********************************************************************************/
-
 import { setContext } from "../core/context.js";
 
 const MODULE_NAME = "discord-add-context";

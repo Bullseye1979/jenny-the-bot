@@ -79,8 +79,6 @@ function getIsAllowedRoles(wo, allowedRoles) {
   return false;
 }
 
-
-
 /********************************************************************************************************************
 * functionSignature: getUserRoleLabels (wo)
 * Purpose: Returns all role labels (lowercased) the current user has.
@@ -138,7 +136,6 @@ function getChatEntryByChannelID(chats, channelID) {
   }
   return null;
 }
-
 
 /********************************************************************************************************************
 * functionSignature: getBasePath (cfg)
@@ -725,6 +722,5 @@ function getChatHtml(opts) {
 '</html>'
   );
 }
-
 
 export const fn = getWebpageChat;

@@ -1,8 +1,8 @@
 # Jenny — Discord AI Bot
 
-> **Version:** 1.0 · **Date:** 2026-03-15
+> **Version:** 1.0 · **Date:** 2026-03-19
 
-Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management, and a live terminal dashboard with hot-reload.
+Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice, browser voice interface), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management, and a live terminal dashboard with hot-reload. A first-run setup wizard eliminates manual `core.json` creation.
 
 ---
 
@@ -72,12 +72,21 @@ cd jenny-the-bot/development
 
 # Install dependencies
 npm install
-
-# Copy and configure
-cp core.json.example core.json   # if an example exists, otherwise edit core.json directly
 ```
 
-Edit `core.json` (see [Configuration Reference](#configuration-reference-corejson)) with at minimum:
+### First-run Setup Wizard
+
+If `core.json` does not exist, run `node main.js` and open `http://localhost:3400/setup` in your browser. The wizard collects the minimum required values (OpenAI API key, database credentials, bot name, trigger word, Discord token) and writes a starter `core.json`. Restart the bot after the wizard completes.
+
+### Manual setup
+
+Copy the example and fill in the placeholders:
+
+```bash
+cp core.json.example core.json
+```
+
+Required fields:
 - Your Discord bot token
 - Your OpenAI API key
 - Your MySQL database credentials
@@ -507,9 +516,11 @@ Headless music scheduler that runs continuously (polling every `pollIntervalMs` 
 
 ### webpage Flow + Admin Modules
 
-**Files:** `flows/webpage.js` + all `modules/00041–00054-webpage-*.js` (including `00052-webpage-wiki.js`)
+**Files:** `flows/webpage.js` + all `modules/00007-webpage-router.js`, `00041–00054-webpage-*.js`
 
 The webpage flow starts **one HTTP server per port** listed in `config.webpage.ports`. Each request exposes `wo.http.port`, allowing modules to route by port.
+
+**Endpoint → flow routing (`webpage-router`):** Module `00007-webpage-router` maps port + path prefix combinations to named flows (e.g. `"webpage-voice"`, `"webpage-wiki"`) and sets `wo.channelID` before `core-channel-config` runs. This lets `core-channel-config` `flows[].flowMatch` entries apply per-endpoint AI overrides. Configured in `config["webpage-router"].routes[]`.
 
 **⚙ Config Editor** (`modules/00047`, `GET /config`)
 - Collapsible cards per object section; flat arrays as tag chips; password fields for secrets; textareas for long strings
@@ -574,6 +585,12 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 ```
 
 Add `3117` to `config.webpage.ports[]`, `config.webpage-auth.ports[]`, and add `reverse_proxy /wiki* localhost:3117` to your Caddyfile.
+
+**🎤 Browser Voice Interface** (`modules/00047-webpage-voice`, `GET /voice`, port 3119)
+- **Mic button (always-on mode):** Click once to start continuous listening. Audio is sent automatically on silence, transcribed, processed by the AI pipeline, and the MP3 response is played back in the browser. Click again to stop.
+- **REC button (meeting recorder):** Records the full session. On stop, transcribes with `gpt-4o-transcribe` + optional speaker diarization and stores the result in channel context. Returns `{ ok, words, speakers }`.
+- Channel dropdown populated from `config["webpage-voice"].channels[]`; persisted in `localStorage`
+- Access controlled via `allowedRoles[]`; add `3119` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 
 **Configuration:** `config["webpage-config-editor"]` and `config["webpage-chat"]` — see the respective config sections above.
 

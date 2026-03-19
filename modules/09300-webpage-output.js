@@ -7,10 +7,6 @@
 /*  range support, otherwise sends wo.http.response.          *
 /*  Treats client disconnect / write-after-end as SOFT.       *
 /**************************************************************/
-/**************************************************************
-/*                                                          *
-/**************************************************************/
-
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -360,6 +356,8 @@ function getHandleHttpResponse(wo, req, res, log) {
 export default async function getWebpageOutput(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
+  // Voice requests are handled exclusively by 09320-webpage-voice-output
+  if (wo?.isWebpageVoice) return coreData;
 
   const log = getPrefixedLogger(wo, import.meta.url);
 

@@ -5,27 +5,6 @@
 /*          resets disclaimer when both chat and voice consent are 0.              *
 /************************************************************************************/
 
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-
-/************************************************************************************/
-/*                                                                                 *
-/************************************************************************************/
-/* filename: "discord-admin-gdpr.js"                         */
-/* Version 1.0                                               */
-/* Purpose: /gdpr (text|voice) (0|1); ensure table; update;  */
-/*          stable option parsing; always touch updated_at;  */
-/*          if both chat & voice == 0 then set disclaimer=0. */
-/**************************************************************/
-/**************************************************************/
-/*                                                            */
-/**************************************************************/
-
 import mysql from "mysql2/promise";
 import { getPrefixedLogger } from "../core/logging.js";
 
@@ -38,13 +17,8 @@ const CREATED = new Set();
 /* the consent table name resolved from configuration.                             *
 /************************************************************************************/
 function getTableName(coreData) {
-  const t1 = coreData?.config?.["discord-gdpr-gate"]?.table;
-  if (typeof t1 === "string" && t1.trim()) return t1.trim();
-  const t2 = coreData?.config?.["discord-admin-gdpr"]?.table;
-  if (typeof t2 === "string" && t2.trim()) return t2.trim();
-  const t3 = coreData?.config?.["gdpr-gate"]?.table;
-  if (typeof t3 === "string" && t3.trim()) return t3.trim();
-  return "gdpr_consent";
+  const t = coreData?.config?.[MODULE_NAME]?.table;
+  return (typeof t === "string" && t.trim()) ? t.trim() : "gdpr_consent";
 }
 
 /************************************************************************************/

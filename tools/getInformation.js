@@ -5,10 +5,6 @@
 /*          info snippets ranked by coverage then frequency.                       *
 /**********************************************************************************/
 
-/**********************************************************************************/
-/*                                                                                 */
-/**********************************************************************************/
-
 import mysql from "mysql2/promise";
 
 const MODULE_NAME = "getInformation";
@@ -57,7 +53,6 @@ async function getPool(wo) {
   POOLS.set(key, pool);
   return pool;
 }
-
 
 /**********************************************************************************/
 /* functionSignature: getNormalizePhrasesToWords (arr)                             */

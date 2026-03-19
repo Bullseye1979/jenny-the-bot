@@ -5,10 +5,6 @@
 /*          current toolcall registry. Adds GET context endpoint for UI usage.       *
 /************************************************************************************/
 
-/************************************************************************************/
-/*                                                                                   *
-/************************************************************************************/
-
 import http from "node:http";
 import { getItem } from "../core/registry.js";
 import { getContext } from "../core/context.js";
