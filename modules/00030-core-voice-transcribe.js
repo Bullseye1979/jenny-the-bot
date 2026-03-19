@@ -330,12 +330,12 @@ export default async function getCoreVoiceTranscribe(coreData) {
   const SNR_DB_MIN    = Number.isFinite(wo.snrDbThreshold)     ? +wo.snrDbThreshold     : Number.isFinite(cfg.snrDbThreshold)    ? +cfg.snrDbThreshold    : 3.5;
   const MIN_VOICED_MS = Number.isFinite(wo.minVoicedMs)        ? +wo.minVoicedMs        : Number.isFinite(cfg.minVoicedMs)       ? +cfg.minVoicedMs       : 2000;
   const KEEP_WAV      = typeof wo.keepWav === "boolean"         ? wo.keepWav             : Boolean(cfg.keepWav);
-  const API_KEY       = (wo.transcribeApiKey || wo.whisperApiKey || cfg.transcribeApiKey || cfg.whisperApiKey || process.env.OPENAI_API_KEY || "").trim();
+  const API_KEY       = (wo.transcribeApiKey || cfg.transcribeApiKey || process.env.OPENAI_API_KEY || "").trim();
   const MODEL         = wo.transcribeOnly
     ? (wo.transcribeModel || cfg.transcribeModelDiarize || "gpt-4o-transcribe-diarize").trim()
-    : (wo.transcribeModel || wo.whisperModel || cfg.transcribeModel || cfg.whisperModel || "gpt-4o-mini-transcribe").trim();
-  const LANGUAGE      = (wo.transcribeLanguage || wo.whisperLanguage || cfg.transcribeLanguage || cfg.whisperLanguage || "auto").trim();
-  const ENDPOINT      = (wo.transcribeEndpoint || wo.whisperEndpoint || cfg.transcribeEndpoint || cfg.whisperEndpoint || "").trim();
+    : (wo.transcribeModel || cfg.transcribeModel || "gpt-4o-mini-transcribe").trim();
+  const LANGUAGE      = (wo.transcribeLanguage || cfg.transcribeLanguage || "auto").trim();
+  const ENDPOINT      = (wo.transcribeEndpoint || cfg.transcribeEndpoint || "").trim();
   const CHUNK_S       = Number.isFinite(wo.transcribeChunkS)   ? +wo.transcribeChunkS   : Number.isFinite(cfg.chunkDurationS)    ? +cfg.chunkDurationS    : DEFAULT_CHUNK_S;
   const OVERLAP_S     = Number.isFinite(wo.transcribeOverlapS) ? +wo.transcribeOverlapS : Number.isFinite(cfg.overlapDurationS)  ? +cfg.overlapDurationS  : DEFAULT_OVERLAP_S;
 

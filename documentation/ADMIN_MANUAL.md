@@ -14,7 +14,7 @@
 5. [core.json — Full Parameter Reference](#5-corejson--full-parameter-reference)
    - 5.1 [workingObject — Global Defaults](#51-workingobject--global-defaults)
    - 5.2 [Database (db)](#52-database-db)
-   - 5.3 [Voice / TTS / Whisper](#53-voice--tts--whisper)
+   - 5.3 [Voice / TTS / Transcription](#53-voice--tts--transcription)
    - 5.4 [Avatar Generation](#54-avatar-generation)
    - 5.5 [Discord Admin / Slash Commands](#55-discord-admin--slash-commands)
    - 5.6 [toolsconfig — Per-Tool Configuration](#56-toolsconfig--per-tool-configuration)
@@ -444,7 +444,7 @@ The live dashboard displays:
 
 ---
 
-### 5.3 Voice / TTS / Whisper
+### 5.3 Voice / TTS / Transcription
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -453,10 +453,10 @@ The live dashboard displays:
 | `ttsVoice` | string | `"nova"` | TTS voice name |
 | `ttsEndpoint` | string | OpenAI URL | TTS API endpoint |
 | `ttsApiKey` | string | — | API key for TTS (if different from `apiKey`) |
-| `whisperModel` | string | `"whisper-1"` | Speech-to-text model used as fallback default; `core-voice-transcribe` uses `gpt-4o-mini-transcribe` by default (overridable via `transcribeModel` in module config) |
-| `whisperLanguage` | string | `""` | Force language (ISO 639-1; empty = auto-detect) |
-| `whisperEndpoint` | string | OpenAI base URL | Whisper API base URL |
-| `whisperApiKey` | string | — | API key for Whisper (if different from `apiKey`) |
+| `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Global fallback transcription model. Prefer setting `transcribeModel` in `config["core-voice-transcribe"]` for explicit control. |
+| `transcribeLanguage` | string | `""` | Force language (ISO 639-1; empty = auto-detect). |
+| `transcribeEndpoint` | string | `""` | Transcription API base URL. |
+| `transcribeApiKey` | string | — | API key for transcription (if different from `apiKey`). |
 
 ---
 
@@ -1322,7 +1322,7 @@ Source-agnostic transcription module. Active in `discord-voice` and `webpage` fl
 
 **Speaker stitching (diarize mode):** Each chunk after the first starts `overlapDurationS` seconds earlier than its logical boundary. After transcription, speakers that appear in the overlap region are matched to the global labels from the previous chunk by order of first appearance. Matched speakers keep their global label (A, B, …); unmatched speakers receive an offset label (e.g. `C_2`) to signal uncertain identity. The overlap region is excluded from the final output so that no text appears twice.
 
-API credentials fall back to `workingObject.whisperApiKey` / `workingObject.apiKey` if not set here.
+API credentials fall back to `workingObject.transcribeApiKey` / `OPENAI_API_KEY` env var if not set here.
 
 **Diarize support:** When the model name contains `"diarize"` (e.g. `gpt-4o-transcribe-diarize`), the module sets `response_format: "diarized_json"` and `chunking_strategy: "auto"`. The API returns a structured response with per-segment speaker labels; the module converts these to `A: text\nB: text` lines in `wo.payload` (using whatever label the API provides — typically single letters like `A`, `B`).
 
@@ -1347,13 +1347,13 @@ API credentials fall back to `workingObject.whisperApiKey` / `workingObject.apiK
 | `minVoicedMs` | number | `1000` | Minimum voiced audio (ms) required; checked against `wo.audioStats.usefulMs` when set |
 | `snrDbThreshold` | number | `3.8` | SNR threshold; segments below this are discarded; checked against `wo.audioStats.snrDb` when set |
 | `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
-| `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model used for always-on voice turns. Overridable per-turn via `wo.transcribeModel`. Alias: `whisperModel` |
-| `transcribeModelDiarize` | string | `"gpt-4o-transcribe-diarize"` | Model used when `wo.transcribeOnly === true` (meeting recorder). Used when `wo.transcribeModel` is not set explicitly. |
+| `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model for always-on voice turns and discord-voice. Overridable per-turn via `wo.transcribeModel`. |
+| `transcribeModelDiarize` | string | `"gpt-4o-transcribe-diarize"` | Transcription model used when `wo.transcribeOnly === true` (meeting recorder). |
 | `chunkDurationS` | number | `300` | Duration (seconds) of each chunk when splitting large audio files. Files >20 MB are split automatically. |
 | `overlapDurationS` | number | `60` | Seconds of audio overlap between consecutive chunks when splitting large files in diarize mode. The overlap is used to match speaker labels across chunks; the overlapping audio is excluded from the final transcript to avoid duplicate text. |
-| `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect. Alias: `whisperLanguage` |
-| `transcribeEndpoint` | string | `""` | Base URL for the transcription API. Falls back to `workingObject.whisperEndpoint`. Alias: `whisperEndpoint` |
-| `transcribeApiKey` | string | `""` | API key for transcription. Falls back to `workingObject.whisperApiKey` then `workingObject.apiKey`. Alias: `whisperApiKey` |
+| `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect. |
+| `transcribeEndpoint` | string | `""` | Base URL for the transcription API. Falls back to `workingObject.transcribeEndpoint` then `OPENAI_BASE_URL`. |
+| `transcribeApiKey` | string | `""` | API key for transcription. Falls back to `workingObject.transcribeApiKey` then `OPENAI_API_KEY` env var. |
 
 ---
 
