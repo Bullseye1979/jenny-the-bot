@@ -1909,13 +1909,19 @@ overlayHint.classList.add("hidden");
                 headers: { "Content-Type": "image/png", "X-Filename": "inpainting.png" },
                 body: blob
               });
-              const d = await r.json();
+              if (!r.ok && r.headers.get("content-type") && !r.headers.get("content-type").includes("json")) {
+                galleryBtn.disabled = false;
+                setApiError(r.status === 401 || r.status === 302 ? "Gallery: not logged in" : "Gallery upload failed: " + r.status);
+                return;
+              }
+              let d = null;
+              try { d = await r.json(); } catch { /* non-JSON response (e.g. redirect to login page) */ }
               if (d && d.ok) {
                 galleryBtn.textContent = "\u2713";
                 setTimeout(() => { galleryBtn.textContent = origLabel; galleryBtn.disabled = false; }, 1500);
               } else {
                 galleryBtn.disabled = false;
-                setApiError("Gallery upload failed: " + (d && d.error || "unknown"));
+                setApiError(d ? "Gallery upload failed: " + (d.error || "unknown") : "Gallery: not logged in");
               }
             } catch (e) {
               galleryBtn.disabled = false;

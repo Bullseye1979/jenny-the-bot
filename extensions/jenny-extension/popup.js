@@ -237,7 +237,11 @@ function uploadFile(file) {
       headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": file.name },
       body: file
     })
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      var ct = r.headers.get("content-type") || "";
+      if (!ct.includes("json")) throw new Error("gallery_unavailable");
+      return r.json();
+    })
     .then(function(d) {
       if (d && d.ok && d.url) return d;
       throw new Error("gallery_unavailable");
