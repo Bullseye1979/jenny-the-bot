@@ -8,7 +8,7 @@
 import path from "path";
 import fs from "fs/promises";
 import puppeteer from "puppeteer";
-import { fileURLToPath } from "url";
+import { ensureUserDir, getUniqueFilename, getUserId, getPublicBaseUrl } from "../core/file.js";
 
 /**********************************************************************************/
 /* functionSignature: logDebug (label, obj)                                        *
@@ -345,10 +345,10 @@ function tolerantParseArgs(input){
 }
 
 /**********************************************************************************/
-/* functionSignature: generatePdfAndHtml (parsed, cfg)                             *
+/* functionSignature: generatePdfAndHtml (parsed, cfg, wo)                         *
 /* Generates files and returns public URLs and metadata                            *
 /**********************************************************************************/
-async function generatePdfAndHtml(parsed, cfg){
+async function generatePdfAndHtml(parsed, cfg, wo){
   let browser = null;
   try{
     const htmlIn = String(parsed.html || "").trim();
@@ -358,13 +358,13 @@ async function generatePdfAndHtml(parsed, cfg){
     if (!htmlIn) return { ok:false, error:"PDF_INPUT — Missing 'html' content." };
     const bodyHtml = extractBody(htmlIn);
     const { html: fullHtml, cssFinal } = buildPrintableHtml(bodyHtml, cssIn, title || "Document");
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const documentsDir = path.join(__dirname, "..", "pub", "documents");
-    await fs.mkdir(documentsDir, { recursive: true });
+    const dir = await ensureUserDir(wo);
     const filename = normalizeFilename(filenameArg, "");
     const baseName = filename || normalizeFilename(title, "") || normalizeFilename("document");
-    const pdfPath = path.join(documentsDir, `${baseName}.pdf`);
-    const htmlPath = path.join(documentsDir, `${baseName}.html`);
+    const pdfFilename = await getUniqueFilename(dir, baseName, ".pdf");
+    const htmlFilename = await getUniqueFilename(dir, baseName, ".html");
+    const pdfPath = path.join(dir, pdfFilename);
+    const htmlPath = path.join(dir, htmlFilename);
     await fs.writeFile(htmlPath, fullHtml, "utf8");
     const headless = (cfg?.headless ?? "new");
     const chromeArgs = Array.isArray(cfg?.chromeArgs) ? cfg.chromeArgs : ["--no-sandbox"];
@@ -379,9 +379,10 @@ async function generatePdfAndHtml(parsed, cfg){
       printBackground: (cfg?.printBackground ?? true),
       margin: { top: "0", right: "0", bottom: "0", left: "0" }
     });
-    const publicPdf = ensureAbsoluteUrl(cfg?.publicBaseUrl, `/documents/${path.basename(pdfPath)}`);
-    const publicHtml = ensureAbsoluteUrl(cfg?.publicBaseUrl, `/documents/${path.basename(htmlPath)}`);
-    const plainText = getPlainFromHTML(bodyHtml, 200000);
+    const userId = getUserId(wo);
+    const baseUrl = getPublicBaseUrl(wo);
+    const publicPdf = baseUrl ? `${baseUrl}/documents/${userId}/${pdfFilename}` : `/documents/${userId}/${pdfFilename}`;
+    const publicHtml = baseUrl ? `${baseUrl}/documents/${userId}/${htmlFilename}` : `/documents/${userId}/${htmlFilename}`;
     return {
       ok: true,
       pdf: publicPdf,
@@ -405,7 +406,8 @@ async function generatePdfAndHtml(parsed, cfg){
 const MODULE_NAME = "getPDF";
 async function getInvoke(args, coreData){
   try{
-    const cfg = coreData?.workingObject?.toolsconfig?.getPDF || {};
+    const wo = coreData?.workingObject || {};
+    const cfg = wo?.toolsconfig?.getPDF || {};
     const payload = args?.json ?? args ?? {};
     const parsedInput = (payload.html || payload.css || payload.title || payload.filename)
       ? payload
@@ -419,7 +421,7 @@ async function getInvoke(args, coreData){
       css: parsed.css,
       title: payload.title ?? parsed.title,
       filename: payload.filename ?? parsed.filename
-    }, cfg);
+    }, cfg, wo);
     return result;
   }catch(e){
     logDebug("TOOLCALL_INVOKE_ERROR", String(e?.stack || e));

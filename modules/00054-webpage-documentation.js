@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getMenuHtml } from "../shared/webpage/interface.js";
+import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 
 const MODULE_NAME = "webpage-documentation";
 const __filename = fileURLToPath(import.meta.url);
@@ -269,6 +269,7 @@ function getPageHtml(wo, files, currentName, content, basePath) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escHtml(title)} — Docs</title>
+${getThemeHeadScript()}
 <link rel="stylesheet" href="${basePath}/style.css">
 <style>
   .doc-layout{display:flex;height:calc(100vh - var(--hh));margin-top:var(--hh);overflow:hidden}
@@ -285,17 +286,17 @@ function getPageHtml(wo, files, currentName, content, basePath) {
   .doc-content p{margin:.6em 0;line-height:1.65}
   .doc-content a{color:var(--acc)}
   .doc-content a:hover{color:var(--acc2)}
-  .doc-content code{background:#f1f5f9;border:1px solid var(--bdr);border-radius:3px;padding:1px 5px;font-family:monospace;font-size:.9em}
-  .doc-content pre{background:#1e293b;color:#e2e8f0;border-radius:var(--r);padding:14px 16px;overflow-x:auto;margin:.8em 0}
+  .doc-content code{background:var(--bg3);border:1px solid var(--bdr);border-radius:3px;padding:1px 5px;font-family:monospace;font-size:.9em}
+  .doc-content pre{background:var(--hdr);color:var(--hdr-txt);border-radius:var(--r);padding:14px 16px;overflow-x:auto;margin:.8em 0}
   .doc-content pre code{background:none;border:none;padding:0;color:inherit;font-size:.88em}
   .doc-content table{border-collapse:collapse;width:100%;margin:.8em 0;font-size:13px}
   .doc-content th{background:var(--hdr);color:var(--hdr-txt);padding:7px 10px;text-align:left}
   .doc-content td{padding:6px 10px;border-bottom:1px solid var(--bdr)}
-  .doc-content tr:nth-child(even) td{background:#f8fafc}
+  .doc-content tr:nth-child(even) td{background:var(--bg3)}
   .doc-content ul,.doc-content ol{padding-left:1.6em;margin:.5em 0}
   .doc-content li{margin:.25em 0;line-height:1.55}
-  .doc-content blockquote{border-left:4px solid var(--acc);margin:.7em 0;padding:8px 14px;background:#eff6ff;border-radius:0 var(--r) var(--r) 0}
-  .doc-content blockquote p{margin:.2em 0;color:#1e40af}
+  .doc-content blockquote{border-left:4px solid var(--acc);margin:.7em 0;padding:8px 14px;background:var(--acc-tint);border-radius:0 var(--r) var(--r) 0}
+  .doc-content blockquote p{margin:.2em 0;color:var(--acc2)}
   .doc-content hr{border:none;border-top:1px solid var(--bdr);margin:1.4em 0}
   .doc-empty{padding:16px;color:var(--muted);font-size:13px}
 </style>

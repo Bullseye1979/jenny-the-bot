@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { ensureUserDir, getUserId } from "../core/file.js";
 
 /**************************************************************/
 /* functionSignature: setEnsureDir (absPath)                  */
@@ -30,13 +30,14 @@ function getRandSuffix() {
 }
 
 /**************************************************************/
-/* functionSignature: getPublicUrl (base, filename)           */
+/* functionSignature: getPublicUrl (base, userId, filename)   */
 /* Builds a public URL for a given filename                    */
 /**************************************************************/
-function getPublicUrl(base, filename) {
-  if (!base) return `/documents/${filename}`;
+function getPublicUrl(base, userId, filename) {
+  const u = String(userId || "shared");
+  if (!base) return `/documents/${u}/${filename}`;
   const trimmed = String(base).replace(/\/+$/, "");
-  return `${trimmed}/documents/${filename}`;
+  return `${trimmed}/documents/${u}/${filename}`;
 }
 
 /**************************************************************/
@@ -421,10 +422,8 @@ async function getInvoke(args, coreData) {
   const { buf, ctype } = await getDownloadedBuffer(url);
   const kind = getMediaKind(ctype, url);
 
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  const documentsDir = path.join(__dirname, "..", "pub", "documents");
-  setEnsureDir(documentsDir);
+  const documentsDir = await ensureUserDir(wo);
+  const userId = getUserId(wo);
 
   if (kind === "video") {
     const inName = `vid_${Date.now()}_${getRandSuffix()}.bin`;
@@ -499,19 +498,19 @@ async function getInvoke(args, coreData) {
       original: {
         filename: inName,
         path: inAbs,
-        url: getPublicUrl(cfg.publicBaseUrl, inName),
+        url: getPublicUrl(cfg.publicBaseUrl, userId, inName),
         mime: "application/octet-stream"
       },
       intermediate: {
         filename: chosenGifName,
         path: chosenGifAbs,
-        url: getPublicUrl(cfg.publicBaseUrl, chosenGifName),
+        url: getPublicUrl(cfg.publicBaseUrl, userId, chosenGifName),
         mime: "image/gif"
       },
       output: {
         filename: tokenName,
         path: tokenAbs,
-        url: getPublicUrl(cfg.publicBaseUrl, tokenName),
+        url: getPublicUrl(cfg.publicBaseUrl, userId, tokenName),
         mime: "image/gif",
         ring_color: ringColor,
         pingpong,
@@ -555,13 +554,13 @@ async function getInvoke(args, coreData) {
         original: {
           filename: inName,
           path: inAbs,
-          url: getPublicUrl(cfg.publicBaseUrl, inName),
+          url: getPublicUrl(cfg.publicBaseUrl, userId, inName),
           mime: "image/gif"
         },
         output: {
           filename: tokenName,
           path: tokenAbs,
-          url: getPublicUrl(cfg.publicBaseUrl, tokenName),
+          url: getPublicUrl(cfg.publicBaseUrl, userId, tokenName),
           mime: "image/gif",
           ring_color: ringColor,
           pingpong,
@@ -585,13 +584,13 @@ async function getInvoke(args, coreData) {
       original: {
         filename: inName,
         path: inAbs,
-        url: getPublicUrl(cfg.publicBaseUrl, inName),
+        url: getPublicUrl(cfg.publicBaseUrl, userId, inName),
         mime: origMime
       },
       output: {
         filename: tokenName,
         path: tokenAbs,
-        url: getPublicUrl(cfg.publicBaseUrl, tokenName),
+        url: getPublicUrl(cfg.publicBaseUrl, userId, tokenName),
         mime: "image/png",
         ring_color: ringColor,
         pingpong: false,

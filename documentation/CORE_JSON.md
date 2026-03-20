@@ -1,6 +1,6 @@
 # core.json — Complete Reference
 
-> **Version:** 1.0 · **Date:** 2026-03-19
+> **Version:** 1.0 · **Date:** 2026-03-20
 
 `core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime — any change triggers an automatic hot-reload within seconds. No restart is required.
 
@@ -61,6 +61,8 @@ All key names follow **camelCase** throughout.
    - [webpage-dashboard](#webpage-dashboard)
    - [webpage-documentation](#webpage-documentation)
    - [webpage-inpainting](#webpage-inpainting)
+   - [webpage-inpaint](#webpage-inpaint)
+   - [webpage-gallery](#webpage-gallery)
    - [bard](#bard)
    - [bard-join](#bard-join)
    - [bard-cron](#bard-cron)
@@ -603,7 +605,7 @@ Any object in `core.json` can have a `_title` key. The Config Editor uses this s
 
 ### webpage-chat
 
-AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, routed via `GET /chat`. The API secret per channel is injected server-side — never exposed to the browser.
+AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, routed via `GET /chat`. AI completions are processed directly within the flow — no external API proxy. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
 
 ```jsonc
 "webpage-chat": {
@@ -611,27 +613,31 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
   "port":         3112,
   "basePath":     "/chat",
   "allowedRoles": ["member", "admin"],
-  "apiUrl":       "http://localhost:3400/api",
+  "systemPrompt": "",
+  "contextSize":  20,
+  "maxTokens":    1024,
   "chats": [
-    { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
-    { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
+    { "label": "General", "channelID": "YOUR_CHANNEL_ID", "roles": [] }
   ]
 }
 ```
 
-**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), toolcall name polled per-channel every 800 ms from `/api/toolcall?channelID=<id>`, server-side API secret injection.
+**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), toolcall name polled per-channel every 800 ms from `/api/toolcall?channelID=<id>`, direct AI completions, subchannel CRUD endpoints.
 
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port to listen on (default `3112`) — must also be in `config.webpage.ports` |
+| `port` | HTTP port (default `3112`) |
 | `basePath` | URL prefix (default `"/chat"`) |
-| `allowedRoles` | Roles allowed to view the chat. Empty array = public |
-| `apiUrl` | Default URL of the bot's HTTP API endpoint (default `http://localhost:3400/api`) |
-| `chats[].label` | Display name shown in the channel selector dropdown |
-| `chats[].channelID` | Channel ID passed to the API as context |
-| `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |
-| `chats[].apiUrl` | Per-chat API URL override; falls back to `apiUrl` if omitted |
+| `allowedRoles` | Roles allowed to access the chat. Empty = public |
+| `systemPrompt` | Optional system prompt prepended to every AI call (default `""`) |
+| `contextSize` | Recent user turns to include in AI context (default `20`) |
+| `maxTokens` | Max tokens in AI response (default `1024`) |
+| `chats[].label` | Display name in the channel selector |
+| `chats[].channelID` | Channel ID used as context scope |
+| `chats[].roles` | Optional role restriction for this chat entry |
+
+> AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
 
 ---
 
@@ -826,8 +832,9 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
   "clientSecret":   "<DISCORD_CLIENT_SECRET>",
   "redirectUri":    "",
   "loginPort":      3111,
-  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
+  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120],
   "sessionTtlMs":   86400000,
+  "ssoPartners":    [],
   "users": [
     { "discordId": "<YOUR_DISCORD_USER_ID>", "role": "admin" }
   ]
@@ -841,8 +848,9 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
 | `clientSecret` | Discord application client secret |
 | `redirectUri` | OAuth2 callback URL. Set to `""` to auto-derive from the HTTP `Host` header (recommended for multi-domain setups). Otherwise set to the exact callback URL, e.g. `"https://yourserver.example.com/auth/callback"`. Must be registered in the Discord Developer Portal under OAuth2 → Redirects. |
 | `loginPort` | Port that handles `/auth/login`, `/auth/callback`, and `/auth/logout` routes. Typically the same port as `webpage-config-editor` (3111). |
-| `ports` | All ports where the module runs passively to set `wo.webAuth`. Must include every port where login state matters. |
+| `ports` | All ports where the module runs passively to set `wo.webAuth`. Must include every port where login state matters. Include port `3120` if using the Gallery module. |
 | `sessionTtlMs` | Session cookie lifetime in milliseconds (default: 86 400 000 = 24 h) |
+| `ssoPartners` | Array of partner base URLs (e.g. `["https://other.example.com"]`). After login the session is chained to partner sites using a short-lived single-use token — the browser is redirected to `<partner>/auth/sso?token=<t>&returnTo=<url>`. Leave empty (`[]`) to disable SSO chaining. |
 | `users[].discordId` | Discord user ID |
 | `users[].role` | Role assigned to this user (`"admin"`, `"editor"`, `"creator"`, etc.) |
 
@@ -974,6 +982,62 @@ AI inpainting SPA. Users load an image, paint a mask, enter a prompt, and the ba
 
 ---
 
+### webpage-inpaint
+
+Redirect module (`modules/00045-webpage-inpaint.js`). Intercepts `GET /documents/*.png` requests and redirects them to the inpainting editor. This allows images generated by the bot (stored under `pub/documents/`) to be opened directly in the inpainting SPA via a single click.
+
+```jsonc
+"webpage-inpaint": {
+  "flow":        ["webpage"],
+  "inpaintHost": "jenny.example.com/inpainting"
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `inpaintHost` | Redirect target. **When the value contains a hostname** (does not start with `/`), it is used as-is as the redirect destination host + path, e.g. `"jenny.example.com/inpainting"`. **When the value starts with `/`**, it is treated as a path suffix appended to the request's own hostname, e.g. `"/inpainting"` → `<request-host>/inpainting`. |
+
+> Only PNG files under `/documents/` are redirected. All other paths pass through unchanged.
+
+---
+
+### webpage-gallery
+
+Image gallery SPA (`modules/00056-webpage-gallery.js`). Shows the logged-in user's images stored in `pub/documents/<userId>/`. Users can open images in the inpainting editor or delete them. Supports gallery upload via a REST endpoint (`POST /gallery/api/files`).
+
+```jsonc
+"webpage-gallery": {
+  "flow":         ["webpage"],
+  "port":         3120,
+  "basePath":     "/gallery",
+  "inpaintingUrl": "https://jenny.example.com/inpainting"
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3120`) — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `basePath` | URL base path (default `"/gallery"`) |
+| `inpaintingUrl` | Full URL of the inpainting SPA. Used by the gallery SPA's "Inpaint" button to construct the deep-link (e.g. `https://jenny.example.com/inpainting?src=<imageUrl>`). Must match the public URL where the inpainting module is served. |
+
+**HTTP routes:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/gallery` | Required | Renders the gallery SPA |
+| `GET` | `/gallery/style.css` | None | Serves shared CSS |
+| `GET` | `/gallery/api/files` | Required | Lists all images for the logged-in user |
+| `POST` | `/gallery/api/files` | Required | Uploads an image for the logged-in user. Send raw image bytes as the request body with `X-Filename: <filename>` header. Returns `{ ok, url, filename }`. |
+| `DELETE` | `/gallery/api/files` | Required | Deletes an image. Body: `{ filename }`. Returns `{ ok }`. |
+
+- Add `3120` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /gallery* localhost:3120` to your Caddyfile
+- The module requires `webpage-auth` to be active on port 3120 — unauthenticated requests are redirected to `/`
+
+---
+
 ### bard
 
 Headless music scheduler flow. Polls the registry every `pollIntervalMs` milliseconds, selects tracks from `library.xml` based on AI mood labels, and writes `bard:stream:{guildId}` for the browser player.
@@ -1085,10 +1149,11 @@ The `channelID` must match the text channel where your D&D session takes place (
 
 ```jsonc
 "context": {
-  "endpoint":   "https://api.openai.com/v1/chat/completions",
-  "model":      "gpt-4o-mini",
-  "apiKey":     "<key>",
-  "periodSize": 600
+  "endpoint":           "https://api.openai.com/v1/chat/completions",
+  "model":              "gpt-4o-mini",
+  "apiKey":             "<key>",
+  "periodSize":         600,
+  "subchannelFallback": false
 }
 ```
 
@@ -1098,6 +1163,7 @@ The `channelID` must match the text channel where your D&D session takes place (
 | `model` | Model used for rolling timeline summarisation |
 | `apiKey` | API key for the summariser |
 | `periodSize` | Rolling window in seconds; messages older than this are summarised |
+| `subchannelFallback` | `false` (default): when `wo.subchannel` is not set, all functions (getContext, setPurgeContext, setFreezeContext, getContextLastSeconds, getContextSince) operate only on rows where `subchannel IS NULL`. `true`: no subchannel filter — all rows for the channel including subchannel rows are included. |
 
 ---
 
@@ -1415,7 +1481,9 @@ Every module has an entry under `config` that declares which flows it participat
 | `webpage-menu` | `webpage` |
 | `webpage-dashboard` | `webpage` |
 | `webpage-documentation` | `webpage` |
+| `webpage-inpaint` | `webpage` |
 | `webpage-inpainting` | `webpage` |
+| `webpage-gallery` | `webpage` |
 | `webpage-wiki` | `webpage` |
 | `webpage-voice` | `webpage` |
 | `webpage-voice-output` | `webpage` |
@@ -1693,7 +1761,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "api":           { "flowName": "api" },
     "discord-admin": { "flowName": "discord-admin" },
     "discord-voice": { "flowName": "discord-voice" },
-    "webpage":       { "flowName": "webpage", "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119] },
+    "webpage":       { "flowName": "webpage", "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120] },
     "cron": {
       "flowName": "cron",
       "timezone": "Europe/Berlin",
@@ -1711,10 +1779,11 @@ Below is a minimal but functional `core.json` template with every section includ
 
     // ── Context summariser ────────────────────────────────────────────────────
     "context": {
-      "endpoint":   "https://api.openai.com/v1/chat/completions",
-      "model":      "gpt-4o-mini",
-      "apiKey":     "<YOUR_OPENAI_API_KEY>",
-      "periodSize": 600
+      "endpoint":           "https://api.openai.com/v1/chat/completions",
+      "model":              "gpt-4o-mini",
+      "apiKey":             "<YOUR_OPENAI_API_KEY>",
+      "periodSize":         600,
+      "subchannelFallback": false
     },
 
     // ── Module flow subscriptions ─────────────────────────────────────────────
@@ -1773,8 +1842,9 @@ Below is a minimal but functional `core.json` template with every section includ
       "clientSecret": "<DISCORD_CLIENT_SECRET>",
       "redirectUri":  "",
       "loginPort":    3111,
-      "ports":        [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
+      "ports":        [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120],
       "sessionTtlMs": 86400000,
+      "ssoPartners":  [],
       "users": [
         { "discordId": "<YOUR_DISCORD_USER_ID>", "role": "admin" }
       ]
@@ -1798,11 +1868,21 @@ Below is a minimal but functional `core.json` template with every section includ
     "webpage-documentation": {
       "flow": ["webpage"], "port": 3116, "basePath": "/docs", "allowedRoles": []
     },
+    "webpage-inpaint": {
+      "flow": ["webpage"],
+      "inpaintHost": "jenny.example.com/inpainting"
+    },
     "webpage-inpainting": {
       "flow": ["webpage"], "port": 3113, "basePath": "/inpainting",
       "allowedRoles": [],
       "auth": { "enabled": false },
       "imageWhitelist": { "hosts": [], "paths": ["/documents/"] }
+    },
+    "webpage-gallery": {
+      "flow":          ["webpage"],
+      "port":          3120,
+      "basePath":      "/gallery",
+      "inpaintingUrl": "https://jenny.example.com/inpainting"
     },
     "bard": {
       "flowName": "bard", "pollIntervalMs": 5000, "musicDir": "assets/bard"
@@ -1878,4 +1958,4 @@ Below is a minimal but functional `core.json` template with every section includ
 
 ---
 
-*Documentation updated 2026-03-14.*
+*Documentation updated 2026-03-20. Version 1.0.*

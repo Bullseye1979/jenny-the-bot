@@ -14,9 +14,19 @@
     <span id="bot-name">Jenny</span>
     <div id="header-actions">
       <button id="summarize-btn" title="Summarize current page / video">&#9654; Summarize</button>
+      <button id="gallery-btn" title="Upload to Gallery">&#128444;</button>
       <button id="options-btn" title="Settings">&#9881;</button>
     </div>
   </header>
+
+  <!-- Gallery upload panel (toggled by gallery-btn) -->
+  <div id="gallery-panel" class="hidden">
+    <div id="gallery-drop">
+      <input type="file" id="gallery-file-input" accept="image/*" style="display:none">
+      <span id="gallery-drop-label">&#128444; Drop image or click to upload to Gallery</span>
+    </div>
+    <div id="gallery-status" class="hidden"></div>
+  </div>
 
   <!-- Config warning (shown when apiUrl is not set) -->
   <div id="config-warn" class="hidden">
@@ -26,8 +36,16 @@
   <!-- Messages -->
   <div id="msgs"></div>
 
+  <!-- File preview (shown when a file is attached) -->
+  <div id="file-preview" class="hidden">
+    <span id="file-name"></span>
+    <button id="file-clear" title="Remove attachment">&#10005;</button>
+  </div>
+
   <!-- Input -->
   <div id="footer">
+    <input type="file" id="file-input" style="display:none">
+    <button id="attach-btn" title="Attach file">&#128206;</button>
     <textarea id="input" rows="1" placeholder="Type a message…"></textarea>
     <button id="send-btn" title="Send">&#10148;</button>
   </div>

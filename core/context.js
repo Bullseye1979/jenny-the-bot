@@ -1,8 +1,8 @@
 /************************************************************************************/
 /* filename: context.js                                                              *
-/* Version 1.0                                                                       *
+/* Version 1.2                                                                       *
 /* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline         *
-/*          summaries, and user-block capping. Supports extra channels.              *
+/*          summaries, user-block capping, extra channels, and subchannel support.   *
 /************************************************************************************/
 
 import mysql from "mysql2/promise";
@@ -51,6 +51,37 @@ function getDsnKey(db) {
   const database = db?.database || "";
   const charset = db?.charset || "utf8mb4";
   return `${host}|${port}|${user}|${database}|${charset}`;
+}
+
+/************************************************************************************/
+/* functionSignature: getSubchannelFilter (workingObject)                            *
+/* Returns { sql, args, subchannel, subchannelFallback } for WHERE-clause reuse.    *
+/*                                                                                   *
+/* Rules (consistent across all exported functions):                                 *
+/*   wo.subchannel set        → sql: "AND COALESCE(subchannel,'')=?"                *
+/*   no subchannel, fallback=false (default)                                         *
+/*                            → sql: "AND subchannel IS NULL"                        *
+/*   no subchannel, fallback=true                                                    *
+/*                            → sql: "" (no filter — includes all subchannel rows)   *
+/*                                                                                   *
+/* config.context.subchannelFallback controls the "no subchannel" behaviour.        *
+/* Default: false (main channel only sees rows without a subchannel).               *
+/************************************************************************************/
+function getSubchannelFilter(workingObject) {
+  const subchannel =
+    typeof workingObject?.subchannel === "string" && workingObject.subchannel.trim()
+      ? workingObject.subchannel.trim()
+      : null;
+  const subchannelFallback =
+    workingObject?.config?.context?.subchannelFallback === true;
+
+  if (subchannel) {
+    return { sql: " AND COALESCE(subchannel, '') = ?", args: [subchannel], subchannel, subchannelFallback };
+  }
+  if (!subchannelFallback) {
+    return { sql: " AND subchannel IS NULL", args: [], subchannel: null, subchannelFallback };
+  }
+  return { sql: "", args: [], subchannel: null, subchannelFallback };
 }
 
 /************************************************************************************/
@@ -114,6 +145,18 @@ async function getEnsurePool(workingObject) {
     await pool.query(`
       ALTER TABLE context
         ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
+    `);
+  } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD COLUMN IF NOT EXISTS subchannel VARCHAR(128) NULL;
+    `);
+  } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD INDEX IF NOT EXISTS idx_id_sub_ctx (id, subchannel, ctx_id);
     `);
   } catch {}
 
@@ -290,9 +333,14 @@ export async function setContext(workingObject, record) {
 
   const ts = getResolvedTimestamp(workingObject, normalized);
 
+  const subchannel =
+    typeof workingObject?.subchannel === "string" && workingObject.subchannel.trim()
+      ? workingObject.subchannel.trim()
+      : null;
+
   await pool.execute(
-    "INSERT INTO context (id, ts, json, text, role, turn_id, frozen) VALUES (?, ?, ?, ?, ?, ?, 0)",
-    [id, ts, json, text, role, turnId]
+    "INSERT INTO context (id, ts, json, text, role, turn_id, frozen, subchannel) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+    [id, ts, json, text, role, turnId, subchannel]
   );
 
   try {
@@ -303,10 +351,23 @@ export async function setContext(workingObject, record) {
 }
 
 /************************************************************************************/
-/* functionSignature: getContextRowsForId (pool, id, nUsers, detailed)               *
+/* functionSignature: getContextRowsForId (pool, id, nUsers, detailed,              *
+/*                                         subchannel, subchannelFallback)           *
 /* Internal helper: fetches context rows for a single id.                            *
+/* subchannel: if set, only rows with that subchannel are returned.                  *
+/* subchannelFallback: if true and no subchannel given, returns all rows;            *
+/*                     if false (default), only rows WHERE subchannel IS NULL.       *
 /************************************************************************************/
-async function getContextRowsForId(pool, id, nUsers, detailed) {
+async function getContextRowsForId(pool, id, nUsers, detailed, subchannel, subchannelFallback) {
+  let subSql = "";
+  const subArgs = [];
+  if (subchannel) {
+    subSql = " AND COALESCE(subchannel, '') = ?";
+    subArgs.push(subchannel);
+  } else if (!subchannelFallback) {
+    subSql = " AND subchannel IS NULL";
+  }
+
   const cutoffSql = `
     SELECT MIN(ts) AS min_ts
     FROM (
@@ -318,6 +379,7 @@ async function getContextRowsForId(pool, id, nUsers, detailed) {
                NULLIF(JSON_UNQUOTE(JSON_EXTRACT(json,'$.role')), ''),
                role
              )) = 'user'
+         ${subSql}
          ${detailed ? "" : `
          AND COALESCE(
                NULLIF(JSON_UNQUOTE(JSON_EXTRACT(json,'$.content')),''),
@@ -328,33 +390,31 @@ async function getContextRowsForId(pool, id, nUsers, detailed) {
        LIMIT ?
     ) AS last_users
   `;
-  const [thresholdRows] = await pool.query(cutoffSql, [id, nUsers]);
+  const [thresholdRows] = await pool.query(cutoffSql, [id, ...subArgs, nUsers]);
   const minTs = thresholdRows?.[0]?.min_ts || null;
 
   let rows = [];
 
   if (minTs) {
     const [mainRows] = await pool.query(
-      `
-        SELECT ctx_id, ts, json, text, role, id
-          FROM context
-         WHERE id = ? AND ts >= ?
-           AND JSON_VALID(json) = 1
-         ORDER BY ts ASC
-      `,
-      [id, minTs]
+      `SELECT ctx_id, ts, json, text, role, id
+         FROM context
+        WHERE id = ? AND ts >= ?
+          AND JSON_VALID(json) = 1
+          ${subSql}
+        ORDER BY ts ASC`,
+      [id, minTs, ...subArgs]
     );
 
     const [prevRows] = await pool.query(
-      `
-        SELECT ctx_id, ts, json, text, role, id
-          FROM context
-         WHERE id = ? AND ts < ?
-           AND JSON_VALID(json) = 1
-         ORDER BY ts DESC
-         LIMIT 1
-      `,
-      [id, minTs]
+      `SELECT ctx_id, ts, json, text, role, id
+         FROM context
+        WHERE id = ? AND ts < ?
+          AND JSON_VALID(json) = 1
+          ${subSql}
+        ORDER BY ts DESC
+        LIMIT 1`,
+      [id, minTs, ...subArgs]
     );
 
     if (prevRows.length) {
@@ -369,14 +429,13 @@ async function getContextRowsForId(pool, id, nUsers, detailed) {
   } else {
     const limitRows = Math.max(1, nUsers * 4);
     const [descRows] = await pool.query(
-      `
-        SELECT ctx_id, ts, json, text, role, id
-         FROM context
-        WHERE id = ? AND JSON_VALID(json) = 1
-        ORDER BY ts DESC
-        LIMIT ?
-      `,
-      [id, limitRows]
+      `SELECT ctx_id, ts, json, text, role, id
+          FROM context
+         WHERE id = ? AND JSON_VALID(json) = 1
+         ${subSql}
+         ORDER BY ts DESC
+         LIMIT ?`,
+      [id, ...subArgs, limitRows]
     );
     rows = descRows.slice().reverse();
   }
@@ -443,6 +502,8 @@ export async function getContext(workingObject) {
   const detailed = workingObject?.detailedContext === true;
   const simplified = workingObject?.simplifiedContext === true;
 
+  const { subchannel, subchannelFallback } = getSubchannelFilter(workingObject);
+
   const metaFramesMode = getMetaFramesMode(workingObject);
 
   const extraIdsRaw = Array.isArray(workingObject?.channelIds)
@@ -460,7 +521,7 @@ export async function getContext(workingObject) {
 
   let rows = [];
   for (const cid of allIds) {
-    const r = await getContextRowsForId(pool, cid, nUsers, detailed);
+    const r = await getContextRowsForId(pool, cid, nUsers, detailed, subchannel, subchannelFallback);
     rows.push(...r);
   }
 
@@ -704,58 +765,122 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
 
 /************************************************************************************/
 /* functionSignature: setPurgeContext (workingObject)                                *
-/* Deletes non-frozen context and timeline rows.                                     *
+/* Deletes non-frozen context rows.  Scope depends on wo.subchannel and             *
+/* config.context.subchannelFallback (see getSubchannelFilter).                     *
+/*                                                                                   *
+/* wo.subchannel set                                                                 *
+/*   → purge only that subchannel (timeline not touched — it is channel-wide)       *
+/* no subchannel + subchannelFallback=false (default)                               *
+/*   → purge only rows where subchannel IS NULL + channel-wide timeline              *
+/* no subchannel + subchannelFallback=true                                           *
+/*   → purge ALL rows for channelID (including subchannel rows) + timeline           *
 /************************************************************************************/
 export async function setPurgeContext(workingObject) {
   const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
+  const { sql: subSql, args: subArgs, subchannel, subchannelFallback } = getSubchannelFilter(workingObject);
+
   const [res1] = await pool.execute(
-    "DELETE FROM context WHERE id = ? AND COALESCE(frozen, 0) = 0",
-    [id]
+    `DELETE FROM context WHERE id = ? ${subSql} AND COALESCE(frozen, 0) = 0`,
+    [id, ...subArgs]
   );
+  let deleted = Number(res1?.affectedRows || 0);
+
+  /* Purge timeline only when the full channel (not a subchannel) is being cleared */
+  if (!subchannel) {
+    const [res2] = await pool.execute(
+      `DELETE FROM ${TIMELINE_TABLE} WHERE channel_id = ? AND COALESCE(frozen, 0) = 0`,
+      [id]
+    );
+    deleted += Number(res2?.affectedRows || 0);
+  }
+
+  return deleted;
+}
+
+/************************************************************************************/
+/* functionSignature: setPurgeSubchannel (workingObject, subchannelId)               *
+/* Called when a subchannel is deleted. Two-step operation:                          *
+/*   1. DELETE non-frozen rows that carry the given subchannelId.                    *
+/*   2. UPDATE frozen rows: set subchannel = NULL so they are promoted to the        *
+/*      main channel (preserved, no longer tied to the deleted subchannel).          *
+/* Returns { deleted, promoted }.                                                    *
+/************************************************************************************/
+export async function setPurgeSubchannel(workingObject, subchannelId) {
+  const id  = String(workingObject?.channelID || "");
+  const sub = String(subchannelId || "").trim();
+  if (!id)  throw new Error("[context] missing channelID");
+  if (!sub) throw new Error("[context] missing subchannelId");
+
+  const pool = await getEnsurePool(workingObject);
+
+  /* Step 1 — delete non-frozen entries */
+  const [res1] = await pool.execute(
+    "DELETE FROM context WHERE id = ? AND COALESCE(subchannel, '') = ? AND COALESCE(frozen, 0) = 0",
+    [id, sub]
+  );
+
+  /* Step 2 — promote frozen entries to main channel */
   const [res2] = await pool.execute(
-    `DELETE FROM ${TIMELINE_TABLE} WHERE channel_id = ? AND COALESCE(frozen, 0) = 0`,
-    [id]
+    "UPDATE context SET subchannel = NULL WHERE id = ? AND COALESCE(subchannel, '') = ? AND COALESCE(frozen, 0) = 1",
+    [id, sub]
   );
-  return Number(res1?.affectedRows || 0) + Number(res2?.affectedRows || 0);
+
+  return {
+    deleted:  Number(res1?.affectedRows || 0),
+    promoted: Number(res2?.affectedRows || 0)
+  };
 }
 
 /************************************************************************************/
 /* functionSignature: setFreezeContext (workingObject)                               *
-/* Marks context and timeline rows as frozen.                                        *
+/* Marks context rows as frozen (protected from deletion).                           *
+/* Same scoping as setPurgeContext — respects wo.subchannel and subchannelFallback.  *
+/* Timeline is only frozen when the full channel (not a subchannel) is targeted.    *
 /************************************************************************************/
 export async function setFreezeContext(workingObject) {
   const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
+  const { sql: subSql, args: subArgs, subchannel } = getSubchannelFilter(workingObject);
+
   const [r1] = await pool.execute(
-    "UPDATE context SET frozen = 1 WHERE id = ?",
-    [id]
+    `UPDATE context SET frozen = 1 WHERE id = ? ${subSql}`,
+    [id, ...subArgs]
   );
-  const [r2] = await pool.execute(
-    `UPDATE ${TIMELINE_TABLE} SET frozen = 1 WHERE channel_id = ?`,
-    [id]
-  );
-  return Number(r1?.affectedRows || 0) + Number(r2?.affectedRows || 0);
+  let affected = Number(r1?.affectedRows || 0);
+
+  if (!subchannel) {
+    const [r2] = await pool.execute(
+      `UPDATE ${TIMELINE_TABLE} SET frozen = 1 WHERE channel_id = ?`,
+      [id]
+    );
+    affected += Number(r2?.affectedRows || 0);
+  }
+
+  return affected;
 }
 
 /************************************************************************************/
 /* functionSignature: getContextLastSeconds (workingObject, seconds)                 *
 /* Returns [{role, text}] for all user/assistant rows in the last N seconds.         *
+/* Respects wo.subchannel and config.context.subchannelFallback.                    *
 /************************************************************************************/
 export async function getContextLastSeconds(workingObject, seconds = 60) {
   const id = String(workingObject?.channelID || "");
   if (!id) return [];
   try {
     const pool = await getEnsurePool(workingObject);
+    const { sql: subSql, args: subArgs } = getSubchannelFilter(workingObject);
     const [rows] = await pool.execute(
       `SELECT role, text FROM context
         WHERE id = ?
           AND role IN ('user', 'assistant')
           AND ts >= DATE_SUB(NOW(), INTERVAL ? SECOND)
+          ${subSql}
         ORDER BY ctx_id ASC`,
-      [id, Math.max(1, Math.round(Number(seconds) || 60))]
+      [id, Math.max(1, Math.round(Number(seconds) || 60)), ...subArgs]
     );
     return Array.isArray(rows)
       ? rows.map(r => ({ role: String(r.role || "user"), text: String(r.text || "") })).filter(r => r.text)
@@ -769,6 +894,7 @@ export async function getContextLastSeconds(workingObject, seconds = 60) {
 /* functionSignature: getContextSince (workingObject, since)                         *
 /* Returns [{role, text}] for all user/assistant rows with ts >= since (ISO string   *
 /* or Date). Channel-isolated by workingObject.channelID. Returns [] on any error.   *
+/* Respects wo.subchannel and config.context.subchannelFallback.                    *
 /************************************************************************************/
 export async function getContextSince(workingObject, since) {
   const id = String(workingObject?.channelID || "");
@@ -782,13 +908,15 @@ export async function getContextSince(workingObject, since) {
   }
   try {
     const pool = await getEnsurePool(workingObject);
+    const { sql: subSql, args: subArgs } = getSubchannelFilter(workingObject);
     const [rows] = await pool.execute(
       `SELECT role, text FROM context
         WHERE id = ?
           AND role IN ('user', 'assistant')
           AND ts >= ?
+          ${subSql}
         ORDER BY ctx_id ASC`,
-      [id, sinceDate]
+      [id, sinceDate, ...subArgs]
     );
     return Array.isArray(rows)
       ? rows.map(r => ({ role: String(r.role || "user"), text: String(r.text || "") })).filter(r => r.text)
@@ -914,7 +1042,7 @@ async function getSummarizeContextBatch(workingObject, rows, meta) {
 /* Provides named functions via a default export object.                             *
 /************************************************************************************/
 function getDefaultExport() {
-  return { setContext, getContext, setPurgeContext, setFreezeContext };
+  return { setContext, getContext, setPurgeContext, setPurgeSubchannel, setFreezeContext };
 }
 
 export default getDefaultExport();

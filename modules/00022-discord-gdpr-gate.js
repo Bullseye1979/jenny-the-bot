@@ -9,7 +9,7 @@ import mysql from "mysql2/promise";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
 
-const MODULE_NAME = "gdpr-gate";
+const MODULE_NAME = "discord-gdpr-gate";
 
 /************************************************************************************/
 /* functionSignature: getTableName (coreData)                                      *

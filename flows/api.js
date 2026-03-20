@@ -6,8 +6,10 @@
 /************************************************************************************/
 
 import http from "node:http";
+import path from "node:path";
 import { getItem } from "../core/registry.js";
 import { getContext } from "../core/context.js";
+import { saveFile } from "../core/file.js";
 
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -109,7 +111,7 @@ function getUlid() {
 function setCorsHeaders(res) {
   res.setHeader("access-control-allow-origin", "*");
   res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type, authorization");
+  res.setHeader("access-control-allow-headers", "content-type, authorization, x-filename");
 }
 
 function getJson(res, status, body) {
@@ -152,6 +154,26 @@ function getReadBody(req, max = 1024 * 1024) {
       if (aborted) return;
       reject(err);
     });
+  });
+}
+
+/****************************************************************************************************************
+* functionSignature: getReadBodyBuffer(req, max)                                                                 *
+* Purpose: Reads the request body as a raw Buffer up to a maximum size (bytes).                                  *
+****************************************************************************************************************/
+function getReadBodyBuffer(req, max = 50 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    let aborted = false;
+    req.on("data", (c) => {
+      if (aborted) return;
+      size += c.length;
+      if (size > max) { aborted = true; reject(new Error("body_too_large")); return; }
+      chunks.push(c);
+    });
+    req.on("end", () => { if (!aborted) resolve(Buffer.concat(chunks)); });
+    req.on("error", (err) => { if (!aborted) reject(err); });
   });
 }
 
@@ -349,6 +371,37 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       }
     }
 
+    const uploadPath = String(cfg.uploadPath || "/upload");
+
+    if (req.method === "POST" && (req.url === uploadPath || req.url.startsWith(uploadPath + "?"))) {
+      if (!isBearerValid(req, baseCore)) {
+        return getJson(res, 401, { ok: false, error: "unauthorized" });
+      }
+      const rawName = String(req.headers["x-filename"] || "upload").replace(/[/\\]/g, "_").trim() || "upload";
+      let buf;
+      try {
+        buf = await getReadBodyBuffer(req, 50 * 1024 * 1024);
+      } catch (e) {
+        return getJson(res, e?.message === "body_too_large" ? 413 : 400, { ok: false, error: e?.message || "read_failed" });
+      }
+      try {
+        const uploadUrlObj = new URL(req.url, `http://localhost:${port}`);
+        const uploadUserId = String(uploadUrlObj.searchParams.get("userId") || "").trim().replace(/[^a-zA-Z0-9_-]/g, "") || "shared";
+        const uploadWo = {
+          ...baseCore?.workingObject,
+          baseUrl: String(cfg.publicBaseUrl || baseCore?.workingObject?.baseUrl || ""),
+          userId: uploadUserId
+        };
+        const { filename, url } = await saveFile(uploadWo, buf, {
+          name: path.basename(rawName, path.extname(rawName)),
+          ext: path.extname(rawName) || ".bin"
+        });
+        return getJson(res, 200, { ok: true, filename, url });
+      } catch (e) {
+        return getJson(res, 500, { ok: false, error: "save_failed", reason: e?.message || String(e) });
+      }
+    }
+
     if (req.method !== "POST" || req.url !== apiPath) {
       return getJson(res, 404, { error: "not_found", botname: getBotname(undefined, baseCore) });
     }
@@ -381,6 +434,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     workingObject.guildId = "";
     workingObject.timestamp = new Date().toISOString();
     workingObject.httpAuthorization = String(req.headers?.authorization || "");
+
+    const _apiSubchannel = String(parsedBody.subchannel || "").trim();
+    if (_apiSubchannel) workingObject.subchannel = _apiSubchannel;
 
     try {
       await runFlow("api", runCore);

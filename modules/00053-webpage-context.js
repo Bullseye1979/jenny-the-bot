@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { getMenuHtml, getDb } from "../shared/webpage/interface.js";
+import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-context";
@@ -348,6 +348,7 @@ function getContextHtml({ menu, role, activePath, base, dbStatus, dbInfo }) {
 <html lang="de">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Context Editor</title>
+${getThemeHeadScript()}
 <link rel="stylesheet" href="${base}/style.css">
 </head>
 <body>

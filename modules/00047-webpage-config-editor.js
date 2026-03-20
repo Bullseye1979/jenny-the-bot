@@ -1,7 +1,7 @@
 "use strict";
 
 import fs from "node:fs";
-import { getMenuHtml, readJsonFile, writeJsonFile } from "../shared/webpage/interface.js";
+import { getMenuHtml, readJsonFile, writeJsonFile, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-config-editor";
@@ -219,6 +219,7 @@ function getAccessDeniedHtml(opts) {
 '<meta charset="UTF-8">\n' +
 '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
 '<title>⚙️ Config</title>\n' +
+getThemeHeadScript() + "\n" +
 '<link rel="stylesheet" href="' + base + '/style.css">\n' +
 '</head>\n' +
 '<body>\n' +
@@ -227,7 +228,7 @@ function getAccessDeniedHtml(opts) {
 (menuHtml ? ('  ' + menuHtml + '\n') : '') +
 '</header>\n' +
 '<div style="margin-top:var(--hh);padding:12px">\n' +
-'  <div style="padding:12px;border:1px solid var(--bdr);border-radius:10px;background:#fff">\n' +
+'  <div style="padding:12px;border:1px solid var(--bdr);border-radius:10px;background:var(--bg2)">\n' +
 '    <strong>Access denied</strong><br>\n' +
 '    <span style="color:var(--muted)">' + msg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + '</span>\n' +
 '  </div>\n' +
@@ -261,45 +262,46 @@ function getConfigHtml(opts) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>⚙️ Config</title>
+${getThemeHeadScript()}
 <link rel="stylesheet" href="${configBase}/style.css">
 <style>
 .cfg-wrap{margin-top:var(--hh);height:calc(100dvh - var(--hh));overflow-y:auto;padding:12px 14px 40px}
 .cfg-toolbar{display:flex;gap:8px;margin-bottom:10px}
 /* sections */
-.cs{border:1px solid var(--bdr);border-radius:8px;margin-bottom:8px;background:#fff;overflow:hidden}
-.cs-hdr{display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;user-select:none;background:var(--bg2,#f5f5f5)}
+.cs{border:1px solid var(--bdr);border-radius:8px;margin-bottom:8px;background:var(--bg2);overflow:hidden}
+.cs-hdr{display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;user-select:none;background:var(--bg2)}
 .cs.open>.cs-hdr{border-radius:8px 8px 0 0}
-.cs-hdr:hover{background:var(--bg3,#e8e8e8)}
+.cs-hdr:hover{background:var(--bg3)}
 .cs-arrow{font-size:10px;transition:transform .15s;display:inline-block;color:var(--muted)}
 .cs.open>.cs-hdr>.cs-arrow{transform:rotate(90deg)}
 .cs-title{font-weight:600;font-size:13px;flex:1;color:var(--txt)}
-.cs-badge{font-size:11px;color:var(--muted);background:rgba(0,0,0,.08);border-radius:10px;padding:1px 7px}
+.cs-badge{font-size:11px;color:var(--muted);background:rgba(128,128,128,.15);border-radius:10px;padding:1px 7px}
 .cs-body{display:none;padding:10px 14px 12px;grid-gap:7px}
 .cs.open>.cs-body{display:grid}
 /* nested sections */
 .cs .cs{margin-bottom:4px}
-.cs .cs .cs-hdr{background:var(--bg,#fafafa)}
-.cs .cs .cs .cs-hdr{background:#fff}
+.cs .cs .cs-hdr{background:var(--bg)}
+.cs .cs .cs .cs-hdr{background:var(--bg2)}
 /* fields */
 .cf{display:grid;grid-template-columns:160px 1fr;gap:8px;align-items:start}
 .cf label{font-size:12px;color:var(--muted);padding-top:5px;word-break:break-word;overflow-wrap:anywhere}
-.cf input[type=text],.cf input[type=number],.cf input[type=password]{width:100%;border:1px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:13px;background:var(--bg,#fafafa);color:var(--txt);box-sizing:border-box}
-.cf textarea{width:100%;border:1px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:12px;font-family:monospace;line-height:1.4;background:var(--bg,#fafafa);color:var(--txt);resize:vertical;min-height:54px;box-sizing:border-box}
-.cf input[type=checkbox]{margin-top:6px;width:16px;height:16px;cursor:pointer;accent-color:var(--accent,#5865f2)}
+.cf input[type=text],.cf input[type=number],.cf input[type=password]{width:100%;border:1px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:13px;background:var(--bg);color:var(--txt);box-sizing:border-box}
+.cf textarea{width:100%;border:1px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:12px;font-family:monospace;line-height:1.4;background:var(--bg);color:var(--txt);resize:vertical;min-height:54px;box-sizing:border-box}
+.cf input[type=checkbox]{margin-top:6px;width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
 /* password row */
 .cfg-pw-row{display:flex;gap:4px;width:100%}
 .cfg-pw-row input{flex:1;min-width:0}
-.cfg-eye{padding:3px 8px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg,#fafafa);cursor:pointer;font-size:13px;line-height:1.4}
+.cfg-eye{padding:3px 8px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg);color:var(--txt);cursor:pointer;font-size:13px;line-height:1.4}
 /* tag chips */
-.cfg-tags{display:flex;flex-wrap:wrap;gap:4px;padding:4px 6px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg,#fafafa);min-height:32px;align-items:center}
-.cfg-tag{display:inline-flex;align-items:center;gap:2px;background:var(--accent,#5865f2);color:#fff;border-radius:12px;padding:2px 4px 2px 9px;font-size:12px;line-height:1.4}
+.cfg-tags{display:flex;flex-wrap:wrap;gap:4px;padding:4px 6px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg);min-height:32px;align-items:center}
+.cfg-tag{display:inline-flex;align-items:center;gap:2px;background:var(--accent);color:#fff;border-radius:12px;padding:2px 4px 2px 9px;font-size:12px;line-height:1.4}
 .cfg-tag-del{background:none;border:none;color:rgba(255,255,255,.75);cursor:pointer;padding:0 5px;font-size:15px;line-height:1}
 .cfg-tag-del:hover{color:#fff}
 .cfg-tag-inp{border:none;background:none;outline:none;font-size:12px;min-width:60px;color:var(--txt);padding:0 2px}
 /* pencil edit */
 .cs-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;border-radius:4px;flex-shrink:0;opacity:.65}
-.cs-edit:hover{opacity:1;color:var(--accent,#5865f2)}
-.cs-title-inp{flex:1;border:1px solid var(--accent,#5865f2);border-radius:4px;padding:1px 6px;font-size:13px;font-weight:600;background:#fff;color:var(--txt);min-width:60px;outline:none}
+.cs-edit:hover{opacity:1;color:var(--accent)}
+.cs-title-inp{flex:1;border:1px solid var(--accent);border-radius:4px;padding:1px 6px;font-size:13px;font-weight:600;background:var(--bg2);color:var(--txt);min-width:60px;outline:none}
 /* delete buttons */
 .cs-del{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0 2px;border-radius:4px;flex-shrink:0}
 .cs-del:hover{color:#c00;background:rgba(200,0,0,.08)}
@@ -309,7 +311,7 @@ function getConfigHtml(opts) {
 /* add bar */
 .cs-add-bar{display:flex;gap:6px;padding:4px 0 0;margin-top:2px;border-top:1px dashed var(--bdr)}
 .cs-add-bar button{font-size:11px;padding:2px 8px;border:1px dashed var(--bdr);border-radius:5px;background:none;color:var(--muted);cursor:pointer}
-.cs-add-bar button:hover{color:var(--accent,#5865f2);border-color:var(--accent,#5865f2);background:rgba(88,101,242,.05)}
+.cs-add-bar button:hover{color:var(--accent);border-color:var(--accent);background:rgba(128,128,255,.07)}
 </style>
 </head>
 <body>

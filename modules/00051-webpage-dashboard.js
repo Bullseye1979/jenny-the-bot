@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getMenuHtml } from "../shared/webpage/interface.js";
+import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-dashboard";
@@ -174,6 +174,7 @@ function buildDashboardHtml(data, menu, role, basePath, refreshSec) {
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta http-equiv="refresh" content="${refreshSec}">
 <title>Dashboard &#8212; Jenny</title>
+${getThemeHeadScript()}
 <link rel="stylesheet" href="${basePath}/style.css">
 <style>
 .dwrap{

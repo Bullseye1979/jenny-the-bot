@@ -1,8 +1,8 @@
 # Jenny — Discord AI Bot
 
-> **Version:** 1.0 · **Date:** 2026-03-19
+> **Version:** 1.0 · **Date:** 2026-03-20
 
-Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice, browser voice interface), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management, and a live terminal dashboard with hot-reload. A first-run setup wizard eliminates manual `core.json` creation.
+Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice, browser voice interface), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management, a live terminal dashboard with hot-reload, and a web-based image gallery. A first-run setup wizard eliminates manual `core.json` creation.
 
 ---
 
@@ -290,7 +290,7 @@ Changes are held in memory until **Save** is clicked (or Ctrl+S). The AI chat ha
 
 #### config.webpage-chat
 
-Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. The `apiSecret` per channel is injected server-side and is never exposed to the browser.
+Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. AI completions are processed directly within the flow — no external API proxy. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
 
 ```jsonc
 {
@@ -299,10 +299,11 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. The `apiSecret` pe
     "port":         3112,
     "basePath":     "/chat",
     "allowedRoles": ["member", "admin"],
-    "apiUrl": "http://localhost:3400/api",
+    "systemPrompt": "",
+    "contextSize":  20,
+    "maxTokens":    1024,
     "chats": [
-      { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
-      { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
+      { "label": "General", "channelID": "YOUR_CHANNEL_ID", "roles": [] }
     ]
   }
 }
@@ -311,14 +312,17 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. The `apiSecret` pe
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port to listen on (default `3112`) — must also be in `config.webpage.ports` |
+| `port` | HTTP port (default `3112`) |
 | `basePath` | URL prefix (default `"/chat"`) |
-| `allowedRoles` | Roles allowed to view the chat. Empty array = public |
-| `apiUrl` | Default URL of the bot's HTTP API endpoint (default `http://localhost:3400/api`) |
-| `chats[].label` | Display name shown in the channel selector dropdown |
-| `chats[].channelID` | Channel ID passed to the API as context |
-| `chats[].apiSecret` | Bearer token for the API; injected server-side, never sent to the browser |
-| `chats[].apiUrl` | Per-chat API URL override; falls back to the global `apiUrl` if omitted |
+| `allowedRoles` | Roles allowed to access the chat. Empty = public |
+| `systemPrompt` | Optional system prompt prepended to every AI call (default `""`) |
+| `contextSize` | Recent user turns to include in AI context (default `20`) |
+| `maxTokens` | Max tokens in AI response (default `1024`) |
+| `chats[].label` | Display name in the channel selector |
+| `chats[].channelID` | Channel ID used as context scope |
+| `chats[].roles` | Optional role restriction for this chat entry |
+
+> AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
 
 #### config.db / workingObject.db
 
@@ -346,12 +350,21 @@ Settings for conversation summarisation (used by `core/context.js`):
     "endpoint":   "https://api.openai.com/v1/chat/completions",
     "model":      "gpt-4o-mini",
     "apiKey":     "<key>",
-    "periodSize": 600
+    "periodSize": 600,
+    "subchannelFallback": false
   }
 }
 ```
 
 `periodSize` is the rolling window in seconds for timeline summarisation (default 600 s = 10 min).
+
+| Key | Description |
+|---|---|
+| `endpoint` | LLM endpoint used by the context summariser |
+| `model` | Model used for rolling timeline summarisation |
+| `apiKey` | API key for the summariser |
+| `periodSize` | Rolling window in seconds; messages older than this are summarised |
+| `subchannelFallback` | `false` (default): when `wo.subchannel` is not set, all functions (getContext, setPurgeContext, setFreezeContext, getContextLastSeconds, getContextSince) operate only on rows where `subchannel IS NULL`. `true`: no subchannel filter — all rows for the channel including subchannel rows are included. |
 
 #### config.cron
 
@@ -534,9 +547,8 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - `Ctrl + S` to save
 
 **💬 Chat** (`modules/00048`, `GET /chat`)
-- Large scrollable chat window with AI; loads the last 100 context entries from MySQL on channel select
-- Channel selector dropdown (configured via `chats[]` in `config["webpage-chat"]`)
-- Messages proxied server-side — `apiSecret` is never sent to the browser
+- Large scrollable chat window with AI; processes completions directly using the global workingObject credentials (no separate `ai.*` config needed)
+- Channel selector dropdown (configured via `chats[]` in `config["webpage-chat"]`); subchannel selector for scoped conversation threads
 - Fixed-height textarea with internal scroll; `Enter` sends, `Shift + Enter` adds a newline
 - **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
 - **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel, no cross-channel interference)
@@ -677,7 +689,7 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 | `00045` | webpage-inpaint | Redirects `GET /documents/*.png` to the inpainting port so AI images open directly in the editor |
 | `00046` | webpage-bard | Bard library manager SPA (port 3114, `/bard`) — tag editor, preview, Now Playing, Bulk Auto-Tag upload |
 | `00047` | webpage-config-editor | Config editor SPA (port 3111, `/config`) — collapsible cards, tag chips, password fields |
-| `00048` | webpage-chat | Chat SPA (port 3112, `/chat`) — markdown, media embeds, toolcall indicator, server-side secret injection |
+| `00048` | webpage-chat | Chat SPA (port 3112, `/chat`) — markdown, media embeds, toolcall indicator, direct AI completions, subchannel CRUD |
 | `00049` | webpage-inpainting | Inpainting SPA (port 3113, `/inpainting`) — brush mask editor, SD proxy, auth gate |
 | `00050` | discord-admin-commands | Processes slash commands and DM admin commands |
 | `00051` | webpage-dashboard | Live telemetry dashboard (port 3115, `/dashboard`) — flow status, memory, per-module timing |
@@ -862,6 +874,7 @@ Manages persistent conversation history in MySQL.
 | `role` | VARCHAR | `user` or `assistant` |
 | `turn_id` | VARCHAR | ULID of the conversation turn |
 | `frozen` | TINYINT | 1 = protected from deletion |
+| `subchannel` | VARCHAR(128) | Optional subchannel UUID; `NULL` = main channel |
 
 **Key behaviours:**
 
@@ -870,14 +883,30 @@ Manages persistent conversation history in MySQL.
 - **Token budget:** Context is trimmed (dropping only the last user message per trim step) until it fits within `contextTokenBudget`.
 - **User blocking:** When a user is blocked, their token budget is capped at 1.
 - **Extra channels:** Messages from additional channels can be included as quoted context.
+- **Subchannel isolation:** `wo.subchannel` (UUID) is stored with every row written by `setContext`. All functions use an internal `getSubchannelFilter()` helper that applies a consistent WHERE clause:
+  - `wo.subchannel` set → scope to that subchannel only
+  - `wo.subchannel` not set + `subchannelFallback=false` (default) → only rows where `subchannel IS NULL`
+  - `wo.subchannel` not set + `subchannelFallback=true` → no filter (full channel including all subchannels)
+- **Subchannel deletion (`setPurgeSubchannel`):** When a subchannel is deleted, non-frozen context entries are permanently deleted. Frozen entries are **promoted** to the main channel (their `subchannel` field is set to `NULL`) so they are preserved and become part of the main context.
+- **Purge/Freeze scoping:** `setPurgeContext` and `setFreezeContext` respect the same filter. The channel-wide timeline rows are only affected when targeting the full channel (not a specific subchannel).
 
 **Exported functions:**
 
 ```js
 import {
-  getAddContext,   // Load history into workingObject
-  getWriteContext, // Persist the current turn to MySQL
-  getDeleteContext // Delete messages for a channel
+  setContext,             // Persist a record; stores wo.subchannel if set
+  getContext,             // Load history; scoped by getSubchannelFilter
+  setPurgeContext,        // Delete non-frozen rows; scoped by getSubchannelFilter
+                          //   subchannel set              → that subchannel only (timeline untouched)
+                          //   no subchannel + fallback=false → subchannel IS NULL rows + timeline
+                          //   no subchannel + fallback=true  → all rows for channel + timeline
+  setPurgeSubchannel,     // Called on subchannel delete:
+                          //   1. DELETE non-frozen rows with that subchannelId
+                          //   2. UPDATE frozen rows: set subchannel=NULL (promoted to main channel)
+                          //   Returns { deleted, promoted }
+  setFreezeContext,       // Mark rows frozen; same scoping as setPurgeContext
+  getContextLastSeconds,  // Rows from last N seconds; scoped by getSubchannelFilter
+  getContextSince         // Rows since timestamp; scoped by getSubchannelFilter
 } from "./core/context.js";
 ```
 
@@ -1164,9 +1193,10 @@ A Manifest V3 browser extension (Edge / Chrome) is included under `extensions/je
 |---|---|
 | **Chat UI** | Full chat window with markdown rendering, link embedding, and video playback — identical to the admin panel chat |
 | **Summarize button** | One click sends the current tab's URL to the bot with a summarization task (`getWebpage` / `getYoutube`) |
+| **Gallery upload** | Drag-and-drop or click to upload images directly to the bot's Gallery. Requires `webBaseUrl` in the options and an active login session on the Jenny web interface. |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots |
 | **META frame filtering** | Lines starting with `META|` are stripped from API responses before display; internal context-injection frames are never shown to the user |
-| **Options page** | Configure API URL, Channel ID, and API Secret via `chrome.storage` |
+| **Options page** | Configure API URL, Channel ID, API Secret, and Web Base URL via `chrome.storage` |
 
 ### Installation
 
@@ -1182,6 +1212,7 @@ A Manifest V3 browser extension (Edge / Chrome) is included under `extensions/je
 | **API URL** | Full URL of the bot's API endpoint, e.g. `http://localhost:3400/api` |
 | **Channel ID** | Channel the extension talks to; must have `apiEnabled: 1` in `core.json` |
 | **API Secret** | Bearer token (leave empty if `apiSecret` is not set on the channel) |
+| **Web Base URL** | Base URL of the Jenny web interface (e.g. `https://jenny.example.com`). Required for gallery uploads. You must be logged into the web interface first — click **Open login page** in the options. |
 
 ### Bot-side setup (`core.json`)
 
@@ -1203,7 +1234,7 @@ Add or verify the `browser-extension` channel entry in `core-channel-config.chan
 And add the chat to `webpage-chat.chats[]` so the admin panel can monitor it:
 
 ```jsonc
-{ "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
+{ "label": "Browser Extension", "channelID": "browser-extension", "roles": [] }
 ```
 
 ---

@@ -5,10 +5,8 @@
 /*          ./pub/documents and return public links.                               *
 /**********************************************************************************/
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { fetch, Agent } from "undici";
+import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getImageSD";
 
@@ -28,45 +26,6 @@ const DEFAULT_NEGATIVE_PROMPT = [
   "text, watermark, signature, logo, captions, UI, interface elements",
   "glitches, tiling, pattern artifacts, banding, moire"
 ].join(", ");
-
-/**********************************************************************************/
-/* functionSignature: getEnsureDir (absPath)                                       *
-/* Creates a directory recursively if it does not exist                            *
-/**********************************************************************************/
-function getEnsureDir(absPath) {
-  if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
-}
-
-/**********************************************************************************/
-/* functionSignature: getRandSuffix ()                                             *
-/* Returns a short random suffix for filenames                                     *
-/**********************************************************************************/
-function getRandSuffix() {
-  const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
-  return n.slice(-6);
-}
-
-/**********************************************************************************/
-/* functionSignature: getSaveBuffer (buf, dirAbs, ext)                             *
-/* Saves a buffer to directory with timestamped name                               *
-/**********************************************************************************/
-function getSaveBuffer(buf, dirAbs, ext = ".png") {
-  getEnsureDir(dirAbs);
-  const filename = `img_${Date.now()}_${getRandSuffix()}${ext}`;
-  const abs = path.join(dirAbs, filename);
-  fs.writeFileSync(abs, buf);
-  return { filename, abs };
-}
-
-/**********************************************************************************/
-/* functionSignature: getBuildPublicUrl (base, filename)                           *
-/* Builds a public URL for a saved document file                                   *
-/**********************************************************************************/
-function getBuildPublicUrl(base, filename) {
-  if (!base) return null;
-  const trimmed = String(base).replace(/\/+$/, "");
-  return `${trimmed}/documents/${filename}`;
-}
 
 /**********************************************************************************/
 /* functionSignature: getParseSize (sizeStr, defW, defH)                           *
@@ -95,13 +54,10 @@ function getStripDataUrlPrefix(b64) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getPersistSDImages (b64List, publicBaseUrl)                  *
+/* functionSignature: getPersistSDImages (b64List, wo)                             *
 /* Persists base64 images to ./pub/documents and returns file metadata             *
 /**********************************************************************************/
-async function getPersistSDImages(b64List, publicBaseUrl) {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  const documentsDir = path.join(__dirname, "..", "pub", "documents");
+async function getPersistSDImages(b64List, wo) {
   const out = [];
   for (const raw of b64List) {
     try {
@@ -111,12 +67,12 @@ async function getPersistSDImages(b64List, publicBaseUrl) {
         continue;
       }
       const buf = Buffer.from(b64, "base64");
-      const saved = getSaveBuffer(buf, documentsDir, ".png");
+      const saved = await saveFile(wo, buf, { prefix: "img", ext: ".png" });
       out.push({
         ok: true,
         filename: saved.filename,
-        path: saved.abs,
-        url: getBuildPublicUrl(publicBaseUrl, saved.filename),
+        path: saved.absPath,
+        url: saved.url,
         source: "b64"
       });
     } catch (e) {
@@ -171,8 +127,6 @@ async function getInvoke(args, coreData) {
   const timeoutMs = getNumSafe(toolCfg.timeoutMs, 120000);
   const netTimeoutMs = getNumSafe(toolCfg.networkTimeoutMs, 1800000);
   const agent = new Agent({ headersTimeout: netTimeoutMs, bodyTimeout: 0 });
-
-  const publicBaseUrl = typeof toolCfg.publicBaseUrl === "string" ? toolCfg.publicBaseUrl : null;
 
   const batch_size = Math.min(n, 4);
   const n_iter = Math.ceil(n / batch_size);
@@ -232,7 +186,7 @@ async function getInvoke(args, coreData) {
   const images = Array.isArray(data?.images) ? data.images : [];
   if (!images.length) return { ok: false, error: "No image data returned by A1111" };
 
-  const saved = await getPersistSDImages(images, publicBaseUrl);
+  const saved = await getPersistSDImages(images, wo);
   const okFiles = saved.filter(x => x.ok);
 
   return {

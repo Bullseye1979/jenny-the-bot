@@ -10,7 +10,7 @@
 import fs   from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getMenuHtml } from "../shared/webpage/interface.js";
+import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem }     from "../core/registry.js";
 
 const MODULE_NAME = "webpage-bard";
@@ -571,6 +571,7 @@ function getBardHtml({ menu, role, activePath, base, isAdmin }) {
 '<!DOCTYPE html>\n<html lang="en">\n<head>\n' +
 '<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
 '<title>🎵 Bard</title>\n' +
+getThemeHeadScript() + "\n" +
 '<link rel="stylesheet" href="' + base + '/style.css">\n' +
 '<style>\n' +
 '#bard-wrap{margin-top:var(--hh);height:calc(100vh - var(--hh));height:calc(100dvh - var(--hh));overflow-y:auto;padding:16px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 80px);display:flex;flex-direction:column;gap:16px;max-width:860px;margin-left:auto;margin-right:auto}\n' +

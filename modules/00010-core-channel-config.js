@@ -289,6 +289,21 @@ function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userI
 }
 
 /************************************************************************************/
+/* functionSignature: applyChannelConfig (workingObject, config, channelId, flow,  *
+/*                    userId)                                                      *
+/* Applies channel-config overrides directly to workingObject for cases where      *
+/* channelID is only known at runtime (e.g. webpage-chat API handlers).            *
+/* Safe to call even if channelId is not in channels — it is a no-op then.        *
+/************************************************************************************/
+export function applyChannelConfig(workingObject, config, channelId, flow, userId) {
+  const channels = config?.["core-channel-config"]?.channels;
+  if (!Array.isArray(channels) || !channelId || !flow) return;
+  if (!channels.some(ch => matchChannel(ch, channelId))) return;
+  applyStrictHierarchy(workingObject, channels, channelId, flow, userId || "");
+  workingObject.channelallowed = true;
+}
+
+/************************************************************************************/
 /* functionSignature: getChannelConfig (coreData)                                  *
 /* coreData after applying hierarchical overrides onto workingObject.              *
 /************************************************************************************/

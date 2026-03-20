@@ -5,28 +5,9 @@
 /*          ./pub/documents, returning a public URL.                               *
 /**********************************************************************************/
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getAnimatedPicture";
-
-/**********************************************************************************/
-/* functionSignature: getEnsureDir (absPath)                                       *
-/* Ensures a directory exists                                                      *
-/**********************************************************************************/
-function getEnsureDir(absPath) {
-  if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
-}
-
-/**********************************************************************************/
-/* functionSignature: getRandSuffix ()                                             *
-/* Returns a short random lowercase base36 suffix                                  *
-/**********************************************************************************/
-function getRandSuffix() {
-  const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
-  return n.slice(-6);
-}
 
 /**********************************************************************************/
 /* functionSignature: getGuessExtFromCtype (ctype)                                 *
@@ -37,28 +18,6 @@ function getGuessExtFromCtype(ctype) {
   if (c.includes("webm")) return ".webm";
   if (c.includes("quicktime") || c.includes("mov")) return ".mov";
   return ".mp4";
-}
-
-/**********************************************************************************/
-/* functionSignature: getBuildPublicUrl (base, filename)                           *
-/* Builds a public URL for a given filename                                        *
-/**********************************************************************************/
-function getBuildPublicUrl(base, filename) {
-  if (!base) return `/documents/${filename}`;
-  const trimmed = String(base).replace(/\/+$/, "");
-  return `${trimmed}/documents/${filename}`;
-}
-
-/**********************************************************************************/
-/* functionSignature: getSaveBuffer (buf, dirAbs, ext)                             *
-/* Saves a buffer to disk with a generated name                                    *
-/**********************************************************************************/
-function getSaveBuffer(buf, dirAbs, ext = ".mp4") {
-  getEnsureDir(dirAbs);
-  const filename = `video_${Date.now()}_${getRandSuffix()}${ext}`;
-  const abs = path.join(dirAbs, filename);
-  fs.writeFileSync(abs, buf);
-  return { filename, abs };
 }
 
 /**********************************************************************************/
@@ -186,10 +145,10 @@ function getBuildInput(prompt, imageUrl) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getRunSinglePrediction ({ cfg, model, input })               *
+/* functionSignature: getRunSinglePrediction ({ cfg, model, input, wo })           *
 /* Runs one prediction, downloads, saves, and returns metadata                     *
 /**********************************************************************************/
-async function getRunSinglePrediction({ cfg, model, input }) {
+async function getRunSinglePrediction({ cfg, model, input, wo }) {
   let predictionId;
   try {
     predictionId = await getCreatePrediction(cfg, input, model);
@@ -197,10 +156,8 @@ async function getRunSinglePrediction({ cfg, model, input }) {
     const url = getExtractFirstOutputUrl(finalData);
     if (!url) return { ok: false, error: "No output URL returned", predictionId };
     const { buf, ctype } = await getDownloadToBuffer(url);
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const documentsDir = path.join(__dirname, "..", "pub", "documents");
-    const saved = getSaveBuffer(buf, documentsDir, getGuessExtFromCtype(ctype));
+    const ext = getGuessExtFromCtype(ctype);
+    const saved = await saveFile(wo, buf, { prefix: "video", ext });
     return {
       ok: true,
       provider: "replicate",
@@ -208,8 +165,8 @@ async function getRunSinglePrediction({ cfg, model, input }) {
       predictionId,
       file: {
         filename: saved.filename,
-        path: saved.abs,
-        url: getBuildPublicUrl(cfg.publicBaseUrl, saved.filename)
+        path: saved.absPath,
+        url: saved.url
       }
     };
   } catch (e) {
@@ -234,7 +191,7 @@ async function getInvoke(args, coreData) {
   const imageURL = getValidateImageUrl(args?.imageURL);
   if (!imageURL) return { ok: false, error: `[${MODULE_NAME}] Missing or invalid 'imageURL' (must be http/https).` };
   const input = getBuildInput(prompt, imageURL);
-  const res = await getRunSinglePrediction({ cfg, model: cfg.model, input });
+  const res = await getRunSinglePrediction({ cfg, model: cfg.model, input, wo });
   if (res.ok) res.input = input;
   return res;
 }

@@ -86,6 +86,58 @@ header {
 }
 #options-btn:hover { background: rgba(255,255,255,.22); }
 
+#gallery-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(255,255,255,.1);
+  color: rgba(255,255,255,.8);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+}
+#gallery-btn:hover { background: rgba(255,255,255,.22); }
+#gallery-btn.active { background: var(--acc); color: #fff; }
+
+/* ---- Gallery upload panel ---- */
+#gallery-panel {
+  background: var(--card);
+  border-bottom: 1px solid var(--bdr);
+  padding: 8px 10px;
+  flex-shrink: 0;
+}
+
+#gallery-drop {
+  border: 2px dashed var(--bdr);
+  border-radius: 7px;
+  padding: 14px 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  user-select: none;
+}
+#gallery-drop:hover, #gallery-drop.dragover {
+  border-color: var(--acc);
+  background: rgba(59,130,246,.05);
+  color: var(--acc);
+}
+
+#gallery-status {
+  margin-top: 6px;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+#gallery-status.ok  { background: #f0fdf4; color: #15803d; }
+#gallery-status.err { background: #fef2f2; color: #dc2626; }
+
 /* ---- Config warning ---- */
 #config-warn {
   background: var(--warn-bg);
@@ -240,3 +292,52 @@ header {
 }
 #send-btn:hover { background: var(--acc2); }
 #send-btn:disabled { opacity: .4; cursor: default; }
+
+/* ---- Attach button ---- */
+#attach-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  transition: color .15s;
+}
+#attach-btn:hover { color: var(--acc); }
+
+/* ---- File preview chip ---- */
+#file-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--card);
+  border-top: 1px solid var(--bdr);
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+#file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#file-clear {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+#file-clear:hover { color: #ef4444; }

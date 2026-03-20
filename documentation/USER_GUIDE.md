@@ -1,6 +1,6 @@
 # Jenny — User Guide
 
-> **Version:** 1.0 · **Date:** 2026-03-15
+> **Version:** 1.0 · **Date:** 2026-03-20
 
 Jenny is an AI assistant that lives in your Discord server. She can chat, answer questions, generate images and videos, look things up on the web, read YouTube transcripts, manage Confluence and Jira, and even talk back to you in voice channels.
 
@@ -24,6 +24,7 @@ This guide explains everything you need to know to use Jenny as a regular user.
 12. [Creating Macros](#creating-macros)
 13. [Bard Music System](#bard-music-system)
 14. [Web Interface](#web-interface)
+14a. [Gallery](#gallery)
 15. [AI Wiki](#ai-wiki)
 16. [Slash Commands Reference](#slash-commands-reference)
 17. [Tips & Tricks](#tips--tricks)
@@ -383,9 +384,10 @@ Jenny provides several browser-based tools. Your server admin decides which are 
 
 | URL | What it does |
 |---|---|
-| `/chat` | AI chat in the browser — same as Discord chat but accessible from any device |
+| `/chat` | AI chat in the browser — select a channel, optionally create or switch subchannels for separate conversation threads |
 | `/voice` | Browser-based voice interface — talk to Jenny from any device with a mic |
 | `/inpainting` | Image editor for AI inpainting (see [Editing Images](#editing-images-inpainting)) |
+| `/gallery` | Your personal image gallery — browse, download, open in inpainting, or delete images you have generated |
 | `/bard` | Bard music player and library manager |
 | `/wiki` | AI-generated wiki for your channel — articles written from conversation history |
 | `/docs` | Project documentation viewer |
@@ -394,6 +396,66 @@ Jenny provides several browser-based tools. Your server admin decides which are 
 | `/context` | Conversation context editor (admin only) |
 
 To log in, navigate to any of these pages and you will be redirected to Discord OAuth2 login if authentication is required. Once logged in, your access is determined by the role your server admin assigned to your Discord account.
+
+---
+
+## Gallery
+
+The Gallery (`/gallery`) shows all images you have generated during your conversations with Jenny — portraits, scene illustrations, generated maps, and anything else Jenny drew for you.
+
+### What you can do
+
+| Action | How |
+|---|---|
+| **Browse** | Scroll through your images — each card shows the filename and a preview |
+| **Download** | Click an image to open it in a new tab, then save from there |
+| **Open in Inpainting** | Click the **Inpaint** button on any image to open it directly in the inpainting editor |
+| **Delete** | Click the **Delete** button on an image to remove it permanently |
+
+### Uploading images
+
+You can also upload images to your gallery from the **browser extension** (if installed):
+
+1. Open the extension popup.
+2. Click the 🖼 gallery button in the toolbar.
+3. Drag-and-drop an image onto the upload zone, or click it to open the file picker.
+
+For this to work, you must set **Web Base URL** in the extension's options page and be logged into the Jenny web interface. The extension reuses your existing session cookie — no extra login step is required once you are already logged in.
+
+> **Note:** The gallery is personal — each user sees only their own images.
+
+---
+
+## Chat Subchannels
+
+The `/chat` interface supports **subchannels** — separate conversation threads within a single channel. Each subchannel has its own isolated context history.
+
+### Using subchannels
+
+1. Select a channel from the first dropdown.
+2. A subchannel selector appears next to it. **Main (no subchannel)** is the default thread.
+3. Choose an existing subchannel or create a new one.
+
+### Managing subchannels
+
+| Button | Action |
+|---|---|
+| ✚ | Create a new subchannel (you will be prompted for a name) |
+| ✎ | Rename the currently selected subchannel |
+| ✕ | Delete the currently selected subchannel (context entries remain in DB) |
+
+> **Note:** Deleting a subchannel removes its name mapping but does not delete the context entries stored under it. Admins can view and manage those via `/context`.
+
+### Channel/subchannel visibility
+
+By default, the **Main** thread shows only messages that were sent without a subchannel selected. Messages stored under a subchannel are only visible when that subchannel is selected.
+
+An admin can change this with `config.context.subchannelFallback = true` in `core.json`, which makes the Main thread show all messages including those from subchannels.
+
+### What happens when a subchannel is deleted
+
+- **Non-frozen messages** (regular conversation entries) are permanently deleted.
+- **Frozen messages** (entries protected with `/freeze`) are **not** deleted — they are moved to the Main channel so they are preserved.
 
 ---
 
@@ -534,4 +596,4 @@ Ask your server admin to run `/purgedb` to clear Jenny's conversation database f
 
 ---
 
-*User guide updated 2026-03-19.*
+*User guide updated 2026-03-20.*

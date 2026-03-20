@@ -5,19 +5,9 @@
 /*          ./pub/documents with AI prompt enhancement and aspect handling.        *
 /**********************************************************************************/
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getImage";
-
-/**********************************************************************************/
-/* functionSignature: getEnsureDir (absPath)                                       *
-/* Ensures a directory exists (recursive).                                         *
-/**********************************************************************************/
-function getEnsureDir(absPath) {
-  if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
-}
 
 /**********************************************************************************/
 /* functionSignature: getContentTypeToExt (ctype)                                  *
@@ -45,55 +35,21 @@ async function getHttpGetBuffer(url) {
 }
 
 /**********************************************************************************/
-/* functionSignature: getRandSuffix ()                                             *
-/* Generates a short random base36 suffix.                                         *
-/**********************************************************************************/
-function getRandSuffix() {
-  const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
-  return n.slice(-6);
-}
-
-/**********************************************************************************/
-/* functionSignature: getSaveBuffer (buf, dirAbs, ext)                             *
-/* Saves a buffer to disk under pub/documents and returns meta.                    *
-/**********************************************************************************/
-function getSaveBuffer(buf, dirAbs, ext = ".png") {
-  getEnsureDir(dirAbs);
-  const filename = `img_${Date.now()}_${getRandSuffix()}${ext}`;
-  const abs = path.join(dirAbs, filename);
-  fs.writeFileSync(abs, buf);
-  return { filename, abs };
-}
-
-/**********************************************************************************/
-/* functionSignature: getBuildPublicUrl (base, filename)                           *
-/* Builds a public URL for the saved file if base is provided.                     *
-/**********************************************************************************/
-function getBuildPublicUrl(base, filename) {
-  if (!base) return null;
-  const trimmed = String(base).replace(/\/+$/, "");
-  return `${trimmed}/documents/${filename}`;
-}
-
-/**********************************************************************************/
-/* functionSignature: getPersistImages (apiImages, publicBaseUrl)                  *
+/* functionSignature: getPersistImages (apiImages, wo)                             *
 /* Persists API image payloads to disk and returns file info.                      *
 /**********************************************************************************/
-async function getPersistImages(apiImages, publicBaseUrl) {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  const documentsDir = path.join(__dirname, "..", "pub", "documents");
+async function getPersistImages(apiImages, wo) {
   const out = [];
   for (const img of apiImages) {
     try {
       if (img?.url) {
         const { buf, ext } = await getHttpGetBuffer(img.url);
-        const saved = getSaveBuffer(buf, documentsDir, ext);
-        out.push({ ok: true, filename: saved.filename, path: saved.abs, url: getBuildPublicUrl(publicBaseUrl, saved.filename), source: "url" });
+        const saved = await saveFile(wo, buf, { prefix: "img", ext });
+        out.push({ ok: true, filename: saved.filename, path: saved.absPath, url: saved.url, source: "url" });
       } else if (img?.b64_json) {
         const buf = Buffer.from(img.b64_json, "base64");
-        const saved = getSaveBuffer(buf, documentsDir, ".png");
-        out.push({ ok: true, filename: saved.filename, path: saved.abs, url: getBuildPublicUrl(publicBaseUrl, saved.filename), source: "b64" });
+        const saved = await saveFile(wo, buf, { prefix: "img", ext: ".png" });
+        out.push({ ok: true, filename: saved.filename, path: saved.absPath, url: saved.url, source: "b64" });
       } else {
         out.push({ ok: false, error: "Unknown image payload" });
       }
@@ -373,7 +329,6 @@ async function getInvoke(args, coreData) {
   if (n > 4) n = 4;
   const strictPrompt = Boolean(args?.strictPrompt || false);
   const negative = args?.negative || null;
-  const publicBaseUrl = typeof toolCfg.publicBaseUrl === "string" ? toolCfg.publicBaseUrl : null;
   const enhancedPrompt = strictPrompt ? promptRaw : await getBuildEnhancedPrompt({ wo, toolCfg, args, basePrompt: promptRaw, imageModelName: model, negative, extraTags: [] });
   const finalSize = getBuiltSize({ size: requestedSize, aspect, targetLongEdge });
   const body = { model, prompt: enhancedPrompt, size: finalSize, n };
@@ -392,7 +347,7 @@ async function getInvoke(args, coreData) {
   if (!images.length) {
     return { ok: false, error: "No image data returned by API", model, size: finalSize, n, enhancedPrompt };
   }
-  const saved = await getPersistImages(images, publicBaseUrl);
+  const saved = await getPersistImages(images, wo);
   const okFiles = saved.filter(x => x.ok);
   return { ok: okFiles.length > 0, endpoint: imagesEndpoint, model, size: finalSize, n, prompt: promptRaw, enhancedPrompt, strictPrompt, aspect: aspect || undefined, files: okFiles.map(f => ({ filename: f.filename, path: f.path, url: f.url })), failed: saved.filter(x => !x.ok).map(x => ({ error: x.error })) };
 }

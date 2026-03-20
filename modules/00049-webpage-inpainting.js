@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { getMenuHtml } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
+import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "webpage-inpainting";
 
@@ -2601,8 +2602,15 @@ export default async function getWebpageInpainting(coreData) {
 
     const filename = `client-${Date.now()}.png`;
     try {
-      fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), imageFile.buffer);
-      setJsonResp(wo, 200, { url: basePath + "/results/" + filename });
+      let resultUrl;
+      if (wo.webAuth?.role && wo.http?.query?.toGallery === "1") {
+        const saved = await saveFile(wo, imageFile.buffer, { prefix: "inpaint", ext: ".png" });
+        resultUrl = saved.url;
+      } else {
+        fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), imageFile.buffer);
+        resultUrl = basePath + "/results/" + filename;
+      }
+      setJsonResp(wo, 200, { url: resultUrl });
     } catch (e) {
       setJsonResp(wo, 500, { error: "store_failed", details: String(e?.message || e) });
     }
@@ -2633,8 +2641,15 @@ export default async function getWebpageInpainting(coreData) {
     const filename = `upload-${Date.now()}${safeExt}`;
 
     try {
-      fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), imageFile.buffer);
-      setJsonResp(wo, 200, { url: basePath + "/results/" + filename });
+      let resultUrl;
+      if (wo.webAuth?.role && wo.http?.query?.toGallery === "1") {
+        const saved = await saveFile(wo, imageFile.buffer, { prefix: "upload", ext: safeExt });
+        resultUrl = saved.url;
+      } else {
+        fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), imageFile.buffer);
+        resultUrl = basePath + "/results/" + filename;
+      }
+      setJsonResp(wo, 200, { url: resultUrl });
     } catch (e) {
       setJsonResp(wo, 500, { error: "upload_failed", details: String(e?.message || e) });
     }
@@ -2786,7 +2801,13 @@ export default async function getWebpageInpainting(coreData) {
         }
 
         filename = `edit-openai-${Date.now()}.png`;
-        fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), buffer);
+        if (wo.webAuth?.role && wo.http?.query?.toGallery === "1") {
+          const saved = await saveFile(wo, buffer, { prefix: "inpaint", ext: ".png" });
+          filename = null;
+          setJsonResp(wo, 200, { url: saved.url, engine: `${engine.type}:${engine.id}` });
+        } else {
+          fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), buffer);
+        }
 
       } else if (type === "a1111") {
         const sdUrl              = String(ecfg.sdUrl || "http://127.0.0.1:7860");
@@ -2836,7 +2857,13 @@ export default async function getWebpageInpainting(coreData) {
         const buffer = Buffer.from(outB64, "base64");
 
         filename = `edit-sd-${Date.now()}.png`;
-        fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), buffer);
+        if (wo.webAuth?.role && wo.http?.query?.toGallery === "1") {
+          const saved = await saveFile(wo, buffer, { prefix: "inpaint", ext: ".png" });
+          filename = null;
+          setJsonResp(wo, 200, { url: saved.url, engine: `${engine.type}:${engine.id}` });
+        } else {
+          fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), buffer);
+        }
 
       } else if (type === "replicate") {
         const apiToken     = ecfg.apiToken;
@@ -2884,13 +2911,21 @@ export default async function getWebpageInpainting(coreData) {
         const buffer = Buffer.from(await imgRes.arrayBuffer());
 
         filename = `edit-replicate-${Date.now()}.png`;
-        fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), buffer);
+        if (wo.webAuth?.role && wo.http?.query?.toGallery === "1") {
+          const saved = await saveFile(wo, buffer, { prefix: "inpaint", ext: ".png" });
+          filename = null;
+          setJsonResp(wo, 200, { url: saved.url, engine: `${engine.type}:${engine.id}` });
+        } else {
+          fs.writeFileSync(path.join(INPAINT_RESULTS_DIR, filename), buffer);
+        }
 
       } else {
         throw new Error(`Unknown engine type: ${type}`);
       }
 
-      setJsonResp(wo, 200, { url: basePath + "/results/" + filename, engine: `${engine.type}:${engine.id}` });
+      if (filename !== null) {
+        setJsonResp(wo, 200, { url: basePath + "/results/" + filename, engine: `${engine.type}:${engine.id}` });
+      }
     } catch (err) {
       setJsonResp(wo, 500, { error: "Image edit failed", details: String(err?.message || err) });
     }

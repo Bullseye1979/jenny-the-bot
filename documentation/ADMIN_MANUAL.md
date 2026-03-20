@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-03-19
+> **Version:** 1.0 · **Date:** 2026-03-20
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -72,6 +72,7 @@
    - 16.2 [Config Editor (`/config`)](#162-config-editor-config)
    - 16.3 [Chat SPA (`/chat`)](#163-chat-spa-chat)
    - 16.4 [Inpainting SPA (`/inpainting`)](#164-inpainting-spa-inpainting)
+   - 16.4a [Gallery (`/gallery`)](#164a-gallery-gallery)
    - 16.5 [Bard Library Manager (`/bard`)](#165-bard-library-manager-bard)
    - 16.6 [Live Dashboard (`/dashboard`)](#166-live-dashboard-dashboard)
    - 16.7 [Documentation Browser (`/docs`)](#167-documentation-browser-docs)
@@ -1150,33 +1151,39 @@ Visual config editor served on a dedicated port. Objects render as collapsible c
 
 #### config.webpage-chat
 
-Serves the AI chat SPA (`GET /chat`). The `apiSecret` for each channel is injected server-side — it is never sent to the browser.
+Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. AI completions are processed directly within the flow — no external API proxy. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
 
-```json
-"webpage-chat": {
-  "flow":         ["webpage"],
-  "port":         3112,
-  "basePath":     "/chat",
-  "allowedRoles": ["member", "admin"],
-  "apiUrl":       "http://localhost:3400/api",
-  "chats": [
-    { "label": "General",           "channelID": "YOUR_CHANNEL_ID",   "apiSecret": "" },
-    { "label": "Browser Extension", "channelID": "browser-extension", "apiSecret": "" }
-  ]
+```jsonc
+{
+  "webpage-chat": {
+    "flow":         ["webpage"],
+    "port":         3112,
+    "basePath":     "/chat",
+    "allowedRoles": ["member", "admin"],
+    "systemPrompt": "",
+    "contextSize":  20,
+    "maxTokens":    1024,
+    "chats": [
+      { "label": "General", "channelID": "YOUR_CHANNEL_ID", "roles": [] }
+    ]
+  }
 }
 ```
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `flow` | array | `["webpage"]` | Must include `"webpage"` for the module to activate |
-| `port` | number | `3112` | HTTP port to listen on — must also be listed in `config.webpage.ports` |
-| `basePath` | string | `"/chat"` | URL prefix served by this module |
-| `allowedRoles` | array | `[]` | Roles allowed to view the chat. Empty array = public |
-| `apiUrl` | string | `"http://localhost:3400/api"` | Default URL of the bot's HTTP API flow used for all chats |
-| `chats[].label` | string | — | Display name shown in the channel dropdown |
-| `chats[].channelID` | string | — | Channel ID; injected into every API request for this chat |
-| `chats[].apiSecret` | string | `""` | Bearer secret for this channel's API requests (injected server-side, never sent to the browser) |
-| `chats[].apiUrl` | string | — | Per-chat API URL override; falls back to the global `apiUrl` if omitted |
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3112`) |
+| `basePath` | URL prefix (default `"/chat"`) |
+| `allowedRoles` | Roles allowed to access the chat. Empty = public |
+| `systemPrompt` | Optional system prompt prepended to every AI call (default `""`) |
+| `contextSize` | Recent user turns to include in AI context (default `20`) |
+| `maxTokens` | Max tokens in AI response (default `1024`) |
+| `chats[].label` | Display name in the channel selector |
+| `chats[].channelID` | Channel ID used as context scope |
+| `chats[].roles` | Optional role restriction for this chat entry |
+
+> AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
 
 ---
 
@@ -1218,10 +1225,11 @@ Controls the rolling-summary backend.
 
 ```json
 "context": {
-  "endpoint":   "https://api.openai.com/v1/chat/completions",
-  "model":      "gpt-4o-mini",
-  "apiKey":     "YOUR_OPENAI_API_KEY",
-  "periodSize": 600
+  "endpoint":           "https://api.openai.com/v1/chat/completions",
+  "model":              "gpt-4o-mini",
+  "apiKey":             "YOUR_OPENAI_API_KEY",
+  "periodSize":         600,
+  "subchannelFallback": false
 }
 ```
 
@@ -1231,6 +1239,7 @@ Controls the rolling-summary backend.
 | `model` | string | Model for rolling summary generation |
 | `apiKey` | string | API key for rolling summaries |
 | `periodSize` | number | Time window in seconds for rolling periods |
+| `subchannelFallback` | boolean | `false` (default): when `wo.subchannel` is not set, all functions (getContext, setPurgeContext, setFreezeContext, getContextLastSeconds, getContextSince) operate only on rows where `subchannel IS NULL`. `true`: no subchannel filter — all rows for the channel including subchannel rows are included. |
 
 ---
 
@@ -1562,6 +1571,7 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
 | `rolePriority` | array | `[]` | Order in which role IDs are checked; highest priority first |
 | `roleMap` | object | `{}` | Maps Discord Role ID → role label (`"admin"`, `"member"`, etc.) |
 | `sameSite` | string | `"Lax"` | Cookie `SameSite` attribute (`"Lax"`, `"Strict"`, or `"None"`) |
+| `ssoPartners` | array | `[]` | List of partner base URLs for cross-domain SSO chaining (e.g. `["https://other.example.com"]`). After login the session is forwarded to each partner using a short-lived single-use token. Leave empty to disable. |
 
 ---
 
@@ -1601,7 +1611,9 @@ Every module can be restricted to specific flows via its config block:
 | `webpage-bard` | webpage |
 | `webpage-config-editor` | webpage |
 | `webpage-chat` | webpage |
+| `webpage-inpaint` | webpage |
 | `webpage-inpainting` | webpage |
+| `webpage-gallery` | webpage |
 | `webpage-dashboard` | webpage |
 | `webpage-documentation` | webpage |
 | `webpage-wiki` | webpage |
@@ -1838,12 +1850,14 @@ Also supports `*/N * * * *` (every N minutes).
 
 **Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
 - Channel dropdown populated from `webpage-chat.chats[]`
-- Last 100 context entries loaded from MySQL on channel select or refresh
+- AI completions processed directly using the global workingObject credentials — no external API proxy
+- **Subchannels:** create, rename, and delete separate conversation threads from the UI; each subchannel has its own isolated context history stored in the `chat_subchannels` DB table
+- AI behaviour controlled by `systemPrompt`, `contextSize`, `maxTokens` keys in `webpage-chat` config (no separate `ai.*` sub-object)
+- Last N context entries loaded from MySQL on channel/subchannel select (controlled by `contextSize`)
 - Large scrollable message window (top) + auto-resize input (bottom)
 - Enter = send, Shift+Enter = newline
 - **Thinking indicator with tool name:** the currently active tool is shown next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel)
 - **Markdown rendering:** `#`/`##`/`###` headings, bold/italic, fenced and inline code, blockquotes, lists, and `---` HR are fully rendered in chat bubbles
-- Messages are sent to the bot's API flow; `apiSecret` is injected server-side and never exposed to the browser
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
 
 ---
@@ -1934,7 +1948,8 @@ Multiple modules can share a single port. Each module routes by URL path:
 | **Chat UI** | Full chat UI with markdown rendering, link/video embeds and toolcall display |
 | **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelID=<id>` every 800 ms (per-channel) |
-| **Options page** | `apiUrl`, `channelID`, `apiSecret` stored in `chrome.storage.sync` |
+| **Gallery upload** | Upload images to the bot's Gallery via drag-and-drop or click. Requires `webBaseUrl` to be configured and an active login session on the Jenny web interface. |
+| **Options page** | `apiUrl`, `channelID`, `apiSecret`, `webBaseUrl` stored in `chrome.storage.sync` |
 
 #### Installation (developer mode)
 
@@ -1953,6 +1968,7 @@ Multiple modules can share a single port. Each module routes by URL path:
 | `API URL` | Full URL of the bot's API endpoint, e.g. `http://localhost:3400/api` |
 | `Channel ID` | Must match a channel with `apiEnabled: 1` in `core.json` — default `browser-extension` |
 | `API Secret` | Bearer token; leave empty if `apiSecret` is not set on the channel |
+| `Web Base URL` | Base URL of the Jenny web interface (e.g. `https://jenny.example.com`). Required for Gallery uploads. The user must be logged into the web interface for uploads to work — the extension uses `credentials: include` to reuse the existing session cookie. Click **Open login page** in the settings to authenticate first. |
 
 #### Bot-side configuration
 
@@ -1971,7 +1987,7 @@ The `browser-extension` channel is pre-configured in `core.json`. Key overrides:
 }
 ```
 
-Add `{ "label": "Browser Extension", "channelID": "browser-extension" }` to `webpage-chat.chats[]` to monitor the extension's chat history in the admin panel.
+Add `{ "label": "Browser Extension", "channelID": "browser-extension", "roles": [] }` to `webpage-chat.chats[]` to monitor the extension's chat history in the admin panel.
 
 ---
 
@@ -2012,10 +2028,10 @@ export default async function myModule(coreData) {
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, role, roles). Login/logout routes handled on the configured `loginPort`. Handles OAuth2 callback and session cookie lifecycle. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports` |
 | 00043 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
-| 00045 | `webpage-inpaint` | Image inpainting redirect for web content |
+| 00045 | `webpage-inpaint` | Redirect `GET /documents/*.png` to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. |
 | 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `GET /chat/api/chats`, `GET /chat/api/messages`, `POST /chat/api/messages` on the configured port. The `/chat/api/messages` endpoint filters out records with `internal_meta: true`, empty content, and lines starting with `META|` before returning them to the browser. |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). Calls AI directly using the global workingObject credentials — no separate `ai.*` config needed. Subchannel names stored in `chat_subchannels` table. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
@@ -2023,6 +2039,7 @@ export default async function myModule(coreData) {
 | 00053 | `webpage-context` | Context DB editor SPA (port 3118, `/context`) — channel browser, field selector, search, search & replace, bulk delete |
 | 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) |
 | 00055 | `core-admin-commands` | Core admin operations (purge, freeze, DB commands) |
+| 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
 | 00070 | `discord-add-context` | Loads conversation history from MySQL into the context window |
@@ -2536,17 +2553,31 @@ clearAll();                // Clear the entire registry
 
 **Exported functions:**
 ```javascript
-import { getAddContext, getWriteContext, getDeleteContext,
-         setContext, getContext, getContextLastSeconds, getContextSince } from "./core/context.js";
-
-getAddContext(workingObject);                  // Load history into workingObject
-getWriteContext(workingObject, record);        // Persist a turn to MySQL
-getDeleteContext(workingObject, channelId);    // Delete messages for a channel
-setContext(workingObject, record);             // Append one record to the context DB (used by discord-add-context etc.)
-getContext(workingObject, n);                  // Return the last n turns for workingObject.channelID
-getContextLastSeconds(workingObject, seconds); // Return all turns in the last N seconds for the channel
-getContextSince(workingObject, since);         // Return all turns since a Date or ISO timestamp for the channel
+import {
+  setContext,             // Persist a record; stores wo.subchannel if set
+  getContext,             // Load history; scoped by getSubchannelFilter
+  setPurgeContext,        // Delete non-frozen rows; scoped by getSubchannelFilter
+                          //   subchannel set              → that subchannel only (timeline untouched)
+                          //   no subchannel + fallback=false → subchannel IS NULL rows + timeline
+                          //   no subchannel + fallback=true  → all rows for channel + timeline
+  setPurgeSubchannel,     // Called on subchannel delete:
+                          //   1. DELETE non-frozen rows with that subchannelId
+                          //   2. UPDATE frozen rows: set subchannel=NULL (promoted to main channel)
+                          //   Returns { deleted, promoted }
+  setFreezeContext,       // Mark rows frozen; same scoping as setPurgeContext
+  getContextLastSeconds,  // Rows from last N seconds; scoped by getSubchannelFilter
+  getContextSince         // Rows since timestamp; scoped by getSubchannelFilter
+} from "./core/context.js";
 ```
+
+**Subchannel isolation:** `wo.subchannel` (UUID) is stored with every row written by `setContext`. All functions use an internal `getSubchannelFilter()` helper that applies a consistent WHERE clause:
+  - `wo.subchannel` set → scope to that subchannel only
+  - `wo.subchannel` not set + `subchannelFallback=false` (default) → only rows where `subchannel IS NULL`
+  - `wo.subchannel` not set + `subchannelFallback=true` → no filter (full channel including all subchannels)
+
+**Subchannel deletion (`setPurgeSubchannel`):** When a subchannel is deleted, non-frozen context entries are permanently deleted. Frozen entries are **promoted** to the main channel (their `subchannel` field is set to `NULL`) so they are preserved and become part of the main context.
+
+**Purge/Freeze scoping:** `setPurgeContext` and `setFreezeContext` respect the same filter. The channel-wide timeline rows are only affected when targeting the full channel (not a specific subchannel).
 
 **Internal meta frames:** `setContext()` silently discards any record where `record.internal_meta === true`. Meta frames are generated dynamically at retrieval time by `getContext()` and injected into the AI context window; they are never stored in MySQL. This prevents ghost entries (e.g. `[assistant] Jenny` index strings) from appearing in the database or the chat UI.
 
@@ -2689,6 +2720,7 @@ The final log is written to `./pub/debug/` by module `10000-core-output`.
 | `role` | VARCHAR(32) | `"user"` or `"assistant"` |
 | `turn_id` | CHAR(26) | ULID of the conversation turn |
 | `frozen` | TINYINT(1) | 1 = protected from deletion |
+| `subchannel` | VARCHAR(128) NULL | Optional subchannel UUID; `NULL` = main channel |
 
 ### Table: timeline_periods
 
@@ -2856,6 +2888,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00052-webpage-wiki.js` | 3117 | `/wiki` | `webpage-wiki` | AI-driven Fandom-style wiki, per-channel, with DALL-E images |
 | `00047-webpage-voice.js` | 3119 | `/voice` | `webpage-voice` | Browser push-to-talk voice interface |
 | `00053-webpage-context.js` | 3118 | `/context` | `webpage-context` | Context DB editor — browse, search, search & replace, bulk-delete conversation rows |
+| `00056-webpage-gallery.js` | 3120 | `/gallery` | `webpage-gallery` | Image gallery — browse, upload and delete the logged-in user's generated images |
 
 ### How Web Modules Work
 
@@ -2908,6 +2941,38 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `POST /inpainting/api/inpaint` — handles image inpainting requests
 - `GET /inpainting/auth/token` — generates auth token for deep links
 - `GET /documents/*.png` — redirected here by module 00045
+
+### 16.4a Gallery (`/gallery`)
+
+**Gallery (port 3120, /gallery):**
+- `GET /gallery` — renders the gallery SPA (login required; unauthenticated users are redirected to `/`)
+- `GET /gallery/style.css` — serves shared CSS (no auth)
+- `GET /gallery/api/files` — lists all images for the logged-in user as `{ files: [{ filename, url }] }`
+- `POST /gallery/api/files` — uploads an image for the logged-in user. Send raw image bytes as the request body with `X-Filename: <filename>` header. Accepted formats: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`. Returns `{ ok, url, filename }`.
+- `DELETE /gallery/api/files` — deletes an image. Body: `{ filename }`. Returns `{ ok }`.
+
+**core.json configuration:**
+```json
+"webpage-gallery": {
+  "flow":          ["webpage"],
+  "port":          3120,
+  "basePath":      "/gallery",
+  "inpaintingUrl": "https://jenny.example.com/inpainting"
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"webpage"` |
+| `port` | number | `3120` | HTTP port — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `basePath` | string | `"/gallery"` | URL base path |
+| `inpaintingUrl` | string | `""` | Full public URL of the inpainting SPA, used to build the "Inpaint" deep-link. Must match `webpage-inpaint.inpaintHost` (with `https://` prefix). |
+
+- Add `3120` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /gallery* localhost:3120` to your Caddyfile
+- Images are stored in `pub/documents/<userId>/` via `core/file.js`
+
+---
 
 ### 16.5 Bard Library Manager (`/bard`)
 
@@ -3335,7 +3400,20 @@ reverse_proxy /inpainting*  localhost:3113
 reverse_proxy /documents*   localhost:3113
 ```
 
-Module `00045-webpage-inpaint.js` redirects `GET /documents/*.png` requests to the inpainting port so that images served by the bot can be opened directly in the editor.
+Module `00045-webpage-inpaint.js` redirects `GET /documents/*.png` requests to the inpainting SPA so that images served by the bot can be opened directly in the editor.
+
+**`inpaintHost` configuration (module `00045`):**
+
+```json
+"webpage-inpaint": {
+  "flow":        ["webpage"],
+  "inpaintHost": "jenny.example.com/inpainting"
+}
+```
+
+When `inpaintHost` contains a hostname (does not start with `/`), the redirect target is derived directly from that value. When `inpaintHost` starts with `/`, it is appended to the hostname from the incoming HTTP request. This allows the same config to work whether you access the bot via `http://localhost` during development or via `https://jenny.example.com` in production.
+
+Set `inpaintHost` to match the public URL of the inpainting SPA (without `https://`), e.g. `"jenny.example.com/inpainting"`.
 
 ---
 

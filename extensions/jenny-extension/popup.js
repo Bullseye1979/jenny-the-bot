@@ -4,10 +4,11 @@
 /* ============================================================
    Settings (loaded from chrome.storage)
    ============================================================ */
-var cfg = { apiUrl: "", channelID: "", apiSecret: "" };
+var cfg = { apiUrl: "", channelID: "", apiSecret: "", webBaseUrl: "" };
 var messages = [];
 var sending   = false;
 var pollTimer = null;
+var pendingFile = null;
 
 /* ============================================================
    Markdown renderer  (no external dependencies, XSS-safe)
@@ -214,12 +215,36 @@ function stopPoll() {
 /* ============================================================
    Send message
    ============================================================ */
+function getUploadUrl() {
+  return cfg.apiUrl.replace(/\/api\/?$/, "/upload");
+}
+
+function uploadFile(file) {
+  var url = getUploadUrl();
+  var headers = { "Content-Type": file.type || "application/octet-stream", "X-Filename": file.name };
+  if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
+  return fetch(url, { method: "POST", headers: headers, body: file })
+    .then(function(r) { return r.json(); });
+}
+
+function clearFilePreview() {
+  pendingFile = null;
+  var fp = document.getElementById("file-preview");
+  if (fp) fp.classList.add("hidden");
+  var fi = document.getElementById("file-input");
+  if (fi) fi.value = "";
+}
+
 function sendMessage(payload) {
-  if (sending || !payload.trim()) return;
+  if (sending || (!payload.trim() && !pendingFile)) return;
   if (!cfg.apiUrl || !cfg.channelID) {
     alert("Please configure the API URL and Channel ID in the extension settings.");
     return;
   }
+
+  var fileToUpload = pendingFile;
+  pendingFile = null;
+  clearFilePreview();
 
   sending = true;
   var sendBtn = document.getElementById("send-btn");
@@ -244,15 +269,25 @@ function sendMessage(payload) {
 
   startPoll();
 
-  var reqHeaders = { "Content-Type": "application/json" };
-  if (cfg.apiSecret) reqHeaders["Authorization"] = "Bearer " + cfg.apiSecret;
+  var uploadPromise = fileToUpload
+    ? uploadFile(fileToUpload).then(function(d) {
+        if (!d || !d.ok || !d.url) throw new Error(d && d.error ? d.error : "upload_failed");
+        return d.url;
+      })
+    : Promise.resolve(null);
 
-  fetch(cfg.apiUrl, {
-    method: "POST",
-    headers: reqHeaders,
-    body: JSON.stringify({ channelID: cfg.channelID, payload: payload })
+  uploadPromise.then(function(uploadedUrl) {
+    var finalPayload = uploadedUrl ? uploadedUrl + "\n" + payload : payload;
+
+    var reqHeaders = { "Content-Type": "application/json" };
+    if (cfg.apiSecret) reqHeaders["Authorization"] = "Bearer " + cfg.apiSecret;
+
+    return fetch(cfg.apiUrl, {
+      method: "POST",
+      headers: reqHeaders,
+      body: JSON.stringify({ channelID: cfg.channelID, payload: finalPayload })
+    }).then(function(r) { return r.json(); });
   })
-  .then(function(r) { return r.json(); })
   .then(function(d) {
     stopPoll();
     if (thinkWrap.parentNode) thinkWrap.parentNode.removeChild(thinkWrap);
@@ -269,7 +304,7 @@ function sendMessage(payload) {
     if (thinkWrap.parentNode) thinkWrap.parentNode.removeChild(thinkWrap);
     sending = false;
     sendBtn.disabled = false;
-    appendMsg("assistant", "\u26a0\ufe0f Send failed: " + e.message);
+    appendMsg("assistant", "\u26a0\ufe0f " + (e.message || "Send failed"));
   });
 }
 
@@ -301,10 +336,11 @@ function summarizePage() {
    Init
    ============================================================ */
 function init() {
-  chrome.storage.sync.get(["apiUrl", "channelID", "apiSecret"], function(stored) {
-    cfg.apiUrl    = stored.apiUrl    || "";
-    cfg.channelID = stored.channelID || "";
-    cfg.apiSecret = stored.apiSecret || "";
+  chrome.storage.sync.get(["apiUrl", "channelID", "apiSecret", "webBaseUrl"], function(stored) {
+    cfg.apiUrl     = stored.apiUrl     || "";
+    cfg.channelID  = stored.channelID  || "";
+    cfg.apiSecret  = stored.apiSecret  || "";
+    cfg.webBaseUrl = (stored.webBaseUrl || "").trim().replace(/\/$/, "");
 
     if (!cfg.apiUrl || !cfg.channelID) {
       document.getElementById("config-warn").classList.remove("hidden");
@@ -332,11 +368,97 @@ function init() {
     document.getElementById("send-btn").addEventListener("click", function() {
       var inp = document.getElementById("input");
       var text = inp.value.trim();
-      if (!text) return;
-      appendMsg("user", text);
+      if (!text && !pendingFile) return;
+      var displayText = text;
+      if (pendingFile) displayText = (text ? text + "\n" : "") + "[\uD83D\uDCCE " + pendingFile.name + "]";
+      appendMsg("user", displayText || "[\uD83D\uDCCE " + pendingFile.name + "]");
       inp.value = "";
       inp.style.height = "";
-      sendMessage(text);
+      sendMessage(text || "");
+    });
+
+    /* Attach button */
+    document.getElementById("attach-btn").addEventListener("click", function() {
+      document.getElementById("file-input").click();
+    });
+
+    /* File selected */
+    document.getElementById("file-input").addEventListener("change", function() {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      pendingFile = f;
+      document.getElementById("file-name").textContent = f.name;
+      document.getElementById("file-preview").classList.remove("hidden");
+    });
+
+    /* Clear attachment */
+    document.getElementById("file-clear").addEventListener("click", function() {
+      clearFilePreview();
+    });
+
+    /* ── Gallery upload ── */
+    var galleryOpen = false;
+
+    function setGalleryStatus(msg, type) {
+      var el = document.getElementById("gallery-status");
+      el.textContent = msg;
+      el.className   = type || "";
+      el.classList.remove("hidden");
+    }
+
+    function uploadToGallery(file) {
+      if (!cfg.webBaseUrl) {
+        setGalleryStatus("No Web Base URL configured — open Settings.", "err");
+        return;
+      }
+      var ext = (file.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+      if (!/\.(png|jpe?g|gif|webp|avif)$/.test(ext)) {
+        setGalleryStatus("Only image files are supported.", "err");
+        return;
+      }
+      setGalleryStatus("Uploading\u2026");
+      fetch(cfg.webBaseUrl + "/gallery/api/files", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": file.name },
+        body: file
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d && d.ok) setGalleryStatus("Uploaded: " + d.filename, "ok");
+        else           setGalleryStatus("Upload failed: " + (d && d.error || "unknown"), "err");
+      })
+      .catch(function(e) { setGalleryStatus("Upload failed: " + e.message, "err"); });
+    }
+
+    document.getElementById("gallery-btn").addEventListener("click", function() {
+      galleryOpen = !galleryOpen;
+      var panel = document.getElementById("gallery-panel");
+      panel.classList.toggle("hidden", !galleryOpen);
+      this.classList.toggle("active", galleryOpen);
+      if (galleryOpen) {
+        document.getElementById("gallery-status").classList.add("hidden");
+      }
+    });
+
+    var dropEl = document.getElementById("gallery-drop");
+    dropEl.addEventListener("click", function() {
+      document.getElementById("gallery-file-input").click();
+    });
+    document.getElementById("gallery-file-input").addEventListener("change", function() {
+      var f = this.files && this.files[0];
+      if (f) { uploadToGallery(f); this.value = ""; }
+    });
+    dropEl.addEventListener("dragover", function(e) {
+      e.preventDefault();
+      this.classList.add("dragover");
+    });
+    dropEl.addEventListener("dragleave", function() { this.classList.remove("dragover"); });
+    dropEl.addEventListener("drop", function(e) {
+      e.preventDefault();
+      this.classList.remove("dragover");
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) uploadToGallery(f);
     });
 
     /* Send on Enter (Shift+Enter = newline) */

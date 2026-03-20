@@ -5,9 +5,7 @@
 /*          with a guessed extension.                                              *
 /**********************************************************************************/
 
-import path from "path";
-import fs from "fs/promises";
-import { fileURLToPath } from "url";
+import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getText";
 
@@ -63,17 +61,6 @@ function getDetectedExt(text, filename){
 }
 
 /**********************************************************************************/
-/* functionSignature: getAbsoluteUrl (publicBaseUrl, p)                            *
-/* Builds public URL if base is given                                              *
-/**********************************************************************************/
-function getAbsoluteUrl(publicBaseUrl, urlPath){
-  const u = String(urlPath || "");
-  const base = String(publicBaseUrl || "").replace(/\/$/, "");
-  if (!base) return u;
-  return `${base}${u.startsWith("/") ? "" : "/"}${u}`;
-}
-
-/**********************************************************************************/
 /* functionSignature: getParsedArgs (args)                                         *
 /* Accepts { text, dateiname } or raw string                                       *
 /**********************************************************************************/
@@ -91,22 +78,12 @@ function getParsedArgs(args){
 }
 
 /**********************************************************************************/
-/* functionSignature: setWrittenTextFile (text, baseName, ext, cfg)                *
-/* Writes text to ../pub/documents and returns URLs                                *
+/* functionSignature: setWrittenTextFile (text, baseName, ext, cfg, wo)            *
+/* Writes text to pub/documents/{userId}/ and returns URLs                         *
 /**********************************************************************************/
-async function setWrittenTextFile(text, baseName, ext, cfg){
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const documentsDir = path.join(__dirname, "..", "pub", "documents");
-  await fs.mkdir(documentsDir, { recursive: true });
-
-  const fileName = `${baseName}.${ext}`;
-  const filePath = path.join(documentsDir, fileName);
-  await fs.writeFile(filePath, text, "utf8");
-
-  const publicBase = cfg?.publicBaseUrl || cfg?.publicBaseUrl || "";
-  const publicUrl = getAbsoluteUrl(publicBase, `/documents/${fileName}`);
-
-  return { filePath, fileName, publicUrl };
+async function setWrittenTextFile(text, baseName, ext, cfg, wo){
+  const saved = await saveFile(wo, Buffer.from(text, "utf8"), { name: baseName, ext: "." + ext });
+  return { filePath: saved.absPath, fileName: saved.filename, publicUrl: saved.url };
 }
 
 /**********************************************************************************/
@@ -115,7 +92,8 @@ async function setWrittenTextFile(text, baseName, ext, cfg){
 /**********************************************************************************/
 async function getInvoke(args, coreData){
   try {
-    const cfg = coreData?.workingObject?.toolsconfig?.getText || {};
+    const wo = coreData?.workingObject || {};
+    const cfg = wo?.toolsconfig?.getText || {};
 
     const { text, dateiname } = getParsedArgs(args);
     if (!text) {
@@ -129,7 +107,7 @@ async function getInvoke(args, coreData){
 
     const ext = getDetectedExt(text, dateiname);
 
-    const { filePath, fileName, publicUrl } = await setWrittenTextFile(text, baseName, ext, cfg);
+    const { filePath, fileName, publicUrl } = await setWrittenTextFile(text, baseName, ext, cfg, wo);
 
     return {
       ok: true,

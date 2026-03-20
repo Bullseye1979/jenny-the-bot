@@ -10,7 +10,7 @@
 "use strict";
 
 import crypto from "node:crypto";
-import { getItem } from "../core/registry.js";
+import { getItem, putItem, deleteItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-auth";
 const COOKIE_STATE = "jenny_oauth_state";
@@ -325,7 +325,7 @@ function setApplyAuthToWorkingObject(wo, cfg, sess) {
 /**************************************************************/
 function getIsAuthPath(p) {
   const path = String(p || "");
-  return path === "/auth/login" || path === "/auth/callback" || path === "/auth/logout";
+  return path === "/auth/login" || path === "/auth/callback" || path === "/auth/logout" || path === "/auth/sso";
 }
 
 /**************************************************************/
@@ -401,6 +401,76 @@ export default async function getWebpageAuth(coreData) {
     const c1 = getCookieLine(COOKIE_SESS, "", { ...cookieBase, maxAge: 0 });
     const c2 = getCookieLine(COOKIE_STATE, "", { ...cookieBase, maxAge: 0 });
     setRedirect(wo, (publicBase ? publicBase : "") + "/auth/login?next=%2F", [c1, c2]);
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
+  /**************************************************************/
+  /* /auth/sso — cross-domain token handoff (any scoped port)   */
+  /**************************************************************/
+  if (path === "/auth/sso") {
+    const tokenId = String(wo.http?.query?.token || "").trim();
+    const returnTo = String(wo.http?.query?.returnTo || "/").trim();
+
+    if (!tokenId) {
+      setJsonResp(wo, 400, { error: "missing_token" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
+    const ssoKey = "sso:" + tokenId;
+    const ssoData = await Promise.resolve(getItem(ssoKey)).catch(() => null);
+
+    /* Single-use: delete immediately regardless of validity */
+    await Promise.resolve(deleteItem(ssoKey)).catch(() => null);
+
+    if (!ssoData || typeof ssoData !== "object") {
+      setJsonResp(wo, 401, { error: "invalid_sso_token" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
+    if (!ssoData.expiresAt || Date.now() > ssoData.expiresAt) {
+      setJsonResp(wo, 401, { error: "sso_token_expired" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
+    const sess = {
+      v: ssoData.v || 1,
+      userId: String(ssoData.userId || ""),
+      username: String(ssoData.username || ""),
+      role: String(ssoData.role || "member"),
+      roles: Array.isArray(ssoData.roles) ? ssoData.roles : [],
+      roleIds: Array.isArray(ssoData.roleIds) ? ssoData.roleIds : [],
+      ts: Date.now()
+    };
+
+    const sessCookie = getCookieLine(COOKIE_SESS, getSignToken(secret, sess), {
+      ...cookieBase,
+      maxAge: Number(cfg.sessionMaxAgeSec ?? 60 * 60 * 12)
+    });
+
+    /* Validate returnTo: allow relative paths or URLs with allowed origins */
+    const ssoPartners = Array.isArray(cfg.ssoPartners) ? cfg.ssoPartners.map(s => String(s).replace(/\/$/, "")) : [];
+    let safeReturnTo = "/";
+    if (returnTo.startsWith("/")) {
+      safeReturnTo = publicBase + returnTo;
+    } else {
+      try {
+        const rt = new URL(returnTo);
+        const allowed = [publicBase, ...ssoPartners];
+        if (allowed.some(o => o && rt.origin === new URL(o).origin)) {
+          safeReturnTo = returnTo;
+        }
+      } catch {}
+    }
+
+    setRedirect(wo, safeReturnTo, [sessCookie]);
     wo.jump = true;
     await setSendNow(wo);
     return coreData;
@@ -574,7 +644,20 @@ export default async function getWebpageAuth(coreData) {
 
     const clearState = getCookieLine(COOKIE_STATE, "", { ...cookieBase, maxAge: 0 });
 
-    setRedirect(wo, String(stateObj.next || "/"), [sessCookie, clearState]);
+    const ssoPartners = Array.isArray(cfg.ssoPartners) ? cfg.ssoPartners.map(s => String(s).replace(/\/$/, "")).filter(Boolean) : [];
+    if (ssoPartners.length > 0) {
+      /* Issue a short-lived single-use token and chain through the first partner */
+      const ssoTokenId = getRandId();
+      await putItem("sso:" + ssoTokenId, { ...sess, expiresAt: Date.now() + 60000 });
+      const next = String(stateObj.next || "/");
+      const finalUrl = (publicBase || "") + (next.startsWith("/") ? next : "/" + next);
+      const partnerUrl = ssoPartners[0] + "/auth/sso" +
+        "?token=" + encodeURIComponent(ssoTokenId) +
+        "&returnTo=" + encodeURIComponent(finalUrl);
+      setRedirect(wo, partnerUrl, [sessCookie, clearState]);
+    } else {
+      setRedirect(wo, String(stateObj.next || "/"), [sessCookie, clearState]);
+    }
     wo.jump = true;
     await setSendNow(wo);
     return coreData;

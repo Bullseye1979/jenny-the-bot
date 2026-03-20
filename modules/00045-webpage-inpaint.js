@@ -87,11 +87,13 @@ export default async function getWebpageInpaint(coreData) {
   if (wo.stop) return coreData;
 
   const http = wo.http || {};
-  // Derive the inpainting path from config (e.g. "jenny.ralfreschke.de/inpainting" → "/inpainting")
-  // but use the actual request host so jenny.xbullseyegaming.de redirects to itself.
-  const configPath = configHost.includes("/") ? configHost.slice(configHost.indexOf("/")) : "/inpainting";
+  // If configHost contains a hostname (does not start with "/"), use it as-is.
+  // If configHost is path-only (starts with "/"), prepend the request host.
+  const configHasHost = !configHost.startsWith("/");
   const reqHost = String(http.host || "").toLowerCase().replace(/:\d+$/, "");
-  const inpaintingHost = reqHost ? `${reqHost}${configPath}` : configHost;
+  const inpaintingHost = configHasHost
+    ? configHost
+    : (reqHost ? `${reqHost}${configHost}` : configHost);
   const method = String(http.method).toUpperCase();
   const urlPath = String(http.path || "/");
   const query = http.query || {};

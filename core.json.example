@@ -382,7 +382,8 @@
       "flowName": "api",
       "host": "0.0.0.0",
       "port": 3400,
-      "path": "/api"
+      "path": "/api",
+      "publicBaseUrl": "https://xbullseyegaming.de"
     },
     "cron": {
       "__description": "Scheduled jobs (optional — leave jobs array empty to disable)",

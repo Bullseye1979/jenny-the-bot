@@ -107,7 +107,7 @@ async function getDb(coreData) {
 /* Optional: rightHtmlOpt renders custom right-side controls (e.g., Save button)   *
 /*          left of role/logout.                                                   *
 /**********************************************************************************/
-function getMenuHtml(menu, activePath, role, rightHtmlOpt) {
+function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml) {
   const items = Array.isArray(menu) ? menu : [];
   const VISIBLE = 3; /* first N items shown directly on desktop */
 
@@ -146,24 +146,41 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt) {
   /* Direct primary items (hidden on mobile via CSS) */
   for (const it of primary) nav += mkLink(it, "nav-primary");
 
-  /* Collapsible dropdown — always rendered so mobile can use it too */
-  nav += '<details class="nav-more' + (overflow.length ? " has-overflow" : "") + '">';
+  /* Collapsible dropdown — always rendered; always has theme toggle so always shown */
+  nav += '<details class="nav-more has-overflow">';
   nav += '<summary class="nav-link nav-more-btn">&#xB7;&#xB7;&#xB7;</summary>';
   nav += '<div class="nav-more-drop">';
   /* Primary items repeated inside dropdown — shown only on mobile via CSS */
   for (const it of primary)  nav += mkLink(it, "nav-more-item nav-more-primary");
   /* Overflow items always visible in dropdown */
   for (const it of overflow) nav += mkLink(it, "nav-more-item");
+  if (extraDropdownHtml) nav += extraDropdownHtml;
+  /* Dark / Light mode toggle — always last in dropdown */
+  nav += '<button class="nav-link nav-more-item" id="jenny-theme-btn"' +
+         ' style="width:100%;text-align:left;cursor:pointer;border:none;font-size:13px;font-weight:600;padding:6px 14px"' +
+         ' onclick="toggleTheme()">&#x1F319; Dark Mode</button>';
   nav += "</div></details>";
 
   nav += "</nav>";
 
-  /* Close dropdown when clicking outside (runs once per page) */
+  /* Close dropdown + theme toggle — injected once per page */
   nav += '<script>!function(){if(window._navMoreReady)return;window._navMoreReady=true;' +
          'document.addEventListener("click",function(e){' +
          'var d=document.querySelector(".nav-more[open]");' +
          'if(d&&!d.contains(e.target))d.removeAttribute("open");' +
-         '},true);}();</script>';
+         '},true);' +
+         'function applyTheme(dark){' +
+           'document.documentElement.setAttribute("data-theme",dark?"dark":"light");' +
+           'var b=document.getElementById("jenny-theme-btn");' +
+           'if(b)b.textContent=dark?"\u2600\uFE0F Light Mode":"\uD83C\uDF19 Dark Mode";' +
+           'localStorage.setItem("jenny-theme",dark?"dark":"light");' +
+         '}' +
+         'window.toggleTheme=function(){' +
+           'applyTheme(document.documentElement.getAttribute("data-theme")!=="dark");' +
+           'var d=document.querySelector(".nav-more[open]");if(d)d.removeAttribute("open");' +
+         '};' +
+         'applyTheme(localStorage.getItem("jenny-theme")==="dark");' +
+         '}();</script>';
 
   const rightHtml = String(rightHtmlOpt || "");
   const right =
@@ -202,6 +219,16 @@ function escAttr(s) {
 }
 
 /**********************************************************************************/
+/* functionSignature: getThemeHeadScript ()                                        *
+/* Returns an inline <script> for <head> that sets data-theme before first paint  *
+/* to prevent light-flash when the user has dark mode saved.                      *
+/**********************************************************************************/
+function getThemeHeadScript() {
+  return '<script>!function(){var t=localStorage.getItem("jenny-theme");' +
+         'document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light");}();<\/script>';
+}
+
+/**********************************************************************************/
 /* Named exports                                                                   *
 /**********************************************************************************/
-export { getBody, readJsonFile, writeJsonFile, isAuthorized, getDb, getMenuHtml };
+export { getBody, readJsonFile, writeJsonFile, isAuthorized, getDb, getMenuHtml, getThemeHeadScript };
