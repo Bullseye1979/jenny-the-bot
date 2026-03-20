@@ -219,12 +219,32 @@ function getUploadUrl() {
   return cfg.apiUrl.replace(/\/api\/?$/, "/upload");
 }
 
-function uploadFile(file) {
+function doRegularUpload(file) {
   var url = getUploadUrl();
   var headers = { "Content-Type": file.type || "application/octet-stream", "X-Filename": file.name };
   if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
   return fetch(url, { method: "POST", headers: headers, body: file })
     .then(function(r) { return r.json(); });
+}
+
+function uploadFile(file) {
+  var ext = (file.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+  var isImage = /\.(png|jpe?g|gif|webp|avif)$/.test(ext);
+  if (cfg.webBaseUrl && isImage) {
+    return fetch(cfg.webBaseUrl + "/gallery/api/files", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": file.name },
+      body: file
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.ok && d.url) return d;
+      throw new Error("gallery_unavailable");
+    })
+    .catch(function() { return doRegularUpload(file); });
+  }
+  return doRegularUpload(file);
 }
 
 function clearFilePreview() {

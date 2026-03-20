@@ -808,6 +808,14 @@ function getInpaintHtml(opts) {
               \u2b07
             </button>
             <button
+              id="galleryBtn"
+              class="secondary"
+              title="Save to gallery"
+              disabled
+            >
+              \ud83d\uddbc
+            </button>
+            <button
               id="unlockBtn"
               class="secondary"
               title="Unlock editing and local upload with credentials"
@@ -898,6 +906,7 @@ function getInpaintHtml(opts) {
         const viewBtn = document.getElementById("viewBtn");
         const resetBtn = document.getElementById("resetBtn");
         const downloadBtn = document.getElementById("downloadBtn");
+        const galleryBtn  = document.getElementById("galleryBtn");
         const unlockBtn = document.getElementById("unlockBtn");
         const uploadBtn = document.getElementById("uploadBtn");
         const fileInput = document.getElementById("fileInput");
@@ -1172,6 +1181,7 @@ function getInpaintHtml(opts) {
           outBtn.disabled = !(allowEdit && imageLoaded);
           resetBtn.disabled = !imageLoaded;
           downloadBtn.disabled = !imageLoaded;
+          galleryBtn.disabled  = !imageLoaded;
 
           uploadBtn.disabled = !INPAINT_LOGGED_IN && !(supportsUnlock && tokenValid);
 
@@ -1874,6 +1884,47 @@ overlayHint.classList.add("hidden");
         }
 
         /**********************************************************************************/
+/* functionSignature: handleGalleryClick()                                        */
+/* Saves the current canvas content to the user's gallery.                        */
+/**********************************************************************************/
+        function handleGalleryClick() {
+          clearApiError();
+          if (!imageLoaded) return;
+
+          const cropCanvas = document.createElement("canvas");
+          cropCanvas.width = drawWidth;
+          cropCanvas.height = drawHeight;
+          const cropCtx = cropCanvas.getContext("2d");
+          cropCtx.drawImage(imageCanvas, drawOffsetX, drawOffsetY, drawWidth, drawHeight, 0, 0, drawWidth, drawHeight);
+
+          galleryBtn.disabled = true;
+          const origLabel = galleryBtn.textContent;
+
+          cropCanvas.toBlob(async (blob) => {
+            if (!blob) { galleryBtn.disabled = false; return; }
+            try {
+              const r = await fetch("/gallery/api/files", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "image/png", "X-Filename": "inpainting.png" },
+                body: blob
+              });
+              const d = await r.json();
+              if (d && d.ok) {
+                galleryBtn.textContent = "\u2713";
+                setTimeout(() => { galleryBtn.textContent = origLabel; galleryBtn.disabled = false; }, 1500);
+              } else {
+                galleryBtn.disabled = false;
+                setApiError("Gallery upload failed: " + (d && d.error || "unknown"));
+              }
+            } catch (e) {
+              galleryBtn.disabled = false;
+              setApiError("Gallery upload failed: " + e.message);
+            }
+          }, "image/png");
+        }
+
+        /**********************************************************************************/
 /* functionSignature: handleUnlockClick()                                         */
 /* Unlocks/locks the tool session.                                                */
 /**********************************************************************************/
@@ -2002,6 +2053,7 @@ overlayHint.classList.add("hidden");
           editBtn.disabled = true;
           resetBtn.disabled = true;
           downloadBtn.disabled = true;
+          galleryBtn.disabled  = true;
 
           try {
             statusEl.textContent = "Storing current view\u2026";
@@ -2035,6 +2087,7 @@ overlayHint.classList.add("hidden");
             editBtn.disabled = false;
             resetBtn.disabled = false;
             downloadBtn.disabled = false;
+            galleryBtn.disabled  = false;
             recomputeAccessState();
           }
         }
@@ -2061,6 +2114,7 @@ overlayHint.classList.add("hidden");
           editBtn.disabled = true;
           resetBtn.disabled = true;
           downloadBtn.disabled = true;
+          galleryBtn.disabled  = true;
           viewBtn.disabled = true;
           if (callbackId) publishBtn.disabled = true;
 
@@ -2159,6 +2213,7 @@ overlayHint.classList.add("hidden");
             editBtn.disabled = false;
             resetBtn.disabled = false;
             downloadBtn.disabled = false;
+            galleryBtn.disabled  = false;
             viewBtn.disabled = false;
             if (publishBtn.style.display !== "none") publishBtn.disabled = !callbackId;
             refreshCanEditFromServer();
@@ -2254,6 +2309,7 @@ overlayHint.classList.add("hidden");
 
           resetBtn.addEventListener("click", handleResetClick);
           downloadBtn.addEventListener("click", handleDownloadClick);
+          galleryBtn.addEventListener("click", handleGalleryClick);
 
           unlockBtn.addEventListener("click", handleUnlockClick);
           uploadBtn.addEventListener("click", handleUploadClick);

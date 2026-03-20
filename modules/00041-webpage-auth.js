@@ -648,7 +648,7 @@ export default async function getWebpageAuth(coreData) {
     if (ssoPartners.length > 0) {
       /* Issue a short-lived single-use token and chain through the first partner */
       const ssoTokenId = getRandId();
-      await putItem("sso:" + ssoTokenId, { ...sess, expiresAt: Date.now() + 60000 });
+      await putItem({ ...sess, expiresAt: Date.now() + 60000 }, "sso:" + ssoTokenId);
       const next = String(stateObj.next || "/");
       const finalUrl = (publicBase || "") + (next.startsWith("/") ? next : "/" + next);
       const partnerUrl = ssoPartners[0] + "/auth/sso" +
