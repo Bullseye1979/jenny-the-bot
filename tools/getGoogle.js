@@ -9,35 +9,23 @@ import fetch from "node-fetch";
 
 const MODULE_NAME = "getGoogle";
 
-/**********************************************************************************/
-/* functionSignature: getStr (value, fallback)                                     *
-/* Returns a non-empty string or the provided default                              *
-/**********************************************************************************/
+
 function getStr(value, fallback) {
   return typeof value === "string" && value.length ? value : fallback;
 }
 
-/**********************************************************************************/
-/* functionSignature: getNum (value, fallback)                                     *
-/* Returns a finite number or the provided default                                 *
-/**********************************************************************************/
+
 function getNum(value, fallback) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
-/**********************************************************************************/
-/* functionSignature: getClamp (n, min, max)                                       *
-/* Clamps a number into [min, max]                                                 *
-/**********************************************************************************/
+
 function getClamp(n, min, max) {
   const x = Number.isFinite(n) ? n : min;
   return Math.max(min, Math.min(max, x));
 }
 
-/**********************************************************************************/
-/* functionSignature: getHttpJson (url, params, timeoutMs)                         *
-/* Performs a GET request with query params and JSON parsing                       *
-/**********************************************************************************/
+
 async function getHttpJson(url, params, timeoutMs = 20000) {
   const u = new URL(url);
   Object.entries(params || {}).forEach(([k, v]) => {
@@ -61,10 +49,7 @@ async function getHttpJson(url, params, timeoutMs = 20000) {
   return data;
 }
 
-/**********************************************************************************/
-/* functionSignature: getNormalizeItems (items)                                    *
-/* Maps Google items into a compact, stable structure                              *
-/**********************************************************************************/
+
 function getNormalizeItems(items) {
   const list = Array.isArray(items) ? items : [];
   return list.map((it) => ({
@@ -76,10 +61,7 @@ function getNormalizeItems(items) {
   })).filter(r => r.link);
 }
 
-/**********************************************************************************/
-/* functionSignature: getInvoke (args, coreData)                                   *
-/* Executes Google Custom Search using toolsconfig.getGoogle                       *
-/**********************************************************************************/
+
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getGoogle || {};

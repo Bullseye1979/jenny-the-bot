@@ -16,18 +16,12 @@ const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 let lastTimeMs = 0;
 let lastRandomBytes = new Uint8Array(10).fill(0);
 
-/************************************************************************************/
-/* functionSignature: getStr (value)                                                 *
-/* Returns a string; empty string for nullish.                                       *
-/************************************************************************************/
+
 function getStr(value) {
   return value == null ? "" : String(value);
 }
 
-/************************************************************************************/
-/* functionSignature: getBotname (workingObject, baseCore)                           *
-/* Resolves the bot name from workingObject.botName (preferred) with stable fallbacks.*
-/************************************************************************************/
+
 function getBotname(workingObject, baseCore) {
   const fromWO = getStr(workingObject?.botName).trim();
   if (fromWO) return fromWO;
@@ -41,10 +35,6 @@ function getBotname(workingObject, baseCore) {
   return "Bot";
 }
 
-/****************************************************************************************************************
-* functionSignature: getToolcallRegistryKey(baseCore, apiCfg)                                                     *
-* Purpose: Uses the SAME registryKey resolution as toolcall.js (config["toolcall"] or config.toolcall).          *
-****************************************************************************************************************/
 function getToolcallRegistryKey(baseCore, apiCfg) {
   const toolcallCfg = baseCore?.config?.toolcall || baseCore?.config?.toolCall || baseCore?.config?.["toolcall"] || {};
   const fromToolcall = getStr(toolcallCfg.registryKey).trim();
@@ -56,10 +46,6 @@ function getToolcallRegistryKey(baseCore, apiCfg) {
   return "status:tool";
 }
 
-/****************************************************************************************************************
-* functionSignature: getUlid()                                                                                   *
-* Purpose: Creates a monotonic ULID compatible with Discord-style timestamp-first IDs.                           *
-****************************************************************************************************************/
 function getUlid() {
   const nowMs = Date.now();
 
@@ -104,10 +90,6 @@ function getUlid() {
   return out.slice(0, 26);
 }
 
-/****************************************************************************************************************
-* functionSignature: getJson(res, status, body)                                                                  *
-* Purpose: Sends a JSON response with standard headers and prevents caching.                                     *
-****************************************************************************************************************/
 function setCorsHeaders(res) {
   res.setHeader("access-control-allow-origin", "*");
   res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
@@ -122,10 +104,6 @@ function getJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-/****************************************************************************************************************
-* functionSignature: getReadBody(req, max)                                                                       *
-* Purpose: Reads the request body as UTF-8 up to a maximum size (bytes) and returns a string.                    *
-****************************************************************************************************************/
 function getReadBody(req, max = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -157,10 +135,6 @@ function getReadBody(req, max = 1024 * 1024) {
   });
 }
 
-/****************************************************************************************************************
-* functionSignature: getReadBodyBuffer(req, max)                                                                 *
-* Purpose: Reads the request body as a raw Buffer up to a maximum size (bytes).                                  *
-****************************************************************************************************************/
 function getReadBodyBuffer(req, max = 50 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -177,10 +151,6 @@ function getReadBodyBuffer(req, max = 50 * 1024 * 1024) {
   });
 }
 
-/****************************************************************************************************************
-* functionSignature: getHasToolValue(val)                                                                        *
-* Purpose: True if a registry value effectively contains a tool.                                                 *
-****************************************************************************************************************/
 function getHasToolValue(val) {
   if (!val) return false;
   if (typeof val === "string") return val.trim().length > 0;
@@ -191,10 +161,6 @@ function getHasToolValue(val) {
   return false;
 }
 
-/****************************************************************************************************************
-* functionSignature: getToolIdentity(val)                                                                        *
-* Purpose: Returns a stable identity string for the tool value.                                                  *
-****************************************************************************************************************/
 function getToolIdentity(val) {
   if (!val) return "";
   if (typeof val === "string") return val.trim();
@@ -210,10 +176,6 @@ function getToolIdentity(val) {
   return String(val);
 }
 
-/****************************************************************************************************************
-* functionSignature: getToolcallSnapshot(registryKey)                                                            *
-* Purpose: Reads the registry and returns a snapshot describing the current toolcall.                            *
-****************************************************************************************************************/
 async function getToolcallSnapshot(registryKey) {
   const val = await getItem(registryKey);
   const hasTool = getHasToolValue(val);
@@ -229,38 +191,22 @@ async function getToolcallSnapshot(registryKey) {
   };
 }
 
-/****************************************************************************************************************
-* functionSignature: getApiSecret(baseCore)                                                                      *
-* Purpose: Returns the configured API secret; empty string means gate is disabled.                               *
-****************************************************************************************************************/
 function getApiSecret(baseCore) {
   return String(baseCore?.workingObject?.apiSecret || "").trim();
 }
 
-/****************************************************************************************************************
-* functionSignature: getBearerToken(req)                                                                         *
-* Purpose: Extracts the Bearer token from the Authorization header.                                              *
-****************************************************************************************************************/
 function getBearerToken(req) {
   const auth = String(req.headers?.authorization || "").trim();
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
   return "";
 }
 
-/****************************************************************************************************************
-* functionSignature: isBearerValid(req, baseCore)                                                                *
-* Purpose: Returns true if no secret is configured (gate disabled) or the Bearer token matches the secret.      *
-****************************************************************************************************************/
 function isBearerValid(req, baseCore) {
   const secret = getApiSecret(baseCore);
   if (!secret) return true;
   return getBearerToken(req) === secret;
 }
 
-/****************************************************************************************************************
-* functionSignature: getContextSnapshot(baseCore, channelID, limit)                                               *
-* Purpose: Returns a simplified context snapshot (role/text/ts).                                                 *
-****************************************************************************************************************/
 async function getContextSnapshot(baseCore, channelID, limit) {
   const n = Number(limit);
   const size = Number.isFinite(n) ? Math.max(1, Math.min(500, Math.floor(n))) : 100;
@@ -294,10 +240,6 @@ async function getContextSnapshot(baseCore, channelID, limit) {
   return out;
 }
 
-/****************************************************************************************************************
-* functionSignature: getApiFlow(baseCore, runFlow, createRunCore)                                                *
-* Purpose: Starts the HTTP API endpoint, executes the flow per request, and guarantees JSON response.            *
-****************************************************************************************************************/
 export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const cfg = baseCore?.config?.api || {};
   const host = String(cfg.host || "0.0.0.0");

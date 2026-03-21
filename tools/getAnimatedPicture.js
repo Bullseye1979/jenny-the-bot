@@ -9,10 +9,7 @@ import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getAnimatedPicture";
 
-/**********************************************************************************/
-/* functionSignature: getGuessExtFromCtype (ctype)                                 *
-/* Guesses a video file extension from content-type                                *
-/**********************************************************************************/
+
 function getGuessExtFromCtype(ctype) {
   const c = String(ctype || "").toLowerCase();
   if (c.includes("webm")) return ".webm";
@@ -20,10 +17,7 @@ function getGuessExtFromCtype(ctype) {
   return ".mp4";
 }
 
-/**********************************************************************************/
-/* functionSignature: getDownloadToBuffer (url)                                    *
-/* Downloads a URL and returns buffer and content-type                             *
-/**********************************************************************************/
+
 async function getDownloadToBuffer(url) {
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -32,11 +26,7 @@ async function getDownloadToBuffer(url) {
   return { buf, ctype };
 }
 
-/**********************************************************************************/
-/* functionSignature: resolveToolConfig (wo, args)                                 *
-/* Build config from toolsconfig.getAnimatedPicture with                           *
-/* args overrides and legacy workingObject fallbacks                               *
-/**********************************************************************************/
+
 function resolveToolConfig(wo = {}, args = {}) {
   const tc = wo?.toolsconfig?.getAnimatedPicture || {};
   const apiToken = String(args.videoApiToken || tc.videoApiToken || wo.videoApiToken || "").trim();
@@ -57,10 +47,7 @@ function resolveToolConfig(wo = {}, args = {}) {
   return { apiToken, baseUrl, model, pollIntervalMs, timeoutMs, publicBaseUrl };
 }
 
-/**********************************************************************************/
-/* functionSignature: getCreatePrediction (cfg, input, model)                      *
-/* Starts a prediction and returns its id                                          *
-/**********************************************************************************/
+
 async function getCreatePrediction(cfg, input, model) {
   const url = `${cfg.baseUrl}/predictions`;
   const payload = {
@@ -88,10 +75,7 @@ async function getCreatePrediction(cfg, input, model) {
   return id;
 }
 
-/**********************************************************************************/
-/* functionSignature: getWaitPrediction (cfg, id)                                  *
-/* Polls a prediction until completion or timeout                                  *
-/**********************************************************************************/
+
 async function getWaitPrediction(cfg, id) {
   const started = Date.now();
   for (;;) {
@@ -109,10 +93,7 @@ async function getWaitPrediction(cfg, id) {
   }
 }
 
-/**********************************************************************************/
-/* functionSignature: getExtractFirstOutputUrl (data)                              *
-/* Extracts the first output URL from prediction data                              *
-/**********************************************************************************/
+
 function getExtractFirstOutputUrl(data) {
   const out = data?.output;
   if (!out) return null;
@@ -122,20 +103,14 @@ function getExtractFirstOutputUrl(data) {
   return null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getValidateImageUrl (u)                                      *
-/* Validates and normalizes an http/https image URL                                *
-/**********************************************************************************/
+
 function getValidateImageUrl(u) {
   const s = String(u || "").trim();
   if (!/^https?:\/\//.test(s)) return null;
   return s;
 }
 
-/**********************************************************************************/
-/* functionSignature: getBuildInput (prompt, imageUrl)                             *
-/* Builds a minimal image-to-video input object                                    *
-/**********************************************************************************/
+
 function getBuildInput(prompt, imageUrl) {
   const p = String(prompt || "");
   return {
@@ -144,10 +119,7 @@ function getBuildInput(prompt, imageUrl) {
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: getRunSinglePrediction ({ cfg, model, input, wo })           *
-/* Runs one prediction, downloads, saves, and returns metadata                     *
-/**********************************************************************************/
+
 async function getRunSinglePrediction({ cfg, model, input, wo }) {
   let predictionId;
   try {
@@ -174,10 +146,7 @@ async function getRunSinglePrediction({ cfg, model, input, wo }) {
   }
 }
 
-/**********************************************************************************/
-/* functionSignature: getInvoke (args, coreData)                                   *
-/* Main entry: validates input, runs prediction, returns result                    *
-/**********************************************************************************/
+
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   let cfg;

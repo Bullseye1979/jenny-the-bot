@@ -22,10 +22,7 @@ const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 let __ulid_lastTime = 0;
 let __ulid_lastRand = new Uint8Array(10).fill(0);
 
-/**************************************************************
-/* functionSignature: getUlidEncodeTime (ms)                 *
-/* Encode a millisecond timestamp to a 10-char base32        *
-/**************************************************************/
+
 function getUlidEncodeTime(ms) {
   let x = BigInt(ms);
   const out = Array(10);
@@ -36,10 +33,7 @@ function getUlidEncodeTime(ms) {
   return out.join("");
 }
 
-/**************************************************************
-/* functionSignature: getUlidEncodeRandom80ToBase32 (rand)   *
-/* Encode 80 random bits into 16 base32 characters           *
-/**************************************************************/
+
 function getUlidEncodeRandom80ToBase32(rand) {
   const out = [];
   let acc = 0;
@@ -58,20 +52,14 @@ function getUlidEncodeRandom80ToBase32(rand) {
   return out.slice(0, 16).join("");
 }
 
-/**************************************************************
-/* functionSignature: getUlidRandom80 ()                     *
-/* Generate 80 bits of randomness as Uint8Array(10)          *
-/**************************************************************/
+
 function getUlidRandom80() {
   const arr = new Uint8Array(10);
   for (let i = 0; i < 10; i++) arr[i] = Math.floor(Math.random() * 256);
   return arr;
 }
 
-/**************************************************************
-/* functionSignature: getNewUlid ()                          *
-/* Generate a monotonic 26-character ULID                    *
-/**************************************************************/
+
 function getNewUlid() {
   const now = Date.now();
   let rand = getUlidRandom80();
@@ -92,11 +80,7 @@ function getNewUlid() {
   return getUlidEncodeTime(now) + getUlidEncodeRandom80ToBase32(rand);
 }
 
-/**************************************************************
-/* functionSignature: setSendResponse (res, status, body,    *
-/*                                    headers)               *
-/* Send a fallback HTTP response if nothing else responded   *
-/**************************************************************/
+
 function setSendResponse(res, status, body = "", headers = {}) {
   if (res.writableEnded) return;
   res.writeHead(status, {
@@ -108,10 +92,7 @@ function setSendResponse(res, status, body = "", headers = {}) {
   else res.end();
 }
 
-/**************************************************************
-/* functionSignature: getReadBody (req, maxBytes)            *
-/* Read and return the request body as a UTF-8 string        *
-/**************************************************************/
+
 function getReadBody(req, maxBytes = 1e6) {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -144,29 +125,19 @@ function getReadBody(req, maxBytes = 1e6) {
   });
 }
 
-/**************************************************************
-/* functionSignature: getNewRequestKey ()                    *
-/* Create a unique registry key for storing req/res          *
-/**************************************************************/
+
 function getNewRequestKey() {
   return `web:${getNewUlid()}`;
 }
 
-/**************************************************************
-/* functionSignature: getConfigFlowName (baseCore)           *
-/* Read flowName from config["webpage"] with fallback        *
-/**************************************************************/
+
 function getConfigFlowName(baseCore) {
   const name = baseCore?.config?.[MODULE_NAME]?.flowName;
   const s = typeof name === "string" ? name.trim() : "";
   return s || MODULE_NAME;
 }
 
-/**************************************************************
-/* functionSignature: getCreateServer (baseCore, runFlow,    *
-/*   createRunCore, flowName, port, pubRoot, documentsRoot)  *
-/* Create and start one HTTP server on the given port.       *
-/**************************************************************/
+
 function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRoot, documentsRoot) {
   const server = http.createServer(async (req, res) => {
     try {
@@ -311,12 +282,7 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
   return server;
 }
 
-/**************************************************************
-/* functionSignature: getWebpageFlow (baseCore, runFlow,     *
-/*                                    createRunCore)         *
-/* Start one HTTP server per configured port and trigger     *
-/* the configured flow per request.                          *
-/**************************************************************/
+
 export default async function getWebpageFlow(baseCore, runFlow, createRunCore) {
   const cfg      = baseCore?.config?.[MODULE_NAME] || {};
   const flowName = getConfigFlowName(baseCore);

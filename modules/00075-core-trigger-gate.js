@@ -16,10 +16,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 const MODULE_NAME        = "core-trigger-gate";
 const DEFAULT_WORD_WINDOW = 1;
 
-/************************************************************************************
-/* functionSignature: getCoreTriggerGate (coreData)                                *
-/* Stops flow when payload lacks the configured trigger within the first N words.  *
-/************************************************************************************/
+
 export default async function getCoreTriggerGate(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

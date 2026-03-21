@@ -9,10 +9,6 @@
 import { getPrefixedLogger } from "../core/logging.js";
 import { setPurgeContext, setFreezeContext } from "../core/context.js";
 
-/****************************************************************************************************************
-* functionSignature: getStr(value)                                                                             *
-* Purpose: Returns a string; empty string for nullish values.                                                   *
-****************************************************************************************************************/
 function getStr(value) {
   if (typeof value === "string") return value;
   if (value == null) return "";
@@ -23,10 +19,6 @@ function getStr(value) {
   }
 }
 
-/****************************************************************************************************************
-* functionSignature: setStop(workingObject, responseText, responseValue?)                                      *
-* Purpose: Marks the workingObject as stopped and sets response fields.                                         *
-****************************************************************************************************************/
 function setStop(workingObject, responseText, responseValue = "STOP") {
   workingObject.stop = true;
 
@@ -37,10 +29,6 @@ function setStop(workingObject, responseText, responseValue = "STOP") {
   workingObject.response = getStr(responseValue);
 }
 
-/****************************************************************************************************************
-* functionSignature: getSlashCommand(payload)                                                                  *
-* Purpose: Parses and returns the slash command name from the payload or null.                                  *
-****************************************************************************************************************/
 function getSlashCommand(payload) {
   const s = getStr(payload).trim();
   if (!s.startsWith("/")) return null;
@@ -51,10 +39,6 @@ function getSlashCommand(payload) {
   return cmd || null;
 }
 
-/****************************************************************************************************************
-* functionSignature: getCoreAdminCommands(coreData)                                                            *
-* Purpose: Executes admin actions for the current id based on parsed slash commands.                            *
-****************************************************************************************************************/
 export default async function getCoreAdminCommands(coreData) {
   const workingObject = coreData?.workingObject || {};
 

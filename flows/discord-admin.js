@@ -16,11 +16,7 @@ const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 let __ulid_lastTime = 0;
 let __ulid_lastRand = new Uint8Array(10).fill(0);
 
-/**************************************************************
-/* functionSignature: getUlidEncodeTime (ms)                 *
-/* Encodes a millisecond timestamp to Crockford base32       *
-/* (10 chars)                                                *
-/**************************************************************/
+
 function getUlidEncodeTime(ms) {
   let x = BigInt(ms);
   const out = Array(10);
@@ -28,10 +24,7 @@ function getUlidEncodeTime(ms) {
   return out.join("");
 }
 
-/**************************************************************
-/* functionSignature: getUlidEncodeRandom80ToBase32 (rand)   *
-/* Encodes 80 random bits to 16 base32 chars                 *
-/**************************************************************/
+
 function getUlidEncodeRandom80ToBase32(rand) {
   const out = [];
   let acc = 0, bits = 0, i = 0;
@@ -42,20 +35,14 @@ function getUlidEncodeRandom80ToBase32(rand) {
   return out.slice(0, 16).join("");
 }
 
-/**************************************************************
-/* functionSignature: getUlidRandom80 ()                     *
-/* Generates 80 random bits as Uint8Array(10)                *
-/**************************************************************/
+
 function getUlidRandom80() {
   const arr = new Uint8Array(10);
   for (let i = 0; i < 10; i++) arr[i] = Math.floor(Math.random() * 256);
   return arr;
 }
 
-/**************************************************************
-/* functionSignature: getNewUlid ()                          *
-/* Produces a 26-character monotonic ULID                    *
-/**************************************************************/
+
 function getNewUlid() {
   const now = Date.now();
   let rand = getUlidRandom80();
@@ -72,42 +59,27 @@ function getNewUlid() {
   return getUlidEncodeTime(now) + getUlidEncodeRandom80ToBase32(rand);
 }
 
-/**************************************************************
-/* functionSignature: getSafeArray (v)                       *
-/* Returns v if array, otherwise an empty array              *
-/**************************************************************/
+
 function getSafeArray(v) {
   return Array.isArray(v) ? v : [];
 }
 
-/**************************************************************
-/* functionSignature: getWOAdminRoot (baseWO)                *
-/* Returns the admin root from workingObject                 *
-/**************************************************************/
+
 function getWOAdminRoot(baseWO) {
   return baseWO?.["discord-admin"] || baseWO?.discordAdmin || {};
 }
 
-/**************************************************************
-/* functionSignature: getEphemeralFlag (root)                *
-/* Reads the ephemeral flag from admin root                  *
-/**************************************************************/
+
 function getEphemeralFlag(root) {
   return Boolean(root?.slash?.ephemeral ?? true);
 }
 
-/**************************************************************
-/* functionSignature: getSilentFlag (root)                   *
-/* Reads the silent flag from admin root                     *
-/**************************************************************/
+
 function getSilentFlag(root) {
   return Boolean(root?.slash?.silent ?? true);
 }
 
-/**************************************************************
-/* functionSignature: getDefaultAvatarCommand ()             *
-/* Returns default /avatar command definition                *
-/**************************************************************/
+
 function getDefaultAvatarCommand() {
   return {
     name: "avatar",
@@ -135,10 +107,7 @@ function getDefaultAvatarCommand() {
   };
 }
 
-/**************************************************************
-/* functionSignature: getCommandDefinitions (root, log)      *
-/* Returns command definitions from admin root or fallback   *
-/**************************************************************/
+
 function getCommandDefinitions(root, log) {
   const defsFromWO = getSafeArray(root?.slash?.definitions);
   if (defsFromWO.length > 0) return defsFromWO;
@@ -146,10 +115,7 @@ function getCommandDefinitions(root, log) {
   return [getDefaultAvatarCommand()];
 }
 
-/**************************************************************
-/* functionSignature: getDetectedGuildIds (client)           *
-/* Returns a list of guild IDs from the client cache         *
-/**************************************************************/
+
 function getDetectedGuildIds(client) {
   try {
     return Array.from(client.guilds?.cache?.keys?.() || []);
@@ -158,19 +124,13 @@ function getDetectedGuildIds(client) {
   }
 }
 
-/**************************************************************
-/* functionSignature: getFindDefByName (defs, name)          *
-/* Finds a command definition by name                        *
-/**************************************************************/
+
 function getFindDefByName(defs, name) {
   const low = String(name || "").toLowerCase();
   return getSafeArray(defs).find(d => String(d?.name || "").toLowerCase() === low) || null;
 }
 
-/**************************************************************
-/* functionSignature: getFindSubByName (cmdDef, subName)     *
-/* Finds a subcommand definition by name                     *
-/**************************************************************/
+
 function getFindSubByName(cmdDef, subName) {
   if (!cmdDef) return null;
   const subs = getSafeArray(cmdDef.options).filter(o => o?.type === 1);
@@ -178,30 +138,19 @@ function getFindSubByName(cmdDef, subName) {
   return subs.find(o => String(o?.name || "").toLowerCase() === low) || null;
 }
 
-/**************************************************************
-/* functionSignature: getHasAdminProp (obj)                  *
-/* True if object has an admin property                      *
-/**************************************************************/
+
 function getHasAdminProp(obj) {
   return obj && Object.prototype.hasOwnProperty.call(obj, "admin");
 }
 
-/**************************************************************
-/* functionSignature: getCheckAllowByAdminArray (defLike,    *
-/*                     userId)                               *
-/* Evaluates admin array allow-list                          *
-/**************************************************************/
+
 function getCheckAllowByAdminArray(defLike, userId) {
   const list = getSafeArray(defLike?.admin).map(String);
   if (list.length === 0) return false;
   return list.includes(String(userId));
 }
 
-/**************************************************************
-/* functionSignature: getIsUserAllowedForCmdAndSub          *
-/*   (defs, cmdName, subName, userId)                        *
-/* Checks admin gate: sub.admin > cmd.admin > allow if none  *
-/**************************************************************/
+
 function getIsUserAllowedForCmdAndSub(defs, cmdName, subName, userId) {
   const cmd = getFindDefByName(defs, cmdName);
   if (!cmd) return true;
@@ -211,10 +160,7 @@ function getIsUserAllowedForCmdAndSub(defs, cmdName, subName, userId) {
   return true;
 }
 
-/**************************************************************
-/* functionSignature: getDeepStripAdmin (def)                *
-/* Removes admin fields from a definition tree               *
-/**************************************************************/
+
 function getDeepStripAdmin(def) {
   if (!def || typeof def !== "object") return def;
   const { admin, options, ...rest } = def;
@@ -222,27 +168,17 @@ function getDeepStripAdmin(def) {
   return rest;
 }
 
-/**************************************************************
-/* functionSignature: getSanitizeDefsForDiscord (defs)       *
-/* Returns definitions without admin fields                  *
-/**************************************************************/
+
 function getSanitizeDefsForDiscord(defs) {
   return getSafeArray(defs).map(getDeepStripAdmin);
 }
 
-/**************************************************************
-/* functionSignature: getSpecString (defs, scope)            *
-/* Serializes a spec for change detection                    *
-/**************************************************************/
+
 function getSpecString(defs, scope) {
   return JSON.stringify({ scope, defs: defs || [] });
 }
 
-/**************************************************************
-/* functionSignature: setRegisterSlashCommands (client,      *
-/*                     defs)                                 *
-/* Registers commands globally or per-guild                  *
-/**************************************************************/
+
 async function setRegisterSlashCommands(client, defs) {
   await client.application?.fetch();
   const guildIds = getDetectedGuildIds(client);
@@ -264,11 +200,7 @@ async function setRegisterSlashCommands(client, defs) {
   return true;
 }
 
-/**************************************************************
-/* functionSignature: setEnsureGuildRegistration (client,    *
-/*                     defs, log)                            *
-/* Repairs missing guild command registrations if needed     *
-/**************************************************************/
+
 async function setEnsureGuildRegistration(client, defs, log) {
   const cleanDefs = getSanitizeDefsForDiscord(defs);
   const gids = getDetectedGuildIds(client);
@@ -287,10 +219,7 @@ async function setEnsureGuildRegistration(client, defs, log) {
   }
 }
 
-/**************************************************************
-/* functionSignature: getOptionObject (interaction)          *
-/* Flattens interaction options into a plain object          *
-/**************************************************************/
+
 function getOptionObject(interaction) {
   const out = {};
   try {
@@ -319,10 +248,7 @@ function getOptionObject(interaction) {
   return out;
 }
 
-/**************************************************************
-/* functionSignature: getInteractionSnapshot (i)             *
-/* Builds a safe snapshot of an interaction                  *
-/**************************************************************/
+
 function getInteractionSnapshot(i) {
   try {
     return {
@@ -344,11 +270,7 @@ function getInteractionSnapshot(i) {
   }
 }
 
-/**************************************************************
-/* functionSignature: getBuildRunCore (createRunCore,        *
-/*                     interaction, baseWO)                  *
-/* Seeds a run core with safe interaction data               *
-/**************************************************************/
+
 function getBuildRunCore(createRunCore, interaction, baseWO) {
   const rc = createRunCore();
   const wo = rc.workingObject;
@@ -381,31 +303,21 @@ function getBuildRunCore(createRunCore, interaction, baseWO) {
   return rc;
 }
 
-/**************************************************************
-/* functionSignature: setBindInteractionHandler (client, fn) *
-/* Binds a single interactionCreate handler once             *
-/**************************************************************/
+
 function setBindInteractionHandler(client, fn) {
   if (client.__discordAdminBound) return;
   client.__discordAdminBound = true;
   client.on("interactionCreate", fn);
 }
 
-/**************************************************************
-/* functionSignature: getConfigFlowName (baseCore)           *
-/* Reads flowName from config["discord-admin"] or fallback   *
-/**************************************************************/
+
 function getConfigFlowName(baseCore) {
   const cfg = baseCore?.config?.["discord-admin"] || baseCore?.config?.discordAdmin || {};
   const name = typeof cfg.flowName === "string" ? cfg.flowName.trim() : "";
   return name || MODULE_NAME;
 }
 
-/**************************************************************
-/* functionSignature: setStartWhenClientAvailable (baseCore, *
-/*                     runFlow, createRunCore)               *
-/* Registers commands and routes interactions to the flow    *
-/**************************************************************/
+
 async function setStartWhenClientAvailable(baseCore, runFlow, createRunCore) {
   const INIT_KEY = "discord-admin:initialized";
   if (await getItem(INIT_KEY)) return;
@@ -485,11 +397,7 @@ async function setStartWhenClientAvailable(baseCore, runFlow, createRunCore) {
   await putItem({ at: Date.now() }, INTERVAL_KEY);
 }
 
-/**************************************************************
-/* functionSignature: getDiscordAdminFlow (baseCore,         *
-/*                     runFlow, createRunCore)               *
-/* Entry point: starts when Discord client is available      *
-/**************************************************************/
+
 export default async function getDiscordAdminFlow(baseCore, runFlow, createRunCore) {
   await setStartWhenClientAvailable(baseCore, runFlow, createRunCore);
 }

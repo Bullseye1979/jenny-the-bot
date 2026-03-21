@@ -25,6 +25,7 @@ This guide explains everything you need to know to use Jenny as a regular user.
 13. [Bard Music System](#bard-music-system)
 14. [Web Interface](#web-interface)
 14a. [Gallery](#gallery)
+14b. [GDPR Data Export](#gdpr-data-export)
 15. [AI Wiki](#ai-wiki)
 16. [Slash Commands Reference](#slash-commands-reference)
 17. [Tips & Tricks](#tips--tricks)
@@ -388,6 +389,7 @@ Jenny provides several browser-based tools. Your server admin decides which are 
 | `/voice` | Browser-based voice interface — talk to Jenny from any device with a mic |
 | `/inpainting` | Image editor for AI inpainting (see [Editing Images](#editing-images-inpainting)) |
 | `/gallery` | Your personal image gallery — browse, download, open in inpainting, or delete images you have generated |
+| `/gdpr` | GDPR data export — download an Excel file with all personal data stored for your account |
 | `/bard` | Bard music player and library manager |
 | `/wiki` | AI-generated wiki for your channel — articles written from conversation history |
 | `/docs` | Project documentation viewer |
@@ -423,6 +425,30 @@ You can also upload images to your gallery from the **browser extension** (if in
 For this to work, you must set **Web Base URL** in the extension's options page and be logged into the Jenny web interface. The extension reuses your existing session cookie — no extra login step is required once you are already logged in.
 
 > **Note:** The gallery is personal — each user sees only their own images.
+
+---
+
+## GDPR Data Export
+
+The GDPR Data Export page (`/gdpr`) lets you download all personal data that Jenny holds for your account, in a single Excel file.
+
+### What is included
+
+| Sheet | Contents |
+|---|---|
+| **Context** | All conversation history entries associated with your user ID |
+| **GDPR Consent** | Your consent records per channel (chat consent, voice consent, disclaimer status) |
+| **Files** | All files stored in your personal documents folder (`pub/documents/<your-id>/`) |
+
+### How to use
+
+1. Navigate to `/gdpr` and log in if prompted.
+2. You will see your username and user ID displayed.
+3. Click **Download Excel export** to generate and download the `.xlsx` file.
+
+The file is generated on demand every time you click the button — it always reflects your current data.
+
+> **Note:** This is your right to data access under GDPR Art. 15. The export only contains data belonging to your own account; other users' data is never included.
 
 ---
 

@@ -73,6 +73,7 @@
    - 16.3 [Chat SPA (`/chat`)](#163-chat-spa-chat)
    - 16.4 [Inpainting SPA (`/inpainting`)](#164-inpainting-spa-inpainting)
    - 16.4a [Gallery (`/gallery`)](#164a-gallery-gallery)
+   - 16.4b [GDPR Data Export (`/gdpr`)](#164b-gdpr-data-export-gdpr)
    - 16.5 [Bard Library Manager (`/bard`)](#165-bard-library-manager-bard)
    - 16.6 [Live Dashboard (`/dashboard`)](#166-live-dashboard-dashboard)
    - 16.7 [Documentation Browser (`/docs`)](#167-documentation-browser-docs)
@@ -122,6 +123,7 @@ CREATE TABLE context (
   ctx_id   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   ts       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   id       VARCHAR(128) NOT NULL,
+  userid   VARCHAR(128) NULL,
   json     LONGTEXT NOT NULL,
   text     TEXT NULL,
   role     VARCHAR(32) NOT NULL DEFAULT 'user',
@@ -130,7 +132,8 @@ CREATE TABLE context (
   KEY idx_id_ctx (id, ctx_id),
   KEY idx_role (role),
   KEY idx_turn (turn_id),
-  KEY idx_id_turn (id, turn_id)
+  KEY idx_id_turn (id, turn_id),
+  KEY idx_userid (userid)
 );
 
 -- Rolling summary periods
@@ -1614,6 +1617,7 @@ Every module can be restricted to specific flows via its config block:
 | `webpage-inpaint` | webpage |
 | `webpage-inpainting` | webpage |
 | `webpage-gallery` | webpage |
+| `webpage-gdpr` | webpage |
 | `webpage-dashboard` | webpage |
 | `webpage-documentation` | webpage |
 | `webpage-wiki` | webpage |
@@ -1949,6 +1953,7 @@ Multiple modules can share a single port. Each module routes by URL path:
 | **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelID=<id>` every 800 ms (per-channel) |
 | **Gallery upload** | Upload images to the bot's Gallery via drag-and-drop or click. Requires `webBaseUrl` to be configured and an active login session on the Jenny web interface. |
+| **Auth status bar** | Displays the logged-in username (from the Jenny web session) at the top of the popup. Shows a **Login** link when not authenticated and a **Logout** link when logged in. Requires `webBaseUrl` to be configured. |
 | **Options page** | `apiUrl`, `channelID`, `apiSecret`, `webBaseUrl` stored in `chrome.storage.sync` |
 
 #### Installation (developer mode)
@@ -1968,7 +1973,7 @@ Multiple modules can share a single port. Each module routes by URL path:
 | `API URL` | Full URL of the bot's API endpoint, e.g. `http://localhost:3400/api` |
 | `Channel ID` | Must match a channel with `apiEnabled: 1` in `core.json` — default `browser-extension` |
 | `API Secret` | Bearer token; leave empty if `apiSecret` is not set on the channel |
-| `Web Base URL` | Base URL of the Jenny web interface (e.g. `https://jenny.example.com`). Required for Gallery uploads. The user must be logged into the web interface for uploads to work — the extension uses `credentials: include` to reuse the existing session cookie. Click **Open login page** in the settings to authenticate first. |
+| `Web Base URL` | Base URL of the Jenny web interface (e.g. `https://jenny.example.com`). When set, the extension fetches `/auth/me` on startup to retrieve the current login session. The logged-in username and user ID are displayed in the auth bar at the top of the popup. Use the **Login** / **Logout** links in the auth bar to manage the session. The user ID from the session is automatically sent with every API message for GDPR attribution. |
 
 #### Bot-side configuration
 
@@ -2040,6 +2045,7 @@ export default async function myModule(coreData) {
 | 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) |
 | 00055 | `core-admin-commands` | Core admin operations (purge, freeze, DB commands) |
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
+| 00057 | `webpage-gdpr` | GDPR data-export SPA (port 3121, `/gdpr`) — allows logged-in users to download an Excel file containing their context history, consent records, and stored files. Requires `exceljs` npm package. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
 | 00070 | `discord-add-context` | Loads conversation history from MySQL into the context window |
@@ -2889,6 +2895,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00047-webpage-voice.js` | 3119 | `/voice` | `webpage-voice` | Browser push-to-talk voice interface |
 | `00053-webpage-context.js` | 3118 | `/context` | `webpage-context` | Context DB editor — browse, search, search & replace, bulk-delete conversation rows |
 | `00056-webpage-gallery.js` | 3120 | `/gallery` | `webpage-gallery` | Image gallery — browse, upload and delete the logged-in user's generated images |
+| `00057-webpage-gdpr.js` | 3121 | `/gdpr` | `webpage-gdpr` | GDPR data export — download personal data as Excel (context, consent, files) |
 
 ### How Web Modules Work
 
@@ -2942,6 +2949,10 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /inpainting/auth/token` — generates auth token for deep links
 - `GET /documents/*.png` — redirected here by module 00045
 
+**Toolbar buttons:**
+- **⬇ Download** — saves the current canvas as `image.png` (always available when an image is loaded)
+- **🖼 Save to Gallery** — uploads the current canvas to `POST /gallery/api/files` with the session cookie. **Requires login** (`INPAINT_LOGGED_IN = true`). Button is disabled when the user is not authenticated.
+
 ### 16.4a Gallery (`/gallery`)
 
 **Gallery (port 3120, /gallery):**
@@ -2971,6 +2982,48 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - Add `3120` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /gallery* localhost:3120` to your Caddyfile
 - Images are stored in `pub/documents/<userId>/` via `core/file.js`
+
+---
+
+### 16.4b GDPR Data Export (`/gdpr`)
+
+**GDPR Export (port 3121, /gdpr):**
+- `GET /gdpr` — renders the data-export SPA (login required)
+- `GET /gdpr/style.css` — serves shared CSS (no auth)
+- `GET /gdpr/export.xlsx` — generates and downloads an Excel file containing all personal data for the logged-in user
+
+**Excel sheets:**
+
+| Sheet | Content |
+|---|---|
+| **Context** | All rows from the `context` table where `id = userId` — conversation history entries keyed to the user's Discord ID |
+| **GDPR Consent** | All rows from the GDPR consent table (`gdpr` by default) where `user_id = userId` — per-channel consent records |
+| **Files** | All files in `pub/documents/<userId>/` — name, size in bytes, and last-modified timestamp |
+
+**core.json configuration:**
+```json
+"webpage-gdpr": {
+  "flow":      ["webpage"],
+  "port":      3121,
+  "basePath":  "/gdpr",
+  "gdprTable": "gdpr"
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"webpage"` |
+| `port` | number | `3121` | HTTP port — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `basePath` | string | `"/gdpr"` | URL base path |
+| `gdprTable` | string | `"gdpr"` | MySQL table name for GDPR consent records — must match `config.discord-gdpr-gate.table` |
+
+**Setup:**
+- Add `3121` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /gdpr* localhost:3121` to your Caddyfile
+- Requires the `exceljs` npm package (`npm install exceljs`)
+- The module reads `wo.db` for the MySQL connection — database must be configured in `workingObject.db`
+
+> **Note:** Context entries are only exported where `context.id = userId`. Guild channel history is keyed by channel ID and will not appear here unless the channel ID matches the user's Discord ID (e.g. DM channels). This is a limitation of the channel-keyed context store.
 
 ---
 

@@ -12,19 +12,13 @@ const MODULE_NAME = "discord-admin-gdpr";
 
 const CREATED = new Set();
 
-/************************************************************************************/
-/* functionSignature: getTableName (coreData)                                      *
-/* the consent table name resolved from configuration.                             *
-/************************************************************************************/
+
 function getTableName(coreData) {
   const t = coreData?.config?.[MODULE_NAME]?.table;
   return (typeof t === "string" && t.trim()) ? t.trim() : "gdpr_consent";
 }
 
-/************************************************************************************/
-/* functionSignature: getDbConfig (wo)                                             *
-/* the DB connection config object or null if incomplete.                          *
-/************************************************************************************/
+
 function getDbConfig(wo) {
   const db = wo?.db || {};
   const { host, user, password, database } = db;
@@ -32,19 +26,13 @@ function getDbConfig(wo) {
   return { host, user, password, database, charset: "utf8mb4" };
 }
 
-/************************************************************************************/
-/* functionSignature: getParseValue (x)                                            *
-/* 0 or 1 from a numeric-like value.                                               *
-/************************************************************************************/
+
 function getParseValue(x) {
   const n = Number(x);
   return n === 1 ? 1 : 0;
 }
 
-/************************************************************************************/
-/* functionSignature: getAdminOptionValue (opts)                                   *
-/* the option value from an object or array of option objects.                     *
-/************************************************************************************/
+
 function getAdminOptionValue(opts) {
   if (!opts) return null;
 
@@ -63,10 +51,7 @@ function getAdminOptionValue(opts) {
   return null;
 }
 
-/************************************************************************************/
-/* functionSignature: setEnsureTable (conn, table)                                 *
-/* nothing; creates the consent table when it does not exist.                      *
-/************************************************************************************/
+
 async function setEnsureTable(conn, table) {
   if (CREATED.has(table)) return;
 
@@ -87,10 +72,7 @@ async function setEnsureTable(conn, table) {
   CREATED.add(table);
 }
 
-/**************************************************************/
-/* functionSignature: setEnsureRow (conn, table, uid, cid)    */
-/* Ensures a row exists for user/channel                      */
-/**************************************************************/
+
 async function setEnsureRow(conn, table, userId, channelId) {
   await conn.execute(
     `INSERT IGNORE INTO \`${table}\` (user_id, channel_id, chat, voice, disclaimer) VALUES (?, ?, 0, 0, 0)`,
@@ -98,10 +80,7 @@ async function setEnsureRow(conn, table, userId, channelId) {
   );
 }
 
-/**************************************************************/
-/* functionSignature: getRow (conn, table, uid, cid)          */
-/* Reads current consent row                                  */
-/**************************************************************/
+
 async function getRow(conn, table, userId, channelId) {
   const [rows] = await conn.execute(
     `SELECT chat, voice, disclaimer, updated_at FROM \`${table}\` WHERE user_id=? AND channel_id=? LIMIT 1`,
@@ -114,10 +93,7 @@ async function getRow(conn, table, userId, channelId) {
   return { chat, voice, disclaimer, updatedAt };
 }
 
-/**************************************************************/
-/* functionSignature: setUpdateText (conn, table, ctx)        */
-/* Updates chat consent and touches updated_at                */
-/**************************************************************/
+
 async function setUpdateText(conn, table, { userId, channelId, value }) {
   await conn.execute(
     `UPDATE \`${table}\` SET chat=?, disclaimer=1, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND channel_id=?`,
@@ -125,10 +101,7 @@ async function setUpdateText(conn, table, { userId, channelId, value }) {
   );
 }
 
-/**************************************************************/
-/* functionSignature: setUpdateVoice (conn, table, ctx)       */
-/* Updates voice consent and touches updated_at               */
-/**************************************************************/
+
 async function setUpdateVoice(conn, table, { userId, channelId, value }) {
   await conn.execute(
     `UPDATE \`${table}\` SET voice=?, disclaimer=1, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND channel_id=?`,
@@ -136,10 +109,7 @@ async function setUpdateVoice(conn, table, { userId, channelId, value }) {
   );
 }
 
-/**************************************************************/
-/* functionSignature: setResetDisclaimerIfBothZero (conn,ctx) */
-/* Resets disclaimer to 0 when both consents are 0            */
-/**************************************************************/
+
 async function setResetDisclaimerIfBothZero(conn, table, { userId, channelId }) {
   const { chat, voice } = await getRow(conn, table, userId, channelId);
   if (chat === 0 && voice === 0) {
@@ -152,10 +122,7 @@ async function setResetDisclaimerIfBothZero(conn, table, { userId, channelId }) 
   return false;
 }
 
-/************************************************************************************/
-/* functionSignature: getDiscordAdminGdpr (coreData)                               *
-/* coreData after updating GDPR consent flags.                                     *
-/************************************************************************************/
+
 export default async function getDiscordAdminGdpr(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

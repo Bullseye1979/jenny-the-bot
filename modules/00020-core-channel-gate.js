@@ -8,10 +8,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-channel-gate";
 
-/***************************************************************
-/* functionSignature: getChannelGate (coreData)                *
-/* Sets stop=true when channel is not allowed; logs outcome    *
-/***************************************************************/
+
 export default async function getChannelGate(coreData) {
   const workingObject = coreData?.workingObject || {};
   const log = getPrefixedLogger(workingObject, import.meta.url);

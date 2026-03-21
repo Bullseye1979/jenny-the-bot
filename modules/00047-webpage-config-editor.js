@@ -6,9 +6,6 @@ import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-config-editor";
 
-/********************************************************************************************************************
-* functionSignature: setSendNow (wo)
-********************************************************************************************************************/
 async function setSendNow(wo) {
   const key = wo?.http?.requestKey;
   if (!key) return;
@@ -23,9 +20,6 @@ async function setSendNow(wo) {
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 }
 
-/********************************************************************************************************************
-* functionSignature: setJsonResp (wo, status, data)
-********************************************************************************************************************/
 function setJsonResp(wo, status, data) {
   wo.http.response = {
     status,
@@ -34,9 +28,6 @@ function setJsonResp(wo, status, data) {
   };
 }
 
-/********************************************************************************************************************
-* functionSignature: setNotFound (wo)
-********************************************************************************************************************/
 function setNotFound(wo) {
   wo.http.response = {
     status: 404,
@@ -45,9 +36,6 @@ function setNotFound(wo) {
   };
 }
 
-/********************************************************************************************************************
-* functionSignature: getIsAllowedRoles (wo, allowedRoles)
-********************************************************************************************************************/
 function getIsAllowedRoles(wo, allowedRoles) {
   const req = Array.isArray(allowedRoles) ? allowedRoles : [];
   if (!req.length) return true;
@@ -72,26 +60,17 @@ function getIsAllowedRoles(wo, allowedRoles) {
   return false;
 }
 
-/********************************************************************************************************************
-* functionSignature: getBasePath (cfg)
-********************************************************************************************************************/
 function getBasePath(cfg) {
   const bp = String(cfg.basePath ?? "/config").trim();
   return bp && bp.startsWith("/") ? bp.replace(/\/+$/,"") : "/config";
 }
 
-/********************************************************************************************************************
-* functionSignature: getConfigFile (cfg)
-********************************************************************************************************************/
 function getConfigFile(cfg) {
   if (cfg.file) return String(cfg.file);
   if (cfg.configPath) return String(cfg.configPath);
   return (new URL("../core.json", import.meta.url)).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 }
 
-/********************************************************************************************************************
-* functionSignature: getWebpageConfigEditor (coreData)
-********************************************************************************************************************/
 export default async function getWebpageConfigEditor(coreData) {
   const wo  = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
@@ -199,10 +178,6 @@ export default async function getWebpageConfigEditor(coreData) {
   return coreData;
 }
 
-/********************************************************************************************************************
-* functionSignature: getAccessDeniedHtml (opts)
-* Purpose: Shows menu + access denied message, leaves rest of page empty.
-********************************************************************************************************************/
 function getAccessDeniedHtml(opts) {
   const base       = String(opts?.base || "/").replace(/\/+$|\/+$/g,"") || "/";
   const activePath = String(opts?.activePath || base) || base;
@@ -238,11 +213,6 @@ getThemeHeadScript() + "\n" +
   );
 }
 
-/********************************************************************************************************************
-* functionSignature: getConfigHtml (opts)
-* Purpose: Visual JSON config editor. Objects render as collapsible sections, flat arrays as
-*          tag chips, secrets as password fields, long strings as textareas.
-********************************************************************************************************************/
 function getConfigHtml(opts) {
   const configBase = String(opts?.configBase || "/config").replace(/\/+$/,"") || "/config";
   const activePath = String(opts?.activePath || configBase) || configBase;

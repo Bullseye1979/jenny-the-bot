@@ -17,10 +17,7 @@ const MODULE_NAME = "bard";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/************************************************************************************/
-/* functionSignature: getParseLibraryXml (xmlText)                                  *
-/* Parses library.xml content into [{file, title, tags[]}] without external deps.   *
-/************************************************************************************/
+
 function getParseLibraryXml(xmlText) {
   const tracks = [];
   const trackRe = /<track\s+([^>]+)>([\s\S]*?)<\/track>/gi;
@@ -53,10 +50,7 @@ function getParseLibraryXml(xmlText) {
   return tracks;
 }
 
-/************************************************************************************/
-/* functionSignature: getLoadLibrary (musicDir)                                      *
-/* Loads and parses library.xml from the given directory. Returns [] on failure.     *
-/************************************************************************************/
+
 const LIBRARY_XML_EMPTY = `<?xml version="1.0" encoding="UTF-8"?>\n<library>\n</library>\n`;
 
 function getLoadLibrary(musicDir) {
@@ -76,22 +70,7 @@ function getLoadLibrary(musicDir) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: getSelectSong (labels, library, currentFile, excludeFile)      *
-/* Selects the best-matching song using a tiered pool approach.                      *
-/* labels[0]=location, labels[1]=situation, labels[2-5]=moods.                      *
-/* track.tags[0]=location, track.tags[1]=situation, track.tags[2+]=moods.           *
-/*                                                                                   *
-/* Empty library tag = wildcard (matches any AI value, including empty AI label).   *
-/*                                                                                   *
-/* Pool tiers (first non-empty tier is used):                                        *
-/*   Tier 1 — songs matching BOTH location AND situation                             *
-/*   Tier 2 — songs matching location OR situation                                   *
-/*   Tier 3 — all songs                                                              *
-/*                                                                                   *
-/* Within the tier, best mood match wins. Tie-with-current → return null (stay).    *
-/* excludeFile is excluded from variety rotation but not from tie-break stays.      *
-/************************************************************************************/
+
 function getSelectSong(labels, library, currentFile, excludeFile = null) {
   if (!Array.isArray(library) || !library.length) return null;
   if (!Array.isArray(labels)) labels = [];
@@ -129,11 +108,7 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   return best[Math.floor(Math.random() * best.length)];
 }
 
-/************************************************************************************/
-/* functionSignature: getTrackDurationMs (filePath)                                  *
-/* Returns the duration of an audio file in milliseconds via ffprobe.               *
-/* Falls back to 180000 ms (3 minutes) if ffprobe fails or duration is unavailable. *
-/************************************************************************************/
+
 async function getTrackDurationMs(filePath) {
   return new Promise((resolve) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
@@ -146,11 +121,7 @@ async function getTrackDurationMs(filePath) {
   });
 }
 
-/************************************************************************************/
-/* functionSignature: setPlayTrack (session, track, musicDir, log, triggerPoll)     *
-/* Writes bard:stream and bard:nowplaying for the given track. Gets the track       *
-/* duration via ffprobe and schedules a timer to trigger the next poll when done.   *
-/************************************************************************************/
+
 async function setPlayTrack(session, track, musicDir, log, triggerPoll) {
   try {
     const filePath = path.resolve(musicDir, track.file);
@@ -202,12 +173,7 @@ async function setPlayTrack(session, track, musicDir, log, triggerPoll) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: getScanAndPlay (musicDir, pollMs, log, cfg)                   *
-/* Returns the polling function. Reads bard:registry on each cycle, selects and     *
-/* starts tracks for each active session. triggerPoll is passed to setPlayTrack so  *
-/* the track end timer can fire an immediate poll without racing a running cycle.   *
-/************************************************************************************/
+
 function getScanAndPlay(musicDir, pollMs, log, cfg) {
   let _running = false;
   let _pendingPoll = false;
@@ -325,10 +291,7 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
   return scanAndPlay;
 }
 
-/************************************************************************************/
-/* functionSignature: getBardFlow (baseCore, runFlow, createRunCore)                 *
-/* Loads the music library and starts the headless bard playback scheduler.          *
-/************************************************************************************/
+
 export default async function getBardFlow(baseCore, runFlow, createRunCore) {
   const rc = createRunCore();
   const log = getPrefixedLogger(rc.workingObject, import.meta.url);

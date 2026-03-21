@@ -22,10 +22,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-voice-tts";
 
-/*************************************************************************************
-/* functionSignature: getSanitizedTTSText (text)                                    *
-/* Strips link targets so TTS reads only the visible text, not URLs.                *
-/*************************************************************************************/
+
 function getSanitizedTTSText(text) {
   if (!text) return "";
   let s = String(text);
@@ -42,30 +39,21 @@ function getSanitizedTTSText(text) {
   return s.trim();
 }
 
-/*************************************************************************************
-/* functionSignature: getNormalizedVoiceKey (voiceRaw)                             *
-/* Normalises a voice name into a stable lowercase API enum.                        *
-/*************************************************************************************/
+
 function getNormalizedVoiceKey(voiceRaw) {
   let v = voiceRaw ?? "";
   if (typeof v !== "string") v = String(v);
   return v.trim().toLowerCase();
 }
 
-/*************************************************************************************
-/* functionSignature: getIsVoiceSessionRefUsable (ref)                             *
-/* Returns true if voiceSessionRef points to a valid registry key.                  *
-/*************************************************************************************/
+
 function getIsVoiceSessionRefUsable(ref) {
   if (ref == null) return false;
   const s = String(ref).trim().toLowerCase();
   return s !== "" && s !== "null" && s !== "undefined";
 }
 
-/*************************************************************************************
-/* functionSignature: getTTSSpeakerSegments (rawText)                              *
-/* Splits response text into voice segments based on [speaker: <voice>] tags.      *
-/*************************************************************************************/
+
 function getTTSSpeakerSegments(rawText) {
   const src  = typeof rawText === "string" ? rawText : String(rawText ?? "");
   const re   = /\[\s*speaker\s*:\s*([^\]]*?)\s*\]/gi;
@@ -99,10 +87,7 @@ function getTTSSpeakerSegments(rawText) {
   return out;
 }
 
-/*************************************************************************************
-/* functionSignature: getTTSBuffer (text, voice, options)                          *
-/* Calls the OpenAI-compatible TTS endpoint and returns an audio Buffer.            *
-/*************************************************************************************/
+
 async function getTTSBuffer(text, voice, { model, endpoint, apiKey, format, fetchTimeoutMs }) {
   const controller = new AbortController();
   const timer      = setTimeout(() => controller.abort(), fetchTimeoutMs);
@@ -128,10 +113,7 @@ async function getTTSBuffer(text, voice, { model, endpoint, apiKey, format, fetc
   return buf;
 }
 
-/*************************************************************************************
-/* functionSignature: getCoreVoiceTTS (coreData)                                   *
-/* Main module entry: parses segments, renders all via TTS API, stores buffers.    *
-/*************************************************************************************/
+
 export default async function getCoreVoiceTTS(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

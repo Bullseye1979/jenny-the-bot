@@ -11,19 +11,13 @@ import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "discord-gdpr-gate";
 
-/************************************************************************************/
-/* functionSignature: getTableName (coreData)                                      *
-/* the consent table name resolved from configuration.                             *
-/************************************************************************************/
+
 function getTableName(coreData) {
   const t = coreData?.config?.[MODULE_NAME]?.table;
   return (typeof t === "string" && t.trim()) ? t.trim() : "gdpr";
 }
 
-/************************************************************************************/
-/* functionSignature: getDbConfig (wo)                                             *
-/* the DB connection config object or null if incomplete.                          *
-/************************************************************************************/
+
 function getDbConfig(wo) {
   const db = wo?.db || {};
   const { host, user, password, database } = db;
@@ -31,18 +25,12 @@ function getDbConfig(wo) {
   return { host, user, password, database, charset: "utf8mb4" };
 }
 
-/************************************************************************************/
-/* functionSignature: getSimpleTemplate (str, vars)                                *
-/* the string with {{var}} placeholders replaced.                                  *
-/************************************************************************************/
+
 function getSimpleTemplate(str, vars) {
   return String(str).replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (k in vars ? String(vars[k]) : ""));
 }
 
-/************************************************************************************/
-/* functionSignature: getDisclaimerText (wo)                                       *
-/* the disclaimer text from workingObject or empty string.                         *
-/************************************************************************************/
+
 function getDisclaimerText(wo) {
   const t1 = typeof wo?.gdprDisclaimer === "string" ? wo.gdprDisclaimer : "";
   if (t1 && t1.trim()) return t1.trim();
@@ -51,10 +39,7 @@ function getDisclaimerText(wo) {
   return "";
 }
 
-/**************************************************************/
-/* functionSignature: getBuildDisclaimerFromWO (wo, ctx)     */
-/* Builds disclaimer body and embed from workingObject       */
-/**************************************************************/
+
 function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
   const txt = getDisclaimerText(wo);
   if (!txt) return null;
@@ -70,10 +55,7 @@ function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
   return { body: desc, embed };
 }
 
-/************************************************************************************/
-/* functionSignature: setHardBlock (wo, body)                                      *
-/* nothing; sets stop/blocked/skipLLM flags on workingObject.                      *
-/************************************************************************************/
+
 function setHardBlock(wo, body) {
   wo.response = body ?? "";
   wo.stop = true;
@@ -81,10 +63,7 @@ function setHardBlock(wo, body) {
   wo.skipLLM = true;
 }
 
-/************************************************************************************/
-/* functionSignature: setSendDisclaimerDM (wo, ctx, log)                           *
-/* true if the disclaimer DM was sent successfully.                                *
-/************************************************************************************/
+
 async function setSendDisclaimerDM(wo, ctx, log) {
   const built = getBuildDisclaimerFromWO(wo, ctx);
   if (!built) {
@@ -108,10 +87,7 @@ async function setSendDisclaimerDM(wo, ctx, log) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: setEnsureConsentTable (conn, table)                          *
-/* nothing; creates the consent table when it does not exist.                      *
-/************************************************************************************/
+
 async function setEnsureConsentTable(conn, table) {
   const sql = `
     CREATE TABLE IF NOT EXISTS \`${table}\` (
@@ -129,10 +105,7 @@ async function setEnsureConsentTable(conn, table) {
   await conn.execute(sql);
 }
 
-/************************************************************************************/
-/* functionSignature: getGdprGate (coreData)                                       *
-/* coreData after enforcing the GDPR consent gate.                                 *
-/************************************************************************************/
+
 export default async function getGdprGate(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

@@ -27,10 +27,7 @@ const DEFAULT_NEGATIVE_PROMPT = [
   "glitches, tiling, pattern artifacts, banding, moire"
 ].join(", ");
 
-/**********************************************************************************/
-/* functionSignature: getParseSize (sizeStr, defW, defH)                           *
-/* Parses "WxH" into width and height rounded to multiples of 8                    *
-/**********************************************************************************/
+
 function getParseSize(sizeStr, defW = 1024, defH = 1024) {
   const m = String(sizeStr || "").match(/^\s*(\d+)\s*[xX]\s*(\d+)\s*$/);
   let width = defW, height = defH;
@@ -43,20 +40,14 @@ function getParseSize(sizeStr, defW = 1024, defH = 1024) {
   return { width, height };
 }
 
-/**********************************************************************************/
-/* functionSignature: getStripDataUrlPrefix (b64)                                  *
-/* Removes data URL prefix if present from base64 string                           *
-/**********************************************************************************/
+
 function getStripDataUrlPrefix(b64) {
   if (typeof b64 !== "string") return b64;
   const i = b64.indexOf("base64,");
   return i >= 0 ? b64.slice(i + "base64,".length) : b64;
 }
 
-/**********************************************************************************/
-/* functionSignature: getPersistSDImages (b64List, wo)                             *
-/* Persists base64 images to ./pub/documents and returns file metadata             *
-/**********************************************************************************/
+
 async function getPersistSDImages(b64List, wo) {
   const out = [];
   for (const raw of b64List) {
@@ -82,19 +73,13 @@ async function getPersistSDImages(b64List, wo) {
   return out;
 }
 
-/**********************************************************************************/
-/* functionSignature: getNumSafe (value, fallback)                                 *
-/* Parses a number or returns the fallback                                         *
-/**********************************************************************************/
+
 function getNumSafe(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
-/**********************************************************************************/
-/* functionSignature: getInvoke (args, coreData)                                   *
-/* Generates images via A1111 API using toolsconfig and returns saved file info    *
-/**********************************************************************************/
+
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getImageSD || {};

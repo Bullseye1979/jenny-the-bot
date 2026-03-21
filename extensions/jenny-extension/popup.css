@@ -138,6 +138,21 @@ header {
 #gallery-status.ok  { background: #f0fdf4; color: #15803d; }
 #gallery-status.err { background: #fef2f2; color: #dc2626; }
 
+/* ---- Auth bar ---- */
+#auth-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 11px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--bdr);
+  flex-shrink: 0;
+  color: var(--muted);
+}
+#auth-user { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#auth-bar a { color: var(--acc); cursor: pointer; text-decoration: underline; font-size: 11px; }
+
 /* ---- Config warning ---- */
 #config-warn {
   background: var(--warn-bg);

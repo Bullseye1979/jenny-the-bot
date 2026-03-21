@@ -13,10 +13,7 @@ let sharedDsn = "";
 
 const TIMELINE_TABLE = "timeline_periods";
 
-/************************************************************************************/
-/* functionSignature: getContextConfig (workingObject)                               *
-/* Resolves endpoint, model, apiKey, and timeline size.                              *
-/************************************************************************************/
+
 function getContextConfig(workingObject) {
   const ctxCfg = workingObject?.config?.context || {};
   const endpoint =
@@ -40,10 +37,7 @@ function getContextConfig(workingObject) {
   return { endpoint, model, apiKey, periodSize };
 }
 
-/************************************************************************************/
-/* functionSignature: getDsnKey (db)                                                 *
-/* Builds a stable DSN key string for pool reuse.                                    *
-/************************************************************************************/
+
 function getDsnKey(db) {
   const host = db?.host || "";
   const port = db?.port ?? 3306;
@@ -53,20 +47,7 @@ function getDsnKey(db) {
   return `${host}|${port}|${user}|${database}|${charset}`;
 }
 
-/************************************************************************************/
-/* functionSignature: getSubchannelFilter (workingObject)                            *
-/* Returns { sql, args, subchannel, subchannelFallback } for WHERE-clause reuse.    *
-/*                                                                                   *
-/* Rules (consistent across all exported functions):                                 *
-/*   wo.subchannel set        → sql: "AND COALESCE(subchannel,'')=?"                *
-/*   no subchannel, fallback=false (default)                                         *
-/*                            → sql: "AND subchannel IS NULL"                        *
-/*   no subchannel, fallback=true                                                    *
-/*                            → sql: "" (no filter — includes all subchannel rows)   *
-/*                                                                                   *
-/* config.context.subchannelFallback controls the "no subchannel" behaviour.        *
-/* Default: false (main channel only sees rows without a subchannel).               *
-/************************************************************************************/
+
 function getSubchannelFilter(workingObject) {
   const subchannel =
     typeof workingObject?.subchannel === "string" && workingObject.subchannel.trim()
@@ -84,10 +65,7 @@ function getSubchannelFilter(workingObject) {
   return { sql: "", args: [], subchannel: null, subchannelFallback };
 }
 
-/************************************************************************************/
-/* functionSignature: getEnsurePool (workingObject)                                  *
-/* Ensures pool exists and schema with ctx_id AI PK is ready.                        *
-/************************************************************************************/
+
 async function getEnsurePool(workingObject) {
   const db = workingObject?.db;
   if (!db) throw new Error("[context] missing db configuration");
@@ -110,6 +88,7 @@ async function getEnsurePool(workingObject) {
       ctx_id    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       ts        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
       id        VARCHAR(128)  NOT NULL,
+      userid    VARCHAR(128)  NULL,
       json      LONGTEXT      NOT NULL,
       text      TEXT          NULL,
       role      VARCHAR(32)   NOT NULL DEFAULT 'user',
@@ -119,7 +98,8 @@ async function getEnsurePool(workingObject) {
       KEY idx_id_ctx (id, ctx_id),
       KEY idx_role   (role),
       KEY idx_turn   (turn_id),
-      KEY idx_id_turn (id, turn_id)
+      KEY idx_id_turn (id, turn_id),
+      KEY idx_userid (userid)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
@@ -159,6 +139,18 @@ async function getEnsurePool(workingObject) {
         ADD INDEX IF NOT EXISTS idx_id_sub_ctx (id, subchannel, ctx_id);
     `);
   } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD COLUMN IF NOT EXISTS userid VARCHAR(128) NULL;
+    `);
+  } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD INDEX IF NOT EXISTS idx_userid (userid);
+    `);
+  } catch {}
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ${TIMELINE_TABLE} (
@@ -189,10 +181,7 @@ async function getEnsurePool(workingObject) {
   return pool;
 }
 
-/************************************************************************************/
-/* functionSignature: getDeepSanitize (value)                                        *
-/* Sanitizes nested values to JSON-safe structures.                                  *
-/************************************************************************************/
+
 function getDeepSanitize(value) {
   const t = typeof value;
   if (value === null) return null;
@@ -238,10 +227,7 @@ function getDeepSanitize(value) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: getNormalizeToolCalls (toolCalls)                              *
-/* Normalizes assistant tool calls to a standard shape.                              *
-/************************************************************************************/
+
 function getNormalizeToolCalls(toolCalls) {
   if (!Array.isArray(toolCalls)) return undefined;
   return toolCalls.map((tc) => ({
@@ -259,10 +245,7 @@ function getNormalizeToolCalls(toolCalls) {
   }));
 }
 
-/************************************************************************************/
-/* functionSignature: getNormalizeRecord (record)                                    *
-/* Normalizes a context record and sanitizes nested values.                          *
-/************************************************************************************/
+
 function getNormalizeRecord(record) {
   const obj = typeof record === "object" && record !== null ? { ...record } : {};
   obj.role = typeof obj.role === "string" ? obj.role.toLowerCase() : "";
@@ -277,10 +260,7 @@ function getNormalizeRecord(record) {
   return getDeepSanitize(obj);
 }
 
-/************************************************************************************/
-/* functionSignature: getDeriveIndexText (rec)                                       *
-/* Derives a short indexable text snippet from a record.                             *
-/************************************************************************************/
+
 function getDeriveIndexText(rec) {
   if (typeof rec?.content === "string" && rec.content) {
     return rec.content.slice(0, 500);
@@ -293,10 +273,7 @@ function getDeriveIndexText(rec) {
   return bits.join(" ").slice(0, 500) || null;
 }
 
-/************************************************************************************/
-/* functionSignature: getResolvedTimestamp (workingObject, record)                   *
-/* Resolves Date for DB ts column from wo.timestamp/record.                          *
-/************************************************************************************/
+
 function getResolvedTimestamp(workingObject, record) {
   if (record && typeof record.ts === "string" && record.ts.length) {
     const d = new Date(record.ts);
@@ -309,10 +286,7 @@ function getResolvedTimestamp(workingObject, record) {
   return new Date();
 }
 
-/************************************************************************************/
-/* functionSignature: setContext (workingObject, record)                             *
-/* Inserts a normalized record and updates the timeline.                             *
-/************************************************************************************/
+
 export async function setContext(workingObject, record) {
   if (record?.internal_meta === true) return false;
   const id = String(workingObject?.channelID || "");
@@ -338,9 +312,16 @@ export async function setContext(workingObject, record) {
       ? workingObject.subchannel.trim()
       : null;
 
+  const userid =
+    typeof normalized?.userId === "string" && normalized.userId.trim()
+      ? normalized.userId.trim()
+      : typeof workingObject?.userId === "string" && workingObject.userId.trim()
+        ? workingObject.userId.trim()
+        : null;
+
   await pool.execute(
-    "INSERT INTO context (id, ts, json, text, role, turn_id, frozen, subchannel) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
-    [id, ts, json, text, role, turnId, subchannel]
+    "INSERT INTO context (id, ts, userid, json, text, role, turn_id, frozen, subchannel) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
+    [id, ts, userid, json, text, role, turnId, subchannel]
   );
 
   try {
@@ -350,14 +331,7 @@ export async function setContext(workingObject, record) {
   return true;
 }
 
-/************************************************************************************/
-/* functionSignature: getContextRowsForId (pool, id, nUsers, detailed,              *
-/*                                         subchannel, subchannelFallback)           *
-/* Internal helper: fetches context rows for a single id.                            *
-/* subchannel: if set, only rows with that subchannel are returned.                  *
-/* subchannelFallback: if true and no subchannel given, returns all rows;            *
-/*                     if false (default), only rows WHERE subchannel IS NULL.       *
-/************************************************************************************/
+
 async function getContextRowsForId(pool, id, nUsers, detailed, subchannel, subchannelFallback) {
   let subSql = "";
   const subArgs = [];
@@ -444,10 +418,7 @@ async function getContextRowsForId(pool, id, nUsers, detailed, subchannel, subch
   return rows;
 }
 
-/************************************************************************************/
-/* functionSignature: getMetaFramesMode (workingObject)                              *
-/* Resolves meta-frames mode for context output.                                     *
-/************************************************************************************/
+
 function getMetaFramesMode(workingObject) {
   const v =
     workingObject?.contextMetaFrames ??
@@ -460,10 +431,7 @@ function getMetaFramesMode(workingObject) {
   return "off";
 }
 
-/************************************************************************************/
-/* functionSignature: getBuildMetaFrame (obj, row, rowChannelId, roleLc)             *
-/* Builds a compact meta-frame line for attribution and channel routing.             *
-/************************************************************************************/
+
 function getBuildMetaFrame(obj, row, rowChannelId, roleLc) {
   const parts = [];
 
@@ -488,10 +456,7 @@ function getBuildMetaFrame(obj, row, rowChannelId, roleLc) {
   return `META|${parts.join("|")}`;
 }
 
-/************************************************************************************/
-/* functionSignature: getContext (workingObject)                                     *
-/* Returns capped messages based on user-block budget; supports extra channels.      *
-/************************************************************************************/
+
 export async function getContext(workingObject) {
   const baseId = String(workingObject?.channelID || "");
   if (!baseId) throw new Error("[context] missing id");
@@ -692,10 +657,7 @@ export async function getContext(workingObject) {
   return capped;
 }
 
-/************************************************************************************/
-/* functionSignature: setMaybeCreateTimelinePeriod (pool, workingObject, channelId)  *
-/* Creates a summary row when period size is met.                                    *
-/************************************************************************************/
+
 async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   const { periodSize } = getContextConfig(workingObject);
   const [cntRows] = await pool.query(
@@ -763,18 +725,7 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   );
 }
 
-/************************************************************************************/
-/* functionSignature: setPurgeContext (workingObject)                                *
-/* Deletes non-frozen context rows.  Scope depends on wo.subchannel and             *
-/* config.context.subchannelFallback (see getSubchannelFilter).                     *
-/*                                                                                   *
-/* wo.subchannel set                                                                 *
-/*   → purge only that subchannel (timeline not touched — it is channel-wide)       *
-/* no subchannel + subchannelFallback=false (default)                               *
-/*   → purge only rows where subchannel IS NULL + channel-wide timeline              *
-/* no subchannel + subchannelFallback=true                                           *
-/*   → purge ALL rows for channelID (including subchannel rows) + timeline           *
-/************************************************************************************/
+
 export async function setPurgeContext(workingObject) {
   const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
@@ -799,14 +750,7 @@ export async function setPurgeContext(workingObject) {
   return deleted;
 }
 
-/************************************************************************************/
-/* functionSignature: setPurgeSubchannel (workingObject, subchannelId)               *
-/* Called when a subchannel is deleted. Two-step operation:                          *
-/*   1. DELETE non-frozen rows that carry the given subchannelId.                    *
-/*   2. UPDATE frozen rows: set subchannel = NULL so they are promoted to the        *
-/*      main channel (preserved, no longer tied to the deleted subchannel).          *
-/* Returns { deleted, promoted }.                                                    *
-/************************************************************************************/
+
 export async function setPurgeSubchannel(workingObject, subchannelId) {
   const id  = String(workingObject?.channelID || "");
   const sub = String(subchannelId || "").trim();
@@ -833,12 +777,7 @@ export async function setPurgeSubchannel(workingObject, subchannelId) {
   };
 }
 
-/************************************************************************************/
-/* functionSignature: setFreezeContext (workingObject)                               *
-/* Marks context rows as frozen (protected from deletion).                           *
-/* Same scoping as setPurgeContext — respects wo.subchannel and subchannelFallback.  *
-/* Timeline is only frozen when the full channel (not a subchannel) is targeted.    *
-/************************************************************************************/
+
 export async function setFreezeContext(workingObject) {
   const id = String(workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
@@ -862,11 +801,7 @@ export async function setFreezeContext(workingObject) {
   return affected;
 }
 
-/************************************************************************************/
-/* functionSignature: getContextLastSeconds (workingObject, seconds)                 *
-/* Returns [{role, text}] for all user/assistant rows in the last N seconds.         *
-/* Respects wo.subchannel and config.context.subchannelFallback.                    *
-/************************************************************************************/
+
 export async function getContextLastSeconds(workingObject, seconds = 60) {
   const id = String(workingObject?.channelID || "");
   if (!id) return [];
@@ -890,12 +825,7 @@ export async function getContextLastSeconds(workingObject, seconds = 60) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: getContextSince (workingObject, since)                         *
-/* Returns [{role, text}] for all user/assistant rows with ts >= since (ISO string   *
-/* or Date). Channel-isolated by workingObject.channelID. Returns [] on any error.   *
-/* Respects wo.subchannel and config.context.subchannelFallback.                    *
-/************************************************************************************/
+
 export async function getContextSince(workingObject, since) {
   const id = String(workingObject?.channelID || "");
   if (!id || !since) return [];
@@ -926,10 +856,7 @@ export async function getContextSince(workingObject, since) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: getEstimatedTokensFromMessage (msg)                            *
-/* Rough estimate of tokens for budgeting.                                           *
-/************************************************************************************/
+
 function getEstimatedTokensFromMessage(msg) {
   if (!msg) return 0;
   const parts = [];
@@ -939,10 +866,7 @@ function getEstimatedTokensFromMessage(msg) {
   return Math.ceil(parts.join(" ").length / 4);
 }
 
-/************************************************************************************/
-/* functionSignature: getCapByTokenBudgetUserBlocks (messages, budget)               *
-/* Caps messages by user-anchored blocks and budget.                                 *
-/************************************************************************************/
+
 function getCapByTokenBudgetUserBlocks(messages, budget) {
   if (!Array.isArray(messages) || !messages.length) return [];
   const maxTokens = Number(budget);
@@ -975,10 +899,7 @@ function getCapByTokenBudgetUserBlocks(messages, budget) {
   return blocks;
 }
 
-/************************************************************************************/
-/* functionSignature: getChecksumBatchFromContextRows (rows)                         *
-/* Computes a SHA-256 checksum for a batch of rows.                                  *
-/************************************************************************************/
+
 function getChecksumBatchFromContextRows(rows) {
   const h = crypto.createHash("sha256");
   for (const r of rows || []) {
@@ -990,10 +911,7 @@ function getChecksumBatchFromContextRows(rows) {
   return h.digest("hex");
 }
 
-/************************************************************************************/
-/* functionSignature: getSummarizeContextBatch (workingObject, rows, meta)           *
-/* Summarizes a batch via the configured endpoint.                                   *
-/************************************************************************************/
+
 async function getSummarizeContextBatch(workingObject, rows, meta) {
   const { endpoint, model, apiKey } = getContextConfig(workingObject);
   const clipped = (rows || []).slice(-50);
@@ -1037,10 +955,7 @@ async function getSummarizeContextBatch(workingObject, rows, meta) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: getDefaultExport ()                                            *
-/* Provides named functions via a default export object.                             *
-/************************************************************************************/
+
 function getDefaultExport() {
   return { setContext, getContext, setPurgeContext, setPurgeSubchannel, setFreezeContext };
 }

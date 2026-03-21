@@ -63,6 +63,7 @@ All key names follow **camelCase** throughout.
    - [webpage-inpainting](#webpage-inpainting)
    - [webpage-inpaint](#webpage-inpaint)
    - [webpage-gallery](#webpage-gallery)
+   - [webpage-gdpr](#webpage-gdpr)
    - [bard](#bard)
    - [bard-join](#bard-join)
    - [bard-cron](#bard-cron)
@@ -847,7 +848,7 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
 | `clientId` | Discord application client ID (from the Discord Developer Portal) |
 | `clientSecret` | Discord application client secret |
 | `redirectUri` | OAuth2 callback URL. Set to `""` to auto-derive from the HTTP `Host` header (recommended for multi-domain setups). Otherwise set to the exact callback URL, e.g. `"https://yourserver.example.com/auth/callback"`. Must be registered in the Discord Developer Portal under OAuth2 → Redirects. |
-| `loginPort` | Port that handles `/auth/login`, `/auth/callback`, and `/auth/logout` routes. Typically the same port as `webpage-config-editor` (3111). |
+| `loginPort` | Port that handles `/auth/login`, `/auth/callback`, `/auth/logout`, and `/auth/me` routes. Typically the same port as `webpage-config-editor` (3111). |
 | `ports` | All ports where the module runs passively to set `wo.webAuth`. Must include every port where login state matters. Include port `3120` if using the Gallery module. |
 | `sessionTtlMs` | Session cookie lifetime in milliseconds (default: 86 400 000 = 24 h) |
 | `ssoPartners` | Array of partner base URLs (e.g. `["https://other.example.com"]`). After login the session is chained to partner sites using a short-lived single-use token — the browser is redirected to `<partner>/auth/sso?token=<t>&returnTo=<url>`. Leave empty (`[]`) to disable SSO chaining. |
@@ -858,6 +859,7 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
 
 - Add all ports used by web modules to `ports`
 - Add `reverse_proxy /auth* localhost:3111` to your Caddyfile (before the catch-all)
+- `GET /auth/me` — returns `{ ok, userId, username, role }` for the current session, or `401 { ok: false }` if not authenticated. Used by the browser extension to retrieve the logged-in user's identity.
 
 ---
 
@@ -869,8 +871,10 @@ Global navigation menu for all web modules. Items are filtered by user role befo
 "webpage-menu": {
   "flow": ["webpage"],
   "items": [
-    { "text": "💬 Chat",       "link": "/chat"       },
+    { "text": "💬 Chat",       "link": "/chat",       "roles": ["member", "admin"] },
     { "text": "🖼 Inpainting", "link": "/inpainting" },
+    { "text": "🖼 Gallery",    "link": "/gallery",    "roles": ["member", "admin"] },
+    { "text": "🔒 GDPR",       "link": "/gdpr",       "roles": ["member", "admin"] },
     { "text": "📖 Wiki",       "link": "/wiki"       },
     { "text": "📚 Docs",       "link": "/docs"       },
     { "text": "🎵 Bard",       "link": "/bard",       "roles": ["admin"] },
@@ -1035,6 +1039,48 @@ Image gallery SPA (`modules/00056-webpage-gallery.js`). Shows the logged-in user
 - Add `3120` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /gallery* localhost:3120` to your Caddyfile
 - The module requires `webpage-auth` to be active on port 3120 — unauthenticated requests are redirected to `/`
+
+---
+
+### webpage-gdpr
+
+GDPR data-export SPA. Authenticated users can download an Excel file (`.xlsx`) containing all personal data held for their account:
+
+- **Sheet 1 – Context** — all conversation history rows where `id = userId`
+- **Sheet 2 – GDPR Consent** — consent records per channel for the user
+- **Sheet 3 – Files** — files stored in the user's personal documents directory (`pub/documents/<userId>/`)
+
+The file is generated on demand; no data is cached or stored by the module itself.
+
+```jsonc
+"webpage-gdpr": {
+  "flow":      ["webpage"],
+  "port":      3121,
+  "basePath":  "/gdpr",
+  "gdprTable": "gdpr"
+}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `flow` | — | Must include `"webpage"` |
+| `port` | `3121` | HTTP port this module listens on |
+| `basePath` | `"/gdpr"` | URL prefix for all GDPR routes |
+| `gdprTable` | `"gdpr"` | MySQL table name for GDPR consent records |
+
+**HTTP routes:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/gdpr` | Required | HTML overview page with download button |
+| `GET` | `/gdpr/style.css` | None | Serves shared CSS |
+| `GET` | `/gdpr/export.xlsx` | Required | Generates and downloads the Excel export |
+
+- Add `3121` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /gdpr* localhost:3121` to your Caddyfile
+- The module requires `webpage-auth` to be active on port 3121 — unauthenticated requests are redirected to `/`
+- Requires the `exceljs` npm package (`npm install`)
+- Database connection is read from `wo.db` (set by the `context` config block)
 
 ---
 
@@ -1484,6 +1530,7 @@ Every module has an entry under `config` that declares which flows it participat
 | `webpage-inpaint` | `webpage` |
 | `webpage-inpainting` | `webpage` |
 | `webpage-gallery` | `webpage` |
+| `webpage-gdpr` | `webpage` |
 | `webpage-wiki` | `webpage` |
 | `webpage-voice` | `webpage` |
 | `webpage-voice-output` | `webpage` |
@@ -1883,6 +1930,12 @@ Below is a minimal but functional `core.json` template with every section includ
       "port":          3120,
       "basePath":      "/gallery",
       "inpaintingUrl": "https://jenny.example.com/inpainting"
+    },
+    "webpage-gdpr": {
+      "flow":      ["webpage"],
+      "port":      3121,
+      "basePath":  "/gdpr",
+      "gdprTable": "gdpr"
     },
     "bard": {
       "flowName": "bard", "pollIntervalMs": 5000, "musicDir": "assets/bard"

@@ -6,10 +6,7 @@
 
 const MODULE_NAME = "getTime";
 
-/**********************************************************************************/
-/* functionSignature: getInvoke (args, coreData)                                   *
-/* Returns { now: <ISO string> } in UTC                                            *
-/**********************************************************************************/
+
 async function getInvoke(args, coreData) {
   const now = new Date().toISOString();
   return { now };

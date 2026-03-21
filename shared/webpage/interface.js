@@ -19,10 +19,7 @@ const __dirname  = path.dirname(__filename);
 
 let dbPool = null;
 
-/**********************************************************************************/
-/* functionSignature: getBody (req)                                                *
-/* Purpose: Reads request body into a string.                                      *
-/**********************************************************************************/
+
 function getBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -32,10 +29,7 @@ function getBody(req) {
   });
 }
 
-/**********************************************************************************/
-/* functionSignature: readJsonFile (filePath)                                      *
-/* Purpose: Reads and parses a JSON file.                                          *
-/**********************************************************************************/
+
 function readJsonFile(filePath) {
   try {
     return { ok: true, data: JSON.parse(fs.readFileSync(filePath, "utf-8")) };
@@ -44,10 +38,7 @@ function readJsonFile(filePath) {
   }
 }
 
-/**********************************************************************************/
-/* functionSignature: writeJsonFile (filePath, data)                               *
-/* Purpose: Writes data as pretty-printed JSON.                                    *
-/**********************************************************************************/
+
 function writeJsonFile(filePath, data) {
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
@@ -57,11 +48,7 @@ function writeJsonFile(filePath, data) {
   }
 }
 
-/**********************************************************************************/
-/* functionSignature: isAuthorized (req, token)                                    *
-/* Purpose: Returns true if no token is required or the request carries the        *
-/*          correct Bearer/Basic token.                                            *
-/**********************************************************************************/
+
 function isAuthorized(req, token) {
   if (!token) return true;
   const auth = String(req.headers.authorization || "").trim();
@@ -73,11 +60,7 @@ function isAuthorized(req, token) {
   return false;
 }
 
-/**********************************************************************************/
-/* functionSignature: getDb (coreData)                                             *
-/* Purpose: Returns (creating if needed) a mysql2 connection pool using DB config  *
-/*          from workingObject.                                                    *
-/**********************************************************************************/
+
 async function getDb(coreData) {
   if (dbPool) return dbPool;
 
@@ -100,13 +83,7 @@ async function getDb(coreData) {
   return dbPool;
 }
 
-/**********************************************************************************/
-/* functionSignature: getMenuHtml (menu, activePath, role, rightHtmlOpt)           *
-/* Purpose: Renders header nav links from wo.web.menu (webpage-menu) and shows     *
-/*          effective role + logout.                                               *
-/* Optional: rightHtmlOpt renders custom right-side controls (e.g., Save button)   *
-/*          left of role/logout.                                                   *
-/**********************************************************************************/
+
 function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml) {
   const items = Array.isArray(menu) ? menu : [];
   const VISIBLE = 3; /* first N items shown directly on desktop */
@@ -200,9 +177,7 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml) {
   );
 }
 
-/**********************************************************************************/
-/* functionSignature: escHtml (s)                                                  *
-/**********************************************************************************/
+
 function escHtml(s) {
   return String(s)
     .replace(/&/g,"&amp;")
@@ -211,18 +186,12 @@ function escHtml(s) {
     .replace(/"/g,"&quot;");
 }
 
-/**********************************************************************************/
-/* functionSignature: escAttr (s)                                                  *
-/**********************************************************************************/
+
 function escAttr(s) {
   return escHtml(s).replace(/'/g,"&#39;");
 }
 
-/**********************************************************************************/
-/* functionSignature: getThemeHeadScript ()                                        *
-/* Returns an inline <script> for <head> that sets data-theme before first paint  *
-/* to prevent light-flash when the user has dark mode saved.                      *
-/**********************************************************************************/
+
 function getThemeHeadScript() {
   return '<script>!function(){var t=localStorage.getItem("jenny-theme");' +
          'document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light");}();<\/script>';

@@ -54,27 +54,17 @@ const DEFAULT_PROMPT_TEMPLATE =
   "Current labels (reference only — do not copy blindly): {{CURRENT_LABELS}}\n" +
   "{{EXAMPLE_LINES}}";
 
-/************************************************************************************/
-/* functionSignature: getNowIso()                                                  *
-/* Returns the current ISO timestamp string.                                       *
-/************************************************************************************/
+
 function getNowIso() {
   try { return new Date().toISOString(); } catch { return ""; }
 }
 
-/************************************************************************************/
-/* functionSignature: getStr(v)                                                    *
-/* Returns string value; empty string for nullish.                                 *
-/************************************************************************************/
+
 function getStr(v) {
   return v == null ? "" : String(v);
 }
 
-/************************************************************************************/
-/* functionSignature: getLibraryTagCategories(musicDir)                            *
-/* Reads library.xml and returns {locations, situations, moods, all} Sets.        *
-/* tags[0]=location, tags[1]=situation, tags[2+]=moods — empty strings ignored.   *
-/************************************************************************************/
+
 function getLibraryTagCategories(musicDir) {
   const empty = { locations: new Set(), situations: new Set(), moods: new Set(), all: new Set() };
   try {
@@ -101,11 +91,7 @@ function getLibraryTagCategories(musicDir) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: buildSystemPrompt(template, tagCategories, currentLabels)    *
-/* Injects categorised tag lists, current labels and dynamic example lines built   *
-/* from actual library tags into the prompt template.                              *
-/************************************************************************************/
+
 function buildSystemPrompt(template, tagCategories, currentLabels) {
   const locs  = [...tagCategories.locations].sort();
   const sits  = [...tagCategories.situations].sort();
@@ -143,12 +129,7 @@ function buildSystemPrompt(template, tagCategories, currentLabels) {
     .replace("{{EXAMPLE_LINES}}",  exampleLines);
 }
 
-/************************************************************************************/
-/* functionSignature: getBardCron(coreData)                                        *
-/* Prepares wo.payload, wo.systemPrompt and AI params so core-ai-completions can   *
-/* generate the mood labels. Handles one guild per flow run (the first active      *
-/* session that has new context, or the one matching wo.channelID).                *
-/************************************************************************************/
+
 export default async function getBardCron(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

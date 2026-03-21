@@ -14,35 +14,23 @@ const CLIENT_REF = "discord:client";
 const getItem = registry.getItem;
 const setItem = typeof registry.setItem === "function" ? registry.setItem : null;
 
-/**********************************************************************************************************************
-/* functionSignature: getStr (v, d)                                                                                   *
-/* Returns a non-empty string or default                                                                              *
-/**********************************************************************************************************************/
+
 function getStr(v, d) {
   return typeof v === "string" && v.length ? v : d;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getNum (v, d)                                                                                   *
-/* Parses a number or returns default                                                                                 *
-/**********************************************************************************************************************/
+
 function getNum(v, d) {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getBool (v, d)                                                                                  *
-/* Returns a boolean or default                                                                                       *
-/**********************************************************************************************************************/
+
 function getBool(v, d) {
   return typeof v === "boolean" ? v : d;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getToolStatusFromRegistry ()                                                                    *
-/* Reads current tool status from registry                                                                            *
-/**********************************************************************************************************************/
+
 async function getToolStatusFromRegistry() {
   if (typeof getItem !== "function") {
     return { hasTool: false, toolName: "" };
@@ -57,10 +45,7 @@ async function getToolStatusFromRegistry() {
   }
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getPresenceTextForTool (toolName, mapping)                                                      *
-/* Maps tool name to presence text or builds a default                                                                *
-/**********************************************************************************************************************/
+
 function getPresenceTextForTool(toolName, mapping) {
   const name = String(toolName || "").trim();
   if (!name) return "";
@@ -70,10 +55,7 @@ function getPresenceTextForTool(toolName, mapping) {
   return `Working: ${name}`;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: setDiscordPresence (text, status, log)                                                          *
-/* Sets Discord user presence via client from registry                                                                *
-/**********************************************************************************************************************/
+
 let lastPresenceText = "";
 async function setDiscordPresence(text, status, log) {
   if (typeof getItem !== "function") {
@@ -106,10 +88,7 @@ async function setDiscordPresence(text, status, log) {
   }
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getStatusFromResponse (resp, maxChars)                                                          *
-/* Extracts a single short status line from workingObject.response                                                    *
-/**********************************************************************************************************************/
+
 function getStatusFromResponse(resp, maxChars) {
   let t = String(resp || "").trim();
   if (!t) return "";
@@ -119,10 +98,7 @@ function getStatusFromResponse(resp, maxChars) {
   return unquoted.length > maxChars ? unquoted.slice(0, maxChars).trim() : unquoted;
 }
 
-/**********************************************************************************************************************
-/* functionSignature: getDiscordStatusApplyFlow (baseCore)                                                            *
-/* Flow entry: reads AI-generated response and updates Discord presence                                               *
-/**********************************************************************************************************************/
+
 let lastUpdateAt = 0;
 let lastAiStatusInMemory = "";
 

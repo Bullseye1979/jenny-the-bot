@@ -18,10 +18,7 @@ const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 let __ulid_lastTime = 0;
 let __ulid_lastRand = new Uint8Array(10).fill(0);
 
-/**************************************************************
-/* functionSignature: getUlidEncodeTime (ms)                 *
-/* Encodes a millisecond timestamp into 10 base32 chars      *
-/**************************************************************/
+
 function getUlidEncodeTime(ms) {
   let x = BigInt(ms);
   const out = Array(10);
@@ -32,10 +29,7 @@ function getUlidEncodeTime(ms) {
   return out.join("");
 }
 
-/**************************************************************
-/* functionSignature: getUlidEncodeRandom80ToBase32 (rand)   *
-/* Encodes 80 random bits into 16 base32 chars               *
-/**************************************************************/
+
 function getUlidEncodeRandom80ToBase32(rand) {
   const out = [];
   let acc = 0;
@@ -54,20 +48,14 @@ function getUlidEncodeRandom80ToBase32(rand) {
   return out.slice(0, 16).join("");
 }
 
-/**************************************************************
-/* functionSignature: getUlidRandom80 ()                     *
-/* Produces 80 random bits as Uint8Array(10)                 *
-/**************************************************************/
+
 function getUlidRandom80() {
   const arr = new Uint8Array(10);
   for (let i = 0; i < 10; i++) arr[i] = Math.floor(Math.random() * 256);
   return arr;
 }
 
-/**************************************************************
-/* functionSignature: getNewUlid ()                          *
-/* Generates a 26-character monotonic ULID                   *
-/**************************************************************/
+
 function getNewUlid() {
   const now = Date.now();
   let rand = getUlidRandom80();
@@ -88,10 +76,7 @@ function getNewUlid() {
   return getUlidEncodeTime(now) + getUlidEncodeRandom80ToBase32(rand);
 }
 
-/**************************************************************
-/* functionSignature: getIsPending (key)                     *
-/* True if a short pending lock is active for the key        *
-/**************************************************************/
+
 function getIsPending(key) {
   const t = PENDING.get(key) || 0;
   const ok = Date.now() - t < PENDING_MS;
@@ -99,18 +84,12 @@ function getIsPending(key) {
   return ok;
 }
 
-/**************************************************************
-/* functionSignature: setPendingLock (key)                   *
-/* Sets a short pending lock timestamp for the key           *
-/**************************************************************/
+
 function setPendingLock(key) {
   PENDING.set(key, Date.now());
 }
 
-/**************************************************************
-/* functionSignature: getResolveDisplayName (userLike)       *
-/* Derives a display name from a Discord user/member object  *
-/**************************************************************/
+
 function getResolveDisplayName(u) {
   if (!u) return "Unknown";
   if (u.nickname) return u.nickname;
@@ -119,11 +98,7 @@ function getResolveDisplayName(u) {
   return x?.globalName || x?.username || "Unknown";
 }
 
-/**************************************************************
-/* functionSignature: getResolveSpeakerName (client,         *
-/*                     guildId, userId)                      *
-/* Fetches and resolves a speaker name using the API         *
-/**************************************************************/
+
 async function getResolveSpeakerName(client, guildId, userId) {
   try {
     const g = await client.guilds.fetch(guildId);
@@ -135,10 +110,7 @@ async function getResolveSpeakerName(client, guildId, userId) {
   }
 }
 
-/**************************************************************
-/* functionSignature: setMergeDynamicWO (src, dst)           *
-/* Merges dynamic fields from src into dst with denylist     *
-/**************************************************************/
+
 function setMergeDynamicWO(src, dst) {
   const deny = new Set([
     "message",
@@ -161,11 +133,7 @@ function setMergeDynamicWO(src, dst) {
   }
 }
 
-/**************************************************************
-/* functionSignature: setAttachToSession (baseCore,          *
-/*   sessionKey, session, cfg, runFlow, createRunCore, log)  *
-/* Attaches speaking.start handler to a voice session        *
-/**************************************************************/
+
 async function setAttachToSession(baseCore, sessionKey, session, cfg, runFlow, createRunCore, log) {
   try {
     await entersState(session.connection, VoiceConnectionStatus.Ready, 10000);
@@ -321,11 +289,7 @@ async function setAttachToSession(baseCore, sessionKey, session, cfg, runFlow, c
   });
 }
 
-/**************************************************************
-/* functionSignature: getDiscordVoiceFlow (baseCore,         *
-/*                     runFlow, createRunCore)               *
-/* Starts a poller that scans registry and attaches hooks    *
-/**************************************************************/
+
 export default async function getDiscordVoiceFlow(baseCore, runFlow, createRunCore) {
   const cfg = baseCore?.config?.["discord-voice"] || {};
   const pollMs = Number.isFinite(cfg.pollMs) ? Math.max(500, Number(cfg.pollMs)) : 1000;

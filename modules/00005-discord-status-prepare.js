@@ -8,18 +8,12 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-status-prepare";
 
-/************************************************************************************
-/* functionSignature: getStr (v, d)                                                *
-/* Returns v when it is a non-empty string; otherwise returns d                    *
-/************************************************************************************/
+
 function getStr(v, d) {
   return typeof v === "string" && v.length ? v : d;
 }
 
-/************************************************************************************
-/* functionSignature: getCleanAllowedChannels (cfg)                                *
-/* Normalizes cfg.allowedChannels to a trimmed string array or null                *
-/************************************************************************************/
+
 function getCleanAllowedChannels(cfg) {
   if (!Array.isArray(cfg?.allowedChannels)) return null;
   const cleaned = cfg.allowedChannels
@@ -28,19 +22,13 @@ function getCleanAllowedChannels(cfg) {
   return cleaned;
 }
 
-/************************************************************************************
-/* functionSignature: getRandomChannel (list)                                      *
-/* Returns one random element from a non-empty array                               *
-/************************************************************************************/
+
 function getRandomChannel(list) {
   const index = Math.floor(Math.random() * list.length);
   return list[index];
 }
 
-/************************************************************************************
-/* functionSignature: getDiscordStatusPrepareFlow (baseCore)                       *
-/* Prepares workingObject for Discord status generation from configuration         *
-/************************************************************************************/
+
 export default async function getDiscordStatusPrepareFlow(baseCore) {
   baseCore = baseCore || {};
   const workingObject = baseCore.workingObject || (baseCore.workingObject = {});

@@ -7,43 +7,25 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "moderation-output";
 
-/**************************************************************
-/* functionSignature: getStr (v, d = "")                      *
-/* Returns v if it is a non-empty string; otherwise d.        *
-/**************************************************************/
+
 function getStr(v, d = "") { return (typeof v === "string" && v.length) ? v : d; }
 
-/**************************************************************
-/* functionSignature: getBool (v, d = false)                  *
-/* Returns v if it is boolean; otherwise d.                   *
-/**************************************************************/
+
 function getBool(v, d = false) { return (typeof v === "boolean") ? v : d; }
 
-/**************************************************************
-/* functionSignature: getNowIso ()                            *
-/* Returns current time in ISO format.                        *
-/**************************************************************/
+
 function getNowIso() { return new Date().toISOString(); }
 
-/**************************************************************
-/* functionSignature: getPreview (s, max = 280)               *
-/* Returns a truncated preview of s up to max chars.          *
-/**************************************************************/
+
 function getPreview(s, max = 280) {
   const t = String(s ?? "");
   return t.length > max ? t.slice(0, max) + " …[truncated]" : t;
 }
 
-/**************************************************************
-/* functionSignature: getEscapedRegex (s)                     *
-/* Escapes regex metacharacters in s.                         *
-/**************************************************************/
+
 function getEscapedRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
-/**************************************************************
-/* functionSignature: getCfg (wo)                             *
-/* Extracts normalized moderation config from wo.             *
-/**************************************************************/
+
 function getCfg(wo) {
   return {
     enabled: getBool(wo?.ModerationEnabled ?? true, true),
@@ -53,10 +35,7 @@ function getCfg(wo) {
   };
 }
 
-/**************************************************************
-/* functionSignature: setDecisionLog (wo, payload)            *
-/* Appends a compact decision entry into wo.logging.          *
-/**************************************************************/
+
 function setDecisionLog(wo, { level = "info", message = "Moderation decision", decision, extra = {} }) {
   try {
     if (!Array.isArray(wo.logging)) wo.logging = [];
@@ -71,10 +50,7 @@ function setDecisionLog(wo, { level = "info", message = "Moderation decision", d
   } catch {}
 }
 
-/**************************************************************
-/* functionSignature: getModerationOutput (coreData)          *
-/* Evaluates wo.response for [silence] only.                  *
-/**************************************************************/
+
 export default async function getModerationOutput(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

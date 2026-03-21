@@ -7,10 +7,7 @@
 
 const MODULE_NAME = "core-add-id";
 
-/****************************************************************************************************************
- * functionSignature: getNowIso()
- * purpose: Returns an ISO timestamp string (or empty string on failure).
- ****************************************************************************************************************/
+
 function getNowIso() {
   try {
     return new Date().toISOString();
@@ -19,18 +16,12 @@ function getNowIso() {
   }
 }
 
-/****************************************************************************************************************
- * functionSignature: getStr(v)
- * purpose: Returns string value; empty string for nullish.
- ****************************************************************************************************************/
+
 function getStr(v) {
   return v == null ? "" : String(v);
 }
 
-/****************************************************************************************************************
- * functionSignature: setLog(wo, severity, exitStatus, message, details = {})
- * purpose: Appends a standardized log entry into wo.logging.
- ****************************************************************************************************************/
+
 function setLog(wo, severity, exitStatus, message, details = {}) {
   try {
     if (!Array.isArray(wo.logging)) wo.logging = [];
@@ -47,19 +38,13 @@ function setLog(wo, severity, exitStatus, message, details = {}) {
   } catch {}
 }
 
-/****************************************************************************************************************
- * functionSignature: getIsLikelyImageUrl(url)
- * purpose: Returns true if URL likely points to an image (extension) or contains /documents/.
- ****************************************************************************************************************/
+
 function getIsLikelyImageUrl(url) {
   const u = getStr(url).toLowerCase();
   return /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/.test(u) || /\/documents\//.test(u);
 }
 
-/****************************************************************************************************************
- * functionSignature: getNormalizeHost(input)
- * purpose: Normalizes a config entry into a hostname (lowercase), or null.
- ****************************************************************************************************************/
+
 function getNormalizeHost(input) {
   const raw = getStr(input).trim();
   if (!raw) return null;
@@ -77,10 +62,7 @@ function getNormalizeHost(input) {
   }
 }
 
-/****************************************************************************************************************
- * functionSignature: getAllowedHosts(config)
- * purpose: Reads and normalizes host allowlist from config["core-add-id"].servers.
- ****************************************************************************************************************/
+
 function getAllowedHosts(config) {
   const c = config || {};
   const block = c[MODULE_NAME] || null;
@@ -109,10 +91,7 @@ function getAllowedHosts(config) {
   return [...new Set(hosts)];
 }
 
-/****************************************************************************************************************
- * functionSignature: getWithAddedIdParam(url, idValue, allowedHosts)
- * purpose: Returns rewritten URL with id=<idValue> appended when eligible; otherwise original.
- ****************************************************************************************************************/
+
 function getWithAddedIdParam(url, idValue, allowedHosts) {
   const original = getStr(url);
   if (!original) return original;
@@ -134,10 +113,7 @@ function getWithAddedIdParam(url, idValue, allowedHosts) {
   return u.toString();
 }
 
-/****************************************************************************************************************
- * functionSignature: getRewriteAllImageLinks(text, idValue, allowedHosts)
- * purpose: Rewrites markdown image URLs and plain URLs in the text.
- ****************************************************************************************************************/
+
 function getRewriteAllImageLinks(text, idValue, allowedHosts) {
   const s = getStr(text);
   if (!s) return { text: s, changed: 0 };
@@ -162,10 +138,7 @@ function getRewriteAllImageLinks(text, idValue, allowedHosts) {
   return { text: out, changed };
 }
 
-/****************************************************************************************************************
- * functionSignature: getCoreAddId(coreData)
- * purpose: Main module entry. Mutates wo.response by appending id to eligible image URLs.
- ****************************************************************************************************************/
+
 export default async function getCoreAddId(coreData) {
   const wo = coreData?.workingObject || {};
   const config = coreData?.config || {};

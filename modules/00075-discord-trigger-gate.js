@@ -8,10 +8,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 const MODULE_NAME = "discord-trigger-gate";
 const DEFAULT_WORD_WINDOW = 1;
 
-/**************************************************************
-/* functionSignature: getDiscordTriggerGate (coreData)        *
-/* Stops flow when payload lacks trigger within first N words *
-/**************************************************************/
+
 export default async function getDiscordTriggerGate(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

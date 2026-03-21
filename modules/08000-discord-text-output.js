@@ -23,19 +23,13 @@ const GUILD_ANSWER_MAX = 3500;
 const REASONING_DESC_TARGET = 3900;
 const THREAD_AUTO_ARCHIVE_MINUTES = 60;
 
-/********************************************************************************
-/* functionSignature: getIsLikelyImageUrl (url)                                 *
-/* Returns true if the URL likely points to an image.                           *
-/********************************************************************************/
+
 function getIsLikelyImageUrl(url) {
   const u = String(url).toLowerCase();
   return /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/.test(u) || /\/documents\//.test(u);
 }
 
-/********************************************************************************
-/* functionSignature: getFirstImageUrlFromText (text)                           *
-/* Extracts the first image-like URL from a text string.                        *
-/********************************************************************************/
+
 function getFirstImageUrlFromText(text) {
   if (!text) return null;
   const s = String(text);
@@ -53,46 +47,31 @@ function getFirstImageUrlFromText(text) {
   return null;
 }
 
-/********************************************************************************
-/* functionSignature: getWithCachebuster (url)                                  *
-/* Appends a cache-busting query parameter to a URL.                            *
-/********************************************************************************/
+
 function getWithCachebuster(url) {
   if (!url) return url;
   const cb = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   return `${url}${url.includes("?") ? "&" : "?"}cb=${cb}`;
 }
 
-/********************************************************************************
-/* functionSignature: getModuleConfigBaseURL (config)                           *
-/* Resolves the module baseURL from config.                                     *
-/********************************************************************************/
+
 function getModuleConfigBaseURL(config) {
   const a = config?.["discord-text-output"];
   const b = config?.["discord_text-output"];
   return (a && a.baseURL) || (b && b.baseURL) || null;
 }
 
-/********************************************************************************
-/* functionSignature: getIsThreadChannel (ch)                                   *
-/* Checks whether a channel is a thread.                                        *
-/********************************************************************************/
+
 function getIsThreadChannel(ch) {
   return ch?.isThread?.() === true;
 }
 
-/********************************************************************************
-/* functionSignature: getIsChannelWebhook (h)                                   *
-/* Checks whether a webhook is a channel webhook.                               *
-/********************************************************************************/
+
 function getIsChannelWebhook(h) {
   return Number(h?.type) === 1 || String(h?.type) === "Incoming";
 }
 
-/********************************************************************************
-/* functionSignature: getUrlExists (url, timeoutMs)                             *
-/* Verifies remote URL availability with HEAD/GET.                              *
-/********************************************************************************/
+
 async function getUrlExists(url, timeoutMs = 3000) {
   if (typeof fetch !== "function") return true;
 
@@ -115,10 +94,7 @@ async function getUrlExists(url, timeoutMs = 3000) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: setEnsureOwnChannelWebhookClient (client, message, name, wo) *
-/* Ensures a usable channel webhook and returns its client.                     *
-/********************************************************************************/
+
 async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo) {
   const currChannel = message.channel;
   const parentChannel = getIsThreadChannel(currChannel) ? currChannel.parent : currChannel;
@@ -170,10 +146,7 @@ async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo
   return { webhookClient, threadId };
 }
 
-/********************************************************************************
-/* functionSignature: getAvatarLookupId (baseChannel, threadId, fallbackId)     *
-/* Returns an id to use for avatar lookup (parent channel when in thread).      *
-/********************************************************************************/
+
 function getAvatarLookupId(baseChannel, threadId, fallbackId) {
   if (threadId) {
     const pid = baseChannel?.parentId || baseChannel?.parent?.id || null;
@@ -182,10 +155,7 @@ function getAvatarLookupId(baseChannel, threadId, fallbackId) {
   return String(baseChannel?.id || fallbackId || "");
 }
 
-/********************************************************************************
-/* functionSignature: getResolvedIdentity (wo, config, channelId, client)       *
-/* Resolves username and avatar URL for webhook identity.                       *
-/********************************************************************************/
+
 async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, client) {
   const raw = typeof wo?.botName === "string" ? wo.botName.trim() : "";
   if (!raw) throw new Error(`${MODULE_NAME}: wo.botName is required but empty/missing`);
@@ -213,10 +183,7 @@ async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, clien
   return { username, avatarURL };
 }
 
-/********************************************************************************
-/* functionSignature: getAskerDisplay (wo, baseMessage)                         *
-/* Resolves a human name for the asker without raw IDs.                         *
-/********************************************************************************/
+
 function getAskerDisplay(wo, baseMessage) {
   const nameCandidates = [
     "UserDisplayName", "userDisplayName", "DisplayName", "displayName",
@@ -234,10 +201,7 @@ function getAskerDisplay(wo, baseMessage) {
   return "";
 }
 
-/********************************************************************************
-/* functionSignature: getLikelyQuestion (wo)                                    *
-/* Returns wo.payload as the question (entire payload).                         *
-/********************************************************************************/
+
 function getLikelyQuestion(wo) {
   const v = wo?.payload;
   if (v == null) return "";
@@ -245,10 +209,7 @@ function getLikelyQuestion(wo) {
   try { return String(v).trim(); } catch { return ""; }
 }
 
-/********************************************************************************
-/* functionSignature: getLocalTimeString (date, tz)                             *
-/* Formats a local time string for the given timezone.                          *
-/********************************************************************************/
+
 function getLocalTimeString(date, tz) {
   try {
     return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: tz || "Europe/Berlin" }).format(date);
@@ -257,10 +218,7 @@ function getLocalTimeString(date, tz) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getBuildYamlQuestionBlock (name, text)                    *
-/* Builds a YAML code block: first line highlights the name.                    *
-/********************************************************************************/
+
 function getBuildYamlQuestionBlock(name, text) {
   const display = String(name || "").trim();
   const norm = String(text || "").replace(/\r\n?/g, "\n");
@@ -270,10 +228,7 @@ function getBuildYamlQuestionBlock(name, text) {
   return "```yaml\n" + body + "\n```";
 }
 
-/********************************************************************************
-/* functionSignature: getStripInvis (s)                                         *
-/* Removes zero-width and normalizes whitespace artifacts.                      *
-/********************************************************************************/
+
 function getStripInvis(s) {
   return String(s || "")
     .replace(/\u200B/g, "")
@@ -283,10 +238,7 @@ function getStripInvis(s) {
     .replace(/\u00A0/g, " ");
 }
 
-/********************************************************************************
-/* functionSignature: getNormalizeReasoningText (text)                          *
-/* Removes provider artifacts and improves readability.                         *
-/********************************************************************************/
+
 function getNormalizeReasoningText(text) {
   const norm = String(text || "").replace(/\r\n?/g, "\n").trim();
   if (!norm) return "";
@@ -322,10 +274,7 @@ function getNormalizeReasoningText(text) {
   return spaced.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/********************************************************************************
-/* functionSignature: getFenceOpenMeta (line)                                   *
-/* Returns { fence, fenceLine } if an opening fence is found.                   *
-/********************************************************************************/
+
 function getFenceOpenMeta(line) {
   const s = String(line || "");
   const m = /^\s*(```|~~~)\s*([A-Za-z0-9_-]+)?\s*$/.exec(s);
@@ -336,10 +285,7 @@ function getFenceOpenMeta(line) {
   return { fence, fenceLine };
 }
 
-/********************************************************************************
-/* functionSignature: getIsFenceCloseLine (line, fence)                         *
-/* Returns true if line closes the currently open fence.                        *
-/********************************************************************************/
+
 function getIsFenceCloseLine(line, fence) {
   if (!fence) return false;
   const s = String(line || "");
@@ -347,10 +293,7 @@ function getIsFenceCloseLine(line, fence) {
   return new RegExp(`^\\s*${esc}\\s*$`).test(s);
 }
 
-/********************************************************************************
-/* functionSignature: getChunkMarkdownFlex (str, firstMax, nextMax)             *
-/* Chunks markdown while preserving fenced code blocks.                         *
-/********************************************************************************/
+
 function getChunkMarkdownFlex(str, firstMax = 3500, nextMax = 3500) {
   const text = typeof str === "string" ? str.replace(/\r\n?/g, "\n") : "";
   if (!text) return [];
@@ -365,46 +308,31 @@ function getChunkMarkdownFlex(str, firstMax = 3500, nextMax = 3500) {
   let activeFence = "";
   let activeFenceLine = "";
 
-  /********************************************************************************
-  /* functionSignature: getCurrMax ()                                             *
-  /* Returns the active max length for the current chunk.                         *
-  /********************************************************************************/
+
   function getCurrMax() {
     return chunks.length === 0 ? fMax : nMax;
   }
 
-  /********************************************************************************
-  /* functionSignature: pushChunk (s)                                             *
-  /* Pushes a completed chunk, ensuring it is non-empty for Discord.              *
-  /********************************************************************************/
+
   function pushChunk(s) {
     const out = String(s || "").replace(/\s+$/g, "");
     chunks.push(out.length ? out : "\u200b");
   }
 
-  /********************************************************************************
-  /* functionSignature: closeFenceIfNeeded ()                                     *
-  /* Closes any currently open fence in the buffer.                               *
-  /********************************************************************************/
+
   function closeFenceIfNeeded() {
     if (!activeFence) return;
     if (!buf.endsWith("\n")) buf += "\n";
     buf += `${activeFence}\n`;
   }
 
-  /********************************************************************************
-  /* functionSignature: startNewChunk ()                                          *
-  /* Starts a new chunk and re-opens the active fence if needed.                  *
-  /********************************************************************************/
+
   function startNewChunk() {
     buf = "";
     if (activeFence && activeFenceLine) buf += `${activeFenceLine}\n`;
   }
 
-  /********************************************************************************
-  /* functionSignature: appendPiece (piece)                                       *
-  /* Appends text to the current chunk while respecting max length and fences.    *
-  /********************************************************************************/
+
   function appendPiece(piece) {
     const currMax = getCurrMax();
     if (!piece) return;
@@ -472,10 +400,7 @@ function getChunkMarkdownFlex(str, firstMax = 3500, nextMax = 3500) {
   return chunks.length ? chunks : ["\u200b"];
 }
 
-/********************************************************************************
-/* functionSignature: getTextFromAny (x)                                        *
-/* Extracts text from various structures (string/array/object).                 *
-/********************************************************************************/
+
 function getTextFromAny(x) {
   if (x == null) return "";
   if (typeof x === "string") return x;
@@ -491,10 +416,7 @@ function getTextFromAny(x) {
   try { return String(x); } catch { return ""; }
 }
 
-/********************************************************************************
-/* functionSignature: getReasoningText (wo)                                     *
-/* Returns reasoningSummary as a normalized string.                             *
-/********************************************************************************/
+
 function getReasoningText(wo) {
   const v = wo?.reasoningSummary;
   if (v == null) return "";
@@ -502,18 +424,12 @@ function getReasoningText(wo) {
   return getNormalizeReasoningText(getTextFromAny(v).trim());
 }
 
-/********************************************************************************
-/* functionSignature: getIsBoldHeadlineLine (line)                              *
-/* Returns true if the line is a bold headline.                                 *
-/********************************************************************************/
+
 function getIsBoldHeadlineLine(line) {
   return /^\s*\*\*.+?\*\*\s*$/.test(String(line || ""));
 }
 
-/********************************************************************************
-/* functionSignature: getSplitByBoldHeadlines (text)                            *
-/* Splits text into segments starting at bold headline lines.                   *
-/********************************************************************************/
+
 function getSplitByBoldHeadlines(text) {
   const norm = String(text || "").replace(/\r\n?/g, "\n").trim();
   if (!norm) return [];
@@ -535,19 +451,13 @@ function getSplitByBoldHeadlines(text) {
   return segments.filter(Boolean);
 }
 
-/********************************************************************************
-/* functionSignature: getPackSegmentsToChunksMarkdown (segments, maxLen)        *
-/* Packs segments into chunks; preserves fenced code blocks.                    *
-/********************************************************************************/
+
 function getPackSegmentsToChunksMarkdown(segments, maxLen) {
   const max = Math.max(400, Math.min(3900, Number(maxLen) || REASONING_DESC_TARGET));
   const out = [];
   let cur = "";
 
-  /********************************************************************************
-  /* functionSignature: pushCur ()                                                *
-  /* Pushes the current accumulator into output and resets it.                    *
-  /********************************************************************************/
+
   function pushCur() {
     const v = String(cur || "").trim();
     if (v) out.push(v);
@@ -586,20 +496,14 @@ function getPackSegmentsToChunksMarkdown(segments, maxLen) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: getNormalizeReasoningForThread (text)                     *
-/* Produces reasoning suitable for thread embeds.                               *
-/********************************************************************************/
+
 function getNormalizeReasoningForThread(text) {
   const norm = getNormalizeReasoningText(text);
   if (!norm) return "";
   return norm.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/********************************************************************************
-/* functionSignature: getReasoningThreadChunks (text, maxLen)                   *
-/* Returns reasoning chunks, prioritizing splits on headlines.                  *
-/********************************************************************************/
+
 function getReasoningThreadChunks(text, maxLen = REASONING_DESC_TARGET) {
   const norm = getNormalizeReasoningForThread(text);
   if (!norm) return [];
@@ -610,10 +514,7 @@ function getReasoningThreadChunks(text, maxLen = REASONING_DESC_TARGET) {
   return getChunkMarkdownFlex(norm, maxLen, maxLen);
 }
 
-/********************************************************************************
-/* functionSignature: getJoinLen (parts)                                        *
-/* Returns the joined length with "\n\n" separators.                            *
-/********************************************************************************/
+
 function getJoinLen(parts) {
   const kept = parts.filter(Boolean).map(x => String(x));
   if (!kept.length) return 0;
@@ -625,18 +526,12 @@ function getJoinLen(parts) {
   return n;
 }
 
-/********************************************************************************
-/* functionSignature: getFooterText (botName, model, useAiModule, timeStr)      *
-/* Builds a consistent embed footer text.                                       *
-/********************************************************************************/
+
 function getFooterText(botName, model, useAiModule, timeStr) {
   return `${botName} (${model || "-"} / ${useAiModule || "-"}) - ${timeStr}`;
 }
 
-/********************************************************************************
-/* functionSignature: getBuildPrimaryEmbed (params)                             *
-/* Builds the main embed with question block + answer chunk.                    *
-/********************************************************************************/
+
 function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName, model, useAiModule, timeStr, imageUrl }) {
   const qBlock = getBuildYamlQuestionBlock(askerDisplay, questionText);
   const joined = [qBlock, String(answerChunk || "")].filter(Boolean).join("\n\n") || "\u200b";
@@ -652,10 +547,7 @@ function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName
   return e;
 }
 
-/********************************************************************************
-/* functionSignature: getBuildAnswerEmbed (params)                              *
-/* Builds additional answer-only embeds for overflow.                           *
-/********************************************************************************/
+
 function getBuildAnswerEmbed({ answerChunk, botName, model, useAiModule, timeStr }) {
   const desc = String(answerChunk || "").slice(0, EMBED_DESC_MAX) || "\u200b";
 
@@ -666,10 +558,7 @@ function getBuildAnswerEmbed({ answerChunk, botName, model, useAiModule, timeStr
     .setTimestamp(new Date());
 }
 
-/********************************************************************************
-/* functionSignature: setBuildEmbedsForAnswer (params)                          *
-/* Creates embeds for answer; preserves fenced code blocks.                     *
-/********************************************************************************/
+
 function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botName, model, useAiModule, timeStr, imageUrl, isDM }) {
   const qBlock = getBuildYamlQuestionBlock(askerDisplay, questionText);
 
@@ -719,10 +608,7 @@ function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botNa
   return embeds;
 }
 
-/********************************************************************************
-/* functionSignature: getBuildReasoningEmbed (params)                           *
-/* Builds a reasoning embed for thread posting.                                 *
-/********************************************************************************/
+
 function getBuildReasoningEmbed({ chunk, partIndex, partCount, botName, model, useAiModule, timeStr }) {
   const title = partCount > 1 ? `Reasoning (${partIndex}/${partCount})` : "Reasoning";
   const desc = String(chunk || "").slice(0, EMBED_DESC_MAX) || "\u200b";
@@ -735,10 +621,7 @@ function getBuildReasoningEmbed({ chunk, partIndex, partCount, botName, model, u
     .setTimestamp(new Date());
 }
 
-/********************************************************************************
-/* functionSignature: getReasoningThreadName (wo, askerDisplay)                 *
-/* Builds a safe thread name for the reasoning thread.                          *
-/********************************************************************************/
+
 function getReasoningThreadName(wo, askerDisplay) {
   const base = String(wo?.ReasoningThreadName || "").trim();
   if (base) return base.slice(0, 100);
@@ -747,10 +630,7 @@ function getReasoningThreadName(wo, askerDisplay) {
   return name.slice(0, 100);
 }
 
-/********************************************************************************
-/* functionSignature: setCanCreateMessageThread (client, channel)               *
-/* Returns true if the bot likely can create a message thread.                  *
-/********************************************************************************/
+
 async function setCanCreateMessageThread(client, channel) {
   try {
     const guild = channel?.guild;
@@ -765,10 +645,7 @@ async function setCanCreateMessageThread(client, channel) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: setCreateReasoningMessageThread (client, channel, msgId, name, wo) *
-/* Creates a Discord message-thread from a root message id.                     *
-/********************************************************************************/
+
 async function setCreateReasoningMessageThread(client, channel, rootMessageId, threadName, wo) {
   if (!channel?.threads?.create) return null;
 
@@ -813,10 +690,7 @@ async function setCreateReasoningMessageThread(client, channel, rootMessageId, t
   }
 }
 
-/********************************************************************************
-/* functionSignature: setSendWebhookEmbeds (webhookClient, payloadBase, embeds) *
-/* Sends embeds via webhook and verifies webhookId. Returns first/last message. *
-/********************************************************************************/
+
 async function setSendWebhookEmbeds(webhookClient, payloadBase, embeds) {
   let firstMsg = null;
   let lastMsg = null;
@@ -834,10 +708,7 @@ async function setSendWebhookEmbeds(webhookClient, payloadBase, embeds) {
   return { firstMsg, lastMsg, sent };
 }
 
-/********************************************************************************
-/* functionSignature: setSendReasoningEmbeds (webhookClient, payloadBase, text, meta) *
-/* Sends reasoning chunks as embeds into a target thread.                       *
-/********************************************************************************/
+
 async function setSendReasoningEmbeds(webhookClient, payloadBase, reasoningText, meta) {
   const chunks = getReasoningThreadChunks(reasoningText, REASONING_DESC_TARGET);
   if (!chunks.length) return 0;
@@ -864,10 +735,7 @@ async function setSendReasoningEmbeds(webhookClient, payloadBase, reasoningText,
   return sent;
 }
 
-/********************************************************************************
-/* functionSignature: setSendDirectEmbeds (channel, embeds)                     *
-/* Sends embeds directly to a channel (DM path).                                *
-/********************************************************************************/
+
 async function setSendDirectEmbeds(channel, embeds) {
   let sent = 0;
   for (const e of (embeds || [])) {
@@ -877,10 +745,7 @@ async function setSendDirectEmbeds(channel, embeds) {
   return sent;
 }
 
-/********************************************************************************
-/* functionSignature: setSendDirectReasoningEmbeds (channel, reasoningText, meta) *
-/* Sends reasoning embeds directly to a channel (DM path).                      *
-/********************************************************************************/
+
 async function setSendDirectReasoningEmbeds(channel, reasoningText, meta) {
   const chunks = getReasoningThreadChunks(reasoningText, REASONING_DESC_TARGET);
   if (!chunks.length) return 0;
@@ -903,10 +768,7 @@ async function setSendDirectReasoningEmbeds(channel, reasoningText, meta) {
   return sent;
 }
 
-/********************************************************************************
-/* functionSignature: getDiscordTextOutput (coreData)                           *
-/* Sends embed responses; webhook in guilds and DMs direct.                      *
-/********************************************************************************/
+
 export default async function getDiscordTextOutput(coreData) {
   const wo = coreData.workingObject || {};
   const config = coreData.config || {};

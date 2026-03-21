@@ -19,10 +19,7 @@ const MACRO_TAG = "#Macro#";
 let __pool = null;
 let __tableEnsured = false;
 
-/**************************************************************
-/* functionSignature: getResolveClient (wo)                  *
-/* Resolves and returns the Discord client from workingObject*/
-/**************************************************************/
+
 async function getResolveClient(wo) {
   const ref = wo?.clientRef || wo?.refs?.client || "discord:client";
   try {
@@ -33,10 +30,7 @@ async function getResolveClient(wo) {
   }
 }
 
-/**************************************************************
-/* functionSignature: getDbPool (wo, log)                    *
-/* Creates or returns a cached MySQL connection pool         *
-/**************************************************************/
+
 async function getDbPool(wo, log) {
   if (__pool) return __pool;
   const db = wo?.db;
@@ -60,10 +54,7 @@ async function getDbPool(wo, log) {
   }
 }
 
-/**************************************************************
-/* functionSignature: setEnsureTable (pool, log)             *
-/* Ensures the macros table exists                           *
-/**************************************************************/
+
 async function setEnsureTable(pool, log) {
   if (__tableEnsured) return;
   const sql = `
@@ -85,10 +76,7 @@ async function setEnsureTable(pool, log) {
   __tableEnsured = true;
 }
 
-/**************************************************************
-/* functionSignature: setCreateOrOverwriteMacro (args)       *
-/* Creates or overwrites a macro for a user                  *
-/**************************************************************/
+
 async function setCreateOrOverwriteMacro({ pool, log, userId, guildId, channelId, name, text }) {
   await setEnsureTable(pool, log);
   const sql = `
@@ -102,10 +90,7 @@ async function setCreateOrOverwriteMacro({ pool, log, userId, guildId, channelId
   log("macro create/overwrite", "info", { moduleName: MODULE_NAME, userId, name });
 }
 
-/**************************************************************
-/* functionSignature: setDeleteMacro (args)                  *
-/* Deletes a macro by name for a user                        *
-/**************************************************************/
+
 async function setDeleteMacro({ pool, log, userId, name }) {
   await setEnsureTable(pool, log);
   const sql = `DELETE FROM discord_macros WHERE user_id = ? AND name = ? LIMIT 1`;
@@ -115,10 +100,7 @@ async function setDeleteMacro({ pool, log, userId, name }) {
   return affected;
 }
 
-/**************************************************************
-/* functionSignature: setRunMacro (args)                     *
-/* Sends the stored macro text to the target channel         *
-/**************************************************************/
+
 async function setRunMacro({ pool, log, wo, userId, guildId, channelId, name }) {
   await setEnsureTable(pool, log);
   const sql = `SELECT text FROM discord_macros WHERE user_id = ? AND name = ? LIMIT 1`;
@@ -155,10 +137,7 @@ async function setRunMacro({ pool, log, wo, userId, guildId, channelId, name }) 
   return { found: true, sent: true };
 }
 
-/**************************************************************
-/* functionSignature: getListMacros (args)                   *
-/* Returns a list of user macros with previews               *
-/**************************************************************/
+
 async function getListMacros({ pool, log, userId }) {
   await setEnsureTable(pool, log);
   const sql = `
@@ -177,10 +156,7 @@ async function getListMacros({ pool, log, userId }) {
   }));
 }
 
-/**************************************************************
-/* functionSignature: getDiscordAdminMacro (coreData)        *
-/* Handles /macro admin commands within the admin flow       *
-/**************************************************************/
+
 export default async function getDiscordAdminMacro(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

@@ -13,34 +13,26 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "webpage-channel-config";
 
-/************************************************************************************/
-/* functionSignature: isPlainObject (v)                                            *
-/************************************************************************************/
+
 function isPlainObject(v) {
   if (!v || typeof v !== "object") return false;
   if (Array.isArray(v)) return false;
   return Object.getPrototypeOf(v) === Object.prototype;
 }
 
-/************************************************************************************/
-/* functionSignature: normalizeStr (v)                                             *
-/************************************************************************************/
+
 function normalizeStr(v) {
   if (v === undefined || v === null) return "";
   return String(v).trim();
 }
 
-/************************************************************************************/
-/* functionSignature: normalizeStrList (v)                                         *
-/************************************************************************************/
+
 function normalizeStrList(v) {
   if (!Array.isArray(v)) return [];
   return v.map(x => normalizeStr(x)).filter(Boolean);
 }
 
-/************************************************************************************/
-/* functionSignature: includesCI (list, value)                                     *
-/************************************************************************************/
+
 function includesCI(list, value) {
   const v = normalizeStr(value);
   if (!v) return false;
@@ -53,9 +45,7 @@ function includesCI(list, value) {
   return false;
 }
 
-/************************************************************************************/
-/* functionSignature: deepMergePlain (target, source)                              *
-/************************************************************************************/
+
 function deepMergePlain(target, source) {
   const out = isPlainObject(target) ? { ...target } : {};
   if (!isPlainObject(source)) return out;
@@ -70,36 +60,28 @@ function deepMergePlain(target, source) {
   return out;
 }
 
-/************************************************************************************/
-/* functionSignature: matchChannel (node, channelId)                               *
-/************************************************************************************/
+
 function matchChannel(node, channelId) {
   const list = normalizeStrList(node?.channelMatch);
   if (list.length === 0) return false;
   return includesCI(list, channelId);
 }
 
-/************************************************************************************/
-/* functionSignature: matchFlow (node, flow)                                       *
-/************************************************************************************/
+
 function matchFlow(node, flow) {
   const list = normalizeStrList(node?.flowMatch);
   if (list.length === 0) return false;
   return includesCI(list, flow);
 }
 
-/************************************************************************************/
-/* functionSignature: matchUser (node, userId)                                     *
-/************************************************************************************/
+
 function matchUser(node, userId) {
   const list = normalizeStrList(node?.userMatch);
   if (list.length === 0) return false;
   return list.includes(normalizeStr(userId));
 }
 
-/************************************************************************************/
-/* functionSignature: applyOverrides (workingObject, overrides)                    *
-/************************************************************************************/
+
 function applyOverrides(workingObject, overrides) {
   if (!isPlainObject(workingObject)) return 0;
   if (!isPlainObject(overrides)) return 0;
@@ -116,9 +98,7 @@ function applyOverrides(workingObject, overrides) {
   return appliedKeys;
 }
 
-/************************************************************************************/
-/* functionSignature: pickLastMatchingIndex (list, matcherFn)                      *
-/************************************************************************************/
+
 function pickLastMatchingIndex(list, matcherFn) {
   const arr = Array.isArray(list) ? list : [];
   let index = -1, count = 0;
@@ -129,10 +109,7 @@ function pickLastMatchingIndex(list, matcherFn) {
   return { index, count };
 }
 
-/************************************************************************************/
-/* functionSignature: applyStrictHierarchy (workingObject, cfgChannels,            *
-/*                    channelId, flow, userId)                                     *
-/************************************************************************************/
+
 function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userId) {
   const channels = Array.isArray(cfgChannels) ? cfgChannels : [];
   const matchedRules = [], warnings = [];
@@ -167,12 +144,7 @@ function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userI
   return { appliedKeys, matchedRules, warnings };
 }
 
-/************************************************************************************/
-/* functionSignature: applyChannelConfig (workingObject, config, channelId, flow,  *
-/*                    userId)                                                      *
-/* Named export — for just-in-time use by request handlers that only know their    *
-/* channelID after parsing the request body (e.g. webpage-chat POST /api/chat).   *
-/************************************************************************************/
+
 export function applyChannelConfig(workingObject, config, channelId, flow, userId) {
   const channels = config?.["webpage-channel-config"]?.channels;
   if (!Array.isArray(channels) || !channelId || !flow) return;
@@ -181,12 +153,7 @@ export function applyChannelConfig(workingObject, config, channelId, flow, userI
   workingObject.channelallowed = true;
 }
 
-/************************************************************************************/
-/* functionSignature: getWebpageChannelConfig (coreData)                           *
-/* Default export — runs in the module pipeline for the webpage flow.              *
-/* Applies channel overrides when wo.channelID is already set (e.g. by the        *
-/* webpage-router module before this one runs).                                    *
-/************************************************************************************/
+
 export default async function getWebpageChannelConfig(coreData) {
   const workingObject = coreData?.workingObject || {};
   const log = getPrefixedLogger(workingObject, import.meta.url);

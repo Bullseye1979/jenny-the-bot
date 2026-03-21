@@ -24,68 +24,44 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-voice-tts-play";
 
-/*************************************************************************************
-/* functionSignature: getNow ()                                                     *
-/* Returns current timestamp in milliseconds.                                       *
-/*************************************************************************************/
+
 function getNow() { return Date.now(); }
 
-/*************************************************************************************
-/* functionSignature: getIsVoiceSessionRefUsable (ref)                             *
-/* Returns true if voiceSessionRef points to a valid registry key.                  *
-/*************************************************************************************/
+
 function getIsVoiceSessionRefUsable(ref) {
   if (ref == null) return false;
   const s = String(ref).trim().toLowerCase();
   return s !== "" && s !== "null" && s !== "undefined";
 }
 
-/*************************************************************************************
-/* functionSignature: setSessionLight (sessionKey, session)                        *
-/* Saves session state without unserializable voice objects.                        *
-/*************************************************************************************/
+
 async function setSessionLight(sessionKey, session) {
   if (!sessionKey || !session) return;
   const { player, connection, ...rest } = session;
   try { await putItem(rest, sessionKey); } catch {}
 }
 
-/*************************************************************************************
-/* functionSignature: getBufferToBinaryStream (buf)                                *
-/* Converts a Buffer to a one-shot Readable stream.                                 *
-/*************************************************************************************/
+
 function getBufferToBinaryStream(buf) {
   return new Readable({ read() { this.push(buf); this.push(null); } });
 }
 
-/*************************************************************************************
-/* functionSignature: getResourceFromOggOpusBuffer (buf)                           *
-/* Probes and builds a Discord audio resource from an OGG/Opus buffer.             *
-/*************************************************************************************/
+
 async function getResourceFromOggOpusBuffer(buf) {
   const { stream, type } = await demuxProbe(getBufferToBinaryStream(buf));
   return createAudioResource(stream, { inputType: type });
 }
 
-/*************************************************************************************
-/* functionSignature: getTTSLockKey (guildId)                                      *
-/* Builds the guild-specific TTS mutex key.                                         *
-/*************************************************************************************/
+
 function getTTSLockKey(guildId) { return `tts-lock-${guildId}`; }
 
-/*************************************************************************************
-/* functionSignature: getIsLockValid (lock)                                        *
-/* Returns true if the lock object is still within its TTL window.                  *
-/*************************************************************************************/
+
 function getIsLockValid(lock) {
   if (!lock || typeof lock !== "object") return false;
   return (getNow() - Number(lock.since || 0)) < (Number(lock.ttlMs) || 60000);
 }
 
-/*************************************************************************************
-/* functionSignature: getDiscordVoiceTTSPlay (coreData)                            *
-/* Main module entry: acquires guild lock and plays ttsSegments via AudioPlayer.   *
-/*************************************************************************************/
+
 export default async function getDiscordVoiceTTSPlay(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

@@ -9,10 +9,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-reaction-start";
 
-/**************************************************************
-/* functionSignature: getFlowStartReaction (coreData)          *
-/* Adds an hourglass reaction to the triggering message        *
-/**************************************************************/
+
 export default async function getFlowStartReaction(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

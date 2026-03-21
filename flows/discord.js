@@ -21,11 +21,7 @@ const VOICE_REGISTRY_KEY = "discord-voice:registry";
 const VOICE_CACHE_TTL_MS = 8000;
 const VOICE_GUILD_CACHE = new Map();
 
-/**************************************************************/
-/* functionSignature: getUlidEncodeTime (ms)                 *
-/* Encodes a millisecond timestamp to Crockford base32       *
-/* (10 chars)                                                *
-/**************************************************************/
+
 function getUlidEncodeTime(ms) {
   let x = BigInt(ms);
   const out = Array(10);
@@ -36,10 +32,7 @@ function getUlidEncodeTime(ms) {
   return out.join("");
 }
 
-/**************************************************************/
-/* functionSignature: getUlidEncodeRandom80ToBase32 (rand)   *
-/* Encodes 80 random bits to 16 base32 chars                 *
-/**************************************************************/
+
 function getUlidEncodeRandom80ToBase32(rand) {
   const out = [];
   let acc = 0, bits = 0, i = 0;
@@ -56,20 +49,14 @@ function getUlidEncodeRandom80ToBase32(rand) {
   return out.slice(0, 16).join("");
 }
 
-/**************************************************************/
-/* functionSignature: getUlidRandom80 ()                     *
-/* Generates 80 random bits as Uint8Array(10)                *
-/**************************************************************/
+
 function getUlidRandom80() {
   const arr = new Uint8Array(10);
   for (let i = 0; i < 10; i++) arr[i] = Math.floor(Math.random() * 256);
   return arr;
 }
 
-/**************************************************************/
-/* functionSignature: getNewUlid ()                          *
-/* Produces a 26-char monotonic ULID string                  *
-/**************************************************************/
+
 function getNewUlid() {
   const now = Date.now();
   let rand = getUlidRandom80();
@@ -90,10 +77,7 @@ function getNewUlid() {
   return getUlidEncodeTime(now) + getUlidEncodeRandom80ToBase32(rand);
 }
 
-/**************************************************************/
-/* functionSignature: getIntentsList (intents)               *
-/* Returns GatewayIntentBits for configured intents          *
-/**************************************************************/
+
 function getIntentsList(intents) {
   const list = Array.isArray(intents)
     ? intents
@@ -101,10 +85,7 @@ function getIntentsList(intents) {
   return list.map((i) => GatewayIntentBits[i]).filter(Boolean);
 }
 
-/**************************************************************/
-/* functionSignature: getAttachmentUrls (message)            *
-/* Extracts attachment URLs from a Discord message           *
-/**************************************************************/
+
 function getAttachmentUrls(message) {
   try {
     const values = message?.attachments?.values ? message.attachments.values() : [];
@@ -114,10 +95,7 @@ function getAttachmentUrls(message) {
   }
 }
 
-/**************************************************************/
-/* functionSignature: getStripMacroTag (content)             *
-/* Removes leading "#Macro#" and returns { isMacro, payload }*
-/**************************************************************/
+
 function getStripMacroTag(content) {
   if (typeof content !== "string") return { isMacro: false, payload: "" };
   if (!content.startsWith(MACRO_TAG)) {
@@ -127,11 +105,7 @@ function getStripMacroTag(content) {
   return { isMacro: true, payload: withoutTag };
 }
 
-/**************************************************************/
-/* functionSignature: getVoiceSessionRefForGuild (guildId)   *
-/* Resolves latest active voice session key for a guild      *
-/* from registry (with a short TTL cache)                    *
-/**************************************************************/
+
 async function getVoiceSessionRefForGuild(guildId) {
   const gid = (guildId === null || guildId === undefined) ? "" : String(guildId).trim();
   if (!gid) return null;
@@ -176,11 +150,7 @@ async function getVoiceSessionRefForGuild(guildId) {
   return null;
 }
 
-/**************************************************************/
-/* functionSignature: getDiscordFlow (baseCore, runFlow,     *
-/*                     createRunCore)                        *
-/* Boots Discord client and forwards messages into the flow  *
-/**************************************************************/
+
 export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
   const discordConfig = baseCore?.config?.discord || {};
   const flowName = discordConfig.flowName || MODULE_NAME;

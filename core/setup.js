@@ -12,10 +12,7 @@ import http from "node:http";
 import fs   from "node:fs";
 import path from "node:path";
 
-/**********************************************************************************/
-/* functionSignature: getSetupHtml ()                                             */
-/* Returns the setup-wizard HTML page.                                            */
-/**********************************************************************************/
+
 function getSetupHtml(error) {
   const errHtml = error
     ? `<div class="error">&#9888; ${String(error).replace(/</g, "&lt;")}</div>`
@@ -79,10 +76,7 @@ function getSetupHtml(error) {
 </html>`;
 }
 
-/**********************************************************************************/
-/* functionSignature: parseFormBody (body)                                        */
-/* Parses a URL-encoded form body string into a plain object.                    */
-/**********************************************************************************/
+
 function parseFormBody(body) {
   const out = {};
   for (const pair of body.split("&")) {
@@ -92,10 +86,7 @@ function parseFormBody(body) {
   return out;
 }
 
-/**********************************************************************************/
-/* functionSignature: buildCoreJson (fields)                                      */
-/* Returns a minimal core.json object from the provided form fields.             */
-/**********************************************************************************/
+
 function buildCoreJson(fields) {
   const apiKey  = (fields.apiKey  || "").trim();
   const botName = (fields.botName || "Jenny").trim() || "Jenny";
@@ -174,10 +165,7 @@ function buildCoreJson(fields) {
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: startSetupWizard (corePath, port)                           */
-/* Starts the setup-wizard HTTP server. Resolves when core.json has been written. */
-/**********************************************************************************/
+
 export function startSetupWizard(corePath, port) {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {

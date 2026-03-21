@@ -8,27 +8,18 @@ import { setContext } from "../core/context.js";
 
 const MODULE_NAME = "discord-add-context";
 
-/********************************************************************************
-/* functionSignature: getString (value)                                         *
-/* Returns a string; empty string for nullish                                   *
-/********************************************************************************/
+
 function getString(value) {
   return value == null ? "" : String(value);
 }
 
-/********************************************************************************
-/* functionSignature: getAttachmentUrlsFromWO (wo)                              *
-/* Extracts normalized attachment URLs from workingObject                        *
-/********************************************************************************/
+
 function getAttachmentUrlsFromWO(wo) {
   if (!Array.isArray(wo?.fileUrls)) return [];
   return wo.fileUrls.map((u) => (typeof u === "string" ? u.trim() : "")).filter(Boolean);
 }
 
-/********************************************************************************
-/* functionSignature: getDiscordAddContext (coreData)                            *
-/* Appends the current user payload to the context store                         *
-/********************************************************************************/
+
 export default async function getDiscordAddContext(coreData) {
   const wo = coreData?.workingObject || {};
   if (!Array.isArray(wo.logging)) wo.logging = [];

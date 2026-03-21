@@ -16,27 +16,18 @@ const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const REGISTRY_MAP = new Map();
 const META_MAP = new Map();
 
-/************************************************************************************/
-/* functionSignature: getNow ()                                                      *
-/* Returns the current timestamp in milliseconds.                                    *
-/************************************************************************************/
+
 function getNow() {
   return Date.now();
 }
 
-/************************************************************************************/
-/* functionSignature: getGenId (prefix)                                              *
-/* Generates a registry key with time and random suffix.                             *
-/************************************************************************************/
+
 function getGenId(prefix = "reg") {
   const randomPart = Math.random().toString(36).slice(2, 8);
   return `${prefix}:${Date.now().toString(36)}:${randomPart}`;
 }
 
-/************************************************************************************/
-/* functionSignature: setEnsureMeta (key)                                            *
-/* Ensures and returns metadata record for a key.                                    *
-/************************************************************************************/
+
 function setEnsureMeta(key) {
   if (!META_MAP.has(key)) {
     META_MAP.set(key, {
@@ -49,10 +40,7 @@ function setEnsureMeta(key) {
   return META_MAP.get(key);
 }
 
-/************************************************************************************/
-/* functionSignature: setApplyGlobalTTL (meta)                                       *
-/* Applies the global TTL to a meta record.                                          *
-/************************************************************************************/
+
 function setApplyGlobalTTL(meta) {
   const ttl = Number(DEFAULT_TTL_MS);
   if (Number.isFinite(ttl) && ttl > 0) {
@@ -64,28 +52,19 @@ function setApplyGlobalTTL(meta) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: getIsExpired (meta)                                            *
-/* Returns true if the meta record indicates expiration.                             *
-/************************************************************************************/
+
 function getIsExpired(meta) {
   if (!meta) return false;
   return meta.expireAt != null && getNow() >= meta.expireAt;
 }
 
-/************************************************************************************/
-/* functionSignature: setHardExpire (key)                                            *
-/* Removes a key and its metadata from the registry.                                 *
-/************************************************************************************/
+
 function setHardExpire(key) {
   REGISTRY_MAP.delete(key);
   META_MAP.delete(key);
 }
 
-/************************************************************************************/
-/* functionSignature: setEnforceLRULimit ()                                          *
-/* Evicts least-recently-used items if size exceeds the cap.                         *
-/************************************************************************************/
+
 function setEnforceLRULimit() {
   if (!ENABLE_LRU_EVICT) return 0;
   if (!Number.isFinite(GC_MAX_ENTRIES) || GC_MAX_ENTRIES === Infinity) return 0;
@@ -109,10 +88,7 @@ function setEnforceLRULimit() {
   return removed;
 }
 
-/************************************************************************************/
-/* functionSignature: setSweepAll ()                                                 *
-/* Expires TTL keys and enforces LRU size limits.                                    *
-/************************************************************************************/
+
 function setSweepAll() {
   const keys = Array.from(REGISTRY_MAP.keys());
   for (const k of keys) {
@@ -122,10 +98,7 @@ function setSweepAll() {
   setEnforceLRULimit();
 }
 
-/************************************************************************************/
-/* functionSignature: putItem (object, id)                                           *
-/* Stores object under provided/generated id and returns key.                        *
-/************************************************************************************/
+
 export function putItem(object, id) {
   const key = (typeof id === "string" && id.trim()) ? id.trim() : getGenId();
   REGISTRY_MAP.set(key, object);
@@ -136,10 +109,7 @@ export function putItem(object, id) {
   return key;
 }
 
-/************************************************************************************/
-/* functionSignature: getItem (id)                                                   *
-/* Retrieves an object by id or null if missing/expired.                             *
-/************************************************************************************/
+
 export function getItem(id) {
   if (typeof id !== "string" || !id) return null;
   if (!REGISTRY_MAP.has(id)) return null;
@@ -152,10 +122,7 @@ export function getItem(id) {
   return REGISTRY_MAP.get(id);
 }
 
-/************************************************************************************/
-/* functionSignature: deleteItem (id)                                                *
-/* Removes an item from the registry by id.                                          *
-/************************************************************************************/
+
 export function deleteItem(id) {
   if (typeof id !== "string" || !id) return false;
   const ok = REGISTRY_MAP.delete(id);
@@ -163,10 +130,7 @@ export function deleteItem(id) {
   return ok;
 }
 
-/************************************************************************************/
-/* functionSignature: listKeys (prefix)                                              *
-/* Returns all keys, optionally filtered by prefix.                                  *
-/************************************************************************************/
+
 export function listKeys(prefix = null) {
   const keys = Array.from(REGISTRY_MAP.keys());
   if (typeof prefix === "string" && prefix.length > 0) {
@@ -175,10 +139,7 @@ export function listKeys(prefix = null) {
   return keys;
 }
 
-/************************************************************************************/
-/* functionSignature: clearAll ()                                                    *
-/* Clears the entire in-memory registry.                                             *
-/************************************************************************************/
+
 export function clearAll() {
   REGISTRY_MAP.clear();
   META_MAP.clear();
@@ -186,10 +147,7 @@ export function clearAll() {
 
 export default { putItem, getItem, deleteItem, listKeys, clearAll };
 
-/************************************************************************************/
-/* functionSignature: setStartHardcodedGC ()                                         *
-/* Starts the periodic GC timer.                                                     *
-/************************************************************************************/
+
 function setStartHardcodedGC() {
   try {
     const t = setInterval(() => {

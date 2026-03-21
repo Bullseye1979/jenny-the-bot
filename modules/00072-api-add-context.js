@@ -8,35 +8,19 @@ import { setContext } from "../core/context.js";
 
 const MODULE_NAME = "api-add-context";
 
-/****************************************************************************************************************
-* functionSignature: getString(value)                                                                          *
-* Purpose: Returns a string; empty string for nullish values.                                                   *
-****************************************************************************************************************/
 function getString(value) {
   return value == null ? "" : String(value);
 }
 
-/****************************************************************************************************************
-* functionSignature: getEnsureLogging(workingObject)                                                           *
-* Purpose: Ensures workingObject.logging exists as an array and returns it.                                     *
-****************************************************************************************************************/
 function getEnsureLogging(workingObject) {
   if (!Array.isArray(workingObject.logging)) workingObject.logging = [];
   return workingObject.logging;
 }
 
-/****************************************************************************************************************
-* functionSignature: setPushLog(logging, entry)                                                                *
-* Purpose: Pushes a standardized entry into the logging array.                                                  *
-****************************************************************************************************************/
 function setPushLog(logging, entry) {
   logging.push(entry);
 }
 
-/****************************************************************************************************************
-* functionSignature: getApiAddContext(coreData)                                                                *
-* Purpose: Appends the current API payload to the context store.                                                *
-****************************************************************************************************************/
 export default async function getApiAddContext(coreData) {
   const workingObject = coreData?.workingObject || {};
   const logging = getEnsureLogging(workingObject);
@@ -73,6 +57,7 @@ export default async function getApiAddContext(coreData) {
     role: "user",
     turn_id: turnId,
     content: getString(text),
+    userId: getString(workingObject.userId || ""),
     source: getString(workingObject.source ?? workingObject.flow ?? "api"),
   };
 

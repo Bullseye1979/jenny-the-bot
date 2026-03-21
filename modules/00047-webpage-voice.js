@@ -37,10 +37,7 @@ const ROUTE_SPA    = "/voice";
 const ROUTE_CSS    = "/voice/style.css";
 const ROUTE_AUDIO  = "/voice/audio";
 
-/**********************************************************************************/
-/* functionSignature: getIsAllowedRoles (wo, allowedRoles)                        */
-/* Returns true when the user has at least one required role, or list is empty.   */
-/**********************************************************************************/
+
 function getIsAllowedRoles(wo, allowedRoles) {
   const req = Array.isArray(allowedRoles) ? allowedRoles : [];
   if (!req.length) return true;
@@ -52,10 +49,7 @@ function getIsAllowedRoles(wo, allowedRoles) {
   return req.some(r => { const n = String(r || "").trim().toLowerCase(); return n && have.has(n); });
 }
 
-/**********************************************************************************/
-/* functionSignature: getAccessDeniedHtml (menuHtml)                              */
-/* Returns an access-denied HTML page.                                            */
-/**********************************************************************************/
+
 function getAccessDeniedHtml(menuHtml) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Voice Interface</title>
 <link rel="stylesheet" href="/voice/style.css">
@@ -68,11 +62,7 @@ function getAccessDeniedHtml(menuHtml) {
 </body></html>`;
 }
 
-/**********************************************************************************/
-/* functionSignature: getSpaHtml (cfg, menuHtml)                                  */
-/* Returns the always-on voice SPA with server-side config values baked in.      */
-/* Features: always-on mic button, meeting recorder button, volume meter, VAD.   */
-/**********************************************************************************/
+
 function getSpaHtml(cfg, menuHtml) {
   const silenceMs = Number(cfg.silenceTimeoutMs ?? 2500);
   const maxMs     = Number(cfg.maxDurationMs    ?? 30000);
@@ -244,7 +234,6 @@ function populateMics() {
 if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) populateMics();
 else micSelect.innerHTML = '<option value="">Not supported</option>';
 
-/* ── Always-On Voice ─────────────────────────────────────────────────────────── */
 var alwaysOn    = false;
 var mediaRecorder = null;
 var chunks        = [];
@@ -424,7 +413,6 @@ btn.addEventListener('click', function() {
   }
 });
 
-/* ── Meeting Recorder ────────────────────────────────────────────────────────── */
 var recActive    = false;
 var recRecorder  = null;
 var recChunks    = [];
@@ -517,10 +505,7 @@ btnRec.addEventListener('click', async function() {
 </html>`;
 }
 
-/**********************************************************************************/
-/* functionSignature: getRes (wo)                                                  */
-/* Returns the HTTP response object from the registry.                            */
-/**********************************************************************************/
+
 async function getRes(wo) {
   const key = wo?.http?.requestKey;
   if (!key) return null;
@@ -528,10 +513,7 @@ async function getRes(wo) {
   return entry?.res || null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getWebpageVoice (coreData)                                  */
-/* Main module entry: serves SPA on GET, processes audio POST.                   */
-/**********************************************************************************/
+
 export default async function getWebpageVoice(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);

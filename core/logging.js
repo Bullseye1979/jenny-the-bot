@@ -10,10 +10,7 @@ import { fileURLToPath } from "url";
 
 const MODULE_NAME = "logging";
 
-/************************************************************************************/
-/* functionSignature: getEnsureLoggingArray (workingObject)                          *
-/* Ensures workingObject.logging exists and is an array.                             *
-/************************************************************************************/
+
 function getEnsureLoggingArray(workingObject) {
   if (!workingObject || typeof workingObject !== "object") {
     throw new Error("[logging] workingObject is required");
@@ -24,18 +21,12 @@ function getEnsureLoggingArray(workingObject) {
   return workingObject.logging;
 }
 
-/************************************************************************************/
-/* functionSignature: getNowIso ()                                                   *
-/* Returns a current ISO timestamp string.                                           *
-/************************************************************************************/
+
 function getNowIso() {
   return new Date().toISOString();
 }
 
-/************************************************************************************/
-/* functionSignature: getModuleNameParts (moduleUrl)                                 *
-/* Returns { prefix, name, base } from a module URL.                                 *
-/************************************************************************************/
+
 function getModuleNameParts(moduleUrl) {
   try {
     const filename = fileURLToPath(moduleUrl);
@@ -52,18 +43,12 @@ function getModuleNameParts(moduleUrl) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: getLogPrefix (maybePrefix, name)                               *
-/* Builds a standard bracketed log prefix string.                                    *
-/************************************************************************************/
+
 function getLogPrefix(maybePrefix, name) {
   return maybePrefix ? `[${maybePrefix}:${name}]` : `[${name}]`;
 }
 
-/************************************************************************************/
-/* functionSignature: setLog (workingObject, entry)                                  *
-/* Pushes a log entry (string or object) into logging array.                         *
-/************************************************************************************/
+
 export function setLog(workingObject, entry) {
   const arr = getEnsureLoggingArray(workingObject);
   const base = typeof entry === "string"
@@ -88,10 +73,7 @@ export function setLog(workingObject, entry) {
   return item;
 }
 
-/************************************************************************************/
-/* functionSignature: getPrefixedLogger (workingObject, url)                         *
-/* Returns a logger fn that adds a file-derived prefix.                              *
-/************************************************************************************/
+
 export function getPrefixedLogger(workingObject, moduleUrl) {
   getEnsureLoggingArray(workingObject);
   const { prefix, name } = getModuleNameParts(moduleUrl);
@@ -109,35 +91,23 @@ export function getPrefixedLogger(workingObject, moduleUrl) {
   };
 }
 
-/************************************************************************************/
-/* functionSignature: getFilePrefixFromUrl (moduleUrl)                               *
-/* Returns a bracketed prefix computed from a module URL.                            *
-/************************************************************************************/
+
 export function getFilePrefixFromUrl(moduleUrl) {
   const { prefix, name } = getModuleNameParts(moduleUrl);
   return getLogPrefix(prefix, name);
 }
 
-/************************************************************************************/
-/* functionSignature: setLogInfo (workingObject, msg, ctx)                           *
-/* Convenience helper to log at info level.                                          *
-/************************************************************************************/
+
 export function setLogInfo(workingObject, message, context) {
   return setLog(workingObject, { level: "info", message, context, moduleName: MODULE_NAME });
 }
 
-/************************************************************************************/
-/* functionSignature: setLogWarn (workingObject, msg, ctx)                           *
-/* Convenience helper to log at warn level.                                          *
-/************************************************************************************/
+
 export function setLogWarn(workingObject, message, context) {
   return setLog(workingObject, { level: "warn", message, context, moduleName: MODULE_NAME });
 }
 
-/************************************************************************************/
-/* functionSignature: setLogError (workingObject, msg, ctx)                          *
-/* Convenience helper to log at error level.                                         *
-/************************************************************************************/
+
 export function setLogError(workingObject, message, context) {
   return setLog(workingObject, { level: "error", message, context, moduleName: MODULE_NAME });
 }

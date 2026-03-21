@@ -5,6 +5,7 @@
    Settings (loaded from chrome.storage)
    ============================================================ */
 var cfg = { apiUrl: "", channelID: "", apiSecret: "", webBaseUrl: "" };
+var webSession = null; /* { userId, username, role } or null */
 var messages = [];
 var sending   = false;
 var pollTimer = null;
@@ -306,10 +307,13 @@ function sendMessage(payload) {
     var reqHeaders = { "Content-Type": "application/json" };
     if (cfg.apiSecret) reqHeaders["Authorization"] = "Bearer " + cfg.apiSecret;
 
+    var apiBody = { channelID: cfg.channelID, payload: finalPayload };
+    var uid = webSession && webSession.userId ? webSession.userId : "";
+    if (uid) apiBody.userId = uid;
     return fetch(cfg.apiUrl, {
       method: "POST",
       headers: reqHeaders,
-      body: JSON.stringify({ channelID: cfg.channelID, payload: finalPayload })
+      body: JSON.stringify(apiBody)
     }).then(function(r) { return r.json(); });
   })
   .then(function(d) {
@@ -371,6 +375,45 @@ function init() {
     }
 
     renderEmpty();
+
+    /* ── Auth session check ── */
+    function setAuthBar(sess) {
+      webSession = sess;
+      var bar     = document.getElementById("auth-bar");
+      var userEl  = document.getElementById("auth-user");
+      var loginEl = document.getElementById("auth-login");
+      var logoutEl= document.getElementById("auth-logout");
+      bar.classList.remove("hidden");
+      if (sess) {
+        userEl.textContent  = "\uD83D\uDC64 " + (sess.username || sess.userId);
+        loginEl.classList.add("hidden");
+        logoutEl.classList.remove("hidden");
+      } else {
+        userEl.textContent  = "Not logged in";
+        loginEl.classList.remove("hidden");
+        logoutEl.classList.add("hidden");
+      }
+    }
+
+    if (cfg.webBaseUrl) {
+      fetch(cfg.webBaseUrl + "/auth/me", { credentials: "include" })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { setAuthBar(d && d.ok ? { userId: d.userId, username: d.username, role: d.role } : null); })
+        .catch(function()  { setAuthBar(null); });
+    }
+
+    document.getElementById("auth-login").addEventListener("click", function(e) {
+      e.preventDefault();
+      if (cfg.webBaseUrl) chrome.tabs.create({ url: cfg.webBaseUrl + "/auth/login?next=%2F" });
+    });
+    document.getElementById("auth-logout").addEventListener("click", function(e) {
+      e.preventDefault();
+      if (cfg.webBaseUrl) {
+        fetch(cfg.webBaseUrl + "/auth/logout", { credentials: "include" })
+          .then(function() { setAuthBar(null); })
+          .catch(function() { setAuthBar(null); });
+      }
+    });
 
     /* Wire up settings link in warning */
     document.getElementById("open-options").addEventListener("click", function() {

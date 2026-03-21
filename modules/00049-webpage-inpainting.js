@@ -23,10 +23,7 @@ try { fs.mkdirSync(INPAINT_RESULTS_DIR, { recursive: true }); } catch {}
 
 const _inpaintAuthTokens = new Map();
 
-/**********************************************************************************/
-/* functionSignature: setSendNow (wo)                                             */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 async function setSendNow(wo) {
   const key = wo?.http?.requestKey;
@@ -44,10 +41,7 @@ async function setSendNow(wo) {
   res.end(typeof body === "string" ? body : Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 
-/**********************************************************************************/
-/* functionSignature: setJsonResp (wo, status, obj)                               */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function setJsonResp(wo, status, obj) {
@@ -58,10 +52,7 @@ function setJsonResp(wo, status, obj) {
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: getBasePath (cfg)                                           */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function getBasePath(cfg) {
@@ -70,10 +61,7 @@ function getBasePath(cfg) {
   return bp.replace(/\/+$/,"");
 }
 
-/**********************************************************************************/
-/* functionSignature: getUserRoleLabels (wo)                                      */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function getUserRoleLabels(wo) {
@@ -97,10 +85,7 @@ function getUserRoleLabels(wo) {
   return out;
 }
 
-/**********************************************************************************/
-/* functionSignature: getIsAllowedByRoles (wo, cfg)                               */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function getIsAllowedByRoles(wo, cfg) {
@@ -118,10 +103,7 @@ function getIsAllowedByRoles(wo, cfg) {
   return false;
 }
 
-/**********************************************************************************/
-/* functionSignature: setHtmlResp (wo, html)                                      */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function setHtmlResp(wo, html) {
@@ -132,10 +114,7 @@ function setHtmlResp(wo, html) {
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: setCssResp (wo, cssText)                                    */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function setCssResp(wo, cssText) {
@@ -146,15 +125,9 @@ function setCssResp(wo, cssText) {
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: setForbiddenPage (wo, menu, activePath)                     */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
 
-/**********************************************************************************/
-/* functionSignature: setForbiddenPage (wo, menu, activePath, basePath)           */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
+
 
 function setForbiddenPage(wo, menu, activePath, basePath) {
   const role = String(wo?.webAuth?.role || "").trim();
@@ -183,10 +156,7 @@ ${menuHtml}
   setHtmlResp(wo, html);
 }
 
-/**********************************************************************************/
-/* functionSignature: getMultipartBoundary (ct)                                   */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function getMultipartBoundary(ct) {
@@ -194,10 +164,7 @@ function getMultipartBoundary(ct) {
   return m ? m[1].replace(/^"|"$/g, "") : null;
 }
 
-/**********************************************************************************/
-/* functionSignature: parseMultipart (rawBytes, boundary)                         */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 function parseMultipart(rawBytes, boundary) {
   const out = { fields: {}, files: {} };
@@ -262,10 +229,7 @@ function parseMultipart(rawBytes, boundary) {
   return out;
 }
 
-/**********************************************************************************/
-/* functionSignature: buildMultipartBody (fields)                                 */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 function buildMultipartBody(fields) {
   const boundary = `----FormBoundary${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
@@ -285,10 +249,7 @@ function buildMultipartBody(fields) {
   return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
-/**********************************************************************************/
-/* functionSignature: getEngineMaskBuffer (maskBuffer)                            */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 function getEngineMaskBuffer(maskBuffer) {
   const png = PNG.sync.read(maskBuffer);
@@ -361,10 +322,7 @@ function inpaintGetIsAuthed(wo) {
   return inpaintGetIsTokenValid(inpaintGetTokenFromWo(wo));
 }
 
-/**********************************************************************************/
-/* functionSignature: getProxyRequestBody (wo)                                    */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function getProxyRequestBody(wo) {
@@ -373,10 +331,7 @@ function getProxyRequestBody(wo) {
   return Buffer.from(s, "utf8");
 }
 
-/**********************************************************************************/
-/* functionSignature: setProxy (wo, targetUrl)                                    */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 async function setProxy(wo, targetUrl) {
@@ -436,10 +391,7 @@ async function setProxy(wo, targetUrl) {
   wo.http.response = { status: resp.status, headers: outHeaders, body: resp.body };
 }
 
-/**********************************************************************************/
-/* functionSignature: getInpaintHtml (opts)                                       */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 function getInpaintHtml(opts) {
@@ -952,10 +904,7 @@ function getInpaintHtml(opts) {
         let viewModeEnabled = false;
         let viewModeForced = false;
 
-        /**********************************************************************************/
-/* functionSignature: setPublishNotice(text, isError)                             */
-/* Shows a small publish status badge.                                            */
-/**********************************************************************************/
+
         function setPublishNotice(text, isError) {
           if (!text) {
             publishNotice.style.display = "none";
@@ -974,10 +923,7 @@ function getInpaintHtml(opts) {
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: setApiError(text)                                           */
-/* Displays API errors on the page.                                               */
-/**********************************************************************************/
+
         function setApiError(text) {
           const t = String(text || "").trim();
           if (!t) {
@@ -989,28 +935,19 @@ function getInpaintHtml(opts) {
           apiErrorEl.style.display = "block";
         }
 
-        /**********************************************************************************/
-/* functionSignature: clearApiError()                                             */
-/* Clears the API error box.                                                      */
-/**********************************************************************************/
+
         function clearApiError() {
           setApiError("");
         }
 
-        /**********************************************************************************/
-/* functionSignature: setWorkingImageSrc(src)                                     */
-/* Stores the current working image state source (last committed).                */
-/**********************************************************************************/
+
         function setWorkingImageSrc(src) {
           const s = String(src || "").trim();
           if (!s) return;
           workingImageSrc = s;
         }
 
-        /**********************************************************************************/
-/* functionSignature: initCanvases()                                              */
-/* Initializes all canvases to the fixed tool size.                               */
-/**********************************************************************************/
+
         function initCanvases() {
           imageCanvas.width = CANVAS_SIZE;
           imageCanvas.height = CANVAS_SIZE;
@@ -1020,27 +957,18 @@ function getInpaintHtml(opts) {
           cursorCanvas.height = CANVAS_SIZE;
         }
 
-        /**********************************************************************************/
-/* functionSignature: updateBrushLabel()                                          */
-/* Updates the brush size label.                                                  */
-/**********************************************************************************/
+
         function updateBrushLabel() {
           brushSizeLabel.textContent = \`\${brushSize} px\`;
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleBrushSizeInput()                                      */
-/* Tracks brush size changes.                                                     */
-/**********************************************************************************/
+
         function handleBrushSizeInput() {
           brushSize = parseInt(brushSizeSlider.value, 10) || 25;
           updateBrushLabel();
         }
 
-        /**********************************************************************************/
-/* functionSignature: updateMaskModeButton()                                      */
-/* Updates the mask mode button icon/tooltip.                                     */
-/**********************************************************************************/
+
         function updateMaskModeButton() {
           if (maskMode === "erase") {
             modeBtn.title = "Mask mode: reveal areas to be edited";
@@ -1051,10 +979,7 @@ function getInpaintHtml(opts) {
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: updateOutpaintButton()                                      */
-/* Updates the outpaint button icon/tooltip.                                      */
-/**********************************************************************************/
+
         function updateOutpaintButton() {
           if (outpaintMode) {
             outBtn.textContent = "\u26f6";
@@ -1068,10 +993,7 @@ function getInpaintHtml(opts) {
           applyMaskInteractivity();
         }
 
-        /**********************************************************************************/
-/* functionSignature: getIsTrustedHost()                                          */
-/* Returns true if the origin host is in the host whitelist.                      */
-/**********************************************************************************/
+
         function getIsTrustedHost() {
           if (!originHost) return false;
           const low = String(originHost || "").toLowerCase();
@@ -1080,10 +1002,7 @@ function getInpaintHtml(opts) {
             .includes(low);
         }
 
-        /**********************************************************************************/
-/* functionSignature: getPreferredViewMode()                                      */
-/* Reads view mode preference from session storage.                               */
-/**********************************************************************************/
+
         function getPreferredViewMode() {
           const raw = String(
             window.sessionStorage.getItem("inpaintViewMode") || ""
@@ -1091,18 +1010,12 @@ function getInpaintHtml(opts) {
           return raw === "1";
         }
 
-        /**********************************************************************************/
-/* functionSignature: setPreferredViewMode(enabled)                               */
-/* Persists view mode preference to session storage.                              */
-/**********************************************************************************/
+
         function setPreferredViewMode(enabled) {
           window.sessionStorage.setItem("inpaintViewMode", enabled ? "1" : "0");
         }
 
-        /**********************************************************************************/
-/* functionSignature: applyViewModeUi()                                           */
-/* Applies view mode settings (mask visibility and UI).                           */
-/**********************************************************************************/
+
         function applyViewModeUi() {
           if (viewModeEnabled) {
             maskCanvas.style.opacity = "0";
@@ -1118,10 +1031,7 @@ function getInpaintHtml(opts) {
           applyMaskInteractivity();
         }
 
-        /**********************************************************************************/
-/* functionSignature: setViewMode(enabled, forced)                                */
-/* Sets view mode and optionally locks it.                                        */
-/**********************************************************************************/
+
         function setViewMode(enabled, forced) {
           viewModeEnabled = !!enabled;
           viewModeForced = !!forced;
@@ -1131,10 +1041,7 @@ function getInpaintHtml(opts) {
           applyViewModeUi();
         }
 
-        /**********************************************************************************/
-/* functionSignature: applyMaskInteractivity()                                    */
-/* Enables/disables painting based on state.                                      */
-/**********************************************************************************/
+
         function applyMaskInteractivity() {
           const canPaint = !!(imageLoaded && allowEdit && !outpaintMode && !viewModeEnabled);
           maskCanvas.style.pointerEvents = canPaint ? "auto" : "none";
@@ -1143,10 +1050,7 @@ function getInpaintHtml(opts) {
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: recomputeAccessState()                                      */
-/* Computes current access and updates UI.                                        */
-/**********************************************************************************/
+
         function recomputeAccessState() {
           if (!configLoaded) {
             statusEl.textContent = "Loading configuration\u2026";
@@ -1181,7 +1085,7 @@ function getInpaintHtml(opts) {
           outBtn.disabled = !(allowEdit && imageLoaded);
           resetBtn.disabled = !imageLoaded;
           downloadBtn.disabled = !imageLoaded;
-          galleryBtn.disabled  = !imageLoaded;
+          galleryBtn.disabled  = !imageLoaded || !INPAINT_LOGGED_IN;
 
           uploadBtn.disabled = !INPAINT_LOGGED_IN && !(supportsUnlock && tokenValid);
 
@@ -1200,10 +1104,7 @@ function getInpaintHtml(opts) {
           updateUnlockButton();
         }
 
-        /**********************************************************************************/
-/* functionSignature: updateUnlockButton()                                        */
-/* Updates the unlock button icon/tooltip.                                        */
-/**********************************************************************************/
+
         function updateUnlockButton() {
           if (INPAINT_LOGGED_IN) {
             unlockBtn.style.display = "none";
@@ -1228,20 +1129,14 @@ function getInpaintHtml(opts) {
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: getAuthHeaders()                                            */
-/* Returns auth headers if token is valid.                                        */
-/**********************************************************************************/
+
         function getAuthHeaders() {
           const headers = {};
           if (tokenValid && authToken) headers["x-inpaint-auth"] = authToken;
           return headers;
         }
 
-        /**********************************************************************************/
-/* functionSignature: refreshCanEditFromServer()                                  */
-/* Computes client-side whether this origin can be edited,                        */
-/**********************************************************************************/
+
         function refreshCanEditFromServer() {
           const o = String(originalImageSrc || "").trim();
           if (!o) {
@@ -1275,10 +1170,7 @@ function getInpaintHtml(opts) {
           recomputeAccessState();
         }
 
-        /**********************************************************************************/
-/* functionSignature: fetchConfig()                                               */
-/* Loads server config (whitelist/engines/capabilities).                          */
-/**********************************************************************************/
+
         async function fetchConfig() {
           try {
             const res = await fetch(INPAINT_BASE + "/api/config");
@@ -1324,10 +1216,7 @@ function getInpaintHtml(opts) {
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: validateTokenFromSession()                                  */
-/* Loads token from session storage and validates it.                             */
-/**********************************************************************************/
+
         async function validateTokenFromSession() {
           const t = String(
             window.sessionStorage.getItem("inpaintAuthToken") || ""
@@ -1367,10 +1256,7 @@ function getInpaintHtml(opts) {
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: lockSession()                                               */
-/* Clears the current auth session token.                                         */
-/**********************************************************************************/
+
         function lockSession() {
           window.sessionStorage.removeItem("inpaintAuthToken");
           authToken = "";
@@ -1379,10 +1265,7 @@ function getInpaintHtml(opts) {
           refreshCanEditFromServer();
         }
 
-        /**********************************************************************************/
-/* functionSignature: unlockWithCredentials()                                     */
-/* Prompts for username/password and requests a token.                            */
-/**********************************************************************************/
+
         async function unlockWithCredentials() {
           if (!supportsUnlock) return false;
 
@@ -1438,10 +1321,7 @@ function getInpaintHtml(opts) {
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: uploadLocalFile(file)                                       */
-/* Uploads a local image to /results (requires unlock).                           */
-/**********************************************************************************/
+
         async function uploadLocalFile(file) {
           if (!file) return;
 
@@ -1499,10 +1379,7 @@ function getInpaintHtml(opts) {
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: setMaskFullBlack()                                          */
-/* Resets the mask to full black (protect everything).                            */
-/**********************************************************************************/
+
         function setMaskFullBlack() {
           maskCtx.setTransform(1, 0, 0, 1, 0, 0);
           maskCtx.globalCompositeOperation = "source-over";
@@ -1512,10 +1389,7 @@ function getInpaintHtml(opts) {
           maskCtx.beginPath();
         }
 
-        /**********************************************************************************/
-/* functionSignature: setMaskFullTransparent()                                    */
-/* Clears the mask fully (edit everything).                                       */
-/**********************************************************************************/
+
         function setMaskFullTransparent() {
           maskCtx.setTransform(1, 0, 0, 1, 0, 0);
           maskCtx.globalCompositeOperation = "source-over";
@@ -1523,10 +1397,7 @@ function getInpaintHtml(opts) {
           maskCtx.beginPath();
         }
 
-        /**********************************************************************************/
-/* functionSignature: setMaskForOutpaintDefault()                                 */
-/* Initializes mask for outpainting by protecting the inner                       */
-/**********************************************************************************/
+
         function setMaskForOutpaintDefault() {
           const overlap = Math.max(0, Math.floor(OUTPAINT_OVERLAP || 0));
 
@@ -1551,8 +1422,6 @@ function getInpaintHtml(opts) {
           maskCtx.beginPath();
         }
 
-         /* functionSignature: loadImageFromSrc(src, options) */
-         /* purpose: Loads an image and draws it into the fixed canvas. */
         function loadImageFromSrc(src, options = {}) {
           const { scaleMode = "fit", maskMode = "fullBlack" } = options;
 
@@ -1618,10 +1487,7 @@ overlayHint.classList.add("hidden");
           img.src = src;
         }
 
-        /**********************************************************************************/
-/* functionSignature: getCanvasPos(evt)                                           */
-/* Converts a mouse/touch event into canvas coordinates.                          */
-/**********************************************************************************/
+
         function getCanvasPos(evt) {
           const rect = maskCanvas.getBoundingClientRect();
           return {
@@ -1630,10 +1496,7 @@ overlayHint.classList.add("hidden");
           };
         }
 
-        /**********************************************************************************/
-/* functionSignature: drawCursor(evt)                                             */
-/* Draws the circular brush cursor.                                               */
-/**********************************************************************************/
+
         function drawCursor(evt) {
           if (!imageLoaded || outpaintMode || viewModeEnabled || !allowEdit) {
             cursorCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
@@ -1648,18 +1511,12 @@ overlayHint.classList.add("hidden");
           cursorCtx.stroke();
         }
 
-        /**********************************************************************************/
-/* functionSignature: clearCursor()                                               */
-/* Clears the cursor canvas.                                                      */
-/**********************************************************************************/
+
         function clearCursor() {
           cursorCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
         }
 
-        /**********************************************************************************/
-/* functionSignature: startDraw(evt)                                              */
-/* Starts drawing on the mask.                                                    */
-/**********************************************************************************/
+
         function startDraw(evt) {
           if (!imageLoaded) return;
           if (!allowEdit) return;
@@ -1670,19 +1527,13 @@ overlayHint.classList.add("hidden");
           draw(evt);
         }
 
-        /**********************************************************************************/
-/* functionSignature: stopDraw()                                                  */
-/* Stops drawing on the mask.                                                     */
-/**********************************************************************************/
+
         function stopDraw() {
           drawing = false;
           maskCtx.beginPath();
         }
 
-        /**********************************************************************************/
-/* functionSignature: draw(evt)                                                   */
-/* Draws the current brush stroke on the mask.                                    */
-/**********************************************************************************/
+
         function draw(evt) {
           if (!drawing) return;
 
@@ -1703,20 +1554,14 @@ overlayHint.classList.add("hidden");
           drawCursor(evt);
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleModeBtnClick()                                        */
-/* Toggles between erase/protect mask modes.                                      */
-/**********************************************************************************/
+
         function handleModeBtnClick() {
           if (!allowEdit || !imageLoaded) return;
           maskMode = maskMode === "erase" ? "protect" : "erase";
           updateMaskModeButton();
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleOutBtnClick()                                         */
-/* Toggles between inpaint and outpaint modes.                                    */
-/**********************************************************************************/
+
         function handleOutBtnClick() {
           if (!imageLoaded) return;
           if (!allowEdit) return;
@@ -1740,10 +1585,7 @@ overlayHint.classList.add("hidden");
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleViewBtnClick()                                        */
-/* Toggles view mode (mask overlay visible/hidden).                               */
-/**********************************************************************************/
+
         function handleViewBtnClick() {
           if (!imageLoaded) return;
           if (!allowEdit) return;
@@ -1755,55 +1597,37 @@ overlayHint.classList.add("hidden");
           recomputeAccessState();
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleMaskMouseDown(e)                                      */
-/* Starts drawing via mouse.                                                      */
-/**********************************************************************************/
+
         function handleMaskMouseDown(e) {
           startDraw(e);
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleMaskMouseMove(e)                                      */
-/* Draws or updates cursor via mouse.                                             */
-/**********************************************************************************/
+
         function handleMaskMouseMove(e) {
           if (drawing) draw(e);
           else drawCursor(e);
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleMaskMouseLeave()                                      */
-/* Clears cursor when leaving canvas.                                             */
-/**********************************************************************************/
+
         function handleMaskMouseLeave() {
           clearCursor();
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleTouchStart(e)                                         */
-/* Starts drawing via touch.                                                      */
-/**********************************************************************************/
+
         function handleTouchStart(e) {
           e.preventDefault();
           if (!e.touches || !e.touches[0]) return;
           startDraw(e.touches[0]);
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleTouchEnd(e)                                           */
-/* Stops drawing via touch.                                                       */
-/**********************************************************************************/
+
         function handleTouchEnd(e) {
           e.preventDefault();
           stopDraw();
           clearCursor();
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleTouchMove(e)                                          */
-/* Draws or updates cursor via touch.                                             */
-/**********************************************************************************/
+
         function handleTouchMove(e) {
           e.preventDefault();
           if (!e.touches || !e.touches[0]) return;
@@ -1811,10 +1635,7 @@ overlayHint.classList.add("hidden");
           else drawCursor(e.touches[0]);
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleResetClick()                                          */
-/* Resets the view back to the original image.                                    */
-/**********************************************************************************/
+
         function handleResetClick() {
           setPublishNotice("", false);
           clearApiError();
@@ -1844,10 +1665,7 @@ overlayHint.classList.add("hidden");
           statusEl.textContent = "Reset back to the original image.";
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleDownloadClick()                                       */
-/* Downloads the current canvas content as PNG.                                   */
-/**********************************************************************************/
+
         function handleDownloadClick() {
           clearApiError();
 
@@ -1883,13 +1701,10 @@ overlayHint.classList.add("hidden");
           }, "image/png");
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleGalleryClick()                                        */
-/* Saves the current canvas content to the user's gallery.                        */
-/**********************************************************************************/
+
         function handleGalleryClick() {
           clearApiError();
-          if (!imageLoaded) return;
+          if (!imageLoaded || !INPAINT_LOGGED_IN) return;
 
           const cropCanvas = document.createElement("canvas");
           cropCanvas.width = drawWidth;
@@ -1930,18 +1745,12 @@ overlayHint.classList.add("hidden");
           }, "image/png");
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleUnlockClick()                                         */
-/* Unlocks/locks the tool session.                                                */
-/**********************************************************************************/
+
         async function handleUnlockClick() {
           await unlockWithCredentials();
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleUploadClick()                                         */
-/* Opens the file selector after unlock.                                          */
-/**********************************************************************************/
+
         async function handleUploadClick() {
           if (!INPAINT_LOGGED_IN && !supportsUnlock) return;
           if (!INPAINT_LOGGED_IN && !tokenValid) {
@@ -1951,10 +1760,7 @@ overlayHint.classList.add("hidden");
           fileInput.click();
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleFileInputChange(e)                                    */
-/* Starts uploading the selected file.                                            */
-/**********************************************************************************/
+
         async function handleFileInputChange(e) {
           const f = e.target.files && e.target.files[0];
           e.target.value = "";
@@ -1962,10 +1768,7 @@ overlayHint.classList.add("hidden");
           await uploadLocalFile(f);
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleDragOver(e)                                           */
-/* Enables drag/drop when unlock is supported.                                    */
-/**********************************************************************************/
+
         let _dragCounter = 0;
 
         function handleDragEnter(e) {
@@ -1986,10 +1789,7 @@ overlayHint.classList.add("hidden");
           e.dataTransfer.dropEffect = "copy";
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleDrop(e)                                               */
-/* Handles drag/drop upload.                                                      */
-/**********************************************************************************/
+
         async function handleDrop(e) {
           if (!INPAINT_LOGGED_IN && !supportsUnlock) return;
           e.preventDefault();
@@ -2002,10 +1802,7 @@ overlayHint.classList.add("hidden");
           await uploadLocalFile(f);
         }
 
-        /**********************************************************************************/
-/* functionSignature: storeCurrentViewAndGetUrl()                                 */
-/* Stores the current image view as /results URL.                                 */
-/**********************************************************************************/
+
         async function storeCurrentViewAndGetUrl() {
           if (!imageLoaded) throw new Error("No image loaded.");
 
@@ -2042,10 +1839,7 @@ overlayHint.classList.add("hidden");
           return new URL(data.url, window.location.origin).toString();
         }
 
-        /**********************************************************************************/
-/* functionSignature: handlePublishClick()                                        */
-/* Publishes the current image to callback API.                                   */
-/**********************************************************************************/
+
         async function handlePublishClick() {
           if (!callbackId) {
             setApiError("No channel ID in URL.");
@@ -2093,15 +1887,12 @@ overlayHint.classList.add("hidden");
             editBtn.disabled = false;
             resetBtn.disabled = false;
             downloadBtn.disabled = false;
-            galleryBtn.disabled  = false;
+            galleryBtn.disabled  = !INPAINT_LOGGED_IN;
             recomputeAccessState();
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: handleEditClick()                                           */
-/* Sends image+mask to the edit API.                                              */
-/**********************************************************************************/
+
         async function handleEditClick() {
           setPublishNotice("", false);
           clearApiError();
@@ -2219,17 +2010,14 @@ overlayHint.classList.add("hidden");
             editBtn.disabled = false;
             resetBtn.disabled = false;
             downloadBtn.disabled = false;
-            galleryBtn.disabled  = false;
+            galleryBtn.disabled  = !INPAINT_LOGGED_IN;
             viewBtn.disabled = false;
             if (publishBtn.style.display !== "none") publishBtn.disabled = !callbackId;
             refreshCanEditFromServer();
           }
         }
 
-        /**********************************************************************************/
-/* functionSignature: loadFromQueryUrl()                                          */
-/* Reads image source and callback id from URL params.                            */
-/**********************************************************************************/
+
         function loadFromQueryUrl() {
           const params = new URLSearchParams(window.location.search);
           const rawImageUrl = params.get("image") || params.get("src") || params.get("url");
@@ -2293,10 +2081,7 @@ overlayHint.classList.add("hidden");
           loadImageFromSrc(imageUrl, { scaleMode: "fit", maskMode: "fullBlack" });
         }
 
-        /**********************************************************************************/
-/* functionSignature: bindEvents()                                                */
-/* Binds all UI event handlers.                                                   */
-/**********************************************************************************/
+
         function bindEvents() {
           brushSizeSlider.addEventListener("input", handleBrushSizeInput);
 
@@ -2330,10 +2115,7 @@ overlayHint.classList.add("hidden");
           editBtn.addEventListener("click", handleEditClick);
         }
 
-        /**********************************************************************************/
-/* functionSignature: bootstrap()                                                 */
-/* Initializes UI, loads config, restores auth, loads image.                      */
-/**********************************************************************************/
+
         async function bootstrap() {
           initCanvases();
           updateBrushLabel();
@@ -2383,10 +2165,7 @@ ${toolScript}
 </html>`;
 }
 
-/**********************************************************************************/
-/* functionSignature: getWebpageInpainting (coreData)                             */
-/* Performs the described operation.                                              */
-/**********************************************************************************/
+
 
 /**********************************************************************************/
 export default async function getWebpageInpainting(coreData) {

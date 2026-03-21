@@ -7,37 +7,22 @@
 
 const MODULE_NAME = "getJira";
 
-/**********************************************************************************/
-/* functionSignature: getStr (v, f)                                                *
-/* Brief: Returns v if it is a non-empty string, otherwise f.                      *
-/**********************************************************************************/
+
 function getStr(v, f){ return (typeof v==="string" && v.length)? v : f; }
 
-/**********************************************************************************/
-/* functionSignature: getNum (v, f)                                                *
-/* Brief: Returns a finite number from v, otherwise f.                             *
-/**********************************************************************************/
+
 function getNum(v, f){ return Number.isFinite(v)? Number(v) : f; }
 
-/**********************************************************************************/
-/* functionSignature: getDebug (label, obj)                                        *
-/* Brief: No-op debug hook placeholder.                                            *
-/**********************************************************************************/
+
 function getDebug(label, obj){}
 
-/**********************************************************************************/
-/* functionSignature: getAuthHeader (email, token)                                 *
-/* Brief: Builds Basic auth header for Jira.                                       *
-/**********************************************************************************/
+
 function getAuthHeader(email, token){
   const b64 = Buffer.from(`${email}:${token}`).toString("base64");
   return { Authorization: `Basic ${b64}` };
 }
 
-/**********************************************************************************/
-/* functionSignature: getBuildUrl (baseUrl, path, query)                           *
-/* Brief: Builds absolute URL with optional query params.                          *
-/**********************************************************************************/
+
 function getBuildUrl(baseUrl, path, query){
   const root = String(baseUrl||"").replace(/\/+$/,"");
   const p0 = String(path||"").trim().replace(/\/+$/,"");
@@ -54,10 +39,7 @@ function getBuildUrl(baseUrl, path, query){
   return q ? `${root}${rel}?${q}` : `${root}${rel}`;
 }
 
-/**********************************************************************************/
-/* functionSignature: getPathFromUrl (url, baseUrl)                                *
-/* Brief: Returns pathname if url shares origin with baseUrl.                      *
-/**********************************************************************************/
+
 function getPathFromUrl(url, baseUrl){
   try{
     const u = new URL(String(url||""));
@@ -67,18 +49,12 @@ function getPathFromUrl(url, baseUrl){
   }catch{ return ""; }
 }
 
-/**********************************************************************************/
-/* functionSignature: getPathnameAny (url)                                         *
-/* Brief: Safely extracts pathname from any absolute URL.                          *
-/**********************************************************************************/
+
 function getPathnameAny(url){
   try{ return new URL(String(url||"")).pathname.replace(/\/+$/,""); }catch{ return ""; }
 }
 
-/**********************************************************************************/
-/* functionSignature: getEnforcedBaseUrl (req, baseUrl)                            *
-/* Brief: Ensures all requests target configured baseUrl.                          *
-/**********************************************************************************/
+
 function getEnforcedBaseUrl(req, baseUrl){
   if (req.path && String(req.path).trim()){
     return getBuildUrl(baseUrl, String(req.path).trim(), req.query || {});
@@ -99,10 +75,7 @@ function getEnforcedBaseUrl(req, baseUrl){
   return getBuildUrl(baseUrl, "/", req.query || {});
 }
 
-/**********************************************************************************/
-/* functionSignature: getFetchJson (url, opts, timeoutMs)                          *
-/* Brief: Fetches URL and returns JSON or text payload.                            *
-/**********************************************************************************/
+
 async function getFetchJson(url, opts={}, timeoutMs=60000){
   const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), Math.max(1, timeoutMs));
   try{
@@ -119,10 +92,7 @@ async function getFetchJson(url, opts={}, timeoutMs=60000){
   }finally{ clearTimeout(t); }
 }
 
-/**********************************************************************************/
-/* functionSignature: getFetchBuffer (url, timeoutMs)                              *
-/* Brief: Fetches URL and returns Buffer plus content type.                        *
-/**********************************************************************************/
+
 async function getFetchBuffer(url, timeoutMs=60000){
   const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), Math.max(1, timeoutMs));
   try{
@@ -134,10 +104,7 @@ async function getFetchBuffer(url, timeoutMs=60000){
   }finally{ clearTimeout(t); }
 }
 
-/**********************************************************************************/
-/* functionSignature: getStatusArgFromReq (req)                                    *
-/* Brief: Extracts target status from request forms.                               *
-/**********************************************************************************/
+
 function getStatusArgFromReq(req){
   const fromMeta = getStr(req?.meta?.status, "");
   if (fromMeta) return fromMeta;
@@ -148,10 +115,7 @@ function getStatusArgFromReq(req){
   return "";
 }
 
-/**********************************************************************************/
-/* functionSignature: getRepairJsonString (s)                                      *
-/* Brief: Attempts to repair truncated JSON strings.                               *
-/**********************************************************************************/
+
 function getRepairJsonString(s){
   const str = String(s||"");
   let inStr=false, esc=false, braces=0, brackets=0;
@@ -176,10 +140,7 @@ function getRepairJsonString(s){
   return repaired;
 }
 
-/**********************************************************************************/
-/* functionSignature: getStableJsonBuffer (body)                                   *
-/* Brief: Stabilizes body to Buffer with preview metadata.                         *
-/**********************************************************************************/
+
 function getStableJsonBuffer(body){
   if (body === undefined || body === null) return { buf: undefined, len: 0, preview: "[empty]", repaired:false, parsed:false };
   if (typeof body === "string"){
@@ -216,10 +177,7 @@ function getStableJsonBuffer(body){
   return { buf, len: buf.byteLength, preview: prev, repaired:false, parsed:false };
 }
 
-/**********************************************************************************/
-/* functionSignature: getSplitJqlOrderBy (jql)                                     *
-/* Brief: Splits JQL into core and ORDER BY tail.                                  *
-/**********************************************************************************/
+
 function getSplitJqlOrderBy(jql){
   const src = String(jql||"");
   const m = src.match(/\border\s+by\b/i);
@@ -230,10 +188,7 @@ function getSplitJqlOrderBy(jql){
   return { core, orderBy };
 }
 
-/**********************************************************************************/
-/* functionSignature: getSanitizedJqlPlaceholders (jql, k)                         *
-/* Brief: Replaces project key placeholders in JQL.                                *
-/**********************************************************************************/
+
 function getSanitizedJqlPlaceholders(jql, projectKey){
   let s = String(jql||"").trim();
   if (!s) return s;
@@ -247,10 +202,7 @@ function getSanitizedJqlPlaceholders(jql, projectKey){
   return s;
 }
 
-/**********************************************************************************/
-/* functionSignature: getEnsuredProjectRestriction (jql,k,a)                       *
-/* Brief: Ensures JQL is scoped to project unless allowed.                         *
-/**********************************************************************************/
+
 function getEnsuredProjectRestriction(jql, projectKey, allowCross){
   if (!projectKey || allowCross) return String(jql||"").trim();
   const { core, orderBy } = getSplitJqlOrderBy(jql);
@@ -263,11 +215,7 @@ function getEnsuredProjectRestriction(jql, projectKey, allowCross){
   return [withProj, orderBy].filter(Boolean).join(" ").trim();
 }
 
-/**********************************************************************************/
-/* functionSignature: getEnsuredSearchFields (fields, mode,                        *
-/* opts)                                                                           *
-/* Brief: Ensures core search fields unless noEnrich is set.                       *
-/**********************************************************************************/
+
 function getEnsuredSearchFields(fields, mode, opts){
   const disableEnrich = !!(opts && opts.noEnrich === true);
   if (fields === undefined || fields === null){
@@ -291,12 +239,7 @@ function getEnsuredSearchFields(fields, mode, opts){
   return mode === "array" ? arr : arr.join(",");
 }
 
-/**********************************************************************************/
-/* functionSignature: getNormalizedSearchShape (reqIn, k)                          *
-/* Brief: Normalizes /search calls, JQL, and fields.                               *
-/* NOTE: 'onlyKeySummary' setzt nur Felder, wenn KEINE                             *
-/* Felder explizit angegeben wurden.                                               *
-/**********************************************************************************/
+
 function getNormalizedSearchShape(reqIn, defaultProjectKey){
   const isSearch = (p)=> /^https?:\/\/[^/]+\/rest\/api\/3\/search(?:\/jql)?\/?$|^\/rest\/api\/3\/search(?:\/jql)?\/?$/i.test(String(p||""));
   const p = reqIn.path || reqIn.url || "";
@@ -346,19 +289,13 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   return { ...reqIn, method:"POST", path:"/rest/api/3/search/jql", url: undefined, query:{}, body };
 }
 
-/**********************************************************************************/
-/* functionSignature: getADFParagraphDoc (text)                                    *
-/* Brief: Wraps plain text into minimal ADF paragraph doc.                         *
-/**********************************************************************************/
+
 function getADFParagraphDoc(text){
   const s = String(text||"");
   return { type: "doc", version: 1, content: [{ type:"paragraph", content: s ? [{ type:"text", text:s }] : [] }] };
 }
 
-/**********************************************************************************/
-/* functionSignature: getIsProjectPlaceholderKey (k)                               *
-/* Brief: Detects common placeholder project keys.                                 *
-/**********************************************************************************/
+
 function getIsProjectPlaceholderKey(k){
   const up = String(k||"").trim().toUpperCase();
   if (!up) return true;
@@ -366,10 +303,7 @@ function getIsProjectPlaceholderKey(k){
   return bad.includes(up);
 }
 
-/**********************************************************************************/
-/* functionSignature: setEarlyParseBody (req)                                      *
-/* Brief: Parses stringified JSON body early if possible.                          *
-/**********************************************************************************/
+
 function setEarlyParseBody(req){
   if (!req || typeof req!=="object") return { req, parsed:false };
   if (typeof req.body === "string"){
@@ -383,11 +317,7 @@ function setEarlyParseBody(req){
   return { req, parsed:false };
 }
 
-/**********************************************************************************/
-/* functionSignature: getNormalizedIssueBodyADFAndProject                          *
-/* (req, defaultProjectKey)                                                        *
-/* Brief: Coerces string fields to ADF and ensures project.                        *
-/**********************************************************************************/
+
 function getNormalizedIssueBodyADFAndProject(req, defaultProjectKey){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -424,10 +354,7 @@ function getNormalizedIssueBodyADFAndProject(req, defaultProjectKey){
   return req;
 }
 
-/**********************************************************************************/
-/* functionSignature: getNormalizedCommentADF (req)                                *
-/* Brief: Coerces comment body strings to ADF.                                     *
-/**********************************************************************************/
+
 function getNormalizedCommentADF(req){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -441,20 +368,13 @@ function getNormalizedCommentADF(req){
   return req;
 }
 
-/**********************************************************************************/
-/* functionSignature: getFetchTransitions (baseUrl, idOrKey,                       *
-/* headers)                                                                        *
-/* Brief: Retrieves available transitions for an issue.                            *
-/**********************************************************************************/
+
 async function getFetchTransitions(baseUrl, issueIdOrKey, headers){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}/transitions?expand=transitions.fields`;
   return await getFetchJson(url, { method:"GET", headers }, 30000);
 }
 
-/**********************************************************************************/
-/* functionSignature: getPickTransitionId (transitions, des)                       *
-/* Brief: Chooses a transition id based on desired target.                         *
-/**********************************************************************************/
+
 function getPickTransitionId(transitions, desired){
   if (!Array.isArray(transitions)) return null;
   const norm = (s)=> String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
@@ -488,10 +408,7 @@ function getPickTransitionId(transitions, desired){
   return null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getPickByStatusString (transitions, s)                       *
-/* Brief: Maps a status-like string to a transition id.                            *
-/**********************************************************************************/
+
 function getPickByStatusString(transitions, statusStr){
   if (!Array.isArray(transitions) || !statusStr) return null;
   const norm = (x)=> String(x||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
@@ -505,11 +422,7 @@ function getPickByStatusString(transitions, statusStr){
   return null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getFindTransitionId (baseUrl, key,                           *
-/* headers, target, statusStr)                                                     *
-/* Brief: Fetches transitions and resolves desired id.                             *
-/**********************************************************************************/
+
 async function getFindTransitionId(baseUrl, issueIdOrKey, headers, target, statusStr){
   const r = await getFetchTransitions(baseUrl, issueIdOrKey, headers);
   const list = r.data;
@@ -523,11 +436,7 @@ async function getFindTransitionId(baseUrl, issueIdOrKey, headers, target, statu
   return { id, list };
 }
 
-/**********************************************************************************/
-/* functionSignature: getPerformTransition (baseUrl, key,                          *
-/* headers, body)                                                                  *
-/* Brief: Posts a transition payload to Jira.                                      *
-/**********************************************************************************/
+
 async function getPerformTransition(baseUrl, issueIdOrKey, headers, body){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}/transitions`;
   const payload = JSON.stringify(body||{});
@@ -535,10 +444,7 @@ async function getPerformTransition(baseUrl, issueIdOrKey, headers, body){
   return await getFetchJson(url, { method:"POST", headers: h, body: Buffer.from(payload,"utf8") }, 30000);
 }
 
-/**********************************************************************************/
-/* functionSignature: getBuildTransitionPayload (id, meta)                         *
-/* Brief: Builds a Jira transition request payload.                                *
-/**********************************************************************************/
+
 function getBuildTransitionPayload(transitionId, meta){
   const fields = (meta && typeof meta === "object" && meta.transitionFields && typeof meta.transitionFields === "object")
     ? { ...meta.transitionFields } : {};
@@ -550,11 +456,7 @@ function getBuildTransitionPayload(transitionId, meta){
   return payload;
 }
 
-/**********************************************************************************/
-/* functionSignature: getFetchIssueStatus (baseUrl, key,                           *
-/* headers)                                                                        *
-/* Brief: Retrieves status and resolution for an issue.                            *
-/**********************************************************************************/
+
 async function getFetchIssueStatus(baseUrl, issueIdOrKey, headers){
   const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(issueIdOrKey)}?fields=status,resolution`;
   const r = await getFetchJson(url, { method:"GET", headers }, 30000);
@@ -563,11 +465,7 @@ async function getFetchIssueStatus(baseUrl, issueIdOrKey, headers){
   return { ok: r.ok, statusObj: status, resolutionObj: resolution, raw: r.data };
 }
 
-/**********************************************************************************/
-/* functionSignature: getMaybeAutoTransition (req, cfg,                            *
-/* headers)                                                                        *
-/* Brief: Applies auto-transition on issue update if needed.                       *
-/**********************************************************************************/
+
 async function getMaybeAutoTransition(req, cfg, headers){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -613,11 +511,7 @@ async function getMaybeAutoTransition(req, cfg, headers){
   return { req: null, transitionResult: trxRes, verify: { issueKey } };
 }
 
-/**********************************************************************************/
-/* functionSignature: setFixDirectTransition (req, cfg,                            *
-/* headers)                                                                        *
-/* Brief: Normalizes direct POST /transitions requests.                            *
-/**********************************************************************************/
+
 async function setFixDirectTransition(req, cfg, headers){
   const path = String(req.path || req.url || "");
   const m = String(req.method||"GET").toUpperCase();
@@ -687,10 +581,7 @@ async function setFixDirectTransition(req, cfg, headers){
   return { req: next, fixed:true };
 }
 
-/**********************************************************************************/
-/* functionSignature: getBuildOpRequest (op, args)                                 *
-/* Brief: Builds high-level operation requests.                                    *
-/**********************************************************************************/
+
 function getBuildOpRequest(op, args){
   const OP = String(op||"").toUpperCase();
   switch (OP){
@@ -763,10 +654,7 @@ function getBuildOpRequest(op, args){
   }
 }
 
-/**********************************************************************************/
-/* functionSignature: getInvoke (args, coreData)                                   *
-/* Brief: Main tool entry: shapes, enforces, fetches, maps.                        *
-/**********************************************************************************/
+
 async function getInvoke(args, coreData){
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
@@ -931,10 +819,7 @@ async function getInvoke(args, coreData){
   return out;
 }
 
-/**********************************************************************************/
-/* functionSignature: getDefaultExport ()                                          *
-/* Brief: Exposes the tool definition and invoke entry.                            *
-/**********************************************************************************/
+
 function getDefaultExport(){
   return {
     name: MODULE_NAME,

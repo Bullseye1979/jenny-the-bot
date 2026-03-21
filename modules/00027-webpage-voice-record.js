@@ -36,10 +36,7 @@ const ROUTE_RECORD = "/voice/record";
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || "/usr/bin/ffmpeg");
 
-/**********************************************************************************/
-/* functionSignature: getIsAllowedRoles (wo, allowedRoles)                        */
-/* Returns true when the user has at least one required role, or list is empty.   */
-/**********************************************************************************/
+
 function getIsAllowedRoles(wo, allowedRoles) {
   const req = Array.isArray(allowedRoles) ? allowedRoles : [];
   if (!req.length) return true;
@@ -51,10 +48,7 @@ function getIsAllowedRoles(wo, allowedRoles) {
   return req.some(r => { const n = String(r || "").trim().toLowerCase(); return n && have.has(n); });
 }
 
-/**********************************************************************************/
-/* functionSignature: sendJson (wo, status, data)                                 */
-/* Sends a JSON response via the registry res object.                             */
-/**********************************************************************************/
+
 async function sendJson(wo, status, data) {
   const key   = wo?.http?.requestKey;
   if (!key) return;
@@ -65,10 +59,7 @@ async function sendJson(wo, status, data) {
   res.end(JSON.stringify(data));
 }
 
-/**********************************************************************************/
-/* functionSignature: getConvertToWav (inputFile, outputFile)                     */
-/* Converts any ffmpeg-supported audio to 16 kHz mono WAV.                       */
-/**********************************************************************************/
+
 function getConvertToWav(inputFile, outputFile) {
   return new Promise((resolve, reject) => {
     ffmpeg()
@@ -83,10 +74,7 @@ function getConvertToWav(inputFile, outputFile) {
   });
 }
 
-/**********************************************************************************/
-/* functionSignature: getTranscript (wavFile, cfg, wo)                            */
-/* Calls the OpenAI transcription API and returns verbose JSON with segments.     */
-/**********************************************************************************/
+
 async function getTranscript(wavFile, cfg, wo) {
   const model    = String(cfg.recordModel || "gpt-4o-transcribe");
   const endpoint = String(wo.whisperEndpoint || "https://api.openai.com");
@@ -113,11 +101,7 @@ async function getTranscript(wavFile, cfg, wo) {
   return resp.json();
 }
 
-/**********************************************************************************/
-/* functionSignature: getDiarizedText (transcript, cfg, wo)                       */
-/* Uses GPT-4o to assign speaker labels to timestamped transcript segments.      */
-/* Returns formatted text: "Speaker 1: ...\nSpeaker 2: ..."                      */
-/**********************************************************************************/
+
 async function getDiarizedText(transcript, cfg, wo) {
   const segments = Array.isArray(transcript.segments) ? transcript.segments : [];
   if (!segments.length) return transcript.text || "";
@@ -157,10 +141,7 @@ async function getDiarizedText(transcript, cfg, wo) {
   return result.trim() || transcript.text || "";
 }
 
-/**********************************************************************************/
-/* functionSignature: getWebpageVoiceRecord (coreData)                            */
-/* Main module entry: handles POST /voice/record.                                 */
-/**********************************************************************************/
+
 export default async function getWebpageVoiceRecord(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);
@@ -245,7 +226,8 @@ export default async function getWebpageVoiceRecord(coreData) {
     await setContext(wo, {
       role:    "user",
       text:    `[Meeting transcript — ${ts}]\n\n${finalText}`,
-      content: `[Meeting transcript — ${ts}]\n\n${finalText}`
+      content: `[Meeting transcript — ${ts}]\n\n${finalText}`,
+      userId:  String(wo.webAuth?.userId || wo.webAuth?.id || wo.userId || "")
     });
 
     wo.channelID = prevChannelId;

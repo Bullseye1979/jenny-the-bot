@@ -9,43 +9,25 @@
 const MODULE_NAME = "getConfluence";
 const SPACE_ID_CACHE = new Map();
 
-/**********************************************************************************/
-/* functionSignature: getStr (v, f)                                                *
-/* Returns v if it is a non-empty string, otherwise f.                             *
-/**********************************************************************************/
+
 function getStr(v, f){ return (typeof v === "string" && v.length) ? v : f; }
 
-/**********************************************************************************/
-/* functionSignature: getNum (v, f)                                                *
-/* Returns a finite number or the fallback value f.                                *
-/**********************************************************************************/
+
 function getNum(v, f){ return Number.isFinite(v) ? Number(v) : f; }
 
-/**********************************************************************************/
-/* functionSignature: getBool (v, f)                                               *
-/* Returns v if it is boolean, otherwise f.                                        *
-/**********************************************************************************/
+
 function getBool(v, f){ return typeof v === "boolean" ? v : f; }
 
-/**********************************************************************************/
-/* functionSignature: getDebug (label, obj)                                        *
-/* No-op debug hook.                                                               *
-/**********************************************************************************/
+
 function getDebug(label, obj){}
 
-/**********************************************************************************/
-/* functionSignature: getAuthHeader (email, token)                                 *
-/* Builds Basic auth header for Confluence.                                        *
-/**********************************************************************************/
+
 function getAuthHeader(email, token){
   const b64 = Buffer.from(`${email}:${token}`).toString("base64");
   return { Authorization: `Basic ${b64}` };
 }
 
-/**********************************************************************************/
-/* functionSignature: getEscapeText (str)                                          *
-/* Escapes text for XML contexts.                                                  *
-/**********************************************************************************/
+
 function getEscapeText(str){
   return String(str ?? "")
     .replace(/&/g, "&amp;")
@@ -53,10 +35,7 @@ function getEscapeText(str){
     .replace(/>/g, "&gt;");
 }
 
-/**********************************************************************************/
-/* functionSignature: getEscapeAttr (str)                                          *
-/* Escapes attribute values for XML contexts.                                      *
-/**********************************************************************************/
+
 function getEscapeAttr(str){
   return String(str ?? "")
     .replace(/&/g, "&amp;")
@@ -65,10 +44,7 @@ function getEscapeAttr(str){
     .replace(/>/g, "&gt;");
 }
 
-/**********************************************************************************/
-/* functionSignature: setDefaultDownloadHeaders ()                                 *
-/* Returns default headers for binary downloads.                                   *
-/**********************************************************************************/
+
 function setDefaultDownloadHeaders(){
   return {
     "User-Agent":"Mozilla/5.0",
@@ -76,10 +52,7 @@ function setDefaultDownloadHeaders(){
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: getFetchJson (url, opts, timeoutMs)                          *
-/* Fetches URL with timeout and returns parsed JSON or text.                       *
-/**********************************************************************************/
+
 async function getFetchJson(url, opts = {}, timeoutMs = 60000){
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), Math.max(1, timeoutMs));
@@ -95,10 +68,7 @@ async function getFetchJson(url, opts = {}, timeoutMs = 60000){
   }
 }
 
-/**********************************************************************************/
-/* functionSignature: getFetchBinary (url, opts, timeoutMs)                        *
-/* Fetches URL with timeout and returns ArrayBuffer.                               *
-/**********************************************************************************/
+
 async function getFetchBinary(url, opts = {}, timeoutMs = 60000){
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), Math.max(1, timeoutMs));
@@ -113,10 +83,7 @@ async function getFetchBinary(url, opts = {}, timeoutMs = 60000){
   }
 }
 
-/**********************************************************************************/
-/* functionSignature: getExtractPageIdFromUrl (u)                                  *
-/* Extracts pageId from a Confluence page URL.                                     *
-/**********************************************************************************/
+
 function getExtractPageIdFromUrl(u){
   try {
     if (!u) return null;
@@ -125,10 +92,7 @@ function getExtractPageIdFromUrl(u){
   } catch { return null; }
 }
 
-/**********************************************************************************/
-/* functionSignature: getRenderInline (md)                                         *
-/* Converts inline markdown to Confluence storage HTML.                            *
-/**********************************************************************************/
+
 function getRenderInline(md){
   let s = String(md ?? "");
   s = s.replace(/`([^`]+)`/g, (_, g1) => `<code>${getEscapeText(g1)}</code>`);
@@ -145,10 +109,7 @@ function getRenderInline(md){
   return parts.join("");
 }
 
-/**********************************************************************************/
-/* functionSignature: getStorageHtmlFromMarkdown (md)                              *
-/* Converts markdown blocks to Confluence storage HTML.                            *
-/**********************************************************************************/
+
 function getStorageHtmlFromMarkdown(md){
   const s = String(md || "").replace(/\r\n/g, "\n");
   const lines = s.split("\n");
@@ -219,10 +180,7 @@ function getStorageHtmlFromMarkdown(md){
   return blocks.join("\n");
 }
 
-/**********************************************************************************/
-/* functionSignature: getAbsolutizeUrlMaybe (u, baseUrl)                           *
-/* Absolutizes relative URLs against the Confluence base.                          *
-/**********************************************************************************/
+
 function getAbsolutizeUrlMaybe(u, baseUrl){
   if (!u) return u;
   try {
@@ -237,10 +195,7 @@ function getAbsolutizeUrlMaybe(u, baseUrl){
   } catch { return u; }
 }
 
-/**********************************************************************************/
-/* functionSignature: getAbsolutizeLinks (obj, baseUrl)                            *
-/* Normalizes _links fields to absolute URLs.                                      *
-/**********************************************************************************/
+
 function getAbsolutizeLinks(obj, baseUrl){
   if (!obj || typeof obj !== "object") return obj;
   const links = obj._links || {};
@@ -253,10 +208,7 @@ function getAbsolutizeLinks(obj, baseUrl){
   return { ...obj, _links: normalized };
 }
 
-/**********************************************************************************/
-/* functionSignature: getAttachAbsoluteLinksToResult (r, baseUrl)                  *
-/* Adds absolute URLs and convenience fields to payload.                           *
-/**********************************************************************************/
+
 function getAttachAbsoluteLinksToResult(r, baseUrl){
   const withLinks = getAbsolutizeLinks(r, baseUrl);
   const webui = withLinks?._links?.webui || "";
@@ -270,10 +222,7 @@ function getAttachAbsoluteLinksToResult(r, baseUrl){
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: getResolvedSpaceId (baseUrl, spaceKey, headers)              *
-/* Resolves a v2 spaceId by space key with caching.                                *
-/**********************************************************************************/
+
 async function getResolvedSpaceId(baseUrl, spaceKey, headers){
   const cached = SPACE_ID_CACHE.get(spaceKey);
   if (cached && (Date.now() - cached.ts) < 600000) return cached.id;
@@ -285,10 +234,7 @@ async function getResolvedSpaceId(baseUrl, spaceKey, headers){
   return id;
 }
 
-/**********************************************************************************/
-/* functionSignature: getSpaceIdFromParent (baseUrl, parentId, headers)            *
-/* Reads parent page to derive its spaceId.                                        *
-/**********************************************************************************/
+
 async function getSpaceIdFromParent(baseUrl, parentId, headers){
   if (!parentId) return null;
   const url = `${baseUrl}/api/v2/pages/${encodeURIComponent(String(parentId))}?body-format=storage`;
@@ -297,10 +243,7 @@ async function getSpaceIdFromParent(baseUrl, parentId, headers){
   return res.data.spaceId != null ? String(res.data.spaceId) : null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getPageV2Storage (baseUrl, pageId, headers)                  *
-/* Retrieves a v2 page including storage body.                                     *
-/**********************************************************************************/
+
 async function getPageV2Storage(baseUrl, pageId, headers){
   const url = `${baseUrl}/api/v2/pages/${encodeURIComponent(pageId)}?body-format=storage`;
   const res = await getFetchJson(url, { method: "GET", headers }, 20000);
@@ -308,10 +251,7 @@ async function getPageV2Storage(baseUrl, pageId, headers){
   return res.data;
 }
 
-/**********************************************************************************/
-/* functionSignature: getMakeAbsNextUrl (baseUrl, nextPath)                        *
-/* Converts a relative 'next' link to absolute URL.                                *
-/**********************************************************************************/
+
 function getMakeAbsNextUrl(baseUrl, nextPath){
   try {
     const base = new URL(baseUrl);
@@ -321,21 +261,14 @@ function getMakeAbsNextUrl(baseUrl, nextPath){
   } catch { return null; }
 }
 
-/**********************************************************************************/
-/* functionSignature: getPageAnyStatusV1 (baseUrl, pageId, headers)                *
-/* Fetches v1 content with status any for recovery checks.                         *
-/**********************************************************************************/
+
 async function getPageAnyStatusV1(baseUrl, pageId, headers){
   const url = `${new URL(baseUrl).origin}/wiki/rest/api/content/${encodeURIComponent(pageId)}?status=any`;
   const res = await getFetchJson(url, { method: "GET", headers }, 20000);
   return res.ok ? res.data : null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getFindCurrentPageIdByTitleV2 (baseUrl, spaceId, title,      *
-/*          headers)                                                               *
-/* Finds current page id by title via v2 pages endpoint.                           *
-/**********************************************************************************/
+
 async function getFindCurrentPageIdByTitleV2(baseUrl, spaceId, title, headers){
   if (!title) return null;
   const normalizedTitle = String(title).trim();
@@ -364,11 +297,7 @@ async function getFindCurrentPageIdByTitleV2(baseUrl, spaceId, title, headers){
   return id || null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getFindCurrentPageIdByTitleV1 (baseUrl, spaceKey, title,     *
-/*          headers)                                                               *
-/* Finds current page id by title via CQL in v1.                                   *
-/**********************************************************************************/
+
 async function getFindCurrentPageIdByTitleV1(baseUrl, spaceKey, title, headers){
   if (!title) return null;
   const cql = `title="${String(title).replace(/"/g,'\\"')}" AND space="${spaceKey}" AND type=page AND status=current`;
@@ -380,11 +309,7 @@ async function getFindCurrentPageIdByTitleV1(baseUrl, spaceKey, title, headers){
   return id ? String(id) : null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getResolveUsablePageId (baseUrl, headers, spaceKey,          *
-/*          rawPageId, pageUrl, titleFromArgs)                                     *
-/* Resolves a usable current page id, handling trashed refs.                       *
-/**********************************************************************************/
+
 async function getResolveUsablePageId(baseUrl, headers, spaceKey, rawPageId, pageUrl, titleFromArgs){
   let pageId = rawPageId || getExtractPageIdFromUrl(pageUrl) || "";
   const spaceIdFromKey = await getResolvedSpaceId(baseUrl, spaceKey, headers);
@@ -420,11 +345,7 @@ async function getResolveUsablePageId(baseUrl, headers, spaceKey, rawPageId, pag
   return { ok:true, pageId: resolvedId, page: v2resolved, note:"resolved_from_trashed" };
 }
 
-/**********************************************************************************/
-/* functionSignature: getPostAttachmentV1 (baseUrl, pageId, headers, filename,     *
-/*          arrayBuffer, contentType)                                              *
-/* Uploads an attachment using REST v1 API.                                        *
-/**********************************************************************************/
+
 async function getPostAttachmentV1(baseUrl, pageId, headers, filename, arrayBuffer, contentType){
   const base = new URL(baseUrl);
   const url = `${base.origin}/wiki/rest/api/content/${encodeURIComponent(pageId)}/child/attachment`;
@@ -440,10 +361,7 @@ async function getPostAttachmentV1(baseUrl, pageId, headers, filename, arrayBuff
   return { ok: res.ok, status: res.status, data, raw: text, url };
 }
 
-/**********************************************************************************/
-/* functionSignature: getPickAttachmentFilename (uploadData, fallbackName)         *
-/* Picks a stored attachment filename from response.                               *
-/**********************************************************************************/
+
 function getPickAttachmentFilename(uploadData, fallbackName){
   if (!uploadData) return fallbackName;
   if (uploadData.title) return String(uploadData.title);
@@ -456,10 +374,7 @@ function getPickAttachmentFilename(uploadData, fallbackName){
   return fallbackName;
 }
 
-/**********************************************************************************/
-/* functionSignature: getBuildImageHtmlFromArgs (args)                             *
-/* Builds safe image HTML for external URLs only.                                  *
-/**********************************************************************************/
+
 function getBuildImageHtmlFromArgs(args) {
   const single = typeof args?.imageUrl === "string" && args.imageUrl.trim()
     ? [args.imageUrl.trim()]
@@ -492,10 +407,7 @@ function getBuildImageHtmlFromArgs(args) {
   return parts.join("\n");
 }
 
-/**********************************************************************************/
-/* functionSignature: getFilenameFromUrl (u, fallbackBase)                         *
-/* Extracts filename from URL path, or uses fallback.                              *
-/**********************************************************************************/
+
 function getFilenameFromUrl(u, fallbackBase){
   try {
     const url = new URL(u);
@@ -510,10 +422,7 @@ function getFilenameFromUrl(u, fallbackBase){
   return fallbackBase;
 }
 
-/**********************************************************************************/
-/* functionSignature: getCollectAttachmentJobs (args)                              *
-/* Collects URLs to upload as attachments.                                         *
-/**********************************************************************************/
+
 function getCollectAttachmentJobs(args){
   const jobs = [];
   if (!args || typeof args !== "object") return jobs;
@@ -550,10 +459,7 @@ function getCollectAttachmentJobs(args){
   return jobs;
 }
 
-/**********************************************************************************/
-/* functionSignature: getAttachFileToPageAndEmbed (opts)                           *
-/* Downloads, uploads to page, and optionally embeds image.                        *
-/**********************************************************************************/
+
 async function getAttachFileToPageAndEmbed({
   baseUrl,
   headers,
@@ -609,10 +515,7 @@ async function getAttachFileToPageAndEmbed({
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: getEnsureApiScope (method, baseUrl, path, spaceId, headers)  *
-/* Enforces GET scope to /api/v2/pages within the space.                           *
-/**********************************************************************************/
+
 async function getEnsureApiScope(method, baseUrl, path, spaceId, headers){
   const m = String(method || "GET").toUpperCase();
   if (m !== "GET") return { ok:false, error:"API_METHOD_NOT_ALLOWED", hint:"Only GET is allowed in 'api' op." };
@@ -647,10 +550,7 @@ async function getEnsureApiScope(method, baseUrl, path, spaceId, headers){
   return { ok:true, url: urlObj.toString() };
 }
 
-/**********************************************************************************/
-/* functionSignature: getEffectiveSpaceId (baseUrl, headers, spaceKey, parentId)   *
-/* Resolves spaceId via parent page or space key.                                  *
-/**********************************************************************************/
+
 async function getEffectiveSpaceId(baseUrl, headers, spaceKey, parentId){
   const byParent = await getSpaceIdFromParent(baseUrl, parentId, headers);
   if (byParent) return { ok:true, spaceId: byParent, source: "parent" };
@@ -659,10 +559,7 @@ async function getEffectiveSpaceId(baseUrl, headers, spaceKey, parentId){
   return { ok:false };
 }
 
-/**********************************************************************************/
-/* functionSignature: getNormalizeStatus (statusStr)                               *
-/* Normalizes status filter for list operation.                                    *
-/**********************************************************************************/
+
 function getNormalizeStatus(statusStr){
   const allowed = new Set(["CURRENT","ARCHIVED","TRASHED","DELETED"]);
   if (!statusStr) return "CURRENT,ARCHIVED";
@@ -675,10 +572,7 @@ function getNormalizeStatus(statusStr){
   return mapped.length ? mapped.join(",") : "CURRENT,ARCHIVED";
 }
 
-/**********************************************************************************/
-/* functionSignature: getInvoke (args, coreData)                                   *
-/* Main entry for all operations against Confluence.                               *
-/**********************************************************************************/
+
 async function getInvoke(args, coreData){
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
@@ -1189,10 +1083,7 @@ async function getInvoke(args, coreData){
   return { ok:false, error:"UNKNOWN_OP", op };
 }
 
-/**********************************************************************************/
-/* functionSignature: getDefaultExport ()                                          *
-/* Builds the default export object for the tool.                                  *
-/**********************************************************************************/
+
 function getDefaultExport(){
   return {
     name: MODULE_NAME,

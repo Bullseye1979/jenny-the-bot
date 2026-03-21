@@ -8,16 +8,10 @@ import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "discord-reaction-finish";
 
-/***************************************************************
-/* functionSignature: getNowIso ()                             *
-/* Returns current timestamp in ISO format                     *
-/***************************************************************/
+
 function getNowIso() { return new Date().toISOString(); }
 
-/***************************************************************
-/* functionSignature: getFlowHadErrors (wo)                    *
-/* Checks logs for errors/failures to decide final reaction    *
-/***************************************************************/
+
 function getFlowHadErrors(wo) {
   const logs = Array.isArray(wo?.logging) ? wo.logging : [];
   for (const entry of logs) {
@@ -28,20 +22,14 @@ function getFlowHadErrors(wo) {
   return false;
 }
 
-/***************************************************************
-/* functionSignature: getIsDMContext (wo)                      *
-/* Determines whether the current context is a DM              *
-/***************************************************************/
+
 function getIsDMContext(wo) {
   return !!(wo?.DM || wo?.isDM || wo?.channelType === 1 ||
             String(wo?.channelType ?? "").toUpperCase() === "DM" ||
             (!wo?.guildId && !!wo?.userId));
 }
 
-/***************************************************************
-/* functionSignature: setRemoveHourglassSafely (msg, c, dm)    *
-/* Removes hourglass reactions safely, DM-aware                *
-/***************************************************************/
+
 async function setRemoveHourglassSafely(message, client, isDM) {
   try {
     if (!isDM && typeof message.reactions?.removeAll === "function") {
@@ -59,10 +47,7 @@ async function setRemoveHourglassSafely(message, client, isDM) {
   } catch {}
 }
 
-/***************************************************************
-/* functionSignature: getDiscordReactionFinish (coreData)      *
-/* Finalizes reactions: clears hourglass, adds ✅ or ❌         *
-/***************************************************************/
+
 export default async function getDiscordReactionFinish(coreData) {
   const wo = coreData?.workingObject || {};
   if (!Array.isArray(wo.logging)) wo.logging = [];

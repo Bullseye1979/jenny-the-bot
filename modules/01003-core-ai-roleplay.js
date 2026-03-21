@@ -16,45 +16,25 @@ import { getContext, setContext } from "../core/context.js";
 
 const MODULE_NAME = "core-ai-roleplay";
 
-/******************************************************************************* 
-/* functionSignature: getAssistantAuthorName (wo)                              *
-/* Returns the assistant authorName (botName).                                 *
-/*******************************************************************************/
+
 function getAssistantAuthorName(wo) {
   const v = (typeof wo?.botName === "string" && wo.botName.trim().length) ? wo.botName.trim() : "";
   return v.length ? v : undefined;
 }
 
-/******************************************************************************* 
-/* functionSignature: getBool (value, def)                                     *
-/* Returns the boolean value or the default.                                   *
-/*******************************************************************************/
+
 function getBool(value, def) { return typeof value === "boolean" ? value : def; }
 
-/******************************************************************************* 
-/* functionSignature: getNum (value, def)                                      *
-/* Converts to a finite number or returns the default.                         *
-/*******************************************************************************/
+
 function getNum(value, def) { return Number.isFinite(value) ? Number(value) : def; }
 
-/******************************************************************************* 
-/* functionSignature: getStr (value, def)                                      *
-/* Returns a non-empty string or the default.                                  *
-/*******************************************************************************/
+
 function getStr(value, def) { return (typeof value === "string" && value.trim().length) ? value.trim() : def; }
 
-/******************************************************************************* 
-/* functionSignature: getTryParseJSON (text, fallback)                         *
-/* Safely parses JSON with a fallback value on failure.                        *
-/*******************************************************************************/
+
 function getTryParseJSON(text, fallback = null) { try { return JSON.parse(text); } catch { return fallback; } }
 
-/*******************************************************************************
-/* functionSignature: getLooksCutOff (text)                                    *
-/* Returns true when text ends mid-sentence (no recognised closing punctuation)*
-/* Applied regardless of finish_reason — local backends often return "stop"    *
-/* even when truncated, so the heuristic is the only reliable signal.          *
-/*******************************************************************************/
+
 function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
   if (!s) return false;
@@ -62,28 +42,20 @@ function getLooksCutOff(text) {
   return !/[.!?:;*"»)\]}>~`]/.test(last);
 }
 
-/*******************************************************************************
-/* functionSignature: getShouldRunForThisModule (wo)                           *
-/* Determines whether to process this request.                                 *
-/*******************************************************************************/
+
 function getShouldRunForThisModule(wo) {
   const v = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
   return v === "roleplay" || v === "core-ai-roleplay" || v === "Roleplay";
 }
 
-/******************************************************************************* 
-/* functionSignature: getWithTurnId (rec, wo)                                  *
-/* Adds workingObject.turn_id to a record if present.                          *
-/*******************************************************************************/
+
 function getWithTurnId(rec, wo) {
   const t = typeof wo?.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
-  return { ...(t ? { ...rec, turn_id: t } : rec), ts: new Date().toISOString() };
+  const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined;
+  return { ...(t ? { ...rec, turn_id: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() };
 }
 
-/******************************************************************************* 
-/* functionSignature: getKiCfg (wo)                                            *
-/* Builds runtime configuration from working object.                           *
-/*******************************************************************************/
+
 function getKiCfg(wo) {
   return {
     includeHistory: getBool(wo?.includeHistory, true),
@@ -99,23 +71,14 @@ function getKiCfg(wo) {
   };
 }
 
-/*******************************************************************************
-/* functionSignature: getStripTrailingUrl (text)                               *
-/* Removes a bare URL appended on the last line of an assistant message.       *
-/* Prevents the model from learning to hallucinate image URLs in future turns. *
-/*******************************************************************************/
+
 function getStripTrailingUrl(text) {
   return String(text ?? "")
     .replace(/\n+(https?:\/\/\S+)\s*$/i, "")
     .trimEnd();
 }
 
-/*******************************************************************************
-/* functionSignature: getPromptFromSnapshot (rows, includeHistory)             *
-/* Maps history rows to chat messages.                                         *
-/* Trailing image URLs are stripped from assistant messages so the model does  *
-/* not learn to hallucinate similar URLs in subsequent turns.                  *
-/*******************************************************************************/
+
 function getPromptFromSnapshot(rows, includeHistory) {
   if (!includeHistory) return [];
   const out = [];
@@ -127,10 +90,7 @@ function getPromptFromSnapshot(rows, includeHistory) {
   return out;
 }
 
-/******************************************************************************* 
-/* functionSignature: getRecentContextForImage (rows, maxTurns)                *
-/* Builds compact context text for image prompt generation.                    *
-/*******************************************************************************/
+
 function getRecentContextForImage(rows, maxTurns) {
   const n = Math.max(0, Number(maxTurns) || 0);
   const r = Array.isArray(rows) ? rows : [];
@@ -147,10 +107,7 @@ function getRecentContextForImage(rows, maxTurns) {
   return lines.join("\n");
 }
 
-/******************************************************************************* 
-/* functionSignature: getToolByName (name, wo)                                 *
-/* Dynamically imports one tool module.                                        *
-/*******************************************************************************/
+
 async function getToolByName(name, wo) {
   try {
     const mod = await import(`../tools/${name}.js`);
@@ -177,20 +134,14 @@ async function getToolByName(name, wo) {
   }
 }
 
-/******************************************************************************* 
-/* functionSignature: getExtractFirstUrlFromString (s)                         *
-/* Extracts the first URL from an arbitrary string.                            *
-/*******************************************************************************/
+
 function getExtractFirstUrlFromString(s) {
   const txt = String(s ?? "");
   const m = txt.match(/\b(https?:\/\/[^\s<>"'`]+|data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+)\b/i);
   return m ? String(m[1] || "").trim() : "";
 }
 
-/******************************************************************************* 
-/* functionSignature: getExtractUrlFromToolResult (toolResultContent)          *
-/* HARD extraction: regex first, then deep JSON scan.                          *
-/*******************************************************************************/
+
 function getExtractUrlFromToolResult(toolResultContent) {
   const raw = String(toolResultContent ?? "").trim();
   if (!raw) return "";
@@ -251,10 +202,7 @@ function getExtractUrlFromToolResult(toolResultContent) {
   return found;
 }
 
-/******************************************************************************* 
-/* functionSignature: getSystemContentTextRun (wo)                             *
-/* System content for pass 1.                                                  *
-/*******************************************************************************/
+
 function getSystemContentTextRun(wo) {
   return [
     typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
@@ -263,10 +211,7 @@ function getSystemContentTextRun(wo) {
   ].filter(Boolean).join("\n\n");
 }
 
-/******************************************************************************* 
-/* functionSignature: getSystemContentImagePromptRun (persona, hint)           *
-/* System content for pass 2 (image prompt generator) incl persona anchoring.  *
-/*******************************************************************************/
+
 function getSystemContentImagePromptRun(personaText, imagePersonaHint) {
   const persona = String(personaText ?? "").trim();
   const hint = String(imagePersonaHint ?? "").trim();
@@ -291,10 +236,7 @@ function getSystemContentImagePromptRun(personaText, imagePersonaHint) {
   return [anchor, rules].filter(Boolean).join("\n\n");
 }
 
-/******************************************************************************* 
-/* functionSignature: getCallChat (wo, body, timeoutMs)                        *
-/* Calls the OpenAI-compatible chat endpoint and returns message content.      *
-/*******************************************************************************/
+
 async function getCallChat(wo, body, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -324,10 +266,7 @@ async function getCallChat(wo, body, timeoutMs) {
   }
 }
 
-/******************************************************************************* 
-/* functionSignature: getCleanSingleLinePrompt (s)                             *
-/* Normalizes the image prompt.                                                *
-/*******************************************************************************/
+
 function getCleanSingleLinePrompt(s) {
   return String(s ?? "")
     .replace(/\r?\n+/g, " ")
@@ -335,10 +274,7 @@ function getCleanSingleLinePrompt(s) {
     .trim();
 }
 
-/******************************************************************************* 
-/* functionSignature: getCoreAi (coreData)                                     *
-/* Pass1 text -> persist; Pass2 prompt (with context) -> tool -> append URL.   *
-/*******************************************************************************/
+
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
   if (!Array.isArray(wo.logging)) wo.logging = [];

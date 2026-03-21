@@ -10,10 +10,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "bard-join";
 
-/************************************************************************************/
-/* functionSignature: getBardRegistry ()                                             *
-/* Ensures and returns the bard session registry object.                            *
-/************************************************************************************/
+
 async function getBardRegistry() {
   const key = "bard:registry";
   let reg = null;
@@ -25,10 +22,7 @@ async function getBardRegistry() {
   return reg;
 }
 
-/************************************************************************************/
-/* functionSignature: setAddBardSessionKey (sessionKey)                             *
-/* Adds a session key to the bard registry list.                                    *
-/************************************************************************************/
+
 async function setAddBardSessionKey(sessionKey) {
   const key = "bard:registry";
   const reg = await getBardRegistry();
@@ -38,10 +32,7 @@ async function setAddBardSessionKey(sessionKey) {
   }
 }
 
-/************************************************************************************/
-/* functionSignature: setRemoveBardSessionKey (sessionKey)                          *
-/* Removes a session key from the bard registry list.                               *
-/************************************************************************************/
+
 async function setRemoveBardSessionKey(sessionKey) {
   const key = "bard:registry";
   const reg = await getBardRegistry();
@@ -49,10 +40,7 @@ async function setRemoveBardSessionKey(sessionKey) {
   try { await putItem(reg, key); } catch {}
 }
 
-/************************************************************************************/
-/* functionSignature: getBardAdminJoin (coreData)                                   *
-/* Main module entry. Handles bardstart and bardstop slash commands.                 *
-/************************************************************************************/
+
 export default async function getBardAdminJoin(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

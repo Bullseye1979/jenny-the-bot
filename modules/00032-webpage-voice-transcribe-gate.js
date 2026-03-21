@@ -14,18 +14,12 @@ import { getItem }           from "../core/registry.js";
 
 const MODULE_NAME = "webpage-voice-transcribe-gate";
 
-/************************************************************************************
-/* functionSignature: getSafeHeaderValue (str)                                    *
-/* Strips newlines/CR to produce safe HTTP header values.                         *
-/************************************************************************************/
+
 function getSafeHeaderValue(str) {
   return String(str || "").replace(/[\r\n]+/g, " ").trim().slice(0, 500);
 }
 
-/************************************************************************************
-/* functionSignature: getWebpageVoiceTranscribeGate (coreData)                    *
-/* Sends transcript response directly, then stops pipeline so AI/TTS never run.  *
-/************************************************************************************/
+
 export default async function getWebpageVoiceTranscribeGate(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

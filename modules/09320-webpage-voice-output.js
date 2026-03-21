@@ -21,18 +21,12 @@ import { getItem }           from "../core/registry.js";
 
 const MODULE_NAME = "webpage-voice-output";
 
-/*************************************************************************************
-/* functionSignature: getSafeHeaderValue (str)                                     *
-/* Strips newlines/CR to produce safe HTTP header values.                          *
-/*************************************************************************************/
+
 function getSafeHeaderValue(str) {
   return String(str || "").replace(/[\r\n]+/g, " ").trim().slice(0, 500);
 }
 
-/*************************************************************************************
-/* functionSignature: getWebpageVoiceOutput (coreData)                             *
-/* Main module entry: always sends HTTP response for voice requests.               *
-/*************************************************************************************/
+
 export default async function getWebpageVoiceOutput(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

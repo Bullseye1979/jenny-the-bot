@@ -39,20 +39,14 @@ const prism = prismImport?.default || prismImport;
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || "/usr/bin/ffmpeg");
 
-/*************************************************************************************
-/* functionSignature: getTmpFile (ext)                                               *
-/* Creates a unique temporary file path inside a fresh temp dir.                     *
-/*************************************************************************************/
+
 function getTmpFile(ext = ".wav") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dvcap-"));
   const rnd = Math.random().toString(36).slice(2, 8);
   return { dir, file: path.join(dir, `${Date.now()}-${rnd}${ext}`) };
 }
 
-/*************************************************************************************
-/* functionSignature: getPcmToWav (pcmReadable, options)                            *
-/* Converts a raw PCM stream to a WAV file via ffmpeg.                              *
-/*************************************************************************************/
+
 function getPcmToWav(pcmReadable, { rate = 48000, channels = 1 } = {}) {
   return new Promise((resolve, reject) => {
     try {
@@ -71,10 +65,7 @@ function getPcmToWav(pcmReadable, { rate = 48000, channels = 1 } = {}) {
   });
 }
 
-/*************************************************************************************
-/* functionSignature: getAnalyzePcmInt16 (samples, frameSamples)                   *
-/* Computes RMS, ZCR, SNR and a voiced-frame mask for VAD.                          *
-/*************************************************************************************/
+
 function getAnalyzePcmInt16(samples, frameSamples) {
   const totalFrames = Math.floor(samples.length / frameSamples);
   if (totalFrames <= 0) return { snrDb: 0, usefulMs: 0, mask: [] };
@@ -110,10 +101,7 @@ function getAnalyzePcmInt16(samples, frameSamples) {
   return { snrDb, usefulMs, mask };
 }
 
-/*************************************************************************************
-/* functionSignature: getExtractVoicedPcm (samples, mask, frameSamples)            *
-/* Extracts voiced frames from a samples array and returns a combined Int16Array.   *
-/*************************************************************************************/
+
 function getExtractVoicedPcm(samples, mask, frameSamples) {
   const chunks = [];
   for (let f = 0; f < mask.length; f++) {
@@ -129,10 +117,7 @@ function getExtractVoicedPcm(samples, mask, frameSamples) {
   return out;
 }
 
-/*************************************************************************************
-/* functionSignature: getWriteWav (samples, options)                                *
-/* Builds a WAV Buffer from raw Int16 PCM samples (no ffmpeg needed).               *
-/*************************************************************************************/
+
 function getWriteWav(samples, { rate = 48000, channels = 1 } = {}) {
   const pcmBytes = samples.byteLength;
   const hdr      = Buffer.alloc(44);
@@ -146,10 +131,7 @@ function getWriteWav(samples, { rate = 48000, channels = 1 } = {}) {
   return Buffer.concat([hdr, Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength)]);
 }
 
-/*************************************************************************************
-/* functionSignature: getCaptureOneSegment (receiver, userId, options)              *
-/* Captures one speech segment from a Discord voice receiver as a WAV file.         *
-/*************************************************************************************/
+
 async function getCaptureOneSegment(receiver, userId, { silenceMs, maxMs, frameSamples }) {
   let opus = null, pcm = null, pass = null, killTimer = null, wavDir = null, endedBy = "silence";
   try {
@@ -184,11 +166,7 @@ async function getCaptureOneSegment(receiver, userId, { silenceMs, maxMs, frameS
   }
 }
 
-/*************************************************************************************
-/* functionSignature: getDiscordVoiceCapture (coreData)                             *
-/* Main module entry: captures Discord voice, applies VAD, writes combined WAV to   *
-/* wo.audioFile. Quality decisions are deferred to the transcription module.        *
-/*************************************************************************************/
+
 export default async function getDiscordVoiceCapture(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);

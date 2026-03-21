@@ -24,10 +24,7 @@ const LAST_OBJECT_NAME = "last-object.json";
 
 let WRITE_CHAIN = Promise.resolve();
 
-/**************************************************************/
-/* functionSignature: setLog (wo, message, level, extra)     *
-/* Appends a structured entry to wo.logging                  *
-/**************************************************************/
+
 function setLog(wo, message, level = "info", extra = {}) {
   (wo.logging ||= []).push({
     timestamp: new Date().toISOString(),
@@ -39,10 +36,7 @@ function setLog(wo, message, level = "info", extra = {}) {
   });
 }
 
-/**************************************************************/
-/* functionSignature: getRedact (value, keyPath)             *
-/* Redacts secrets and truncates large strings               *
-/**************************************************************/
+
 function getRedact(value, keyPath) {
   if (typeof value !== "string") return value;
   const lowerPath = String(keyPath || "").toLowerCase();
@@ -60,10 +54,7 @@ function getRedact(value, keyPath) {
   return value;
 }
 
-/**************************************************************/
-/* functionSignature: getMessageSnapshot (m)                 *
-/* Produces a lightweight, safe snapshot of a message object *
-/**************************************************************/
+
 function getMessageSnapshot(m) {
   if (!m) return m;
   const isPlain = m && typeof m === "object" && m.constructor?.name === "Object";
@@ -80,10 +71,7 @@ function getMessageSnapshot(m) {
   };
 }
 
-/**************************************************************/
-/* functionSignature: getSafeReplacerFactory ()              *
-/* Creates a JSON replacer that redacts and handles cycles   *
-/**************************************************************/
+
 function getSafeReplacerFactory() {
   const seen = new WeakSet();
   return function safeReplacer(key, value) {
@@ -127,11 +115,7 @@ function getSafeReplacerFactory() {
   };
 }
 
-/**************************************************************/
-/* functionSignature: getWithKeyPath (obj, keyPath, seen)    *
-/* Wraps objects to carry a dotted key path for redaction.   *
-/* Uses a WeakSet to detect and short-circuit circular refs. *
-/**************************************************************/
+
 function getWithKeyPath(obj, keyPath = "", seen = new WeakSet()) {
   if (obj && typeof obj === "object") {
     if (seen.has(obj)) return `[[Circular:${keyPath}]]`;
@@ -149,19 +133,13 @@ function getWithKeyPath(obj, keyPath = "", seen = new WeakSet()) {
   return obj;
 }
 
-/**************************************************************/
-/* functionSignature: getVerifyWritable (dir)                *
-/* Verifies directory is writable; throws on failure         *
-/**************************************************************/
+
 async function getVerifyWritable(dir) {
   await fsp.access(dir);
   await fsp.access(dir, fsp.constants ? fsp.constants.W_OK : 2);
 }
 
-/**************************************************************/
-/* functionSignature: setEnsureDirs ()                       *
-/* Ensures base log directories exist                        *
-/**************************************************************/
+
 async function setEnsureDirs() {
   await fsp.mkdir(LOG_DIR, { recursive: true });
   await fsp.mkdir(OBJECTS_DIR, { recursive: true });
@@ -169,10 +147,7 @@ async function setEnsureDirs() {
   await getVerifyWritable(OBJECTS_DIR);
 }
 
-/**************************************************************/
-/* functionSignature: getPickFirstString (...values)         *
-/* Returns first non-empty trimmed string from values        *
-/**************************************************************/
+
 function getPickFirstString(...values) {
   for (const v of values) {
     if (typeof v === "string" && v.trim()) return v.trim();
@@ -180,10 +155,7 @@ function getPickFirstString(...values) {
   return "";
 }
 
-/**************************************************************/
-/* functionSignature: getFlowKey (coreData)                  *
-/* Derives a stable, filesystem-safe flow key                *
-/**************************************************************/
+
 function getFlowKey(coreData) {
   const wo = coreData?.workingObject || {};
   const fromWOFlow =
@@ -207,26 +179,17 @@ function getFlowKey(coreData) {
     .replace(/^_+|_+$/g, "") || "default";
 }
 
-/**************************************************************/
-/* functionSignature: getFlowObjectsDir (flowKey)            *
-/* Returns directory for a specific flow's object logs       *
-/**************************************************************/
+
 function getFlowObjectsDir(flowKey) {
   return path.join(OBJECTS_DIR, flowKey);
 }
 
-/**************************************************************/
-/* functionSignature: getBuildObjectsPath (index, flowKey)   *
-/* Builds a full path for objects-N.log for a given flow     *
-/**************************************************************/
+
 function getBuildObjectsPath(index, flowKey) {
   return path.join(getFlowObjectsDir(flowKey), `${FILE_BASENAME}-${index}${FILE_EXT}`);
 }
 
-/**************************************************************/
-/* functionSignature: getListLogFiles (flowKey)              *
-/* Lists existing rolling object log files for a flow        *
-/**************************************************************/
+
 async function getListLogFiles(flowKey) {
   await setEnsureDirs();
   const flowDir = getFlowObjectsDir(flowKey);
@@ -245,19 +208,13 @@ async function getListLogFiles(flowKey) {
   return out;
 }
 
-/**************************************************************/
-/* functionSignature: getFileSize (p)                        *
-/* Returns file size in bytes or 0 if not found              *
-/**************************************************************/
+
 async function getFileSize(p) {
   const st = await fsp.stat(p).catch(() => null);
   return st?.size || 0;
 }
 
-/**************************************************************/
-/* functionSignature: setAppendRolling (text, flowKey)       *
-/* Appends to rolling objects-N.log per flow, keep last two  *
-/**************************************************************/
+
 async function setAppendRolling(text, flowKey) {
   await setEnsureDirs();
   const flowDir = getFlowObjectsDir(flowKey);
@@ -287,10 +244,7 @@ async function setAppendRolling(text, flowKey) {
   return currentPath;
 }
 
-/**************************************************************/
-/* functionSignature: setWriteLastObject (flowKey, safeJson) *
-/* Writes the last-object.json for a flow                    *
-/**************************************************************/
+
 async function setWriteLastObject(flowKey, safeJson) {
   await setEnsureDirs();
   const flowDir = getFlowObjectsDir(flowKey);
@@ -301,19 +255,13 @@ async function setWriteLastObject(flowKey, safeJson) {
   return lastPath;
 }
 
-/**************************************************************/
-/* functionSignature: setEnqueueWrite (fn)                   *
-/* Serializes file writes to avoid race conditions           *
-/**************************************************************/
+
 function setEnqueueWrite(fn) {
   WRITE_CHAIN = WRITE_CHAIN.then(fn, fn);
   return WRITE_CHAIN;
 }
 
-/**************************************************************/
-/* functionSignature: getNormalizeWOLogItem (x)              *
-/* Normalizes entries from wo.logging for readable log       *
-/**************************************************************/
+
 function getNormalizeWOLogItem(x) {
   const sev = (x?.severity ?? x?.level ?? "").toString().toLowerCase();
   return {
@@ -326,10 +274,7 @@ function getNormalizeWOLogItem(x) {
   };
 }
 
-/**************************************************************/
-/* functionSignature: getToOneLineLog (e)                    *
-/* Formats a normalized log entry into a one-line string     *
-/**************************************************************/
+
 function getToOneLineLog(e) {
   const ts = e.timestamp || new Date().toISOString();
   const level = (e.severity || "info").toUpperCase();
@@ -347,10 +292,7 @@ function getToOneLineLog(e) {
   return `[${ts}] [${level}] ${mod}:${prefix} ${getRedact(msg, "message")}${reason}${ctx}`;
 }
 
-/**************************************************************/
-/* functionSignature: getReadableLogBlock (wo)               *
-/* Builds a readable log block from wo.logging               *
-/**************************************************************/
+
 function getReadableLogBlock(wo) {
   const arr = Array.isArray(wo?.logging) ? wo.logging : [];
   if (!arr.length) return "";
@@ -365,18 +307,12 @@ function getReadableLogBlock(wo) {
   return header + lines + footer;
 }
 
-/**************************************************************/
-/* functionSignature: getBuildEventsPath (index)             *
-/* Builds a full path for events-N.log in logs/              *
-/**************************************************************/
+
 function getBuildEventsPath(index) {
   return path.join(LOG_DIR, `${EVENT_BASENAME}-${index}${EVENT_EXT}`);
 }
 
-/**************************************************************/
-/* functionSignature: getListEventFiles ()                   *
-/* Lists existing rolling events log files in logs/          *
-/**************************************************************/
+
 async function getListEventFiles() {
   await setEnsureDirs();
   const out = [];
@@ -393,10 +329,7 @@ async function getListEventFiles() {
   return out;
 }
 
-/**************************************************************/
-/* functionSignature: setAppendReadableLog (text)            *
-/* Appends to rolling events-N.log in logs/, keep last two   *
-/**************************************************************/
+
 async function setAppendReadableLog(text) {
   await setEnsureDirs();
   const files = await getListEventFiles();
@@ -423,11 +356,7 @@ async function setAppendReadableLog(text) {
   return currentPath;
 }
 
-/**************************************************************/
-/* functionSignature: getCoreOutput (coreData)               *
-/* Appends a safe coreData dump to per-flow rolling log,     *
-/* writes per-flow last-object.json, and appends readable log*
-/**************************************************************/
+
 export default async function getCoreOutput(coreData) {
   try {
     if (!coreData || typeof coreData !== "object") return coreData;

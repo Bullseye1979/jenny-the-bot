@@ -9,10 +9,7 @@ import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getImage";
 
-/**********************************************************************************/
-/* functionSignature: getContentTypeToExt (ctype)                                  *
-/* Maps image content-type to a filename extension.                                *
-/**********************************************************************************/
+
 function getContentTypeToExt(ctype) {
   const c = String(ctype || "").toLowerCase();
   if (c.includes("image/jpeg") || c.includes("image/jpg")) return ".jpg";
@@ -22,10 +19,7 @@ function getContentTypeToExt(ctype) {
   return ".png";
 }
 
-/**********************************************************************************/
-/* functionSignature: getHttpGetBuffer (url)                                       *
-/* Downloads a URL and returns buffer and inferred extension.                      *
-/**********************************************************************************/
+
 async function getHttpGetBuffer(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -34,10 +28,7 @@ async function getHttpGetBuffer(url) {
   return { buf, ext: getContentTypeToExt(ct) };
 }
 
-/**********************************************************************************/
-/* functionSignature: getPersistImages (apiImages, wo)                             *
-/* Persists API image payloads to disk and returns file info.                      *
-/**********************************************************************************/
+
 async function getPersistImages(apiImages, wo) {
   const out = [];
   for (const img of apiImages) {
@@ -60,18 +51,12 @@ async function getPersistImages(apiImages, wo) {
   return out;
 }
 
-/**********************************************************************************/
-/* functionSignature: getSanitized (text)                                          *
-/* Collapses whitespace in a string and trims.                                     *
-/**********************************************************************************/
+
 function getSanitized(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
-/**********************************************************************************/
-/* functionSignature: getModelPolicyHints (modelName)                              *
-/* Provides model-specific safety guidance hints.                                  *
-/**********************************************************************************/
+
 function getModelPolicyHints(modelName) {
   const m = String(modelName || "").toLowerCase();
   const base = [
@@ -88,10 +73,7 @@ function getModelPolicyHints(modelName) {
   return base;
 }
 
-/**********************************************************************************/
-/* functionSignature: getHeuristicEnhancedPrompt (basePrompt, opts)                *
-/* Builds an enhanced prompt via deterministic heuristics.                         *
-/**********************************************************************************/
+
 function getHeuristicEnhancedPrompt(basePrompt, { extraNegatives = [], extraQuality = [], preferDigitalPainting = true } = {}) {
   const ENHANCER_DEFAULT_QUALITY = [
     "cinematic",
@@ -133,10 +115,7 @@ function getHeuristicEnhancedPrompt(basePrompt, { extraNegatives = [], extraQual
   ].join(" | ");
 }
 
-/**********************************************************************************/
-/* functionSignature: getResolveEnhancerConfig (args, wo, toolCfg, modelName)      *
-/* Resolves enhancer configuration from layered sources.                           *
-/**********************************************************************************/
+
 function getResolveEnhancerConfig(args, wo, toolCfg, imageModelName) {
   const epArg = args?.enhancerEndpoint;
   const epCfg = toolCfg?.enhancerEndpoint || toolCfg?.endpoint;
@@ -160,10 +139,7 @@ function getResolveEnhancerConfig(args, wo, toolCfg, imageModelName) {
   return { endpoint, apiKey, model, temperature, max_tokens, timeout, preferDigitalPainting, imageModelName };
 }
 
-/**********************************************************************************/
-/* functionSignature: getAiEnhancedPrompt (opts)                                   *
-/* Produces an enhanced prompt using a GPT enhancer with fallback on failure.      *
-/**********************************************************************************/
+
 async function getAiEnhancedPrompt({
   endpoint,
   apiKey,
@@ -215,10 +191,7 @@ async function getAiEnhancedPrompt({
   }
 }
 
-/**********************************************************************************/
-/* functionSignature: getBuildEnhancedPrompt (opts)                                *
-/* Wrapper: tries GPT enhancer with heuristic fallback.                            *
-/**********************************************************************************/
+
 async function getBuildEnhancedPrompt({
   wo,
   toolCfg,
@@ -248,18 +221,12 @@ async function getBuildEnhancedPrompt({
   });
 }
 
-/**********************************************************************************/
-/* functionSignature: getRoundedToMultiple (x, m)                                  *
-/* Rounds a number to the nearest multiple with a minimum.                         *
-/**********************************************************************************/
+
 function getRoundedToMultiple(x, m = 64) {
   return Math.max(m, Math.round(x / m) * m);
 }
 
-/**********************************************************************************/
-/* functionSignature: getParsedAspect (aspect)                                     *
-/* Parses aspect tokens like 'portrait', '16:9', '1:1'.                            *
-/**********************************************************************************/
+
 function getParsedAspect(aspect) {
   const a = String(aspect || "").trim().toLowerCase();
   if (!a) return null;
@@ -274,10 +241,7 @@ function getParsedAspect(aspect) {
   return null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getNormalizedSizeString (s)                                  *
-/* Validates and normalizes an explicit 'WxH' size string.                         *
-/**********************************************************************************/
+
 function getNormalizedSizeString(s) {
   const m = String(s || "").trim().match(/^(\d+)\s*x\s*(\d+)$/i);
   if (!m) return null;
@@ -286,10 +250,7 @@ function getNormalizedSizeString(s) {
   return `${w}x${h}`;
 }
 
-/**********************************************************************************/
-/* functionSignature: getBuiltSize (opts)                                          *
-/* Derives final WxH string from size or aspect and target long edge.              *
-/**********************************************************************************/
+
 function getBuiltSize({ size, aspect, targetLongEdge = 1024 }) {
   const sNorm = getNormalizedSizeString(size);
   if (sNorm) return sNorm;
@@ -308,10 +269,7 @@ function getBuiltSize({ size, aspect, targetLongEdge = 1024 }) {
   return `${w}x${h}`;
 }
 
-/**********************************************************************************/
-/* functionSignature: getInvoke (args, coreData)                                   *
-/* Calls the Images API, saves results, and returns file metadata.                 *
-/**********************************************************************************/
+
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getImage || {};
@@ -352,10 +310,7 @@ async function getInvoke(args, coreData) {
   return { ok: okFiles.length > 0, endpoint: imagesEndpoint, model, size: finalSize, n, prompt: promptRaw, enhancedPrompt, strictPrompt, aspect: aspect || undefined, files: okFiles.map(f => ({ filename: f.filename, path: f.path, url: f.url })), failed: saved.filter(x => !x.ok).map(x => ({ error: x.error })) };
 }
 
-/**********************************************************************************/
-/* functionSignature: getDefaultExport ()                                          *
-/* Constructs the tool definition object with schema and invoke.                   *
-/**********************************************************************************/
+
 function getDefaultExport() {
   return {
     name: MODULE_NAME,
@@ -390,10 +345,7 @@ function getDefaultExport() {
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: getDefault ()                                                *
-/* Default export factory for module consumers.                                    *
-/**********************************************************************************/
+
 function getDefault() {
   return getDefaultExport();
 }

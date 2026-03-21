@@ -30,10 +30,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "webpage-router";
 
-/************************************************************************************
-/* functionSignature: resolveChannelId (source, url, pathPrefix)                  *
-/* Derives a channelId string from the configured source strategy.                 *
-/************************************************************************************/
+
 function resolveChannelId(source, url, pathPrefix) {
   if (!source) return "";
 
@@ -56,10 +53,7 @@ function resolveChannelId(source, url, pathPrefix) {
   return source.trim();
 }
 
-/************************************************************************************
-/* functionSignature: getWebpageRouter (coreData)                                 *
-/* Sets wo.flow + wo.channelID for matched webpage routes before channel-config.  *
-/************************************************************************************/
+
 export default async function getWebpageRouter(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);

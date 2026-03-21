@@ -47,7 +47,6 @@ export default async function getWebpageGallery(coreData) {
   const method  = String(wo.http?.method || "GET").toUpperCase();
   const urlPath = String(wo.http?.path || "/").replace(/\/$/, "") || "/";
 
-  /* ── GET /gallery/style.css ─────────────────────────────────────────── */
   if (method === "GET" && urlPath === basePath + "/style.css") {
     try {
       const css = fs.readFileSync(CSS_FILE, "utf-8");
@@ -59,7 +58,6 @@ export default async function getWebpageGallery(coreData) {
     return coreData;
   }
 
-  /* ── Auth gate ───────────────────────────────────────────────────────── */
   if (!wo.webAuth?.role) {
     wo.http.response = { status: 302, headers: { "Location": "/" }, body: "" };
     wo.jump = true;
@@ -69,7 +67,6 @@ export default async function getWebpageGallery(coreData) {
   const role = String(wo.webAuth?.role || "").toLowerCase();
   const menu = Array.isArray(wo.web?.menu) ? wo.web.menu : [];
 
-  /* ── GET /gallery/api/files ──────────────────────────────────────────── */
   if (method === "GET" && urlPath === basePath + "/api/files") {
     const userId  = getUserId(wo);
     const baseUrl = getRequestBaseUrl(wo) || getPublicBaseUrl(wo);
@@ -87,7 +84,6 @@ export default async function getWebpageGallery(coreData) {
     return coreData;
   }
 
-  /* ── DELETE /gallery/api/files ───────────────────────────────────────── */
   if (method === "DELETE" && urlPath === basePath + "/api/files") {
     const body     = wo.http?.json || {};
     const filename = String(body.filename || "").trim();
@@ -115,7 +111,6 @@ export default async function getWebpageGallery(coreData) {
     return coreData;
   }
 
-  /* ── POST /gallery/api/files (upload) ───────────────────────────────── */
   if (method === "POST" && urlPath === basePath + "/api/files") {
     const rawBody = wo.http?.rawBodyBytes;
     if (!rawBody || !rawBody.length) {
@@ -146,7 +141,6 @@ export default async function getWebpageGallery(coreData) {
     return coreData;
   }
 
-  /* ── GET /gallery (main page) ────────────────────────────────────────── */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     const menuHtml = getMenuHtml(menu, basePath, role);
 

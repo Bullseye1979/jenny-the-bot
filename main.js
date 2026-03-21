@@ -99,51 +99,33 @@ let FLOW_RUN_SEQ = 0;
 const FLOW_NAME_COUNTS = new Map();
 const MAX_FINISHED_FLOWS = 10;
 
-/**************************************************************
-/* functionSignature: getPad (s, n)                          *
-/* Pads string s to length n                                 *
-/**************************************************************/
+
 function getPad(s, n) {
   return String(s).padEnd(n, " ");
 }
 
-/**************************************************************
-/* functionSignature: getTrunc (s, n)                        *
-/* Truncates s to n chars with ellipsis                      *
-/**************************************************************/
+
 function getTrunc(s, n) {
   const str = String(s);
   return str.length > n ? str.slice(0, n - 1) + "…" : str;
 }
 
-/**************************************************************
-/* functionSignature: getFmtMs (n)                           *
-/* Formats milliseconds                                      *
-/**************************************************************/
+
 function getFmtMs(n) {
   return `${n.toFixed(0)}ms`;
 }
 
-/**************************************************************
-/* functionSignature: getFmtSec (n)                          *
-/* Formats seconds                                           *
-/**************************************************************/
+
 function getFmtSec(n) {
   return `${n.toFixed(2)}s`;
 }
 
-/**************************************************************
-/* functionSignature: getNowISO ()                           *
-/* Returns current ISO timestamp                             *
-/**************************************************************/
+
 function getNowISO() {
   return new Date().toISOString();
 }
 
-/**************************************************************
-/* functionSignature: getFmtMem (bytes)                      *
-/* Formats bytes as human-readable memory size               *
-/**************************************************************/
+
 function getFmtMem(bytes) {
   const KB = 1024, MB = KB * 1024, GB = MB * 1024;
   if (bytes >= GB) return (bytes / GB).toFixed(2) + " GB";
@@ -152,10 +134,7 @@ function getFmtMem(bytes) {
   return bytes + " B";
 }
 
-/**************************************************************
-/* functionSignature: getPadLinesToWidth (text)              *
-/* Pads every line to terminal width to overwrite leftovers  *
-/**************************************************************/
+
 function getPadLinesToWidth(text) {
   const cols = process.stdout.columns || 120;
   const ansiRe = /\x1b\[[0-9;]*m|\x1b\[[0-9;]*[A-Za-z]/g;
@@ -166,10 +145,7 @@ function getPadLinesToWidth(text) {
   }).join("\n");
 }
 
-/**************************************************************
-/* functionSignature: getClearScreenHard ()                  *
-/* Moves cursor home; first time does a full clear           *
-/**************************************************************/
+
 function getClearScreenHard() {
   if (!supportsClear) return;
   if (__firstRender) {
@@ -180,26 +156,17 @@ function getClearScreenHard() {
   }
 }
 
-/**************************************************************
-/* functionSignature: setRenderWrite (s)                     *
-/* Writes a string to stdout                                 *
-/**************************************************************/
+
 function setRenderWrite(s) {
   process.stdout.write(s);
 }
 
-/**************************************************************
-/* functionSignature: getSep (ch)                            *
-/* Returns a gray separator line                             *
-/**************************************************************/
+
 function getSep(ch = "─") {
   return `${C.gray}${ch.repeat(60)}${C.reset}`;
 }
 
-/**************************************************************
-/* functionSignature: getProgressBar (pct, width, color)     *
-/* Builds a textual progress bar                             *
-/**************************************************************/
+
 function getProgressBar(pct, width = 28, color = C.green) {
   const p = Math.max(0, Math.min(1, pct || 0));
   const filled = Math.round(width * p);
@@ -207,10 +174,7 @@ function getProgressBar(pct, width = 28, color = C.green) {
   return `${color}${"█".repeat(filled)}${C.gray}${"░".repeat(empty)}${C.reset} ${Math.round(p * 100)}%`;
 }
 
-/**************************************************************
-/* functionSignature: getRenderFlowLine (state)              *
-/* Renders one flow line with progress                       *
-/**************************************************************/
+
 function getRenderFlowLine(state) {
   const { flowName, startedAt, ok, fail, skip, total, current, stopped, phase, lastModule, lastError, runIndex } = state;
   const tNow = performance.now();
@@ -253,10 +217,7 @@ function getRenderFlowLine(state) {
   return `${color}${statusIcon}${C.reset} ${C.bold}${flowLabel}${C.reset} ${bar}  ${extra}`;
 }
 
-/**************************************************************
-/* functionSignature: getRenderAllDashboards ()              *
-/* Renders telemetry and all flow lines                      *
-/**************************************************************/
+
 function getRenderAllDashboards() {
   const list = Array.from(FLOW_STATES.values());
   const nowISO = getNowISO();
@@ -280,11 +241,7 @@ function getRenderAllDashboards() {
   return headerLines.join("\n") + "\n" + lines.join("\n") + "\n" + getSep() + "\n";
 }
 
-/**************************************************************
-/* functionSignature: setWriteDashboardToRegistry ()         *
-/* Writes structured telemetry to registry key              *
-/* dashboard:state for the web dashboard module             *
-/**************************************************************/
+
 function setWriteDashboardToRegistry() {
   const now = Date.now();
   if (now - __lastRegistryWriteAt < REGISTRY_WRITE_INTERVAL_MS) return;
@@ -321,10 +278,7 @@ function setWriteDashboardToRegistry() {
   putItem(data, "dashboard:state");
 }
 
-/**************************************************************
-/* functionSignature: setRenderThrottled (_, force)          *
-/* Renders dashboard at most once per second                 *
-/**************************************************************/
+
 function setRenderThrottled(_ignored, force = false) {
   const now = Date.now();
   if (!force && now - __lastRenderAt < CLEAR_MIN_INTERVAL_MS) return;
@@ -351,10 +305,7 @@ function setRenderThrottled(_ignored, force = false) {
   setWriteDashboardToRegistry();
 }
 
-/**************************************************************
-/* functionSignature: getDebounce (fn, ms)                   *
-/* Returns a debounced wrapper                               *
-/**************************************************************/
+
 function getDebounce(fn, ms = 200) {
   let t = null;
   return (...args) => {
@@ -363,10 +314,7 @@ function getDebounce(fn, ms = 200) {
   };
 }
 
-/**************************************************************
-/* functionSignature: getLoadJsonSafe (filePath)             *
-/* Loads and validates a JSON file                           *
-/**************************************************************/
+
 function getLoadJsonSafe(filePath) {
   const raw = fs.readFileSync(filePath, "utf-8");
   const parsed = JSON.parse(raw);
@@ -374,10 +322,7 @@ function getLoadJsonSafe(filePath) {
   return parsed;
 }
 
-/**************************************************************
-/* functionSignature: getInitCurrentBase ()                  *
-/* Initializes the core base object                          *
-/**************************************************************/
+
 function getInitCurrentBase() {
   const base = getLoadJsonSafe(CORE_PATH);
   if (typeof base.workingObject !== "object" || !base.workingObject) base.workingObject = {};
@@ -394,10 +339,7 @@ if (!fs.existsSync(CORE_PATH)) {
 
 let currentBase = getInitCurrentBase();
 
-/**************************************************************
-/* functionSignature: getStartHotReload ()                   *
-/* Starts hot-reload watching core.json                      *
-/**************************************************************/
+
 function getStartHotReload() {
   const doReload = () => {
     try {
@@ -424,18 +366,12 @@ function getStartHotReload() {
 }
 getStartHotReload();
 
-/**************************************************************
-/* functionSignature: getCloneJSON (x)                       *
-/* Deep clones a JSON-compatible value                       *
-/**************************************************************/
+
 function getCloneJSON(x) {
   return JSON.parse(JSON.stringify(x));
 }
 
-/**************************************************************
-/* functionSignature: getCreateRunCore ()                    *
-/* Creates a fresh core object for a run                     *
-/**************************************************************/
+
 function getCreateRunCore() {
   return {
     config: currentBase.config,
@@ -443,10 +379,7 @@ function getCreateRunCore() {
   };
 }
 
-/**************************************************************
-/* functionSignature: setPruneFinishedFlows (max)            *
-/* Keeps only the last max finished flows in registry        *
-/**************************************************************/
+
 function setPruneFinishedFlows(max = MAX_FINISHED_FLOWS) {
   const all = Array.from(FLOW_STATES.values());
   const finished = all.filter(s => s.finishedAt);
@@ -460,10 +393,7 @@ function setPruneFinishedFlows(max = MAX_FINISHED_FLOWS) {
   }
 }
 
-/**************************************************************
-/* functionSignature: getModuleAddSet (arr)                  *
-/* Normalizes flowModuleAdd into a Set of module names       *
-/**************************************************************/
+
 function getModuleAddSet(arr) {
   const out = new Set();
   const list = Array.isArray(arr) ? arr : [];
@@ -483,10 +413,7 @@ function getModuleAddSet(arr) {
   return out;
 }
 
-/**************************************************************/
-/* functionSignature: getModuleRemoveSet (arr)               *
-/* Normalizes flowModuleRemove into a Set of module names    *
-/**************************************************************/
+
 function getModuleRemoveSet(arr) {
   const out = new Set();
   const list = Array.isArray(arr) ? arr : [];
@@ -507,17 +434,7 @@ function getModuleRemoveSet(arr) {
 }
 
 
-/**************************************************************
-/* functionSignature: getIsModuleSubscribed (clean, flowName, *
-/* coreData, moduleAddSet)                                   *
-/* Returns true if module is configured or ad-hoc subscribed  *
-/**************************************************************/
-/**************************************************************/
-/* functionSignature: getIsModuleSubscribed (clean, flowName, *
-/* coreData, moduleAddSet, moduleRemoveSet)                  *
-/* Returns true if module is configured or ad-hoc subscribed  *
-/* and not explicitly removed                                *
-/**************************************************************/
+
 function getIsModuleSubscribed(clean, flowName, coreData, moduleAddSet, moduleRemoveSet) {
   if (moduleRemoveSet && moduleRemoveSet.has(clean)) return false;
   if (moduleAddSet && moduleAddSet.has(clean)) return true;
@@ -528,10 +445,7 @@ function getIsModuleSubscribed(clean, flowName, coreData, moduleAddSet, moduleRe
 }
 
 
-/**************************************************************
-/* functionSignature: getRunFlow (flowName, coreDataForRun)  *
-/* Executes modules with live multi-flow dashboard           *
-/**************************************************************/
+
 async function getRunFlow(flowName, coreDataForRun) {
   const coreData = coreDataForRun || getCreateRunCore();
   const modulesDir = path.join(__dirname, "modules");
@@ -545,10 +459,7 @@ async function getRunFlow(flowName, coreDataForRun) {
     .filter(Boolean)
     .sort((a, b) => a.num - b.num);
 
-  /**************************************************************/
-  /* functionSignature: getCleanModuleName (file)             *
-  /* Normalizes module filename to clean module name          *
-  /************************************************************/
+
   function getCleanModuleName(file) {
     return file.replace(".js", "").replace(/^\d+-/, "");
   }
@@ -566,10 +477,7 @@ async function getRunFlow(flowName, coreDataForRun) {
       return ok;
     }).length;
 
-  /**************************************************************/
-  /* functionSignature: getIsSubscribedNow (s)                *
-  /* Checks module subscription with live workingObject state *
-  /************************************************************/
+
   function getIsSubscribedNow(s) {
     const clean = getCleanModuleName(s.file);
     const moduleAddSetNow = getModuleAddSet(coreData?.workingObject?.flowModuleAdd);
@@ -608,10 +516,7 @@ async function getRunFlow(flowName, coreDataForRun) {
 
   
 
-  /**************************************************************/
-  /* functionSignature: getRunModule (s, kind)               *
-  /* Runs a single module file                               *
-  /************************************************************/
+
   async function getRunModule(s, kind = "normal") {
     const cleanName = s.file.replace(".js", "").replace(/^\d+-/, "");
     state.current = cleanName;
@@ -681,10 +586,7 @@ async function getRunFlow(flowName, coreDataForRun) {
   return coreData;
 }
 
-/**************************************************************
-/* functionSignature: getStartFlows ()                       *
-/* Loads and starts all flow entrypoints                     *
-/**************************************************************/
+
 async function getStartFlows() {
   const flowsDir = path.join(__dirname, "flows");
   const flowFiles = fs.readdirSync(flowsDir).filter(f => f.endsWith(".js"));

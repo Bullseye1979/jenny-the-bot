@@ -15,16 +15,10 @@ const MODULE_NAME = "webpage-dashboard";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/************************************************************************************/
-/* functionSignature: getStr (v)                                                     *
-/* Returns a string; empty string for nullish                                        *
-/************************************************************************************/
+
 function getStr(v) { return v == null ? "" : String(v); }
 
-/************************************************************************************/
-/* functionSignature: escHtml (s)                                                    *
-/* Escapes HTML special characters                                                   *
-/************************************************************************************/
+
 function escHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -33,10 +27,7 @@ function escHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-/************************************************************************************/
-/* functionSignature: getUserRoleLabels (wo)                                         *
-/* Returns all role labels for the current user                                      *
-/************************************************************************************/
+
 function getUserRoleLabels(wo) {
   const out = [], seen = new Set();
   const primary = getStr(wo?.webAuth?.role).trim().toLowerCase();
@@ -51,10 +42,7 @@ function getUserRoleLabels(wo) {
   return out;
 }
 
-/************************************************************************************/
-/* functionSignature: getIsAllowed (wo, allowedRoles)                               *
-/* Returns true if the user has one of the allowed roles, or no roles required      *
-/************************************************************************************/
+
 function getIsAllowed(wo, allowedRoles) {
   const req = Array.isArray(allowedRoles) ? allowedRoles : [];
   if (!req.length) return true;
@@ -62,19 +50,13 @@ function getIsAllowed(wo, allowedRoles) {
   return req.some(r => have.has(getStr(r).trim().toLowerCase()));
 }
 
-/************************************************************************************/
-/* functionSignature: getBasePath (cfg)                                              *
-/* Returns the configured base path with leading slash, no trailing slash           *
-/************************************************************************************/
+
 function getBasePath(cfg) {
   const bp = getStr(cfg.basePath ?? "/dashboard").trim();
   return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/dashboard";
 }
 
-/************************************************************************************/
-/* functionSignature: setSendNow (wo)                                                *
-/* Writes the HTTP response back via the registered response object                  *
-/************************************************************************************/
+
 async function setSendNow(wo) {
   const key = wo?.http?.requestKey;
   if (!key) return;
@@ -92,10 +74,7 @@ async function setSendNow(wo) {
   } catch {}
 }
 
-/************************************************************************************/
-/* functionSignature: getFmtElapsed (ms)                                             *
-/* Formats elapsed milliseconds as a human-readable duration string                  *
-/************************************************************************************/
+
 function getFmtElapsed(ms) {
   if (!Number.isFinite(ms) || ms < 0) return "—";
   if (ms < 1000) return `${Math.round(ms)}ms`;
@@ -103,10 +82,7 @@ function getFmtElapsed(ms) {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
-/************************************************************************************/
-/* functionSignature: getFlowStatusCls (f)                                           *
-/* Returns a CSS class for the flow card based on its status                         *
-/************************************************************************************/
+
 function getFlowStatusCls(f) {
   if (f.fail > 0) return "st-err";
   if (f.stopped) return "st-stp";
@@ -114,10 +90,7 @@ function getFlowStatusCls(f) {
   return "st-run";
 }
 
-/************************************************************************************/
-/* functionSignature: getFlowBadge (f)                                               *
-/* Returns an HTML badge label for the flow status                                   *
-/************************************************************************************/
+
 function getFlowBadge(f) {
   if (f.fail > 0) return "&#x2716;&nbsp;Error";
   if (f.stopped) return "&#x25A0;&nbsp;stopped";
@@ -126,10 +99,7 @@ function getFlowBadge(f) {
   return "&#x25B6;&nbsp;running";
 }
 
-/************************************************************************************/
-/* functionSignature: buildDashboardHtml (data, menu, role, basePath, refreshSec)   *
-/* Builds the full HTML page for the dashboard                                       *
-/************************************************************************************/
+
 function buildDashboardHtml(data, menu, role, basePath, refreshSec) {
   const ts      = data?.ts ? new Date(data.ts).toLocaleString() : "—";
   const memRss  = escHtml(data?.mem?.rssStr  || "—");
@@ -302,10 +272,7 @@ ${flowCards}
 </html>`;
 }
 
-/************************************************************************************/
-/* functionSignature: getWebpageDashboard (coreData)                                 *
-/* Serves the live telemetry dashboard at the configured basePath and port           *
-/************************************************************************************/
+
 export default async function getWebpageDashboard(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;

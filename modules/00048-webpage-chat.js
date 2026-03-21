@@ -17,9 +17,7 @@ import getCoreAiRoleplay    from "./01003-core-ai-roleplay.js";
 
 const MODULE_NAME = "webpage-chat";
 
-/************************************************************************************/
-/* functionSignature: setSendNow (wo)                                                *
-/************************************************************************************/
+
 async function setSendNow(wo) {
   const key = wo?.http?.requestKey;
   if (!key) return;
@@ -34,9 +32,7 @@ async function setSendNow(wo) {
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 }
 
-/************************************************************************************/
-/* functionSignature: setJsonResp (wo, status, data)                                 *
-/************************************************************************************/
+
 function setJsonResp(wo, status, data) {
   wo.http.response = {
     status,
@@ -45,9 +41,7 @@ function setJsonResp(wo, status, data) {
   };
 }
 
-/************************************************************************************/
-/* functionSignature: setNotFound (wo)                                               *
-/************************************************************************************/
+
 function setNotFound(wo) {
   wo.http.response = {
     status: 404,
@@ -56,16 +50,12 @@ function setNotFound(wo) {
   };
 }
 
-/************************************************************************************/
-/* functionSignature: getBody (wo)                                                   *
-/************************************************************************************/
+
 function getBody(wo) {
   return String(wo.http?.rawBody ?? wo.http?.body ?? "");
 }
 
-/************************************************************************************/
-/* functionSignature: getIsAllowedRoles (wo, allowedRoles)                           *
-/************************************************************************************/
+
 function getIsAllowedRoles(wo, allowedRoles) {
   const req = Array.isArray(allowedRoles) ? allowedRoles : [];
   if (!req.length) return true;
@@ -87,9 +77,7 @@ function getIsAllowedRoles(wo, allowedRoles) {
   return false;
 }
 
-/************************************************************************************/
-/* functionSignature: getUserRoleLabels (wo)                                         *
-/************************************************************************************/
+
 function getUserRoleLabels(wo) {
   const out = [];
   const seen = new Set();
@@ -106,9 +94,7 @@ function getUserRoleLabels(wo) {
   return out;
 }
 
-/************************************************************************************/
-/* functionSignature: getIsChatVisibleForUser (wo, chatEntry)                        *
-/************************************************************************************/
+
 function getIsChatVisibleForUser(wo, chatEntry) {
   const required = Array.isArray(chatEntry?.roles) ? chatEntry.roles : [];
   if (!required.length) return true;
@@ -122,9 +108,7 @@ function getIsChatVisibleForUser(wo, chatEntry) {
   return false;
 }
 
-/************************************************************************************/
-/* functionSignature: getChatEntryByChannelID (chats, channelID)                     *
-/************************************************************************************/
+
 function getChatEntryByChannelID(chats, channelID) {
   const id = String(channelID || "").trim();
   if (!id) return null;
@@ -134,18 +118,13 @@ function getChatEntryByChannelID(chats, channelID) {
   return null;
 }
 
-/************************************************************************************/
-/* functionSignature: getBasePath (cfg)                                              *
-/************************************************************************************/
+
 function getBasePath(cfg) {
   const bp = String(cfg.basePath ?? "/chat").trim();
   return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/chat";
 }
 
-/************************************************************************************/
-/* functionSignature: getEnsureChatSubchannelsTable (pool)                           *
-/* Creates chat_subchannels table if it does not exist.                              *
-/************************************************************************************/
+
 async function getEnsureChatSubchannelsTable(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_subchannels (
@@ -168,13 +147,7 @@ async function getEnsureChatSubchannelsTable(pool) {
   } catch {}
 }
 
-/************************************************************************************/
-/* functionSignature: getResolvedAiCfg (wo, cfg)                                     *
-/* Resolves AI config. Credentials (endpoint/model/apiKey) and prompt fields        *
-/* (systemPrompt/persona/instructions/maxTokens) come from wo (set by               *
-/* core-channel-config). Module-level cfg provides fallbacks for contextSize and     *
-/* systemPrompt only. Subchannel overrides are applied later in the chat handler.   *
-/************************************************************************************/
+
 function getResolvedAiCfg(wo, cfg) {
   return {
     endpoint:     String(wo.endpoint || "https://api.openai.com/v1/chat/completions").trim(),
@@ -190,10 +163,7 @@ function getResolvedAiCfg(wo, cfg) {
   };
 }
 
-/************************************************************************************/
-/* functionSignature: getAiCompletion (aiCfg, messages)                              *
-/* Calls the configured AI endpoint directly and returns the response text.          *
-/************************************************************************************/
+
 async function getAiCompletion(aiCfg, messages) {
   const { endpoint, model, apiKey, maxTokens, temperature } = aiCfg;
 
@@ -217,11 +187,7 @@ async function getAiCompletion(aiCfg, messages) {
   return String(data?.choices?.[0]?.message?.content || "");
 }
 
-/************************************************************************************/
-/* functionSignature: getChatWo (wo, channelID, subchannelId, aiCfg)                 *
-/* Builds a minimal working-object for context.js calls scoped to a channel.        *
-/* aiCfg is the already-resolved config from getResolvedAiCfg().                    *
-/************************************************************************************/
+
 function getChatWo(wo, channelID, subchannelId, aiCfg) {
   return {
     db:          wo.db,
@@ -232,9 +198,7 @@ function getChatWo(wo, channelID, subchannelId, aiCfg) {
   };
 }
 
-/************************************************************************************/
-/* functionSignature: getWebpageChat (coreData)                                      *
-/************************************************************************************/
+
 export default async function getWebpageChat(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
@@ -654,9 +618,7 @@ export default async function getWebpageChat(coreData) {
   return coreData;
 }
 
-/************************************************************************************/
-/* functionSignature: getAccessDeniedHtml (opts)                                     *
-/************************************************************************************/
+
 function getAccessDeniedHtml(opts) {
   const base       = String(opts?.base || "/").replace(/\/+$/g, "") || "/";
   const activePath = String(opts?.activePath || base);
@@ -687,10 +649,7 @@ function getAccessDeniedHtml(opts) {
   );
 }
 
-/************************************************************************************/
-/* functionSignature: getChatHtml (opts)                                             *
-/* Chat SPA with channel selector, subchannel management, and message area.         *
-/************************************************************************************/
+
 function getChatHtml(opts) {
   const chatBase   = String(opts?.chatBase || "/chat").replace(/\/+$/, "") || "/chat";
   const activePath = String(opts?.activePath || chatBase);

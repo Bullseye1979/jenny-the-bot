@@ -14,10 +14,7 @@ const MODULE_NAME = "subchannel-config";
 let _pool = null;
 let _poolDsn = "";
 
-/************************************************************************************/
-/* functionSignature: getPool (db)                                                   *
-/* Returns a shared mysql pool for the given db config.                              *
-/************************************************************************************/
+
 async function getPool(db) {
   const dsn = `${db.host}|${db.port ?? 3306}|${db.user}|${db.database}`;
   if (_pool && _poolDsn === dsn) return _pool;
@@ -35,10 +32,7 @@ async function getPool(db) {
   return _pool;
 }
 
-/************************************************************************************/
-/* functionSignature: getSubchannelConfig (coreData)                                 *
-/* Loads and applies subchannel AI config overrides onto workingObject.              *
-/************************************************************************************/
+
 export default async function getSubchannelConfig(coreData) {
   const wo = coreData?.workingObject || {};
 

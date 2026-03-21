@@ -9,11 +9,6 @@
 import path from "node:path";
 import { getItem } from "../core/registry.js";
 
-/****************************************************************************************************************
-* functionSignature: getShouldBypassRedirect(wo, inpaintingHost)                                               *
-* purpose: Determines whether redirect should be bypassed based on headers (Accept/Sec-Fetch-Dest), user agent *
-*          and referer including the inpaintingHost.                                                           *
-****************************************************************************************************************/
 function getShouldBypassRedirect(wo, inpaintingHost) {
   const headers = wo?.http?.headers || {};
 
@@ -43,10 +38,6 @@ function getShouldBypassRedirect(wo, inpaintingHost) {
   return isDiscord || isFromInpainting || likelyWantsBinaryImage || browserExplicitImageFetch;
 }
 
-/****************************************************************************************************************
-* functionSignature: setSendNow(wo)                                                                            *
-* purpose: Sends the prepared HTTP response immediately if available.                                          *
-****************************************************************************************************************/
 async function setSendNow(wo) {
   try {
     const requestKey = wo?.http?.requestKey;
@@ -68,10 +59,6 @@ async function setSendNow(wo) {
   }
 }
 
-/****************************************************************************************************************
-* functionSignature: getWebpageInpaint(coreData)                                                               *
-* purpose: Applies redirect logic for image documents, writes response, and sets jump.                         *
-****************************************************************************************************************/
 export default async function getWebpageInpaint(coreData) {
   const wo = coreData?.workingObject || {};
 

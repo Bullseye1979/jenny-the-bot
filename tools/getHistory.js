@@ -10,10 +10,7 @@ import mysql from "mysql2/promise";
 const MODULE_NAME = "getHistory";
 const POOLS = new Map();
 
-/**********************************************************************************/
-/* functionSignature: getPool (wo)                                                 *
-/* Create or reuse a MySQL pool based on workingObject database settings.          *
-/**********************************************************************************/
+
 async function getPool(wo) {
   const key = JSON.stringify({ h: wo?.db?.host, u: wo?.db?.user, d: wo?.db?.database });
   if (POOLS.has(key)) {
@@ -38,16 +35,10 @@ async function getPool(wo) {
   return pool;
 }
 
-/**********************************************************************************/
-/* functionSignature: getPadString (n)                                             *
-/* Return a two-digit, zero-padded string representation.                          *
-/**********************************************************************************/
+
 function getPadString(n) { return String(n).padStart(2, "0"); }
 
-/**********************************************************************************/
-/* functionSignature: getParsedHumanDate (input, isEnd)                            *
-/* Parse human dates into "YYYY-MM-DD HH:mm:ss" or return null if unsupported.     *
-/**********************************************************************************/
+
 function getParsedHumanDate(input, isEnd = false) {
   if (!input) return null;
   const raw = String(input).trim();
@@ -74,10 +65,7 @@ function getParsedHumanDate(input, isEnd = false) {
   return null;
 }
 
-/**********************************************************************************/
-/* functionSignature: getISO (ts)                                                  *
-/* Convert "YYYY-MM-DD HH:mm:ss" to ISO 8601 if valid, else passthru.              *
-/**********************************************************************************/
+
 function getISO(ts) {
   if (!ts) return "";
   const d = new Date(ts.replace(" ", "T"));
@@ -85,20 +73,13 @@ function getISO(ts) {
   return d.toISOString();
 }
 
-/**********************************************************************************/
-/* functionSignature: getIsDateOnly (raw)                                          *
-/* Determine if value is a date-only string in DE or ISO format.                   *
-/**********************************************************************************/
+
 function getIsDateOnly(raw) {
   const s = String(raw || "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(s) || /^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s);
 }
 
-/**********************************************************************************/
-/* functionSignature: getAddDaysUTC (yyyy_mm_dd, days)                             *
-/* Add UTC days to a date-only string and return a "YYYY-MM-DD" formatted date     *
-/*          string.                                                                *
-/**********************************************************************************/
+
 function getAddDaysUTC(yyyy_mm_dd, days) {
   const d = new Date(yyyy_mm_dd + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + (days | 0));
@@ -108,11 +89,7 @@ function getAddDaysUTC(yyyy_mm_dd, days) {
   return `${y}-${m}-${da}`;
 }
 
-/**********************************************************************************/
-/* functionSignature: getRowsByTime (pool, channelIds, opts)                       *
-/* Retrieve rows from DB within a time range for one or multiple channels with     *
-/*          pagination and roles.                                                  *
-/**********************************************************************************/
+
 async function getRowsByTime(
   pool,
   channelIds,
@@ -152,11 +129,7 @@ async function getRowsByTime(
   return rows || [];
 }
 
-/**********************************************************************************/
-/* functionSignature: getPreloadUpToCap (pool, channelIds, opts)                   *
-/* Load pages of rows up to a cap or until none remain; propagate includeToolRows  *
-/*          downstream consistently.                                               *
-/**********************************************************************************/
+
 async function getPreloadUpToCap(
   pool,
   channelIds,
@@ -184,11 +157,7 @@ async function getPreloadUpToCap(
   return out;
 }
 
-/**********************************************************************************/
-/* functionSignature: getBuildSummaryMessages (meta, lines, extraPrompt)           *
-/* Build messages payload for summarization with optional operator instructions    *
-/*          and concise channel info.                                              *
-/**********************************************************************************/
+
 function getBuildSummaryMessages(meta, lines, extraPrompt) {
   const channelLine = Array.isArray(meta.channels) && meta.channels.length > 1
     ? `Channels: ${meta.channels.join(", ")}`
@@ -218,11 +187,7 @@ function getBuildSummaryMessages(meta, lines, extraPrompt) {
   return msgs;
 }
 
-/**********************************************************************************/
-/* functionSignature: getSummarize (wo, meta, rows, cfg, extraPrompt)              *
-/* Perform an OpenAI-compatible summarization call; respects cfg.max_tokens and    *
-/*          returns model and summary or error.                                    *
-/**********************************************************************************/
+
 async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
   const endpoint =
     (typeof cfg?.endpoint === "string" && cfg.endpoint)
@@ -284,12 +249,7 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
   return { ok: true, summary: answer, model };
 }
 
-/**********************************************************************************/
-/* functionSignature: getHistoryInvoke (args, coreData)                            *
-/* Execute retrieval: dump (≤ threshold), single summary (≤ max_rows), or chunked  *
-/*          summaries (> max_rows) with paging and prompt steering across one or   *
-/*          more channels.                                                         *
-/**********************************************************************************/
+
 async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const cfgTool = wo?.toolsconfig?.getHistory || {};
@@ -555,11 +515,7 @@ async function getHistoryInvoke(args, coreData) {
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: getDefaultExport ()                                          *
-/* Construct the tool definition and return the default export object for function *
-/*          invocation.                                                            *
-/**********************************************************************************/
+
 function getDefaultExport() {
   return {
     name: MODULE_NAME,

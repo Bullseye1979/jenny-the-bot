@@ -17,10 +17,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-admin-join";
 
-/**************************************************************
-/* functionSignature: setLogVoiceStateDiag (connection, log, ctx) *
-/* Logs state transitions of a voice connection for diagnostics   *
-/**************************************************************/
+
 function setLogVoiceStateDiag(connection, log, ctx) {
   try {
     connection.setMaxListeners?.(0);
@@ -30,10 +27,7 @@ function setLogVoiceStateDiag(connection, log, ctx) {
   } catch {}
 }
 
-/**************************************************************
-/* functionSignature: getRegistry ()                         *
-/* Ensures and returns the voice session registry object     *
-/**************************************************************/
+
 async function getRegistry() {
   const key = "discord-voice:registry";
   let reg = null;
@@ -48,10 +42,7 @@ async function getRegistry() {
   return reg;
 }
 
-/**************************************************************
-/* functionSignature: setAddSessionKey (sessionKey)          *
-/* Adds a session key to the shared registry list            *
-/**************************************************************/
+
 async function setAddSessionKey(sessionKey) {
   const key = "discord-voice:registry";
   const reg = await getRegistry();
@@ -61,10 +52,7 @@ async function setAddSessionKey(sessionKey) {
   }
 }
 
-/**************************************************************
-/* functionSignature: setRemoveSessionKey (sessionKey)       *
-/* Removes a session key from the shared registry list       *
-/**************************************************************/
+
 async function setRemoveSessionKey(sessionKey) {
   const key = "discord-voice:registry";
   const reg = await getRegistry();
@@ -72,10 +60,7 @@ async function setRemoveSessionKey(sessionKey) {
   try { await putItem(reg, key); } catch {}
 }
 
-/**************************************************************
-/* functionSignature: getResolveClient (wo)                  *
-/* Resolves and returns the Discord client from workingObject*
-/**************************************************************/
+
 async function getResolveClient(wo) {
   const ref = wo?.clientRef || wo?.refs?.client || "discord:client";
   try {
@@ -85,10 +70,7 @@ async function getResolveClient(wo) {
   }
 }
 
-/**************************************************************
-/* functionSignature: getResolveGuildAndMember (client, guildId, userId) *
-/* Fetches and returns the guild and member objects                     *
-/**************************************************************/
+
 async function getResolveGuildAndMember(client, guildId, userId) {
   try {
     const guild  = await client.guilds.fetch(guildId);
@@ -99,10 +81,7 @@ async function getResolveGuildAndMember(client, guildId, userId) {
   }
 }
 
-/**************************************************************
-/* functionSignature: getDiscordJoinLeave (coreData)         *
-/* Handles /join and /leave to manage per-guild voice session*
-/**************************************************************/
+
 export default async function getDiscordJoinLeave(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

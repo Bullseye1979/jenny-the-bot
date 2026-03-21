@@ -59,10 +59,7 @@ try {
   if (mod?.transcribeWithWhisper) transcribeWithWhisper = mod.transcribeWithWhisper;
 } catch {}
 
-/*************************************************************************************
-/* functionSignature: getAudioDurationS (filePath)                                 *
-/* Returns the duration of an audio file in seconds via ffprobe.                   *
-/*************************************************************************************/
+
 function getAudioDurationS(filePath) {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, meta) => {
@@ -75,10 +72,7 @@ function getAudioDurationS(filePath) {
   });
 }
 
-/*************************************************************************************
-/* functionSignature: getFirstAppearanceOrder (segments, field)                    *
-/* Returns unique values of `field` from segments in the order they first appear.  *
-/*************************************************************************************/
+
 function getFirstAppearanceOrder(segments, field) {
   const seen = [];
   for (const seg of segments) {
@@ -88,15 +82,7 @@ function getFirstAppearanceOrder(segments, field) {
   return seen;
 }
 
-/*************************************************************************************
-/* functionSignature: splitAudioIntoChunks                                         *
-/*   (filePath, chunkDir, chunkDurationS, overlapS, isDiarize)                     *
-/* Splits a WAV file into sequential chunks. When isDiarize is true, every chunk   *
-/* after the first starts overlapS seconds before its logical boundary so that     *
-/* speaker stitching can use the repeated audio to match labels across chunks.     *
-/* Returns an array of { file, overlapDur } where overlapDur is the number of     *
-/* overlap seconds prepended (0 for the first chunk).                              *
-/*************************************************************************************/
+
 async function splitAudioIntoChunks(filePath, chunkDir, chunkDurationS, overlapS, isDiarize) {
   const duration = await getAudioDurationS(filePath);
   const chunks   = [];
@@ -131,18 +117,7 @@ async function splitAudioIntoChunks(filePath, chunkDir, chunkDurationS, overlapS
   return chunks;
 }
 
-/*************************************************************************************
-/* functionSignature: buildSpeakerMapping                                           *
-/*   (segments, overlapDur, prevGlobalSegments, counter, chunkIdx)                 *
-/* Builds a local-label → global-label map for one chunk.                          *
-/*                                                                                 *
-/* Chunk 0: assigns A, B, C … to speakers in order of first appearance.            *
-/* Chunk N: compares speakers in the overlap region (start < overlapDur) with      *
-/*          speakers in the previous chunk's overlap tail (end > prevEnd-overlapS) *
-/*          by order of first appearance; matched speakers keep their global label. *
-/*          Unmatched speakers receive an offset label: base_letter + "_" + chunk  *
-/*          index (e.g. "C_2") to signal that identity is uncertain.               *
-/*************************************************************************************/
+
 function buildSpeakerMapping(segments, overlapDur, prevGlobalSegments, counter, chunkIdx) {
   const localMap = {};
 
@@ -182,12 +157,7 @@ function buildSpeakerMapping(segments, overlapDur, prevGlobalSegments, counter, 
   return localMap;
 }
 
-/*************************************************************************************
-/* functionSignature: formatDiarizedSegments (segments, localMap, overlapDur)      *
-/* Converts diarized segments to "LABEL: text" lines.                              *
-/* Segments whose start timestamp falls within the overlap region                  *
-/* (start < overlapDur) are excluded to prevent duplicate content.                 *
-/*************************************************************************************/
+
 function formatDiarizedSegments(segments, localMap, overlapDur) {
   return segments
     .filter(s  => (s.start ?? 0) >= overlapDur)
@@ -200,10 +170,7 @@ function formatDiarizedSegments(segments, localMap, overlapDur) {
     .join("\n");
 }
 
-/*************************************************************************************
-/* functionSignature: getAudioTranscribeUrl (endpoint)                             *
-/* Normalizes an OpenAI-compatible transcription endpoint URL.                     *
-/*************************************************************************************/
+
 function getAudioTranscribeUrl(endpoint) {
   const ep = (endpoint || "").trim().replace(/\/+$/, "");
   if (ep) {
@@ -214,10 +181,7 @@ function getAudioTranscribeUrl(endpoint) {
   return base ? `${base}/v1/audio/transcriptions` : "https://api.openai.com/v1/audio/transcriptions";
 }
 
-/*************************************************************************************
-/* functionSignature: transcribeOneRaw (fp, opts)                                  *
-/* Sends a WAV file to the transcription API and returns the raw JSON response.    *
-/*************************************************************************************/
+
 async function transcribeOneRaw(fp, { model, language, isDiarize, apiKey, url, Fetch, FormData, Blob }) {
   const fd = new FormData();
   fd.set("model", model);
@@ -237,12 +201,7 @@ async function transcribeOneRaw(fp, { model, language, isDiarize, apiKey, url, F
   return res.json();
 }
 
-/*************************************************************************************
-/* functionSignature: getTranscribeAudio (filePath, options)                       *
-/* Transcribes an audio file. Large files are split into overlapping chunks;       *
-/* for diarized models the speaker labels are stitched across chunk boundaries     *
-/* and the overlap region is removed from the output to avoid duplicate text.      *
-/*************************************************************************************/
+
 async function getTranscribeAudio(filePath, { model, language, apiKey, endpoint, chunkDurationS, overlapDurationS }) {
   let Fetch = globalThis.fetch, FormData = globalThis.FormData, Blob = globalThis.Blob;
   if (!Fetch || !FormData || !Blob) {
@@ -307,10 +266,7 @@ async function getTranscribeAudio(filePath, { model, language, apiKey, endpoint,
   }
 }
 
-/*************************************************************************************
-/* functionSignature: getCoreVoiceTranscribe (coreData)                            *
-/* Main module entry: quality gate → transcription → payload.                      *
-/*************************************************************************************/
+
 export default async function getCoreVoiceTranscribe(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);

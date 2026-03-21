@@ -12,46 +12,31 @@ import discordJs from "discord.js";
 const { EmbedBuilder } = discordJs;
 import { getItem } from "../core/registry.js";
 
-/**************************************************************
-/* functionSignature: getChannelId (wo)                      *
-/* Resolves a channel id from admin snapshot or workingObject*
-/**************************************************************/
+
 function getChannelId(wo) {
   const fromAdmin = wo?.admin?.channelId;
   const fromWO = wo?.channelID;
   return String(fromAdmin || fromWO || "");
 }
 
-/**************************************************************
-/* functionSignature: getAvatarDir ()                        *
-/* Returns the absolute directory path for stored avatars    *
-/**************************************************************/
+
 function getAvatarDir() {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   return path.join(__dirname, "..", "pub", "documents", "avatars");
 }
 
-/**************************************************************
-/* functionSignature: setEnsureDir (absPath)                 *
-/* Ensures a directory exists                                *
-/**************************************************************/
+
 function setEnsureDir(absPath) {
   if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
 }
 
-/**************************************************************
-/* functionSignature: getAvatarFilePath (channelId)          *
-/* Returns the avatar file path for a given channel          *
-/**************************************************************/
+
 function getAvatarFilePath(channelId) {
   return path.join(getAvatarDir(), `${channelId}.png`);
 }
 
-/**************************************************************
-/* functionSignature: setWriteAvatar (channelId, buf)        *
-/* Atomically writes an avatar buffer to disk                *
-/**************************************************************/
+
 function setWriteAvatar(channelId, buf) {
   const dir = getAvatarDir();
   setEnsureDir(dir);
@@ -65,10 +50,7 @@ function setWriteAvatar(channelId, buf) {
   return p;
 }
 
-/**************************************************************
-/* functionSignature: setLog (wo, message, level, extra)     *
-/* Appends a structured log entry to workingObject.logging   *
-/**************************************************************/
+
 function setLog(wo, message, level = "info", extra = null) {
   (wo.logging ||= []).push({
     timestamp: new Date().toISOString(),
@@ -80,10 +62,7 @@ function setLog(wo, message, level = "info", extra = null) {
   });
 }
 
-/**************************************************************
-/* functionSignature: getComposePrompt (wo)                  *
-/* Builds the final avatar prompt text from workingObject    *
-/**************************************************************/
+
 function getComposePrompt(wo) {
   const persona = String(wo?.persona || wo?.persona || "").trim();
   const instructions = String(wo?.instructions || wo?.instructions || "").trim();
@@ -109,10 +88,7 @@ function getComposePrompt(wo) {
   return `${base}\n${suffix}`;
 }
 
-/**************************************************************
-/* functionSignature: setAppendPrompt (wo, extra)            *
-/* Appends additional text to the avatar prompt field        *
-/**************************************************************/
+
 function setAppendPrompt(wo, extra) {
   const base = String(wo?.avatarprompt ?? wo?.avatarPrompt ?? "").trim();
   const add = String(extra || "").trim();
@@ -120,10 +96,7 @@ function setAppendPrompt(wo, extra) {
   wo.avatarprompt = combined;
 }
 
-/**************************************************************
-/* functionSignature: getDownloadUrlBuffer (urlStr)          *
-/* Downloads a URL and returns its contents as a Buffer      *
-/**************************************************************/
+
 async function getDownloadUrlBuffer(urlStr) {
   const res = await fetch(String(urlStr));
   if (!res.ok) {
@@ -134,10 +107,7 @@ async function getDownloadUrlBuffer(urlStr) {
   return Buffer.from(ab);
 }
 
-/**************************************************************
-/* functionSignature: getGenerateAvatarBuffer (wo)           *
-/* Calls the image API and returns the generated image buffer*
-/**************************************************************/
+
 async function getGenerateAvatarBuffer(wo) {
   const endpoint = String(wo?.avatarEndpoint || "");
   const model = String(wo?.avatarModel || "");
@@ -172,10 +142,7 @@ async function getGenerateAvatarBuffer(wo) {
   throw new Error("No image returned by endpoint");
 }
 
-/**************************************************************
-/* functionSignature: getResolveChannel (wo, channelId)      *
-/* Resolves a Discord channel via the client registry        *
-/**************************************************************/
+
 async function getResolveChannel(wo, channelId) {
   const clientKey = wo?.clientRef || wo?.refs?.client || "discord:client";
   const client = await getItem(clientKey);
@@ -187,10 +154,7 @@ async function getResolveChannel(wo, channelId) {
   }
 }
 
-/**************************************************************
-/* functionSignature: setSendAvatarEmbed (wo, channel, filePath) *
-/* Sends a preview embed with the new avatar image           *
-/**************************************************************/
+
 async function setSendAvatarEmbed(wo, channel, filePath) {
   try {
     const filename = filePath.split(filePath.includes("/") ? "/" : "\\").pop();
@@ -207,10 +171,7 @@ async function setSendAvatarEmbed(wo, channel, filePath) {
   }
 }
 
-/**************************************************************
-/* functionSignature: getAdminCommand (wo)                   *
-/* Parses the admin slash command for avatar operations      *
-/**************************************************************/
+
 function getAdminCommand(wo) {
   const cmd = (wo?.admin?.command || "").toLowerCase();
   if (cmd !== "avatar") return { isAvatar: false };
@@ -227,10 +188,7 @@ function getAdminCommand(wo) {
   return { isAvatar: true, kind: "regen" };
 }
 
-/**************************************************************
-/* functionSignature: getDiscordAdminAvatar (coreData)       *
-/* Handles /avatar slash operations and writes files + embed *
-/**************************************************************/
+
 export default async function getDiscordAdminAvatar(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "discord-admin") {

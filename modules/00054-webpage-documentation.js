@@ -27,10 +27,7 @@ const EXTRA_DOCS = [
   }
 ];
 
-/************************************************************************************/
-/* functionSignature: escHtml (s)                                                   *
-/* Escapes HTML special characters for safe output.                                 *
-/************************************************************************************/
+
 function escHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -39,10 +36,7 @@ function escHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-/************************************************************************************/
-/* functionSignature: getDocFiles ()                                                 *
-/* Returns sorted list of {name, filePath} from documentation/ plus EXTRA_DOCS.    *
-/************************************************************************************/
+
 function getDocFiles() {
   const files = [];
   try {
@@ -60,20 +54,13 @@ function getDocFiles() {
   return files;
 }
 
-/************************************************************************************/
-/* functionSignature: getFilePath (files, name)                                     *
-/* Returns the absolute filePath for a given name, or null if not found.            *
-/************************************************************************************/
+
 function getFilePath(files, name) {
   const entry = files.find(f => f.name === name);
   return entry ? entry.filePath : null;
 }
 
-/************************************************************************************/
-/* functionSignature: getMdToHtml (md)                                              *
-/* Converts Markdown text to HTML. Handles headings, bold, italic, code blocks,    *
-/* inline code, tables, links, lists, blockquotes, and horizontal rules.            *
-/************************************************************************************/
+
 function getMdToHtml(md) {
   const lines = md.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   const out = [];
@@ -237,10 +224,7 @@ function getMdToHtml(md) {
   return out.join("\n");
 }
 
-/************************************************************************************/
-/* functionSignature: getDocNavHtml (files, currentName, basePath)                  *
-/* Builds a sidebar navigation list from the file list.                             *
-/************************************************************************************/
+
 function getDocNavHtml(files, currentName, basePath) {
   if (!files.length) return "<p class='doc-empty'>No .md files found.</p>";
   const items = files.map(({ name }) => {
@@ -251,10 +235,7 @@ function getDocNavHtml(files, currentName, basePath) {
   return `<nav class="doc-nav">${items.join("")}</nav>`;
 }
 
-/************************************************************************************/
-/* functionSignature: getPageHtml (wo, files, currentName, content, basePath)       *
-/* Renders the full HTML page with menu, sidebar, and document content.             *
-/************************************************************************************/
+
 function getPageHtml(wo, files, currentName, content, basePath) {
   const menu     = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];
   const role     = String(wo?.webAuth?.role || "");
@@ -336,10 +317,7 @@ document.addEventListener("click", function(e) {
 </html>`;
 }
 
-/************************************************************************************/
-/* functionSignature: getWebpageDocumentation (coreData)                            *
-/* Main module entry. Handles GET requests for the documentation browser.           *
-/************************************************************************************/
+
 export default async function getWebpageDocumentation(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;

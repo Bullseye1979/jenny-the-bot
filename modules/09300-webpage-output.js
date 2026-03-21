@@ -18,10 +18,7 @@ const MODULE_NAME = "webpage-output";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**************************************************************/
-/* functionSignature: getIsSoftHttpWriteError (e)             */
-/* Returns true for expected HTTP write errors (client abort) */
-/**************************************************************/
+
 function getIsSoftHttpWriteError(e) {
   const code = String(e?.code || "");
   const msg = String(e?.message || "").toLowerCase();
@@ -36,10 +33,7 @@ function getIsSoftHttpWriteError(e) {
   return false;
 }
 
-/**************************************************************/
-/* functionSignature: getContentType (filePath)              */
-/* Return an appropriate Content-Type header for a file.     */
-/**************************************************************/
+
 function getContentType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   switch (ext) {
@@ -64,10 +58,7 @@ function getContentType(filePath) {
   }
 }
 
-/**************************************************************/
-/* functionSignature: setSendResponse (res, status, body, headers) */
-/* Send an HTTP response with safe defaults and length.       */
-/**************************************************************/
+
 function setSendResponse(res, status, body = "", headers = {}) {
   if (!res) return;
   if (res.writableEnded) return;
@@ -99,10 +90,7 @@ function setSendResponse(res, status, body = "", headers = {}) {
   }
 }
 
-/**************************************************************/
-/* functionSignature: getSafeJoin (root, reqPath)            */
-/* Safely resolve a path within a root directory.            */
-/**************************************************************/
+
 function getSafeJoin(root, reqPath) {
   const clean = decodeURIComponent(String(reqPath || "/").split("?")[0].split("#")[0]);
   const normalized = path.normalize(clean.startsWith("/") ? clean : `/${clean}`);
@@ -111,10 +99,7 @@ function getSafeJoin(root, reqPath) {
   return resolved;
 }
 
-/**************************************************************/
-/* functionSignature: getServeFileWithRange (req, res, absPath, stat) *
-/* Serve a file with HEAD and Range support.                  */
-/**************************************************************/
+
 function getServeFileWithRange(req, res, absPath, stat) {
   const total = stat.size;
   const ctype = getContentType(absPath);
@@ -250,10 +235,7 @@ function getServeFileWithRange(req, res, absPath, stat) {
   }
 }
 
-/**************************************************************/
-/* functionSignature: getHandleStaticDocument (wo, req, res, log) *
-/* Serve a static file from documents root with range support. *
-/**************************************************************/
+
 function getHandleStaticDocument(wo, req, res, log) {
   const urlPath = String(wo?.http?.path || "/");
   if (urlPath === "/documents" || urlPath === "/documents/") {
@@ -298,10 +280,7 @@ function getHandleStaticDocument(wo, req, res, log) {
   });
 }
 
-/**************************************************************/
-/* functionSignature: getHandleHttpResponse (wo, req, res, log) *
-/* Send an application response or stream a specified file.   *
-/**************************************************************/
+
 function getHandleHttpResponse(wo, req, res, log) {
   const resp = wo?.http?.response || {};
   const status = Number.isFinite(resp.status) ? Number(resp.status) : 200;
@@ -349,10 +328,7 @@ function getHandleHttpResponse(wo, req, res, log) {
   return setSendResponse(res, status, body, headers);
 }
 
-/**************************************************************/
-/* functionSignature: getWebpageOutput (coreData)            */
-/* Main output handler for the "webpage" flow.               */
-/**************************************************************/
+
 export default async function getWebpageOutput(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;

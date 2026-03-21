@@ -8,38 +8,26 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-channel-config";
 
-/************************************************************************************/
-/* functionSignature: isPlainObject (v)                                            *
-/* true if v is a plain object.                                                    *
-/************************************************************************************/
+
 function isPlainObject(v) {
   if (!v || typeof v !== "object") return false;
   if (Array.isArray(v)) return false;
   return Object.getPrototypeOf(v) === Object.prototype;
 }
 
-/************************************************************************************/
-/* functionSignature: normalizeStr (v)                                             *
-/* a trimmed string from any value.                                                *
-/************************************************************************************/
+
 function normalizeStr(v) {
   if (v === undefined || v === null) return "";
   return String(v).trim();
 }
 
-/************************************************************************************/
-/* functionSignature: normalizeStrList (v)                                         *
-/* a list of trimmed non-empty strings.                                            *
-/************************************************************************************/
+
 function normalizeStrList(v) {
   if (!Array.isArray(v)) return [];
   return v.map(x => normalizeStr(x)).filter(Boolean);
 }
 
-/************************************************************************************/
-/* functionSignature: includesCI (list, value)                                     *
-/* true if list contains value (case-insensitive).                                 *
-/************************************************************************************/
+
 function includesCI(list, value) {
   const v = normalizeStr(value);
   if (!v) return false;
@@ -53,10 +41,7 @@ function includesCI(list, value) {
   return false;
 }
 
-/************************************************************************************/
-/* functionSignature: deepMergePlain (target, source)                              *
-/* a deep-merged plain object; arrays are replaced.                                *
-/************************************************************************************/
+
 function deepMergePlain(target, source) {
   const out = isPlainObject(target) ? { ...target } : {};
   if (!isPlainObject(source)) return out;
@@ -87,40 +72,28 @@ function deepMergePlain(target, source) {
   return out;
 }
 
-/************************************************************************************/
-/* functionSignature: matchChannel (node, channelId)                               *
-/* true if channelId matches node.channelMatch.                                    *
-/************************************************************************************/
+
 function matchChannel(node, channelId) {
   const list = normalizeStrList(node?.channelMatch);
   if (list.length === 0) return false;
   return includesCI(list, channelId);
 }
 
-/************************************************************************************/
-/* functionSignature: matchFlow (node, flow)                                       *
-/* true if flow matches node.flowMatch (case-insensitive).                         *
-/************************************************************************************/
+
 function matchFlow(node, flow) {
   const list = normalizeStrList(node?.flowMatch);
   if (list.length === 0) return false;
   return includesCI(list, flow);
 }
 
-/************************************************************************************/
-/* functionSignature: matchUser (node, userId)                                     *
-/* true if userId matches node.userMatch.                                          *
-/************************************************************************************/
+
 function matchUser(node, userId) {
   const list = normalizeStrList(node?.userMatch);
   if (list.length === 0) return false;
   return list.includes(normalizeStr(userId));
 }
 
-/************************************************************************************/
-/* functionSignature: applyOverrides (workingObject, overrides)                    *
-/* the count of keys applied from overrides onto workingObject.                    *
-/************************************************************************************/
+
 function applyOverrides(workingObject, overrides) {
   if (!isPlainObject(workingObject)) return 0;
   if (!isPlainObject(overrides)) return 0;
@@ -157,10 +130,7 @@ function applyOverrides(workingObject, overrides) {
   return appliedKeys;
 }
 
-/************************************************************************************/
-/* functionSignature: getEffectiveChannelId (workingObject)                        *
-/* "DM" for DM contexts, otherwise the channel id string.                          *
-/************************************************************************************/
+
 function getEffectiveChannelId(workingObject) {
   const id = normalizeStr(
     workingObject?.channelID ??
@@ -177,10 +147,7 @@ function getEffectiveChannelId(workingObject) {
   return isDM ? "DM" : id;
 }
 
-/************************************************************************************/
-/* functionSignature: ensureFlow (workingObject, effectiveChannelId, log)          *
-/* the flow string; defaults to "discord" for DMs when empty.                      *
-/************************************************************************************/
+
 function ensureFlow(workingObject, effectiveChannelId, log) {
   let flow = normalizeStr(workingObject?.flow);
 
@@ -193,10 +160,7 @@ function ensureFlow(workingObject, effectiveChannelId, log) {
   return flow;
 }
 
-/************************************************************************************/
-/* functionSignature: pickLastMatchingIndex (list, matcherFn)                      *
-/* { index, count } where index is the last match position.                        *
-/************************************************************************************/
+
 function pickLastMatchingIndex(list, matcherFn) {
   const arr = Array.isArray(list) ? list : [];
   let index = -1;
@@ -211,11 +175,7 @@ function pickLastMatchingIndex(list, matcherFn) {
   return { index, count };
 }
 
-/************************************************************************************/
-/* functionSignature: applyStrictHierarchy (workingObject, cfgChannels,            *
-/*                    channelId, flow, userId)                                     *
-/* { appliedKeys, matchedRules, warnings } from hierarchical matching.             *
-/************************************************************************************/
+
 function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userId) {
   const channels = Array.isArray(cfgChannels) ? cfgChannels : [];
 
@@ -288,13 +248,7 @@ function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userI
   return { appliedKeys, matchedRules, warnings };
 }
 
-/************************************************************************************/
-/* functionSignature: applyChannelConfig (workingObject, config, channelId, flow,  *
-/*                    userId)                                                      *
-/* Applies channel-config overrides directly to workingObject for cases where      *
-/* channelID is only known at runtime (e.g. webpage-chat API handlers).            *
-/* Safe to call even if channelId is not in channels — it is a no-op then.        *
-/************************************************************************************/
+
 export function applyChannelConfig(workingObject, config, channelId, flow, userId) {
   const channels = config?.["core-channel-config"]?.channels;
   if (!Array.isArray(channels) || !channelId || !flow) return;
@@ -303,10 +257,7 @@ export function applyChannelConfig(workingObject, config, channelId, flow, userI
   workingObject.channelallowed = true;
 }
 
-/************************************************************************************/
-/* functionSignature: getChannelConfig (coreData)                                  *
-/* coreData after applying hierarchical overrides onto workingObject.              *
-/************************************************************************************/
+
 export default async function getChannelConfig(coreData) {
   const workingObject = coreData?.workingObject || {};
   const log = getPrefixedLogger(workingObject, import.meta.url);

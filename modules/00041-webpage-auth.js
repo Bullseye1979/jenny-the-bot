@@ -16,9 +16,7 @@ const MODULE_NAME = "webpage-auth";
 const COOKIE_STATE = "jenny_oauth_state";
 const COOKIE_SESS = "jenny_session";
 
-/**************************************************************/
-/* functionSignature: setSendNow (wo)                         */
-/**************************************************************/
+
 async function setSendNow(wo) {
   const key = wo?.http?.requestKey;
   if (!key) return;
@@ -31,9 +29,7 @@ async function setSendNow(wo) {
   res.end(typeof r.body === "string" ? r.body : JSON.stringify(r.body ?? ""));
 }
 
-/**************************************************************/
-/* functionSignature: setJsonResp (wo, status, obj)           */
-/**************************************************************/
+
 function setJsonResp(wo, status, obj) {
   wo.http.response = {
     status,
@@ -42,18 +38,14 @@ function setJsonResp(wo, status, obj) {
   };
 }
 
-/**************************************************************/
-/* functionSignature: setRedirect (wo, url, cookies)          */
-/**************************************************************/
+
 function setRedirect(wo, url, cookies = []) {
   const headers = { Location: url, "Cache-Control": "no-store" };
   if (cookies.length) headers["Set-Cookie"] = cookies;
   wo.http.response = { status: 302, headers, body: "" };
 }
 
-/**************************************************************/
-/* functionSignature: getBaseUrl (wo)                         */
-/**************************************************************/
+
 function getBaseUrl(wo) {
   const h = wo?.http?.headers || {};
   const host = String(h["x-forwarded-host"] || h["host"] || "").trim();
@@ -62,17 +54,13 @@ function getBaseUrl(wo) {
   return `${proto}://${host}`;
 }
 
-/**************************************************************/
-/* functionSignature: getIsHttps (wo)                         */
-/**************************************************************/
+
 function getIsHttps(wo) {
   const h = wo?.http?.headers || {};
   return String(h["x-forwarded-proto"] || "").toLowerCase() === "https";
 }
 
-/**************************************************************/
-/* functionSignature: getParseCookies (cookieHeader)          */
-/**************************************************************/
+
 function getParseCookies(cookieHeader) {
   const out = {};
   const s = String(cookieHeader || "");
@@ -85,33 +73,25 @@ function getParseCookies(cookieHeader) {
   return out;
 }
 
-/**************************************************************/
-/* functionSignature: getB64UrlEncode (input)                 */
-/**************************************************************/
+
 function getB64UrlEncode(input) {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input));
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
-/**************************************************************/
-/* functionSignature: getB64UrlDecode (s)                     */
-/**************************************************************/
+
 function getB64UrlDecode(s) {
   const t = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
   const pad = t.length % 4 ? "=".repeat(4 - (t.length % 4)) : "";
   return Buffer.from(t + pad, "base64");
 }
 
-/**************************************************************/
-/* functionSignature: getHmac (secret, data)                  */
-/**************************************************************/
+
 function getHmac(secret, data) {
   return crypto.createHmac("sha256", String(secret)).update(String(data)).digest();
 }
 
-/**************************************************************/
-/* functionSignature: getSignToken (secret, payloadObj)       */
-/**************************************************************/
+
 function getSignToken(secret, payloadObj) {
   const payloadJson = JSON.stringify(payloadObj);
   const p = getB64UrlEncode(payloadJson);
@@ -119,9 +99,7 @@ function getSignToken(secret, payloadObj) {
   return `${p}.${sig}`;
 }
 
-/**************************************************************/
-/* functionSignature: getVerifyToken (secret, token)          */
-/**************************************************************/
+
 function getVerifyToken(secret, token) {
   const s = String(token || "");
   const parts = s.split(".");
@@ -142,9 +120,7 @@ function getVerifyToken(secret, token) {
   }
 }
 
-/**************************************************************/
-/* functionSignature: getCookieLine (name, value, opts)       */
-/**************************************************************/
+
 function getCookieLine(name, value, opts = {}) {
   const parts = [];
   parts.push(`${name}=${encodeURIComponent(String(value || ""))}`);
@@ -156,16 +132,12 @@ function getCookieLine(name, value, opts = {}) {
   return parts.join("; ");
 }
 
-/**************************************************************/
-/* functionSignature: getRandId ()                            */
-/**************************************************************/
+
 function getRandId() {
   return getB64UrlEncode(crypto.randomBytes(24));
 }
 
-/**************************************************************/
-/* functionSignature: getHttpPostForm (urlStr, formObj)       */
-/**************************************************************/
+
 async function getHttpPostForm(urlStr, formObj) {
   const { default: https } = await import("https");
   const { default: http } = await import("http");
@@ -198,9 +170,7 @@ async function getHttpPostForm(urlStr, formObj) {
   });
 }
 
-/**************************************************************/
-/* functionSignature: getHttpGetJson (urlStr, headers)        */
-/**************************************************************/
+
 async function getHttpGetJson(urlStr, headers = {}) {
   const { default: https } = await import("https");
   const { default: http } = await import("http");
@@ -222,9 +192,7 @@ async function getHttpGetJson(urlStr, headers = {}) {
   });
 }
 
-/**************************************************************/
-/* functionSignature: getNormalizeRoleLabel (cfg, roleValue)  */
-/**************************************************************/
+
 function getNormalizeRoleLabel(cfg, roleValue) {
   const raw = String(roleValue || "").trim();
   const map = cfg?.roleMap && typeof cfg.roleMap === "object" ? cfg.roleMap : {};
@@ -241,9 +209,7 @@ function getNormalizeRoleLabel(cfg, roleValue) {
   return def;
 }
 
-/**************************************************************/
-/* functionSignature: getRoleFromMember (cfg, member)         */
-/**************************************************************/
+
 function getRoleFromMember(cfg, member) {
   const roleIds = Array.isArray(member?.roles) ? member.roles.map(String) : [];
   const map = cfg?.roleMap && typeof cfg.roleMap === "object" ? cfg.roleMap : {};
@@ -297,9 +263,7 @@ function getRoleFromMember(cfg, member) {
   return { role: primary, roles: uniq, roleIds };
 }
 
-/**************************************************************/
-/* functionSignature: getIsAllowedByRole (cfg, roles)         */
-/**************************************************************/
+
 function getIsAllowedByRole(cfg, roles) {
   const allow = Array.isArray(cfg?.allowRoleIds) ? cfg.allowRoleIds.map(String) : [];
   if (!allow.length) return true;
@@ -307,9 +271,7 @@ function getIsAllowedByRole(cfg, roles) {
   return false;
 }
 
-/**************************************************************/
-/* functionSignature: setApplyAuthToWorkingObject (wo, cfg, sess) */
-/**************************************************************/
+
 function setApplyAuthToWorkingObject(wo, cfg, sess) {
   wo.webAuth = {
     username: sess?.username ? String(sess.username) : "",
@@ -320,24 +282,18 @@ function setApplyAuthToWorkingObject(wo, cfg, sess) {
   };
 }
 
-/**************************************************************/
-/* functionSignature: getIsAuthPath (p)                       */
-/**************************************************************/
+
 function getIsAuthPath(p) {
   const path = String(p || "");
-  return path === "/auth/login" || path === "/auth/callback" || path === "/auth/logout" || path === "/auth/sso";
+  return path === "/auth/login" || path === "/auth/callback" || path === "/auth/logout" || path === "/auth/sso" || path === "/auth/me";
 }
 
-/**************************************************************/
-/* functionSignature: getNextFromUrl (wo)                     */
-/**************************************************************/
+
 function getNextFromUrl(wo) {
   return String(wo.http?.url || wo.http?.path || "/") || "/";
 }
 
-/**************************************************************/
-/* functionSignature: getPorts (cfg)                          */
-/**************************************************************/
+
 function getPorts(cfg) {
   const loginPort = Number(cfg?.loginPort ?? 3111);
   const raw = cfg?.ports;
@@ -346,9 +302,7 @@ function getPorts(cfg) {
   return { loginPort, ports };
 }
 
-/**************************************************************/
-/* functionSignature: getWebpageAuth (coreData)               */
-/**************************************************************/
+
 export default async function getWebpageAuth(coreData) {
   const wo = coreData?.workingObject || {};
   const flow = String(wo?.flow || "").trim().toLowerCase();
@@ -401,6 +355,26 @@ export default async function getWebpageAuth(coreData) {
     const c1 = getCookieLine(COOKIE_SESS, "", { ...cookieBase, maxAge: 0 });
     const c2 = getCookieLine(COOKIE_STATE, "", { ...cookieBase, maxAge: 0 });
     setRedirect(wo, (publicBase ? publicBase : "") + "/auth/login?next=%2F", [c1, c2]);
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
+  /**************************************************************/
+  /* /auth/me — returns current session as JSON (any scoped port) */
+  /**************************************************************/
+  if (path === "/auth/me") {
+    if (sessObj) {
+      setApplyAuthToWorkingObject(wo, cfg, sessObj);
+      setJsonResp(wo, 200, {
+        ok: true,
+        userId:   wo.webAuth.userId,
+        username: wo.webAuth.username,
+        role:     wo.webAuth.role
+      });
+    } else {
+      setJsonResp(wo, 401, { ok: false, error: "not_authenticated" });
+    }
     wo.jump = true;
     await setSendNow(wo);
     return coreData;

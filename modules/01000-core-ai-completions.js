@@ -11,60 +11,34 @@ const MODULE_NAME = "core-ai-completions";
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 
-/********************************************************************************
-/* functionSignature: getAssistantAuthorName (wo)                               *
-/* Returns the assistant authorName (botName).                                  *
-/********************************************************************************/
+
 function getAssistantAuthorName(wo) {
   const v = (typeof wo?.botName === "string" && wo.botName.trim().length) ? wo.botName.trim() : "";
   return v.length ? v : undefined;
 }
 
-/********************************************************************************
-/* functionSignature: getShouldRunForThisModule (wo)                             *
-/* Returns true when useAiModule equals "completions".                           *
-/********************************************************************************/
+
 function getShouldRunForThisModule(wo) {
   const v = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
   return v === "completions";
 }
 
-/********************************************************************************
-/* functionSignature: getJsonSafe (v)                                            *
-/* Converts a value to a JSON-safe string for logging.                           *
-/********************************************************************************/
+
 function getJsonSafe(v) { try { return typeof v === "string" ? v : JSON.stringify(v); } catch { return String(v); } }
 
-/********************************************************************************
-/* functionSignature: getPreview (str, max)                                      *
-/* Truncates a string to max length with a suffix marker.                        *
-/********************************************************************************/
+
 function getPreview(str, max = 400) { const s = String(str ?? ""); return s.length > max ? s.slice(0, max) + " …[truncated]" : s; }
 
-/********************************************************************************
-/* functionSignature: getNum (value, def)                                        *
-/* Returns a finite number or the provided default.                              *
-/********************************************************************************/
+
 function getNum(value, def) { return Number.isFinite(value) ? Number(value) : def; }
 
-/********************************************************************************
-/* functionSignature: getBool (value, def)                                       *
-/* Returns a boolean value or the provided default.                              *
-/********************************************************************************/
+
 function getBool(value, def) { return typeof value === "boolean" ? value : def; }
 
-/********************************************************************************
-/* functionSignature: getStr (value, def)                                        *
-/* Returns a non-empty string or the provided default.                           *
-/********************************************************************************/
+
 function getStr(value, def) { return (typeof value === "string" && value.length) ? value : def; }
 
-/********************************************************************************
-/* functionSignature: getLooksCutOff (text)                                     *
-/* Returns true when text appears to end mid-sentence (no closing punctuation). *
-/* Applied regardless of finish_reason — local backends often return "stop"     *
-/* even when truncated. maxLoops caps worst-case false-positive continuations.  *
-/********************************************************************************/
+
 function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
   if (!s) return false;
@@ -73,25 +47,17 @@ function getLooksCutOff(text) {
   return true;
 }
 
-/********************************************************************************
-/* functionSignature: getTryParseJSON (text, fallback)                           *
-/* Parses JSON text with a fallback value on failure.                            *
-/********************************************************************************/
+
 function getTryParseJSON(text, fallback = {}) { try { return JSON.parse(text); } catch { return fallback; } }
 
-/********************************************************************************
-/* functionSignature: getWithTurnId (rec, wo)                                    *
-/* Injects workingObject.turn_id into a record if present.                       *
-/********************************************************************************/
+
 function getWithTurnId(rec, wo) {
   const t = typeof wo?.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
-  return { ...(t ? { ...rec, turn_id: t } : rec), ts: new Date().toISOString() };
+  const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined;
+  return { ...(t ? { ...rec, turn_id: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() };
 }
 
-/********************************************************************************
-/* functionSignature: getKiCfg (wo)                                              *
-/* Builds runtime configuration for the completions runner.                      *
-/********************************************************************************/
+
 function getKiCfg(wo) {
   const includeHistory = getBool(wo?.includeHistory, true);
   const includeHistoryTools = getBool(wo?.includeHistoryTools, false);
@@ -120,10 +86,7 @@ function getKiCfg(wo) {
   };
 }
 
-/********************************************************************************
-/* functionSignature: getRuntimeContextFromLast (wo, kiCfg, lastRecord)          *
-/* Builds minimal runtime context from the last history turn.                    *
-/********************************************************************************/
+
 function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
   if (!kiCfg.includeRuntimeContext || !kiCfg.includeHistory || !lastRecord) return null;
   const metadata = { id: String(wo?.channelID ?? ""), flow: String(wo?.flow ?? ""), clientRef: String(wo?.clientRef ?? "") };
@@ -131,20 +94,14 @@ function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
   return { metadata, last };
 }
 
-/********************************************************************************
-/* functionSignature: getAppendedContextBlockToUserContent (baseText, ctxObj)    *
-/* Appends a JSON context block to the user content.                             *
-/********************************************************************************/
+
 function getAppendedContextBlockToUserContent(baseText, contextObj) {
   if (!contextObj || typeof contextObj !== "object") return baseText ?? "";
   const jsonBlock = "```json\n" + JSON.stringify(contextObj) + "\n```";
   return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
 }
 
-/********************************************************************************
-/* functionSignature: getPromptFromSnapshot (rows, kiCfg, allowToolHistory)      *
-/* Converts stored rows to chat messages including tool turns when allowed.      *
-/********************************************************************************/
+
 function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
   if (!kiCfg.includeHistory) return [];
   const out = [];
@@ -195,10 +152,7 @@ function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: getToolsByName (names, wo)                                 *
-/* Dynamically imports tool modules by name and validates them.                  *
-/********************************************************************************/
+
 async function getToolsByName(names, wo) {
   const loaded = [];
   for (const name of names || []) {
@@ -229,20 +183,14 @@ async function getToolsByName(names, wo) {
   return loaded;
 }
 
-/********************************************************************************
-/* functionSignature: getToolDefs (toolModules)                                  *
-/* Extracts JSON schema function definitions from tool modules.                  *
-/********************************************************************************/
+
 function getToolDefs(toolModules) {
   return toolModules
     .map(t => t.definition)
     .filter(d => d && d.type === "function" && d.function?.name);
 }
 
-/********************************************************************************
-/* functionSignature: getExpandedToolArgs (args, wo)                             *
-/* Optionally expands short text args to the full assistant text if available.   *
-/********************************************************************************/
+
 function getExpandedToolArgs(args, wo) {
   const full = typeof wo?._fullAssistantText === "string" ? wo._fullAssistantText : "";
   if (!full || !args || typeof args !== "object") return args;
@@ -267,10 +215,7 @@ function getExpandedToolArgs(args, wo) {
   return args;
 }
 
-/********************************************************************************
-/* functionSignature: getExecToolCall (toolModules, toolCall, coreData)          *
-/* Executes a single tool call and returns a structured tool message.            *
-/********************************************************************************/
+
 async function getExecToolCall(toolModules, toolCall, coreData) {
   const wo = coreData?.workingObject || {};
   const name = toolCall?.function?.name || toolCall?.name;
@@ -347,10 +292,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getSystemContent (wo, kiCfg)                               *
-/* Builds the system prompt with runtime info and policy notes.                  *
-/********************************************************************************/
+
 async function getSystemContent(wo, kiCfg) {
   const now = new Date();
   const tz = getStr(wo?.timezone, "Europe/Berlin");
@@ -400,10 +342,7 @@ async function getSystemContent(wo, kiCfg) {
   return parts.filter(Boolean).join("\n\n");
 }
 
-/********************************************************************************
-/* functionSignature: getCoreAi (coreData)                                       *
-/* Runs the AI loop, executes tools, persists turns, and returns final text.     *
-/********************************************************************************/
+
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
   if (!Array.isArray(wo.logging)) wo.logging = [];

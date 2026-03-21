@@ -7,28 +7,19 @@
 
 const MODULE_NAME = "discord-add-files";
 
-/***************************************************************************************
-/* functionSignature: getToString (v)                                                  *
-/* Safe string conversion.                                                             *
-/***************************************************************************************/
+
 function getToString(v) {
   if (typeof v === "string") return v;
   if (v == null) return "";
   try { return String(v); } catch { return ""; }
 }
 
-/***************************************************************************************
-/* functionSignature: getIsHttpUrl (s)                                                 *
-/* Checks if a string looks like a http(s) URL.                                        *
-/***************************************************************************************/
+
 function getIsHttpUrl(s) {
   return typeof s === "string" && /^https?:\/\//.test(s);
 }
 
-/***************************************************************************************
-/* functionSignature: getNormalizedFileUrls (wo)                                       *
-/* Extracts normalized http/https URLs from workingObject.fileUrls.                    *
-/***************************************************************************************/
+
 function getNormalizedFileUrls(wo) {
   const raw = Array.isArray(wo?.fileUrls) ? wo.fileUrls : [];
   const urls = [];
@@ -57,10 +48,7 @@ function getNormalizedFileUrls(wo) {
   return deduped;
 }
 
-/***************************************************************************************
-/* functionSignature: getFilesBlock (urls)                                             *
-/* Builds a plain block from an array of URLs, one URL per line.                       *
-/***************************************************************************************/
+
 function getFilesBlock(urls) {
   if (!Array.isArray(urls) || !urls.length) return "";
   return urls
@@ -69,20 +57,14 @@ function getFilesBlock(urls) {
     .join("\n");
 }
 
-/***************************************************************************************
-/* functionSignature: getBasePayload (wo)                                              *
-/* Returns the current payload text, preferring `payload` over `Payload`.              *
-/***************************************************************************************/
+
 function getBasePayload(wo) {
   const p = typeof wo?.payload === "string" ? wo.payload : "";
   const P = (!p && typeof wo?.Payload === "string") ? wo.Payload : "";
   return p || P || "";
 }
 
-/***************************************************************************************
-/* functionSignature: setPayload (wo, text)                                            *
-/* Writes payload back to workingObject (syncs payload and Payload).                   *
-/***************************************************************************************/
+
 function setPayload(wo, text) {
   wo.payload = text;
   if (Object.prototype.hasOwnProperty.call(wo, "Payload") || typeof wo.Payload === "string") {
@@ -90,10 +72,7 @@ function setPayload(wo, text) {
   }
 }
 
-/***************************************************************************************
-/* functionSignature: getShouldSkipForSource (wo)                                      *
-/* Optional gate: only run for Discord if source is explicitly non-discord.            *
-/***************************************************************************************/
+
 function getShouldSkipForSource(wo) {
   const src = String(wo?.source ?? wo?.Source ?? "").trim().toLowerCase();
   if (!src) return false;
@@ -101,10 +80,7 @@ function getShouldSkipForSource(wo) {
   return true;
 }
 
-/***************************************************************************************
-/* functionSignature: getCore (coreData)                                               *
-/* Main entry: appends file URLs into payload as plain lines if available.             *
-/***************************************************************************************/
+
 export default async function getCore(coreData) {
   const wo = coreData?.workingObject || coreData?.working_object || {};
   if (!Array.isArray(wo.logging)) wo.logging = [];

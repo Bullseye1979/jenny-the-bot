@@ -11,10 +11,7 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "bard-voice-gate";
 
-/****************************************************************************************************************
- * functionSignature: getBardVoiceGate(coreData)
- * purpose: Stops the discord-voice pipeline if the speaker is the Bard bot.
- ****************************************************************************************************************/
+
 export default async function getBardVoiceGate(coreData) {
   const wo = coreData?.workingObject || {};
 

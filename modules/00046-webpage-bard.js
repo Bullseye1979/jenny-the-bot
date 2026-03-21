@@ -99,19 +99,13 @@ function getBasePath(cfg) {
   return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/bard";
 }
 
-/**********************************************************************************/
-/* functionSignature: getMultipartBoundary (ct)                                   */
-/* Extracts the multipart boundary string from a Content-Type header.             */
-/**********************************************************************************/
+
 function getMultipartBoundary(ct) {
   const m = /boundary=([^\s;]+)/i.exec(String(ct || ""));
   return m ? m[1].replace(/^"|"$/g, "") : null;
 }
 
-/**********************************************************************************/
-/* functionSignature: parseMultipart (rawBytes, boundary)                         */
-/* Parses a multipart/form-data Buffer into { fields, files }.                    */
-/**********************************************************************************/
+
 function parseMultipart(rawBytes, boundary) {
   const out = { fields: {}, files: {} };
   if (!Buffer.isBuffer(rawBytes) || !boundary) return out;
@@ -156,10 +150,7 @@ function parseMultipart(rawBytes, boundary) {
   return out;
 }
 
-/**********************************************************************************/
-/* functionSignature: getTitleFromFilename (filename)                             */
-/* Converts a filename to a display title: strips extension, normalizes spaces.  */
-/**********************************************************************************/
+
 function getTitleFromFilename(filename) {
   return filename
     .replace(/\.mp3$/i, "")
@@ -169,12 +160,7 @@ function getTitleFromFilename(filename) {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
-/**********************************************************************************/
-/* functionSignature: getExistingTagCategories (tracks)                           */
-/* Returns {locations, situations, moods} — sorted arrays of unique tags from     */
-/* each structural position across all library tracks (position 0 = location,     */
-/* position 1 = situation, positions 2+ = moods). Empty strings are excluded.    */
-/**********************************************************************************/
+
 function getExistingTagCategories(tracks) {
   const locs = new Set(), sits = new Set(), moods = new Set();
   for (const t of tracks) {
@@ -190,10 +176,7 @@ function getExistingTagCategories(tracks) {
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: callTavily (title, atCfg)                                   */
-/* Queries Tavily for genre/mood info about a song. Returns a text snippet.      */
-/**********************************************************************************/
+
 async function callTavily(title, atCfg) {
   const query = `"${title}" song music mood genre atmosphere RPG tabletop`;
   const body = {
@@ -224,13 +207,7 @@ async function callTavily(title, atCfg) {
     .join("\n\n");
 }
 
-/**********************************************************************************/
-/* functionSignature: callLlmForTags (title, tavilySnippet, tagCats, atCfg)      */
-/* Calls an LLM to generate 6 structured tags for a music track:                 */
-/* [location, situation, mood1, mood2, mood3, mood4]                             */
-/* location and situation may be empty strings (= fits any location/situation).  */
-/* tagCats = {locations:[], situations:[], moods:[]} from the current library.   */
-/**********************************************************************************/
+
 async function callLlmForTags(title, tavilySnippet, tagCats, atCfg) {
   const locList  = tagCats.locations.length  ? tagCats.locations.join(", ")  : "tavern, dungeon, forest, city, camp";
   const sitList  = tagCats.situations.length ? tagCats.situations.join(", ") : "combat, exploration, rest, dialogue, travel";
@@ -305,10 +282,7 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg) {
   return tags;
 }
 
-/**********************************************************************************/
-/* functionSignature: getMusicDir (cfg)                                           */
-/* Resolves the music directory from the module's own config section.             */
-/**********************************************************************************/
+
 function getMusicDir(cfg) {
   const dir = getStr(cfg.musicDir || "assets/bard");
   return path.resolve(__dirname, "..", dir);
@@ -363,11 +337,7 @@ function writeTracks(musicDir, tracks) {
   fs.writeFileSync(xmlPath, serializeTracks(tracks), "utf8");
 }
 
-/**********************************************************************************/
-/* functionSignature: getWebpageBard (coreData)                                   */
-/* Main module entry point. Handles all /bard-admin/* routes: audio stream,       */
-/* track listing, library management, and the Now Playing API endpoint.           */
-/**********************************************************************************/
+
 export default async function getWebpageBard(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;

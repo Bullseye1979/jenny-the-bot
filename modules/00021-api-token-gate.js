@@ -9,42 +9,26 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "api-token-gate";
 
-/**************************************************************
-/* functionSignature: getApiEnabled (wo)                      *
-/* Returns the numeric apiEnabled flag. Defaults to 1 when    *
-/* not set (backward-compatible: channel allowed by default). *
-/**************************************************************/
+
 function getApiEnabled(wo) {
   const v = wo?.apiEnabled;
   if (v === undefined || v === null || v === "") return 1;
   return Number(v);
 }
 
-/**************************************************************
-/* functionSignature: getApiSecret (wo)                       *
-/* Reads apiSecret from workingObject; empty = gate disabled. *
-/**************************************************************/
+
 function getApiSecret(wo) {
   return String(wo?.apiSecret || "").trim();
 }
 
-/**************************************************************
-/* functionSignature: getBearerToken (wo)                     *
-/* Extracts Bearer token from workingObject.httpAuthorization *
-/**************************************************************/
+
 function getBearerToken(wo) {
   const auth = String(wo?.httpAuthorization || "").trim();
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
   return "";
 }
 
-/**************************************************************
-/* functionSignature: getApiTokenGate (coreData)              *
-/* Gates the pipeline:                                        *
-/*   apiEnabled=0 → always blocked (hard channel lock).       *
-/*   apiEnabled=1 → blocked only when apiSecret is set and    *
-/*                  Bearer token does not match.              *
-/**************************************************************/
+
 export default async function getApiTokenGate(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

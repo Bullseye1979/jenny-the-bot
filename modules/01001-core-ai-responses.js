@@ -31,89 +31,50 @@ const MODULE_NAME = "core-ai-responses";
 const DEBUG_DIR = path.resolve("./pub/debug");
 const DOC_DIR = path.resolve("./pub/documents");
 
-/********************************************************************************
-/* functionSignature: getAssistantAuthorName (wo)                               *
-/* Returns the assistant authorName (botName).                                  *
-/********************************************************************************/
+
 function getAssistantAuthorName(wo) {
   const v = (typeof wo?.botName === "string" && wo.botName.trim().length) ? wo.botName.trim() : "";
   return v.length ? v : undefined;
 }
 
-/********************************************************************************
-/* functionSignature: getToString (v)                                           *
-/* Returns a safe string representation.                                        *
-/********************************************************************************/
+
 function getToString(v) { return typeof v === "string" ? v : (v == null ? "" : String(v)); }
 
-/********************************************************************************
-/* functionSignature: getStr (v, d)                                             *
-/* Returns v if non-empty string; otherwise default d.                          *
-/********************************************************************************/
+
 function getStr(v, d) { return (typeof v === "string" && v.length) ? v : d; }
 
-/********************************************************************************
-/* functionSignature: getNum (v, d)                                             *
-/* Returns finite numeric v; otherwise default d.                               *
-/********************************************************************************/
+
 function getNum(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; }
 
-/********************************************************************************
-/* functionSignature: getJSON (t, f)                                            *
-/* Parses JSON text t; returns fallback f on failure.                           *
-/********************************************************************************/
+
 function getJSON(t, f = null) { try { return JSON.parse(t); } catch { return f; } }
 
-/********************************************************************************
-/* functionSignature: getWithTurnId (rec, wo)                                   *
-/* Adds turn_id from working object if present.                                 *
-/********************************************************************************/
-function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; return { ...(t ? { ...rec, turn_id: t } : rec), ts: new Date().toISOString() }; }
 
-/********************************************************************************
-/* functionSignature: getPreview (s, n)                                         *
-/* Returns a truncated preview with ellipsis marker.                            *
-/********************************************************************************/
+function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined; return { ...(t ? { ...rec, turn_id: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() }; }
+
+
 function getPreview(s, n = 400) { const t = getToString(s); return t.length > n ? t.slice(0, n) + " …[truncated]" : t; }
 
-/********************************************************************************
-/* functionSignature: getLooksBase64 (s)                                        *
-/* Heuristically checks if s looks like base64 content.                         *
-/********************************************************************************/
+
 function getLooksBase64(s) { return typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s); }
 
-/********************************************************************************
-/* functionSignature: setEnsureDir (dirPath)                                    *
-/* Ensures a directory exists.                                                  *
-/********************************************************************************/
+
 function setEnsureDir(dirPath) {
   const p = getToString(dirPath);
   if (!p.length) return;
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 
-/********************************************************************************
-/* functionSignature: setEnsureDebugDir ()                                      *
-/* Ensures the debug directory exists.                                          *
-/********************************************************************************/
+
 function setEnsureDebugDir() { setEnsureDir(DEBUG_DIR); }
 
-/********************************************************************************
-/* functionSignature: setEnsureDocDir ()                                        *
-/* Ensures the public documents directory exists.                               *
-/********************************************************************************/
+
 function setEnsureDocDir() { setEnsureDir(DOC_DIR); }
 
-/********************************************************************************
-/* functionSignature: getSafeJSONStringify (obj)                                *
-/* Safe JSON stringify with fallback.                                           *
-/********************************************************************************/
+
 function getSafeJSONStringify(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj); } }
 
-/********************************************************************************
-/* functionSignature: setRedactSecrets (s)                                      *
-/* Redacts common secret patterns from text.                                    *
-/********************************************************************************/
+
 function setRedactSecrets(s) {
   s = (typeof s === "string") ? s : String(s);
   s = s.replace(/(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+\-\/=]+/gi, "$1***REDACTED***");
@@ -122,34 +83,22 @@ function setRedactSecrets(s) {
   return s;
 }
 
-/********************************************************************************
-/* functionSignature: getApproxBase64Bytes (b64)                                *
-/* Approximates decoded byte length of base64 text.                             *
-/********************************************************************************/
+
 function getApproxBase64Bytes(b64) {
   const s = (typeof b64 === "string") ? b64 : "";
   const pads = s.endsWith("==") ? 2 : (s.endsWith("=") ? 1 : 0);
   return Math.max(0, Math.floor(s.length * 0.75) - pads);
 }
 
-/********************************************************************************
-/* functionSignature: getSha256OfBase64 (b64)                                   *
-/* Computes SHA-256 of base64-decoded data.                                     *
-/********************************************************************************/
+
 function getSha256OfBase64(b64) { try { return createHash("sha256").update(Buffer.from(b64 || "", "base64")).digest("hex"); } catch { return "n/a"; } }
 
-/********************************************************************************
-/* functionSignature: getSanitizedForLog (obj)                                  *
-/* Produces a log-friendly sanitized clone.                                     *
-/********************************************************************************/
+
 function getSanitizedForLog(obj) {
   const seen = new WeakSet();
   const MAX_STRING = 2000;
 
-  /********************************************************************************
-  /* functionSignature: walk (x)                                                  *
-  /* Sanitizes objects/arrays/strings for safe logging.                            *
-  /********************************************************************************/
+
   function walk(x) {
     if (x && typeof x === "object") {
       if (seen.has(x)) return "[[circular]]";
@@ -190,10 +139,7 @@ function getSanitizedForLog(obj) {
   return walk(obj);
 }
 
-/********************************************************************************
-/* functionSignature: getImageSummaryForLog (images)                            *
-/* Summarizes image artifacts for logs.                                         *
-/********************************************************************************/
+
 function getImageSummaryForLog(images) {
   return (images || []).map(im => {
     if (im.kind === "b64") {
@@ -207,10 +153,7 @@ function getImageSummaryForLog(images) {
   });
 }
 
-/********************************************************************************
-/* functionSignature: setLogBig (label, data, options)                          *
-/* Writes large sanitized debug logs (optional to file).                        *
-/********************************************************************************/
+
 function setLogBig(label, data, { toFile = false } = {}) {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const sanitized = getSanitizedForLog(data);
@@ -224,22 +167,13 @@ function setLogBig(label, data, { toFile = false } = {}) {
   } catch {}
 }
 
-/********************************************************************************
-/* functionSignature: setLogConsole (_label, _data)                             *
-/* No-op console logger (no console output).                                    *
-/********************************************************************************/
+
 function setLogConsole(_label, _data) {}
 
-/********************************************************************************
-/* functionSignature: getIdemp (wo)                                             *
-/* Returns idempotence-tracking store on working object.                        *
-/********************************************************************************/
+
 function getIdemp(wo) { if (!wo.__idemp) wo.__idemp = { tools: new Set(), images: new Set() }; return wo.__idemp; }
 
-/********************************************************************************
-/* functionSignature: getNormalizedToolDefs (toolsLike)                         *
-/* Normalizes tool definitions to Responses format.                             *
-/********************************************************************************/
+
 function getNormalizedToolDefs(toolsLike) {
   if (!Array.isArray(toolsLike)) return [];
   const out = [];
@@ -258,10 +192,7 @@ function getNormalizedToolDefs(toolsLike) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: getNormalizedToolChoice (tc)                              *
-/* Normalizes tool_choice to accepted structures.                               *
-/********************************************************************************/
+
 function getNormalizedToolChoice(tc) {
   if (!tc || tc === "auto" || tc === "none") return tc || "auto";
   if (tc?.type === "function" && tc?.name) return tc;
@@ -269,11 +200,7 @@ function getNormalizedToolChoice(tc) {
   return "auto";
 }
 
-/********************************************************************************
-/* functionSignature: getReasoningEffort (wo)                                   *
-/* Normalizes wo.reasoning into a Responses reasoning.effort value or null.     *
-/* Rules: unset/0/"0"/false/"false"/"none"/"" => disabled; true/"true" => medium.*
-/********************************************************************************/
+
 function getReasoningEffort(wo) {
   const v = wo?.reasoning;
 
@@ -300,20 +227,14 @@ function getReasoningEffort(wo) {
   return null;
 }
 
-/********************************************************************************
-/* functionSignature: getResponseToolsRaw (wo)                                  *
-/* Returns raw response-tools array from working object.                        *
-/********************************************************************************/
+
 function getResponseToolsRaw(wo) {
   if (Array.isArray(wo?.ResponseTools)) return wo.ResponseTools;
   if (Array.isArray(wo?.responseTools)) return wo.responseTools;
   return [];
 }
 
-/********************************************************************************
-/* functionSignature: getNormalizedResponseTools (toolsLike)                    *
-/* Normalizes Responses built-in tools (type-based).                             *
-/********************************************************************************/
+
 function getNormalizedResponseTools(toolsLike) {
   const out = [];
   const seen = new Set();
@@ -339,10 +260,7 @@ function getNormalizedResponseTools(toolsLike) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: getToolsForResponses (toolDefs, responseTools, disabled)  *
-/* Builds tools list for Responses API: responseTools first, then function tools.*
-/********************************************************************************/
+
 function getToolsForResponses(toolDefs, responseTools, toolsDisabled) {
   if (toolsDisabled) return [];
   const out = [];
@@ -351,10 +269,7 @@ function getToolsForResponses(toolDefs, responseTools, toolsDisabled) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: getRuntimeContextFromLast (wo, snapshot)                  *
-/* Builds optional runtime context from last history record.                    *
-/********************************************************************************/
+
 function getRuntimeContextFromLast(wo, snapshot) {
   if (wo?.includeRuntimeContext !== true) return null;
   const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
@@ -370,20 +285,14 @@ function getRuntimeContextFromLast(wo, snapshot) {
   return { metadata, last };
 }
 
-/********************************************************************************
-/* functionSignature: getAppendRuntimeContextToUserContent (baseText, ctx)      *
-/* Appends runtime context JSON block to user text.                             *
-/********************************************************************************/
+
 function getAppendRuntimeContextToUserContent(baseText, ctx) {
   if (!ctx) return baseText ?? "";
   const jsonBlock = "```json\n" + JSON.stringify(ctx) + "\n```";
   return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
 }
 
-/********************************************************************************
-/* functionSignature: getToolsByName (names, wo)                                *
-/* Dynamically imports tools and validates invoke function.                     *
-/********************************************************************************/
+
 async function getToolsByName(names, wo) {
   const loaded = [];
   for (const name of names || []) {
@@ -399,10 +308,7 @@ async function getToolsByName(names, wo) {
   return loaded;
 }
 
-/********************************************************************************
-/* functionSignature: getExpandedToolArgs (args, wo)                            *
-/* Expands short text fields to full assistant text when applicable.            *
-/********************************************************************************/
+
 function getExpandedToolArgs(args, wo) {
   const full = typeof wo?._fullAssistantText === "string" ? wo._fullAssistantText : "";
   if (!full || !args || typeof args !== "object") return args;
@@ -424,10 +330,7 @@ function getExpandedToolArgs(args, wo) {
   return args;
 }
 
-/********************************************************************************
-/* functionSignature: setExecGenericTool (toolModules, call, coreData)          *
-/* Executes a generic tool with idempotence and message mapping.                *
-/********************************************************************************/
+
 async function setExecGenericTool(toolModules, call, coreData) {
   const wo = coreData?.workingObject ?? {};
   const idemp = getIdemp(wo);
@@ -510,10 +413,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getExtFromMime (m)                                        *
-/* Returns a file extension based on MIME type.                                 *
-/********************************************************************************/
+
 function getExtFromMime(m) {
   const mime = (m || "").toLowerCase();
   if (mime.includes("png")) return ".png";
@@ -525,19 +425,13 @@ function getExtFromMime(m) {
   return ".png";
 }
 
-/********************************************************************************
-/* functionSignature: getBuildUrl (filename, baseUrl)                           *
-/* Builds a public URL for a persisted document.                                *
-/********************************************************************************/
+
 function getBuildUrl(filename, baseUrl) {
   const clean = (baseUrl || "").replace(/\/+$/, "");
   return clean ? `${clean}/documents/${filename}` : `/documents/${filename}`;
 }
 
-/********************************************************************************
-/* functionSignature: setSaveB64 (b64, mime, baseUrl, wo)                       *
-/* Persists base64 image and returns hosted URL.                                *
-/********************************************************************************/
+
 async function setSaveB64(b64, mime, baseUrl, wo) {
   setEnsureDocDir();
   const idemp = getIdemp(wo);
@@ -551,20 +445,14 @@ async function setSaveB64(b64, mime, baseUrl, wo) {
   return getBuildUrl(filename, baseUrl);
 }
 
-/********************************************************************************
-/* functionSignature: getFetch ()                                               *
-/* Returns a fetch function (global fetch or node-fetch).                       *
-/********************************************************************************/
+
 async function getFetch() {
   if (typeof globalThis.fetch === "function") return globalThis.fetch;
   const mod = await import("node-fetch");
   return mod.default;
 }
 
-/********************************************************************************
-/* functionSignature: setMirrorURL (url, baseUrl, wo)                           *
-/* Downloads a remote image and mirrors it locally.                             *
-/********************************************************************************/
+
 async function setMirrorURL(url, baseUrl, wo) {
   setEnsureDocDir();
   const idemp = getIdemp(wo);
@@ -584,10 +472,7 @@ async function setMirrorURL(url, baseUrl, wo) {
   return getBuildUrl(filename, baseUrl);
 }
 
-/********************************************************************************
-/* functionSignature: setSaveFromFileId (fileId, opts, wo)                      *
-/* Downloads an image via provider fileId and persists it.                      *
-/********************************************************************************/
+
 async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }, wo) {
   setEnsureDocDir();
   const idemp = getIdemp(wo);
@@ -615,10 +500,7 @@ async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, e
   return getBuildUrl(filename, baseUrl);
 }
 
-/********************************************************************************
-/* functionSignature: getParsedTextFromNode (node)                              *
-/* Extracts text from a response content node (supports multiple shapes).       *
-/********************************************************************************/
+
 function getParsedTextFromNode(node) {
   if (!node || typeof node !== "object") return "";
   if (typeof node.text === "string") return node.text;
@@ -629,10 +511,7 @@ function getParsedTextFromNode(node) {
   return "";
 }
 
-/********************************************************************************
-/* functionSignature: getParsedResponsesOutput (raw)                            *
-/* Extracts text, images, and tool calls from Responses JSON.                   *
-/********************************************************************************/
+
 function getParsedResponsesOutput(raw) {
   const out = { text: "", toolCalls: [], images: [] };
   const seen = new WeakSet();
@@ -641,36 +520,21 @@ function getParsedResponsesOutput(raw) {
   const toolSeen = new Set();
   const imageSeen = new Set();
 
-  /********************************************************************************
-  /* functionSignature: isHttpUrl (u)                                             *
-  /* Returns true for http(s) URLs.                                               *
-  /********************************************************************************/
+
   function isHttpUrl(u) { return (typeof u === "string" && /^https?:\/\//i.test(u)); }
 
-  /********************************************************************************
-  /* functionSignature: isDataUrl (u)                                             *
-  /* Returns true for base64 image data URLs.                                     *
-  /********************************************************************************/
+
   function isDataUrl(u) { return (typeof u === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(u)); }
 
-  /********************************************************************************
-  /* functionSignature: b64FromDataUrl (u)                                        *
-  /* Extracts base64 payload from a data URL.                                     *
-  /********************************************************************************/
+
   function b64FromDataUrl(u) { return (typeof u === "string" ? (u.split(",")[1] || "") : ""); }
 
-  /********************************************************************************
-  /* functionSignature: getIsImageMime (m)                                        *
-  /* Returns true if the given MIME looks like an image MIME.                     *
-  /********************************************************************************/
+
   function getIsImageMime(m) {
     return (typeof m === "string" && m.trim().toLowerCase().startsWith("image/"));
   }
 
-  /********************************************************************************
-  /* functionSignature: getIsLikelyImageHttpUrl (u)                               *
-  /* Heuristic check for image-like HTTP URLs by file extension.                 *
-  /********************************************************************************/
+
   function getIsLikelyImageHttpUrl(u) {
     const s = String(u || "");
     if (!isHttpUrl(s)) return false;
@@ -679,10 +543,7 @@ function getParsedResponsesOutput(raw) {
     return (/\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(pathPart));
   }
 
-  /********************************************************************************
-  /* functionSignature: pushImage (rec)                                           *
-  /* Adds a normalized image record with dedupe.                                  *
-  /********************************************************************************/
+
   function pushImage(rec) {
     if (!rec) return;
 
@@ -697,10 +558,7 @@ function getParsedResponsesOutput(raw) {
     out.images.push(rec);
   }
 
-  /********************************************************************************
-  /* functionSignature: pushImageUrl (u, mime)                                    *
-  /* Pushes an image URL if it is a data URL or looks like an image link.        *
-  /********************************************************************************/
+
   function pushImageUrl(u, mime) {
     if (isDataUrl(u)) {
       pushImage({ kind: "b64", b64: b64FromDataUrl(u), mime: mime || "image/png" });
@@ -714,26 +572,17 @@ function getParsedResponsesOutput(raw) {
     }
   }
 
-  /********************************************************************************
-  /* functionSignature: pushImageB64 (b64, mime)                                  *
-  /* Pushes a base64 image record when present.                                   *
-  /********************************************************************************/
+
   function pushImageB64(b64, mime) {
     if (typeof b64 === "string" && b64.length) pushImage({ kind: "b64", b64, mime: mime || "image/png" });
   }
 
-  /********************************************************************************
-  /* functionSignature: pushFileId (id, mime)                                     *
-  /* Pushes a file_id image record when present.                                  *
-  /********************************************************************************/
+
   function pushFileId(id, mime) {
     if (typeof id === "string" && id.length) pushImage({ kind: "file_id", file_id: id, mime: mime || "image/png" });
   }
 
-  /********************************************************************************
-  /* functionSignature: pushToolCall (node, typeHint)                             *
-  /* Normalizes and dedupes tool/function calls from output nodes.                *
-  /********************************************************************************/
+
   function pushToolCall(node, typeHint) {
     const name = node?.name || node?.function?.name || node?.tool_name;
     if (!name) return;
@@ -754,10 +603,7 @@ function getParsedResponsesOutput(raw) {
     });
   }
 
-  /********************************************************************************
-  /* functionSignature: crawl (node, inReasoning)                                 *
-  /* Recursively walks output payload to collect text/toolcalls/images.           *
-  /********************************************************************************/
+
   function crawl(node, inReasoning) {
     if (!node || typeof node !== "object") return;
     if (seen.has(node)) return;
@@ -832,12 +678,7 @@ function getParsedResponsesOutput(raw) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: getLooksCutOff (text)                                     *
-/* Returns true when text ends mid-sentence (no recognised closing punctuation).*
-/* Applied regardless of finish_reason — local backends often return "stop"     *
-/* even when truncated. maxLoops caps worst-case false-positive continuations.  *
-/********************************************************************************/
+
 function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
   if (!s) return false;
@@ -845,10 +686,7 @@ function getLooksCutOff(text) {
   return !/[.!?:;*"»)\]}>~`]/.test(last);
 }
 
-/********************************************************************************
-/* functionSignature: getFinishReasonFromData (data)                            *
-/* Extracts the first non-null finish_reason from a Responses API data object.  *
-/********************************************************************************/
+
 function getFinishReasonFromData(data) {
   try {
     const outputs = Array.isArray(data?.output) ? data.output : [];
@@ -860,10 +698,7 @@ function getFinishReasonFromData(data) {
   return null;
 }
 
-/********************************************************************************
-/* functionSignature: getWasTruncatedOutput (data)                              *
-/* Detects whether model output was truncated.                                  *
-/********************************************************************************/
+
 function getWasTruncatedOutput(data) {
   if (data?.incomplete_details) return true;
   if (data?.status && String(data.status).toLowerCase() === "incomplete") return true;
@@ -877,10 +712,7 @@ function getWasTruncatedOutput(data) {
   return false;
 }
 
-/********************************************************************************
-/* functionSignature: getSanitizeReasoningText (s)                              *
-/* Removes API meta-lines (rs_ ids / standalone markers) without harming content.*
-/********************************************************************************/
+
 function getSanitizeReasoningText(s) {
   const raw = getToString(s);
   if (!raw.trim()) return "";
@@ -918,20 +750,14 @@ function getSanitizeReasoningText(s) {
   return joined.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/********************************************************************************
-/* functionSignature: getReasoningSummaryFromResponse (data)                    *
-/* Extracts reasoning summary text from a Responses payload (robust + dedupe).  *
-/********************************************************************************/
+
 function getReasoningSummaryFromResponse(data) {
   const BAD = new Set(["auto", "none", "concise", "detailed", "low", "medium", "high"]);
   const seenObj = new WeakSet();
   const seenText = new Set();
   const out = [];
 
-  /********************************************************************************
-  /* functionSignature: norm (s)                                                  *
-  /* Normalizes whitespace and line breaks.                                       *
-  /********************************************************************************/
+
   function norm(s) {
     return String(s || "")
       .replace(/\r\n/g, "\n")
@@ -940,10 +766,7 @@ function getReasoningSummaryFromResponse(data) {
       .trim();
   }
 
-  /********************************************************************************
-  /* functionSignature: add (s)                                                   *
-  /* Adds a candidate reasoning summary chunk if it is valid and new.            *
-  /********************************************************************************/
+
   function add(s) {
     if (typeof s !== "string") return;
     let t = norm(s);
@@ -959,19 +782,13 @@ function getReasoningSummaryFromResponse(data) {
     out.push(t);
   }
 
-  /********************************************************************************
-  /* functionSignature: isReasonKey (k)                                           *
-  /* Returns true if a key name looks reasoning-related.                          *
-  /********************************************************************************/
+
   function isReasonKey(k) {
     const kk = String(k || "").toLowerCase();
     return kk.includes("summary") || kk.includes("reason") || kk.includes("explain") || kk === "text";
   }
 
-  /********************************************************************************
-  /* functionSignature: walk (node, keyHint)                                      *
-  /* Walks objects to find reasoning/summary fields while avoiding input echoes. *
-  /********************************************************************************/
+
   function walk(node, keyHint) {
     const hint = getToString(keyHint);
 
@@ -1026,10 +843,7 @@ function getReasoningSummaryFromResponse(data) {
   }
 }
 
-/********************************************************************************
-/* functionSignature: getPayload (row)                                          *
-/* Extracts the text payload from a history row (prefers parsed message text).  *
-/********************************************************************************/
+
 function getPayload(row) {
   const j = (typeof row?.json === "string" && row.json.trim().length) ? row.json.trim() : "";
   if (j) {
@@ -1050,10 +864,7 @@ function getPayload(row) {
   return "";
 }
 
-/********************************************************************************
-/* functionSignature: getSnapshotMappedToChat (rows)                            *
-/* Maps stored snapshot rows to chat-style messages.                            *
-/********************************************************************************/
+
 function getSnapshotMappedToChat(rows) {
   const out = [];
   for (const r of rows || []) {
@@ -1066,10 +877,7 @@ function getSnapshotMappedToChat(rows) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: getResponsesInputFromMessages (messages)                  *
-/* Converts chat messages to Responses API input format.                        *
-/********************************************************************************/
+
 function getResponsesInputFromMessages(messages) {
   const out = [];
   for (const m of messages || []) {
@@ -1082,10 +890,7 @@ function getResponsesInputFromMessages(messages) {
   return out;
 }
 
-/********************************************************************************
-/* functionSignature: setAppendReasoningBlock (reasoningParts, iter, rs, tools) *
-/* Appends an iteration reasoning block, with tool names if present.            *
-/********************************************************************************/
+
 function setAppendReasoningBlock(reasoningParts, iter, rs, toolCalls) {
   const toolNames = Array.isArray(toolCalls) ? toolCalls.map(t => t?.name).filter(Boolean) : [];
   const header = `--- Iteration ${iter + 1}${toolNames.length ? ` (tools: ${toolNames.join(", ")})` : ""} ---`;
@@ -1094,20 +899,14 @@ function setAppendReasoningBlock(reasoningParts, iter, rs, toolCalls) {
   return true;
 }
 
-/********************************************************************************
-/* functionSignature: getToolsDisabledMode (totalToolCalls, maxToolCalls, wo)   *
-/* Returns true when the final synthesis run must be executed without tools.    *
-/********************************************************************************/
+
 function getToolsDisabledMode(totalToolCalls, maxToolCalls, wo) {
   if (wo?.__forceNoTools === true) return true;
   if (Number.isFinite(maxToolCalls) && maxToolCalls >= 0 && totalToolCalls >= maxToolCalls) return true;
   return false;
 }
 
-/********************************************************************************
-/* functionSignature: setEnsureFinalSynthesisPrompt (messages, wo)              *
-/* Ensures a single prompt is injected to force synthesis without tools.        *
-/********************************************************************************/
+
 function setEnsureFinalSynthesisPrompt(messages, wo) {
   if (wo?.__didToolBudgetNotice === true) return false;
   wo.__didToolBudgetNotice = true;
@@ -1118,10 +917,7 @@ function setEnsureFinalSynthesisPrompt(messages, wo) {
   return true;
 }
 
-/********************************************************************************
-/* functionSignature: getCoreAi (coreData)                                      *
-/* Runs the Responses workflow end-to-end.                                      *
-/********************************************************************************/
+
 export default async function getCoreAi(coreData) {
   const wo = coreData?.workingObject ?? {};
   if (!Array.isArray(wo.logging)) wo.logging = [];
@@ -1170,10 +966,7 @@ export default async function getCoreAi(coreData) {
   try { snapshot = await getContext(wo); }
   catch (e) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` }); }
 
-/********************************************************************************
-/* functionSignature: getSystemContent (wo2)                                    *
-/* Builds system prompt content with runtime hints and policy lines.            *
-/********************************************************************************/
+
   function getSystemContent(wo2) {
     const nowIso = new Date().toISOString();
     const tz = getStr(wo2?.timezone, "Europe/Berlin");

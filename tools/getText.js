@@ -9,16 +9,10 @@ import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getText";
 
-/**********************************************************************************/
-/* functionSignature: getLogDebug (label, obj)                                     *
-/* Silent debug helper                                                             *
-/**********************************************************************************/
+
 function getLogDebug(label, obj){}
 
-/**********************************************************************************/
-/* functionSignature: getNormalizedFilename (s, fallback)                          *
-/* Returns fs-safe lowercased base filename without extension                      *
-/**********************************************************************************/
+
 function getNormalizedFilename(s, fallback = ""){
   const base = String(s || "")
     .toLowerCase()
@@ -33,10 +27,7 @@ function getNormalizedFilename(s, fallback = ""){
   );
 }
 
-/**********************************************************************************/
-/* functionSignature: getDetectedExt (text, filename)                              *
-/* Guesses a file extension from content or given name                             *
-/**********************************************************************************/
+
 function getDetectedExt(text, filename){
   if (filename && /\.[a-z0-9]+$/i.test(filename)) {
     return filename.split(".").pop().toLowerCase();
@@ -60,10 +51,7 @@ function getDetectedExt(text, filename){
   return "txt";
 }
 
-/**********************************************************************************/
-/* functionSignature: getParsedArgs (args)                                         *
-/* Accepts { text, dateiname } or raw string                                       *
-/**********************************************************************************/
+
 function getParsedArgs(args){
   if (args && typeof args === "object" && !Array.isArray(args)) {
     return {
@@ -77,19 +65,13 @@ function getParsedArgs(args){
   };
 }
 
-/**********************************************************************************/
-/* functionSignature: setWrittenTextFile (text, baseName, ext, cfg, wo)            *
-/* Writes text to pub/documents/{userId}/ and returns URLs                         *
-/**********************************************************************************/
+
 async function setWrittenTextFile(text, baseName, ext, cfg, wo){
   const saved = await saveFile(wo, Buffer.from(text, "utf8"), { name: baseName, ext: "." + ext });
   return { filePath: saved.absPath, fileName: saved.filename, publicUrl: saved.url };
 }
 
-/**********************************************************************************/
-/* functionSignature: getInvoke (args, coreData)                                   *
-/* Entry point for toolcall                                                        *
-/**********************************************************************************/
+
 async function getInvoke(args, coreData){
   try {
     const wo = coreData?.workingObject || {};

@@ -2,7 +2,7 @@
 
 > **Version:** 1.0 · **Date:** 2026-03-20
 
-Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice, browser voice interface), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management, a live terminal dashboard with hot-reload, and a web-based image gallery. A first-run setup wizard eliminates manual `core.json` creation.
+Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice, browser voice interface), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management with a self-service data-export portal, a live terminal dashboard with hot-reload, and a web-based image gallery. A first-run setup wizard eliminates manual `core.json` creation.
 
 ---
 
@@ -980,6 +980,18 @@ Jenny ships with a full GDPR consent workflow compliant with EU Regulation 2016/
 | `voice` | 1 = voice consent granted |
 | `disclaimer` | 1 = disclaimer has been seen |
 | `updated_at` | Last update timestamp |
+
+### GDPR Data Export (`/gdpr`)
+
+Authenticated users can request a machine-readable export of all personal data held for their account. Navigate to `/gdpr` in the web interface and click **Download Excel export**. The generated `.xlsx` file contains three sheets:
+
+| Sheet | Contents |
+|---|---|
+| **Context** | All conversation history rows associated with the user's ID |
+| **GDPR Consent** | Consent records per channel |
+| **Files** | Files stored in the user's personal documents directory |
+
+The export is generated on demand by module `00057-webpage-gdpr.js` (port 3121). See [CORE_JSON.md](CORE_JSON.md#webpage-gdpr) for configuration details.
 
 ---
 

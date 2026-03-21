@@ -29,17 +29,7 @@ import { getPrefixedLogger }           from "../core/logging.js";
 const MODULE_NAME    = "webpage-voice-add-context";
 const SPEAKER_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-/*************************************************************************************
-/* functionSignature: parseDiarizeSegments (text)                                  *
-/* Parses "LABEL: text" lines and returns { label, text } objects.                 *
-/*                                                                                 *
-/* Recognised label formats:                                                       *
-/*   A      — single uppercase letter (known speaker)                              *
-/*   A_2    — letter + underscore + digit(s) (uncertain/offset speaker)            *
-/*   speaker_0 — legacy numeric format, mapped to A, B, C, …                      *
-/*                                                                                 *
-/* Returns an empty array when no matching lines are found (plain transcript).     *
-/*************************************************************************************/
+
 function parseDiarizeSegments(text) {
   const speakerMap = {};
   const segments   = [];
@@ -68,11 +58,7 @@ function parseDiarizeSegments(text) {
   return segments;
 }
 
-/*************************************************************************************
-/* functionSignature: getWebpageVoiceAddContext (coreData)                         *
-/* Optionally purges channel context, then writes one context entry per speaker    *
-/* turn (diarized) or a single entry for plain transcripts.                        *
-/*************************************************************************************/
+
 export default async function getWebpageVoiceAddContext(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

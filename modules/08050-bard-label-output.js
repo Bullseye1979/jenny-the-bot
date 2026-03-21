@@ -14,22 +14,12 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "bard-label-output";
 
-/************************************************************************************/
-/* functionSignature: getStr(v)                                                    *
-/* Returns string value; empty string for nullish.                                 *
-/************************************************************************************/
+
 function getStr(v) {
   return v == null ? "" : String(v);
 }
 
-/************************************************************************************/
-/* functionSignature: getBardLabelOutput(coreData)                                 *
-/* Parses the AI response into a 6-position structured label array and writes it   *
-/* to bard:labels:{guildId} in the registry.                                       *
-/* Label structure: [location, situation, mood1, mood2, mood3, mood4]              *
-/* Positions 0-1 (location/situation) may be empty strings.                        *
-/* Positions 2-5 (moods) are validated against validTags; invalid = blanked.      *
-/************************************************************************************/
+
 export default async function getBardLabelOutput(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);

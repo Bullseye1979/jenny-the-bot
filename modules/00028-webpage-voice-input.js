@@ -35,10 +35,7 @@ const ROUTE_AUDIO  = "/voice/audio";
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || "/usr/bin/ffmpeg");
 
-/************************************************************************************
-/* functionSignature: getConvertToWav (inputFile, outputFile)                      *
-/* Converts any ffmpeg-supported audio to 16 kHz mono WAV.                         *
-/************************************************************************************/
+
 function getConvertToWav(inputFile, outputFile) {
   return new Promise((resolve, reject) => {
     ffmpeg()
@@ -53,10 +50,7 @@ function getConvertToWav(inputFile, outputFile) {
   });
 }
 
-/************************************************************************************
-/* functionSignature: getIsAllowedRoles (wo, allowedRoles)                         *
-/* Returns true when the user has at least one of the required roles (or list empty)*
-/************************************************************************************/
+
 function getIsAllowedRoles(wo, allowedRoles) {
   const req = Array.isArray(allowedRoles) ? allowedRoles : [];
   if (!req.length) return true;
@@ -68,10 +62,7 @@ function getIsAllowedRoles(wo, allowedRoles) {
   return req.some(r => { const n = String(r || "").trim().toLowerCase(); return n && have.has(n); });
 }
 
-/************************************************************************************
-/* functionSignature: sendError (wo, status, errorCode)                            *
-/* Sends a JSON error response directly via the registry res object.               *
-/************************************************************************************/
+
 async function sendError(wo, status, errorCode) {
   const key   = wo?.http?.requestKey;
   if (!key) return;
@@ -82,10 +73,7 @@ async function sendError(wo, status, errorCode) {
   res.end(JSON.stringify({ error: errorCode }));
 }
 
-/************************************************************************************
-/* functionSignature: getWebpageVoiceInput (coreData)                              *
-/* Main module entry: processes POST /voice/audio body.                            *
-/************************************************************************************/
+
 export default async function getWebpageVoiceInput(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);

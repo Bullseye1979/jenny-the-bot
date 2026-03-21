@@ -12,27 +12,18 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { ensureUserDir, getUserId } from "../core/file.js";
 
-/**************************************************************/
-/* functionSignature: setEnsureDir (absPath)                  */
-/* Ensures a directory exists                                 */
-/**************************************************************/
+
 function setEnsureDir(absPath) {
   if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
 }
 
-/**************************************************************/
-/* functionSignature: getRandSuffix ()                        */
-/* Returns a short random lowercase base36 suffix              */
-/**************************************************************/
+
 function getRandSuffix() {
   const n = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
   return n.slice(-6);
 }
 
-/**************************************************************/
-/* functionSignature: getPublicUrl (base, userId, filename)   */
-/* Builds a public URL for a given filename                    */
-/**************************************************************/
+
 function getPublicUrl(base, userId, filename) {
   const u = String(userId || "shared");
   if (!base) return `/documents/${u}/${filename}`;
@@ -40,10 +31,7 @@ function getPublicUrl(base, userId, filename) {
   return `${trimmed}/documents/${u}/${filename}`;
 }
 
-/**************************************************************/
-/* functionSignature: getCleanString (v)                      */
-/* Returns trimmed string or empty string for null/undefined   */
-/**************************************************************/
+
 function getCleanString(v) {
   if (typeof v !== "string") return "";
   const s = v.trim();
@@ -53,10 +41,7 @@ function getCleanString(v) {
   return s;
 }
 
-/**************************************************************/
-/* functionSignature: getBool (v)                             */
-/* Parses boolean-ish values safely                            */
-/**************************************************************/
+
 function getBool(v) {
   if (v === true) return true;
   if (v === false) return false;
@@ -69,20 +54,14 @@ function getBool(v) {
   return false;
 }
 
-/**************************************************************/
-/* functionSignature: getIsHttpUrl (s)                        */
-/* Validates basic http/https URL                              */
-/**************************************************************/
+
 function getIsHttpUrl(s) {
   if (typeof s !== "string") return false;
   if (!/^https?:\/\//i.test(s)) return false;
   return true;
 }
 
-/**************************************************************/
-/* functionSignature: getDownloadedBuffer (url)               */
-/* Downloads a URL and returns buffer and content-type         */
-/**************************************************************/
+
 async function getDownloadedBuffer(url) {
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -91,10 +70,7 @@ async function getDownloadedBuffer(url) {
   return { buf, ctype };
 }
 
-/**************************************************************/
-/* functionSignature: getMediaKind (ctype, url)               */
-/* Guesses whether the media is an image or a video            */
-/**************************************************************/
+
 function getMediaKind(ctype, url) {
   const c = String(ctype || "").toLowerCase();
   const u = String(url || "").toLowerCase();
@@ -105,10 +81,7 @@ function getMediaKind(ctype, url) {
   return "unknown";
 }
 
-/**************************************************************/
-/* functionSignature: getImageExt (ctype, url)                */
-/* Determines an appropriate image file extension              */
-/**************************************************************/
+
 function getImageExt(ctype, url) {
   const c = String(ctype || "").toLowerCase();
   const u = String(url || "").toLowerCase();
@@ -119,10 +92,7 @@ function getImageExt(ctype, url) {
   return ".png";
 }
 
-/**************************************************************/
-/* functionSignature: getRun (cmd, args, cwd)                 */
-/* Runs a child process and resolves on success                */
-/**************************************************************/
+
 function getRun(cmd, args, cwd) {
   return new Promise((resolve, reject) => {
     const p = spawn(cmd, args, { cwd });
@@ -133,10 +103,7 @@ function getRun(cmd, args, cwd) {
   });
 }
 
-/**************************************************************/
-/* functionSignature: getStrictCfg (wo)                       */
-/* Builds a strict, validated configuration object             */
-/**************************************************************/
+
 function getStrictCfg(wo) {
   const MODULE_NAME = "getToken";
   const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
@@ -167,10 +134,7 @@ function getStrictCfg(wo) {
   };
 }
 
-/**************************************************************/
-/* functionSignature: getGeometry (size, ringPx)              */
-/* Calculates geometry for circular masking and ring drawing   */
-/**************************************************************/
+
 function getGeometry(size, ringPx) {
   const CX = Math.floor(size / 2);
   const CY = CX;
@@ -180,21 +144,13 @@ function getGeometry(size, ringPx) {
   return { CX, CY, R_MASK, R_OUT, R_DRAW };
 }
 
-/**************************************************************/
-/* functionSignature: getEffectiveMaxBytes (cfg, pingpong)    */
-/* Returns effective byte budget (scaled when pingpong=true)   */
-/**************************************************************/
+
 function getEffectiveMaxBytes(cfg, pingpong) {
   const base = cfg.maxMb * 1024 * 1024;
   return pingpong ? (base * 2) : base;
 }
 
-/**************************************************************/
-/* functionSignature: setOptimizeGifWithinLimit (cfg, inAbs,  */
-/*  outAbs, maxBytes)                                         */
-/* Optimizes (and optionally lossy-compresses) a GIF to fit    */
-/* under maxBytes using gifsicle                               */
-/**************************************************************/
+
 async function setOptimizeGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
   try {
     const st0 = fs.statSync(inAbs);
@@ -246,11 +202,7 @@ async function setOptimizeGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
   return false;
 }
 
-/**************************************************************/
-/* functionSignature: getGifWithinLimit (cfg, inAbs, outAbs,  */
-/*  maxBytes)                                                 */
-/* Creates a GIF under a byte budget using ffmpeg/gifsicle     */
-/**************************************************************/
+
 async function getGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
   for (const sc of cfg.scaleList) {
     for (const fps of cfg.fpsList) {
@@ -317,11 +269,7 @@ async function getGifWithinLimit(cfg, inAbs, outAbs, maxBytes) {
   return false;
 }
 
-/**************************************************************/
-/* functionSignature: setTokenizeStatic (cfg, inAbs, outAbs,  */
-/*  size, ringColor, ringPx)                                  */
-/* Tokenizes a static image with a round mask and ring         */
-/**************************************************************/
+
 async function setTokenizeStatic(cfg, inAbs, outAbs, size, ringColor, ringPx) {
   const { CX, CY, R_MASK, R_DRAW } = getGeometry(size, ringPx);
   const args = [
@@ -348,13 +296,7 @@ async function setTokenizeStatic(cfg, inAbs, outAbs, size, ringColor, ringPx) {
   await getRun(cfg.magickPath, args, path.dirname(outAbs));
 }
 
-/**************************************************************/
-/* functionSignature: setTokenizeAnimated (cfg, inAbs, outAbs,*/
-/*  size, ringColor, ringPx, pingpong)                        */
-/* Tokenizes an animated GIF with a round mask and ring. If   */
-/* pingpong=true, appends a reversed copy of frames for        */
-/* forward+reverse playback, then loops.                       */
-/**************************************************************/
+
 async function setTokenizeAnimated(cfg, inAbs, outAbs, size, ringColor, ringPx, pingpong) {
   const { CX, CY, R_MASK, R_DRAW } = getGeometry(size, ringPx);
   const args = [
@@ -401,10 +343,7 @@ async function setTokenizeAnimated(cfg, inAbs, outAbs, size, ringColor, ringPx, 
   await getRun(cfg.magickPath, args, path.dirname(outAbs));
 }
 
-/**************************************************************/
-/* functionSignature: getInvoke (args, coreData)              */
-/* Main entry: downloads media, converts if needed, tokenizes  */
-/**************************************************************/
+
 async function getInvoke(args, coreData) {
   const MODULE_NAME = "getToken";
   const wo = coreData?.workingObject || {};
@@ -604,10 +543,7 @@ async function getInvoke(args, coreData) {
 
 const MODULE_NAME = "getToken";
 
-/**************************************************************/
-/* functionSignature: getExport ()                            */
-/* Provides the tool export definition                         */
-/**************************************************************/
+
 function getExport() {
   return {
     name: MODULE_NAME,

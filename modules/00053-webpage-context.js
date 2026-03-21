@@ -242,11 +242,9 @@ async function dbReplaceAll(pool, { search, replace, channel, searchFields, mode
 /**********************************************************************************/
 function getContextCss() {
   return `
-/* ── Layout ───────────────────────────────────────────── */
 body{font-size:13px}
 .page-wrap{display:flex;flex-direction:column;height:calc(100vh - var(--hh));margin-top:var(--hh)}
 .ctx-layout{display:flex;flex:1;overflow:hidden}
-/* ── Sidebar ──────────────────────────────────────────── */
 .ctx-sidebar{width:220px;min-width:160px;background:var(--card);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
 .sidebar-title{padding:9px 12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--bdr);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
 #channel-list{overflow-y:auto;flex:1}
@@ -255,7 +253,6 @@ body{font-size:13px}
 .channel-item.active{background:#dbeafe;color:var(--acc)}
 .ch-id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:12px}
 .ch-cnt{color:var(--muted);font-size:11px;flex-shrink:0}
-/* ── Main area ────────────────────────────────────────── */
 .ctx-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .toolbar{display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:var(--card);border-bottom:1px solid var(--bdr);align-items:center}
 #search-input{flex:1;min-width:180px;padding:5px 8px;background:var(--bg);border:1px solid var(--bdr);color:var(--txt);border-radius:4px;font-size:13px;outline:none}
@@ -268,15 +265,12 @@ button{padding:5px 10px;border:1px solid transparent;border-radius:4px;cursor:po
 .btn-danger{background:var(--dan);color:#fff}
 .btn-danger:hover{background:var(--dan2)}
 button:disabled{opacity:.4;cursor:not-allowed}
-/* ── Field dropdown ───────────────────────────────────── */
 .field-toggle{position:relative}
 .field-panel{position:absolute;top:calc(100% + 4px);right:0;z-index:100;background:var(--card);border:1px solid var(--bdr);border-radius:6px;padding:10px 12px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.15)}
 .field-panel.hidden{display:none}
 .field-panel label{display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer;white-space:nowrap;font-size:12px}
 .field-panel label:hover{color:var(--acc)}
-/* ── Status bar ───────────────────────────────────────── */
 #status-bar{padding:3px 10px;font-size:11px;color:var(--muted);background:var(--bg);border-bottom:1px solid var(--bdr);min-height:20px}
-/* ── Table ────────────────────────────────────────────── */
 .table-wrap{flex:1;overflow:auto}
 #records-table{width:100%;border-collapse:collapse;table-layout:auto}
 #records-table th{background:var(--bg);padding:6px 8px;text-align:left;border-bottom:2px solid var(--bdr);white-space:nowrap;position:sticky;top:0;z-index:1;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.05em}
@@ -287,11 +281,9 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .cell-expandable{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
 .btn-edit-row{background:transparent;color:var(--muted);border:none;padding:2px 5px;cursor:pointer;font-size:13px;line-height:1;border-radius:3px}
 .btn-edit-row:hover{color:var(--acc);background:var(--bg)}
-/* ── Pagination ───────────────────────────────────────── */
 #pagination{padding:6px 10px;display:flex;gap:6px;align-items:center;background:var(--card);border-top:1px solid var(--bdr);flex-shrink:0}
 #page-info{flex:1;color:var(--muted);font-size:11px}
 #page-num{font-size:12px;color:var(--muted)}
-/* ── Modals ───────────────────────────────────────────── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center}
 .modal-overlay.hidden{display:none}
 .modal-box{background:var(--card);border:1px solid var(--bdr);border-radius:8px;width:740px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.15)}
@@ -310,7 +302,6 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .checkbox-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
 .checkbox-row label{display:flex;align-items:center;gap:5px;cursor:pointer}
 .modal-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-/* ── S&R ──────────────────────────────────────────────── */
 .sr-count{font-size:12px;color:var(--muted);margin-left:auto}
 .sr-warn{font-size:11px;color:#92400e;padding:4px 0}
 #sr-results-list{display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:300px;padding-right:4px}
@@ -326,7 +317,6 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .sr-status{font-size:11px;color:#16a34a;font-weight:600;padding:2px 0}
 .sr-msg{color:var(--muted);font-size:12px;padding:8px 0}
 mark{background:#fef3c7;color:#92400e;border-radius:2px;padding:0 1px}
-/* ── Expand overlay ───────────────────────────────────── */
 .expand-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center}
 .expand-overlay.hidden{display:none}
 .expand-box{background:var(--card);border:1px solid var(--bdr);border-radius:6px;max-width:80vw;max-height:75vh;overflow:auto;padding:16px;white-space:pre-wrap;word-break:break-all;font-family:monospace;font-size:12px;line-height:1.6;position:relative;min-width:400px}
