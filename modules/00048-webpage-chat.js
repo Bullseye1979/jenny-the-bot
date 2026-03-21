@@ -12,8 +12,9 @@ import crypto from "node:crypto";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem }            from "../core/registry.js";
 import { setContext, getContext, setPurgeContext, setFreezeContext, setPurgeSubchannel } from "../core/context.js";
-import { applyChannelConfig } from "./00011-webpage-channel-config.js";
-import getCoreAiRoleplay    from "./01003-core-ai-roleplay.js";
+import { applyChannelConfig }    from "./00011-webpage-channel-config.js";
+import getCoreAiRoleplay         from "./01003-core-ai-roleplay.js";
+import { getWebpageAddContext }  from "./00073-webpage-add-context.js";
 
 const MODULE_NAME = "webpage-chat";
 
@@ -392,6 +393,9 @@ export default async function getWebpageChat(coreData) {
 
       let aiResponse = "";
 
+      /* Write user message to context — independent of which AI module follows */
+      await getWebpageAddContext(wo, channelID, subchannelId, payload);
+
       if (aiCfg.useAiModule === "roleplay" || aiCfg.useAiModule === "core-ai-roleplay") {
         /* ---- ROLEPLAY path — delegate to core-ai-roleplay module ---- */
         /* The module handles its own context read/write, continue loops,
@@ -410,16 +414,6 @@ export default async function getWebpageChat(coreData) {
 
       } else {
         /* ---- COMPLETIONS path ---- */
-        /* Write user message to context */
-        await setContext(chatWo, {
-          role:       "user",
-          content:    payload,
-          userId:     String(wo.userId || ""),
-          authorName: String(wo.webAuth?.username || wo.webAuth?.displayName || ""),
-          channelId:  channelID,
-          messageId:  "",
-          source:     "webpage-chat"
-        });
 
         /* Build messages for AI (context + new user message) */
         const ctxMsgs = await getContext(chatWo);

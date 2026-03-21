@@ -824,7 +824,7 @@ Context DB editor SPA served as a **webpage-flow module** (`modules/00053`) on p
 
 ### webpage-auth
 
-Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.webAuth` when a valid session cookie is present and propagates `wo.userId = wo.webAuth.userId` so all downstream modules (chat, voice recording, context writers) have a consistent `wo.userId` without per-module fallbacks. Handles login/logout on `loginPort`.
+Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.webAuth` when a valid session cookie is present. Handles login/logout on `loginPort`. `userId` is resolved from `wo.webAuth.userId` automatically by `setContext` in `core/context.js` — no per-module fallback chains needed.
 
 ```jsonc
 "webpage-auth": {
@@ -1536,6 +1536,7 @@ Every module has an entry under `config` that declares which flows it participat
 | `webpage-voice-output` | `webpage` |
 | `webpage-context` | `webpage` |
 | `api-add-context` | `api` |
+| `webpage-add-context` | called directly by `webpage-chat` (not pipeline-subscribed) |
 
 ---
 

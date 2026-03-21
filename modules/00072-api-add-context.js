@@ -57,7 +57,6 @@ export default async function getApiAddContext(coreData) {
     role: "user",
     turn_id: turnId,
     content: getString(text),
-    userId: getString(workingObject.userId || ""),
     source: getString(workingObject.source ?? workingObject.flow ?? "api"),
   };
 

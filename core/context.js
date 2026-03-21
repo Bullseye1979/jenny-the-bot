@@ -315,9 +315,11 @@ export async function setContext(workingObject, record) {
   const userid =
     typeof normalized?.userId === "string" && normalized.userId.trim()
       ? normalized.userId.trim()
-      : typeof workingObject?.userId === "string" && workingObject.userId.trim()
-        ? workingObject.userId.trim()
-        : null;
+      : typeof workingObject?.webAuth?.userId === "string" && workingObject.webAuth.userId.trim()
+        ? workingObject.webAuth.userId.trim()
+        : typeof workingObject?.userId === "string" && workingObject.userId.trim()
+          ? workingObject.userId.trim()
+          : null;
 
   await pool.execute(
     "INSERT INTO context (id, ts, userid, json, text, role, turn_id, frozen, subchannel) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",

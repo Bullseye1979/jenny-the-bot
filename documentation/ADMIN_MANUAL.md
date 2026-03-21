@@ -2031,12 +2031,12 @@ export default async function myModule(coreData) {
 | 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
-| 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, role, roles) **and also `wo.userId`** (from `wo.webAuth.userId`) so all downstream modules can use `wo.userId` without needing webAuth fallbacks. Login/logout routes handled on the configured `loginPort`. Handles OAuth2 callback and session cookie lifecycle. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports` |
+| 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, role, roles). Login/logout routes handled on the configured `loginPort`. Handles OAuth2 callback and session cookie lifecycle. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports` |
 | 00043 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
 | 00045 | `webpage-inpaint` | Redirect `GET /documents/*.png` to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. |
 | 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). Calls AI directly using the global workingObject credentials — no separate `ai.*` config needed. Subchannel names stored in `chat_subchannels` table. |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). Before calling any AI module, delegates user-message context writing to `00073-webpage-add-context`. Subchannel names stored in `chat_subchannels` table. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
@@ -2048,8 +2048,9 @@ export default async function myModule(coreData) {
 | 00057 | `webpage-gdpr` | GDPR data-export SPA (port 3121, `/gdpr`) — allows logged-in users to download an Excel file containing their context history, consent records, and stored files. Requires `exceljs` npm package. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
-| 00070 | `discord-add-context` | Loads conversation history from MySQL into the context window |
-| 00072 | `api-add-context` | Loads context for API flow requests |
+| 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
+| 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user) |
+| 00073 | `webpage-add-context` | Writes the incoming webpage chat user message to the context DB (role=user). Called directly by `00048-webpage-chat` before any AI module runs. `userId` is resolved automatically by `setContext` from `wo.webAuth.userId`. |
 | 00075 | `discord-trigger-gate` | Filters messages based on trigger words |
 | 00080 | `discord-reaction-start` | Adds a progress reaction emoji to the user's message |
 
@@ -3476,6 +3477,8 @@ Set `inpaintHost` to match the public URL of the inpainting SPA (without `https:
 **Config key:** `webpage-auth`
 
 Provides Discord OAuth2 SSO (Single Sign-On) for all web modules. Runs as a **passive module** — it processes every request on listed ports, sets `wo.webAuth` if a valid session cookie is present, and lets the request continue normally. It does not block or respond unless the URL is an `/auth/*` route.
+
+`userId` is **not** copied to `wo.userId` by this module. Instead, `setContext` in `core/context.js` reads `wo.webAuth.userId` directly when writing to the DB, so no per-module fallback chains are needed.
 
 **Routes:**
 - `GET /auth/login` — redirects to Discord OAuth2 authorize URL

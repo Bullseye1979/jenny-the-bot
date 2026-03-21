@@ -75,7 +75,7 @@ async function buildGdprWorkbook(userId, dbCfg, gdprTable) {
     let ctxRows = [];
     try {
       const [rows] = await conn.execute(
-        "SELECT ctx_id, ts, id, userid, role, text, frozen FROM context WHERE userid = ? ORDER BY ctx_id",
+        "SELECT ctx_id, ts, id, userid, role, text, frozen FROM context WHERE userid = ? AND role = 'user' ORDER BY ctx_id",
         [userId]
       );
       ctxRows = rows;
