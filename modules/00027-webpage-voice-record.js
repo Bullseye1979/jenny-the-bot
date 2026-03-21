@@ -227,7 +227,7 @@ export default async function getWebpageVoiceRecord(coreData) {
       role:    "user",
       text:    `[Meeting transcript — ${ts}]\n\n${finalText}`,
       content: `[Meeting transcript — ${ts}]\n\n${finalText}`,
-      userId:  String(wo.webAuth?.userId || wo.webAuth?.id || wo.userId || "")
+      userId:  String(wo.userId || "")
     });
 
     wo.channelID = prevChannelId;

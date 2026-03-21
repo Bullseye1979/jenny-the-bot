@@ -414,7 +414,7 @@ export default async function getWebpageChat(coreData) {
         await setContext(chatWo, {
           role:       "user",
           content:    payload,
-          userId:     String(wo.webAuth?.userId || wo.webAuth?.id || "web-user"),
+          userId:     String(wo.userId || ""),
           authorName: String(wo.webAuth?.username || wo.webAuth?.displayName || ""),
           channelId:  channelID,
           messageId:  "",
