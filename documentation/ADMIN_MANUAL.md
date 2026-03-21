@@ -1679,6 +1679,8 @@ Channel override
 
 **channelMatch:** Can contain channel IDs or channel names. The special value `"browser"` matches all API requests. The special value `"DM"` matches Direct Messages sent to the bot — add a channel entry with `"channelMatch": ["DM"]` to enable DM support (without it the channel-gate blocks all DMs).
 
+**DM detection heuristic:** A message is treated as a DM (and `effectiveChannelId` becomes `"DM"`) when: `isDM === true`, or `channelType === "DM"`, or `channelType === 1`, or — as a fallback — `guildId` is empty *and* `userId` is set *and* `isDM` is **not explicitly `false`**. The API flow sets `isDM = false` explicitly, so API requests with a `userId` are never misidentified as DMs even when `guildId` is empty.
+
 **Flow overrides with `webpage-router`:** When `webpage-router` is configured, web requests get a named flow (e.g. `"webpage-voice"`, `"webpage-wiki"`). Add `flows[]` entries to `core-channel-config` to apply overrides only when that flow is active:
 
 ```json

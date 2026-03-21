@@ -142,7 +142,7 @@ function getEffectiveChannelId(workingObject) {
     workingObject?.isDM === true ||
     String(chType ?? "").toUpperCase() === "DM" ||
     chType === 1 ||
-    (!workingObject?.guildId && !!normalizeStr(workingObject?.userId));
+    (workingObject?.isDM !== false && !workingObject?.guildId && !!normalizeStr(workingObject?.userId));
 
   return isDM ? "DM" : id;
 }
