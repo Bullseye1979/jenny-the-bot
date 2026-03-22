@@ -390,10 +390,15 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     db:                  wo.db,
     /* toolsconfig: global base, overrides always win (shallow merge — overrides replace entire sub-blocks) */
     toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
+    /* Expose the three wiki tools; config overrides.tools can replace this list if needed */
+    tools:               Array.isArray(overrides.tools) ? overrides.tools : ["getInformation", "getTimeline", "getImage"],
     timezone:            wo.timezone    || "Europe/Berlin",
     logging:             [],
-    /* Route all wiki-generated images to pub/documents/wiki/ (isolated from shared documents) */
-    userId:              "wiki"
+    /* Route all wiki-generated images to pub/documents/wiki/ (isolated from shared documents).
+       baseUrl forced to "" so saveFile returns a relative URL (/documents/wiki/…) which
+       addThumbParam can append ?w=N to — an absolute URL would bypass thumbnail serving. */
+    userId:              "wiki",
+    baseUrl:             ""
   };
 
   const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
@@ -469,9 +474,11 @@ If getImage fails or returns no URL, return {"image_url":null}`;
     includeHistory:      false,
     db:                  wo.db,
     toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
+    tools:               ["getImage"],
     timezone:            wo.timezone || "Europe/Berlin",
     logging:             [],
-    userId:              "wiki"
+    userId:              "wiki",
+    baseUrl:             ""
   };
 
   const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
