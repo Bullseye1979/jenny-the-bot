@@ -234,12 +234,7 @@ export default async function getWebpageChat(coreData) {
   /* ---- GET /chat ---- */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     if (!isAllowed) {
-      wo.http.response = {
-        status:  200,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-        body:    getAccessDeniedHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath })
-      };
-      wo.web.useLayout = false;
+      wo.http.response = { status: 302, headers: { Location: "/" }, body: "" };
       wo.jump = true;
       await setSendNow(wo);
       return coreData;
@@ -612,36 +607,6 @@ export default async function getWebpageChat(coreData) {
   return coreData;
 }
 
-
-function getAccessDeniedHtml(opts) {
-  const base       = String(opts?.base || "/").replace(/\/+$/g, "") || "/";
-  const activePath = String(opts?.activePath || base);
-  const role       = String(opts?.role || "").trim();
-  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role);
-
-  return (
-    "<!DOCTYPE html>\n" +
-    "<html lang=\"en\">\n" +
-    "<head>\n" +
-    "<meta charset=\"UTF-8\">\n" +
-    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1\">\n" +
-    "<title>\u{1F4AC} Chat</title>\n" +
-    "<link rel=\"stylesheet\" href=\"" + base + "/style.css\">\n" +
-    "</head>\n" +
-    "<body>\n" +
-    "<header>\n" +
-    "  <h1>\u{1F4AC} Chat</h1>\n" +
-    (menuHtml ? ("  " + menuHtml + "\n") : "") +
-    "</header>\n" +
-    "<div style=\"margin-top:var(--hh);padding:12px\">\n" +
-    "  <div style=\"padding:12px;border:1px solid var(--bdr);border-radius:10px;background:#fff\">\n" +
-    "    <strong>Access denied</strong>\n" +
-    "  </div>\n" +
-    "</div>\n" +
-    "</body>\n" +
-    "</html>"
-  );
-}
 
 
 function getChatHtml(opts) {
