@@ -423,11 +423,12 @@ export default async function getWebpageAuth(coreData) {
 
     const sess = {
       v: ssoData.v || 1,
-      userId: String(ssoData.userId || ""),
+      userId:   String(ssoData.userId   || ""),
       username: String(ssoData.username || ""),
-      role: String(ssoData.role || "member"),
-      roles: Array.isArray(ssoData.roles) ? ssoData.roles : [],
-      roleIds: Array.isArray(ssoData.roleIds) ? ssoData.roleIds : [],
+      guildId:  String(ssoData.guildId  || ""),
+      role:     String(ssoData.role     || "member"),
+      roles:    Array.isArray(ssoData.roles)   ? ssoData.roles   : [],
+      roleIds:  Array.isArray(ssoData.roleIds) ? ssoData.roleIds : [],
       ts: Date.now()
     };
 
