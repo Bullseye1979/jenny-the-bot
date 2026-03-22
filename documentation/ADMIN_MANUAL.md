@@ -1483,6 +1483,56 @@ Browser-based always-on voice interface with meeting recorder. Serves the SPA at
 
 ---
 
+#### config.webpage-voice-input
+
+Handles `POST /voice/audio` — converts incoming audio to WAV and sets `wo` fields for the shared transcription pipeline. Reads config from `config["webpage-voice-input"]`.
+
+```json
+"webpage-voice-input": {
+  "flow": ["webpage"],
+  "port": 3119
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"webpage"` |
+| `port` | number | `3119` | Must match `config["webpage-voice"].port` |
+
+---
+
+#### config.webpage-voice-record
+
+Handles `POST /voice/record` — full meeting recording: transcribes with Whisper, optionally diarizes with GPT, stores transcript in context DB. Reads config from `config["webpage-voice-record"]`.
+
+```json
+"webpage-voice-record": {
+  "flow":         ["webpage"],
+  "port":         3119,
+  "allowedRoles": ["member", "admin"],
+  "recordModel":  "gpt-4o-transcribe",
+  "whisperApiKey": "",
+  "diarize":      true,
+  "model":        "gpt-4o-mini",
+  "apiKey":       "",
+  "clearContextBeforeTranscription": false
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"webpage"` |
+| `port` | number | `3119` | Must match `config["webpage-voice"].port` |
+| `allowedRoles` | array | `[]` | Roles allowed to use the recorder. Empty = open |
+| `recordModel` | string | `"gpt-4o-transcribe"` | Whisper model for transcription |
+| `whisperApiKey` | string | `wo.apiKey` fallback | API key for the Whisper endpoint |
+| `diarize` | boolean | `true` | Run a GPT speaker-attribution pass after transcription |
+| `model` | string | `wo.model` fallback | Chat model used for diarization |
+| `apiKey` | string | `wo.apiKey` fallback | API key for the diarization chat endpoint |
+| `clearContextBeforeTranscription` | boolean | `false` | Purge non-frozen context for the channel before storing the transcript |
+
+---
+
 #### config.webpage-voice-add-context
 
 Writes the voice transcription to the context DB immediately after transcription (position 00031, before the pipeline stop at 00032). Reads config from `config["webpage-voice-add-context"]`.

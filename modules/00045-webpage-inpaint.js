@@ -9,6 +9,8 @@
 import path from "node:path";
 import { getItem } from "../core/registry.js";
 
+const MODULE_NAME = "webpage-inpaint";
+
 function getShouldBypassRedirect(wo, inpaintingHost) {
   const headers = wo?.http?.headers || {};
 
@@ -62,7 +64,7 @@ async function setSendNow(wo) {
 export default async function getWebpageInpaint(coreData) {
   const wo = coreData?.workingObject || {};
 
-  const cfg = coreData?.config?.["webpage-inpaint"] || {};
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
   const enabled = cfg.enabled !== false;
   if (!enabled) return coreData;
 

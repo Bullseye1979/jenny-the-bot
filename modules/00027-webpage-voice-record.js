@@ -10,7 +10,7 @@
 /* Routes (port 3119):                                                            */
 /*   POST /voice/record?channelId=<id>                                            */
 /*                                                                                */
-/* Config (config["webpage-voice"]):                                              */
+/* Config (config["webpage-voice-record"]):                                              */
 /*   recordModel                  — transcription model (default: gpt-4o-transcribe) */
 /*   diarize                      — run speaker-attribution pass (default: true)  */
 /*   clearContextBeforeTranscription — purge non-frozen context before storing   */
@@ -29,7 +29,6 @@ import { getItem }            from "../core/registry.js";
 import { setContext, setPurgeContext } from "../core/context.js";
 
 const MODULE_NAME  = "webpage-voice-record";
-const VOICE_CFG    = "webpage-voice";
 const DEFAULT_PORT = 3119;
 const ROUTE_RECORD = "/voice/record";
 
@@ -146,7 +145,7 @@ export default async function getWebpageVoiceRecord(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);
 
-  const cfg    = coreData?.config?.[VOICE_CFG] || {};
+  const cfg    = coreData?.config?.[MODULE_NAME] || {};
   const port   = Number(cfg.port ?? DEFAULT_PORT);
   const method = (wo.http?.method || "").toUpperCase();
   const url    = wo.http?.url || "";

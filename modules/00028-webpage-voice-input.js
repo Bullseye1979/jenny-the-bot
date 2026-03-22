@@ -78,7 +78,7 @@ export default async function getWebpageVoiceInput(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);
 
-  const cfg    = coreData?.config?.["webpage-voice"] || {};
+  const cfg    = coreData?.config?.[MODULE_NAME] || {};
   const port   = Number(cfg.port ?? DEFAULT_PORT);
   const method = (wo.http?.method || "").toUpperCase();
   const url    = wo.http?.url || "";
