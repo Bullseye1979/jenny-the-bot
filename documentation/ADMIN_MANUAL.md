@@ -1544,16 +1544,27 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
   "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
   "clientId":       "YOUR_DISCORD_APP_CLIENT_ID",
   "clientSecret":   "YOUR_DISCORD_APP_CLIENT_SECRET",
-  "guildId":        "YOUR_DISCORD_GUILD_ID",
   "sessionSecret":  "long_random_secret_string",
   "redirectUri":    "",
   "scope":          "identify guilds.members.read",
   "sessionMaxAgeSec": 43200,
-  "defaultRole":    "member",
-  "allowRoleIds":   ["DISCORD_ROLE_ID_1", "DISCORD_ROLE_ID_2"],
-  "rolePriority":   ["DISCORD_ROLE_ID_1", "DISCORD_ROLE_ID_2"],
-  "roleMap":        { "DISCORD_ROLE_ID_1": "admin", "DISCORD_ROLE_ID_2": "member" },
-  "sameSite":       "Lax"
+  "sameSite":       "Lax",
+  "guilds": [
+    {
+      "guildId":      "YOUR_PRIMARY_GUILD_ID",
+      "defaultRole":  "member",
+      "allowRoleIds": ["DISCORD_ROLE_ID_1", "DISCORD_ROLE_ID_2"],
+      "rolePriority": ["DISCORD_ROLE_ID_1", "DISCORD_ROLE_ID_2"],
+      "roleMap":      { "DISCORD_ROLE_ID_1": "admin", "DISCORD_ROLE_ID_2": "member" }
+    },
+    {
+      "guildId":      "YOUR_SECONDARY_GUILD_ID",
+      "defaultRole":  "member",
+      "allowRoleIds": [],
+      "rolePriority": ["DISCORD_ROLE_ID_3"],
+      "roleMap":      { "DISCORD_ROLE_ID_3": "admin" }
+    }
+  ]
 }
 ```
 
@@ -1564,17 +1575,22 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
 | `ports` | array | `[loginPort]` | All ports where session cookies are validated |
 | `clientId` | string | — | Discord application Client ID |
 | `clientSecret` | string | — | Discord application Client Secret |
-| `guildId` | string | — | Discord Guild (server) ID to read member roles from |
 | `sessionSecret` | string | — | Secret used to sign session cookies |
 | `redirectUri` | string | `""` | OAuth2 callback URL; auto-derived from `Host` header if empty |
 | `scope` | string | `"identify"` | Discord OAuth2 scope |
 | `sessionMaxAgeSec` | number | `43200` | Session lifetime in seconds (default: 12 h) |
-| `defaultRole` | string | `"member"` | Role assigned to authenticated users not matched by `roleMap` |
-| `allowRoleIds` | array | `[]` | Discord Role IDs considered for role mapping |
-| `rolePriority` | array | `[]` | Order in which role IDs are checked; highest priority first |
-| `roleMap` | object | `{}` | Maps Discord Role ID → role label (`"admin"`, `"member"`, etc.) |
 | `sameSite` | string | `"Lax"` | Cookie `SameSite` attribute (`"Lax"`, `"Strict"`, or `"None"`) |
+| `guilds` | array | `[]` | List of guilds to authenticate against (see below). First guild where the user is a member wins. |
+| `guilds[].guildId` | string | — | Discord Guild (server) ID. The Jenny bot must be a member of this server. |
+| `guilds[].defaultRole` | string | `"member"` | Role assigned to authenticated users not matched by `roleMap` |
+| `guilds[].allowRoleIds` | array | `[]` | If non-empty, only users with at least one of these Role IDs are allowed in |
+| `guilds[].rolePriority` | array | `[]` | Order in which role IDs are checked; highest priority first |
+| `guilds[].roleMap` | object | `{}` | Maps Discord Role ID → role label (`"admin"`, `"member"`, etc.) |
 | `ssoPartners` | array | `[]` | List of partner base URLs for cross-domain SSO chaining (e.g. `["https://other.example.com"]`). After login the session is forwarded to each partner using a short-lived single-use token. Leave empty to disable. |
+
+> **Backward compatibility:** The old single-guild format (`"guildId"` + `"roleMap"` etc. at top level) is still supported. If `guilds` is absent, the top-level `guildId` is used as a single-entry guild list.
+
+> **Multi-guild requirement:** For `guilds.members.read` to work, the **Jenny bot must be invited to every guild in the list**. You don't need Developer Portal access to Server 2 — as long as you are an admin there, you can invite the bot using its existing OAuth2 invite URL.
 
 ---
 

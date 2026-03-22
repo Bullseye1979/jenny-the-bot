@@ -614,13 +614,13 @@ function getInpaintHtml(opts) {
         font-weight: 600;
       }
       button.secondary {
-        background: #f1f5f9;
-        color: var(--txt, #1e293b);
-        border: 1px solid #cbd5e1;
+        background: #1e2433;
+        color: #cbd5e1;
+        border: 1px solid #3a3f50;
         font-weight: 500;
       }
       button.secondary:hover {
-        background: #e2e8f0;
+        background: #2a3048;
       }
       button:disabled {
         opacity: 0.45;

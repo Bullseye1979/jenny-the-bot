@@ -442,6 +442,29 @@
         }
       ]
     },
+    "webpage-auth": {
+      "__description": "Discord OAuth2 SSO for all web modules. The Jenny bot must be invited to every guild listed in 'guilds'. First guild where the user is a member wins. Backward compat: old top-level guildId still works.",
+      "flow": ["webpage"],
+      "clientId":         "YOUR_DISCORD_CLIENT_ID",
+      "clientSecret":     "YOUR_DISCORD_CLIENT_SECRET",
+      "sessionSecret":    "LONG_RANDOM_SECRET_STRING",
+      "redirectUri":      "",
+      "scope":            "identify guilds.members.read",
+      "loginPort":        3111,
+      "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
+      "sessionMaxAgeSec": 43200,
+      "sameSite":         "Lax",
+      "ssoPartners":      [],
+      "guilds": [
+        {
+          "guildId":      "YOUR_PRIMARY_DISCORD_GUILD_ID",
+          "defaultRole":  "member",
+          "allowRoleIds": [],
+          "rolePriority": ["YOUR_ADMIN_ROLE_ID"],
+          "roleMap":      { "YOUR_ADMIN_ROLE_ID": "admin", "YOUR_MEMBER_ROLE_ID": "member" }
+        }
+      ]
+    },
     "webpage-menu": {
       "__description": "Global navigation menu shown on all webpage modules. Add one item per page. 'roles' is optional: omit or leave empty to show to everyone.",
       "flow": [

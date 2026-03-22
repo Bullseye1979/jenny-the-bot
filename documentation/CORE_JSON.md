@@ -824,20 +824,29 @@ Context DB editor SPA served as a **webpage-flow module** (`modules/00053`) on p
 
 ### webpage-auth
 
-Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.webAuth` when a valid session cookie is present. Handles login/logout on `loginPort`. `userId` is resolved from `wo.webAuth.userId` automatically by `setContext` in `core/context.js` — no per-module fallback chains needed.
+Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.webAuth` when a valid session cookie is present. Handles login/logout on `loginPort`. `wo.userId` is automatically populated from `wo.webAuth.userId` for all downstream modules (context writes, AI modules, etc.) — no per-module fallback chains needed.
 
 ```jsonc
 "webpage-auth": {
-  "flow":           ["webpage"],
-  "clientId":       "<DISCORD_CLIENT_ID>",
-  "clientSecret":   "<DISCORD_CLIENT_SECRET>",
-  "redirectUri":    "",
-  "loginPort":      3111,
-  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120],
-  "sessionTtlMs":   86400000,
-  "ssoPartners":    [],
-  "users": [
-    { "discordId": "<YOUR_DISCORD_USER_ID>", "role": "admin" }
+  "flow":             ["webpage"],
+  "clientId":         "<DISCORD_CLIENT_ID>",
+  "clientSecret":     "<DISCORD_CLIENT_SECRET>",
+  "sessionSecret":    "<LONG_RANDOM_SECRET>",
+  "redirectUri":      "",
+  "scope":            "identify guilds.members.read",
+  "loginPort":        3111,
+  "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120],
+  "sessionMaxAgeSec": 43200,
+  "sameSite":         "Lax",
+  "ssoPartners":      [],
+  "guilds": [
+    {
+      "guildId":      "<PRIMARY_GUILD_ID>",
+      "defaultRole":  "member",
+      "allowRoleIds": [],
+      "rolePriority": ["<ADMIN_ROLE_ID>"],
+      "roleMap":      { "<ADMIN_ROLE_ID>": "admin", "<MEMBER_ROLE_ID>": "member" }
+    }
   ]
 }
 ```
@@ -847,15 +856,26 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
 | `flow` | Must include `"webpage"` |
 | `clientId` | Discord application client ID (from the Discord Developer Portal) |
 | `clientSecret` | Discord application client secret |
-| `redirectUri` | OAuth2 callback URL. Set to `""` to auto-derive from the HTTP `Host` header (recommended for multi-domain setups). Otherwise set to the exact callback URL, e.g. `"https://yourserver.example.com/auth/callback"`. Must be registered in the Discord Developer Portal under OAuth2 → Redirects. |
-| `loginPort` | Port that handles `/auth/login`, `/auth/callback`, `/auth/logout`, and `/auth/me` routes. Typically the same port as `webpage-config-editor` (3111). |
-| `ports` | All ports where the module runs passively to set `wo.webAuth`. Must include every port where login state matters. Include port `3120` if using the Gallery module. |
-| `sessionTtlMs` | Session cookie lifetime in milliseconds (default: 86 400 000 = 24 h) |
-| `ssoPartners` | Array of partner base URLs (e.g. `["https://other.example.com"]`). After login the session is chained to partner sites using a short-lived single-use token — the browser is redirected to `<partner>/auth/sso?token=<t>&returnTo=<url>`. Leave empty (`[]`) to disable SSO chaining. |
-| `users[].discordId` | Discord user ID |
-| `users[].role` | Role assigned to this user (`"admin"`, `"editor"`, `"creator"`, etc.) |
+| `sessionSecret` | Secret used to sign session cookies — use a long random string |
+| `redirectUri` | OAuth2 callback URL. Set to `""` to auto-derive from the HTTP `Host` header (recommended for multi-domain setups). Must be registered in the Discord Developer Portal under OAuth2 → Redirects. |
+| `scope` | Discord OAuth2 scope. Use `"identify guilds.members.read"` to read guild roles. |
+| `loginPort` | Port that handles `/auth/login`, `/auth/callback`, `/auth/logout`, and `/auth/me`. |
+| `ports` | All ports where the module runs passively to set `wo.webAuth`. Include every port where login state matters. |
+| `sessionMaxAgeSec` | Session cookie lifetime in seconds (default: 43 200 = 12 h) |
+| `sameSite` | Cookie `SameSite` attribute: `"Lax"`, `"Strict"`, or `"None"` |
+| `ssoPartners` | Array of partner base URLs for cross-domain SSO chaining. After login the session is forwarded to each partner via a short-lived token. Leave `[]` to disable. |
+| `guilds` | List of Discord guilds to authenticate against. The first guild where the user is a member wins. Each entry has its own `roleMap`/`rolePriority` so different servers can have different role mappings. |
+| `guilds[].guildId` | Discord Guild (server) ID. **The Jenny bot must be invited to this server.** |
+| `guilds[].defaultRole` | Role assigned to authenticated members not matched by `roleMap` |
+| `guilds[].allowRoleIds` | If non-empty, only users with at least one of these role IDs are allowed in |
+| `guilds[].rolePriority` | Role IDs checked first; highest-priority first |
+| `guilds[].roleMap` | Maps Discord Role ID → role label (`"admin"`, `"member"`, etc.) |
 
-> **Multi-domain:** Set `redirectUri: ""` and register all domains in Discord Developer Portal. The module derives the callback URL automatically from the `Host` header.
+> **Backward compat:** The old format with `guildId`, `roleMap`, `rolePriority`, `defaultRole`, `allowRoleIds` at the top level (instead of inside `guilds[]`) is still supported.
+
+> **Multi-guild:** Add more entries to `guilds[]`. The bot must be invited to each server (you need admin rights on the target server — no Developer Portal access required). Useful for authenticating users from multiple Discord servers without having them join one central server.
+
+> **Multi-domain:** Set `redirectUri: ""` and register all domains in the Discord Developer Portal. The module derives the callback URL from the `Host` header automatically.
 
 - Add all ports used by web modules to `ports`
 - Add `reverse_proxy /auth* localhost:3111` to your Caddyfile (before the catch-all)

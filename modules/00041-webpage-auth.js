@@ -264,6 +264,13 @@ function getRoleFromMember(cfg, member) {
 }
 
 
+function getGuilds(cfg) {
+  if (Array.isArray(cfg.guilds) && cfg.guilds.length) return cfg.guilds;
+  if (String(cfg.guildId || "").trim()) return [cfg]; // backward compat
+  return [];
+}
+
+
 function getIsAllowedByRole(cfg, roles) {
   const allow = Array.isArray(cfg?.allowRoleIds) ? cfg.allowRoleIds.map(String) : [];
   if (!allow.length) return true;
@@ -322,7 +329,6 @@ export default async function getWebpageAuth(coreData) {
   const clientId = String(cfg.clientId || "").trim();
   const clientSecret = String(cfg.clientSecret || "").trim();
   const secret = String(cfg.sessionSecret || "").trim();
-  const guildId = String(cfg.guildId || "").trim();
 
   if (!clientId || !clientSecret || !secret) {
     setJsonResp(wo, 500, { error: "webpage-auth misconfigured" });
@@ -572,17 +578,28 @@ export default async function getWebpageAuth(coreData) {
     }
 
     let member = null;
-    if (guildId) {
-      member = await getHttpGetJson(
-        "https://discord.com/api/users/@me/guilds/" + encodeURIComponent(guildId) + "/member",
+    let matchedGuildCfg = null;
+    const guilds = getGuilds(cfg);
+
+    for (const guildCfg of guilds) {
+      const gId = String(guildCfg.guildId || "").trim();
+      if (!gId) continue;
+      const m = await getHttpGetJson(
+        "https://discord.com/api/users/@me/guilds/" + encodeURIComponent(gId) + "/member",
         { Authorization: "Bearer " + access }
       );
-      if (!member || !Array.isArray(member.roles)) {
-        setJsonResp(wo, 401, { error: "discord_member_fetch_failed", discord: member || null });
-        wo.jump = true;
-        await setSendNow(wo);
-        return coreData;
+      if (m && Array.isArray(m.roles)) {
+        member = m;
+        matchedGuildCfg = guildCfg;
+        break;
       }
+    }
+
+    if (guilds.length && !member) {
+      setJsonResp(wo, 401, { error: "discord_member_fetch_failed" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
     }
 
     const username =
@@ -590,11 +607,12 @@ export default async function getWebpageAuth(coreData) {
         ? user.global_name.trim()
         : (typeof user.username === "string" ? user.username.trim() : "");
 
+    const effectiveCfg = matchedGuildCfg || cfg;
     const roleInfo = member
-      ? getRoleFromMember(cfg, member)
+      ? getRoleFromMember(effectiveCfg, member)
       : { role: String(cfg?.defaultRole || "member").trim().toLowerCase(), roles: [] };
 
-    if (!getIsAllowedByRole(cfg, roleInfo.roleIds)) {
+    if (!getIsAllowedByRole(effectiveCfg, roleInfo.roleIds)) {
       setJsonResp(wo, 403, { error: "forbidden" });
       wo.jump = true;
       await setSendNow(wo);
@@ -605,7 +623,7 @@ export default async function getWebpageAuth(coreData) {
       v: 1,
       userId: String(user.id || ""),
       username,
-      role: getNormalizeRoleLabel(cfg, roleInfo.role),
+      role: getNormalizeRoleLabel(effectiveCfg, roleInfo.role),
       roles: roleInfo.roles,
       roleIds: roleInfo.roleIds,
       ts: Date.now()
