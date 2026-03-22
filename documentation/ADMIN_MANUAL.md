@@ -3347,6 +3347,8 @@ The AI **must** output a single raw JSON object (no markdown fences, no surround
 | Record table | Paginated, 50 rows per page. Clicking long `text` or `json` cells opens a full-content expand overlay. |
 | Multi-select delete | Checkbox per row + "Select All". Delete button enabled when ≥ 1 row selected. Confirmation required. |
 | Search | Searches the `text` column by default. A **JSON** checkbox next to the search button adds the `json` column to the search (`searchFields=text,json`). Results replace the normal record list in-place with a "Clear" button to return. |
+| Inline cell editing | Click any cell in an editable column (`text`, `json`, `role`, `turn_id`, `id`) to edit it directly in the table. Short fields (`role`, `turn_id`, `id`): **Enter** saves, **Esc** cancels. Long fields (`text`, `json`): textarea opens in-cell with a hint; **Ctrl+Enter** saves, **Esc** cancels. Blur also saves. Long `text`/`json` cells show a small **⤢** icon to open the full-content expand overlay without entering edit mode. NULL cells of editable columns are also clickable. |
+| Edit modal (✏) | The per-row ✏ button still opens the full edit modal showing all fields of a record at once — useful when editing multiple fields in one go. |
 | Search & Replace | Modal with separate "Find Matches" (preview per record with Replace/Skip buttons) and "Replace All (no confirm)" paths. Fields `text` and `json` selectable. Mode toggle: **Replace matched text only** (default, substring replace) or **Replace entire field value** (overwrites the whole field with the replacement). ⚠ `json` replacement operates on raw JSON strings. |
 
 **core.json configuration:**

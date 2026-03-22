@@ -321,6 +321,15 @@ mark{background:#fef3c7;color:#92400e;border-radius:2px;padding:0 1px}
 .expand-overlay.hidden{display:none}
 .expand-box{background:var(--card);border:1px solid var(--bdr);border-radius:6px;max-width:80vw;max-height:75vh;overflow:auto;padding:16px;white-space:pre-wrap;word-break:break-all;font-family:monospace;font-size:12px;line-height:1.6;position:relative;min-width:400px}
 .expand-close{position:sticky;top:0;float:right;margin-left:8px}
+.cell-editable{cursor:text}
+.cell-editable:hover{outline:1px solid var(--bdr);outline-offset:-1px}
+.cell-editing{padding:2px 3px!important;overflow:visible!important;max-width:none!important;white-space:normal!important;position:relative;z-index:10}
+.cell-saving{opacity:.5;pointer-events:none}
+.cell-inline-input{width:100%;min-width:120px;padding:3px 5px;background:var(--bg);border:1px solid var(--acc);color:var(--txt);border-radius:3px;font-size:12px;outline:none;box-sizing:border-box}
+.cell-inline-textarea{width:100%;min-width:320px;min-height:90px;padding:4px 6px;background:var(--bg);border:1px solid var(--acc);color:var(--txt);border-radius:3px;font-size:12px;font-family:monospace;line-height:1.45;outline:none;resize:vertical;box-sizing:border-box;display:block}
+.cell-edit-hint{display:block;font-size:10px;color:var(--muted);margin-top:2px}
+.btn-expand-cell{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:10px;padding:0 3px;line-height:1;vertical-align:middle;opacity:.7}
+.btn-expand-cell:hover{color:var(--acc);opacity:1}
 `.trim();
 }
 
@@ -657,16 +666,22 @@ function renderTable(rows) {
     visibleCols.forEach(function (col) {
       var td = document.createElement('td'); td.dataset.col = col;
       var val = row[col];
-      if (val == null) { td.className = 'null-cell'; td.textContent = 'NULL'; }
-      else if (col === 'json') {
+      var rowCtxId = row.ctx_id;
+      if (val == null) {
+        td.dataset.value = '';
+        if (EDITABLE_COLS.has(col)) {
+          td.className = 'null-cell cell-editable';
+          td.textContent = 'NULL';
+          makeCellEditable(td, rowCtxId, col);
+        } else {
+          td.className = 'null-cell'; td.textContent = 'NULL';
+        }
+      } else {
         var s = String(val);
-        td.textContent = trunc(s, 120); td.className = 'cell-expandable'; td.title = 'Click to expand';
-        td.addEventListener('click', function () { expandShow(s, 'json'); });
-      } else if (col === 'text') {
-        var t = String(val);
-        td.textContent = trunc(t, 200);
-        if (t.length > 200) { td.className = 'cell-expandable'; td.title = 'Click to expand'; td.addEventListener('click', function () { expandShow(t, 'text'); }); }
-      } else { td.textContent = String(val); }
+        td.dataset.value = s;
+        renderCellContent(td, col, s);
+        if (EDITABLE_COLS.has(col)) makeCellEditable(td, rowCtxId, col);
+      }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
@@ -875,6 +890,86 @@ function expandShow(content, type) {
     try { box.textContent = JSON.stringify(JSON.parse(content), null, 2); } catch (_) { box.textContent = content; }
   } else { box.textContent = content; }
   document.getElementById('expand-overlay').classList.remove('hidden');
+}
+
+/* ---- Inline cell editing ---- */
+var EDITABLE_COLS = new Set(['text', 'json', 'role', 'turn_id', 'id']);
+var LONG_COLS     = new Set(['text', 'json']);
+
+function renderCellContent(td, col, val) {
+  td.classList.remove('cell-editing', 'cell-saving');
+  td.innerHTML = '';
+  if (LONG_COLS.has(col)) {
+    var limit = col === 'json' ? 120 : 200;
+    td.appendChild(document.createTextNode(trunc(val, limit)));
+    if (val.length > limit) {
+      var btnExp = document.createElement('button');
+      btnExp.className = 'btn-expand-cell'; btnExp.title = 'Expand full content'; btnExp.textContent = '⤢';
+      (function (v, c) { btnExp.addEventListener('click', function (e) { e.stopPropagation(); expandShow(v, c); }); })(val, col);
+      td.appendChild(btnExp);
+    }
+  } else {
+    td.textContent = val;
+  }
+}
+
+function makeCellEditable(td, ctx_id, col) {
+  td.classList.add('cell-editable');
+  td.addEventListener('click', function (e) {
+    if (e.target.classList.contains('btn-expand-cell')) return;
+    startInlineEdit(td, ctx_id, col);
+  });
+}
+
+function startInlineEdit(td, ctx_id, col) {
+  if (td.classList.contains('cell-editing')) return;
+  var originalVal = String(td.dataset.value || '');
+  td.classList.add('cell-editing');
+  var isLong = LONG_COLS.has(col);
+  var el;
+  if (isLong) {
+    el = document.createElement('textarea');
+    el.className = 'cell-inline-textarea';
+    var hint = document.createElement('span');
+    hint.className = 'cell-edit-hint'; hint.textContent = 'Ctrl+Enter to save · Esc to cancel';
+  } else {
+    el = document.createElement('input');
+    el.type = 'text'; el.className = 'cell-inline-input';
+  }
+  el.value = originalVal;
+  td.innerHTML = '';
+  td.appendChild(el);
+  if (isLong && hint) td.appendChild(hint);
+  el.focus();
+  if (!isLong) el.select();
+
+  var saved = false;
+  async function doSave() {
+    if (saved) return; saved = true;
+    var newVal = el.value;
+    if (newVal === originalVal) { cancel(); return; }
+    td.classList.add('cell-saving');
+    try {
+      await api('/api/record', 'PATCH', { ctx_id: ctx_id, field: col, value: newVal });
+      td.dataset.value = newVal;
+      renderCellContent(td, col, newVal);
+    } catch (e) {
+      saved = false;
+      td.classList.remove('cell-saving');
+      el.focus();
+      setStatus('Save error (' + col + '): ' + e.message, true);
+    }
+  }
+  function cancel() {
+    saved = true;
+    renderCellContent(td, col, originalVal);
+  }
+  el.addEventListener('blur', function () { doSave(); });
+  el.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    else if (!isLong && e.key === 'Enter') { e.preventDefault(); doSave(); }
+    else if (isLong && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doSave(); }
+  });
 }
 
 /* ---- Events ---- */
