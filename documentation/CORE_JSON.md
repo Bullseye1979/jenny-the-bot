@@ -872,6 +872,8 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
 | `guilds[].rolePriority` | Role IDs checked first; highest-priority first |
 | `guilds[].roleMap` | Maps Discord Role ID → role label (`"admin"`, `"member"`, etc.) |
 
+> **Role label persistence:** The role label (e.g. `"dnd"`, `"admin"`, `"member"`) is normalized once at login time using the matched guild's `roleMap` and stored in the signed session cookie. On every subsequent request it is read directly from the session — no re-normalization occurs. This means custom labels are preserved correctly even when the root config has no `roleMap`.
+
 > **Backward compat:** The old format with `guildId`, `roleMap`, `rolePriority`, `defaultRole`, `allowRoleIds` at the top level (instead of inside `guilds[]`) is still supported.
 
 > **Multi-guild:** Add more entries to `guilds[]`. The bot must be invited to each server (you need admin rights on the target server — no Developer Portal access required). Useful for authenticating users from multiple Discord servers without having them join one central server.

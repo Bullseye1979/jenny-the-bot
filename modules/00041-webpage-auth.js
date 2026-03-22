@@ -283,7 +283,7 @@ function setApplyAuthToWorkingObject(wo, cfg, sess) {
   wo.webAuth = {
     username: sess?.username ? String(sess.username) : "",
     userId: sess?.userId ? String(sess.userId) : "",
-    role: getNormalizeRoleLabel(cfg, sess?.role),
+    role: String(sess?.role || "").trim().toLowerCase() || String(cfg?.defaultRole || "member").trim().toLowerCase(),
     roles: Array.isArray(sess?.roles) ? sess.roles.map(String) : [],
     roleIds: Array.isArray(sess?.roleIds) ? sess.roleIds.map(String) : []
   };
