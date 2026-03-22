@@ -2174,7 +2174,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | 08100 | `core-voice-tts` | Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to split into voice segments, sanitizes text, calls the OpenAI TTS API for each segment (parallel, concurrency 2). Output format is controlled by `wo.ttsFormat` / `cfg.ttsFormat` (default `"opus"` for Discord, `"mp3"` for webpage). Outputs `wo.ttsSegments = [{voice, text, buffer}]` and `wo.ttsDefaultVoice` |
 | 08110 | `discord-voice-tts-play` | Discord-specific TTS playback. Runs when `wo.ttsSegments` exists and a voice session is usable. Manages guild-level lock to prevent overlapping speech; plays each segment buffer sequentially via the @discordjs/voice AudioPlayer. Active only in `discord-voice` flow |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
-| 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`). Also serves `/documents/*` files: images (`png`, `jpg`, `gif`, `webp`, `avif`) get `Cache-Control: public, max-age=604800, immutable`; all other file types default to `no-store`. |
+| 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`). Also serves `/documents/*` files: images (`png`, `jpg`, `gif`, `webp`, `avif`) get `Cache-Control: public, max-age=604800, immutable`; all other file types default to `no-store`. Supports `?w=N` on image requests to serve a JPEG thumbnail scaled to N px wide — thumbnail generated with `sharp` on first request and cached to `pub/documents/_thumbs/{N}/{filename}.jpg`. |
 | 09320 | `webpage-voice-output` | Sends TTS audio back to the webpage voice caller. Triggered when `wo.isWebpageVoice === true` — runs regardless of `wo.stop`. Success: HTTP 200 with `Content-Type: audio/mpeg`, concatenated MP3 buffers from `wo.ttsSegments`, plus `X-Transcript` and `X-Response` headers. Error: HTTP 400 JSON |
 
 #### discord-text-output (08000) — Details
@@ -3145,11 +3145,11 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 **AI Wiki (port 3117, /wiki):**
 - `GET /wiki` — lists all configured channel wikis (public ones visible without auth)
 - `GET /wiki/style.css` — shared CSS
-- `GET /wiki/{channelId}` — channel homepage (search bar + recent article cards); card images load sequentially (concurrency 2) via a JS queue to avoid hammering the server on first load
+- `GET /wiki/{channelId}` — channel homepage (search bar + recent article cards); card images load sequentially (concurrency 2) via a JS queue, and request `?w=400` thumbnails (see below)
 - `GET /wiki/{channelId}/{slug}` — article page (Fandom-style layout)
 - `GET /wiki/{channelId}/{slug}/edit` — editor/admin: edit form
 - `GET /wiki/{channelId}/search?q=` — search; always shows results overview (even with a single hit); no hit triggers generation automatically for creator/admin
-- `GET /wiki/{channelId}/images/{filename}` — serves uploaded images (`Cache-Control: public, max-age=604800, immutable`)
+- `GET /wiki/{channelId}/images/{filename}` — serves uploaded images (`Cache-Control: public, max-age=604800, immutable`); supports `?w=N` query param to serve a JPEG thumbnail scaled to N px wide — thumbnail is generated with `sharp` on first request and cached to `pub/wiki/{channelId}/images/_thumbs/{N}/{filename}.jpg` for subsequent requests
 - `POST /wiki/{channelId}/api/generate` — AJAX generate (creator/admin); body `{query, force?, promptAddition?}`; `promptAddition` is appended to the AI payload as `"\n\nAdditional context: …"` (never overwrites the system prompt); without `force`: returns `{ok,slug,existing:true}` or `{ok,results:[]}` if matches found; with `force:true`: always generates a new article; returns `{ok,slug,generated:true}`
 - `POST /wiki/{channelId}/api/upload-image/{slug}` — editor/admin: upload image for article (JSON `{base64,ext}`)
 - `POST /wiki/{channelId}/api/regen-image/{slug}` — editor/admin: regenerate the article image via AI (calls `callPipelineForImageOnly`); optional body `{promptAddition?}` appended to image prompt; deletes old local file if `image_url` points to `pub/wiki/{channelId}/images/`; updates `image_url` in DB; returns `{ok, image_url}`

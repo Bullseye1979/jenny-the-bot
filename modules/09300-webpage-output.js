@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import sharp from "sharp";
 
 const MODULE_NAME = "webpage-output";
 
@@ -236,6 +237,27 @@ function getServeFileWithRange(req, res, absPath, stat, cacheControl = "no-store
 }
 
 
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
+
+/* Resolve or generate a thumbnail for srcPath at the given pixel width.
+ * Thumbnails are cached to thumbsDir/{filename}.jpg on first request.
+ * Returns { buf: Buffer, mime: string } or null on failure. */
+async function getThumb(srcPath, thumbsDir, filename, width) {
+  const thumbPath = path.join(thumbsDir, filename + ".jpg");
+  if (fs.existsSync(thumbPath)) {
+    return { buf: fs.readFileSync(thumbPath), mime: "image/jpeg" };
+  }
+  try {
+    fs.mkdirSync(thumbsDir, { recursive: true });
+    const buf = await sharp(srcPath)
+      .resize(width, null, { withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    fs.writeFileSync(thumbPath, buf);
+    return { buf, mime: "image/jpeg" };
+  } catch { return null; }
+}
+
 function getHandleStaticDocument(wo, req, res, log) {
   const urlPath = String(wo?.http?.path || "/");
   if (urlPath === "/documents" || urlPath === "/documents/") {
@@ -256,16 +278,38 @@ function getHandleStaticDocument(wo, req, res, log) {
     return setSendResponse(res, 400, "Bad Request");
   }
 
-  fs.stat(target, (err, stat) => {
+  const thumbW = parseInt(wo?.http?.query?.w || "0", 10) || 0;
+
+  fs.stat(target, async (err, stat) => {
     if (res.writableEnded) return;
     if (err || !stat.isFile()) {
       return setSendResponse(res, 404, "Not Found");
     }
 
     try {
-      const imageMimes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
       const ctype = getContentType(target);
-      const cacheControl = imageMimes.has(ctype) ? "public, max-age=604800, immutable" : "no-store";
+      const isImage = IMAGE_MIMES.has(ctype);
+      const cacheControl = isImage ? "public, max-age=604800, immutable" : "no-store";
+
+      /* Serve thumbnail when ?w=N is requested and file is an image */
+      if (thumbW > 0 && isImage) {
+        const thumbsDir = path.join(documentsRoot, "_thumbs", String(thumbW));
+        const filename  = path.basename(target);
+        const thumb = await getThumb(target, thumbsDir, filename, thumbW);
+        if (thumb && !res.writableEnded) {
+          res.writeHead(200, {
+            "Content-Type": thumb.mime,
+            "Content-Length": thumb.buf.length,
+            "Cache-Control": cacheControl,
+            "X-Content-Type-Options": "nosniff"
+          });
+          res.end(thumb.buf);
+        } else if (!res.writableEnded) {
+          setSendResponse(res, 500, "Thumbnail generation failed");
+        }
+        return;
+      }
+
       wo.http.response = {
         status: 200,
         headers: { "Content-Type": ctype },

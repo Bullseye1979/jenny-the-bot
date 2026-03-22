@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
+import sharp from "sharp";
 /* AI module is selected dynamically per request based on overrides.useAiModule */
 const AI_MODULE_MAP = {
   "completions":     "./01000-core-ai-completions.js",
@@ -22,6 +23,33 @@ const AI_MODULE_MAP = {
 const MODULE_NAME = "webpage-wiki";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
+
+/* Width used for article card thumbnails on the homepage */
+const THUMB_WIDTH = 400;
+
+/* Resolve or generate a JPEG thumbnail cached to thumbsDir/{filename}.jpg.
+ * Returns { buf, mime } or null on failure. */
+async function getThumb(srcPath, thumbsDir, filename, width) {
+  const thumbPath = path.join(thumbsDir, filename + ".jpg");
+  if (fs.existsSync(thumbPath)) {
+    return { buf: fs.readFileSync(thumbPath), mime: "image/jpeg" };
+  }
+  try {
+    fs.mkdirSync(thumbsDir, { recursive: true });
+    const buf = await sharp(srcPath)
+      .resize(width, null, { withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    fs.writeFileSync(thumbPath, buf);
+    return { buf, mime: "image/jpeg" };
+  } catch { return null; }
+}
+
+/* Append ?w=N to a URL only when it is a local (same-origin) path */
+function addThumbParam(url, w) {
+  if (!url || !url.startsWith("/")) return url;
+  return url + (url.includes("?") ? "&" : "?") + "w=" + w;
+}
 
 
 function getStr(v) { return v == null ? "" : String(v); }
@@ -652,7 +680,7 @@ function buildChannelHomePage(channel, articles, basePath, menu, role, webAuth) 
     const cats = safeParseJson(a.categories, []);
     return `<a class="wiki-article-card" href="${escHtml(chPath)}/${escHtml(a.slug)}" style="text-decoration:none">
       ${a.image_url
-        ? `<img class="wiki-article-card-img wiki-lazy" data-src="${escHtml(a.image_url)}" alt="${escHtml(a.title)}">`
+        ? `<img class="wiki-article-card-img wiki-lazy" data-src="${escHtml(addThumbParam(a.image_url, THUMB_WIDTH))}" alt="${escHtml(a.title)}">`
         : `<div class="wiki-article-card-img-placeholder">📄</div>`}
       <div class="wiki-article-card-body">
         <div class="wiki-article-card-title">${escHtml(a.title)}</div>
@@ -1366,10 +1394,18 @@ export default async function getWebpageWiki(coreData) {
     const imgPath = path.resolve(imgDir, seg2);
     if (!imgPath.startsWith(path.resolve(imgDir))) { await sendText(wo, 400, "Bad Request"); return coreData; }
     try {
-      const data = fs.readFileSync(imgPath);
       const ext  = path.extname(seg2).toLowerCase().slice(1) || "png";
       const mime = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" }[ext] || "image/png";
-      wo.http.response = { status: 200, headers: { "Content-Type": mime, "Cache-Control": "public, max-age=604800, immutable" }, body: data };
+      const thumbW = parseInt(wo.http?.query?.w || "0", 10) || 0;
+      if (thumbW > 0) {
+        const thumbsDir = path.join(imgDir, "_thumbs", String(thumbW));
+        const thumb = await getThumb(imgPath, thumbsDir, seg2, thumbW);
+        if (!thumb) { await sendText(wo, 500, "Thumbnail generation failed"); return coreData; }
+        wo.http.response = { status: 200, headers: { "Content-Type": thumb.mime, "Cache-Control": "public, max-age=604800, immutable" }, body: thumb.buf };
+      } else {
+        const data = fs.readFileSync(imgPath);
+        wo.http.response = { status: 200, headers: { "Content-Type": mime, "Cache-Control": "public, max-age=604800, immutable" }, body: data };
+      }
       await setSendNow(wo);
     } catch { await sendText(wo, 404, "Image not found"); }
     return coreData;
