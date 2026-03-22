@@ -613,7 +613,10 @@ export default async function getWebpageAuth(coreData) {
       : { role: String(cfg?.defaultRole || "member").trim().toLowerCase(), roles: [] };
 
     if (!getIsAllowedByRole(effectiveCfg, roleInfo.roleIds)) {
-      setJsonResp(wo, 403, { error: "forbidden" });
+      const body = cfg.debug
+        ? { error: "forbidden", yourRoleIds: roleInfo.roleIds ?? [], allowRoleIds: effectiveCfg.allowRoleIds ?? [], guildId: matchedGuildCfg?.guildId ?? "" }
+        : { error: "forbidden" };
+      setJsonResp(wo, 403, body);
       wo.jump = true;
       await setSendNow(wo);
       return coreData;
