@@ -293,7 +293,7 @@ function getHandleStaticDocument(wo, req, res, log) {
 
       /* Serve thumbnail when ?w=N is requested and file is an image */
       if (thumbW > 0 && isImage) {
-        const thumbsDir = path.join(documentsRoot, "_thumbs", String(thumbW));
+        const thumbsDir = path.join(path.dirname(target), "thumbnails", String(thumbW));
         const filename  = path.basename(target);
         const thumb = await getThumb(target, thumbsDir, filename, thumbW);
         if (thumb && !res.writableEnded) {

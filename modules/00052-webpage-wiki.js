@@ -384,7 +384,9 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     /* toolsconfig: global base, overrides always win (shallow merge — overrides replace entire sub-blocks) */
     toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
     timezone:            wo.timezone    || "Europe/Berlin",
-    logging:             []
+    logging:             [],
+    /* Route all wiki-generated images to pub/documents/wiki/ (isolated from shared documents) */
+    userId:              "wiki"
   };
 
   const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
@@ -461,7 +463,8 @@ If getImage fails or returns no URL, return {"image_url":null}`;
     db:                  wo.db,
     toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
     timezone:            wo.timezone || "Europe/Berlin",
-    logging:             []
+    logging:             [],
+    userId:              "wiki"
   };
 
   const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
@@ -975,9 +978,11 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
       const data = await resp.json();
       if (data.ok && data.image_url) {
         imgUrl.value = data.image_url;
-        imgPrev.src  = data.image_url;
+        /* Append cache-buster so the browser fetches the new image even if a
+           stale entry exists under the same path (e.g. immutable thumbnail) */
+        imgPrev.src = data.image_url + (data.image_url.includes('?') ? '&' : '?') + '_t=' + Date.now();
         imgPrev.classList.remove('hidden');
-        status.textContent = '\u2705 Image regenerated \u2014 save the article to apply.';
+        status.textContent = '\u2705 Image saved.';
       } else {
         status.textContent = '\u274C ' + (data.error || 'Regeneration failed');
       }
@@ -1283,16 +1288,32 @@ export default async function getWebpageWiki(coreData) {
   if (method === "DELETE" && seg1 === "api" && seg2 === "article" && seg3) {
     if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden" }); return coreData; }
     try {
-      /* Delete local image if it was uploaded to this wiki's images directory */
       const articleToDelete = await dbGetArticle(db, channelId, seg3, 0).catch(() => null);
       if (articleToDelete?.image_url) {
-        const imgPrefix = `/wiki/${channelId}/images/`;
         const imgUrlStr = getStr(articleToDelete.image_url);
-        if (imgUrlStr.startsWith(imgPrefix)) {
-          const filename = imgUrlStr.slice(imgPrefix.length).split("?")[0];
+        const deleteFileAndThumbs = (absPath) => {
+          try { fs.unlinkSync(absPath); } catch { /* already gone */ }
+          const thumbsRoot = path.join(path.dirname(absPath), "thumbnails");
+          try {
+            for (const sz of fs.readdirSync(thumbsRoot)) {
+              try { fs.unlinkSync(path.join(thumbsRoot, sz, path.basename(absPath) + ".jpg")); } catch { /* ignore */ }
+            }
+          } catch { /* no thumbnails dir */ }
+        };
+        /* Uploaded wiki image */
+        const wikiImgPrefix = `/wiki/${channelId}/images/`;
+        if (imgUrlStr.startsWith(wikiImgPrefix)) {
+          const filename = imgUrlStr.slice(wikiImgPrefix.length).split("?")[0];
           if (filename && !filename.includes("/") && !filename.includes("..") && filename.length > 0) {
-            const imgPath = path.join(__dirname, "..", "pub", "wiki", channelId, "images", filename);
-            try { fs.unlinkSync(imgPath); } catch { /* ignore — file may already be gone */ }
+            deleteFileAndThumbs(path.join(__dirname, "..", "pub", "wiki", channelId, "images", filename));
+          }
+        }
+        /* AI-generated wiki image in pub/documents/wiki/ */
+        const docsWikiMatch = imgUrlStr.match(/\/documents\/wiki\/([^?#/]+)$/);
+        if (docsWikiMatch) {
+          const filename = docsWikiMatch[1];
+          if (filename && !filename.includes("..")) {
+            deleteFileAndThumbs(path.join(__dirname, "..", "pub", "documents", "wiki", filename));
           }
         }
       }
@@ -1368,16 +1389,38 @@ export default async function getWebpageWiki(coreData) {
     try {
       const imageUrl = await callPipelineForImageOnly(articleForRegen, channel, coreData, regenPromptAddition);
       if (!imageUrl) { await sendJson(wo, 500, { ok: false, error: "Image generation returned no URL" }); return coreData; }
-      /* Delete old local image if it lives in this wiki's images directory */
+
+      /* Delete old image file + its thumbnail caches */
       const oldUrl = getStr(articleForRegen.image_url || "");
-      const imgPrefix = `/wiki/${channelId}/images/`;
-      if (oldUrl.startsWith(imgPrefix)) {
-        const oldFilename = oldUrl.slice(imgPrefix.length).split("?")[0];
+      const deleteOldImageFile = (absPath) => {
+        try { fs.unlinkSync(absPath); } catch { /* already gone */ }
+        /* Remove cached thumbnails: thumbnails/{w}/{filename}.jpg next to the source file */
+        const thumbsRoot = path.join(path.dirname(absPath), "thumbnails");
+        try {
+          const sizes = fs.readdirSync(thumbsRoot);
+          for (const sz of sizes) {
+            try { fs.unlinkSync(path.join(thumbsRoot, sz, path.basename(absPath) + ".jpg")); } catch { /* ignore */ }
+          }
+        } catch { /* no thumbnails dir — ignore */ }
+      };
+      /* Delete uploaded wiki image (belongs exclusively to this article) */
+      const wikiImgPrefix = `/wiki/${channelId}/images/`;
+      if (oldUrl.startsWith(wikiImgPrefix)) {
+        const oldFilename = oldUrl.slice(wikiImgPrefix.length).split("?")[0];
         if (oldFilename && !oldFilename.includes("/") && !oldFilename.includes("..")) {
-          const oldPath = path.join(__dirname, "..", "pub", "wiki", channelId, "images", oldFilename);
-          try { fs.unlinkSync(oldPath); } catch { /* ignore — may already be gone */ }
+          deleteOldImageFile(path.join(__dirname, "..", "pub", "wiki", channelId, "images", oldFilename));
         }
       }
+      /* Delete AI-generated wiki image from pub/documents/wiki/
+         (safe to delete — this subdirectory is exclusively used by the wiki) */
+      const docsWikiMatch = oldUrl.match(/\/documents\/wiki\/([^?#/]+)$/);
+      if (docsWikiMatch) {
+        const oldFilename = docsWikiMatch[1];
+        if (oldFilename && !oldFilename.includes("..")) {
+          deleteOldImageFile(path.join(__dirname, "..", "pub", "documents", "wiki", oldFilename));
+        }
+      }
+
       await db.execute(
         "UPDATE wiki_articles SET image_url=?, updated_at=NOW() WHERE channel_id=? AND slug=?",
         [imageUrl, channelId, seg3]
@@ -1398,7 +1441,7 @@ export default async function getWebpageWiki(coreData) {
       const mime = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" }[ext] || "image/png";
       const thumbW = parseInt(wo.http?.query?.w || "0", 10) || 0;
       if (thumbW > 0) {
-        const thumbsDir = path.join(imgDir, "_thumbs", String(thumbW));
+        const thumbsDir = path.join(imgDir, "thumbnails", String(thumbW));
         const thumb = await getThumb(imgPath, thumbsDir, seg2, thumbW);
         if (!thumb) { await sendText(wo, 500, "Thumbnail generation failed"); return coreData; }
         wo.http.response = { status: 200, headers: { "Content-Type": thumb.mime, "Cache-Control": "public, max-age=604800, immutable" }, body: thumb.buf };
