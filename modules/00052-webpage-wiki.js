@@ -652,7 +652,7 @@ function buildChannelHomePage(channel, articles, basePath, menu, role, webAuth) 
     const cats = safeParseJson(a.categories, []);
     return `<a class="wiki-article-card" href="${escHtml(chPath)}/${escHtml(a.slug)}" style="text-decoration:none">
       ${a.image_url
-        ? `<img class="wiki-article-card-img" src="${escHtml(a.image_url)}" alt="${escHtml(a.title)}" loading="lazy">`
+        ? `<img class="wiki-article-card-img wiki-lazy" data-src="${escHtml(a.image_url)}" alt="${escHtml(a.title)}">`
         : `<div class="wiki-article-card-img-placeholder">📄</div>`}
       <div class="wiki-article-card-body">
         <div class="wiki-article-card-title">${escHtml(a.title)}</div>
@@ -672,7 +672,23 @@ function buildChannelHomePage(channel, articles, basePath, menu, role, webAuth) 
     ? `<div style="color:var(--wiki-text-muted);font-size:.9em;margin-bottom:10px">Recent articles</div>
        <div class="wiki-recent">${articleCards}</div>`
     : `<div class="wiki-empty">No articles yet. Use the search bar to generate the first one!</div>`}
-</div>`;
+</div>
+<script>
+(function(){
+  var imgs = Array.from(document.querySelectorAll('img.wiki-lazy'));
+  if (!imgs.length) return;
+  var concurrency = 2, active = 0, idx = 0;
+  function loadNext() {
+    while (active < concurrency && idx < imgs.length) {
+      var img = imgs[idx++];
+      active++;
+      img.onload = img.onerror = function() { active--; loadNext(); };
+      img.src = img.dataset.src;
+    }
+  }
+  loadNext();
+})();
+</script>`;
 
   return buildFullPage({ head: chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
 }
@@ -1353,7 +1369,7 @@ export default async function getWebpageWiki(coreData) {
       const data = fs.readFileSync(imgPath);
       const ext  = path.extname(seg2).toLowerCase().slice(1) || "png";
       const mime = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" }[ext] || "image/png";
-      wo.http.response = { status: 200, headers: { "Content-Type": mime, "Cache-Control": "max-age=86400" }, body: data };
+      wo.http.response = { status: 200, headers: { "Content-Type": mime, "Cache-Control": "public, max-age=604800, immutable" }, body: data };
       await setSendNow(wo);
     } catch { await sendText(wo, 404, "Image not found"); }
     return coreData;

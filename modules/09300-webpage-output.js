@@ -100,7 +100,7 @@ function getSafeJoin(root, reqPath) {
 }
 
 
-function getServeFileWithRange(req, res, absPath, stat) {
+function getServeFileWithRange(req, res, absPath, stat, cacheControl = "no-store") {
   const total = stat.size;
   const ctype = getContentType(absPath);
   const filename = path.basename(absPath);
@@ -124,7 +124,7 @@ function getServeFileWithRange(req, res, absPath, stat) {
         "Content-Length": total,
         "Accept-Ranges": "bytes",
         "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-        "Cache-Control": "no-store",
+        "Cache-Control": cacheControl,
         "X-Content-Type-Options": "nosniff"
       });
       return res.end();
@@ -143,7 +143,7 @@ function getServeFileWithRange(req, res, absPath, stat) {
         "Content-Length": total,
         "Accept-Ranges": "bytes",
         "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-        "Cache-Control": "no-store",
+        "Cache-Control": cacheControl,
         "X-Content-Type-Options": "nosniff"
       });
       if (req.method === "HEAD") return res.end();
@@ -174,7 +174,7 @@ function getServeFileWithRange(req, res, absPath, stat) {
     try {
       res.writeHead(416, {
         "Content-Range": `bytes */${total}`,
-        "Cache-Control": "no-store",
+        "Cache-Control": cacheControl,
         "X-Content-Type-Options": "nosniff"
       });
       return res.end();
@@ -210,7 +210,7 @@ function getServeFileWithRange(req, res, absPath, stat) {
       "Content-Range": `bytes ${start}-${end}/${total}`,
       "Accept-Ranges": "bytes",
       "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-      "Cache-Control": "no-store",
+      "Cache-Control": cacheControl,
       "X-Content-Type-Options": "nosniff"
     });
     if (req.method === "HEAD") return res.end();
@@ -263,12 +263,15 @@ function getHandleStaticDocument(wo, req, res, log) {
     }
 
     try {
+      const imageMimes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
+      const ctype = getContentType(target);
+      const cacheControl = imageMimes.has(ctype) ? "public, max-age=604800, immutable" : "no-store";
       wo.http.response = {
         status: 200,
-        headers: { "Content-Type": getContentType(target) },
+        headers: { "Content-Type": ctype },
         body: null
       };
-      return getServeFileWithRange(req, res, target, stat);
+      return getServeFileWithRange(req, res, target, stat, cacheControl);
     } catch (e) {
       if (getIsSoftHttpWriteError(e)) return;
       log("documents serve failed", "error", {
