@@ -355,6 +355,9 @@ ${dbBanner}
         <input id="search-input" type="text" placeholder="Search…">
         <button class="btn-primary" id="btn-search">Search</button>
         <button class="btn-secondary" id="btn-clear-search">Reset</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--txt);cursor:pointer;user-select:none">
+          <input type="checkbox" id="chk-search-json" style="cursor:pointer"> JSON
+        </label>
         <button class="btn-secondary" id="btn-replace-open">Search &amp; Replace</button>
         <div style="flex:1"></div>
         <div class="field-toggle">
@@ -557,7 +560,12 @@ async function loadPage() {
   var p = new URLSearchParams({ page: currentPage, limit: pageSize, fields: visibleCols.join(',') });
   if (currentChannel) p.set('channel', currentChannel);
   var endpoint = '/api/records';
-  if (isSearchMode && lastQ) { endpoint = '/api/search'; p.set('q', lastQ); }
+  if (isSearchMode && lastQ) {
+    endpoint = '/api/search'; p.set('q', lastQ);
+    var searchJson = document.getElementById('chk-search-json');
+    var sf = searchJson && searchJson.checked ? 'text,json' : 'text';
+    p.set('searchFields', sf);
+  }
   setStatus('Loading…');
   try {
     var data = await api(endpoint + '?' + p);

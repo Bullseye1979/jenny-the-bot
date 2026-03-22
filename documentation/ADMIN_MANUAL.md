@@ -3332,7 +3332,7 @@ The AI **must** output a single raw JSON object (no markdown fences, no surround
 - `GET /context/api/channels` — returns `{channels: [{id, cnt}]}` — all distinct channel IDs with row counts, via SQL `GROUP BY`
 - `GET /context/api/columns` — returns `{columns: [{name, type}]}` — column names and types from `INFORMATION_SCHEMA.COLUMNS`
 - `GET /context/api/records?channel=&page=&limit=&fields=` — paginated record list; returns `{rows, total, page, pages}`
-- `GET /context/api/search?q=&channel=&fields=&searchFields=` — full-text search in `text` and/or `json` column; paginated
+- `GET /context/api/search?q=&channel=&fields=&searchFields=` — full-text LIKE search; `searchFields` is a comma-separated list of columns to search (`text`, `json`, `role`, `turn_id`, `id`); defaults to `text` when omitted; UI sends `text,json` when the **JSON** checkbox is checked
 - `DELETE /context/api/delete` — bulk-delete records; body: `{ids: [ctx_id, ...]}`; returns `{ok, deleted}`
 - `POST /context/api/replace/find` — find all records matching a search string; body: `{search, channel?, fields}`; returns `{matches: [{ctx_id, channel, field, value}]}`
 - `POST /context/api/replace/apply` — replace in a single record; body: `{ctx_id, field, search, replace, mode?}`; `mode` is `"partial"` (default, replaces matched substring) or `"full"` (overwrites entire field value); returns `{ok, affected}`
@@ -3346,7 +3346,7 @@ The AI **must** output a single raw JSON object (no markdown fences, no surround
 | Field selector | Dropdown showing all DB columns (fetched live via `INFORMATION_SCHEMA`). Toggle checkboxes to show/hide columns. Defaults: `ctx_id`, `ts`, `id`, `role`, `text`. |
 | Record table | Paginated, 50 rows per page. Clicking long `text` or `json` cells opens a full-content expand overlay. |
 | Multi-select delete | Checkbox per row + "Select All". Delete button enabled when ≥ 1 row selected. Confirmation required. |
-| Search | Searches the `text` column (default). Results replace the normal record list in-place with a "Clear" button to return. |
+| Search | Searches the `text` column by default. A **JSON** checkbox next to the search button adds the `json` column to the search (`searchFields=text,json`). Results replace the normal record list in-place with a "Clear" button to return. |
 | Search & Replace | Modal with separate "Find Matches" (preview per record with Replace/Skip buttons) and "Replace All (no confirm)" paths. Fields `text` and `json` selectable. Mode toggle: **Replace matched text only** (default, substring replace) or **Replace entire field value** (overwrites the whole field with the replacement). ⚠ `json` replacement operates on raw JSON strings. |
 
 **core.json configuration:**
