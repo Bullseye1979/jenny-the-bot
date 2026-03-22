@@ -589,9 +589,13 @@ export default async function getWebpageAuth(coreData) {
         { Authorization: "Bearer " + access }
       );
       if (m && Array.isArray(m.roles)) {
-        member = m;
-        matchedGuildCfg = guildCfg;
-        break;
+        const ri = getRoleFromMember(guildCfg, m);
+        if (getIsAllowedByRole(guildCfg, ri.roleIds)) {
+          member = m;
+          matchedGuildCfg = guildCfg;
+          break;
+        }
+        /* Member found but no matching roles in this guild — try next */
       }
     }
 
@@ -613,10 +617,7 @@ export default async function getWebpageAuth(coreData) {
       : { role: String(cfg?.defaultRole || "member").trim().toLowerCase(), roles: [] };
 
     if (!getIsAllowedByRole(effectiveCfg, roleInfo.roleIds)) {
-      const body = cfg.debug
-        ? { error: "forbidden", yourRoleIds: roleInfo.roleIds ?? [], allowRoleIds: effectiveCfg.allowRoleIds ?? [], guildId: matchedGuildCfg?.guildId ?? "" }
-        : { error: "forbidden" };
-      setJsonResp(wo, 403, body);
+      setJsonResp(wo, 403, { error: "forbidden" });
       wo.jump = true;
       await setSendNow(wo);
       return coreData;

@@ -1580,7 +1580,7 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
 | `scope` | string | `"identify"` | Discord OAuth2 scope |
 | `sessionMaxAgeSec` | number | `43200` | Session lifetime in seconds (default: 12 h) |
 | `sameSite` | string | `"Lax"` | Cookie `SameSite` attribute (`"Lax"`, `"Strict"`, or `"None"`) |
-| `guilds` | array | `[]` | List of guilds to authenticate against (see below). First guild where the user is a member wins. |
+| `guilds` | array | `[]` | List of guilds to authenticate against (see below). Guilds are tried in order — the first guild where the user is a member **and** passes `allowRoleIds` wins. If a guild matches membership but the user has no permitted role there, iteration continues to the next guild. |
 | `guilds[].guildId` | string | — | Discord Guild (server) ID. The Jenny bot must be a member of this server. |
 | `guilds[].defaultRole` | string | `"member"` | Role assigned to authenticated users not matched by `roleMap` |
 | `guilds[].allowRoleIds` | array | `[]` | If non-empty, only users with at least one of these Role IDs are allowed in |
@@ -2051,6 +2051,7 @@ export default async function myModule(coreData) {
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, role, roles). Login/logout routes handled on the configured `loginPort`. Handles OAuth2 callback and session cookie lifecycle. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports` |
 | 00043 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
+| 00044 | `webpage-landing` | Landing page at `GET /` on the configured port (default 3111). Renders the role-filtered navigation menu (`wo.web.menu`) and a welcome message with username and role. Unauthenticated requests are redirected to `/auth/login`. Config key: `webpage-landing`. |
 | 00045 | `webpage-inpaint` | Redirect `GET /documents/*.png` to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. |
 | 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |

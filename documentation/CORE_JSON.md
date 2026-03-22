@@ -57,6 +57,7 @@ All key names follow **camelCase** throughout.
    - [webpage-wiki](#webpage-wiki)
    - [webpage-context](#webpage-context)
    - [webpage-auth](#webpage-auth)
+   - [webpage-landing](#webpage-landing)
    - [webpage-menu](#webpage-menu)
    - [webpage-dashboard](#webpage-dashboard)
    - [webpage-documentation](#webpage-documentation)
@@ -864,7 +865,7 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
 | `sessionMaxAgeSec` | Session cookie lifetime in seconds (default: 43 200 = 12 h) |
 | `sameSite` | Cookie `SameSite` attribute: `"Lax"`, `"Strict"`, or `"None"` |
 | `ssoPartners` | Array of partner base URLs for cross-domain SSO chaining. After login the session is forwarded to each partner via a short-lived token. Leave `[]` to disable. |
-| `guilds` | List of Discord guilds to authenticate against. The first guild where the user is a member wins. Each entry has its own `roleMap`/`rolePriority` so different servers can have different role mappings. |
+| `guilds` | List of Discord guilds to authenticate against. Guilds are tried in order — the first guild where the user is a member **and** passes `allowRoleIds` wins. If the user is found in a guild but has no permitted role there, iteration continues to the next guild. Each entry has its own `roleMap`/`rolePriority` so different servers can have different role mappings. |
 | `guilds[].guildId` | Discord Guild (server) ID. **The Jenny bot must be invited to this server.** |
 | `guilds[].defaultRole` | Role assigned to authenticated members not matched by `roleMap` |
 | `guilds[].allowRoleIds` | If non-empty, only users with at least one of these role IDs are allowed in |
@@ -880,6 +881,24 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
 - Add all ports used by web modules to `ports`
 - Add `reverse_proxy /auth* localhost:3111` to your Caddyfile (before the catch-all)
 - `GET /auth/me` — returns `{ ok, userId, username, role }` for the current session, or `401 { ok: false }` if not authenticated. Used by the browser extension to retrieve the logged-in user's identity.
+
+---
+
+### webpage-landing
+
+Landing page served at `GET /` after login. Shows the authenticated user's name and role, and renders the role-filtered navigation menu (`wo.web.menu`, set by `00043-webpage-menu`). Unauthenticated requests are redirected to `/auth/login`.
+
+```jsonc
+"webpage-landing": {
+  "flow": ["webpage"],
+  "port": 3111
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | Port on which `GET /` is handled (default: `3111`) |
 
 ---
 
