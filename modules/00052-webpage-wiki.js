@@ -346,6 +346,106 @@ async function dbUpdateArticle(db, channelId, slug, updates) {
   );
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   Embedded image generation — independent of tools/getImage.js.
+   Config keys under core.json["webpage-wiki"].imageGen:
+     apiKey        — API key for the image generation endpoint (required)
+     endpoint      — image endpoint URL (default: OpenAI images/generations)
+     model         — model name (default: gpt-image-1)
+     size          — explicit size string e.g. "1024x1024" (overrides aspect)
+     aspect        — aspect ratio e.g. "1:1", "16:9", "portrait" (default: 1:1)
+     publicBaseUrl — prefix for returned image URLs (optional; relative if unset)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+function wikiImgResolveSize(cfg) {
+  const raw = String(cfg?.size || "").trim();
+  const mSize = raw.match(/^(\d+)\s*x\s*(\d+)$/i);
+  if (mSize) return `${Number(mSize[1])}x${Number(mSize[2])}`;
+  const asp = String(cfg?.aspect || "").trim().toLowerCase();
+  const mAsp = asp === "portrait"   ? [null, "2", "3"]
+             : asp === "landscape"  ? [null, "16", "9"]
+             : asp === "widescreen" ? [null, "16", "9"]
+             : asp.match(/^(\d+)\s*:\s*(\d+)$/);
+  if (mAsp) {
+    const aw = Number(mAsp[1]), ah = Number(mAsp[2]);
+    if (aw > 0 && ah > 0) {
+      const base = 1024;
+      const ratio = aw / ah;
+      const w = ratio >= 1 ? base : Math.round(base * ratio / 64) * 64 || 64;
+      const h = ratio >= 1 ? Math.round(base / ratio / 64) * 64 || 64 : base;
+      return `${w}x${h}`;
+    }
+  }
+  return "1024x1024";
+}
+
+function wikiImgEnhancePrompt(raw) {
+  const p = String(raw || "").replace(/\s+/g, " ").trim();
+  return [
+    p,
+    "Style: digital painting, painterly brushwork, studio quality, cinematic, creative angles",
+    "Quality: vibrant colors, vibrant lighting, sharp focus, high quality, highly detailed faces, anatomically correct hands",
+    "Avoid: text, captions, logos, watermarks, deformed hands, extra fingers, low-res, distorted anatomy"
+  ].join(" | ");
+}
+
+async function wikiGenImage(prompt, imgCfg, wo) {
+  const apiKey = getStr(imgCfg?.apiKey || wo?.apiKey || "");
+  if (!apiKey) throw new Error("Wiki image generation requires imageGen.apiKey in webpage-wiki config");
+
+  const endpoint = getStr(imgCfg?.endpoint || "https://api.openai.com/v1/images/generations");
+  const model    = getStr(imgCfg?.model    || "gpt-image-1");
+  const size     = wikiImgResolveSize(imgCfg);
+  const finalPrompt = wikiImgEnhancePrompt(prompt);
+
+  let res, data;
+  try {
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, prompt: finalPrompt, size, n: 1 })
+    });
+    const raw = await res.text();
+    try { data = JSON.parse(raw); }
+    catch { throw new Error(`Image API non-JSON response (HTTP ${res.status}): ${raw.slice(0, 300)}`); }
+  } catch (e) {
+    throw new Error(`Image API request failed: ${e?.message || String(e)}`);
+  }
+  if (!res.ok) {
+    throw new Error(`Image API error (HTTP ${res.status}): ${data?.error?.message || JSON.stringify(data).slice(0, 300)}`);
+  }
+
+  const img = Array.isArray(data?.data) ? data.data[0] : null;
+  if (!img) throw new Error("Image API returned no image data");
+
+  let buf, ext;
+  if (img.url) {
+    try {
+      const imgRes = await fetch(img.url);
+      if (!imgRes.ok) throw new Error(`HTTP ${imgRes.status}`);
+      const ct = String(imgRes.headers.get("content-type") || "");
+      ext = ct.includes("jpeg") || ct.includes("jpg") ? ".jpg"
+          : ct.includes("webp") ? ".webp"
+          : ".png";
+      buf = Buffer.from(await imgRes.arrayBuffer());
+    } catch (e) {
+      throw new Error(`Failed to download generated image: ${e?.message || String(e)}`);
+    }
+  } else if (img.b64_json) {
+    buf = Buffer.from(img.b64_json, "base64");
+    ext = ".png";
+  } else {
+    throw new Error("Image API returned neither url nor b64_json");
+  }
+
+  const { saveFile } = await import("../core/file.js");
+  const fileWo = { ...(wo || {}), userId: "wiki" };
+  if (imgCfg?.publicBaseUrl) fileWo.baseUrl = getStr(imgCfg.publicBaseUrl);
+  const saved = await saveFile(fileWo, buf, { prefix: "img", ext });
+  return saved.url;
+}
+
+
 /**********************************************************************************/
 /* Default system prompt for wiki article generation via core-ai pipeline.        */
 /**********************************************************************************/
@@ -359,17 +459,15 @@ The user message contains the TOPIC to write about.
 MANDATORY STEPS — follow in order, ALL required:
 1. REQUIRED: Call getInformation with the topic as search query. This is your PRIMARY factual source. Do this BEFORE writing anything.
 2. REQUIRED: Call getTimeline to retrieve the full chronological event history for this channel. You MUST do this regardless of the topic — the timeline provides the correct order of events.
-3. REQUIRED: Call getImage to generate an illustration for the article. Use the imageAlt field from the infobox as the prompt. Put the URL from files[0].url into infobox.imageUrl.
-4. Combine the results from getInformation and getTimeline. Use the timeline to establish the correct chronological order of all events. Events MUST be presented in chronological order throughout the entire article — in the intro, in sections, and in the infobox. Never describe a later event before an earlier one.
-5. Write the article using ONLY what the tool results contain. Do NOT add facts from your training data.
-6. OUTPUT a single raw JSON object — no markdown fences, no prose before or after — using this schema:
+3. Combine the results from getInformation and getTimeline. Use the timeline to establish the correct chronological order of all events. Events MUST be presented in chronological order throughout the entire article — in the intro, in sections, and in the infobox. Never describe a later event before an earlier one.
+4. Write the article using ONLY what the tool results contain. Do NOT add facts from your training data.
+5. OUTPUT a single raw JSON object — no markdown fences, no prose before or after — using this schema:
 {
   "title": "Article Title",
   "intro": "One to two paragraph introduction — facts from tool results only, events in chronological order",
   "sections": [{"heading": "Section Heading", "level": 2, "content": "Section text — tool results only, events in chronological order"}],
   "infobox": {
-    "imageAlt": "Image description",
-    "imageUrl": "<URL returned by getImage, or null>",
+    "imageAlt": "Short visual scene description for an illustration of this article (used to generate an image — be specific and vivid)",
     "fields": [{"label": "Label", "value": "Value — from tool results only"}]
   },
   "categories": ["Category1", "Category2"],
@@ -381,7 +479,7 @@ CRITICAL RULES:
 - ALL events and developments MUST be in strict chronological order (earliest first).
 - Every sentence must be traceable to a tool result. If unsure, omit it.
 - Do NOT invent names, dates, stats, or lore not found in the tool results.
-- Final output MUST be raw JSON only. Always call getImage and put files[0].url in infobox.imageUrl. If getImage fails or returns no url, set infobox.imageUrl to null.`;
+- Final output MUST be raw JSON only. No markdown fences, no prose before or after.`;
 
 
 async function callPipelineForArticle(query, channel, coreData, promptAddition) {
@@ -416,8 +514,8 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     db:                  wo.db,
     /* toolsconfig: global base, overrides always win (shallow merge — overrides replace entire sub-blocks) */
     toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
-    /* Expose the three wiki tools; config overrides.tools can replace this list if needed */
-    tools:               Array.isArray(overrides.tools) ? overrides.tools : ["getInformation", "getTimeline", "getImage"],
+    /* Wiki tools — image generation is handled separately via wikiGenImage, not as a tool call */
+    tools:               Array.isArray(overrides.tools) ? overrides.tools : ["getInformation", "getTimeline"],
     timezone:            wo.timezone    || "Europe/Berlin",
     logging:             [],
     /* Route all wiki-generated images to pub/documents/wiki/ (isolated from shared documents) */
@@ -449,9 +547,14 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     throw new Error("AI returned no valid JSON article: " + responseText.slice(0, 200));
   }
 
-  /* Map infobox.imageUrl (from getImage tool) → article.image_url for DB storage */
-  if (!article.image_url && article.infobox?.imageUrl) {
-    article.image_url = article.infobox.imageUrl;
+  /* Generate article illustration via embedded image gen (independent of AI tool calls) */
+  const imgCfg  = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
+  const imgBase = { apiKey: getStr(overrides.apiKey || wo.apiKey || "") };
+  const imgPrompt = getStr(article.infobox?.imageAlt || article.title || query);
+  if (imgPrompt) {
+    try {
+      article.image_url = await wikiGenImage(imgPrompt, imgCfg, imgBase);
+    } catch { /* image generation failed — article saves without image, regen available in editor */ }
   }
 
   /* Attach the model name used for generation */
@@ -462,57 +565,22 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
 
 
 async function callPipelineForImageOnly(article, channel, coreData, promptAddition) {
-  const wo = coreData?.workingObject || {};
+  const wo  = coreData?.workingObject || {};
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
 
-  const cfg             = coreData?.config?.[MODULE_NAME] || {};
   const globalOverrides = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
   const chanOverrides   = (channel.overrides && typeof channel.overrides === "object") ? channel.overrides : {};
   const overrides       = { ...globalOverrides, ...chanOverrides };
-
-  const useAiModule = getStr(overrides.useAiModule || "completions");
-  const modulePath  = AI_MODULE_MAP[useAiModule] || AI_MODULE_MAP["completions"];
-  const { default: getCoreAi } = await import(modulePath);
 
   const infobox     = safeParseJson(article.infobox, {});
   const basePrompt  = getStr(article.image_prompt || infobox.imageAlt || article.title);
   const imagePrompt = basePrompt + (promptAddition ? `\n${promptAddition}` : "");
 
-  const imageOnlyPrompt = `You are an image generator.
-Call getImage once using the provided description as the prompt.
-Return ONLY a raw JSON object with no markdown, no prose:
-{"image_url":"<url from files[0].url>"}
-If getImage fails or returns no URL, return {"image_url":null}`;
+  if (!imagePrompt.trim()) throw new Error("No image prompt available for this article");
 
-  const syntheticWo = {
-    ...overrides,
-    endpoint:          getStr(overrides.endpoint          || wo.endpoint          || ""),
-    endpointResponses: getStr(overrides.endpointResponses || wo.endpointResponses || ""),
-    apiKey:            getStr(overrides.apiKey            || wo.apiKey            || ""),
-    flow:                "webpage",
-    channelID:           channel.channelId,
-    useAiModule:         useAiModule,
-    systemPrompt:        imageOnlyPrompt,
-    payload:             imagePrompt,
-    doNotWriteToContext: true,
-    includeHistory:      false,
-    db:                  wo.db,
-    toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
-    tools:               ["getImage"],
-    timezone:            wo.timezone || "Europe/Berlin",
-    logging:             [],
-    userId:              "wiki"
-  };
-
-  const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
-  const result       = await getCoreAi(syntheticCoreData);
-  const responseText = getStr(result?.workingObject?.response || "").trim();
-
-  let parsed = null;
-  try { parsed = JSON.parse(responseText); } catch {
-    const m = responseText.match(/\{[\s\S]*\}/);
-    if (m) { try { parsed = JSON.parse(m[0]); } catch { /* ignore */ } }
-  }
-  return getStr(parsed?.image_url || "");
+  const imgCfg  = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
+  const imgBase = { apiKey: getStr(overrides.apiKey || wo.apiKey || "") };
+  return wikiGenImage(imagePrompt, imgCfg, imgBase);
 }
 
 
@@ -1430,7 +1498,6 @@ export default async function getWebpageWiki(coreData) {
     } catch { /* ignore */ }
     try {
       const imageUrl = await callPipelineForImageOnly(articleForRegen, channel, coreData, regenPromptAddition);
-      if (!imageUrl) { await sendJson(wo, 500, { ok: false, error: "Image generation returned no URL" }); return coreData; }
 
       /* Delete old image file + its thumbnail caches */
       const oldUrl = getStr(articleForRegen.image_url || "");

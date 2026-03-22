@@ -3241,7 +3241,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 
 #### WorkingObject Handling (Article Generation)
 
-The wiki module does **not** use the main `workingObject` for its AI calls. Instead, `callPipelineForArticle` (full article generation) and `callPipelineForImageOnly` (image-only regeneration) each construct a **synthetic `workingObject`** by spreading the merged overrides (global `overrides` + channel `overrides`, channel wins) and passing it directly to the selected core-ai module. This means:
+The wiki module does **not** use the main `workingObject` for its AI calls. `callPipelineForArticle` constructs a **synthetic `workingObject`** by spreading the merged overrides (global `overrides` + channel `overrides`, channel wins) and passes it directly to the selected core-ai module. This means:
 
 - The wiki AI call is fully isolated from the Discord/API flow context
 - All AI parameters (`model`, `temperature`, `maxTokens`, `tools`, `systemPrompt`, `persona`, `instructions`, `contextSize`, …) come exclusively from the merged overrides
@@ -3252,7 +3252,7 @@ The wiki module does **not** use the main `workingObject` for its AI calls. Inst
 - `wo.payload` = `"Topic: <query>"` + optional `"\n\nAdditional context: <promptAddition>"` (becomes the article subject; `promptAddition` is appended, never replaces the system prompt)
 - `wo.flow = "webpage"` — tools like `getInformation` and `getTimeline` use `wo.channelID` directly
 
-This pattern allows the wiki to reuse the shared AI pipeline (with full tool-call support, multi-loop retries, etc.) without coupling its AI parameters to the global `workingObject` defaults.
+**Image generation** is handled separately by the embedded `wikiGenImage` function (see below) — it is called after the AI returns the article JSON, not as an AI tool call. `callPipelineForImageOnly` (regen endpoint) also uses `wikiGenImage` directly.
 
 > **⚠️ `includeHistory: true` and JSON format**
 >
@@ -3260,28 +3260,54 @@ This pattern allows the wiki to reuse the shared AI pipeline (with full tool-cal
 >
 > The default is `includeHistory: false`. If you enable it and article generation fails with `"AI returned no valid JSON article"` and the response is plain prose, set it back to `false`. The AI will then receive context only via `getInformation` and `getTimeline` tool calls, which is the safer default for JSON-format compliance.
 
-#### System Prompt and Image Generation
+#### Embedded Image Generation (`wikiGenImage`)
 
-The built-in system prompt (`DEFAULT_WIKI_SYSTEM_PROMPT`) instructs the AI to call `getInformation`, `getTimeline`, and `getImage` — in that order — before writing the article. **`getImage` is mandatory**: the AI is explicitly told that an article without `imageUrl` is incomplete.
+Image generation is **built into the wiki module** and does **not** depend on `tools/getImage.js` or any other plugin. It is called automatically after the AI returns the article JSON (article gen) and directly from the regen endpoint.
 
-**Why images are sometimes skipped:** The default prompt tells the AI to use `imageAlt` (an output field it has not yet written) as the `getImage` prompt. Under tight `maxLoops` budgets the AI may defer `getImage` to a later loop and then run out of budget. The fix is a custom `systemPrompt` that instructs `getImage` to be called in step 3 with an independently composed prompt — not tied to the output JSON.
+**Config keys** under `core.json["webpage-wiki"].imageGen`:
 
-**Recommended channel override for reliable image generation:**
+| Key | Default | Description |
+|-----|---------|-------------|
+| `apiKey` | — | **Required.** API key for the image endpoint |
+| `endpoint` | `https://api.openai.com/v1/images/generations` | Image generation API URL |
+| `model` | `gpt-image-1` | Model name (e.g. `dall-e-3`, `gpt-image-1`) |
+| `size` | — | Explicit size like `1024x1024` (overrides `aspect`) |
+| `aspect` | `1:1` | Aspect ratio: `1:1`, `16:9`, `portrait`, `landscape`, or `W:H` |
+| `publicBaseUrl` | — | Prepended to image URL (omit for relative URLs) |
 
+**Example config:**
 ```json
-"overrides": {
-  "maxLoops": 7,
-  "systemPrompt": "<paste custom prompt here>"
+"webpage-wiki": {
+  "imageGen": {
+    "apiKey": "sk-...",
+    "endpoint": "https://api.openai.com/v1/images/generations",
+    "model": "dall-e-3",
+    "aspect": "1:1"
+  }
 }
 ```
 
-The custom prompt should:
-1. Call `getInformation` first (up to 2 times with alternate keywords if needed)
-2. Call `getTimeline`
-3. Call `getImage` in step 3 — with a prompt composed directly from topic name + key traits found in steps 1–2 — **before writing any article text**
-4. Only then write and output the JSON article
+**Prompt enhancement:** The function automatically appends quality/style tags (digital painting, cinematic, etc.) to the raw prompt from `infobox.imageAlt`. No extra AI call is needed.
 
-With `maxLoops: 7` there is enough budget for 2× `getInformation` + `getTimeline` + `getImage` + the final JSON response. At `maxLoops: 5`, if the AI uses two `getInformation` calls, `getImage` may be cut due to budget exhaustion.
+**Image source:** Article generation uses the AI-written `infobox.imageAlt` field as the image prompt (falling back to the article title). The system prompt explicitly instructs the AI to write a vivid, specific scene description in `imageAlt`.
+
+**Failure handling:** If image generation fails during article creation, the article is saved without an image — no error is raised. The editor's "🔄 Regenerate Image via AI" button can be used afterwards. During regen the full error is returned to the browser.
+
+#### System Prompt
+
+The built-in system prompt (`DEFAULT_WIKI_SYSTEM_PROMPT`) instructs the AI to call `getInformation` and `getTimeline` — in that order — then output a JSON article. Image generation happens outside the AI pipeline and requires no `getImage` tool call.
+
+**Tools active in the article pipeline:** `getInformation`, `getTimeline` (configurable via `overrides.tools`).
+
+**Recommended channel override for reliable article quality:**
+
+```json
+"overrides": {
+  "maxLoops": 5
+}
+```
+
+With `maxLoops: 5` there is enough budget for up to 2× `getInformation` + `getTimeline` + the final JSON response.
 
 #### Article JSON Schema
 
