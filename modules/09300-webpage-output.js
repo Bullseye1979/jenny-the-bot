@@ -12,7 +12,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
-import sharp from "sharp";
+/* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
+let sharp = null;
+try { sharp = (await import("sharp")).default; } catch { /* sharp not available */ }
 
 const MODULE_NAME = "webpage-output";
 
@@ -244,6 +246,7 @@ const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp
  * Regenerates automatically when the source file is newer than the cached thumbnail.
  * Returns { buf: Buffer, mime: string } or null on failure. */
 async function getThumb(srcPath, thumbsDir, filename, width) {
+  if (!sharp) return null;
   const thumbPath = path.join(thumbsDir, filename + ".jpg");
   try {
     const [srcStat, thumbStat] = await Promise.all([

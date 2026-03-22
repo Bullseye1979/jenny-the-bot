@@ -12,7 +12,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
-import sharp from "sharp";
+/* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
+let sharp = null;
+try { sharp = (await import("sharp")).default; } catch { /* sharp not available */ }
 /* AI module is selected dynamically per request based on overrides.useAiModule */
 const AI_MODULE_MAP = {
   "completions":     "./01000-core-ai-completions.js",
@@ -29,8 +31,9 @@ const THUMB_WIDTH = 400;
 
 /* Resolve or generate a JPEG thumbnail cached to thumbsDir/{filename}.jpg.
  * Regenerates automatically when the source file is newer than the cached thumbnail.
- * Returns { buf, mime } or null on failure. */
+ * Returns { buf, mime } or null on failure (also null when sharp is not installed). */
 async function getThumb(srcPath, thumbsDir, filename, width) {
+  if (!sharp) return null;
   const thumbPath = path.join(thumbsDir, filename + ".jpg");
   try {
     const [srcStat, thumbStat] = await Promise.all([
@@ -52,10 +55,33 @@ async function getThumb(srcPath, thumbsDir, filename, width) {
   } catch { return null; }
 }
 
-/* Append ?w=N to a URL only when it is a local (same-origin) path */
-function addThumbParam(url, w) {
-  if (!url || !url.startsWith("/")) return url;
-  return url + (url.includes("?") ? "&" : "?") + "w=" + w;
+/* Extract the URL path from an absolute or relative URL */
+function getUrlPath(url) {
+  if (!url) return "";
+  try { return new URL(url).pathname.split("?")[0]; } catch { return String(url).split("?")[0]; }
+}
+
+/* Derive the thumbnail URL for a given image URL and width.
+ * Works for both relative (/documents/wiki/img.png) and absolute (https://host/documents/wiki/img.png).
+ * Returns the pre-generated thumbnail path; the original URL is used as onerror fallback. */
+function getThumbUrl(imageUrl, width) {
+  if (!imageUrl) return imageUrl;
+  const urlPath = getUrlPath(imageUrl);
+  if (!urlPath.startsWith("/")) return imageUrl;
+  const dir      = path.posix.dirname(urlPath);
+  const filename = path.posix.basename(urlPath);
+  const thumbPath = `${dir}/thumbnails/${width}/${filename}.jpg`;
+  try { const u = new URL(imageUrl); return u.origin + thumbPath; } catch { return thumbPath; }
+}
+
+/* Eagerly generate a thumbnail for a freshly saved image URL (fire-and-forget). */
+async function ensureThumb(imageUrl, width) {
+  if (!imageUrl || !sharp) return;
+  const urlPath = getUrlPath(imageUrl);
+  if (!urlPath.startsWith("/")) return;
+  const absPath  = path.join(__dirname, "..", "pub", urlPath);
+  const thumbDir = path.join(path.dirname(absPath), "thumbnails", String(width));
+  await getThumb(absPath, thumbDir, path.basename(absPath), width);
 }
 
 
@@ -394,11 +420,8 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     tools:               Array.isArray(overrides.tools) ? overrides.tools : ["getInformation", "getTimeline", "getImage"],
     timezone:            wo.timezone    || "Europe/Berlin",
     logging:             [],
-    /* Route all wiki-generated images to pub/documents/wiki/ (isolated from shared documents).
-       baseUrl forced to "" so saveFile returns a relative URL (/documents/wiki/…) which
-       addThumbParam can append ?w=N to — an absolute URL would bypass thumbnail serving. */
-    userId:              "wiki",
-    baseUrl:             ""
+    /* Route all wiki-generated images to pub/documents/wiki/ (isolated from shared documents) */
+    userId:              "wiki"
   };
 
   const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
@@ -477,8 +500,7 @@ If getImage fails or returns no URL, return {"image_url":null}`;
     tools:               ["getImage"],
     timezone:            wo.timezone || "Europe/Berlin",
     logging:             [],
-    userId:              "wiki",
-    baseUrl:             ""
+    userId:              "wiki"
   };
 
   const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
@@ -697,7 +719,7 @@ function buildChannelHomePage(channel, articles, basePath, menu, role, webAuth) 
     const cats = safeParseJson(a.categories, []);
     return `<a class="wiki-article-card" href="${escHtml(chPath)}/${escHtml(a.slug)}" style="text-decoration:none">
       ${a.image_url
-        ? `<img class="wiki-article-card-img wiki-lazy" data-src="${escHtml(addThumbParam(a.image_url, THUMB_WIDTH))}" alt="${escHtml(a.title)}">`
+        ? `<img class="wiki-article-card-img wiki-lazy" data-src="${escHtml(getThumbUrl(a.image_url, THUMB_WIDTH))}" data-fallback="${escHtml(a.image_url)}" alt="${escHtml(a.title)}">`
         : `<div class="wiki-article-card-img-placeholder">📄</div>`}
       <div class="wiki-article-card-body">
         <div class="wiki-article-card-title">${escHtml(a.title)}</div>
@@ -727,7 +749,11 @@ function buildChannelHomePage(channel, articles, basePath, menu, role, webAuth) 
     while (active < concurrency && idx < imgs.length) {
       var img = imgs[idx++];
       active++;
-      img.onload = img.onerror = function() { active--; loadNext(); };
+      img.onload = function() { active--; loadNext(); };
+      img.onerror = function() {
+        var fb = img.dataset.fallback;
+        if (fb && img.src !== fb) { img.src = fb; } else { active--; loadNext(); }
+      };
       img.src = img.dataset.src;
     }
   }
@@ -1292,6 +1318,7 @@ export default async function getWebpageWiki(coreData) {
       const article   = await callPipelineForArticle(query, channel, coreData, promptAddition);
       const slug      = getSlug(article.title || query);
       const finalSlug = await dbSaveArticle(db, channelId, slug, article);
+      ensureThumb(article.image_url, THUMB_WIDTH).catch(() => {});
       await sendJson(wo, 200, { ok: true, slug: finalSlug, generated: true });
     } catch (e) {
       await sendJson(wo, 500, { ok: false, error: getStr(e?.message || "Generation failed") });
@@ -1383,6 +1410,7 @@ export default async function getWebpageWiki(coreData) {
       const filename = `${seg3}.${ext}`;
       fs.writeFileSync(path.join(imgDir, filename), buf);
       const publicUrl = `/wiki/${channelId}/images/${filename}`;
+      ensureThumb(publicUrl, THUMB_WIDTH).catch(() => {});
       await sendJson(wo, 200, { ok: true, url: publicUrl });
     } catch (e) {
       await sendJson(wo, 500, { ok: false, error: getStr(e?.message || "Upload failed") });
@@ -1439,6 +1467,7 @@ export default async function getWebpageWiki(coreData) {
         "UPDATE wiki_articles SET image_url=?, updated_at=NOW() WHERE channel_id=? AND slug=?",
         [imageUrl, channelId, seg3]
       );
+      ensureThumb(imageUrl, THUMB_WIDTH).catch(() => {});
       await sendJson(wo, 200, { ok: true, image_url: imageUrl });
     } catch (e) {
       await sendJson(wo, 500, { ok: false, error: getStr(e?.message || "Image regeneration failed") });
