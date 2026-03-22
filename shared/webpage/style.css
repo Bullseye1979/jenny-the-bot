@@ -49,6 +49,7 @@ header h1{
   order:1
 }
 header>.nav-wrap{order:0}
+.wiki-logo-link{order:1}
 
 /* webpage-menu.js uses these classes */
 .nav-wrap{display:flex;align-items:center;gap:10px;flex:0 0 auto}

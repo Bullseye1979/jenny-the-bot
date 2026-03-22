@@ -242,7 +242,7 @@ export default async function getWebpageChat(coreData) {
                  "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
                  "<title>Chat</title>" + getThemeHeadScript() +
                  "<link rel=\"stylesheet\" href=\"" + basePath + "/style.css\"></head><body>" +
-                 "<header>" + menu + "</header>" +
+                 "<header><h1>Chat</h1>" + menu + "</header>" +
                  "<div style=\"margin-top:var(--hh);padding:1.5rem;display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--hh))\">" +
                  "<div style=\"text-align:center;color:var(--txt)\">" +
                  "<div style=\"font-size:2rem;margin-bottom:0.5rem\">\uD83D\uDD12</div>" +
