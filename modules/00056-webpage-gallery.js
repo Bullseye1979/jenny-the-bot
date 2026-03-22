@@ -142,7 +142,7 @@ export default async function getWebpageGallery(coreData) {
   }
 
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
-    const menuHtml = getMenuHtml(menu, basePath, role);
+    const menuHtml = getMenuHtml(menu, basePath, role, null, null, wo.webAuth);
 
     const html = `<!DOCTYPE html>
 <html lang="en">

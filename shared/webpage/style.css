@@ -45,8 +45,10 @@ header{
 }
 
 header h1{
-  font-size:15px;font-weight:700;white-space:nowrap;letter-spacing:-.2px
+  font-size:15px;font-weight:700;white-space:nowrap;letter-spacing:-.2px;
+  order:1
 }
+header>.nav-wrap{order:0}
 
 /* webpage-menu.js uses these classes */
 .nav-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
@@ -103,6 +105,17 @@ header h1{
 details[open].nav-more .nav-more-drop{display:flex}
 .nav-more-item{display:block;width:100%;border-radius:4px}
 .nav-more-primary{display:none}
+
+/* Profile dropdown (right side) */
+.nav-profile .nav-more-drop,.nav-profile-drop{left:auto;right:0;min-width:200px}
+.nav-profile-btn{list-style:none;cursor:pointer;user-select:none}
+.nav-profile-btn::-webkit-details-marker{display:none}
+.nav-profile-btn::marker{display:none}
+.nav-pi-block{padding:8px 12px 6px;border-bottom:1px solid rgba(255,255,255,.14);margin-bottom:4px;display:flex;flex-direction:column;gap:5px}
+.nav-pi-row{display:flex;flex-direction:column;gap:1px}
+.nav-pi-lbl{font-size:10px;opacity:.55;text-transform:uppercase;letter-spacing:.04em}
+.nav-pi-val{font-size:12px;color:rgba(255,255,255,.9);word-break:break-all}
+.nav-pi-mono{font-family:monospace;font-size:11px}
 
 /* Smartphones & landscape phones: all items collapse into dropdown */
 @media(max-width:640px){

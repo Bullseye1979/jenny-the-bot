@@ -529,7 +529,7 @@ export default async function getWebpageVoice(coreData) {
   const isAllowed    = getIsAllowedRoles(wo, allowedRoles);
   const menu         = wo.web?.menu || [];
   const role         = wo.webAuth?.role || "";
-  const menuHtml     = getMenuHtml(menu, ROUTE_SPA, role);
+  const menuHtml     = getMenuHtml(menu, ROUTE_SPA, role, null, null, wo.webAuth);
 
   /* GET /voice/style.css */
   if (method === "GET" && url === ROUTE_CSS) {

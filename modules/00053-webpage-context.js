@@ -327,8 +327,8 @@ mark{background:#fef3c7;color:#92400e;border-radius:2px;padding:0 1px}
 /**********************************************************************************/
 /* HTML / SPA                                                                     */
 /**********************************************************************************/
-function getContextHtml({ menu, role, activePath, base, dbStatus, dbInfo }) {
-  const menuHtml = getMenuHtml(menu, activePath, role);
+function getContextHtml({ menu, role, activePath, base, dbStatus, dbInfo, webAuth }) {
+  const menuHtml = getMenuHtml(menu, activePath, role, null, null, webAuth);
   const dbBanner = dbStatus === "error"
     ? `<div id="db-banner" style="background:#fef2f2;color:#dc2626;padding:10px 16px;font-size:13px;font-weight:600;border-bottom:2px solid #ef4444;flex-shrink:0">
         Database error - context table not reachable: <span style="font-weight:400;font-family:monospace">${dbInfo.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</span>
@@ -1002,7 +1002,8 @@ export default async function getWebpageContext(coreData) {
         activePath: urlPath,
         base: basePath,
         dbStatus,
-        dbInfo
+        dbInfo,
+        webAuth: wo.webAuth
       }));
     }
     wo.web = wo.web || {}; wo.web.useLayout = false;

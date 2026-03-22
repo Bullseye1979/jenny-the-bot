@@ -84,9 +84,10 @@ async function getDb(coreData) {
 }
 
 
-function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml) {
+/* getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, userInfo)
+   userInfo = { userId, username, guildId }  — optional; enables profile dropdown */
+function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, userInfo) {
   const items = Array.isArray(menu) ? menu : [];
-  const VISIBLE = 3; /* first N items shown directly on desktop */
 
   const cur = String(activePath || "/") || "/";
   const r0  = String(role || "").trim();
@@ -107,9 +108,6 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml) {
     filtered.push({ text, link });
   }
 
-  const primary  = filtered.slice(0, VISIBLE);   /* shown directly on desktop */
-  const overflow = filtered.slice(VISIBLE);       /* always in dropdown */
-
   function mkLink(it, extraClass) {
     const isActive = (cur === it.link) || (it.link !== "/" && cur.startsWith(it.link));
     return '<a href="' + escAttr(it.link) + '" class="nav-link' +
@@ -118,61 +116,73 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml) {
       '">' + escHtml(it.text) + "</a>";
   }
 
+  /* All nav items go into the ... dropdown */
   let nav = '<nav class="nav-links">';
-
-  /* Direct primary items (hidden on mobile via CSS) */
-  for (const it of primary) nav += mkLink(it, "nav-primary");
-
-  /* Collapsible dropdown — always rendered; always has theme toggle so always shown */
   nav += '<details class="nav-more has-overflow">';
   nav += '<summary class="nav-link nav-more-btn">&#xB7;&#xB7;&#xB7;</summary>';
   nav += '<div class="nav-more-drop">';
-  /* Primary items repeated inside dropdown — shown only on mobile via CSS */
-  for (const it of primary)  nav += mkLink(it, "nav-more-item nav-more-primary");
-  /* Overflow items always visible in dropdown */
-  for (const it of overflow) nav += mkLink(it, "nav-more-item");
+  for (const it of filtered) nav += mkLink(it, "nav-more-item");
   if (extraDropdownHtml) nav += extraDropdownHtml;
-  /* Dark / Light mode toggle — always last in dropdown */
-  nav += '<button class="nav-link nav-more-item" id="jenny-theme-btn"' +
-         ' style="width:100%;text-align:left;cursor:pointer;border:none;font-size:13px;font-weight:600;padding:6px 14px"' +
-         ' onclick="toggleTheme()">&#x1F319; Dark Mode</button>';
   nav += "</div></details>";
-
   nav += "</nav>";
 
-  /* Close dropdown + theme toggle — injected once per page */
-  nav += '<script>!function(){if(window._navMoreReady)return;window._navMoreReady=true;' +
-         'document.addEventListener("click",function(e){' +
-         'var d=document.querySelector(".nav-more[open]");' +
-         'if(d&&!d.contains(e.target))d.removeAttribute("open");' +
-         '},true);' +
-         'function applyTheme(dark){' +
-           'document.documentElement.setAttribute("data-theme",dark?"dark":"light");' +
-           'var b=document.getElementById("jenny-theme-btn");' +
-           'if(b)b.textContent=dark?"\u2600\uFE0F Light Mode":"\uD83C\uDF19 Dark Mode";' +
-           'localStorage.setItem("jenny-theme",dark?"dark":"light");' +
-         '}' +
-         'window.toggleTheme=function(){' +
-           'applyTheme(document.documentElement.getAttribute("data-theme")!=="dark");' +
-           'var d=document.querySelector(".nav-more[open]");if(d)d.removeAttribute("open");' +
-         '};' +
-         'applyTheme(localStorage.getItem("jenny-theme")==="dark");' +
-         '}();</script>';
+  /* Profile dropdown — role badge opens a panel with user info, theme toggle, logout */
+  const ui      = userInfo && typeof userInfo === "object" ? userInfo : {};
+  const uid     = String(ui.userId   || "");
+  const uname   = String(ui.username || "");
+  const gid     = String(ui.guildId  || "");
+  const isDark  = false; /* initial state resolved by script below */
+
+  let profileRows = "";
+  if (uname) profileRows += '<div class="nav-pi-row"><span class="nav-pi-lbl">User</span><span class="nav-pi-val">'  + escHtml(uname) + "</span></div>";
+  if (uid)   profileRows += '<div class="nav-pi-row"><span class="nav-pi-lbl">User ID</span><span class="nav-pi-val nav-pi-mono">'  + escHtml(uid)   + "</span></div>";
+  if (gid)   profileRows += '<div class="nav-pi-row"><span class="nav-pi-lbl">Guild ID</span><span class="nav-pi-val nav-pi-mono">' + escHtml(gid)   + "</span></div>";
+
+  const profileDrop =
+    '<details class="nav-more nav-profile has-overflow" id="nav-profile-det">' +
+      '<summary class="nav-link nav-profile-btn">\uD83D\uDC64 ' + escHtml(r ? r : "guest") + '</summary>' +
+      '<div class="nav-more-drop nav-profile-drop">' +
+        (profileRows ? '<div class="nav-pi-block">' + profileRows + '</div>' : "") +
+        '<button class="nav-link nav-more-item" id="jenny-theme-btn"' +
+          ' style="width:100%;text-align:left;cursor:pointer;border:none;font-size:13px;padding:6px 14px"' +
+          ' onclick="toggleTheme()">\uD83C\uDF19 Dark Mode</button>' +
+        (r
+          ? '<a class="nav-link nav-more-item" href="/auth/logout" style="display:block;padding:6px 14px">Logout</a>'
+          : '<a class="nav-link nav-more-item" href="/auth/login"  style="display:block;padding:6px 14px">Login</a>') +
+      '</div>' +
+    '</details>';
+
+  /* Shared script: close-on-outside-click + theme toggle */
+  const script =
+    '<script>!function(){if(window._navMoreReady)return;window._navMoreReady=true;' +
+    'document.addEventListener("click",function(e){' +
+      'document.querySelectorAll(".nav-more[open]").forEach(function(d){' +
+        'if(!d.contains(e.target))d.removeAttribute("open");' +
+      '});' +
+    '},true);' +
+    'function applyTheme(dark){' +
+      'document.documentElement.setAttribute("data-theme",dark?"dark":"light");' +
+      'var b=document.getElementById("jenny-theme-btn");' +
+      'if(b)b.textContent=dark?"\u2600\uFE0F Light Mode":"\uD83C\uDF19 Dark Mode";' +
+      'localStorage.setItem("jenny-theme",dark?"dark":"light");' +
+    '}' +
+    'window.toggleTheme=function(){' +
+      'applyTheme(document.documentElement.getAttribute("data-theme")!=="dark");' +
+      'document.querySelectorAll(".nav-more[open]").forEach(function(d){d.removeAttribute("open");});' +
+    '};' +
+    'applyTheme(localStorage.getItem("jenny-theme")==="dark");' +
+    '}();<\/script>';
 
   const rightHtml = String(rightHtmlOpt || "");
   const right =
-    '<div class="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:10px;white-space:nowrap;flex-shrink:1;min-width:0;overflow:hidden">' +
+    '<div class="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0">' +
       (rightHtml ? rightHtml : "") +
-      '<span class="nav-role">👤 ' + escHtml(r ? r : "guest") + '</span>' +
-      (r
-        ? '<a class="nav-logout" href="/auth/logout">Logout</a>'
-        : '<a class="nav-logout" href="/auth/login">Login</a>') +
+      profileDrop +
     '</div>';
 
   return (
     '<div class="nav-wrap" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;overflow:visible">' +
-      nav +
-      right +
+      nav + script + right +
     '</div>'
   );
 }

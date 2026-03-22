@@ -2055,7 +2055,7 @@ export default async function myModule(coreData) {
 | 00045 | `webpage-inpaint` | Redirect `GET /documents/*.png` to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. |
 | 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). Before calling any AI module, delegates user-message context writing to `00073-webpage-add-context`. Subchannel names stored in `chat_subchannels` table. |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). Before calling any AI module, delegates user-message context writing to `00073-webpage-add-context`. Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
@@ -2604,6 +2604,13 @@ import {
 **Subchannel deletion (`setPurgeSubchannel`):** When a subchannel is deleted, non-frozen context entries are permanently deleted. Frozen entries are **promoted** to the main channel (their `subchannel` field is set to `NULL`) so they are preserved and become part of the main context.
 
 **Purge/Freeze scoping:** `setPurgeContext` and `setFreezeContext` respect the same filter. The channel-wide timeline rows are only affected when targeting the full channel (not a specific subchannel).
+
+**`userId` resolution in `setContext`:** The `userId` stored in the DB is resolved automatically using the following priority chain — callers do **not** need to populate it manually:
+1. `record.userId` (if the caller explicitly passes one)
+2. `workingObject.webAuth?.userId` (set by `webpage-auth` for all authenticated web requests)
+3. `workingObject.userId` (set directly for Discord/API flows)
+
+This means `add-context` modules (00070, 00072, 00073) do not include `userId` in the record they pass to `setContext` — it is resolved centrally.
 
 **Internal meta frames:** `setContext()` silently discards any record where `record.internal_meta === true`. Meta frames are generated dynamically at retrieval time by `getContext()` and injected into the AI context window; they are never stored in MySQL. This prevents ghost entries (e.g. `[assistant] Jenny` index strings) from appearing in the database or the chat UI.
 
@@ -3506,8 +3513,9 @@ Provides Discord OAuth2 SSO (Single Sign-On) for all web modules. Runs as a **pa
 
 **`wo.webAuth` object (set on authenticated requests):**
 ```json
-{ "username": "alice", "userId": "123456789", "role": "admin", "roles": ["admin", "staff"] }
+{ "username": "alice", "userId": "123456789", "guildId": "406902788317118465", "role": "admin", "roles": ["admin", "staff"] }
 ```
+`guildId` contains the Discord Guild ID of the guild through which the user authenticated (the first guild in `guilds[]` where membership and `allowRoleIds` both matched).
 
 If no valid session exists, `wo.webAuth` is not set.
 
@@ -3594,6 +3602,10 @@ This module runs for every request on ports listed in `config["webpage-auth"].po
 If no valid session cookie is present, `wo.webAuth` is not set (or has empty fields). Unauthenticated users can still access the site — individual modules decide whether to allow or deny them.
 
 ### Navigation Menu (`00043-webpage-menu.js`)
+
+**Layout:** The header shows a `···` dropdown button on the left (all nav items inside), followed by the page title, and a **role badge** on the right. Clicking the role badge opens a profile panel showing username, User ID, Guild ID, a dark/light mode toggle, and a logout link.
+
+**`getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, userInfo)`** — renders the nav bar. `userInfo` is optional (`wo.webAuth`) and enables the profile panel with user/guild info. Without it the profile panel still shows role + theme toggle + logout, but no IDs.
 
 Menu items are defined in `config["webpage-menu"].items[]`. Each item can have an optional `roles` array:
 

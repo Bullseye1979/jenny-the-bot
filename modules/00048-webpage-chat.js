@@ -234,7 +234,7 @@ export default async function getWebpageChat(coreData) {
   /* ---- GET /chat ---- */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     if (!isAllowed) {
-      const menu = getMenuHtml(wo.web?.menu || [], urlPath, wo.webAuth?.role || "");
+      const menu = getMenuHtml(wo.web?.menu || [], urlPath, wo.webAuth?.role || "", null, null, wo.webAuth);
       wo.http.response = {
         status:  403,
         headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -242,7 +242,7 @@ export default async function getWebpageChat(coreData) {
                  "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
                  "<title>Chat</title>" + getThemeHeadScript() +
                  "<link rel=\"stylesheet\" href=\"" + basePath + "/style.css\"></head><body>" +
-                 menu +
+                 "<header>" + menu + "</header>" +
                  "<div style=\"margin-top:var(--hh);padding:1.5rem;display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--hh))\">" +
                  "<div style=\"text-align:center;color:var(--txt)\">" +
                  "<div style=\"font-size:2rem;margin-bottom:0.5rem\">\uD83D\uDD12</div>" +
@@ -258,7 +258,7 @@ export default async function getWebpageChat(coreData) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getChatHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, chatBase: basePath })
+      body:    getChatHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, chatBase: basePath, webAuth: wo.webAuth })
     };
     wo.web.useLayout = false;
     wo.jump = true;
@@ -629,7 +629,7 @@ function getChatHtml(opts) {
   const chatBase   = String(opts?.chatBase || "/chat").replace(/\/+$/, "") || "/chat";
   const activePath = String(opts?.activePath || chatBase);
   const role       = String(opts?.role || "").trim();
-  const menuHtml = getMenuHtml(opts?.menu || [], activePath, role);
+  const menuHtml = getMenuHtml(opts?.menu || [], activePath, role, null, null, opts?.webAuth);
 
   return (
     "<!DOCTYPE html>\n" +

@@ -364,7 +364,7 @@ export default async function getWebpageBard(coreData) {
     wo.http.response = {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body: getBardHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, isAdmin: isAllowed })
+      body: getBardHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, isAdmin: isAllowed, webAuth: wo.webAuth })
     };
     wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
   }
@@ -517,8 +517,8 @@ export default async function getWebpageBard(coreData) {
   return coreData;
 }
 
-function getBardHtml({ menu, role, activePath, base, isAdmin }) {
-  const menuHtml = getMenuHtml(menu || [], activePath || base, role || "");
+function getBardHtml({ menu, role, activePath, base, isAdmin, webAuth }) {
+  const menuHtml = getMenuHtml(menu || [], activePath || base, role || "", null, null, webAuth);
   const adminHtml =
 '<div class="card">\n' +
 '<h2>Bulk Auto-Tag Upload</h2>\n' +

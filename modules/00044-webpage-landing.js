@@ -37,7 +37,7 @@ function buildHtml(wo) {
   const username = escHtml(getStr(wo.webAuth?.username) || "Guest");
   const role     = escHtml(getStr(wo.webAuth?.role) || "");
   const menu     = Array.isArray(wo.web?.menu) ? wo.web.menu : [];
-  const menuHtml = getMenuHtml(menu, "/", role);
+  const menuHtml = getMenuHtml(menu, "/", role, null, null, wo.webAuth);
 
   return `<!DOCTYPE html>
 <html lang="en">

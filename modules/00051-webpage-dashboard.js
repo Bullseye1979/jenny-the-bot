@@ -100,12 +100,12 @@ function getFlowBadge(f) {
 }
 
 
-function buildDashboardHtml(data, menu, role, basePath, refreshSec) {
+function buildDashboardHtml(data, menu, role, basePath, refreshSec, webAuth) {
   const ts      = data?.ts ? new Date(data.ts).toLocaleString() : "—";
   const memRss  = escHtml(data?.mem?.rssStr  || "—");
   const memHeap = escHtml(data?.mem?.heapStr || "—");
   const flows   = Array.isArray(data?.flows) ? data.flows : [];
-  const menuHtml = getMenuHtml(menu, basePath, role);
+  const menuHtml = getMenuHtml(menu, basePath, role, null, null, webAuth);
 
   const flowCards = flows.length
     ? flows.map(f => {
@@ -337,7 +337,7 @@ export default async function getWebpageDashboard(coreData) {
   const data    = getItem("dashboard:state") || null;
   const menu    = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];
   const role    = getStr(wo?.webAuth?.role || "");
-  const html    = buildDashboardHtml(data, menu, role, basePath, refreshSec);
+  const html    = buildDashboardHtml(data, menu, role, basePath, refreshSec, wo.webAuth);
 
   wo.http.response = {
     status: 200,

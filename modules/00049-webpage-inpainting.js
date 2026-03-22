@@ -131,7 +131,7 @@ function setCssResp(wo, cssText) {
 
 function setForbiddenPage(wo, menu, activePath, basePath) {
   const role = String(wo?.webAuth?.role || "").trim();
-  const menuHtml = getMenuHtml(menu || [], activePath, role);
+  const menuHtml = getMenuHtml(menu || [], activePath, role, null, null, wo?.webAuth);
   const bp = typeof basePath === "string" && basePath.trim() ? basePath.trim() : "/inpainting";
 
   const html = `<!DOCTYPE html>
@@ -399,7 +399,7 @@ function getInpaintHtml(opts) {
   const activePath = String(opts?.activePath || basePath) || basePath;
   const role       = String(opts?.role || "").trim();
   const isLoggedIn = !!opts?.isLoggedIn;
-  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role);
+  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role, null, null, opts?.webAuth);
 
   const toolCss = `:root {
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -2194,7 +2194,7 @@ export default async function getWebpageInpainting(coreData) {
 
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     if (!allowed) setForbiddenPage(wo, wo.web?.menu || [], urlPath, basePath);
-    else setHtmlResp(wo, getInpaintHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, basePath, isLoggedIn: !inpaintGetAuthEnabled(cfg) || !!wo.webAuth?.role }));
+    else setHtmlResp(wo, getInpaintHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, basePath, isLoggedIn: !inpaintGetAuthEnabled(cfg) || !!wo.webAuth?.role, webAuth: wo.webAuth }));
     wo.web.useLayout = false;
     wo.jump = true;
     await setSendNow(wo);

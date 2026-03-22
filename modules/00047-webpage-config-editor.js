@@ -111,7 +111,7 @@ export default async function getWebpageConfigEditor(coreData) {
       wo.http.response = {
         status: 200,
         headers: { "Content-Type": "text/html; charset=utf-8" },
-        body: getAccessDeniedHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, title: "Config", message: "Access denied." })
+        body: getAccessDeniedHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, title: "Config", message: "Access denied.", webAuth: wo.webAuth })
       };
       wo.web.useLayout = false;
       wo.jump = true;
@@ -122,7 +122,7 @@ export default async function getWebpageConfigEditor(coreData) {
     wo.http.response = {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body: getConfigHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, configBase: basePath })
+      body: getConfigHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, configBase: basePath, webAuth: wo.webAuth })
     };
     wo.web.useLayout = false;
     wo.jump = true;
@@ -182,7 +182,7 @@ function getAccessDeniedHtml(opts) {
   const base       = String(opts?.base || "/").replace(/\/+$|\/+$/g,"") || "/";
   const activePath = String(opts?.activePath || base) || base;
   const role       = String(opts?.role || "").trim();
-  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role);
+  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role, null, null, opts?.webAuth);
 
   const title = String(opts?.title || "Page");
   const msg   = String(opts?.message || "Access denied.");
@@ -220,7 +220,7 @@ function getConfigHtml(opts) {
   const rightHtml  =
     '<span id="status-lbl" style="font-size:12px;color:var(--muted)"></span>' +
     '<button id="save-btn" disabled onclick="saveConfig()">Saved</button>';
-  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role, rightHtml);
+  const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role, rightHtml, null, opts?.webAuth);
 
   /* The embedded <script> closing tag must be split so the browser parser doesn't
      terminate the script block early when this string is part of a larger file. */

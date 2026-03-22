@@ -239,7 +239,7 @@ function getDocNavHtml(files, currentName, basePath) {
 function getPageHtml(wo, files, currentName, content, basePath) {
   const menu     = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];
   const role     = String(wo?.webAuth?.role || "");
-  const menuHtml = getMenuHtml(menu, basePath, role);
+  const menuHtml = getMenuHtml(menu, basePath, role, null, null, wo?.webAuth);
   const navHtml  = getDocNavHtml(files, currentName, basePath);
   const title    = currentName ? currentName.replace(/\.md$/i, "").replace(/[_-]/g, " ") : "Documentation";
   const docHtml  = content !== null ? getMdToHtml(content) : "";

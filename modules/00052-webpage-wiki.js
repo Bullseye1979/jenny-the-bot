@@ -406,12 +406,12 @@ function getStyleCss() {
 }
 
 
-function buildPageHeader(title, basePath, channelId, menu, role) {
+function buildPageHeader(title, basePath, channelId, menu, role, webAuth) {
   const chPath = channelId ? `${basePath}/${channelId}` : basePath;
   const searchHtml = channelId
     ? `<form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get"><input class="wiki-search-input" type="text" name="q" placeholder="Search or create…" autocomplete="off"><button class="wiki-search-btn" type="submit">Go</button></form>`
     : "";
-  const menuHtml = getMenuHtml(menu, chPath, role, searchHtml);
+  const menuHtml = getMenuHtml(menu, chPath, role, searchHtml, null, webAuth);
   return `<header>
   <a class="wiki-logo-link" href="${escHtml(chPath)}">
     <span class="wiki-logo">🗺️</span>
@@ -549,7 +549,7 @@ a:hover { text-decoration: underline; }
 }
 
 
-function buildFullPage({ head = "", body, basePath, channelId = "", wikiTitle, menu, role }) {
+function buildFullPage({ head = "", body, basePath, channelId = "", wikiTitle, menu, role, webAuth }) {
   const css = buildWikiCss();
   return `<!DOCTYPE html>
 <html lang="en">
@@ -562,14 +562,14 @@ ${getThemeHeadScript()}
 <style>${css}</style>
 </head>
 <body>
-${buildPageHeader(wikiTitle, basePath, channelId, menu, role)}
+${buildPageHeader(wikiTitle, basePath, channelId, menu, role, webAuth)}
 ${body}
 </body>
 </html>`;
 }
 
 
-function buildIndexPage(channels, basePath, menu, role) {
+function buildIndexPage(channels, basePath, menu, role, webAuth) {
   const cards = channels.map(ch => `
     <div class="wiki-channel-card">
       <h3><a href="${escHtml(basePath)}/${escHtml(ch.channelId)}">${escHtml(ch._title || ch.channelId)}</a></h3>
@@ -581,11 +581,11 @@ function buildIndexPage(channels, basePath, menu, role) {
   ${cards ? `<div class="wiki-index">${cards}</div>` : `<div class="wiki-empty">No wikis configured.</div>`}
 </div>`;
 
-  return buildFullPage({ head: "Wiki Index", body, basePath, wikiTitle: "Wiki", menu, role });
+  return buildFullPage({ head: "Wiki Index", body, basePath, wikiTitle: "Wiki", menu, role, webAuth });
 }
 
 
-function buildChannelHomePage(channel, articles, basePath, menu, role) {
+function buildChannelHomePage(channel, articles, basePath, menu, role, webAuth) {
   const chId    = channel.channelId;
   const chTitle = channel._title || `Wiki ${chId}`;
   const chPath  = `${basePath}/${chId}`;
@@ -616,11 +616,11 @@ function buildChannelHomePage(channel, articles, basePath, menu, role) {
     : `<div class="wiki-empty">No articles yet. Use the search bar to generate the first one!</div>`}
 </div>`;
 
-  return buildFullPage({ head: chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role });
+  return buildFullPage({ head: chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
 }
 
 
-function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxAgeDays = 0) {
+function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxAgeDays = 0, webAuth) {
   const chId    = channel.channelId;
   const chTitle = channel._title || `Wiki ${chId}`;
   const chPath  = `${basePath}/${chId}`;
@@ -726,11 +726,11 @@ function wikiDeleteArticle(chId, slug) {
 }
 </script>` : ""}`;
 
-  return buildFullPage({ head: article.title + " – " + chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role });
+  return buildFullPage({ head: article.title + " – " + chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
 }
 
 
-function buildEditPage(channel, article, basePath, menu, role) {
+function buildEditPage(channel, article, basePath, menu, role, webAuth) {
   const chId    = channel.channelId;
   const chTitle = channel._title || `Wiki ${chId}`;
   const chPath  = `${basePath}/${chId}`;
@@ -889,11 +889,11 @@ function buildEditPage(channel, article, basePath, menu, role) {
 })();
 </script>`;
 
-  return buildFullPage({ head: "Edit: " + article.title + " – " + chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role });
+  return buildFullPage({ head: "Edit: " + article.title + " – " + chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
 }
 
 
-function buildSearchPage(channel, query, results, basePath, menu, role, isCreator = false) {
+function buildSearchPage(channel, query, results, basePath, menu, role, isCreator = false, webAuth) {
   const chId    = channel.channelId;
   const chTitle = channel._title || `Wiki ${chId}`;
   const chPath  = `${basePath}/${chId}`;
@@ -977,7 +977,7 @@ function wikiDoGenerate(force) {
 if (!WIKI_HAS_RESULTS) { wikiDoGenerate(); }
 </script>` : ""}`;
 
-  return buildFullPage({ head: `Search: ${query} – ${chTitle}`, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role });
+  return buildFullPage({ head: `Search: ${query} – ${chTitle}`, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
 }
 
 
@@ -1027,8 +1027,9 @@ export default async function getWebpageWiki(coreData) {
 
   wo.stop = true;
 
-  const menu = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];
-  const role = getStr(wo?.webAuth?.role || "");
+  const menu    = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];
+  const role    = getStr(wo?.webAuth?.role || "");
+  const webAuth = wo?.webAuth;
 
   if (method === "GET" && urlPath === basePath + "/style.css") {
     const css = getStyleCss();
@@ -1053,7 +1054,7 @@ export default async function getWebpageWiki(coreData) {
       const allowed = Array.isArray(ch.allowedRoles) ? ch.allowedRoles : [];
       return getIsAllowed(wo, allowed);
     });
-    const html = buildIndexPage(visible, basePath, menu, role);
+    const html = buildIndexPage(visible, basePath, menu, role, webAuth);
     await sendHtml(wo, 200, html);
     return coreData;
   }
@@ -1064,7 +1065,7 @@ export default async function getWebpageWiki(coreData) {
     await sendHtml(wo, 404, buildFullPage({
       head: "404 – Wiki Not Found",
       body: `<div class="wiki-content-wrap"><div class="wiki-empty">Wiki not configured for channel <strong>${escHtml(channelId)}</strong>.</div></div>`,
-      basePath, wikiTitle: "Wiki", menu, role
+      basePath, wikiTitle: "Wiki", menu, role, webAuth
     }));
     return coreData;
   }
@@ -1155,7 +1156,7 @@ export default async function getWebpageWiki(coreData) {
     if (method !== "GET") { await sendText(wo, 405, "405 Method Not Allowed"); return coreData; }
     let articles = [];
     try { articles = await dbGetRecentArticles(db, channelId, maxAgeDays); } catch { articles = []; }
-    const html = buildChannelHomePage(channel, articles, basePath, menu, role);
+    const html = buildChannelHomePage(channel, articles, basePath, menu, role, webAuth);
     await sendHtml(wo, 200, html);
     return coreData;
   }
@@ -1176,7 +1177,7 @@ export default async function getWebpageWiki(coreData) {
     }
     let results = [];
     try { results = await dbSearchArticles(db, channelId, query, maxAgeDays); } catch { results = []; }
-    const html = buildSearchPage(channel, query, results, basePath, menu, role, isCreator);
+    const html = buildSearchPage(channel, query, results, basePath, menu, role, isCreator, webAuth);
     await sendHtml(wo, 200, html);
     return coreData;
   }
@@ -1224,11 +1225,11 @@ export default async function getWebpageWiki(coreData) {
       await sendHtml(wo, 404, buildFullPage({
         head: "404 – Article Not Found",
         body: `<div class="wiki-content-wrap"><div class="wiki-empty">Article "<strong>${escHtml(seg1)}</strong>" not found.</div></div>`,
-        basePath, channelId, wikiTitle: channel._title || `Wiki ${channelId}`, menu, role
+        basePath, channelId, wikiTitle: channel._title || `Wiki ${channelId}`, menu, role, webAuth
       }));
       return coreData;
     }
-    const html = buildEditPage(channel, article, basePath, menu, role);
+    const html = buildEditPage(channel, article, basePath, menu, role, webAuth);
     await sendHtml(wo, 200, html);
     return coreData;
   }
@@ -1262,11 +1263,11 @@ export default async function getWebpageWiki(coreData) {
       await sendHtml(wo, 404, buildFullPage({
         head: "404 – Article Not Found",
         body: `<div class="wiki-content-wrap"><div class="wiki-empty">Article "<strong>${escHtml(seg1)}</strong>" not found in this wiki.</div></div>`,
-        basePath, channelId, wikiTitle: channel._title || `Wiki ${channelId}`, menu, role
+        basePath, channelId, wikiTitle: channel._title || `Wiki ${channelId}`, menu, role, webAuth
       }));
       return coreData;
     }
-    const html = buildArticlePage(channel, article, basePath, isEditor, menu, role, maxAgeDays);
+    const html = buildArticlePage(channel, article, basePath, isEditor, menu, role, maxAgeDays, webAuth);
     await sendHtml(wo, 200, html);
     return coreData;
   }
