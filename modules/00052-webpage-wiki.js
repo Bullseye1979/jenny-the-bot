@@ -28,19 +28,26 @@ const __dirname  = path.dirname(__filename);
 const THUMB_WIDTH = 400;
 
 /* Resolve or generate a JPEG thumbnail cached to thumbsDir/{filename}.jpg.
+ * Regenerates automatically when the source file is newer than the cached thumbnail.
  * Returns { buf, mime } or null on failure. */
 async function getThumb(srcPath, thumbsDir, filename, width) {
   const thumbPath = path.join(thumbsDir, filename + ".jpg");
-  if (fs.existsSync(thumbPath)) {
-    return { buf: fs.readFileSync(thumbPath), mime: "image/jpeg" };
-  }
   try {
-    fs.mkdirSync(thumbsDir, { recursive: true });
+    const [srcStat, thumbStat] = await Promise.all([
+      fs.promises.stat(srcPath),
+      fs.promises.stat(thumbPath).catch(() => null)
+    ]);
+    if (thumbStat && thumbStat.mtimeMs >= srcStat.mtimeMs) {
+      return { buf: await fs.promises.readFile(thumbPath), mime: "image/jpeg" };
+    }
+  } catch { /* srcPath missing — fall through to sharp */ }
+  try {
+    await fs.promises.mkdir(thumbsDir, { recursive: true });
     const buf = await sharp(srcPath)
       .resize(width, null, { withoutEnlargement: true })
       .jpeg({ quality: 80 })
       .toBuffer();
-    fs.writeFileSync(thumbPath, buf);
+    await fs.promises.writeFile(thumbPath, buf);
     return { buf, mime: "image/jpeg" };
   } catch { return null; }
 }

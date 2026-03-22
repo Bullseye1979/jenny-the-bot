@@ -240,20 +240,27 @@ function getServeFileWithRange(req, res, absPath, stat, cacheControl = "no-store
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
 
 /* Resolve or generate a thumbnail for srcPath at the given pixel width.
- * Thumbnails are cached to thumbsDir/{filename}.jpg on first request.
+ * Thumbnails are cached to thumbsDir/{filename}.jpg.
+ * Regenerates automatically when the source file is newer than the cached thumbnail.
  * Returns { buf: Buffer, mime: string } or null on failure. */
 async function getThumb(srcPath, thumbsDir, filename, width) {
   const thumbPath = path.join(thumbsDir, filename + ".jpg");
-  if (fs.existsSync(thumbPath)) {
-    return { buf: fs.readFileSync(thumbPath), mime: "image/jpeg" };
-  }
   try {
-    fs.mkdirSync(thumbsDir, { recursive: true });
+    const [srcStat, thumbStat] = await Promise.all([
+      fs.promises.stat(srcPath),
+      fs.promises.stat(thumbPath).catch(() => null)
+    ]);
+    if (thumbStat && thumbStat.mtimeMs >= srcStat.mtimeMs) {
+      return { buf: await fs.promises.readFile(thumbPath), mime: "image/jpeg" };
+    }
+  } catch { /* srcPath missing — let sharp fail gracefully below */ }
+  try {
+    await fs.promises.mkdir(thumbsDir, { recursive: true });
     const buf = await sharp(srcPath)
       .resize(width, null, { withoutEnlargement: true })
       .jpeg({ quality: 80 })
       .toBuffer();
-    fs.writeFileSync(thumbPath, buf);
+    await fs.promises.writeFile(thumbPath, buf);
     return { buf, mime: "image/jpeg" };
   } catch { return null; }
 }
