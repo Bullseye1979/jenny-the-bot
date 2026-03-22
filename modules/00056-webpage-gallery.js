@@ -153,6 +153,7 @@ export default async function getWebpageGallery(coreData) {
 ${getThemeHeadScript()}
 <link rel="stylesheet" href="${basePath}/style.css">
 <style>
+body{overflow-y:auto}
 #gallery-view{padding:20px;max-width:1200px;margin:calc(var(--hh,52px) + 20px) auto 20px;}
 #gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;}
 .gal-card{background:var(--bg2,#fff);border:1px solid var(--bdr,#e2e8f0);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;}
