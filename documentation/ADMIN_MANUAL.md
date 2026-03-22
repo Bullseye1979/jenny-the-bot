@@ -3150,10 +3150,11 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /wiki/{channelId}/{slug}/edit` — editor/admin: edit form
 - `GET /wiki/{channelId}/search?q=` — search; always shows results overview (even with a single hit); no hit triggers generation automatically for creator/admin
 - `GET /wiki/{channelId}/images/{filename}` — serves uploaded images
-- `POST /wiki/{channelId}/api/generate` — AJAX generate (creator/admin); body `{query, force?}`; without `force`: returns `{ok,slug,existing:true}` or `{ok,results:[]}` if matches found; with `force:true`: always generates a new article, ignoring existing matches; returns `{ok,slug,generated:true}`
+- `POST /wiki/{channelId}/api/generate` — AJAX generate (creator/admin); body `{query, force?, promptAddition?}`; `promptAddition` is appended to the AI payload as `"\n\nAdditional context: …"` (never overwrites the system prompt); without `force`: returns `{ok,slug,existing:true}` or `{ok,results:[]}` if matches found; with `force:true`: always generates a new article; returns `{ok,slug,generated:true}`
 - `POST /wiki/{channelId}/api/upload-image/{slug}` — editor/admin: upload image for article (JSON `{base64,ext}`)
+- `POST /wiki/{channelId}/api/regen-image/{slug}` — editor/admin: regenerate the article image via AI (calls `callPipelineForImageOnly`); optional body `{promptAddition?}` appended to image prompt; deletes old local file if `image_url` points to `pub/wiki/{channelId}/images/`; updates `image_url` in DB; returns `{ok, image_url}`
 - `POST /wiki/{channelId}/{slug}/edit` — editor/admin: save edited article (JSON body)
-- `DELETE /wiki/{channelId}/api/article/{slug}` — editor/admin: delete article row
+- `DELETE /wiki/{channelId}/api/article/{slug}` — editor/admin: delete article + local image file if stored in `pub/wiki/{channelId}/images/`
 
 **core.json — `webpage-wiki` section:**
 ```jsonc
@@ -3230,15 +3231,16 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 - `allowedRoles: []` → publicly accessible (no login required)
 - `getInformation`, `getTimeline`, and **`getImage`** are all **mandatory** in the built-in prompt; AI uses **only tool results** as facts; events always in **chronological order**
 - **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles.
-- **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB)
-- **Search page:** non-creators see results only; auto-generation spinner only shown to creators
+- **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB) + **🔄 Regenerate Image via AI** button with an optional context textarea below it (e.g. physical description of character); text is sent as `promptAddition` and appended to the AI image prompt; old local image file is automatically deleted on successful regeneration; updates DB + preview immediately; save the article to persist the new URL
+- **Search page:** creators see an optional **"Additional context for generation"** textarea before the results/generate section. Text entered here is sent as `promptAddition` with the generate request and appended to the AI payload. Non-creators never see this textarea. When no results are found, creators see a **"✨ Generate article"** button (not an auto-spinner) so they can fill in context before triggering generation.
 - **Image generation** is mandatory per article (`getImage` is a required step in the AI prompt). AI-generated images → `pub/documents/`; uploaded images → `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be configured.
+- **Image deletion:** when an editor deletes an article and its `image_url` matches the pattern `/wiki/{channelId}/images/<filename>` (i.e. it was uploaded to this wiki, not an external AI URL), the file is deleted from `pub/wiki/{channelId}/images/` automatically. AI-generated images in `pub/documents/` are not deleted — they may be referenced by other articles.
 - Articles stored in MySQL table `wiki_articles` (auto-created on first start; `model` column added automatically via migration)
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 
 #### WorkingObject Handling (Article Generation)
 
-The wiki module does **not** use the main `workingObject` for its AI calls. Instead, `callPipelineForArticle` constructs a **synthetic `workingObject`** by spreading the merged overrides (global `overrides` + channel `overrides`, channel wins) and passing it directly to the selected core-ai module. This means:
+The wiki module does **not** use the main `workingObject` for its AI calls. Instead, `callPipelineForArticle` (full article generation) and `callPipelineForImageOnly` (image-only regeneration) each construct a **synthetic `workingObject`** by spreading the merged overrides (global `overrides` + channel `overrides`, channel wins) and passing it directly to the selected core-ai module. This means:
 
 - The wiki AI call is fully isolated from the Discord/API flow context
 - All AI parameters (`model`, `temperature`, `maxTokens`, `tools`, `systemPrompt`, `persona`, `instructions`, `contextSize`, …) come exclusively from the merged overrides
@@ -3246,7 +3248,7 @@ The wiki module does **not** use the main `workingObject` for its AI calls. Inst
 - `wo.channelID` is set to the wiki's channel ID for `getInformation` / `getTimeline` tool calls and for native context loading
 - `wo.doNotWriteToContext = true` — article generation never writes to the conversation context
 - `wo.includeHistory` — controlled by `overrides.includeHistory` (default `false`); when `true`, core-ai loads recent channel messages as context via `channelID` (see warning below)
-- `wo.payload` = `"Topic: <query>"` (becomes the article subject)
+- `wo.payload` = `"Topic: <query>"` + optional `"\n\nAdditional context: <promptAddition>"` (becomes the article subject; `promptAddition` is appended, never replaces the system prompt)
 - `wo.flow = "webpage"` — tools like `getInformation` and `getTimeline` use `wo.channelID` directly
 
 This pattern allows the wiki to reuse the shared AI pipeline (with full tool-call support, multi-loop retries, etc.) without coupling its AI parameters to the global `workingObject` defaults.

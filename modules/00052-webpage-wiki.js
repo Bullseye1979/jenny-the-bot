@@ -323,7 +323,7 @@ CRITICAL RULES:
 - Final output MUST be raw JSON only. Always call getImage and put files[0].url in infobox.imageUrl. If getImage fails or returns no url, set infobox.imageUrl to null.`;
 
 
-async function callPipelineForArticle(query, channel, coreData) {
+async function callPipelineForArticle(query, channel, coreData, promptAddition) {
   const wo = coreData?.workingObject || {};
 
   /* Read AI overrides: global config merged with optional per-channel overrides */
@@ -349,7 +349,7 @@ async function callPipelineForArticle(query, channel, coreData) {
     channelID:           channel.channelId,
     useAiModule:         useAiModule,
     systemPrompt:        getStr(overrides.systemPrompt) || DEFAULT_WIKI_SYSTEM_PROMPT,
-    payload:             `Topic: ${query}`,
+    payload:             `Topic: ${query}` + (promptAddition ? `\n\nAdditional context: ${promptAddition}` : ""),
     doNotWriteToContext: true,
     includeHistory:      false,
     db:                  wo.db,
@@ -393,6 +393,59 @@ async function callPipelineForArticle(query, channel, coreData) {
   article._model = getStr(result?.workingObject?.model || "");
 
   return article;
+}
+
+
+async function callPipelineForImageOnly(article, channel, coreData, promptAddition) {
+  const wo = coreData?.workingObject || {};
+
+  const cfg             = coreData?.config?.[MODULE_NAME] || {};
+  const globalOverrides = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
+  const chanOverrides   = (channel.overrides && typeof channel.overrides === "object") ? channel.overrides : {};
+  const overrides       = { ...globalOverrides, ...chanOverrides };
+
+  const useAiModule = getStr(overrides.useAiModule || "completions");
+  const modulePath  = AI_MODULE_MAP[useAiModule] || AI_MODULE_MAP["completions"];
+  const { default: getCoreAi } = await import(modulePath);
+
+  const infobox     = safeParseJson(article.infobox, {});
+  const basePrompt  = getStr(article.image_prompt || infobox.imageAlt || article.title);
+  const imagePrompt = basePrompt + (promptAddition ? `\n${promptAddition}` : "");
+
+  const imageOnlyPrompt = `You are an image generator.
+Call getImage once using the provided description as the prompt.
+Return ONLY a raw JSON object with no markdown, no prose:
+{"image_url":"<url from files[0].url>"}
+If getImage fails or returns no URL, return {"image_url":null}`;
+
+  const syntheticWo = {
+    ...overrides,
+    endpoint:          getStr(overrides.endpoint          || wo.endpoint          || ""),
+    endpointResponses: getStr(overrides.endpointResponses || wo.endpointResponses || ""),
+    apiKey:            getStr(overrides.apiKey            || wo.apiKey            || ""),
+    flow:                "webpage",
+    channelID:           channel.channelId,
+    useAiModule:         useAiModule,
+    systemPrompt:        imageOnlyPrompt,
+    payload:             imagePrompt,
+    doNotWriteToContext: true,
+    includeHistory:      false,
+    db:                  wo.db,
+    toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
+    timezone:            wo.timezone || "Europe/Berlin",
+    logging:             []
+  };
+
+  const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
+  const result       = await getCoreAi(syntheticCoreData);
+  const responseText = getStr(result?.workingObject?.response || "").trim();
+
+  let parsed = null;
+  try { parsed = JSON.parse(responseText); } catch {
+    const m = responseText.match(/\{[\s\S]*\}/);
+    if (m) { try { parsed = JSON.parse(m[0]); } catch { /* ignore */ } }
+  }
+  return getStr(parsed?.image_url || "");
 }
 
 
@@ -545,6 +598,11 @@ a:hover { text-decoration: underline; }
 .wiki-cancel-btn { background: var(--wiki-surface2); color: var(--wiki-text); border: 1px solid var(--wiki-border); padding: 9px 20px; border-radius: 5px; cursor: pointer; font-size: 1em; text-decoration: none; display: inline-block; }
 .wiki-cancel-btn:hover { border-color: var(--wiki-text-muted); }
 .wiki-edit-notice { font-size: 0.82em; color: var(--wiki-text-muted); margin-top: 4px; }
+.wiki-regen-btn { background: #2a5fa3; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.88em; margin-top: 6px; }
+.wiki-regen-btn:hover { background: #1d4a80; }
+.wiki-regen-btn:disabled { opacity: .5; cursor: not-allowed; }
+.wiki-prompt-addition-block { margin-bottom: 20px; }
+.wiki-prompt-addition-block label { display: block; font-size: .85em; color: var(--wiki-text-muted); margin-bottom: 5px; font-weight: bold; }
 `;
 }
 
@@ -766,6 +824,9 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
     <div class="wiki-edit-field">
       <label>Article Image</label>
       <input id="wiki-img-url" class="wiki-edit-input" type="text" value="${escHtml(imageUrl)}" placeholder="https://... or /wiki/${escHtml(chId)}/images/filename.png">
+      <button type="button" class="wiki-regen-btn" id="wiki-regen-btn" onclick="wikiRegenImage()">🔄 Regenerate Image via AI</button>
+      <textarea id="wiki-regen-addition" class="wiki-edit-textarea" rows="2" style="max-width:600px;margin-top:6px" placeholder="Optional: additional context for image (e.g. Irene has long red hair and wears leather armor)"></textarea>
+      <p id="wiki-regen-status" class="wiki-edit-notice"></p>
       <p class="wiki-edit-notice">Paste a URL or upload a new image below. Uploading replaces the URL automatically.</p>
       ${imageUrl ? `<img id="wiki-img-preview" class="wiki-edit-img-preview" src="${escHtml(imageUrl)}" alt="Current image">` : `<img id="wiki-img-preview" class="wiki-edit-img-preview hidden" src="" alt="">`}
       <div class="wiki-upload-area" id="wiki-upload-drop">
@@ -854,6 +915,32 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
     else { imgPrev.classList.add('hidden'); }
   });
 
+  window.wikiRegenImage = async function() {
+    const btn    = document.getElementById('wiki-regen-btn');
+    const status = document.getElementById('wiki-regen-status');
+    const pa     = document.getElementById('wiki-regen-addition');
+    const promptAddition = pa ? pa.value.trim() : '';
+    if (btn) btn.disabled = true;
+    status.textContent = '⏳ Regenerating image\u2026 this may take a moment.';
+    try {
+      const resp = await fetch('/wiki/' + chId + '/api/regen-image/' + slug, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptAddition: promptAddition })
+      });
+      const data = await resp.json();
+      if (data.ok && data.image_url) {
+        imgUrl.value = data.image_url;
+        imgPrev.src  = data.image_url;
+        imgPrev.classList.remove('hidden');
+        status.textContent = '\u2705 Image regenerated \u2014 save the article to apply.';
+      } else {
+        status.textContent = '\u274C ' + (data.error || 'Regeneration failed');
+      }
+    } catch { status.textContent = '\u274C Request failed'; }
+    if (btn) btn.disabled = false;
+  };
+
   window.wikiSaveArticle = async function() {
     const btn    = document.getElementById('wiki-save-btn');
     const status = document.getElementById('wiki-save-status');
@@ -915,6 +1002,10 @@ function buildSearchPage(channel, query, results, basePath, menu, role, isCreato
     <input class="wiki-search-input" type="text" name="q" value="${escHtml(query)}" autocomplete="off" style="width:340px">
     <button class="wiki-search-btn" type="submit">Go</button>
   </form>
+  ${isCreator ? `<div class="wiki-prompt-addition-block">
+    <label for="wiki-prompt-addition">Additional context for generation <span style="font-weight:normal">(optional)</span></label>
+    <textarea id="wiki-prompt-addition" class="wiki-edit-textarea" rows="3" style="max-width:600px" placeholder="e.g. Irene is also known as Hippomann. She is a fighter in the party\u2026"></textarea>
+  </div>` : ""}
   <div id="wiki-results">
     ${results.length > 0
       ? `<div class="wiki-search-results">${resultItems}</div>
@@ -923,9 +1014,11 @@ function buildSearchPage(channel, query, results, basePath, menu, role, isCreato
            ${isCreator ? `<a href="#" id="wiki-gen-link" onclick="wikiGenerate(event)">Generate new article for this topic</a>` : ""}
          </div>`
       : isCreator
-        ? `<div class="wiki-spinner-wrap" id="wiki-gen-spinner">
-             <div class="wiki-spinner"></div>
-             <div class="wiki-spinner-msg">Generating article… this may take a moment.</div>
+        ? `<div class="wiki-empty" style="text-align:left;padding:20px 0">
+             No articles found for "<strong>${escHtml(query)}</strong>".
+             <div style="margin-top:14px">
+               <button class="wiki-search-btn" onclick="wikiGenerate(event)" id="wiki-gen-btn">✨ Generate article</button>
+             </div>
            </div>`
         : `<div class="wiki-empty">No articles found for "<strong>${escHtml(query)}</strong>".</div>`}
     <div id="wiki-gen-results" style="display:none"></div>
@@ -935,20 +1028,23 @@ ${isCreator ? `<script>
 var WIKI_CHANNEL = ${JSON.stringify(chId)};
 var WIKI_QUERY   = ${JSON.stringify(query)};
 var WIKI_BASE    = ${JSON.stringify(chPath)};
-var WIKI_HAS_RESULTS = ${results.length > 0 ? "true" : "false"};
 
 function wikiGenerate(e) {
   if (e) e.preventDefault();
+  var btn = document.getElementById('wiki-gen-btn') || document.getElementById('wiki-gen-link');
+  if (btn) btn.style.display = 'none';
   document.getElementById('wiki-results').innerHTML =
     '<div class="wiki-spinner-wrap"><div class="wiki-spinner"></div><div class="wiki-spinner-msg">Generating article\u2026 this may take a moment.</div></div>';
   wikiDoGenerate(true);
 }
 
 function wikiDoGenerate(force) {
+  var pa = document.getElementById('wiki-prompt-addition');
+  var promptAddition = pa ? pa.value.trim() : '';
   fetch(WIKI_BASE + '/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: WIKI_QUERY, force: force === true })
+    body: JSON.stringify({ query: WIKI_QUERY, force: force === true, promptAddition: promptAddition })
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
@@ -973,8 +1069,6 @@ function wikiDoGenerate(force) {
     document.getElementById('wiki-results').innerHTML = '<div class="wiki-empty">Generation failed. Please try again.</div>';
   });
 }
-
-if (!WIKI_HAS_RESULTS) { wikiDoGenerate(); }
 </script>` : ""}`;
 
   return buildFullPage({ head: `Search: ${query} – ${chTitle}`, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
@@ -1108,10 +1202,12 @@ export default async function getWebpageWiki(coreData) {
     if (!isCreator) { await sendJson(wo, 403, { ok: false, error: "Forbidden – creator role required" }); return coreData; }
     let query = "";
     let force = false;
+    let promptAddition = "";
     try {
       const bodyJson = wo.http?.json || (wo.http?.rawBody ? JSON.parse(wo.http.rawBody) : {});
-      query = getStr(bodyJson.query || "").trim();
-      force = bodyJson.force === true;
+      query           = getStr(bodyJson.query           || "").trim();
+      force           = bodyJson.force === true;
+      promptAddition  = getStr(bodyJson.promptAddition  || "").trim();
     } catch { query = ""; }
 
     /* Search first — skip if user explicitly requested generation */
@@ -1130,7 +1226,7 @@ export default async function getWebpageWiki(coreData) {
 
     /* Generate new article via pipeline (context loaded natively by core-ai) */
     try {
-      const article   = await callPipelineForArticle(query, channel, coreData);
+      const article   = await callPipelineForArticle(query, channel, coreData, promptAddition);
       const slug      = getSlug(article.title || query);
       const finalSlug = await dbSaveArticle(db, channelId, slug, article);
       await sendJson(wo, 200, { ok: true, slug: finalSlug, generated: true });
@@ -1143,7 +1239,19 @@ export default async function getWebpageWiki(coreData) {
   if (method === "DELETE" && seg1 === "api" && seg2 === "article" && seg3) {
     if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden" }); return coreData; }
     try {
-      /* Images are stored in pub/documents/ (managed by getImage tool) — not deleted here */
+      /* Delete local image if it was uploaded to this wiki's images directory */
+      const articleToDelete = await dbGetArticle(db, channelId, seg3, 0).catch(() => null);
+      if (articleToDelete?.image_url) {
+        const imgPrefix = `/wiki/${channelId}/images/`;
+        const imgUrlStr = getStr(articleToDelete.image_url);
+        if (imgUrlStr.startsWith(imgPrefix)) {
+          const filename = imgUrlStr.slice(imgPrefix.length).split("?")[0];
+          if (filename && !filename.includes("/") && !filename.includes("..") && filename.length > 0) {
+            const imgPath = path.join(__dirname, "..", "pub", "wiki", channelId, "images", filename);
+            try { fs.unlinkSync(imgPath); } catch { /* ignore — file may already be gone */ }
+          }
+        }
+      }
       await dbDeleteArticle(db, channelId, seg3);
       await sendJson(wo, 200, { ok: true });
     } catch (e) {
@@ -1199,6 +1307,40 @@ export default async function getWebpageWiki(coreData) {
       await sendJson(wo, 200, { ok: true, url: publicUrl });
     } catch (e) {
       await sendJson(wo, 500, { ok: false, error: getStr(e?.message || "Upload failed") });
+    }
+    return coreData;
+  }
+
+  if (method === "POST" && seg1 === "api" && seg2 === "regen-image" && seg3) {
+    if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden – editor role required" }); return coreData; }
+    let articleForRegen = null;
+    try { articleForRegen = await dbGetArticle(db, channelId, seg3, 0); } catch { /* ignore */ }
+    if (!articleForRegen) { await sendJson(wo, 404, { ok: false, error: "Article not found" }); return coreData; }
+    let regenPromptAddition = "";
+    try {
+      const bodyJson = wo.http?.json || (wo.http?.rawBody ? JSON.parse(wo.http.rawBody) : {});
+      regenPromptAddition = getStr(bodyJson.promptAddition || "").trim();
+    } catch { /* ignore */ }
+    try {
+      const imageUrl = await callPipelineForImageOnly(articleForRegen, channel, coreData, regenPromptAddition);
+      if (!imageUrl) { await sendJson(wo, 500, { ok: false, error: "Image generation returned no URL" }); return coreData; }
+      /* Delete old local image if it lives in this wiki's images directory */
+      const oldUrl = getStr(articleForRegen.image_url || "");
+      const imgPrefix = `/wiki/${channelId}/images/`;
+      if (oldUrl.startsWith(imgPrefix)) {
+        const oldFilename = oldUrl.slice(imgPrefix.length).split("?")[0];
+        if (oldFilename && !oldFilename.includes("/") && !oldFilename.includes("..")) {
+          const oldPath = path.join(__dirname, "..", "pub", "wiki", channelId, "images", oldFilename);
+          try { fs.unlinkSync(oldPath); } catch { /* ignore — may already be gone */ }
+        }
+      }
+      await db.execute(
+        "UPDATE wiki_articles SET image_url=?, updated_at=NOW() WHERE channel_id=? AND slug=?",
+        [imageUrl, channelId, seg3]
+      );
+      await sendJson(wo, 200, { ok: true, image_url: imageUrl });
+    } catch (e) {
+      await sendJson(wo, 500, { ok: false, error: getStr(e?.message || "Image regeneration failed") });
     }
     return coreData;
   }
