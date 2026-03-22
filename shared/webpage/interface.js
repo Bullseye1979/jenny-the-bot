@@ -174,16 +174,20 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, us
     '}();<\/script>';
 
   const rightHtml = String(rightHtmlOpt || "");
-  const right =
-    '<div class="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0">' +
+  /* nav-wrap contains only the ... dropdown (flex:0 so h1 sits right next to it).
+     nav-right-slot is a separate header sibling so margin-left:auto pushes it to the
+     far right of the header regardless of the h1 width. */
+  const rightSlot =
+    '<div class="nav-right-slot">' +
       (rightHtml ? rightHtml : "") +
       profileDrop +
     '</div>';
 
   return (
-    '<div class="nav-wrap" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;overflow:visible">' +
-      nav + script + right +
-    '</div>'
+    '<div class="nav-wrap">' +
+      nav + script +
+    '</div>' +
+    rightSlot
   );
 }
 

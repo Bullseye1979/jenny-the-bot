@@ -51,7 +51,8 @@ header h1{
 header>.nav-wrap{order:0}
 
 /* webpage-menu.js uses these classes */
-.nav-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.nav-wrap{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.nav-right-slot{margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0;order:2}
 .nav-links{display:flex;gap:6px;min-width:0;flex-wrap:wrap}
 .nav-link{
   padding:6px 14px;border-radius:6px;font-size:13px;font-weight:600;

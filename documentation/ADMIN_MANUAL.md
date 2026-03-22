@@ -3603,7 +3603,7 @@ If no valid session cookie is present, `wo.webAuth` is not set (or has empty fie
 
 ### Navigation Menu (`00043-webpage-menu.js`)
 
-**Layout:** The header shows a `···` dropdown button on the left (all nav items inside), followed by the page title, and a **role badge** on the right. Clicking the role badge opens a profile panel showing username, User ID, Guild ID, a dark/light mode toggle, and a logout link.
+**Layout:** The header shows a `···` dropdown button on the left (all nav items inside), followed by the page title (`<h1>`, always right next to `···`), and a **role badge** on the far right (`margin-left:auto`). Clicking the role badge opens a profile panel showing username, User ID, Guild ID (from the authenticated guild), a dark/light mode toggle, and a logout link. The three elements are direct `<header>` flex children ordered via CSS (`nav-wrap` order:0 → `h1` order:1 → `nav-right-slot` order:2) so all page templates remain unchanged.
 
 **`getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, userInfo)`** — renders the nav bar. `userInfo` is optional (`wo.webAuth`) and enables the profile panel with user/guild info. Without it the profile panel still shows role + theme toggle + logout, but no IDs.
 

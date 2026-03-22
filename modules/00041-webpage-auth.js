@@ -626,12 +626,13 @@ export default async function getWebpageAuth(coreData) {
 
     const sess = {
       v: 1,
-      userId: String(user.id || ""),
+      userId:  String(user.id || ""),
       username,
-      role: getNormalizeRoleLabel(effectiveCfg, roleInfo.role),
-      roles: roleInfo.roles,
+      guildId: String(effectiveCfg?.guildId || ""),
+      role:    getNormalizeRoleLabel(effectiveCfg, roleInfo.role),
+      roles:   roleInfo.roles,
       roleIds: roleInfo.roleIds,
-      ts: Date.now()
+      ts:      Date.now()
     };
 
     const sessCookie = getCookieLine(COOKIE_SESS, getSignToken(secret, sess), {
