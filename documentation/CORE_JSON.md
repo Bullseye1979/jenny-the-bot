@@ -410,6 +410,15 @@ Information clustering and retrieval from the context log.
 | `minCoverage` | number | `1` | Minimum coverage threshold |
 | `eventGapMinutes` | number | `45` | Minutes between events before a new cluster starts |
 | `stripCode` | boolean | `false` | Strip code blocks from context before clustering |
+| `includeAnsweredTurns` | boolean | `false` | Include user turns that already have a bot reply |
+| `includeAssistantTurns` | boolean | `false` | Include `role=assistant` rows; implies `includeAnsweredTurns` |
+| `includeAliasSearch` | boolean | `false` | Enable 2-pass alias resolution (see ADMIN_MANUAL) |
+| `aliasMaxCount` | number | `8` | Max aliases to extract and search in Pass 2 |
+| `aliasSampleRows` | number | `30` | Pass 1 rows fed to the alias AI call |
+| `aliasEndpoint` | string | `""` | Endpoint for alias AI call; falls back to `wo.endpoint` |
+| `aliasApiKey` | string | `""` | API key for alias AI call; falls back to `wo.apiKey` |
+| `aliasModel` | string | `"gpt-4o-mini"` | Model for alias extraction |
+| `aliasTimeoutMs` | number | `30000` | Timeout for the alias AI call |
 
 #### getConfluence
 

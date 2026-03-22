@@ -1,8 +1,11 @@
 /**********************************************************************************/
 /* filename: getInformation.js                                                     *
-/* Version 1.0                                                                     *
+/* Version 1.1                                                                     *
 /* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
 /*          info snippets ranked by coverage then frequency.                       *
+/*          v1.1: 2-pass alias search — Pass 1 finds rows for original keywords,  *
+/*          a small AI call extracts aliases, Pass 2 searches for those aliases,   *
+/*          results are merged and deduplicated before returning.                  *
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
@@ -10,13 +13,16 @@ import mysql from "mysql2/promise";
 const MODULE_NAME = "getInformation";
 const POOLS = new Map();
 
-const DEFAULT_ROWS_PER_CLUSTER = 400;
-const DEFAULT_PAD_ROWS = 20;
-const DEFAULT_MAX_LOG_CHARS = 6000;
-const DEFAULT_TOKEN_WINDOW = 5;
-const DEFAULT_MAX_OUTPUT_LINES = 800;
-const DEFAULT_MIN_COVERAGE = 1;
-const DEFAULT_EVENT_GAP_MINUTES = 45;
+const DEFAULT_ROWS_PER_CLUSTER   = 400;
+const DEFAULT_PAD_ROWS           = 20;
+const DEFAULT_MAX_LOG_CHARS      = 6000;
+const DEFAULT_TOKEN_WINDOW       = 5;
+const DEFAULT_MAX_OUTPUT_LINES   = 800;
+const DEFAULT_MIN_COVERAGE       = 1;
+const DEFAULT_EVENT_GAP_MINUTES  = 45;
+const DEFAULT_ALIAS_SAMPLE_ROWS  = 30;
+const DEFAULT_ALIAS_MAX          = 8;
+const DEFAULT_ALIAS_TIMEOUT_MS   = 30000;
 
 const CONTENT_EXPR = `
   (
@@ -366,12 +372,226 @@ function getBuildFetchRangeSQL(includeAssistantTurns, includeAnsweredTurns) {
 }
 
 
+/* Run a single search pass for the given groups.
+   Returns { blocks, analyzed, hitCount } or null when no hits. */
+async function getRunSearchPass(db, channelIds, groups, opts) {
+  const {
+    rowsPerCluster, padRows, tokenWindow, stripCode,
+    maxOutputLines, minCoverage,
+    includeAssistantTurns, includeAnsweredTurns,
+    fetchRangeSQL
+  } = opts;
+
+  const sqlTokens = Array.from(new Set(groups.flatMap(g => g.variants)));
+  if (!sqlTokens.length) return null;
+
+  const { selectFlagsSQL, whereAnySQL } = getBuildLikeFlags(CONTENT_EXPR, sqlTokens);
+  const likeParams = sqlTokens.map(k => `%${getEscapeLike(k)}%`);
+  const idPlaceholders = channelIds.map(() => "?").join(", ");
+  const hitsSQL = getBuildHitsSQL(idPlaceholders, selectFlagsSQL, whereAnySQL, { includeAssistantTurns, includeAnsweredTurns });
+
+  const hitsParams = includeAnsweredTurns
+    ? [...channelIds, ...likeParams, ...likeParams]
+    : [...channelIds, ...channelIds, ...likeParams, ...likeParams];
+  const [hitRows] = await db.execute(hitsSQL, hitsParams);
+
+  if (!hitRows?.length) return { blocks: [], analyzed: [], hitCount: 0 };
+
+  const clustersAll = getBuildClustersFromHits(hitRows, rowsPerCluster);
+  const analyzed = [];
+
+  for (const c of clustersAll) {
+    const [rowsInRange] = await db.execute(
+      fetchRangeSQL,
+      includeAnsweredTurns
+        ? [c.channel_id, c.start_rn, c.end_rn]
+        : [c.channel_id, c.channel_id, c.start_rn, c.end_rn]
+    );
+    const metrics = getAnalyzeClusterRows(rowsInRange, groups, { tokenWindow, stripCode });
+    let firstTs = null, lastTs = null;
+    for (const r of rowsInRange) {
+      const t = getParseTs(r.ts);
+      if (t == null) continue;
+      if (firstTs == null || t < firstTs) firstTs = t;
+      if (lastTs == null || t > lastTs) lastTs = t;
+    }
+    analyzed.push({ ...c, rowsInRangeCount: rowsInRange.length, ...metrics, firstTs, lastTs });
+  }
+
+  analyzed.sort((a, b) => {
+    if (b.coverage !== a.coverage) return b.coverage - a.coverage;
+    if (b.totalHits !== a.totalHits) return b.totalHits - a.totalHits;
+    if (b.rowsMulti !== a.rowsMulti) return b.rowsMulti - a.rowsMulti;
+    if (b.rowsAny !== a.rowsAny) return b.rowsAny - a.rowsAny;
+    if (a.channel_id !== b.channel_id) return a.channel_id.localeCompare(b.channel_id);
+    return a.start_rn - b.start_rn;
+  });
+
+  const blocks = [];
+  let usedLines = 0;
+
+  for (const c of analyzed) {
+    if (c.coverage < minCoverage) break;
+
+    const padStart = Math.max(1, c.start_rn - padRows);
+    const padEnd = c.end_rn + padRows;
+    const [rowsFull] = await db.execute(
+      fetchRangeSQL,
+      includeAnsweredTurns
+        ? [c.channel_id, padStart, padEnd]
+        : [c.channel_id, c.channel_id, padStart, padEnd]
+    );
+
+    const lines = [];
+    const seenLocal = new Set();
+
+    lines.push({
+      channel_id: c.channel_id,
+      rn: c.start_rn - 0.0001,
+      ts: null,
+      sender: "meta",
+      content: `[[ CLUSTER channel=${c.channel_id} idx=${c.idx} rows=${c.start_rn}-${c.end_rn} coverage=${c.coverage} hits=${c.totalHits} ]]`
+    });
+
+    let firstTs = null, lastTs = null;
+
+    for (const r of rowsFull) {
+      const key = `${r.id}:${r.rn}`;
+      if (seenLocal.has(key)) continue;
+      seenLocal.add(key);
+
+      const { sender, content } = getParseRowForText(r, { stripCode });
+      let safe = typeof content === "string" ? content : String(content ?? "");
+      if (safe.length > DEFAULT_MAX_LOG_CHARS) safe = safe.slice(0, DEFAULT_MAX_LOG_CHARS) + "…";
+
+      const t = getParseTs(r.ts);
+      if (t != null) {
+        if (firstTs == null || t < firstTs) firstTs = t;
+        if (lastTs == null || t > lastTs) lastTs = t;
+      }
+
+      lines.push({ channel_id: r.id, rn: r.rn, ts: r.ts, sender, content: safe });
+    }
+
+    if (usedLines + lines.length > maxOutputLines) {
+      const remaining = Math.max(0, maxOutputLines - usedLines);
+      if (remaining > 0) blocks.push({ channel_id: c.channel_id, start_rn: c.start_rn, idx: c.idx, lines: lines.slice(0, remaining), firstTs, lastTs });
+      usedLines = maxOutputLines;
+      break;
+    }
+
+    blocks.push({ channel_id: c.channel_id, start_rn: c.start_rn, idx: c.idx, lines, firstTs, lastTs });
+    usedLines += lines.length;
+  }
+
+  return { blocks, analyzed, hitCount: hitRows.length };
+}
+
+
+/* Extract aliases from Pass 1 rows using a small AI call.
+   Returns an array of lowercase alias strings (may be empty). */
+async function getExtractAliases(pass1Blocks, originalGroups, giCfg, wo) {
+  const endpoint   = giCfg.aliasEndpoint   || wo.endpoint   || "";
+  const apiKey     = giCfg.aliasApiKey     || wo.apiKey     || "";
+  const model      = giCfg.aliasModel      || wo.model      || "gpt-4o-mini";
+  const maxAliases = Math.max(1, Math.floor(giCfg.aliasMaxCount   ?? DEFAULT_ALIAS_MAX));
+  const sampleSize = Math.max(5, Math.floor(giCfg.aliasSampleRows ?? DEFAULT_ALIAS_SAMPLE_ROWS));
+  const timeoutMs  = Math.max(5000, Math.floor(giCfg.aliasTimeoutMs ?? DEFAULT_ALIAS_TIMEOUT_MS));
+
+  if (!endpoint || !apiKey) return [];
+
+  /* Collect content rows from Pass 1, skip meta lines */
+  const contentLines = pass1Blocks
+    .flatMap(b => b.lines)
+    .filter(l => Number.isInteger(l.rn))
+    .slice(0, sampleSize);
+
+  if (!contentLines.length) return [];
+
+  const excerpts = contentLines
+    .map(l => `[${String(l.sender || "").split("|")[0]}]: ${String(l.content || "").slice(0, 300)}`)
+    .join("\n");
+
+  const searchTerms = originalGroups.map(g => g.base);
+
+  const systemPrompt =
+    `You are an alias extractor for conversation transcripts. ` +
+    `Given excerpts, identify ALL alternative names, nicknames, titles, or labels used to refer to the SAME entities as the search terms. ` +
+    `Rules: return ONLY a JSON array of short strings (names/labels, not sentences). ` +
+    `Max ${maxAliases} items. Exclude the original search terms. If none found, return []. ` +
+    `Example: ["Hippomann","Slaad","der Unbekannte"]`;
+
+  const userPrompt =
+    `Search terms: ${JSON.stringify(searchTerms)}\n\nConversation excerpts:\n${excerpts}`;
+
+  try {
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        max_tokens: 200,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content: userPrompt   }
+        ]
+      }),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const text = data?.choices?.[0]?.message?.content || "";
+    const match = text.match(/\[[\s\S]*?\]/);
+    if (!match) return [];
+    const parsed = JSON.parse(match[0]);
+    if (!Array.isArray(parsed)) return [];
+    const original = new Set(searchTerms.map(getNorm));
+    return parsed
+      .map(s => getNorm(String(s || "").trim()))
+      .filter(s => s.length >= 2 && s.length <= 100 && !original.has(s))
+      .slice(0, maxAliases);
+  } catch {
+    return [];
+  }
+}
+
+
+/* Merge blocks from two passes, deduplicate rows by (channel_id, rn), sort chronologically. */
+function getMergeBlocks(blocks1, blocks2) {
+  const seenRN = new Set();
+  const merged = [];
+
+  for (const b of [...blocks1, ...blocks2]) {
+    const lines = [];
+    for (const l of b.lines) {
+      const isHeader = !Number.isInteger(l.rn);
+      if (isHeader) { lines.push(l); continue; }
+      const key = `${l.channel_id}:${l.rn}`;
+      if (seenRN.has(key)) continue;
+      seenRN.add(key);
+      lines.push(l);
+    }
+    /* Only keep block if it has at least one non-header row */
+    if (lines.filter(l => Number.isInteger(l.rn)).length > 0) {
+      merged.push({ ...b, lines });
+    }
+  }
+
+  merged.sort((a, b) => {
+    if (a.channel_id !== b.channel_id) return a.channel_id.localeCompare(b.channel_id);
+    return a.start_rn - b.start_rn;
+  });
+
+  return merged;
+}
+
+
 async function getInformationInvoke(args, coreData) {
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
 
   const primaryChannelId = String(wo?.channelID || "").trim();
-
   const extraChannelIds = Array.isArray(wo?.channelIds)
     ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
@@ -379,234 +599,120 @@ async function getInformationInvoke(args, coreData) {
   const channelIdSet = new Set();
   if (primaryChannelId) channelIdSet.add(primaryChannelId);
   for (const cid of extraChannelIds) channelIdSet.add(cid);
-
   const channelIds = [...channelIdSet];
-  if (!channelIds.length) {
-    return { error: "ERROR: channel_id missing (wo.channelID / wo.channelIds)" };
-  }
-  const mainChannelId = primaryChannelId || channelIds[0];
 
+  if (!channelIds.length) return { error: "ERROR: channel_id missing (wo.channelID / wo.channelIds)" };
+
+  const mainChannelId = primaryChannelId || channelIds[0];
   const groups = getNormalizeGroupsFromArgs(args);
   if (!Array.isArray(groups) || !groups.length) return { error: "ERROR: no keyword_groups or keywords" };
 
-  const giCfg = wo?.toolsconfig?.getInformation || {};
-  const rowsPerCluster = Math.max(1, Math.floor(giCfg.clusterRows ?? DEFAULT_ROWS_PER_CLUSTER));
-  const stripCode = giCfg.stripCode === true;
-  const padRows = Math.max(0, Math.floor(giCfg.padRows ?? DEFAULT_PAD_ROWS));
-  const tokenWindow = Math.max(1, Math.floor(giCfg.tokenWindow ?? DEFAULT_TOKEN_WINDOW));
-  const maxLogChars = Number.isFinite(giCfg.maxLogChars) ? giCfg.maxLogChars : DEFAULT_MAX_LOG_CHARS;
-  const maxOutputLines = Math.max(100, Math.floor(giCfg.maxOutputLines ?? DEFAULT_MAX_OUTPUT_LINES));
-  const minCoverage = Math.max(0, Math.floor(giCfg.minCoverage ?? DEFAULT_MIN_COVERAGE));
-  const eventGapMinutes = Math.max(1, Math.floor(giCfg.eventGapMinutes ?? DEFAULT_EVENT_GAP_MINUTES));
-  const EVENT_GAP_MS = eventGapMinutes * 60 * 1000;
-  const includeAssistantTurns = giCfg.includeAssistantTurns === true;
-  const includeAnsweredTurns = includeAssistantTurns || giCfg.includeAnsweredTurns === true;
+  if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) return { error: "ERROR: workingObject.db incomplete" };
 
-  if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
-    return { error: "ERROR: workingObject.db incomplete" };
-  }
+  const giCfg              = wo?.toolsconfig?.getInformation || {};
+  const rowsPerCluster     = Math.max(1, Math.floor(giCfg.clusterRows      ?? DEFAULT_ROWS_PER_CLUSTER));
+  const stripCode          = giCfg.stripCode === true;
+  const padRows            = Math.max(0, Math.floor(giCfg.padRows           ?? DEFAULT_PAD_ROWS));
+  const tokenWindow        = Math.max(1, Math.floor(giCfg.tokenWindow       ?? DEFAULT_TOKEN_WINDOW));
+  const maxLogChars        = Number.isFinite(giCfg.maxLogChars) ? giCfg.maxLogChars : DEFAULT_MAX_LOG_CHARS;
+  const maxOutputLines     = Math.max(100, Math.floor(giCfg.maxOutputLines  ?? DEFAULT_MAX_OUTPUT_LINES));
+  const minCoverage        = Math.max(0, Math.floor(giCfg.minCoverage       ?? DEFAULT_MIN_COVERAGE));
+  const eventGapMinutes    = Math.max(1, Math.floor(giCfg.eventGapMinutes   ?? DEFAULT_EVENT_GAP_MINUTES));
+  const EVENT_GAP_MS       = eventGapMinutes * 60 * 1000;
+  const includeAssistantTurns  = giCfg.includeAssistantTurns === true;
+  const includeAnsweredTurns   = includeAssistantTurns || giCfg.includeAnsweredTurns === true;
+  const includeAliasSearch     = giCfg.includeAliasSearch === true;
 
-  const sqlTokens = Array.from(new Set(groups.flatMap(g => g.variants)));
-  if (!sqlTokens.length) {
-    return { error: "ERROR: no effective tokens (variants)" };
-  }
-
-  const { selectFlagsSQL, whereAnySQL } = getBuildLikeFlags(CONTENT_EXPR, sqlTokens);
-  const likeParams = sqlTokens.map(k => `%${getEscapeLike(k)}%`);
-  const idPlaceholders = channelIds.map(() => "?").join(", ");
-  const hitsSQL = getBuildHitsSQL(idPlaceholders, selectFlagsSQL, whereAnySQL, { includeAssistantTurns, includeAnsweredTurns });
   const fetchRangeSQL = getBuildFetchRangeSQL(includeAssistantTurns, includeAnsweredTurns);
+
+  const passOpts = {
+    rowsPerCluster, padRows, tokenWindow, stripCode,
+    maxOutputLines, minCoverage,
+    includeAssistantTurns, includeAnsweredTurns,
+    fetchRangeSQL
+  };
 
   try {
     const db = await getPool(wo);
 
-    const hitsParams = includeAnsweredTurns
-      ? [...channelIds, ...likeParams, ...likeParams]
-      : [...channelIds, ...channelIds, ...likeParams, ...likeParams];
-    const [hitRows] = await db.execute(hitsSQL, hitsParams);
+    /* ── Pass 1: search for original keywords ── */
+    const pass1 = await getRunSearchPass(db, channelIds, groups, passOpts);
 
-    if (!hitRows?.length) {
+    if (!pass1 || pass1.hitCount === 0) {
       return {
         items: [],
         meta: {
-          channel_id: mainChannelId,
-          channel_ids: channelIds,
+          channel_id: mainChannelId, channel_ids: channelIds,
           groups: groups.map(g => ({ base: g.base, parts: g.parts })),
-          rows_per_cluster: rowsPerCluster,
-          clusters_considered: 0,
-          clusters_selected: 0,
-          printed_rows: 0,
+          rows_per_cluster: rowsPerCluster, clusters_considered: 0,
+          clusters_selected: 0, printed_rows: 0,
           duration_ms: Date.now() - startedAt,
           include_assistant_turns: includeAssistantTurns,
           include_answered_turns: includeAnsweredTurns,
-          note:
-            "No matching rows found. Call getTimeline separately if a chronological overview is needed."
+          note: "No matching rows found. Call getTimeline separately if a chronological overview is needed."
         }
       };
     }
 
-    const clustersAll = getBuildClustersFromHits(hitRows, rowsPerCluster);
-    const analyzed = [];
+    /* ── Alias search (Pass 2) ── */
+    let aliases = [];
+    let pass2 = null;
 
-    for (const c of clustersAll) {
-      const [rowsInRange] = await db.execute(
-        fetchRangeSQL,
-        includeAnsweredTurns
-          ? [c.channel_id, c.start_rn, c.end_rn]
-          : [c.channel_id, c.channel_id, c.start_rn, c.end_rn]
-      );
-      const metrics = getAnalyzeClusterRows(rowsInRange, groups, { tokenWindow, stripCode });
-      let firstTs = null, lastTs = null;
-      for (const r of rowsInRange) {
-        const t = getParseTs(r.ts);
-        if (t == null) continue;
-        if (firstTs == null || t < firstTs) firstTs = t;
-        if (lastTs == null || t > lastTs) lastTs = t;
+    if (includeAliasSearch && pass1.blocks.length) {
+      aliases = await getExtractAliases(pass1.blocks, groups, giCfg, wo);
+
+      if (aliases.length) {
+        const aliasGroups = aliases.map((a, i) => ({
+          id: groups.length + i,
+          base: a,
+          variants: [a],
+          parts: []
+        }));
+        pass2 = await getRunSearchPass(db, channelIds, aliasGroups, passOpts);
       }
-      analyzed.push({
-        ...c,
-        rowsInRangeCount: rowsInRange.length,
-        ...metrics,
-        firstTs,
-        lastTs
-      });
     }
 
-    analyzed.sort((a, b) => {
-      if (b.coverage !== a.coverage) return b.coverage - a.coverage;
-      if (b.totalHits !== a.totalHits) return b.totalHits - a.totalHits;
-      if (b.rowsMulti !== a.rowsMulti) return b.rowsMulti - a.rowsMulti;
-      if (b.rowsAny !== a.rowsAny) return b.rowsAny - a.rowsAny;
-      if (a.channel_id !== b.channel_id) return a.channel_id.localeCompare(b.channel_id);
-      return a.start_rn - b.start_rn;
-    });
+    /* ── Merge ── */
+    const allBlocks = pass2?.blocks?.length
+      ? getMergeBlocks(pass1.blocks, pass2.blocks)
+      : pass1.blocks;
 
-    const blocks = [];
-    let usedLines = 0;
-
-    for (const c of analyzed) {
-      if (c.coverage < minCoverage) break;
-
-      const padStart = Math.max(1, c.start_rn - padRows);
-      const padEnd = c.end_rn + padRows;
-      const [rowsFull] = await db.execute(
-        fetchRangeSQL,
-        includeAnsweredTurns
-          ? [c.channel_id, padStart, padEnd]
-          : [c.channel_id, c.channel_id, padStart, padEnd]
-      );
-
-      const lines = [];
-      const seenLocal = new Set();
-
-      lines.push({
-        channel_id: c.channel_id,
-        rn: c.start_rn - 0.0001,
-        ts: null,
-        sender: "meta",
-        content: `[[ CLUSTER channel=${c.channel_id} idx=${c.idx} rows=${c.start_rn}-${c.end_rn} coverage=${c.coverage} hits=${c.totalHits} ]]`
-      });
-
-      let firstTs = null, lastTs = null;
-
-      for (const r of rowsFull) {
-        const key = `${r.id}:${r.rn}`;
-        if (seenLocal.has(key)) continue;
-        seenLocal.add(key);
-
-        const { sender, content } = getParseRowForText(r, { stripCode });
-
-        let safe = typeof content === "string" ? content : String(content ?? "");
-        if (safe.length > DEFAULT_MAX_LOG_CHARS) safe = safe.slice(0, DEFAULT_MAX_LOG_CHARS) + "…";
-        if (safe.length > maxLogChars) safe = safe.slice(0, maxLogChars) + "…";
-
-        const t = getParseTs(r.ts);
-        if (t != null) {
-          if (firstTs == null || t < firstTs) firstTs = t;
-          if (lastTs == null || t > lastTs) lastTs = t;
-        }
-
-        lines.push({
-          channel_id: r.id,
-          rn: r.rn,
-          ts: r.ts,
-          sender,
-          content: safe
-        });
-      }
-
-      if (usedLines + lines.length > maxOutputLines) {
-        const remaining = Math.max(0, maxOutputLines - usedLines);
-        if (remaining > 0) {
-          blocks.push({
-            channel_id: c.channel_id,
-            start_rn: c.start_rn,
-            idx: c.idx,
-            lines: lines.slice(0, remaining),
-            firstTs,
-            lastTs
-          });
-        }
-        usedLines = maxOutputLines;
-        break;
-      }
-
-      blocks.push({
-        channel_id: c.channel_id,
-        start_rn: c.start_rn,
-        idx: c.idx,
-        lines,
-        firstTs,
-        lastTs
-      });
-      usedLines += lines.length;
-    }
-
-    if (!blocks.length) {
+    if (!allBlocks.length) {
       return {
         items: [],
         meta: {
-          channel_id: mainChannelId,
-          channel_ids: channelIds,
+          channel_id: mainChannelId, channel_ids: channelIds,
           groups: groups.map(g => ({ base: g.base, parts: g.parts })),
           rows_per_cluster: rowsPerCluster,
-          clusters_considered: analyzed.length,
-          clusters_selected: 0,
-          printed_rows: 0,
+          clusters_considered: (pass1.analyzed?.length || 0) + (pass2?.analyzed?.length || 0),
+          clusters_selected: 0, printed_rows: 0,
           duration_ms: Date.now() - startedAt,
           include_assistant_turns: includeAssistantTurns,
           include_answered_turns: includeAnsweredTurns,
-          note:
-            "Hits found but no cluster met minCoverage. Call getTimeline separately if a chronological overview is needed."
+          aliases_searched: aliases,
+          note: "Hits found but no cluster met minCoverage. Call getTimeline separately if a chronological overview is needed."
         }
       };
     }
 
-    blocks.sort((a, b) => {
-      if (a.channel_id !== b.channel_id) return a.channel_id.localeCompare(b.channel_id);
-      return a.start_rn - b.start_rn;
-    });
-
+    /* ── Build final output ── */
     const allPrinted = [];
     const seenGlobalRN = new Set();
 
-    for (let bi = 0; bi < blocks.length; bi++) {
-      const B = blocks[bi];
+    for (let bi = 0; bi < allBlocks.length; bi++) {
+      const B = allBlocks[bi];
 
       for (const L of B.lines) {
         const isHeader = !Number.isInteger(L.rn);
-        if (isHeader) {
-          allPrinted.push(L);
-          continue;
-        }
+        if (isHeader) { allPrinted.push(L); continue; }
         const key = `${L.channel_id}:${L.rn}`;
         if (seenGlobalRN.has(key)) continue;
         seenGlobalRN.add(key);
         allPrinted.push(L);
       }
 
-      if (bi < blocks.length - 1) {
-        const next = blocks[bi + 1];
+      if (bi < allBlocks.length - 1) {
+        const next = allBlocks[bi + 1];
         const gapOK = (B.firstTs != null && next.firstTs != null);
         const bigGap = gapOK && (next.firstTs - B.lastTs) >= EVENT_GAP_MS;
         if (bigGap) {
@@ -621,27 +727,23 @@ async function getInformationInvoke(args, coreData) {
       }
     }
 
-    const compact = allPrinted.map(({ channel_id, rn, ts, sender, content }) => ({
-      channel_id,
-      rn,
-      ts,
-      sender,
-      content
-    }));
+    const compact = allPrinted.map(({ channel_id, rn, ts, sender, content }) => ({ channel_id, rn, ts, sender, content }));
 
     const meta = {
       channel_id: mainChannelId,
       channel_ids: channelIds,
       groups: groups.map(g => ({ base: g.base, parts: g.parts })),
       rows_per_cluster: rowsPerCluster,
-      clusters_considered: analyzed.length,
-      clusters_selected: blocks.length,
+      clusters_considered: (pass1.analyzed?.length || 0) + (pass2?.analyzed?.length || 0),
+      clusters_selected: allBlocks.length,
       printed_rows: allPrinted.length,
       duration_ms: Date.now() - startedAt,
       include_assistant_turns: includeAssistantTurns,
       include_answered_turns: includeAnsweredTurns,
+      aliases_searched: aliases.length ? aliases : undefined,
       note:
         "These are detail snippets ranked by keyword coverage. " +
+        (aliases.length ? `Alias search found ${aliases.length} alias(es): ${aliases.join(", ")}. ` : "") +
         "Call getTimeline separately to get the full chronological event history."
     };
 
@@ -666,6 +768,9 @@ function getDefaultExport() {
           "using fixed-size clusters (400 rows). " +
           "By default excludes assistant messages and 'answered' turns (role/turn_id). " +
           "Set toolsconfig.getInformation.includeAssistantTurns=true to include all rows. " +
+          "Set toolsconfig.getInformation.includeAliasSearch=true to enable 2-pass alias resolution: " +
+          "Pass 1 finds rows for the original keywords; a small AI call extracts aliases (e.g. nicknames, " +
+          "later-used names); Pass 2 searches for those aliases; results are merged and deduplicated. " +
           "Prefers 'keyword_groups' (with 'variants' and optional 'parts'); " +
           "falls back to 'keywords' as full-form LIKE tokens (no internal splitting). " +
           "Ranking: coverage (distinct keyword groups) → totalHits → chronological order. " +
@@ -683,10 +788,10 @@ function getDefaultExport() {
               items: {
                 type: "object",
                 properties: {
-                  id: { type: ["string", "number"] },
-                  base: { type: "string" },
+                  id:       { type: ["string", "number"] },
+                  base:     { type: "string" },
                   variants: { type: "array", items: { type: "string" } },
-                  parts: { type: "array", items: { type: "string" } }
+                  parts:    { type: "array", items: { type: "string" } }
                 },
                 required: ["base"],
                 additionalProperties: true

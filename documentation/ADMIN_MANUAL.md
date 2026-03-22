@@ -978,7 +978,14 @@ Semantic cluster search over the stored conversation log.
   "eventGapMinutes":       45,
   "stripCode":             false,
   "includeAnsweredTurns":  false,
-  "includeAssistantTurns": false
+  "includeAssistantTurns": false,
+  "includeAliasSearch":    false,
+  "aliasMaxCount":         8,
+  "aliasSampleRows":       30,
+  "aliasEndpoint":         "",
+  "aliasApiKey":           "",
+  "aliasModel":            "gpt-4o-mini",
+  "aliasTimeoutMs":        30000
 }
 ```
 
@@ -994,6 +1001,25 @@ Semantic cluster search over the stored conversation log.
 | `stripCode` | boolean | `false` | Collapse large triple-backtick code blocks (>30 lines) to `«code N lines»` |
 | `includeAnsweredTurns` | boolean | `false` | When `true`, skips the `answered_turns` filter — returns ALL user/agent rows including those that already received a bot reply. Required for voice transcripts (discord-voice always generates bot replies). |
 | `includeAssistantTurns` | boolean | `false` | When `true`, also includes `role=assistant` rows. Implies `includeAnsweredTurns`. |
+| `includeAliasSearch` | boolean | `false` | Enables 2-pass alias resolution (see below). |
+| `aliasMaxCount` | number | `8` | Maximum number of aliases to search for in Pass 2. |
+| `aliasSampleRows` | number | `30` | Number of Pass 1 content rows fed to the alias AI call. |
+| `aliasEndpoint` | string | `wo.endpoint` | AI endpoint for alias extraction. Falls back to `workingObject.endpoint`. |
+| `aliasApiKey` | string | `wo.apiKey` | API key for alias extraction. Falls back to `workingObject.apiKey`. |
+| `aliasModel` | string | `"gpt-4o-mini"` | Model for alias extraction. Cheap model recommended. |
+| `aliasTimeoutMs` | number | `30000` | Timeout for the alias AI call. |
+
+**2-pass alias resolution (`includeAliasSearch: true`):**
+
+Solves the problem of entities that are referred to by different names across the conversation (e.g. "Irene" → later called "Hippomann" → revealed as "Slaad"). Without alias search, these appear as three unrelated entities.
+
+How it works:
+1. **Pass 1** — standard search for the original keywords → finds matching rows
+2. **Alias extraction** — a small AI call (cheap model, `aliasSampleRows` rows) extracts all alternative names/labels used for the same entities in the Pass 1 results
+3. **Pass 2** — SQL search for the extracted aliases → finds additional rows
+4. **Merge** — Pass 1 + Pass 2 results are combined and deduplicated by `(channel_id, rn)`, then sorted chronologically
+
+Cost: one additional cheap AI call (e.g. `gpt-4o-mini`, ~200 tokens output) + one additional DB query per alias batch. The alias AI call is skipped entirely if Pass 1 returns no results or no aliases are found.
 
 > **Context overflow warning:** The defaults (`maxOutputLines: 800`, `maxLogChars: 6000`) can produce very large tool results when a topic appears frequently in the context log. If the AI pipeline hits a context-length error (HTTP 400, 128k tokens exceeded), reduce these values:
 > ```json
@@ -1586,7 +1612,7 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
 | `guilds[].allowRoleIds` | array | `[]` | If non-empty, only users with at least one of these Role IDs are allowed in |
 | `guilds[].rolePriority` | array | `[]` | Order in which role IDs are checked; highest priority first |
 | `guilds[].roleMap` | object | `{}` | Maps Discord Role ID → role label (`"admin"`, `"member"`, etc.) |
-| `ssoPartners` | array | `[]` | List of partner base URLs for cross-domain SSO chaining (e.g. `["https://other.example.com"]`). After login the session is forwarded to each partner using a short-lived single-use token. Leave empty to disable. |
+| `ssoPartners` | array | `[]` | List of partner base URLs for cross-domain SSO chaining (e.g. `["https://other.example.com"]`). After login the session is forwarded to each partner using a short-lived single-use token. Leave empty to disable. The full session payload (`userId`, `username`, `guildId`, `role`, `roles`, `roleIds`) is forwarded unchanged. |
 
 > **Backward compatibility:** The old single-guild format (`"guildId"` + `"roleMap"` etc. at top level) is still supported. If `guilds` is absent, the top-level `guildId` is used as a single-entry guild list.
 
@@ -2049,7 +2075,7 @@ export default async function myModule(coreData) {
 | 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
-| 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
+| 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
 | 00043 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
 | 00044 | `webpage-landing` | Landing page at `GET /` on the configured port (default 3111). Renders the role-filtered navigation menu (`wo.web.menu`) and a welcome message with username and role. Unauthenticated requests are redirected to `/auth/login`. Config key: `webpage-landing`. |
 | 00045 | `webpage-inpaint` | Redirect `GET /documents/*.png` to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. |
