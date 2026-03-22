@@ -3515,7 +3515,7 @@ Provides Discord OAuth2 SSO (Single Sign-On) for all web modules. Runs as a **pa
 ```json
 { "username": "alice", "userId": "123456789", "guildId": "406902788317118465", "role": "admin", "roles": ["admin", "staff"] }
 ```
-`guildId` contains the Discord Guild ID of the guild through which the user authenticated (the first guild in `guilds[]` where membership and `allowRoleIds` both matched).
+`guildId` contains the Discord Guild ID of the guild through which the user authenticated (the first guild in `guilds[]` where membership and `allowRoleIds` both matched). It is stored in the session cookie and shown in the profile dropdown. **Existing sessions created before this field was added will not contain `guildId` — users must log out and back in to receive a new token.**
 
 If no valid session exists, `wo.webAuth` is not set.
 
