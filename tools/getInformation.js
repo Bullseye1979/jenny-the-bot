@@ -659,41 +659,45 @@ async function getInformationInvoke(args, coreData) {
     }
 
     /* ── Iterative alias search (depth-limited) ── */
-    /* allAliases: every alias searched so far (prevents re-searching)
-       latestBlocks: blocks from the most recent pass (source for next alias extraction)
-       allBlocks: accumulated merged result across all passes               */
-    const allAliases = new Set(groups.map(g => g.base));
-    let allBlocks    = pass1.blocks;
-    let latestBlocks = pass1.blocks;
-    let totalAliases = [];
+    /* Strategy: aliases are added as variants to the ORIGINAL groups so that
+       - SQL in each pass searches for ALL accumulated terms together
+       - Scoring treats aliases as variants of the original entity (same coverage slot)
+       - Rows found only via alias still contribute coverage = 1 for the original group
+       allSearched: all terms already covered by previous SQL passes (avoids duplicate queries)
+       latestBlocks: blocks from the most recent pass (source for next alias extraction)  */
+    const allSearched = new Set(groups.flatMap(g => g.variants));
+    let allBlocks     = pass1.blocks;
+    let latestBlocks  = pass1.blocks;
+    let totalAliases  = [];
     let clustersConsidered = pass1.analyzed?.length || 0;
 
     if (includeAliasSearch && pass1.blocks.length) {
       for (let depth = 0; depth < aliasMaxDepth; depth++) {
         /* Extract aliases from rows found in the PREVIOUS pass only */
         const newAliases = (await getExtractAliases(latestBlocks, groups, giCfg, wo))
-          .filter(a => !allAliases.has(a));
+          .filter(a => !allSearched.has(a));
 
         if (!newAliases.length) break;
 
-        newAliases.forEach(a => allAliases.add(a));
+        /* Add new aliases as variants to ALL original groups so scoring
+           treats them as the same entity as the search terms */
+        for (const g of groups) {
+          for (const a of newAliases) {
+            if (!g.variants.includes(a)) g.variants.push(a);
+          }
+        }
+        newAliases.forEach(a => allSearched.add(a));
         totalAliases = [...totalAliases, ...newAliases];
 
-        const aliasGroups = newAliases.map((a, i) => ({
-          id: groups.length + totalAliases.length - newAliases.length + i,
-          base: a,
-          variants: [a],
-          parts: []
-        }));
-
-        const passN = await getRunSearchPass(db, channelIds, aliasGroups, passOpts);
+        /* Search using the fully extended groups — SQL now covers all accumulated variants */
+        const passN = await getRunSearchPass(db, channelIds, groups, passOpts);
         clustersConsidered += passN?.analyzed?.length || 0;
 
         if (passN?.blocks?.length) {
           allBlocks    = getMergeBlocks(allBlocks, passN.blocks);
           latestBlocks = passN.blocks;
         } else {
-          break; /* no new rows found — stop early */
+          break;
         }
       }
     }

@@ -1023,6 +1023,12 @@ How it works:
 
 Each round only extracts aliases from the rows found in the **previous** round (not all rows), so the AI focuses on the right context. Already-searched terms are excluded automatically to prevent loops.
 
+**Key design — aliases extend the original group, not a new group:**
+Found aliases (e.g. "Hippomann", "Hippo") are added as **variants of the original search group** (e.g. "Irene"), not as separate groups. This means:
+- SQL in each subsequent round searches for ALL accumulated terms (`WHERE content LIKE '%irene%' OR LIKE '%hippomann%' OR LIKE '%hippo%'`)
+- Scoring treats aliases as equivalent to the original term — a row containing only "Hippomann" still contributes `coverage = 1` for the "Irene" group
+- Clusters that mention only an alias still pass `minCoverage` correctly
+
 **What the alias AI extracts per round:**
 - Alternative names, nicknames, titles
 - Shortened/partial forms of any name (first word of compound names, abbreviations, root words — e.g. `"Hippo"` for `"Hippomann"`, `"Vect"` for `"Vecna"`)
