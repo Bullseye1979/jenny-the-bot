@@ -371,11 +371,37 @@ The player syncs automatically when the track changes. If a song ends, the next 
 
 ### Music library management
 
-Admins can manage the music library at **`/bard`**:
+Users with the appropriate role can manage the music library at **`/bard`**:
 - Edit track title, tags, and volume
 - Delete tracks
 - Preview any track with the ▶ button
 - Upload MP3 files with automatic AI-generated tags (if configured)
+
+#### Track tags
+
+Each track has exactly **6 tag slots** — the position determines what kind of tag belongs there:
+
+| Slot | Category | Description | Examples |
+|------|----------|-------------|---------|
+| 1 | **Location** | Where the music belongs — a physical place or setting | `dungeon`, `tavern`, `forest`, `city`, `cave`, `camp` |
+| 2 | **Situation** | What is happening — the type of scene or activity | `combat`, `exploration`, `rest`, `dialogue`, `travel` |
+| 3 | **Mood 1** | Primary atmosphere (most fitting mood first) | `dark`, `intense`, `epic`, `tense`, `eerie` |
+| 4 | **Mood 2** | Secondary atmosphere | `calm`, `mysterious`, `dramatic`, `cozy` |
+| 5 | **Mood 3** | Tertiary atmosphere | `warm`, `ambient`, `danger`, `battle` |
+| 6 | **Mood 4** | Least fitting mood (still relevant) | `foreboding`, `hopeful`, `grim`, `peaceful` |
+
+**Wildcard (`*`):** Leave slot 1 or 2 empty (shown as `*` in the editor) to make the track play in any location or situation respectively. Mood slots should always be filled.
+
+In the tag editor, all 6 tags are entered as a single comma-separated string, for example:
+```
+dungeon,combat,dark,intense,tense,danger
+```
+or with a wildcard location:
+```
+*,combat,intense,dark,battle,danger
+```
+
+The AI reads the chat every few minutes and picks the track whose tags best match the current mood and situation.
 
 ---
 
