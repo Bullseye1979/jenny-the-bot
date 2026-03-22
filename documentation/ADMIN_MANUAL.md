@@ -1016,14 +1016,20 @@ Solves the problem of entities referred to by different names across the convers
 
 How it works:
 1. **Pass 1** — standard search for the original keywords → finds matching rows
-2. **Round 1** — alias AI call on Pass 1 rows → finds "Hippomann" → SQL search → new rows
-3. **Round 2** (if `aliasMaxDepth ≥ 2`) — alias AI call on Round 1 rows → finds "Slaad" → SQL search → new rows
+2. **Round 1** — alias AI call on Pass 1 rows → finds aliases → SQL search → new rows
+3. **Round 2** (if `aliasMaxDepth ≥ 2`) — alias AI call on Round 1 rows → finds further aliases → SQL search → new rows
 4. … up to `aliasMaxDepth` rounds
 5. **Merge** — all passes combined, deduplicated by `(channel_id, rn)`, sorted chronologically
 
 Each round only extracts aliases from the rows found in the **previous** round (not all rows), so the AI focuses on the right context. Already-searched terms are excluded automatically to prevent loops.
 
-Cost per round: one cheap AI call (`gpt-4o-mini`, ~200 tokens output) + one DB query. Stops early if a round finds no new aliases or no new rows.
+**What the alias AI extracts per round:**
+- Alternative names, nicknames, titles
+- Shortened/partial forms of any name (first word of compound names, abbreviations, root words — e.g. `"Hippo"` for `"Hippomann"`, `"Vect"` for `"Vecna"`)
+- Descriptive labels and creature types
+- Implicit connections (e.g. "the creature turned out to be a Slaad" → `"Slaad"` is an alias)
+
+Cost per round: one cheap AI call (`gpt-4o-mini`, ~300 tokens output) + one DB query. Stops early if a round finds no new aliases or no new rows.
 
 > **Context overflow warning:** The defaults (`maxOutputLines: 800`, `maxLogChars: 6000`) can produce very large tool results when a topic appears frequently in the context log. If the AI pipeline hits a context-length error (HTTP 400, 128k tokens exceeded), reduce these values:
 > ```json

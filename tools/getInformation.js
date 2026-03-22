@@ -515,14 +515,17 @@ async function getExtractAliases(pass1Blocks, originalGroups, giCfg, wo) {
   const searchTerms = originalGroups.map(g => g.base);
 
   const systemPrompt =
-    `You are an alias extractor for conversation transcripts. ` +
-    `Given excerpts, identify ALL alternative names, nicknames, titles, or labels used to refer to the SAME entities as the search terms. ` +
-    `Rules: return ONLY a JSON array of short strings (names/labels, not sentences). ` +
-    `Max ${maxAliases} items. Exclude the original search terms. If none found, return []. ` +
-    `Example: ["Hippomann","Slaad","der Unbekannte"]`;
+    `You are an alias extractor for tabletop RPG session transcripts. ` +
+    `Given conversation excerpts and a list of search terms (entity names), find ALL other ways the SAME entities are referred to. ` +
+    `Include: alternative names, nicknames, titles, shortened forms, descriptive labels, creature types, and role descriptions. ` +
+    `Also include shortened/partial forms of any name: first word of compound names, common abbreviations, root words (e.g. "Hippo" for "Hippomann", "Vect" for "Vecna", "Lord" for "Lord of Shadows"). ` +
+    `Look for IMPLICIT connections too — e.g. if the text says "the creature turned out to be a Slaad" right after mentioning one of the search terms, "Slaad" is an alias. ` +
+    `Return ONLY a JSON array of short strings (single words or short phrases, NOT full sentences). ` +
+    `Max ${maxAliases} items. Exclude the original search terms themselves. If none found, return []. ` +
+    `Example: ["Hippo","Hippomann","Slaad","die Kreatur","der Unbekannte"]`;
 
   const userPrompt =
-    `Search terms: ${JSON.stringify(searchTerms)}\n\nConversation excerpts:\n${excerpts}`;
+    `Search terms (find aliases FOR these): ${JSON.stringify(searchTerms)}\n\nConversation excerpts:\n${excerpts}`;
 
   try {
     const resp = await fetch(endpoint, {
@@ -531,7 +534,7 @@ async function getExtractAliases(pass1Blocks, originalGroups, giCfg, wo) {
       body: JSON.stringify({
         model,
         temperature: 0,
-        max_tokens: 200,
+        max_tokens: 300,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user",   content: userPrompt   }
