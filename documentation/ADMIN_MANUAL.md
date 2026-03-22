@@ -1001,25 +1001,29 @@ Semantic cluster search over the stored conversation log.
 | `stripCode` | boolean | `false` | Collapse large triple-backtick code blocks (>30 lines) to `«code N lines»` |
 | `includeAnsweredTurns` | boolean | `false` | When `true`, skips the `answered_turns` filter — returns ALL user/agent rows including those that already received a bot reply. Required for voice transcripts (discord-voice always generates bot replies). |
 | `includeAssistantTurns` | boolean | `false` | When `true`, also includes `role=assistant` rows. Implies `includeAnsweredTurns`. |
-| `includeAliasSearch` | boolean | `false` | Enables 2-pass alias resolution (see below). |
-| `aliasMaxCount` | number | `8` | Maximum number of aliases to search for in Pass 2. |
+| `includeAliasSearch` | boolean | `false` | Enables iterative alias resolution (see below). |
+| `aliasMaxDepth` | number | `1` | Number of alias-extraction rounds. `1` = one extra pass (Irene→Hippomann). `2` = two extra passes (Irene→Hippomann→Slaad). Each round extracts aliases from the rows found in the **previous** round only. |
+| `aliasMaxCount` | number | `8` | Maximum number of new aliases per round. |
 | `aliasSampleRows` | number | `30` | Number of Pass 1 content rows fed to the alias AI call. |
 | `aliasEndpoint` | string | `wo.endpoint` | AI endpoint for alias extraction. Falls back to `workingObject.endpoint`. |
 | `aliasApiKey` | string | `wo.apiKey` | API key for alias extraction. Falls back to `workingObject.apiKey`. |
 | `aliasModel` | string | `"gpt-4o-mini"` | Model for alias extraction. Cheap model recommended. |
 | `aliasTimeoutMs` | number | `30000` | Timeout for the alias AI call. |
 
-**2-pass alias resolution (`includeAliasSearch: true`):**
+**Iterative alias resolution (`includeAliasSearch: true`):**
 
-Solves the problem of entities that are referred to by different names across the conversation (e.g. "Irene" → later called "Hippomann" → revealed as "Slaad"). Without alias search, these appear as three unrelated entities.
+Solves the problem of entities referred to by different names across the conversation (e.g. "Irene" → later called "Hippomann" → revealed as "Slaad"). Without alias search, these appear as three unrelated entities.
 
 How it works:
 1. **Pass 1** — standard search for the original keywords → finds matching rows
-2. **Alias extraction** — a small AI call (cheap model, `aliasSampleRows` rows) extracts all alternative names/labels used for the same entities in the Pass 1 results
-3. **Pass 2** — SQL search for the extracted aliases → finds additional rows
-4. **Merge** — Pass 1 + Pass 2 results are combined and deduplicated by `(channel_id, rn)`, then sorted chronologically
+2. **Round 1** — alias AI call on Pass 1 rows → finds "Hippomann" → SQL search → new rows
+3. **Round 2** (if `aliasMaxDepth ≥ 2`) — alias AI call on Round 1 rows → finds "Slaad" → SQL search → new rows
+4. … up to `aliasMaxDepth` rounds
+5. **Merge** — all passes combined, deduplicated by `(channel_id, rn)`, sorted chronologically
 
-Cost: one additional cheap AI call (e.g. `gpt-4o-mini`, ~200 tokens output) + one additional DB query per alias batch. The alias AI call is skipped entirely if Pass 1 returns no results or no aliases are found.
+Each round only extracts aliases from the rows found in the **previous** round (not all rows), so the AI focuses on the right context. Already-searched terms are excluded automatically to prevent loops.
+
+Cost per round: one cheap AI call (`gpt-4o-mini`, ~200 tokens output) + one DB query. Stops early if a round finds no new aliases or no new rows.
 
 > **Context overflow warning:** The defaults (`maxOutputLines: 800`, `maxLogChars: 6000`) can produce very large tool results when a topic appears frequently in the context log. If the AI pipeline hits a context-length error (HTTP 400, 128k tokens exceeded), reduce these values:
 > ```json

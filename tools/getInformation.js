@@ -622,6 +622,7 @@ async function getInformationInvoke(args, coreData) {
   const includeAssistantTurns  = giCfg.includeAssistantTurns === true;
   const includeAnsweredTurns   = includeAssistantTurns || giCfg.includeAnsweredTurns === true;
   const includeAliasSearch     = giCfg.includeAliasSearch === true;
+  const aliasMaxDepth          = Math.max(1, Math.floor(giCfg.aliasMaxDepth ?? 1));
 
   const fetchRangeSQL = getBuildFetchRangeSQL(includeAssistantTurns, includeAnsweredTurns);
 
@@ -654,28 +655,45 @@ async function getInformationInvoke(args, coreData) {
       };
     }
 
-    /* ── Alias search (Pass 2) ── */
-    let aliases = [];
-    let pass2 = null;
+    /* ── Iterative alias search (depth-limited) ── */
+    /* allAliases: every alias searched so far (prevents re-searching)
+       latestBlocks: blocks from the most recent pass (source for next alias extraction)
+       allBlocks: accumulated merged result across all passes               */
+    const allAliases = new Set(groups.map(g => g.base));
+    let allBlocks    = pass1.blocks;
+    let latestBlocks = pass1.blocks;
+    let totalAliases = [];
+    let clustersConsidered = pass1.analyzed?.length || 0;
 
     if (includeAliasSearch && pass1.blocks.length) {
-      aliases = await getExtractAliases(pass1.blocks, groups, giCfg, wo);
+      for (let depth = 0; depth < aliasMaxDepth; depth++) {
+        /* Extract aliases from rows found in the PREVIOUS pass only */
+        const newAliases = (await getExtractAliases(latestBlocks, groups, giCfg, wo))
+          .filter(a => !allAliases.has(a));
 
-      if (aliases.length) {
-        const aliasGroups = aliases.map((a, i) => ({
-          id: groups.length + i,
+        if (!newAliases.length) break;
+
+        newAliases.forEach(a => allAliases.add(a));
+        totalAliases = [...totalAliases, ...newAliases];
+
+        const aliasGroups = newAliases.map((a, i) => ({
+          id: groups.length + totalAliases.length - newAliases.length + i,
           base: a,
           variants: [a],
           parts: []
         }));
-        pass2 = await getRunSearchPass(db, channelIds, aliasGroups, passOpts);
+
+        const passN = await getRunSearchPass(db, channelIds, aliasGroups, passOpts);
+        clustersConsidered += passN?.analyzed?.length || 0;
+
+        if (passN?.blocks?.length) {
+          allBlocks    = getMergeBlocks(allBlocks, passN.blocks);
+          latestBlocks = passN.blocks;
+        } else {
+          break; /* no new rows found — stop early */
+        }
       }
     }
-
-    /* ── Merge ── */
-    const allBlocks = pass2?.blocks?.length
-      ? getMergeBlocks(pass1.blocks, pass2.blocks)
-      : pass1.blocks;
 
     if (!allBlocks.length) {
       return {
@@ -684,12 +702,12 @@ async function getInformationInvoke(args, coreData) {
           channel_id: mainChannelId, channel_ids: channelIds,
           groups: groups.map(g => ({ base: g.base, parts: g.parts })),
           rows_per_cluster: rowsPerCluster,
-          clusters_considered: (pass1.analyzed?.length || 0) + (pass2?.analyzed?.length || 0),
+          clusters_considered: clustersConsidered,
           clusters_selected: 0, printed_rows: 0,
           duration_ms: Date.now() - startedAt,
           include_assistant_turns: includeAssistantTurns,
           include_answered_turns: includeAnsweredTurns,
-          aliases_searched: aliases,
+          aliases_searched: totalAliases.length ? totalAliases : undefined,
           note: "Hits found but no cluster met minCoverage. Call getTimeline separately if a chronological overview is needed."
         }
       };
@@ -734,16 +752,16 @@ async function getInformationInvoke(args, coreData) {
       channel_ids: channelIds,
       groups: groups.map(g => ({ base: g.base, parts: g.parts })),
       rows_per_cluster: rowsPerCluster,
-      clusters_considered: (pass1.analyzed?.length || 0) + (pass2?.analyzed?.length || 0),
+      clusters_considered: clustersConsidered,
       clusters_selected: allBlocks.length,
       printed_rows: allPrinted.length,
       duration_ms: Date.now() - startedAt,
       include_assistant_turns: includeAssistantTurns,
       include_answered_turns: includeAnsweredTurns,
-      aliases_searched: aliases.length ? aliases : undefined,
+      aliases_searched: totalAliases.length ? totalAliases : undefined,
       note:
         "These are detail snippets ranked by keyword coverage. " +
-        (aliases.length ? `Alias search found ${aliases.length} alias(es): ${aliases.join(", ")}. ` : "") +
+        (totalAliases.length ? `Alias search found ${totalAliases.length} alias(es): ${totalAliases.join(", ")}. ` : "") +
         "Call getTimeline separately to get the full chronological event history."
     };
 

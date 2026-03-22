@@ -412,8 +412,9 @@ Information clustering and retrieval from the context log.
 | `stripCode` | boolean | `false` | Strip code blocks from context before clustering |
 | `includeAnsweredTurns` | boolean | `false` | Include user turns that already have a bot reply |
 | `includeAssistantTurns` | boolean | `false` | Include `role=assistant` rows; implies `includeAnsweredTurns` |
-| `includeAliasSearch` | boolean | `false` | Enable 2-pass alias resolution (see ADMIN_MANUAL) |
-| `aliasMaxCount` | number | `8` | Max aliases to extract and search in Pass 2 |
+| `includeAliasSearch` | boolean | `false` | Enable iterative alias resolution (see ADMIN_MANUAL) |
+| `aliasMaxDepth` | number | `1` | Alias-extraction rounds. `2` handles 3-step chains (A→B→C) |
+| `aliasMaxCount` | number | `8` | Max new aliases per round |
 | `aliasSampleRows` | number | `30` | Pass 1 rows fed to the alias AI call |
 | `aliasEndpoint` | string | `""` | Endpoint for alias AI call; falls back to `wo.endpoint` |
 | `aliasApiKey` | string | `""` | API key for alias AI call; falls back to `wo.apiKey` |
