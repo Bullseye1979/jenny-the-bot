@@ -20,7 +20,6 @@ const DEFAULT_TOKEN_WINDOW       = 5;
 const DEFAULT_MAX_OUTPUT_LINES   = 800;
 const DEFAULT_MIN_COVERAGE       = 1;
 const DEFAULT_EVENT_GAP_MINUTES  = 45;
-const DEFAULT_ALIAS_SAMPLE_ROWS  = 30;
 const DEFAULT_ALIAS_MAX          = 8;
 const DEFAULT_ALIAS_TIMEOUT_MS   = 30000;
 
@@ -490,22 +489,15 @@ async function getRunSearchPass(db, channelIds, groups, opts) {
 
 /* Extract aliases from Pass 1 rows using a small AI call.
    Returns an array of lowercase alias strings (may be empty). */
-async function getExtractAliases(pass1Blocks, originalGroups, giCfg, wo) {
+/* contentLines: array of { rn, content, sender } — may come from matched blocks OR bridge rows */
+async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
   const endpoint   = giCfg.aliasEndpoint   || wo.endpoint   || "";
   const apiKey     = giCfg.aliasApiKey     || wo.apiKey     || "";
   const model      = giCfg.aliasModel      || wo.model      || "gpt-4o-mini";
   const maxAliases = Math.max(1, Math.floor(giCfg.aliasMaxCount   ?? DEFAULT_ALIAS_MAX));
-  const sampleSize = Math.max(5, Math.floor(giCfg.aliasSampleRows ?? DEFAULT_ALIAS_SAMPLE_ROWS));
   const timeoutMs  = Math.max(5000, Math.floor(giCfg.aliasTimeoutMs ?? DEFAULT_ALIAS_TIMEOUT_MS));
 
   if (!endpoint || !apiKey) return [];
-
-  /* Collect content rows from Pass 1, skip meta lines */
-  const contentLines = pass1Blocks
-    .flatMap(b => b.lines)
-    .filter(l => Number.isInteger(l.rn))
-    .slice(0, sampleSize);
-
   if (!contentLines.length) return [];
 
   const excerpts = contentLines
@@ -558,6 +550,28 @@ async function getExtractAliases(pass1Blocks, originalGroups, giCfg, wo) {
     return [];
   }
 }
+
+
+/* Build a Set of "channel_id:rn" keys from a blocks array — used for diff. */
+function getBlockRowKeys(blocks) {
+  const keys = new Set();
+  for (const b of blocks)
+    for (const l of b.lines)
+      if (Number.isInteger(l.rn)) keys.add(`${l.channel_id}:${l.rn}`);
+  return keys;
+}
+
+
+/* Return only the content lines from newBlocks whose (channel_id, rn) is NOT in existingKeys. */
+function getDiffLines(newBlocks, existingKeys) {
+  const lines = [];
+  for (const b of newBlocks)
+    for (const l of b.lines)
+      if (Number.isInteger(l.rn) && !existingKeys.has(`${l.channel_id}:${l.rn}`))
+        lines.push(l);
+  return lines;
+}
+
 
 
 /* Merge blocks from two passes, deduplicate rows by (channel_id, rn), sort chronologically. */
@@ -625,7 +639,7 @@ async function getInformationInvoke(args, coreData) {
   const includeAssistantTurns  = giCfg.includeAssistantTurns === true;
   const includeAnsweredTurns   = includeAssistantTurns || giCfg.includeAnsweredTurns === true;
   const includeAliasSearch     = giCfg.includeAliasSearch === true;
-  const aliasMaxDepth          = Math.max(1, Math.floor(giCfg.aliasMaxDepth ?? 1));
+  const aliasMaxDepth          = Math.max(1, Math.floor(giCfg.aliasMaxDepth  ?? 1));
 
   const fetchRangeSQL = getBuildFetchRangeSQL(includeAssistantTurns, includeAnsweredTurns);
 
@@ -665,37 +679,44 @@ async function getInformationInvoke(args, coreData) {
        - Rows found only via alias still contribute coverage = 1 for the original group
        allSearched: all terms already covered by previous SQL passes (avoids duplicate queries)
        latestBlocks: blocks from the most recent pass (source for next alias extraction)  */
-    const allSearched = new Set(groups.flatMap(g => g.variants));
-    let allBlocks     = pass1.blocks;
-    let latestBlocks  = pass1.blocks;
-    let totalAliases  = [];
+    const allSearched    = new Set(groups.flatMap(g => g.variants));
+    let allBlocks        = pass1.blocks;
+    let prevBlockRowKeys = getBlockRowKeys(pass1.blocks);
+    let totalAliases     = [];
     let clustersConsidered = pass1.analyzed?.length || 0;
 
     if (includeAliasSearch && pass1.blocks.length) {
       for (let depth = 0; depth < aliasMaxDepth; depth++) {
-        /* Extract aliases from rows found in the PREVIOUS pass only */
-        const newAliases = (await getExtractAliases(latestBlocks, groups, giCfg, wo))
+        /* Alias input: rows from the relevant chunks of the current pass.
+           depth=0 → all content rows from pass1 blocks (already scored/relevant chunks).
+           depth>0 → only NEW rows added by the last merge (diff), so the AI focuses on
+                     the new context instead of re-reading already-processed content.
+           Rows are spread evenly across blocks so a large `aliasSampleRows` (default 300)
+           covers the full span of each chunk, not just the first N rows.              */
+        const sourceLines = depth === 0
+          ? pass1.blocks.flatMap(b => b.lines).filter(l => Number.isInteger(l.rn))
+          : getDiffLines(allBlocks, prevBlockRowKeys);
+
+        const newAliases = (await getExtractAliases(sourceLines, groups, giCfg, wo))
           .filter(a => !allSearched.has(a));
 
         if (!newAliases.length) break;
 
-        /* Add new aliases as variants to ALL original groups so scoring
-           treats them as the same entity as the search terms */
-        for (const g of groups) {
-          for (const a of newAliases) {
+        /* Extend original groups' variants — aliases score as equivalent to original term */
+        for (const g of groups)
+          for (const a of newAliases)
             if (!g.variants.includes(a)) g.variants.push(a);
-          }
-        }
+
         newAliases.forEach(a => allSearched.add(a));
         totalAliases = [...totalAliases, ...newAliases];
 
-        /* Search using the fully extended groups — SQL now covers all accumulated variants */
+        /* Search with fully extended groups */
         const passN = await getRunSearchPass(db, channelIds, groups, passOpts);
         clustersConsidered += passN?.analyzed?.length || 0;
 
         if (passN?.blocks?.length) {
-          allBlocks    = getMergeBlocks(allBlocks, passN.blocks);
-          latestBlocks = passN.blocks;
+          prevBlockRowKeys = getBlockRowKeys(allBlocks);   /* snapshot before merge */
+          allBlocks        = getMergeBlocks(allBlocks, passN.blocks);
         } else {
           break;
         }

@@ -1002,9 +1002,8 @@ Semantic cluster search over the stored conversation log.
 | `includeAnsweredTurns` | boolean | `false` | When `true`, skips the `answered_turns` filter — returns ALL user/agent rows including those that already received a bot reply. Required for voice transcripts (discord-voice always generates bot replies). |
 | `includeAssistantTurns` | boolean | `false` | When `true`, also includes `role=assistant` rows. Implies `includeAnsweredTurns`. |
 | `includeAliasSearch` | boolean | `false` | Enables iterative alias resolution (see below). |
-| `aliasMaxDepth` | number | `1` | Number of alias-extraction rounds. `1` = one extra pass (Irene→Hippomann). `2` = two extra passes (Irene→Hippomann→Slaad). Each round extracts aliases from the rows found in the **previous** round only. |
+| `aliasMaxDepth` | number | `1` | Number of alias-extraction rounds. `1` = one extra pass (Irene→Hippomann). `2` = two extra passes (Irene→Hippomann→Slaad). Each round extracts aliases from **new rows only** (diff from previous merge). |
 | `aliasMaxCount` | number | `8` | Maximum number of new aliases per round. |
-| `aliasSampleRows` | number | `30` | Number of Pass 1 content rows fed to the alias AI call. |
 | `aliasEndpoint` | string | `wo.endpoint` | AI endpoint for alias extraction. Falls back to `workingObject.endpoint`. |
 | `aliasApiKey` | string | `wo.apiKey` | API key for alias extraction. Falls back to `workingObject.apiKey`. |
 | `aliasModel` | string | `"gpt-4o-mini"` | Model for alias extraction. Cheap model recommended. |
@@ -1021,7 +1020,7 @@ How it works:
 4. … up to `aliasMaxDepth` rounds
 5. **Merge** — all passes combined, deduplicated by `(channel_id, rn)`, sorted chronologically
 
-Each round only extracts aliases from the rows found in the **previous** round (not all rows), so the AI focuses on the right context. Already-searched terms are excluded automatically to prevent loops.
+Each round only extracts aliases from **new rows** (diff between current and previous merge). Already-searched terms are excluded automatically to prevent loops.
 
 **Key design — aliases extend the original group, not a new group:**
 Found aliases (e.g. "Hippomann", "Hippo") are added as **variants of the original search group** (e.g. "Irene"), not as separate groups. This means:
