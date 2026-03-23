@@ -1,5 +1,5 @@
 /************************************************************************************/
-/* filename: bard-label-output.js                                                  */
+/* filename: 08050-bard-label-output.js                                                  */
 /* Version 1.0                                                                     */
 /* Purpose: Output module for the bard-label-gen flow. Reads wo.response from     */
 /*          core-ai-completions, parses the comma-separated tag list, validates    */
@@ -47,7 +47,7 @@ export default async function getBardLabelOutput(coreData) {
   // Positions 0-1 (location, situation) may be empty strings → wildcard.
   // Positions 2-5 (moods) are validated against validTags; invalid or overlong tags → blank.
   const rawParts = response.split(",").slice(0, 6);
-  while (rawParts.length < 6) rawParts.push(""); // pad to 6 if AI returned fewer
+  while (rawParts.length < 6) rawParts.push("");
 
   const sanitized = rawParts.map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""));
 
@@ -101,7 +101,7 @@ export default async function getBardLabelOutput(coreData) {
       if (!v || v.length > 25) continue;
       if (locationSet.has(v) && v !== loc) {
         log(`location scene-change: "${loc}" → "${v}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
-        usedIndices.delete(sanitized.indexOf(loc)); // release old index
+        usedIndices.delete(sanitized.indexOf(loc));
         loc = v; usedIndices.add(i);
         break;
       }

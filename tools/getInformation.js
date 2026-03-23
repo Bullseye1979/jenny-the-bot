@@ -1,6 +1,6 @@
 /**********************************************************************************/
 /* filename: getInformation.js                                                     *
-/* Version 1.1                                                                     *
+/* Version 1.0                                                                     *
 /* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
 /*          info snippets ranked by coverage then frequency.                       *
 /*          v1.1: 2-pass alias search — Pass 1 finds rows for original keywords,  *
@@ -715,7 +715,8 @@ async function getInformationInvoke(args, coreData) {
         clustersConsidered += passN?.analyzed?.length || 0;
 
         if (passN?.blocks?.length) {
-          prevBlockRowKeys = getBlockRowKeys(allBlocks);   /* snapshot before merge */
+          prevBlockRowKeys = getBlockRowKeys(allBlocks);
+
           allBlocks        = getMergeBlocks(allBlocks, passN.blocks);
         } else {
           break;

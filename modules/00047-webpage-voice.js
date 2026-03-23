@@ -340,7 +340,7 @@ function stopVAD() {
   if (vadTimer) { clearInterval(vadTimer); vadTimer = null; }
   if (analyser) { try { analyser.disconnect(); } catch(e) {} analyser = null; }
   if (audioCtx) { audioCtx.close().catch(function(){}); audioCtx = null; }
-  if (!recActive) clearVolume(); /* keep bar alive if rec is still running */
+  if (!recActive) clearVolume();
 }
 
 async function startRecording() {
@@ -388,10 +388,10 @@ async function stopAndSend() {
   var blob      = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
   var postUrl   = '/voice/audio?channelId=' + encodeURIComponent(channelId);
   if (alwaysOn) postUrl += '&alwaysOn=1';
-  handleRequest(blob, postUrl); /* fire-and-forget */
+  handleRequest(blob, postUrl);
   processing = false;
   if (alwaysOn) {
-    startRecording(); /* restart immediately for continuous listening */
+    startRecording();
   } else {
     btn.className = 'idle';
     setStatus('Ready');

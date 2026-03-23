@@ -1,5 +1,5 @@
 /************************************************************************************/
-/* filename: webpage-dashboard.js                                                    *
+/* filename: 00051-webpage-dashboard.js                                                    *
 /* Version 1.0                                                                       *
 /* Purpose: Live bot telemetry dashboard served as a webpage; reads structured       *
 /*          data from registry key dashboard:state (written by main.js).             *

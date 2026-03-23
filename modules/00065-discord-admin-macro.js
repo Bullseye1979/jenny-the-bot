@@ -1,5 +1,5 @@
 /**************************************************************
-/* filename: "discord-admin-macro.js"                        *
+/* filename: 00065-discord-admin-macro.js                        *
 /* Version 1.0                                               *
 /* Purpose: Slash admin command /macro with subcommands:     *
 /*          /macro create <name> <text> (overwrites)         *

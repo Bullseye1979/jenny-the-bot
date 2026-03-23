@@ -1,5 +1,5 @@
 /************************************************************************************/
-/* filename: bard-join.js                                                            *
+/* filename: 00035-bard-join.js                                                            *
 /* Version 1.0                                                                       *
 /* Purpose: Handles /bardstart and /bardstop in the discord-admin flow.             *
 /*          Creates or removes headless bard sessions (no voice channel required).  *

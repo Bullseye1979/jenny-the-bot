@@ -1,5 +1,5 @@
 /*******************************************************************************
-/* filename: "core-ai-roleplay.js"                                             *
+/* filename: 01003-core-ai-roleplay.js                                             *
 /* Version 1.0                                                                 *
 /* Purpose: Two-pass generation for models that struggle with multi-step.      *
 /*          Pass 1 (LLM): Generate normal text response.                       *

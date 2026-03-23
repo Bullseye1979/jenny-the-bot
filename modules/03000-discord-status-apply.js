@@ -1,5 +1,5 @@
 /**********************************************************************************************************************
-/* filename: "discord-status-apply.js"                                                                                *
+/* filename: 03000-discord-status-apply.js                                                                                *
 /* Version 1.0                                                                                                        *
 /* Purpose: Apply Discord presence using AI-generated status in workingObject.response                                *
 /**********************************************************************************************************************/

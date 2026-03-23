@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: "core-ai-context-writer.js"                                           *
+/* filename: 01004-core-ai-context-writer.js                                           *
 /* Version 1.0                                                                     *
 /* Purpose: Persists the conversation turns queued by core-ai-* modules into the   *
 /*          context DB. Each core-ai module (01000–01003) pushes assistant and tool *

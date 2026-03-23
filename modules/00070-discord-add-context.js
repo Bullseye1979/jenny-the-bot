@@ -1,5 +1,5 @@
 /********************************************************************************
-/* filename: "discord-add-context.js"                                           *
+/* filename: 00070-discord-add-context.js                                           *
 /* Version 1.0                                                                  *
 /* Purpose: Append the current user payload to the DB context with role=user    *
 /*          and preserved turn_id when present.                                 *

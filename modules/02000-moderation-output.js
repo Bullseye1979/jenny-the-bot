@@ -1,5 +1,5 @@
 /**************************************************************
-/* filename: "moderation-output.js"                           *
+/* filename: 02000-moderation-output.js                           *
 /* Version 1.0                                                *
 /* Purpose: Trigger-based moderation on AI output (silence only)*
 /**************************************************************/

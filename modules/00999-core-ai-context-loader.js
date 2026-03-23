@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: "core-ai-context-loader.js"                                           *
+/* filename: 00999-core-ai-context-loader.js                                           *
 /* Version 1.0                                                                     *
 /* Purpose: Pre-loads the conversation context (snapshot) from the context DB into *
 /*          wo._contextSnapshot before any core-ai module runs.                    *

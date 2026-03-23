@@ -250,7 +250,7 @@ Module-specific settings live under `config.<module-name>`. The most important s
 
 #### config.webpage-config-editor
 
-> **Replaces the old `config-editor` standalone flow.** The config editor now runs as a **webpage-flow module** (`modules/00047-webpage-config-editor.js`) on a dedicated port within the webpage flow. Add the port to `config.webpage.ports`.
+> **Replaces the old `config-editor` standalone flow.** The config editor now runs as a **webpage-flow module** (`modules/00044-webpage-config-editor.js`) on a dedicated port within the webpage flow. Add the port to `config.webpage.ports`.
 
 Serves the **JSON config editor SPA** (`GET /config`) — browse and edit every value in `core.json` without touching a text editor. Objects render as collapsible cards, flat arrays as tag chips, secrets as password fields.
 

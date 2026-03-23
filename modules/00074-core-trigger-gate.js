@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: 00075-core-trigger-gate.js                                            *
+/* filename: 00074-core-trigger-gate.js                                            *
 /* Version 1.0                                                                     *
 /* Purpose: Flow-agnostic trigger gate.                                            *
 /*          Stops the pipeline when wo.payload does not start with the configured  *

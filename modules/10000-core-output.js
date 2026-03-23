@@ -1,5 +1,5 @@
 /**************************************************************
-/* filename: "core-output.js"                                 *
+/* filename: 10000-core-output.js                                 *
 /* Version 1.0                                                *
 /* Purpose: Safely dumps coreData with redaction, rolling logs,*
 /*          per-flow object logs and per-flow last-object file *

@@ -1,5 +1,5 @@
 /**************************************************************
-/* filename: "discord-admin-avatar.js"                       *
+/* filename: 00060-discord-admin-avatar.js                       *
 /* Version 1.0                                               *
 /* Purpose: Slash-command avatar handler for the             *
 /*          "discord-admin" flow: regen, prompt, and URL.    *

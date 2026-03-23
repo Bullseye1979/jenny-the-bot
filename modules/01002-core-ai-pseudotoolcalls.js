@@ -1,5 +1,5 @@
 /******************************************************************************* 
-/* filename: "core-ai-pseudotoolcalls.js"                                      *
+/* filename: 01002-core-ai-pseudotoolcalls.js                                      *
 /* Version 1.0                                                                 *
 /* Purpose: Pseudo tool runner that renders a compact tool catalog and         *
 /*          executes pseudo tool invocations with schema checks.               *

@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: discord-add-files.js                                                  *
+/* filename: 00032-discord-add-files.js                                                  *
 /* Version 1.0                                                                     *
 /* Purpose: Appends Discord file URLs from workingObject.fileUrls into payload     *
 /*          as plain lines (one URL per line).                                     *

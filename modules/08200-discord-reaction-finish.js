@@ -1,5 +1,5 @@
 /***************************************************************
-/* filename: "discord-reaction-finish.js"                     *
+/* filename: 08200-discord-reaction-finish.js                     *
 /* Version 1.0                                                *
 /* Purpose: Clear hourglass and add check/cross reaction;     *
 /*          DM-safe by removing only own hourglass in DMs.    *

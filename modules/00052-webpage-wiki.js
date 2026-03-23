@@ -1275,9 +1275,9 @@ export default async function getWebpageWiki(coreData) {
   /* Expiry config — 0 = no expiry */
   const maxAgeDays = getMaxAgeDays(channel);
 
-  const seg1 = segments[1] || "";  /* slug / "search" / "api" / "images" */
-  const seg2 = segments[2] || "";  /* under api: "article" or filename */
-  const seg3 = segments[3] || "";  /* under api/article: slug */
+  const seg1 = segments[1] || "";
+  const seg2 = segments[2] || "";
+  const seg3 = segments[3] || "";
 
   let db;
   try {

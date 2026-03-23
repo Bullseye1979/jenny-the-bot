@@ -79,7 +79,8 @@ export default async function getWebpageRouter(coreData) {
     if (!urlPath.startsWith(pathPrefix))    continue;
 
     wo.flow    = flow;
-    wo.trigger = "";   // clear global default — core-channel-config re-applies if channel matches
+    /* core-channel-config re-applies the trigger if the channel matches */
+    wo.trigger = "";
 
     const channelId = resolveChannelId(
       String(route.channelIdSource || ""),
@@ -97,7 +98,7 @@ export default async function getWebpageRouter(coreData) {
       channelId: channelId || "(none)"
     });
 
-    break; // first match wins
+    break;
   }
 
   return coreData;

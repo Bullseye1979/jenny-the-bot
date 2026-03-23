@@ -3056,10 +3056,10 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 
 | Module File | Port | URL Prefix | Config Key | Purpose |
 |---|---|---|---|---|
-| `00047-webpage-config-editor.js` | 3111 | `/config` | `webpage-config-editor` | Visual config editor — collapsible cards, tag chips, password fields, add/remove attributes and blocks |
+| `00044-webpage-config-editor.js` | 3111 | `/config` | `webpage-config-editor` | Visual config editor — collapsible cards, tag chips, password fields, add/remove attributes and blocks |
 | `00048-webpage-chat.js` | 3112 | `/chat` | `webpage-chat` | Chat history viewer and message sender |
 | `00049-webpage-inpainting.js` | 3113 | `/inpainting` | `webpage-inpainting` | Image inpainting single-page app |
-| `00046-webpage-bard.js` | 3114 | `/bard` | `webpage-bard` | Bard music library manager |
+| `00043-webpage-bard.js` | 3114 | `/bard` | `webpage-bard` | Bard music library manager |
 | `00051-webpage-dashboard.js` | 3115 | `/dashboard` | `webpage-dashboard` | Live bot telemetry dashboard |
 | `00054-webpage-documentation.js` | 3116 | `/docs` | `webpage-documentation` | Renders the project documentation as HTML pages |
 | `00052-webpage-wiki.js` | 3117 | `/wiki` | `webpage-wiki` | AI-driven Fandom-style wiki, per-channel, with DALL-E images |
@@ -3554,7 +3554,7 @@ POST /voice/audio?channelId=<id>&transcribeOnly=1
  → 00028-webpage-voice-input    (set wo.audioFile, wo.channelID, wo.transcribeOnly=true)
  → 00030-core-voice-transcribe  (transcribe WAV → wo.payload, model: transcribeModelDiarize)
  → 00031-webpage-voice-add-context  (purge if configured, write one DB entry per speaker turn)
- → 00032-webpage-voice-transcribe-gate  (send HTTP 200 {transcript: ...}, set wo.stop=true)
+ → 00033-webpage-voice-transcribe-gate  (send HTTP 200 {transcript: ...}, set wo.stop=true)
  [AI and TTS skipped]
 ```
 
@@ -3656,7 +3656,7 @@ reverse_proxy /inpainting*  localhost:3113
 reverse_proxy /documents*   localhost:3113
 ```
 
-Module `00045-webpage-inpaint.js` redirects `GET /documents/*.png` requests to the inpainting SPA so that images served by the bot can be opened directly in the editor.
+Module `00042-webpage-inpaint.js` redirects `GET /documents/*.png` requests to the inpainting SPA so that images served by the bot can be opened directly in the editor.
 
 **`inpaintHost` configuration (module `00045`):**
 
@@ -3675,7 +3675,7 @@ Set `inpaintHost` to match the public URL of the inpainting SPA (without `https:
 
 ### 16.10 Authentication & SSO (`/auth`)
 
-**File:** `modules/00041-webpage-auth.js`
+**File:** `modules/00040-webpage-auth.js`
 **Config key:** `webpage-auth`
 
 Provides Discord OAuth2 SSO (Single Sign-On) for all web modules. Runs as a **passive module** — it processes every request on listed ports, sets `wo.webAuth` if a valid session cookie is present, and lets the request continue normally. It does not block or respond unless the URL is an `/auth/*` route.
@@ -3728,7 +3728,7 @@ If no valid session exists, `wo.webAuth` is not set.
 
 ### 16.11 Navigation Menu
 
-**File:** `modules/00043-webpage-menu.js`
+**File:** `modules/00041-webpage-menu.js`
 **Config key:** `webpage-menu`
 
 Sets `wo.web.menu` for every webpage request. Menu items are defined globally in `config["webpage-menu"].items[]` and filtered by the user's role before being passed to individual modules. Each module calls `getMenuHtml(wo)` to render the nav bar.
@@ -3767,7 +3767,7 @@ Sets `wo.web.menu` for every webpage request. Menu items are defined globally in
 
 Jenny's web modules use a layered permission system. Three independent components decide what a user can see and access:
 
-### Authentication (`00041-webpage-auth.js`)
+### Authentication (`00040-webpage-auth.js`)
 
 This module runs for every request on ports listed in `config["webpage-auth"].ports`. It reads session cookies, looks up the user in the configured user store, and sets `wo.webAuth`:
 
@@ -3777,7 +3777,7 @@ This module runs for every request on ports listed in `config["webpage-auth"].po
 
 If no valid session cookie is present, `wo.webAuth` is not set (or has empty fields). Unauthenticated users can still access the site — individual modules decide whether to allow or deny them.
 
-### Navigation Menu (`00043-webpage-menu.js`)
+### Navigation Menu (`00041-webpage-menu.js`)
 
 **Layout:** The header shows a `···` dropdown button on the left (all nav items inside), followed by the page title (`<h1>`, always right next to `···`), and a **role badge** on the far right (`margin-left:auto`). Clicking the role badge opens a profile panel showing username, User ID, Guild ID (from the authenticated guild), a dark/light mode toggle, and a logout link. The three elements are direct `<header>` flex children ordered via CSS (`nav-wrap` order:0 → `h1` order:1 → `nav-right-slot` order:2) so all page templates remain unchanged.
 

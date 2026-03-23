@@ -1,5 +1,5 @@
 /**********************************************************************************/
-/* filename: 00041-webpage-auth.js                                                */
+/* filename: 00040-webpage-auth.js                                                */
 /* Version 1.0                                                                    */
 /* Purpose: Discord OAuth2 SSO for webpage ports. Scope controlled via cfg.ports. */
 /*          Login routes handled only on cfg.loginPort. Writes wo.webAuth (role). */
@@ -266,7 +266,7 @@ function getRoleFromMember(cfg, member) {
 
 function getGuilds(cfg) {
   if (Array.isArray(cfg.guilds) && cfg.guilds.length) return cfg.guilds;
-  if (String(cfg.guildId || "").trim()) return [cfg]; // backward compat
+  if (String(cfg.guildId || "").trim()) return [cfg];
   return [];
 }
 
@@ -341,7 +341,8 @@ export default async function getWebpageAuth(coreData) {
   const path = String(wo.http?.path || "/");
   const cookies = getParseCookies(wo.http?.headers?.cookie);
 
-  const publicBase = getBaseUrl(wo); /* IMPORTANT: public origin (no internal port switching) */
+  /* getBaseUrl returns the public origin without internal port switching */
+  const publicBase = getBaseUrl(wo);
   const redirectUri = cfg.redirectUri ? String(cfg.redirectUri).trim() : (publicBase ? (publicBase + "/auth/callback") : "");
   if (!redirectUri) {
     setJsonResp(wo, 500, { error: "redirectUri missing" });

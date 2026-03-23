@@ -5,16 +5,10 @@
 /*          URL with optional directions text.                                     *
 /**********************************************************************************/
 
-import fs from "node:fs/promises";
 import path from "node:path";
-import crypto from "node:crypto";
-import { fileURLToPath } from "node:url";
+import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getLocation";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
-const ROOT_DIR   = path.join(__dirname, "..");
-const DOC_DIR    = path.join(ROOT_DIR, "pub", "documents");
 
 
 function getStr(value, fallback) {
@@ -33,15 +27,6 @@ function getClamp(n, min, max) {
 }
 
 
-function getEnsureAbsoluteUrl(urlPath, cfg) {
-  const baseCfg = getStr(cfg?.publicBaseUrl, getStr(cfg?.baseUrl, ""));
-  const base = (baseCfg || "").replace(/\/$/, "");
-  const normalized = String(urlPath || "").replace(/\\/g, "/");
-  if (/^https?:\/\//.test(normalized)) return normalized;
-  if (base) return `${base}${normalized.startsWith("/") ? "" : "/"}${normalized}`;
-  return normalized;
-}
-
 
 function getPickExtFromContentType(ct) {
   const s = String(ct || "").toLowerCase();
@@ -53,29 +38,11 @@ function getPickExtFromContentType(ct) {
 }
 
 
-function getSafeBaseFromHint(hint) {
-  const s = String(hint || "streetview")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 30);
-  return s || "streetview";
-}
-
-
-async function setSaveBufferAsPicture(buffer, nameHint, ct = "image/png", cfg) {
-  await fs.mkdir(DOC_DIR, { recursive: true });
+async function setSaveBufferAsPicture(buffer, nameHint, ct = "image/png", cfg, wo) {
   const ext = getPickExtFromContentType(ct);
-  const slug = getSafeBaseFromHint(nameHint);
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const rand = crypto.randomBytes(4).toString("hex");
-  const filename = `${slug}-${ts}-${rand}${ext}`;
-  const filePath = path.join(DOC_DIR, filename);
-  await fs.writeFile(filePath, buffer);
-  const publicRel = `/documents/${filename}`.replace(/\\/g, "/");
-  const publicUrl = getEnsureAbsoluteUrl(publicRel, cfg);
-  return { filename, filePath, publicUrl };
+  const publicBaseUrl = getStr(cfg?.publicBaseUrl, getStr(cfg?.baseUrl, ""));
+  const saved = await saveFile(wo, buffer, { prefix: "streetview", ext, publicBaseUrl });
+  return { filename: saved.filename, filePath: saved.absPath, publicUrl: saved.url };
 }
 
 
@@ -213,10 +180,10 @@ async function getDirectionsDetail(origin, destination, waypoints = [], apiKey, 
 }
 
 
-async function setDownloadStreetViewToLocal(imageUrl, nameHint, cfg, timeoutMs) {
+async function setDownloadStreetViewToLocal(imageUrl, nameHint, cfg, timeoutMs, wo) {
   const { buffer, contentType } = await getHttpBuffer(imageUrl, timeoutMs);
   if (!String(contentType).toLowerCase().startsWith("image/")) throw new Error("STREETVIEW_NON_IMAGE");
-  const saved = await setSaveBufferAsPicture(buffer, nameHint, contentType || "image/png", cfg);
+  const saved = await setSaveBufferAsPicture(buffer, nameHint, contentType || "image/png", cfg, wo);
   return { url: saved.publicUrl, filePath: saved.filePath };
 }
 
@@ -281,7 +248,7 @@ async function getInvoke(args, coreData) {
     if (imageSrc) {
       try {
         const nameHint = svCoord ? `streetview-${svCoord}` : `streetview-${destAddress}`;
-        const saved = await setDownloadStreetViewToLocal(imageSrc, nameHint, toolCfg, Math.max(timeoutMs, 30000));
+        const saved = await setDownloadStreetViewToLocal(imageSrc, nameHint, toolCfg, Math.max(timeoutMs, 30000), wo);
         imageUrl = saved.url;
       } catch {
         imageUrl = imageSrc;

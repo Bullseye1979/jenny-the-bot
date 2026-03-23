@@ -1,5 +1,5 @@
 /**************************************************************
-/* filename: "discord-trigger-gate.js"                        *
+/* filename: 00075-discord-trigger-gate.js                        *
 /* Version 1.0                                                *
 /* Purpose: Block if trigger not in first N words             *
 /**************************************************************/

@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: discord-channel-gate.js                                               *
+/* filename: 00020-core-channel-gate.js                                               *
 /* Version 1.0                                                                     *
 /* Purpose: Stops the flow when a channel is not allowed and logs the outcome.     *
 /************************************************************************************/

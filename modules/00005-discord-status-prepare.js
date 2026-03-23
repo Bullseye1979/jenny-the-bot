@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: discord-status-prepare.js                                             *
+/* filename: 00005-discord-status-prepare.js                                             *
 /* Version 1.0                                                                     *
 /* Purpose: Prepares AI prompt for Discord presence generation.                    *
 /************************************************************************************/

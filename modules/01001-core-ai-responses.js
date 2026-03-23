@@ -1,26 +1,18 @@
-/********************************************************************************
-/* filename: "core-ai-responses.js"                                             *
-/* Version 1.0                                                                  *
-/* Purpose: Responses runner (GPT-5) with context translation, real tool        *
-/*          handling, image persistence, and file-based logging (no console).   *
-/*          Accumulates reasoning summaries across iterations (incl. tool calls)*
-/*          and returns a final combined summary.                               *
-/*          Adds parser fallbacks for Responses text extraction.                *
-/*          When tool-call budget is exhausted, forces a final synthesis run    *
-/*          with tools disabled (tool_choice="none").                           *
-/*          Built-in Responses tools are controlled via workingObject.ResponseTools*
-/*          (defaults to OFF when missing/empty).                               *
-/*                                                                              *
-/* Fix v1.1: Persist image-only Responses into context by writing an assistant  *
-/*          turn even when parsed.text is empty. Persisted content includes     *
-/*          hosted image links (and any assistant text).                        *
-/*                                                                              *
-/* Fix: Prevent web_search outputs (and any generic "url" fields) from being    *
-/*      misclassified as images by restricting image extraction to explicit     *
-/*      image nodes + likely image URLs/mime only.                              *
-/********************************************************************************/
+/************************************************************************************/
+/* filename: 01001-core-ai-responses.js                                             *
+/* Version 1.0                                                                      *
+/* Purpose: Responses runner with context translation, real tool handling,          *
+/*          image persistence via file.js, and file-based logging (no console).     *
+/*          Accumulates reasoning summaries across iterations (incl. tool calls)    *
+/*          and returns a final combined summary.                                   *
+/*          When tool-call budget is exhausted, forces a final synthesis run        *
+/*          with tools disabled (tool_choice="none").                               *
+/*          Built-in Responses tools are controlled via workingObject.ResponseTools *
+/*          (defaults to OFF when missing/empty).                                   *
+/************************************************************************************/
 import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
+import { saveFile } from "../core/file.js";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -29,7 +21,6 @@ const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
 const MODULE_NAME = "core-ai-responses";
 const DEBUG_DIR = path.resolve("./pub/debug");
-const DOC_DIR = path.resolve("./pub/documents");
 
 
 function getAssistantAuthorName(wo) {
@@ -68,8 +59,6 @@ function setEnsureDir(dirPath) {
 
 function setEnsureDebugDir() { setEnsureDir(DEBUG_DIR); }
 
-
-function setEnsureDocDir() { setEnsureDir(DOC_DIR); }
 
 
 function getSafeJSONStringify(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj); } }
@@ -433,16 +422,14 @@ function getBuildUrl(filename, baseUrl) {
 
 
 async function setSaveB64(b64, mime, baseUrl, wo) {
-  setEnsureDocDir();
   const idemp = getIdemp(wo);
   const hash = getSha256OfBase64(b64 || "");
   if (idemp.images.has(hash)) return getBuildUrl(`DUP-${hash}.png`, baseUrl);
   idemp.images.add(hash);
 
   const ext = getExtFromMime(mime || "image/png");
-  const filename = `${Date.now()}-${randomUUID()}${ext}`;
-  fs.writeFileSync(path.join(DOC_DIR, filename), Buffer.from(b64, "base64"));
-  return getBuildUrl(filename, baseUrl);
+  const saved = await saveFile(wo, Buffer.from(b64, "base64"), { prefix: "img", ext, publicBaseUrl: baseUrl });
+  return saved.url;
 }
 
 
@@ -454,7 +441,6 @@ async function getFetch() {
 
 
 async function setMirrorURL(url, baseUrl, wo) {
-  setEnsureDocDir();
   const idemp = getIdemp(wo);
   const key = `url:${createHash("sha256").update(url || "").digest("hex")}`;
   if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(url).digest("hex")}.png`, baseUrl);
@@ -466,15 +452,13 @@ async function setMirrorURL(url, baseUrl, wo) {
 
   const mime = res.headers.get("content-type") || "image/png";
   const ext = getExtFromMime(mime);
-  const filename = `${Date.now()}-${randomUUID()}${ext}`;
   const buf = Buffer.from(await res.arrayBuffer());
-  fs.writeFileSync(path.join(DOC_DIR, filename), buf);
-  return getBuildUrl(filename, baseUrl);
+  const saved = await saveFile(wo, buf, { prefix: "img", ext, publicBaseUrl: baseUrl });
+  return saved.url;
 }
 
 
 async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }, wo) {
-  setEnsureDocDir();
   const idemp = getIdemp(wo);
   const key = `file:${fileId}`;
   if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(fileId).digest("hex")}.png`, baseUrl);
@@ -494,10 +478,9 @@ async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, e
 
   const mime = res.headers.get("content-type") || "image/png";
   const ext = getExtFromMime(mime);
-  const filename = `${Date.now()}-${randomUUID()}${ext}`;
   const buf = Buffer.from(await res.arrayBuffer());
-  fs.writeFileSync(path.join(DOC_DIR, filename), buf);
-  return getBuildUrl(filename, baseUrl);
+  const saved = await saveFile(wo, buf, { prefix: "img", ext, publicBaseUrl: baseUrl });
+  return saved.url;
 }
 
 

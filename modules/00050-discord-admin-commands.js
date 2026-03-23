@@ -1,5 +1,5 @@
 /**************************************************************
-/* filename: "discord-admin-commands.js"                     *
+/* filename: 00050-discord-admin-commands.js                     *
 /* Version 1.0                                               *
 /* Purpose: Slash admin commands for "discord-admin" flow    *
 /*          plus DM-only text commands for purge and DB      *

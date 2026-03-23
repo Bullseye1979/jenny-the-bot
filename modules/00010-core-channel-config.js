@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: core-channel-config.js                                                *
+/* filename: 00010-core-channel-config.js                                                *
 /* Version 1.0                                                                     *
 /* Purpose: Applies strict hierarchical channel/flow/user overrides.               *
 /************************************************************************************/

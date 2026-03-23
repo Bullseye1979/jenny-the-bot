@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: discord-admin-gdpr.js                                                 *
+/* filename: 00025-discord-admin-gdpr.js                                                 *
 /* Version 1.0                                                                     *
 /* Purpose: Handles /gdpr (text|voice) (0|1) command; updates consent table and    *
 /*          resets disclaimer when both chat and voice consent are 0.              *

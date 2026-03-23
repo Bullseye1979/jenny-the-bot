@@ -1,5 +1,5 @@
 /****************************************************************************************************************
-* filename: webpage-inpaint.js                                                                                 *
+* filename: 00042-webpage-inpaint.js                                                                                 *
 * version: 1.0                                                                                                 *
 * purpose: Redirects eligible image GET requests under /documents to a configurable inpainting host, sends     *
 *          the response immediately, and sets jump so normal modules are skipped while jump-modules run.       *

@@ -1,5 +1,5 @@
 /************************************************************************************/
-/* filename: bard-cron.js                                                          */
+/* filename: 00036-bard-cron.js                                                          */
 /* Version 1.0                                                                     */
 /* Purpose: Prepares the bard-label-gen flow payload for core-ai-completions.     */
 /*          Reads channel context, builds a system prompt (tag list + current      */
@@ -230,9 +230,9 @@ export default async function getBardCron(coreData) {
       // _bardLastRunKey and _bardLastRunTs are written to registry by bard-label-output
       // only after a successful AI response — preventing the stuck-lastrun bug.
       wo._bardGuildId     = getStr(session.guildId);
-      wo._bardValidTags   = [...tagCategories.all];       // full set — mood validation in output module
-      wo._bardLocations   = [...tagCategories.locations]; // for position rescue in output module
-      wo._bardSituations  = [...tagCategories.situations];// for position rescue in output module
+      wo._bardValidTags   = [...tagCategories.all];
+      wo._bardLocations   = [...tagCategories.locations];
+      wo._bardSituations  = [...tagCategories.situations];
       wo._bardLastRunKey  = lastRunKey;
       wo._bardLastRunTs   = targetNowTs;
 
@@ -241,7 +241,7 @@ export default async function getBardCron(coreData) {
       if (!wo.model) wo.model = "gpt-4o-mini";
 
       wo.temperature       = 0.3;
-      wo.maxTokens         = 80; // 6 labels ~ 50 chars, 80 tokens is ample
+      wo.maxTokens         = 80;
       wo.maxLoops          = 1;
       wo.useAiModule       = "completions";
       wo.includeHistory    = false;
@@ -258,7 +258,7 @@ export default async function getBardCron(coreData) {
         currentLabels
       });
 
-      break; // one guild per flow run
+      break;
     } catch (e) {
       log(`error preparing session ${sessionKey}: ${e?.message}`, "error", { moduleName: MODULE_NAME });
     }

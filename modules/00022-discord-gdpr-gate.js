@@ -1,5 +1,5 @@
 /************************************************************************************
-/* filename: discord-gdpr-gate.js                                                  *
+/* filename: 00022-discord-gdpr-gate.js                                                  *
 /* Version 1.0                                                                     *
 /* Purpose: GDPR gate for discord and discord-voice flows; sends disclaimer DM     *
 /*          once, enforces consent, and skips DMs and bot users.                   *

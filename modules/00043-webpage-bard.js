@@ -1,5 +1,5 @@
 /**********************************************************************************/
-/* filename: 00046-webpage-bard.js                                                */
+/* filename: 00043-webpage-bard.js                                                */
 /* Version 1.0                                                                    */
 /* Purpose: Bard music manager SPA (port 3114, /bard-admin). Provides MP3 upload */
 /*          with auto-tagging, tag editor, play-preview buttons, and a live Now  */
@@ -276,8 +276,8 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg) {
   parsed = parsed.slice(0, 6);
   const tags = parsed.map((t, i) => {
     const clean = String(t || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
-    if (i >= 2 && !clean) return "ambient"; // fallback for empty mood slots
-    return clean; // location/situation: keep empty as empty
+    if (i >= 2 && !clean) return "ambient";
+    return clean;
   });
   return tags;
 }

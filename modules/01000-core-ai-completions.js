@@ -1,5 +1,5 @@
 /********************************************************************************
-/* filename: "core-ai-completions.js"                                           *
+/* filename: 01000-core-ai-completions.js                                           *
 /* Version 1.0                                                                  *
 /* Purpose: Platform-agnostic AI runner for chat completions with real tool     *
 /*          calls only                                                          *
