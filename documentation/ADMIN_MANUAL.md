@@ -2155,7 +2155,7 @@ export default async function myModule(coreData) {
 | 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
 | 00043 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
 | 00044 | *(deleted)* | `webpage-landing` has been removed. The landing page (`GET /`) is no longer a separate module. |
-| 00045 | `webpage-inpaint` | Redirect `GET /documents/*.png` to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. |
+| 00042 | `webpage-inpaint` | Redirect `GET /documents/*.<ext>` (PNG, JPG, JPEG, WebP, GIF, BMP) to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. Use the path-only form (`"/inpainting"`) when hosting under multiple domains so the redirect stays on the same domain as the request (avoids cross-domain session cookie loss). |
 | 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. Version 1.0. |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
@@ -3658,18 +3658,18 @@ reverse_proxy /documents*   localhost:3113
 
 Module `00042-webpage-inpaint.js` redirects `GET /documents/*.png` requests to the inpainting SPA so that images served by the bot can be opened directly in the editor.
 
-**`inpaintHost` configuration (module `00045`):**
+**`inpaintHost` configuration (module `00042`):**
 
 ```json
 "webpage-inpaint": {
   "flow":        ["webpage"],
-  "inpaintHost": "jenny.example.com/inpainting"
+  "inpaintHost": "/inpainting"
 }
 ```
 
-When `inpaintHost` contains a hostname (does not start with `/`), the redirect target is derived directly from that value. When `inpaintHost` starts with `/`, it is appended to the hostname from the incoming HTTP request. This allows the same config to work whether you access the bot via `http://localhost` during development or via `https://jenny.example.com` in production.
+When `inpaintHost` contains a hostname (does not start with `/`), the redirect target is derived directly from that value. When `inpaintHost` starts with `/`, it is appended to the hostname from the incoming HTTP request.
 
-Set `inpaintHost` to match the public URL of the inpainting SPA (without `https://`), e.g. `"jenny.example.com/inpainting"`.
+**Recommended:** use the path-only form `"/inpainting"`. This keeps the redirect on the same domain as the original request, so the user's session cookie is valid on the inpainting SPA without having to log in separately. A fixed hostname (e.g. `"jenny.example.com/inpainting"`) only works reliably when users exclusively access the bot through that one domain.
 
 ---
 

@@ -1044,16 +1044,16 @@ Redirect module (`modules/00042-webpage-inpaint.js`). Intercepts `GET /documents
 ```jsonc
 "webpage-inpaint": {
   "flow":        ["webpage"],
-  "inpaintHost": "jenny.example.com/inpainting"
+  "inpaintHost": "/inpainting"
 }
 ```
 
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `inpaintHost` | Redirect target. **When the value contains a hostname** (does not start with `/`), it is used as-is as the redirect destination host + path, e.g. `"jenny.example.com/inpainting"`. **When the value starts with `/`**, it is treated as a path suffix appended to the request's own hostname, e.g. `"/inpainting"` → `<request-host>/inpainting`. |
+| `inpaintHost` | Redirect target. **When the value contains a hostname** (does not start with `/`), it is used as-is as the redirect destination host + path, e.g. `"jenny.example.com/inpainting"`. **When the value starts with `/`**, it is treated as a path suffix appended to the request's own hostname, e.g. `"/inpainting"` → `<request-host>/inpainting`. **Recommended:** use the path-only form so the redirect stays on the same domain and the user's session cookie remains valid. A fixed hostname only works when users access the bot exclusively through that one domain. |
 
-> Only PNG files under `/documents/` are redirected. All other paths pass through unchanged.
+> Image files (PNG, JPG, JPEG, WebP, GIF, BMP) under `/documents/` are redirected. All other paths pass through unchanged. Add `?raw=1` to bypass the redirect and receive the raw file.
 
 ---
 
