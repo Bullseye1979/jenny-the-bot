@@ -528,18 +528,18 @@ function getStyleCss() {
 
 
 function buildPageHeader(title, basePath, channelId, menu, role, webAuth) {
-  const chPath = channelId ? `${basePath}/${channelId}` : basePath;
-  const searchHtml = channelId
-    ? `<form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get"><input class="wiki-search-input" type="text" name="q" placeholder="Search or create…" autocomplete="off"><button class="wiki-search-btn" type="submit">Go</button></form>`
+  const chPath   = channelId ? `${basePath}/${channelId}` : basePath;
+  const menuHtml = getMenuHtml(menu, chPath, role, null, null, webAuth);
+  const searchBar = channelId
+    ? `<div class="wiki-search-bar"><form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get"><input class="wiki-search-input" type="text" name="q" placeholder="Search or create…" autocomplete="off"><button class="wiki-search-btn" type="submit">Go</button></form></div>`
     : "";
-  const menuHtml = getMenuHtml(menu, chPath, role, searchHtml, null, webAuth);
   return `<header>
   <a class="wiki-logo-link" href="${escHtml(chPath)}">
     <span class="wiki-logo">🗺️</span>
     <span class="wiki-title">${escHtml(title)}</span>
   </a>
   ${menuHtml}
-</header>`;
+</header>${searchBar}`;
 }
 
 
@@ -581,11 +581,13 @@ a { color: var(--wiki-link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .wiki-logo-link { display: flex; align-items: center; gap: 6px; color: #f1f5f9; font-size: 15px; font-weight: 700; white-space: nowrap; letter-spacing: -.2px; text-decoration: none; flex-shrink: 0; }
 .wiki-logo { font-size: 1em; }
+.wiki-search-bar { display: flex; justify-content: flex-end; padding: 6px 16px; background: var(--wiki-surface); border-bottom: 1px solid var(--wiki-border); }
 .wiki-search-form { display: flex; gap: 6px; }
 .wiki-search-input { background: var(--wiki-bg); border: 1px solid var(--wiki-border); color: var(--wiki-text); padding: 7px 12px; border-radius: 4px; width: 260px; font-size: 0.95em; }
 .wiki-search-input:focus { outline: none; border-color: var(--wiki-accent); }
 .wiki-search-btn { background: var(--wiki-accent); color: #fff; border: none; padding: 7px 16px; border-radius: 4px; cursor: pointer; font-size: 0.95em; }
 .wiki-search-btn:hover { background: #c73450; }
+@media (max-width: 600px) { .wiki-search-bar { padding: 6px 10px; } .wiki-search-input { width: 100%; min-width: 0; } .wiki-search-form { width: 100%; } }
 .wiki-breadcrumb { background: var(--wiki-surface2); padding: 7px 24px; font-size: 0.85em; color: var(--wiki-text-muted); border-bottom: 1px solid var(--wiki-border); }
 .wiki-breadcrumb a { color: var(--wiki-text-muted); }
 .wiki-breadcrumb a:hover { color: var(--wiki-link); }
