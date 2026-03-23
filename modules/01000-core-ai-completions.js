@@ -4,7 +4,7 @@
 /* Purpose: Platform-agnostic AI runner for chat completions with real tool     *
 /*          calls only                                                          *
 /********************************************************************************/
-import { getContext, setContext } from "../core/context.js";
+import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 
 const MODULE_NAME = "core-ai-completions";
@@ -19,7 +19,7 @@ function getAssistantAuthorName(wo) {
 
 
 function getShouldRunForThisModule(wo) {
-  const v = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
+  const v = String(wo?.useAiModule ?? "").trim().toLowerCase();
   return v === "completions";
 }
 
@@ -42,7 +42,6 @@ function getStr(value, def) { return (typeof value === "string" && value.length)
 function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
   if (!s) return false;
-  // Ends with a recognised closing character — treat as complete
   if (/[.!?)\]"'`}]$/.test(s)) return false;
   return true;
 }
@@ -63,15 +62,6 @@ function getKiCfg(wo) {
   const includeHistoryTools = getBool(wo?.includeHistoryTools, false);
   const includeRuntimeContext = getBool(wo?.includeRuntimeContext, false);
   const toolsList = Array.isArray(wo?.tools) ? wo.tools : [];
-  if (Array.isArray(wo?.tools) && !Array.isArray(wo?.tools)) {
-    wo.logging?.push({
-      timestamp: new Date().toISOString(),
-      severity: "warn",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: 'Config key "tools" is ignored. Use "tools" (capital T).'
-    });
-  }
   return {
     includeHistory,
     includeHistoryTools,
@@ -204,10 +194,7 @@ function getExpandedToolArgs(args, wo) {
         module: MODULE_NAME,
         exitStatus: "success",
         message: `Expanded tool argument "${key}" to full assistant text.`,
-        details: {
-          original_length: v.length,
-          full_length: full.length
-        }
+        details: { original_length: v.length, full_length: full.length }
       });
       return { ...args, [key]: full };
     }
@@ -248,7 +235,6 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
-  /* Channel-specific toolcall key (for API / browser-extension consumers) */
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   try {
     try { await putItem(name, "status:tool"); } catch {}
@@ -307,13 +293,13 @@ async function getSystemContent(wo, kiCfg) {
     "Runtime info:",
     `- current_time_iso: ${nowIso}`,
     `- timezone_hint: ${tz}`,
-    "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
+    "- When the user says \u201ctoday\u201d, \u201ctomorrow\u201d, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
     "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
   ].join("\n");
   const commonPolicy = [
     "Policy:",
     "- Do not answer unrelated older user requests.",
-    "- If the latest user message asks you to continue your previous response, continue exactly where you stopped — do not repeat, summarize, or restart.",
+    "- If the latest user message asks you to continue your previous response, continue exactly where you stopped \u2014 do not repeat, summarize, or restart.",
     "- If tools are available, use them only when necessary.",
     "- When you emit a tool call, do not include extra prose in the same turn.",
     "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format"
@@ -346,14 +332,13 @@ async function getSystemContent(wo, kiCfg) {
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
   if (!Array.isArray(wo.logging)) wo.logging = [];
-  const skipContextWrites = wo?.doNotWriteToContext === true;
   if (!getShouldRunForThisModule(wo)) {
     wo.logging.push({
       timestamp: new Date().toISOString(),
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "skipped",
-      message: `Skipped: useAiModule="${String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim()}" != "completions"`
+      message: `Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" != "completions"`
     });
     return coreData;
   }
@@ -388,7 +373,7 @@ export default async function getCoreAi(coreData) {
   const sendRealTools = kiCfg.exposeTools;
   const toolModules = sendRealTools ? await getToolsByName(kiCfg.toolsList, wo) : [];
   const toolDefs = sendRealTools ? getToolDefs(toolModules) : [];
-  const persistQueue = [];
+  if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
   let accumulatedText = "";
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     const controller = new AbortController();
@@ -434,7 +419,7 @@ export default async function getCoreAi(coreData) {
         message: `AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${typeof msg.content === "string" ? msg.content.length : 0} tool_calls=${toolCalls?.length ?? 0}`
       });
       const assistantMsg = {
-      role: "assistant",
+        role: "assistant",
         authorName: getAssistantAuthorName(wo),
         content: typeof msg.content === "string" ? msg.content : ""
       };
@@ -465,22 +450,18 @@ export default async function getCoreAi(coreData) {
       }
       messages.push(assistantMsg);
       if (assistantMsg.content || (Array.isArray(assistantMsg.tool_calls) && assistantMsg.tool_calls.length)) {
-        persistQueue.push(getWithTurnId(assistantMsg, wo));
+        wo._contextPersistQueue.push(getWithTurnId(assistantMsg, wo));
       }
       if (toolCalls && toolCalls.length && toolModules.length) {
         wo._fullAssistantText = accumulatedText;
         for (const tc of toolCalls) {
           const toolMsg = await getExecToolCall(toolModules, tc, coreData);
           messages.push(toolMsg);
-          persistQueue.push(getWithTurnId(toolMsg, wo));
+          wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
         }
         wo._fullAssistantText = undefined;
         continue;
       }
-      // Continue when: token limit hit (explicit) OR finish_reason is absent and the
-      // output appears truncated (local backends like oobabooga sometimes return null
-      // instead of "length" when hitting a stop token mid-sentence).
-      // Not applied for finish === "stop" to avoid false positives on short outputs.
       const cutOff = finish === "length" || getLooksCutOff(chunkText);
       if (cutOff) {
         const cont = {
@@ -488,7 +469,7 @@ export default async function getCoreAi(coreData) {
           content: "Continue exactly where you stopped. Do not restart, do not summarize, do not repeat the previous text. Output only the missing continuation."
         };
         messages.push(cont);
-        persistQueue.push(getWithTurnId(cont, wo));
+        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         wo.logging.push({
           timestamp: new Date().toISOString(),
           severity: "info",
@@ -496,7 +477,6 @@ export default async function getCoreAi(coreData) {
           exitStatus: "success",
           message: `Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`
         });
-        /* Disable tools for the continuation pass — model should resume output, not call more tools */
         wo.__forceNoTools = true;
         continue;
       }
@@ -517,28 +497,6 @@ export default async function getCoreAi(coreData) {
     } finally {
       clearTimeout(timer);
     }
-  }
-  if (!skipContextWrites) {
-    for (const turn of persistQueue) {
-      try { await setContext(wo, turn); }
-      catch (e) {
-        wo.logging.push({
-          timestamp: new Date().toISOString(),
-          severity: "warn",
-          module: MODULE_NAME,
-          exitStatus: "success",
-          message: `Persist failed (role=${turn.role}): ${e?.message || String(e)}`
-        });
-      }
-    }
-  } else {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `doNotWriteToContext=true → skipped context persistence for ${persistQueue.length} turn(s).`
-    });
   }
   wo.response = (accumulatedText || "").trim() || "[Empty AI response]";
   wo.logging.push({

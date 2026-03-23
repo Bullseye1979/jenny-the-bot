@@ -9,6 +9,8 @@
 import { getPrefixedLogger } from "../core/logging.js";
 import { setPurgeContext, setFreezeContext } from "../core/context.js";
 
+const MODULE_NAME = "core-admin-commands";
+
 function getStr(value) {
   if (typeof value === "string") return value;
   if (value == null) return "";

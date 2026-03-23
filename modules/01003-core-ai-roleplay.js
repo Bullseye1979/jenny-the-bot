@@ -1,4 +1,4 @@
-/******************************************************************************* 
+/*******************************************************************************
 /* filename: "core-ai-roleplay.js"                                             *
 /* Version 1.0                                                                 *
 /* Purpose: Two-pass generation for models that struggle with multi-step.      *
@@ -12,7 +12,7 @@
 /*          the Pass-1 text on its own line.                                   *
 /* Persistence: Only persist the Pass-1 assistant text (NOT the prompt pass). *
 /*******************************************************************************/
-import { getContext, setContext } from "../core/context.js";
+import { getContext } from "../core/context.js";
 
 const MODULE_NAME = "core-ai-roleplay";
 
@@ -44,8 +44,8 @@ function getLooksCutOff(text) {
 
 
 function getShouldRunForThisModule(wo) {
-  const v = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
-  return v === "roleplay" || v === "core-ai-roleplay" || v === "Roleplay";
+  const v = String(wo?.useAiModule ?? "").trim().toLowerCase();
+  return v === "roleplay" || v === "core-ai-roleplay";
 }
 
 
@@ -66,7 +66,7 @@ function getKiCfg(wo) {
     imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 260),
     imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.35),
     imagePersonaHint: getStr(wo?.ImagePersonaHint, ""),
-    imageContextTurns: Math.max(0, getNum(wo?.ImageContextTurns, 8)), /* last N messages to feed into pass2 */
+    imageContextTurns: Math.max(0, getNum(wo?.ImageContextTurns, 8)),
     maxLoops: Math.max(1, getNum(wo?.maxLoops, 5))
   };
 }
@@ -285,12 +285,11 @@ export default async function getCoreAi(coreData) {
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "skipped",
-      message: `Skipped: useAiModule="${String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim()}" not handled by ${MODULE_NAME}`
+      message: `Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" not handled by ${MODULE_NAME}`
     });
     return coreData;
   }
 
-  const skipContextWrites = wo?.doNotWriteToContext === true;
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
   if (!userPromptRaw.trim()) {
@@ -366,12 +365,11 @@ export default async function getCoreAi(coreData) {
 
   textOut = textOut.trim();
 
-  const persistQueue = [];
+  if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
   const assistantPass1 = { role: "assistant", authorName: getAssistantAuthorName(wo), content: textOut };
   if (assistantPass1.authorName == null) delete assistantPass1.authorName;
-  /* Push happens AFTER finalUrl is known — see below. */
 
-  /***** PASS 2: IMAGE PROMPT (NOT persisted) – INCLUDE CONTEXT + LAST USER *****/
+  /***** PASS 2: IMAGE PROMPT (NOT persisted) *****/
   const personaForImages = getStr(wo?.persona, "");
   const system2 = getSystemContentImagePromptRun(personaForImages, kiCfg.imagePersonaHint);
 
@@ -424,8 +422,7 @@ export default async function getCoreAi(coreData) {
         const result = await tool.invoke({ prompt: imagePrompt }, coreData);
         const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
         finalUrl = getExtractUrlFromToolResult(content);
-        /* Tool result not persisted — the URL is appended to assistantPass1.content below. */
-      } catch (e) {
+      } catch {
         finalUrl = "";
       }
     }
@@ -433,17 +430,8 @@ export default async function getCoreAi(coreData) {
 
   const finalText = (finalUrl ? (textOut + "\n" + finalUrl) : textOut).trim();
 
-  /* Set final content (text + URL) and push — getWithTurnId clones via spread,
-     so the push must happen here, after finalText is known. */
   assistantPass1.content = finalText;
-  persistQueue.push(getWithTurnId(assistantPass1, wo));
-
-  /***** Persist PASS 1 (with URL). Tool result and Pass 2 are not persisted. *****/
-  if (!skipContextWrites) {
-    for (const turn of persistQueue) {
-      try { await setContext(wo, turn); } catch {}
-    }
-  }
+  wo._contextPersistQueue.push(getWithTurnId(assistantPass1, wo));
 
   wo.response = finalText || "[Empty AI response]";
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });

@@ -290,7 +290,7 @@ Changes are held in memory until **Save** is clicked (or Ctrl+S). The AI chat ha
 
 #### config.webpage-chat
 
-Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. AI completions are processed directly within the flow — no external API proxy. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
+Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-chat` is a pure HTTP handler — it sets up the `workingObject` (channelID, payload, systemPrompt, persona, instructions, contextSize) and returns. The AI pipeline modules (01000–01003) then handle the AI call naturally. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
 
 ```jsonc
 {
@@ -547,7 +547,7 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - `Ctrl + S` to save
 
 **💬 Chat** (`modules/00048`, `GET /chat`)
-- Large scrollable chat window with AI; processes completions directly using the global workingObject credentials (no separate `ai.*` config needed)
+- Large scrollable chat window with AI; `00048` is a pure HTTP handler — it sets up `workingObject` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) and returns; AI pipeline modules (01000–01003) handle the actual AI call
 - Channel selector dropdown (configured via `chats[]` in `config["webpage-chat"]`); subchannel selector for scoped conversation threads
 - Fixed-height textarea with internal scroll; `Enter` sends, `Shift + Enter` adds a newline
 - **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
@@ -562,6 +562,7 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - Admin role (configurable) sees 🗑 Delete button on article page
 - Articles stored in MySQL (`wiki_articles` table, auto-created; `model` column added via migration); the generating LLM model is shown at the bottom of each article page; images at `pub/wiki/{channelId}/images/`
 - `allowedRoles: []` = public wiki (no login required)
+- AI calls are made via **HTTP POST to the internal API flow** (`cfg.apiUrl`, defaults to `http://localhost:3400/api`) — no direct import of AI modules. Wiki channel AI config (systemPrompt, tools, model, etc.) lives in `core.json` api-channel-config. `cfg.apiUrl` in `core.json["webpage-wiki"]` configures the endpoint.
 
 ```jsonc
 "webpage-wiki": {
@@ -674,7 +675,7 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 |---|---|---|
 | `00005` | discord-status-prepare | Reads current Discord status; prepares AI-generated presence payload |
 | `00010` | core-channel-config | Applies hierarchical channel/flow/user config overrides (deep merge) |
-| `00019` | bard-voice-gate | Gates discord-voice: halts pipeline when the speaking user is the Bard bot itself (prevents self-transcription) |
+| `00011` | webpage-channel-config | Stores the parsed `webpage-chat.chats[]` channel list in `wo._webpageChannelConfig` so downstream modules (e.g. `00048`) can read it without accessing foreign config keys |
 | `00020` | discord-channel-gate | Checks if the bot is permitted to respond in this channel |
 | `00021` | api-token-gate | Two-stage API gate: blocks when `apiEnabled=0`; verifies Bearer token when `apiSecret` is set |
 | `00022` | discord-gdpr-gate | Enforces GDPR consent; sends disclaimer DM on first contact |
@@ -688,8 +689,8 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 | `00043` | webpage-menu | Sets `wo.web.menu` from `config["webpage-menu"].items[]`, filtered by `wo.webAuth.role` |
 | `00045` | webpage-inpaint | Redirects `GET /documents/*.png` to the inpainting port so AI images open directly in the editor |
 | `00046` | webpage-bard | Bard library manager SPA (port 3114, `/bard`) — tag editor, preview, Now Playing, Bulk Auto-Tag upload |
-| `00047` | webpage-config-editor | Config editor SPA (port 3111, `/config`) — collapsible cards, tag chips, password fields |
-| `00048` | webpage-chat | Chat SPA (port 3112, `/chat`) — markdown, media embeds, toolcall indicator, direct AI completions, subchannel CRUD |
+| `00047` | webpage-config-editor | Config editor SPA (port 3111, `/config`) — collapsible cards, tag chips, password fields (Version 1.0) |
+| `00048` | webpage-chat | Chat SPA (port 3112, `/chat`) — pure HTTP handler; sets up `wo` (channelID, payload, systemPrompt, persona, instructions, contextSize) and returns; AI pipeline modules (01000–01003) handle the AI call naturally |
 | `00049` | webpage-inpainting | Inpainting SPA (port 3113, `/inpainting`) — brush mask editor, SD proxy, auth gate |
 | `00050` | discord-admin-commands | Processes slash commands and DM admin commands |
 | `00051` | webpage-dashboard | Live telemetry dashboard (port 3115, `/dashboard`) — flow status, memory, per-module timing |
@@ -703,6 +704,8 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 | `00072` | api-add-context | Loads context for API flow requests |
 | `00075` | discord-trigger-gate | Filters messages based on configured trigger words |
 | `00080` | discord-reaction-start | Adds a progress reaction emoji to the user's message |
+
+| `00999` | core-ai-context-loader | Pre-loads conversation context into `wo._contextSnapshot` before AI modules run. When `channelID` is missing, leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. |
 
 ---
 
@@ -747,7 +750,7 @@ This is the primary AI module. It runs a loop of up to `maxLoops` iterations:
 | `08000` | discord-text-output | Formats and sends the response as a Discord embed; creates reasoning thread |
 | `08100` | discord-voice-tts | Synthesises TTS audio with speaker-tagged voice selection |
 | `08200` | discord-reaction-finish | Removes the progress reaction; adds a completion reaction |
-| `09300` | webpage-output | Sends the response back to the webpage flow caller |
+| `09300` | webpage-output | Sends the response back to the webpage flow caller. When `wo.http.response.body` is null and `wo.response` is set, sends `{ response: wo.response }` as JSON. When both are absent, sends `{ ok: false, error: "Empty response" }`. |
 
 #### discord-text-output (08000) — Detail
 
@@ -1071,6 +1074,11 @@ Configuration in `core.json`:
 
 ## Adding a New Module
 
+**Module isolation rules (mandatory):**
+- Modules read their own config ONLY from `coreData?.config?.[MODULE_NAME]` — never from another module's config key.
+- No module may import another module.
+- Exception: core-ai modules (01000–01003) may dynamically `import()` tools from `../tools/`.
+
 1. Create a file in `modules/` with the naming pattern `[NUMBER]-[PREFIX]-[NAME].js`. Choose a number that places it correctly in the pipeline order.
 
 2. Export a default async function:
@@ -1080,6 +1088,7 @@ Configuration in `core.json`:
 
 export default async function getMyModule(coreData) {
   const { workingObject } = coreData;
+  const cfg = coreData?.config?.["myprefix-mymodule"] || {};
 
   // Guard: only run for the discord flow
   if (workingObject.flow !== "discord") return;
@@ -1125,7 +1134,9 @@ export default {
 
   invoke: async (args, workingObject) => {
     const { query } = args;
-    const apiKey = workingObject?.toolsconfig?.myTool?.apiKey;
+    // Tools read config ONLY from wo.toolsconfig?.[toolName]
+    const toolCfg = workingObject?.toolsconfig?.myTool || {};
+    const apiKey = toolCfg.apiKey;
     // perform work ...
     return { ok: true, result: "..." };
   }

@@ -617,7 +617,7 @@ Any object in `core.json` can have a `_title` key. The Config Editor uses this s
 
 ### webpage-chat
 
-AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, routed via `GET /chat`. AI completions are processed directly within the flow — no external API proxy. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
+AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, routed via `GET /chat`. `00048-webpage-chat` is a **pure HTTP handler** — it sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) and returns. The AI pipeline modules (01000–01003) handle the AI call naturally; `09300-webpage-output` returns `{ response: wo.response }` as JSON. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
 
 ```jsonc
 "webpage-chat": {
@@ -634,7 +634,7 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 }
 ```
 
-**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), toolcall name polled per-channel every 800 ms from `/api/toolcall?channelID=<id>`, direct AI completions, subchannel CRUD endpoints.
+**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), toolcall name polled per-channel every 800 ms from `/api/toolcall?channelID=<id>`, subchannel CRUD endpoints.
 
 | Key | Description |
 |---|---|

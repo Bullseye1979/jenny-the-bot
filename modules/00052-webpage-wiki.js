@@ -15,12 +15,6 @@ import { getItem } from "../core/registry.js";
 /* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
 let sharp = null;
 try { sharp = (await import("sharp")).default; } catch { /* sharp not available */ }
-/* AI module is selected dynamically per request based on overrides.useAiModule */
-const AI_MODULE_MAP = {
-  "completions":     "./01000-core-ai-completions.js",
-  "responses":       "./01001-core-ai-responses.js",
-  "pseudotoolcalls": "./01002-core-ai-pseudotoolcalls.js",
-};
 
 const MODULE_NAME = "webpage-wiki";
 const __filename = fileURLToPath(import.meta.url);
@@ -446,98 +440,41 @@ async function wikiGenImage(prompt, imgCfg, wo) {
 }
 
 
-/**********************************************************************************/
-/* Default system prompt for wiki article generation via core-ai pipeline.        */
-/**********************************************************************************/
-const DEFAULT_WIKI_SYSTEM_PROMPT = `You are a wiki article generator for a Discord community server.
-Your ONLY sources of information are the tool results you receive. Do NOT use your own general knowledge.
-Every fact in the article MUST come directly from what getInformation or getTimeline returns.
-If the tools return no relevant data, write a short stub article saying there is no information yet.
-
-The user message contains the TOPIC to write about.
-
-MANDATORY STEPS — follow in order, ALL required:
-1. REQUIRED: Call getInformation with the topic as search query. This is your PRIMARY factual source. Do this BEFORE writing anything.
-2. REQUIRED: Call getTimeline to retrieve the full chronological event history for this channel. You MUST do this regardless of the topic — the timeline provides the correct order of events.
-3. Combine the results from getInformation and getTimeline. Use the timeline to establish the correct chronological order of all events. Events MUST be presented in chronological order throughout the entire article — in the intro, in sections, and in the infobox. Never describe a later event before an earlier one.
-4. Write the article using ONLY what the tool results contain. Do NOT add facts from your training data.
-5. OUTPUT a single raw JSON object — no markdown fences, no prose before or after — using this schema:
-{
-  "title": "Article Title",
-  "intro": "One to two paragraph introduction — facts from tool results only, events in chronological order",
-  "sections": [{"heading": "Section Heading", "level": 2, "content": "Section text — tool results only, events in chronological order"}],
-  "infobox": {
-    "imageAlt": "Short visual scene description for an illustration of this article (used to generate an image — be specific and vivid)",
-    "fields": [{"label": "Label", "value": "Value — from tool results only"}]
-  },
-  "categories": ["Category1", "Category2"],
-  "relatedTerms": ["Term1", "Term2", "Term3"]
-}
-
-CRITICAL RULES:
-- You MUST call both getInformation AND getTimeline before writing. No exceptions.
-- ALL events and developments MUST be in strict chronological order (earliest first).
-- Every sentence must be traceable to a tool result. If unsure, omit it.
-- Do NOT invent names, dates, stats, or lore not found in the tool results.
-- Final output MUST be raw JSON only. No markdown fences, no prose before or after.`;
+/* NOTE: The wiki AI system prompt and tools (getInformation, getTimeline) are
+ * configured in core.json per wiki channelId (api-channel-config), just like
+ * the browser-extension channel. cfg.apiUrl points to the internal API flow. */
 
 
 async function callPipelineForArticle(query, channel, coreData, promptAddition) {
-  const wo = coreData?.workingObject || {};
+  const wo  = coreData?.workingObject || {};
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
 
-  /* Read AI overrides: global config merged with optional per-channel overrides */
-  const cfg             = coreData?.config?.[MODULE_NAME] || {};
-  const globalOverrides = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
-  const chanOverrides   = (channel.overrides && typeof channel.overrides === "object") ? channel.overrides : {};
-  const overrides       = { ...globalOverrides, ...chanOverrides };
+  /* POST to the internal API flow.
+   * All AI parameters (model, endpoint, apiKey, systemPrompt, tools, etc.) are
+   * configured per channel-ID in core.json (api-channel-config / core-channel-config),
+   * mirroring how the browser-extension channel is configured. */
+  const apiUrl    = getStr(cfg.apiUrl || "http://localhost:3400/api");
+  const apiSecret = getStr(wo.apiSecret || "");
 
-  /* Resolve which AI module to use and dynamically import it */
-  const useAiModule = getStr(overrides.useAiModule || "completions");
-  const modulePath  = AI_MODULE_MAP[useAiModule] || AI_MODULE_MAP["completions"];
-  const { default: getCoreAi } = await import(modulePath);
+  const payload = `Topic: ${query}` + (promptAddition ? `\n\nAdditional context: ${promptAddition}` : "");
+  const reqBody = { channelID: channel.channelId, payload, userId: "wiki" };
 
-  const syntheticWo = {
-    /* All AI parameters come from overrides (global merged with channel-specific) */
-    ...overrides,
-    /* Connection settings: overrides take priority, fall back to parent wo */
-    endpoint:          getStr(overrides.endpoint          || wo.endpoint          || ""),
-    endpointResponses: getStr(overrides.endpointResponses || wo.endpointResponses || ""),
-    apiKey:            getStr(overrides.apiKey            || wo.apiKey            || ""),
-    /* Wiki-fixed values — always override whatever overrides may contain */
-    flow:                "webpage",
-    channelID:           channel.channelId,
-    useAiModule:         useAiModule,
-    systemPrompt:        getStr(overrides.systemPrompt) || DEFAULT_WIKI_SYSTEM_PROMPT,
-    payload:             `Topic: ${query}` + (promptAddition ? `\n\nAdditional context: ${promptAddition}` : ""),
-    doNotWriteToContext: true,
-    includeHistory:      false,
-    db:                  wo.db,
-    /* toolsconfig: global base, overrides always win (shallow merge — overrides replace entire sub-blocks) */
-    toolsconfig:         { ...(wo.toolsconfig || {}), ...(overrides.toolsconfig || {}) },
-    /* Wiki tools — image generation is handled separately via wikiGenImage, not as a tool call */
-    tools:               Array.isArray(overrides.tools) ? overrides.tools : ["getInformation", "getTimeline"],
-    timezone:            wo.timezone    || "Europe/Berlin",
-    logging:             [],
-    /* Route all wiki-generated images to pub/documents/wiki/ (isolated from shared documents) */
-    userId:              "wiki"
-  };
+  const headers = { "Content-Type": "application/json" };
+  if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
 
-  const syntheticCoreData = { workingObject: syntheticWo, config: coreData.config };
-  const result            = await getCoreAi(syntheticCoreData);
-  const responseText      = getStr(result?.workingObject?.response || "").trim();
-
-  if (!responseText || responseText === "[Empty AI response]") {
-    const fullLog = (syntheticWo.logging || []).map(e => {
-      let s = `[${e.severity || "?"}] ${e.module || "?"}: ${e.message || ""}`;
-      if (e.details && typeof e.details === "object") {
-        try { s += " " + JSON.stringify(e.details); } catch { /* ignore */ }
-      }
-      return s;
-    }).join("\n");
-    throw new Error("Pipeline returned no response" + (fullLog ? "\n" + fullLog : ""));
+  let data;
+  try {
+    const res = await fetch(apiUrl, { method: "POST", headers, body: JSON.stringify(reqBody) });
+    data = await res.json();
+    if (!res.ok) throw new Error(`API responded ${res.status}: ${data?.error || res.statusText}`);
+  } catch (e) {
+    throw new Error(`API call failed: ${e?.message || String(e)}`);
   }
 
-  /* Parse the JSON article */
+  const responseText = getStr(data?.response || "").trim();
+  if (!responseText) throw new Error("API returned no response: " + JSON.stringify(data).slice(0, 200));
+
+  /* Parse the JSON article from the AI response */
   let article = null;
   try { article = JSON.parse(responseText); } catch {
     const m = responseText.match(/\{[\s\S]*\}/);
@@ -547,18 +484,14 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     throw new Error("AI returned no valid JSON article: " + responseText.slice(0, 200));
   }
 
-  /* Generate article illustration via embedded image gen (independent of AI tool calls) */
-  const imgCfg  = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
-  const imgBase = { apiKey: getStr(overrides.apiKey || wo.apiKey || "") };
+  /* Generate article illustration via embedded image gen (independent of AI) */
+  const imgCfg    = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
   const imgPrompt = getStr(article.infobox?.imageAlt || article.title || query);
   if (imgPrompt) {
     try {
-      article.image_url = await wikiGenImage(imgPrompt, imgCfg, imgBase);
+      article.image_url = await wikiGenImage(imgPrompt, imgCfg, wo);
     } catch { /* image generation failed — article saves without image, regen available in editor */ }
   }
-
-  /* Attach the model name used for generation */
-  article._model = getStr(result?.workingObject?.model || "");
 
   return article;
 }

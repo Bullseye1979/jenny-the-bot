@@ -29,17 +29,16 @@ export default async function getCoreAiContextLoader(coreData) {
   /* No payload → no AI call will happen, skip the DB round-trip */
   if (!String(wo?.payload ?? "").trim()) return coreData;
 
-  /* No channelID → context cannot be queried; leave _contextSnapshot unset so
-     each ai module can produce its own error for the missing id case */
+  /* No channelID yet — leave _contextSnapshot unset so AI modules fall back to
+     getContext(wo) themselves once channelID is known (e.g. set by 00048 later) */
   const channelId = String(wo?.channelID ?? "").trim();
   if (!channelId) {
-    wo._contextSnapshot = [];
     wo.logging.push({
       timestamp: new Date().toISOString(),
       severity: "info",
       module: MODULE_NAME,
       exitStatus: "skipped",
-      message: "Skipped: no channelID — _contextSnapshot set to []"
+      message: "Skipped: no channelID — AI modules will load context themselves"
     });
     return coreData;
   }

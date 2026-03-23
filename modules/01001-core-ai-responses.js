@@ -19,7 +19,7 @@
 /*      misclassified as images by restricting image extraction to explicit     *
 /*      image nodes + likely image URLs/mime only.                              *
 /********************************************************************************/
-import { getContext, setContext } from "../core/context.js";
+import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -928,8 +928,6 @@ export default async function getCoreAi(coreData) {
     return coreData;
   }
 
-  const skipContextWrites = wo?.doNotWriteToContext === true;
-
   const endpoint = getStr(wo?.endpointResponses, "");
   const apiKey = getStr(wo?.apiKey, "");
   const model = getStr(wo?.model, "");
@@ -1037,7 +1035,7 @@ export default async function getCoreAi(coreData) {
   const toolDefs = getNormalizedToolDefs(genericTools.map(t => t.definition).filter(Boolean));
 
   const toolChoiceInitial = getNormalizedToolChoice(wo?.toolChoice) || "auto";
-  const persistQueue = [];
+  if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
 
   let finalText = "";
   let accumulatedText = "";
@@ -1153,7 +1151,7 @@ export default async function getCoreAi(coreData) {
         const msg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: persistAssistantContent };
         if (msg.authorName == null) delete msg.authorName;
         messages.push(msg);
-        persistQueue.push(getWithTurnId(msg, wo));
+        wo._contextPersistQueue.push(getWithTurnId(msg, wo));
         if (assistantText) accumulatedText += (accumulatedText ? "\n" : "") + assistantText;
       }
 
@@ -1219,7 +1217,7 @@ export default async function getCoreAi(coreData) {
         }
         const cont = { role: "user", content: "continue" };
         messages.push(cont);
-        persistQueue.push(getWithTurnId(cont, wo));
+        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         wo.logging.push({
           timestamp: new Date().toISOString(),
           severity: "info",
@@ -1255,16 +1253,7 @@ export default async function getCoreAi(coreData) {
     wo.reasoningSummary = undefined;
   }
 
-  if (!skipContextWrites) {
-    for (const turn of persistQueue) {
-      try { await setContext(wo, turn); }
-      catch (e) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `Persist failed (role=${turn.role}): ${e?.message || String(e)}` }); }
-    }
-  } else {
-    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `doNotWriteToContext=true → skipped persistence of ${persistQueue.length} turn(s)` });
-  }
-
-  setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: persistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
+  setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: wo._contextPersistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
 
   wo.response = finalText || "[Empty AI response]";
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });

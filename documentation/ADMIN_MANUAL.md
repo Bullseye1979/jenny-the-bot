@@ -256,6 +256,8 @@ Event source (Discord / HTTP API / Cron / Voice / Webpage)
 
 **Key principles:**
 - Every module receives `coreData = { workingObject, logging }` and reads/writes from it.
+- Modules read their own config ONLY from `coreData?.config?.[MODULE_NAME]`; tools read config ONLY from `wo.toolsconfig?.[toolName]`.
+- No module may import another module. Exception: core-ai modules (01000–01003) may dynamically `import()` tools from `../tools/`.
 - `workingObject.stop = true` halts the pipeline immediately.
 - Any change to `core.json` is automatically detected and the bot reinitializes — **no restart required** (hot-reload).
 - All settings for channels, flows, and users can be overridden via the channel config hierarchy.
@@ -1195,7 +1197,7 @@ Visual config editor served on a dedicated port. Objects render as collapsible c
 
 #### config.webpage-chat
 
-Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. AI completions are processed directly within the flow — no external API proxy. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
+Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-chat` is a pure HTTP handler — it sets up the `workingObject` (channelID, payload, systemPrompt, persona, instructions, contextSize) and returns; the AI pipeline modules (01000–01003) then process the request naturally. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
 
 ```jsonc
 {
@@ -1699,6 +1701,7 @@ Every module can be restricted to specific flows via its config block:
 |---|---|
 | `webpage-router` | webpage |
 | `core-channel-config` | discord, discord-voice, discord-admin, discord-status, api, webpage |
+| `webpage-channel-config` | webpage |
 | `discord-channel-gate` | discord, discord-voice, discord-admin, api |
 | `api-token-gate` | api |
 | `discord-gdpr-gate` | discord, discord-voice, discord-admin, webpage |
@@ -1710,6 +1713,7 @@ Every module can be restricted to specific flows via its config block:
 | `core-voice-transcribe` | discord-voice, webpage |
 | `core-voice-tts` | discord-voice, webpage |
 | `discord-voice-tts-play` | discord-voice |
+| `core-ai-context-loader` | discord-status, discord, discord-voice, api, bard-label-gen, webpage |
 | `core-ai-completions` | discord-status, discord, discord-voice, api, **bard-label-gen**, webpage |
 | `core-ai-responses` | discord-status, discord, discord-voice, api, webpage |
 | `core-ai-pseudotoolcalls` | discord-status, discord, discord-voice, api, webpage |
@@ -1962,8 +1966,8 @@ Also supports `*/N * * * *` (every N minutes).
 **Multi-port:** `config.webpage.ports` is an array — one HTTP server is started per port. Each incoming request sets `wo.http.port` so modules can route by port.
 
 **Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
-- Channel dropdown populated from `webpage-chat.chats[]`
-- AI completions processed directly using the global workingObject credentials — no external API proxy
+- Channel dropdown populated from `wo._webpageChannelConfig` (set by `00011-webpage-channel-config` from `webpage-chat.chats[]`)
+- `00048` is a **pure HTTP handler** — it sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally.
 - **Subchannels:** create, rename, and delete separate conversation threads from the UI; each subchannel has its own isolated context history stored in the `chat_subchannels` DB table
 - AI behaviour controlled by `systemPrompt`, `contextSize`, `maxTokens` keys in `webpage-chat` config (no separate `ai.*` sub-object)
 - Last N context entries loaded from MySQL on channel/subchannel select (controlled by `contextSize`)
@@ -2109,10 +2113,18 @@ Add `{ "label": "Browser Extension", "channelID": "browser-extension", "roles": 
 
 Modules execute in **strict numeric order**. Naming convention: `NNNNN-PREFIX-NAME.js`
 
+**Module isolation rules (mandatory):**
+- Modules read their own config ONLY from `coreData?.config?.[MODULE_NAME]` — never from another module's config key.
+- Tools read config ONLY from `wo.toolsconfig?.[toolName]`.
+- No module may import another module.
+- Exception: core-ai modules (01000–01003) may dynamically `import()` tools from `../tools/`.
+- `core/ai-completions.js` does NOT exist as a shared helper — AI calls always go through the pipeline modules.
+
 Every module is an async function:
 ```javascript
 export default async function myModule(coreData) {
   const { workingObject, logging } = coreData;
+  const cfg = coreData?.config?.["my-module-name"] || {};
   // Read from workingObject, do work, write results back
   // Optional: workingObject.stop = true -> halt pipeline
 }
@@ -2127,7 +2139,7 @@ export default async function myModule(coreData) {
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00007 | `webpage-router` | Maps HTTP port + path to a named flow and sets `wo.channelID`. Runs before `core-channel-config` so that flow-specific overrides (e.g. different trigger word for `/voice`) can be applied. Config key: `webpage-router`. Active only in `webpage` flow. |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
-| 00019 | `bard-voice-gate` | Gates the discord-voice flow: if the speaking user is the Bard bot itself (detected by matching user ID against a configured bot ID), the pipeline is stopped so the bot's own music audio is not transcribed |
+| 00011 | `webpage-channel-config` | Stores the parsed `webpage-chat.chats[]` channel list in `wo._webpageChannelConfig` on every webpage request. Allows downstream modules (like `00048-webpage-chat`) to read channel config from `wo` without accessing foreign config keys. |
 | 00020 | `discord-channel-gate` | Checks whether the bot is allowed to respond in this channel |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
@@ -2142,11 +2154,11 @@ export default async function myModule(coreData) {
 | 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
 | 00043 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
-| 00044 | `webpage-landing` | Landing page at `GET /` on the configured port (default 3111). Renders the role-filtered navigation menu (`wo.web.menu`) and a welcome message with username and role. Unauthenticated requests are redirected to `/auth/login`. Config key: `webpage-landing`. |
+| 00044 | *(deleted)* | `webpage-landing` has been removed. The landing page (`GET /`) is no longer a separate module. |
 | 00045 | `webpage-inpaint` | Redirect `GET /documents/*.png` to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. |
 | 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
-| 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). Before calling any AI module, delegates user-message context writing to `00073-webpage-add-context`. Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
+| 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. Version 1.0. |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
@@ -2160,9 +2172,10 @@ export default async function myModule(coreData) {
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
 | 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user) |
-| 00073 | `webpage-add-context` | Writes the incoming webpage chat user message to the context DB (role=user). Called directly by `00048-webpage-chat` before any AI module runs. `userId` is resolved automatically by `setContext` from `wo.webAuth.userId`. |
+| 00073 | *(deleted)* | `webpage-add-context` has been removed. Its logic was inlined into `00048-webpage-chat`. |
 | 00075 | `discord-trigger-gate` | Filters messages based on trigger words |
 | 00080 | `discord-reaction-start` | Adds a progress reaction emoji to the user's message |
+| 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelID` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. |
 
 ---
 
@@ -2196,6 +2209,26 @@ All `core-ai-*` modules retain a direct `getContext()` fallback, so synthetic pi
 | `flow` | array | Flows in which the module runs. Must include all flows where `core-ai-*` modules are active. |
 
 **`wo._contextSnapshot`** — After this module runs, `wo._contextSnapshot` is an array of context rows (same format as `getContext()` returns). Set it to an empty array `[]` to suppress history. Replace or append rows to inject context.
+
+---
+
+#### config.core-ai-context-writer
+
+Persists the conversation turns queued by `core-ai-*` modules into the context DB. During their run, `core-ai-*` modules (01000–01003) push each assistant turn and tool result into `wo._contextPersistQueue`. This module drains the queue afterwards.
+
+Modules positioned between the last `core-ai-*` module and `01004` can inspect or modify `wo._contextPersistQueue` before it is written — enabling post-processing of AI responses at pipeline level (e.g. filtering, logging, transforming stored turns).
+
+```json
+"core-ai-context-writer": {
+  "flow": ["discord-status", "discord", "discord-voice", "api", "bard-label-gen", "webpage"]
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `flow` | array | Flows in which the module runs. Must include all flows where `core-ai-*` modules are active. |
+
+**`wo._contextPersistQueue`** — Array of turn objects to be persisted. Each entry is `{ role, content, ... }` as returned by `getWithTurnId()`. Set to `[]` to suppress all writes. Add entries to inject additional turns into the stored context.
 
 ---
 
@@ -2244,7 +2277,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | 08100 | `core-voice-tts` | Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to split into voice segments, sanitizes text, calls the OpenAI TTS API for each segment (parallel, concurrency 2). Output format is controlled by `wo.ttsFormat` / `cfg.ttsFormat` (default `"opus"` for Discord, `"mp3"` for webpage). Outputs `wo.ttsSegments = [{voice, text, buffer}]` and `wo.ttsDefaultVoice` |
 | 08110 | `discord-voice-tts-play` | Discord-specific TTS playback. Runs when `wo.ttsSegments` exists and a voice session is usable. Manages guild-level lock to prevent overlapping speech; plays each segment buffer sequentially via the @discordjs/voice AudioPlayer. Active only in `discord-voice` flow |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
-| 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`). Also serves `/documents/*` files: images (`png`, `jpg`, `gif`, `webp`, `avif`) get `Cache-Control: public, max-age=604800, immutable`; all other file types default to `no-store`. Supports `?w=N` on image requests to serve a JPEG thumbnail scaled to N px wide — thumbnail generated on first request and cached to `<imagedir>/thumbnails/{N}/{filename}.jpg` next to the source file; subsequent requests are served from cache (mtime-aware: regenerated if source is newer). `sharp` is a dynamic optional import — if not installed, thumbnail requests fall through to the full image. |
+| 09300 | `webpage-output` | Sends the response back to the webpage flow caller (runs in output phase so it is not skipped by `wo.jump`). **Response logic:** when `wo.http.response.body` is null and `wo.response` is set → sends `{ response: wo.response }` as JSON; when both are absent → sends `{ ok: false, error: "Empty response" }`. Also serves `/documents/*` files: images (`png`, `jpg`, `gif`, `webp`, `avif`) get `Cache-Control: public, max-age=604800, immutable`; all other file types default to `no-store`. Supports `?w=N` on image requests to serve a JPEG thumbnail scaled to N px wide — thumbnail generated on first request and cached to `<imagedir>/thumbnails/{N}/{filename}.jpg` next to the source file; subsequent requests are served from cache (mtime-aware: regenerated if source is newer). `sharp` is a dynamic optional import — if not installed, thumbnail requests fall through to the full image. |
 | 09320 | `webpage-voice-output` | Sends TTS audio back to the webpage voice caller. Triggered when `wo.isWebpageVoice === true` — runs regardless of `wo.stop`. Success: HTTP 200 with `Content-Type: audio/mpeg`, concatenated MP3 buffers from `wo.ttsSegments`, plus `X-Transcript` and `X-Response` headers. Error: HTTP 400 JSON |
 
 #### discord-text-output (08000) — Details
@@ -3075,8 +3108,11 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /chat` — renders the chat SPA
 - `GET /chat/style.css` — serves shared CSS
 - `GET /chat/api/chats` — returns list of available chat channels (role-filtered)
-- `GET /chat/api/messages?channelID=xxx` — fetches message history for a channel
-- `POST /chat/api/messages` — sends a message to a Discord channel
+- `GET /chat/api/context?channelID=xxx` — fetches message history for a channel
+- `POST /chat/api/chat` — receives a user message; `00048` sets up `wo` fields and returns; the AI pipeline (01000–01003) processes the request and `09300-webpage-output` returns `{ response: ... }` as JSON
+- Subchannel CRUD: `GET/POST/PATCH/DELETE /chat/api/subchannels`
+
+**Architecture note:** `00048-webpage-chat` is a pure HTTP handler. It reads channel config from `wo._webpageChannelConfig` (populated by `00011-webpage-channel-config`), writes the user message to context, populates `wo.channelID`, `wo.payload`, `wo.systemPrompt`, etc., then returns without making any AI call. The pipeline continues through the AI modules (01000–01003) which produce `wo.response`, and `09300-webpage-output` sends `{ response: wo.response }` as JSON.
 
 ### 16.4 Inpainting SPA (`/inpainting`)
 
@@ -3232,7 +3268,8 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
   "flow": ["webpage"],
   "port": 3117,
   "basePath": "/wiki",
-  "overrides": {                              // global defaults — apply to all channels
+  "apiUrl": "http://localhost:3400/api",      // internal API endpoint for AI calls (default shown)
+  "overrides": {                              // global defaults — apply to all channels (legacy; AI config now in api-channel-config)
     "useAiModule":      "completions",
     "model":            "gpt-4o-mini",
     "temperature":      0.7,
@@ -3271,7 +3308,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 
 All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has that role. Admin automatically includes editor and creator rights — no need to add admin to those lists.
 
-**AI settings** are configured via the `overrides` block in `config["webpage-wiki"]`. A **global `overrides`** block sets defaults for all channels; each channel may additionally define its own `overrides` block — channel values win. All keys are optional — unset values fall back to the built-in defaults. The module reads exclusively from its own config section and never from `core-channel-config`. Image generation requires `toolsconfig.getImage.publicBaseUrl` to be set — without it images are saved to disk but the URL stored in the DB is `null`.
+**AI settings** are now configured in the `api-channel-config` entry (under `core-channel-config`) for the wiki's channel ID — exactly like the browser-extension channel. The `overrides` block in `config["webpage-wiki"]` is retained for backward compatibility but the primary AI config path is the API channel config. `apiUrl` (default `http://localhost:3400/api`) controls which internal API endpoint is used for article generation. Image generation requires `toolsconfig.getImage.publicBaseUrl` to be set — without it images are saved to disk but the URL stored in the DB is `null`.
 
 | Parameter (`webpage-wiki`) | Type | Default | Description |
 |---|---|---|---|
@@ -3309,18 +3346,15 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 - Articles stored in MySQL table `wiki_articles` (auto-created on first start; `model` column added automatically via migration)
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 
-#### WorkingObject Handling (Article Generation)
+#### AI Call Architecture (Article Generation)
 
-The wiki module does **not** use the main `workingObject` for its AI calls. `callPipelineForArticle` constructs a **synthetic `workingObject`** by spreading the merged overrides (global `overrides` + channel `overrides`, channel wins) and passes it directly to the selected core-ai module. This means:
+The wiki module no longer imports AI modules directly. `callPipelineForArticle` makes an **HTTP POST to the internal API flow** (`cfg.apiUrl`, defaults to `http://localhost:3400/api`). Wiki channel AI configuration (systemPrompt, tools, model, temperature, maxTokens, etc.) lives in `core.json` `api-channel-config`, like the browser-extension channel. `cfg.apiUrl` in `core.json["webpage-wiki"]` configures the endpoint.
 
+Key points:
 - The wiki AI call is fully isolated from the Discord/API flow context
-- All AI parameters (`model`, `temperature`, `maxTokens`, `tools`, `systemPrompt`, `persona`, `instructions`, `contextSize`, …) come exclusively from the merged overrides
-- `wo.useAiModule` selects the AI backend (`completions` / `responses` / `pseudotoolcalls`)
-- `wo.channelID` is set to the wiki's channel ID for `getInformation` / `getTimeline` tool calls and for native context loading
-- `wo.doNotWriteToContext = true` — article generation never writes to the conversation context
-- `wo.includeHistory` — controlled by `overrides.includeHistory` (default `false`); when `true`, core-ai loads recent channel messages as context via `channelID` (see warning below)
-- `wo.payload` = `"Topic: <query>"` + optional `"\n\nAdditional context: <promptAddition>"` (becomes the article subject; `promptAddition` is appended, never replaces the system prompt)
-- `wo.flow = "webpage"` — tools like `getInformation` and `getTimeline` use `wo.channelID` directly
+- All AI parameters come from the `api-channel-config` entry for the wiki's channel
+- `channelID` is set to the wiki's channel ID for `getInformation` / `getTimeline` tool calls
+- Article generation never writes to the conversation context (`doNotWriteToContext: true` in the API payload)
 
 **Image generation** is handled separately by the embedded `wikiGenImage` function (see below) — it is called after the AI returns the article JSON, not as an AI tool call. `callPipelineForImageOnly` (regen endpoint) also uses `wikiGenImage` directly.
 

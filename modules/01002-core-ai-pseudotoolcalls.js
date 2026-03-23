@@ -9,7 +9,7 @@
 /*          - Extracts URL(s) from tool results and injects plain-text hints   *
 /*            so the follow-up assistant turn reliably appends the link.       *
 /*******************************************************************************/
-import { getContext, setContext } from "../core/context.js";
+import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 
 const MODULE_NAME = "core-ai-pseudotoolcalls";
@@ -658,8 +658,6 @@ export default async function getCoreAi(coreData) {
     return coreData;
   }
 
-  const skipContextWrites = wo?.doNotWriteToContext === true;
-
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
   if (!userPromptRaw.trim()) {
@@ -697,7 +695,7 @@ export default async function getCoreAi(coreData) {
     { role: "user", content: userContent }
   ];
 
-  const persistQueue = [];
+  if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
   let finalText = "";
   let accumulatedText = "";
   let toolCallsUsedTotal = 0;
@@ -754,7 +752,7 @@ export default async function getCoreAi(coreData) {
       if (assistantMsg.authorName == null) delete assistantMsg.authorName;
 
       messages.push(assistantMsg);
-      persistQueue.push(getWithTurnId(assistantMsg, wo));
+      wo._contextPersistQueue.push(getWithTurnId(assistantMsg, wo));
 
       const cleanAssistantText = extracted ? String(extracted.cleanText || "").trim() : String(msgText || "").trim();
       if (cleanAssistantText) {
@@ -792,7 +790,7 @@ export default async function getCoreAi(coreData) {
 
           const userErr = { role: "user", content: errMsg };
           messages.push(userErr);
-          persistQueue.push(getWithTurnId(userErr, wo));
+          wo._contextPersistQueue.push(getWithTurnId(userErr, wo));
           wo._fullAssistantText = undefined;
           continue;
         }
@@ -804,7 +802,7 @@ export default async function getCoreAi(coreData) {
           toolSpecsByName
         );
 
-        persistQueue.push(getWithTurnId(toolMsg, wo));
+        wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
 
         const toolResultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? null);
         const urls = getExtractUrlsFromToolContent(toolResultText);
@@ -820,7 +818,7 @@ export default async function getCoreAi(coreData) {
         };
 
         messages.push(userToolResult);
-        persistQueue.push(getWithTurnId(userToolResult, wo));
+        wo._contextPersistQueue.push(getWithTurnId(userToolResult, wo));
 
         wo._fullAssistantText = undefined;
         continue;
@@ -831,7 +829,7 @@ export default async function getCoreAi(coreData) {
         /* Instruct model not to embed new tool calls in the continuation pass */
         const cont = { role: "user", content: "Continue exactly where you stopped. Do not call any more tools. Output only the missing text continuation." };
         messages.push(cont);
-        persistQueue.push(getWithTurnId(cont, wo));
+        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         wo.logging.push({
           timestamp: new Date().toISOString(),
           severity: "info",
@@ -859,29 +857,6 @@ export default async function getCoreAi(coreData) {
     } finally {
       clearTimeout(timer);
     }
-  }
-
-  if (!skipContextWrites) {
-    for (const turn of persistQueue) {
-      try { await setContext(wo, turn); }
-      catch (e) {
-        wo.logging.push({
-          timestamp: new Date().toISOString(),
-          severity: "warn",
-          module: MODULE_NAME,
-          exitStatus: "success",
-          message: `Persist failed (role=${turn.role}): ${e?.message || String(e)}`
-        });
-      }
-    }
-  } else {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `doNotWriteToContext=true → skipped persistence of ${persistQueue.length} turn(s)`
-    });
   }
 
   wo.response = finalText || "[Empty AI response]";

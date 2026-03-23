@@ -12,6 +12,8 @@ import discordJs from "discord.js";
 const { EmbedBuilder } = discordJs;
 import { getItem } from "../core/registry.js";
 
+const MODULE_NAME = "discord-admin-avatar";
+
 
 function getChannelId(wo) {
   const fromAdmin = wo?.admin?.channelId;

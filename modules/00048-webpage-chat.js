@@ -1,6 +1,6 @@
 /************************************************************************************/
 /* filename: 00048-webpage-chat.js                                                   *
-/* Version 1.1                                                                       *
+/* Version 1.0                                                                       *
 /* Purpose: Webpage chat SPA (port 3112, /chat). Handles channel listing, context    *
 /*          display, AI completions (direct, no API proxy), and subchannel CRUD.     *
 /*          Config section: config["webpage-chat"]. Reads wo.db for DB access.       *
@@ -11,10 +11,7 @@ import fs     from "node:fs";
 import crypto from "node:crypto";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem }            from "../core/registry.js";
-import { setContext, getContext, setPurgeContext, setFreezeContext, setPurgeSubchannel } from "../core/context.js";
-import { applyChannelConfig }    from "./00011-webpage-channel-config.js";
-import getCoreAiRoleplay         from "./01003-core-ai-roleplay.js";
-import { getWebpageAddContext }  from "./00073-webpage-add-context.js";
+import { setContext, setPurgeContext, setFreezeContext, setPurgeSubchannel } from "../core/context.js";
 
 const MODULE_NAME = "webpage-chat";
 
@@ -165,38 +162,135 @@ function getResolvedAiCfg(wo, cfg) {
 }
 
 
-async function getAiCompletion(aiCfg, messages) {
-  const { endpoint, model, apiKey, maxTokens, temperature } = aiCfg;
+/* ---- Channel-config helpers (own copy — no cross-module import) ---- */
 
-  if (!apiKey) throw new Error("No AI apiKey configured (check webpage-chat.ai.apiKey or workingObject.apiKey)");
-
-  const body = { model, messages, max_tokens: maxTokens };
-  if (typeof temperature === "number") body.temperature = temperature;
-
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => res.statusText);
-    throw new Error(`AI HTTP ${res.status}: ${errText.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  return String(data?.choices?.[0]?.message?.content || "");
+function isPlainObject(v) {
+  if (!v || typeof v !== "object") return false;
+  if (Array.isArray(v)) return false;
+  return Object.getPrototypeOf(v) === Object.prototype;
 }
 
+function normalizeStr(v) {
+  if (v === undefined || v === null) return "";
+  return String(v).trim();
+}
 
-function getChatWo(wo, channelID, subchannelId, aiCfg) {
-  return {
-    db:          wo.db,
-    config:      { context: wo.config?.context ?? {} },
-    channelID,
-    subchannel:  subchannelId || null,
-    contextSize: Number(aiCfg?.contextSize ?? 20)
-  };
+function normalizeStrList(v) {
+  if (!Array.isArray(v)) return [];
+  return v.map(x => normalizeStr(x)).filter(Boolean);
+}
+
+function includesCI(list, value) {
+  const v = normalizeStr(value);
+  if (!v) return false;
+  const vu = v.toUpperCase();
+  for (let i = 0; i < list.length; i++) {
+    const li = normalizeStr(list[i]);
+    if (!li) continue;
+    if (li.toUpperCase() === vu) return true;
+  }
+  return false;
+}
+
+function deepMergePlain(target, source) {
+  const out = isPlainObject(target) ? { ...target } : {};
+  if (!isPlainObject(source)) return out;
+  for (const [k, v] of Object.entries(source)) {
+    if (v === undefined || v === null) continue;
+    const cur = out[k];
+    if (isPlainObject(cur) && isPlainObject(v)) { out[k] = deepMergePlain(cur, v); continue; }
+    if (Array.isArray(v))   { out[k] = v.slice();            continue; }
+    if (isPlainObject(v))   { out[k] = deepMergePlain({}, v); continue; }
+    out[k] = v;
+  }
+  return out;
+}
+
+function matchChannel(node, channelId) {
+  const list = normalizeStrList(node?.channelMatch);
+  if (list.length === 0) return false;
+  return includesCI(list, channelId);
+}
+
+function matchFlow(node, flow) {
+  const list = normalizeStrList(node?.flowMatch);
+  if (list.length === 0) return false;
+  return includesCI(list, flow);
+}
+
+function matchUser(node, userId) {
+  const list = normalizeStrList(node?.userMatch);
+  if (list.length === 0) return false;
+  return list.includes(normalizeStr(userId));
+}
+
+function applyOverrides(workingObject, overrides) {
+  if (!isPlainObject(workingObject)) return 0;
+  if (!isPlainObject(overrides)) return 0;
+  const { channelallowed: _c, allow: _a, ...rawOverrides } = overrides;
+  let appliedKeys = 0;
+  for (const [k, v] of Object.entries(rawOverrides)) {
+    if (v === undefined || v === null) continue;
+    if (Array.isArray(v))                                       { workingObject[k] = v.slice();              appliedKeys++; continue; }
+    if (isPlainObject(v) && isPlainObject(workingObject[k]))    { workingObject[k] = deepMergePlain(workingObject[k], v); appliedKeys++; continue; }
+    if (isPlainObject(v))                                       { workingObject[k] = deepMergePlain({}, v);  appliedKeys++; continue; }
+    workingObject[k] = v;
+    appliedKeys++;
+  }
+  return appliedKeys;
+}
+
+function pickLastMatchingIndex(list, matcherFn) {
+  const arr = Array.isArray(list) ? list : [];
+  let index = -1, count = 0;
+  for (let i = 0; i < arr.length; i++) {
+    if (!matcherFn(arr[i])) continue;
+    index = i; count++;
+  }
+  return { index, count };
+}
+
+function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userId) {
+  const channels = Array.isArray(cfgChannels) ? cfgChannels : [];
+  const matchedRules = [], warnings = [];
+  let appliedKeys = 0;
+
+  for (let c = 0; c < channels.length; c++) {
+    const ch = channels[c];
+    if (!matchChannel(ch, channelId)) continue;
+
+    appliedKeys += applyOverrides(workingObject, ch?.overrides);
+    matchedRules.push({ level: "channel", path: { c } });
+
+    const flows = Array.isArray(ch?.flows) ? ch.flows : [];
+    const flowPick = pickLastMatchingIndex(flows, fl => matchFlow(fl, flow));
+    if (flowPick.count > 1) warnings.push({ type: "multipleFlowMatches", channelPath: { c }, flow, matches: flowPick.count, pickedIndex: flowPick.index });
+    if (flowPick.index < 0) continue;
+
+    const fl = flows[flowPick.index];
+    appliedKeys += applyOverrides(workingObject, fl?.overrides);
+    matchedRules.push({ level: "flow", path: { c, f: flowPick.index } });
+
+    const users = Array.isArray(fl?.users) ? fl.users : [];
+    const userPick = pickLastMatchingIndex(users, us => matchUser(us, userId));
+    if (userPick.count > 1) warnings.push({ type: "multipleUserMatches", channelPath: { c, f: flowPick.index }, userId: userId || "unknown", matches: userPick.count, pickedIndex: userPick.index });
+    if (userPick.index < 0) continue;
+
+    const us = users[userPick.index];
+    appliedKeys += applyOverrides(workingObject, us?.overrides);
+    matchedRules.push({ level: "user", path: { c, f: flowPick.index, u: userPick.index } });
+  }
+
+  return { appliedKeys, matchedRules, warnings };
+}
+
+function applyChannelConfig(workingObject, channelId, flow, userId) {
+  /* Read channel config from wo._webpageChannelConfig — populated by 00011 */
+  const channels = workingObject._webpageChannelConfig;
+  if (!Array.isArray(channels) || !channelId || !flow) return;
+  if (!channels.some(ch => matchChannel(ch, channelId))) return;
+  applyStrictHierarchy(workingObject, channels, channelId, flow, userId || "");
+  workingObject.channelallowed = true;
 }
 
 
@@ -357,18 +451,19 @@ export default async function getWebpageChat(coreData) {
       /* Apply channel-config overrides to wo now that channelID is known.
          core-channel-config (00010) runs before this module but wo.channelID
          was not yet set at that point — so we apply the overrides here just-in-time. */
-      applyChannelConfig(wo, coreData.config, channelID, "webpage", wo.userId || "");
+      applyChannelConfig(wo, channelID, "webpage", wo.userId || "");
 
-      /* Resolve AI config from workingObject (now enriched) + own module cfg */
-      const aiCfg  = getResolvedAiCfg(wo, cfg);
-      const chatWo = getChatWo(wo, channelID, subchannelId, aiCfg);
+      /* Resolve effective AI config (applies cfg-level defaults to wo) */
+      const aiCfg = getResolvedAiCfg(wo, cfg);
 
       /* ---- Admin slash commands — handled before AI call ---- */
       if (payload.startsWith("/")) {
         const cmdToken = payload.split(/\s+/)[0].slice(1).toLowerCase();
+        wo.channelID = channelID;
+        wo.subchannel = subchannelId || null;
 
         if (cmdToken === "purgedb") {
-          const deleted = await setPurgeContext(chatWo);
+          const deleted = await setPurgeContext(wo);
           setJsonResp(wo, 200, { response: `${deleted} items removed` });
           wo.jump = true;
           await setSendNow(wo);
@@ -376,7 +471,7 @@ export default async function getWebpageChat(coreData) {
         }
 
         if (cmdToken === "freeze") {
-          await setFreezeContext(chatWo);
+          await setFreezeContext(wo);
           setJsonResp(wo, 200, { response: `freeze ok` });
           wo.jump = true;
           await setSendNow(wo);
@@ -397,74 +492,50 @@ export default async function getWebpageChat(coreData) {
         } catch {}
       }
 
-      /* Apply subchannel prompt overrides (take priority over channel-config) */
+      /* Set effective prompts (subchannel overrides channel-config) */
       const effectiveSystemPrompt = (subConfig?.system_prompt ? String(subConfig.system_prompt).trim() : "") || String(aiCfg.systemPrompt || "").trim();
       const effectivePersona      = (subConfig?.persona      ? String(subConfig.persona).trim()      : "") || String(aiCfg.persona      || "").trim();
       const effectiveInstructions = (subConfig?.instructions ? String(subConfig.instructions).trim() : "") || String(aiCfg.instructions || "").trim();
 
-      let aiResponse = "";
+      /* Set up wo for downstream AI pipeline modules */
+      wo.channelID    = channelID;
+      wo.subchannel   = subchannelId || null;
+      wo.payload      = payload;
+      wo.systemPrompt = effectiveSystemPrompt;
+      wo.persona      = effectivePersona;
+      wo.instructions = effectiveInstructions;
+      wo.contextSize  = aiCfg.contextSize;
 
-      /* Write user message to context — independent of which AI module follows */
-      await getWebpageAddContext(wo, channelID, subchannelId, payload);
-
-      if (aiCfg.useAiModule === "roleplay" || aiCfg.useAiModule === "core-ai-roleplay") {
-        /* ---- ROLEPLAY path — delegate to core-ai-roleplay module ---- */
-        /* The module handles its own context read/write, continue loops,
-           two-pass image generation and tool invocation.                */
-        wo.channelID    = channelID;
-        wo.subchannel   = subchannelId || null;
-        wo.payload      = payload;
-        wo.contextSize  = aiCfg.contextSize;
-        /* Apply effective prompt overrides onto wo so the roleplay module picks them up */
-        wo.systemPrompt = effectiveSystemPrompt;
-        wo.persona      = effectivePersona;
-        wo.instructions = effectiveInstructions;
-
-        await getCoreAiRoleplay({ workingObject: wo, config: coreData.config });
-        aiResponse = String(wo.response || "");
-
-      } else {
-        /* ---- COMPLETIONS path ---- */
-
-        /* Build messages for AI (context + new user message) */
-        const ctxMsgs = await getContext(chatWo);
-        const messages = [];
-
-        const sysParts = [effectiveSystemPrompt, effectivePersona, effectiveInstructions].filter(Boolean);
-        if (sysParts.length) messages.push({ role: "system", content: sysParts.join("\n\n") });
-
-        for (const m of (ctxMsgs || [])) {
-          if (m?.internal_meta === true) continue;
-          if (String(m.role || "").toLowerCase() === "system") continue;
-          const text = String(m.content || m.text || "");
-          if (!text || /^META\|/.test(text)) continue;
-          messages.push({ role: m.role, content: text });
-        }
-
-        /* getContext() strips the last user message (by design — caller adds it).
-           Always append the current message at the end so the AI receives it. */
-        messages.push({ role: "user", content: payload });
-
-        aiResponse = await getAiCompletion(aiCfg, messages);
-
-        /* Write assistant response to context */
-        await setContext(chatWo, {
-          role:      "assistant",
-          content:   aiResponse,
-          channelId: channelID,
-          messageId: "",
-          source:    "webpage-chat"
-        });
+      /* Write user turn to context before AI runs */
+      if (wo.db && channelID && payload) {
+        try {
+          await setContext(
+            { ...wo, channelID, subchannel: subchannelId || null },
+            {
+              ts:         String(wo.timestamp || ""),
+              role:       "user",
+              turn_id:    typeof wo.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined,
+              content:    String(payload),
+              authorName: String(wo.webAuth?.username || wo.webAuth?.displayName || ""),
+              channelId:  String(channelID),
+              messageId:  "",
+              source:     "webpage-chat"
+            }
+          );
+        } catch {}
       }
 
-      setJsonResp(wo, 200, { response: aiResponse });
+      /* Clear the webpage-flow 404 default so 09300 uses wo.response instead */
+      wo.http.response = { status: 200 };
+      /* Hand off to the AI pipeline — 09300 will format wo.response as JSON */
+      return coreData;
+
     } catch (e) {
       setJsonResp(wo, 500, { error: String(e?.message || e) });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
     }
-
-    wo.jump = true;
-    await setSendNow(wo);
-    return coreData;
   }
 
   /* ---- GET /chat/api/subchannels?channelID=xxx ---- */

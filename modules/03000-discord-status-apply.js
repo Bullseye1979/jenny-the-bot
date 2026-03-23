@@ -106,11 +106,7 @@ export default async function getDiscordStatusApplyFlow(baseCore) {
   const wo = baseCore.workingObject || (baseCore.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);
 
-  const cfg =
-    baseCore?.config?.["discord-status-apply"] ||
-    baseCore?.config?.["discord-status-set"] ||
-    baseCore?.config?.["cron-discord-status"] ||
-    {};
+  const cfg = baseCore?.config?.[MODULE_NAME] || {};
 
   const now = Date.now();
   const updateStatusFlag = String(wo.updateStatus || "").toLowerCase() === "true";

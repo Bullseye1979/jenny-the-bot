@@ -5,8 +5,6 @@
 /*          Identical logic to core-channel-config but with its own config section  *
 /*          ("webpage-channel-config") so webpage channels are configured           *
 /*          independently from Discord/API channels.                                *
-/*          Also exports applyChannelConfig() for just-in-time use by modules that  *
-/*          know their channelID only at request time (e.g. 00048-webpage-chat.js). *
 /************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
@@ -145,7 +143,7 @@ function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userI
 }
 
 
-export function applyChannelConfig(workingObject, config, channelId, flow, userId) {
+function applyChannelConfig(workingObject, config, channelId, flow, userId) {
   const channels = config?.["webpage-channel-config"]?.channels;
   if (!Array.isArray(channels) || !channelId || !flow) return;
   if (!channels.some(ch => matchChannel(ch, channelId))) return;
@@ -163,6 +161,11 @@ export default async function getWebpageChannelConfig(coreData) {
 
   const channels = cfg.channels;
   if (!Array.isArray(channels)) return coreData;
+
+  /* Always expose the full channel list so downstream modules (e.g. 00048-webpage-chat)
+     can apply overrides just-in-time when channelID is only known at request time
+     (e.g. from a POST body parsed after this module already ran). */
+  workingObject._webpageChannelConfig = channels;
 
   const channelId = normalizeStr(workingObject?.channelID);
   const flow      = normalizeStr(workingObject?.flow);

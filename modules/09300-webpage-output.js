@@ -373,7 +373,12 @@ function getHandleHttpResponse(wo, req, res, log) {
     if (!headers["Content-Type"] && !headers["content-type"]) {
       headers["Content-Type"] = "application/json; charset=utf-8";
     }
-    body = JSON.stringify({ ok: false, error: "Empty response" });
+    /* If the AI pipeline produced a response, forward it as JSON */
+    if (typeof wo.response === "string" && wo.response) {
+      body = JSON.stringify({ response: wo.response });
+    } else {
+      body = JSON.stringify({ ok: false, error: "Empty response" });
+    }
   }
 
   log("webpage-output send response", "info", {

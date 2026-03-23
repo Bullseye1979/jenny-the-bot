@@ -1,3 +1,9 @@
+/************************************************************************************/
+/* filename: 00047-webpage-config-editor.js                                         *
+/* Version 1.0                                                                      *
+/* Purpose: Web-based config editor SPA. Serves the editor UI and handles           *
+/*          read/write of core.json. Config section: config["webpage-config-editor"]*
+/************************************************************************************/
 "use strict";
 
 import fs from "node:fs";
