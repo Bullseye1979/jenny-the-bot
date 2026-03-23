@@ -2140,6 +2140,7 @@ export default async function myModule(coreData) {
 | 00007 | `webpage-router` | Maps HTTP port + path to a named flow and sets `wo.channelID`. Runs before `core-channel-config` so that flow-specific overrides (e.g. different trigger word for `/voice`) can be applied. Config key: `webpage-router`. Active only in `webpage` flow. |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
 | 00011 | `webpage-channel-config` | Stores the parsed `webpage-chat.chats[]` channel list in `wo._webpageChannelConfig` on every webpage request. Allows downstream modules (like `00048-webpage-chat`) to read channel config from `wo` without accessing foreign config keys. |
+| 00012 | `subchannel-config` | When `wo.subchannel` is set, loads `system_prompt`, `persona`, and `instructions` from the `chat_subchannels` table and overrides the corresponding workingObject fields. |
 | 00020 | `discord-channel-gate` | Checks whether the bot is allowed to respond in this channel |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
@@ -2147,17 +2148,17 @@ export default async function myModule(coreData) {
 | 00029 | `discord-voice-capture` | Captures PCM from the Discord voice receiver (Opus → PCM via prism-media), applies RMS/ZCR-based VAD, extracts voiced frames, and combines them into a single 16kHz mono WAV. Outputs `wo.audioFile`, `wo.audioStats = {snrDb, usefulMs}`, and `wo.transcribeAudio = true`. Does not make quality decisions — deferred to the transcription module. Only runs when `wo.voiceIntent.action === "describe_and_transcribe"` |
 | 00030 | `core-voice-transcribe` | Source-agnostic transcription module. Runs when `wo.transcribeAudio === true`. When `wo.audioStats` is set, applies a quality gate before calling the API. Large files (>20 MB) are split into overlapping chunks (`overlapDurationS` seconds overlap, default 60s); for diarize models, speaker labels are stitched across chunk boundaries by matching speakers in the overlap region to global labels from the previous chunk — matched speakers keep their label (A, B, …), unmatched speakers receive an offset label (e.g. `C_2`). The overlap region is excluded from the output to prevent duplicate text. When `wo.transcribeOnly === true`, uses `transcribeModelDiarize` (default `gpt-4o-transcribe-diarize`). Active in `discord-voice` and `webpage` flows |
 | 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB immediately after transcription (before 00032 stops the pipeline). Active when `wo.isWebpageVoice === true` and `wo.payload` is set. Reads config from `config["webpage-voice-add-context"]`. Diarized transcripts (`A: text`, `A_2: text`, or legacy `speaker_N: text` lines) are parsed into one DB entry per speaker turn with `role: "user"`, plain text `content`, `userId` = speaker label, `authorName: ""`, `source: "voice-transcribe"`. Offset labels (`A_2`) are stored as-is. When `clearContextBeforeTranscription === true`, purges non-frozen context for the channel first. |
-| 00032 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends the HTTP 200 JSON response with the transcript directly, then sets `wo.stop = true` so AI and TTS never run. This module runs before `discord-add-files` (which also has prefix 00032 but gates on Discord messages). Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
+| 00033 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends the HTTP 200 JSON response with the transcript directly, then sets `wo.stop = true` so AI and TTS never run. Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
 | 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
-| 00040 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
-| 00041 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
-| 00043 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
-| 00044 | *(deleted)* | `webpage-landing` has been removed. The landing page (`GET /`) is no longer a separate module. |
-| 00042 | `webpage-inpaint` | Redirect `GET /documents/*.<ext>` (PNG, JPG, JPEG, WebP, GIF, BMP) to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. Use the path-only form (`"/inpainting"`) when hosting under multiple domains so the redirect stays on the same domain as the request (avoids cross-domain session cookie loss). |
-| 00046 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
-| 00047 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. Version 1.0. |
+| 00037 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
+| 00040 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
+| 00041 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
+| 00042 | `webpage-inpaint` | Redirect `GET /documents/*.<ext>` (PNG, JPG, JPEG, WebP, GIF, BMP) to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. Use a fixed hostname (e.g. `"jenny.ralfreschke.de/inpainting"`) pointing to the domain where users log in, so the session cookie is valid on the inpainting SPA. |
+| 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
+| 00044 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. |
+| 00047 | `webpage-voice` | Webpage voice interface — serves a browser-based always-on SPA and handles incoming audio POST requests, bridging the browser microphone into the bot pipeline. |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
@@ -2173,6 +2174,7 @@ export default async function myModule(coreData) {
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
 | 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user) |
 | 00073 | *(deleted)* | `webpage-add-context` has been removed. Its logic was inlined into `00048-webpage-chat`. |
+| 00074 | `core-trigger-gate` | Flow-agnostic trigger gate. Stops the pipeline when `wo.payload` does not start with the configured trigger word. |
 | 00075 | `discord-trigger-gate` | Filters messages based on trigger words |
 | 00080 | `discord-reaction-start` | Adds a progress reaction emoji to the user's message |
 | 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelID` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. |
@@ -3121,7 +3123,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /inpainting/style.css` — serves shared CSS
 - `POST /inpainting/api/inpaint` — handles image inpainting requests
 - `GET /inpainting/auth/token` — generates auth token for deep links
-- `GET /documents/*.png` — redirected here by module 00045
+- `GET /documents/*.<ext>` — redirected here by module 00042 (PNG, JPG, JPEG, WebP, GIF, BMP)
 
 **Toolbar buttons:**
 - **⬇ Download** — saves the current canvas as `image.png` (always available when an image is loaded)
@@ -3652,24 +3654,31 @@ When auth is enabled, users log in via the webpage-auth session cookie. The `ima
 ### Caddy reverse proxy (required for `/documents` redirect)
 
 ```caddy
-reverse_proxy /inpainting*  localhost:3113
-reverse_proxy /documents*   localhost:3113
+handle /inpainting* {
+    reverse_proxy localhost:3113
+}
+handle /documents/* {
+    header Vary "Sec-Fetch-Dest"
+    reverse_proxy localhost:3000
+}
 ```
 
-Module `00042-webpage-inpaint.js` redirects `GET /documents/*.png` requests to the inpainting SPA so that images served by the bot can be opened directly in the editor.
+Module `00042-webpage-inpaint.js` redirects `GET /documents/*.<ext>` requests (PNG, JPG, JPEG, WebP, GIF, BMP) to the inpainting SPA so that images served by the bot can be opened directly in the editor.
+
+**`Vary: Sec-Fetch-Dest` is required** on the `/documents/*` Caddy block. Without it, the browser caches the raw image response (loaded inline by the web chat SPA via `<img>`) and serves subsequent navigation requests from cache, bypassing the bot and never triggering the redirect. With `Vary: Sec-Fetch-Dest`, the browser keeps separate cache entries per fetch type — a direct navigation (`Sec-Fetch-Dest: document`) always misses the cache and hits the server, which then issues the redirect.
 
 **`inpaintHost` configuration (module `00042`):**
 
 ```json
 "webpage-inpaint": {
   "flow":        ["webpage"],
-  "inpaintHost": "/inpainting"
+  "inpaintHost": "jenny.ralfreschke.de/inpainting"
 }
 ```
 
-When `inpaintHost` contains a hostname (does not start with `/`), the redirect target is derived directly from that value. When `inpaintHost` starts with `/`, it is appended to the hostname from the incoming HTTP request.
+Set `inpaintHost` to the domain where users are authenticated (where the session cookie is valid). The redirect must go to the same domain the user is logged into, otherwise the inpainting SPA appears logged out. Use a path-only value (`"/inpainting"`) only when all image links and the inpainting SPA share the same domain.
 
-**Recommended:** use the path-only form `"/inpainting"`. This keeps the redirect on the same domain as the original request, so the user's session cookie is valid on the inpainting SPA without having to log in separately. A fixed hostname (e.g. `"jenny.example.com/inpainting"`) only works reliably when users exclusively access the bot through that one domain.
+When `inpaintHost` contains a hostname (does not start with `/`), the redirect target is derived directly from that value. When `inpaintHost` starts with `/`, it is appended to the hostname from the incoming HTTP request.
 
 ---
 
