@@ -73,7 +73,6 @@ export default async function getWebpageInpaint(coreData) {
 
   if (wo.flow !== "webpage") return coreData;
   if (wo.source && wo.source !== "http") return coreData;
-  if (wo.stop) return coreData;
 
   const http = wo.http || {};
   // If configHost contains a hostname (does not start with "/"), use it as-is.
