@@ -299,7 +299,11 @@ export default async function getCoreAi(coreData) {
   }
 
   let snapshot = [];
-  try { snapshot = await getContext(wo); } catch {}
+  if (Array.isArray(wo._contextSnapshot)) {
+    snapshot = wo._contextSnapshot;
+  } else {
+    try { snapshot = await getContext(wo); } catch {}
+  }
 
   const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory);
   const system1 = getSystemContentTextRun(wo);

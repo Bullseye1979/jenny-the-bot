@@ -365,9 +365,13 @@ export default async function getCoreAi(coreData) {
   }
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "AI request started" });
   let snapshot = [];
-  try { snapshot = await getContext(wo); }
-  catch (e) {
-    wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` });
+  if (Array.isArray(wo._contextSnapshot)) {
+    snapshot = wo._contextSnapshot;
+  } else {
+    try { snapshot = await getContext(wo); }
+    catch (e) {
+      wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` });
+    }
   }
   const systemContent = await getSystemContent(wo, kiCfg);
   const allowToolHistory = !!kiCfg.includeHistoryTools;

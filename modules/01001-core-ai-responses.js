@@ -963,8 +963,12 @@ export default async function getCoreAi(coreData) {
   wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Responses built-in tools (workingObject.ResponseTools): ${responseToolsInfo}` });
 
   let snapshot = [];
-  try { snapshot = await getContext(wo); }
-  catch (e) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` }); }
+  if (Array.isArray(wo._contextSnapshot)) {
+    snapshot = wo._contextSnapshot;
+  } else {
+    try { snapshot = await getContext(wo); }
+    catch (e) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` }); }
+  }
 
 
   function getSystemContent(wo2) {

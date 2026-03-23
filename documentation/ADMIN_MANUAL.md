@@ -2179,6 +2179,26 @@ Only **one** of these modules runs per turn, selected by `workingObject.useAiMod
 
 **All four modules share identical continue logic** — see the continue strategy below.
 
+#### config.core-ai-context-loader
+
+Pre-loads the conversation context snapshot from the DB into `wo._contextSnapshot` before any `core-ai-*` module runs. This allows intermediate pipeline modules (positioned between `00999` and `01000`) to inspect or modify the context before the AI sees it — enabling context injection, filtering, or augmentation at pipeline level.
+
+All `core-ai-*` modules retain a direct `getContext()` fallback, so synthetic pipelines that invoke an AI module directly (without running the full module pipeline) continue to work unchanged.
+
+```json
+"core-ai-context-loader": {
+  "flow": ["discord-status", "discord", "discord-voice", "api", "bard-label-gen", "webpage"]
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `flow` | array | Flows in which the module runs. Must include all flows where `core-ai-*` modules are active. |
+
+**`wo._contextSnapshot`** — After this module runs, `wo._contextSnapshot` is an array of context rows (same format as `getContext()` returns). Set it to an empty array `[]` to suppress history. Replace or append rows to inject context.
+
+---
+
 #### core-ai-completions (01000) — Detailed flow
 
 1. Builds the message array: system prompt → history (if `includeHistory=true`) → current user turn
