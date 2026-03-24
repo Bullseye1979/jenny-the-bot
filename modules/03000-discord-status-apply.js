@@ -92,6 +92,7 @@ async function setDiscordPresence(text, status, log) {
 function getStatusFromResponse(resp, maxChars) {
   let t = String(resp || "").trim();
   if (!t) return "";
+  if (/^\[empty(\s+ai)?\s+response\]$/i.test(t)) return "...";
   const firstLine = t.split(/\r?\n/)[0].trim();
   const unquoted = firstLine.replace(/^["'`]+|["'`]+$/g, "").trim();
   if (!maxChars || maxChars <= 0) return unquoted;
