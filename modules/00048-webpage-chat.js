@@ -1,17 +1,19 @@
 /************************************************************************************/
 /* filename: 00048-webpage-chat.js                                                   *
-/* Version 1.0                                                                       *
+/* Version 2.0                                                                       *
 /* Purpose: Webpage chat SPA (port 3112, /chat). Handles channel listing, context    *
-/*          display, AI completions (direct, no API proxy), and subchannel CRUD.     *
-/*          Config section: config["webpage-chat"]. Reads wo.db for DB access.       *
+/*          display, AI completions (via internal POST /api proxy), and subchannel   *
+/*          CRUD. Config section: config["webpage-chat"]. Reads wo.db for DB access. *
 /*          Subchannel names stored in chat_subchannels table.                       *
+/*          AI calls are routed through POST localhost:3400/api — channel config      *
+/*          is handled by core-channel-config (api flow), not webpage-channel-config.*
 /************************************************************************************/
 
 import fs     from "node:fs";
 import crypto from "node:crypto";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getItem }            from "../core/registry.js";
-import { setContext, setPurgeContext, setFreezeContext, setPurgeSubchannel } from "../core/context.js";
+import { setPurgeContext, setFreezeContext, setPurgeSubchannel } from "../core/context.js";
 
 const MODULE_NAME = "webpage-chat";
 
@@ -146,152 +148,27 @@ async function getEnsureChatSubchannelsTable(pool) {
 }
 
 
-function getResolvedAiCfg(wo, cfg) {
-  return {
-    endpoint:     String(wo.endpoint || "https://api.openai.com/v1/chat/completions").trim(),
-    model:        String(wo.model    || "gpt-4o-mini").trim(),
-    apiKey:       String(wo.apiKey   || "").trim(),
-    systemPrompt: String(wo.systemPrompt ?? cfg.systemPrompt ?? ""),
-    persona:      String(wo.persona      ?? ""),
-    instructions: String(wo.instructions ?? ""),
-    contextSize:  Number(cfg.contextSize  ?? wo.contextSize ?? 20),
-    maxTokens:    Number(wo.maxTokens    ?? cfg.maxTokens   ?? 1024),
-    temperature:  typeof wo.temperature === "number" ? wo.temperature : undefined,
-    useAiModule:  String(wo.useAiModule  ?? "completions").trim().toLowerCase()
-  };
-}
-
-
-/* ---- Channel-config helpers (own copy — no cross-module import) ---- */
-
-function isPlainObject(v) {
-  if (!v || typeof v !== "object") return false;
-  if (Array.isArray(v)) return false;
-  return Object.getPrototypeOf(v) === Object.prototype;
-}
-
-function normalizeStr(v) {
-  if (v === undefined || v === null) return "";
-  return String(v).trim();
-}
-
-function normalizeStrList(v) {
-  if (!Array.isArray(v)) return [];
-  return v.map(x => normalizeStr(x)).filter(Boolean);
-}
-
-function includesCI(list, value) {
-  const v = normalizeStr(value);
-  if (!v) return false;
-  const vu = v.toUpperCase();
-  for (let i = 0; i < list.length; i++) {
-    const li = normalizeStr(list[i]);
-    if (!li) continue;
-    if (li.toUpperCase() === vu) return true;
+/* Look up apiSecret for a channelID from core-channel-config.
+   The chat POST body delivers channelID after core-channel-config ran,
+   so wo.apiSecret is not populated. We scan the config directly. */
+function getApiSecretForChannel(config, channelID) {
+  const channels = config?.["core-channel-config"]?.channels;
+  if (!Array.isArray(channels) || !channelID) return "";
+  const id = String(channelID).trim().toUpperCase();
+  for (const ch of channels) {
+    const matches = Array.isArray(ch?.channelMatch) ? ch.channelMatch : [];
+    const hit = matches.some(m => String(m || "").trim().toUpperCase() === id);
+    if (!hit) continue;
+    const secret = String(ch?.overrides?.apiSecret || "").trim();
+    if (secret) return secret;
   }
-  return false;
+  return "";
 }
 
-function deepMergePlain(target, source) {
-  const out = isPlainObject(target) ? { ...target } : {};
-  if (!isPlainObject(source)) return out;
-  for (const [k, v] of Object.entries(source)) {
-    if (v === undefined || v === null) continue;
-    const cur = out[k];
-    if (isPlainObject(cur) && isPlainObject(v)) { out[k] = deepMergePlain(cur, v); continue; }
-    if (Array.isArray(v))   { out[k] = v.slice();            continue; }
-    if (isPlainObject(v))   { out[k] = deepMergePlain({}, v); continue; }
-    out[k] = v;
-  }
-  return out;
-}
 
-function matchChannel(node, channelId) {
-  const list = normalizeStrList(node?.channelMatch);
-  if (list.length === 0) return false;
-  return includesCI(list, channelId);
-}
-
-function matchFlow(node, flow) {
-  const list = normalizeStrList(node?.flowMatch);
-  if (list.length === 0) return false;
-  return includesCI(list, flow);
-}
-
-function matchUser(node, userId) {
-  const list = normalizeStrList(node?.userMatch);
-  if (list.length === 0) return false;
-  return list.includes(normalizeStr(userId));
-}
-
-function applyOverrides(workingObject, overrides) {
-  if (!isPlainObject(workingObject)) return 0;
-  if (!isPlainObject(overrides)) return 0;
-  const { channelallowed: _c, allow: _a, ...rawOverrides } = overrides;
-  let appliedKeys = 0;
-  for (const [k, v] of Object.entries(rawOverrides)) {
-    if (v === undefined || v === null) continue;
-    if (Array.isArray(v))                                       { workingObject[k] = v.slice();              appliedKeys++; continue; }
-    if (isPlainObject(v) && isPlainObject(workingObject[k]))    { workingObject[k] = deepMergePlain(workingObject[k], v); appliedKeys++; continue; }
-    if (isPlainObject(v))                                       { workingObject[k] = deepMergePlain({}, v);  appliedKeys++; continue; }
-    workingObject[k] = v;
-    appliedKeys++;
-  }
-  return appliedKeys;
-}
-
-function pickLastMatchingIndex(list, matcherFn) {
-  const arr = Array.isArray(list) ? list : [];
-  let index = -1, count = 0;
-  for (let i = 0; i < arr.length; i++) {
-    if (!matcherFn(arr[i])) continue;
-    index = i; count++;
-  }
-  return { index, count };
-}
-
-function applyStrictHierarchy(workingObject, cfgChannels, channelId, flow, userId) {
-  const channels = Array.isArray(cfgChannels) ? cfgChannels : [];
-  const matchedRules = [], warnings = [];
-  let appliedKeys = 0;
-
-  for (let c = 0; c < channels.length; c++) {
-    const ch = channels[c];
-    if (!matchChannel(ch, channelId)) continue;
-
-    appliedKeys += applyOverrides(workingObject, ch?.overrides);
-    matchedRules.push({ level: "channel", path: { c } });
-
-    const flows = Array.isArray(ch?.flows) ? ch.flows : [];
-    const flowPick = pickLastMatchingIndex(flows, fl => matchFlow(fl, flow));
-    if (flowPick.count > 1) warnings.push({ type: "multipleFlowMatches", channelPath: { c }, flow, matches: flowPick.count, pickedIndex: flowPick.index });
-    if (flowPick.index < 0) continue;
-
-    const fl = flows[flowPick.index];
-    appliedKeys += applyOverrides(workingObject, fl?.overrides);
-    matchedRules.push({ level: "flow", path: { c, f: flowPick.index } });
-
-    const users = Array.isArray(fl?.users) ? fl.users : [];
-    const userPick = pickLastMatchingIndex(users, us => matchUser(us, userId));
-    if (userPick.count > 1) warnings.push({ type: "multipleUserMatches", channelPath: { c, f: flowPick.index }, userId: userId || "unknown", matches: userPick.count, pickedIndex: userPick.index });
-    if (userPick.index < 0) continue;
-
-    const us = users[userPick.index];
-    appliedKeys += applyOverrides(workingObject, us?.overrides);
-    matchedRules.push({ level: "user", path: { c, f: flowPick.index, u: userPick.index } });
-  }
-
-  return { appliedKeys, matchedRules, warnings };
-}
-
-function applyChannelConfig(workingObject, channelId, flow, userId) {
-  /* Read channel config from wo._webpageChannelConfig — populated by 00011 */
-  const channels = workingObject._webpageChannelConfig;
-  if (!Array.isArray(channels) || !channelId || !flow) return;
-  if (!channels.some(ch => matchChannel(ch, channelId))) return;
-  applyStrictHierarchy(workingObject, channels, channelId, flow, userId || "");
-  workingObject.channelallowed = true;
-}
+/* Channel-config helpers removed — AI is now handled via POST /api.
+   core-channel-config (00010, api flow) applies per-channel overrides
+   on the API side. No local wo overrides needed here. */
 
 
 export default async function getWebpageChat(coreData) {
@@ -448,19 +325,12 @@ export default async function getWebpageChat(coreData) {
     if (!getIsChatVisibleForUser(wo, chatEntry)) { setNotFound(wo); wo.jump = true; await setSendNow(wo); return coreData; }
 
     try {
-      /* Apply channel-config overrides to wo now that channelID is known.
-         core-channel-config (00010) runs before this module but wo.channelID
-         was not yet set at that point — so we apply the overrides here just-in-time. */
-      applyChannelConfig(wo, channelID, "webpage", wo.userId || "");
-
-      /* Resolve effective AI config (applies cfg-level defaults to wo) */
-      const aiCfg = getResolvedAiCfg(wo, cfg);
+      wo.channelID = channelID;
+      wo.subchannel = subchannelId || null;
 
       /* ---- Admin slash commands — handled before AI call ---- */
       if (payload.startsWith("/")) {
         const cmdToken = payload.split(/\s+/)[0].slice(1).toLowerCase();
-        wo.channelID = channelID;
-        wo.subchannel = subchannelId || null;
 
         if (cmdToken === "purgedb") {
           const deleted = await setPurgeContext(wo);
@@ -492,42 +362,46 @@ export default async function getWebpageChat(coreData) {
         } catch {}
       }
 
-      /* Set effective prompts (subchannel overrides channel-config) */
-      const effectiveSystemPrompt = (subConfig?.system_prompt ? String(subConfig.system_prompt).trim() : "") || String(aiCfg.systemPrompt || "").trim();
-      const effectivePersona      = (subConfig?.persona      ? String(subConfig.persona).trim()      : "") || String(aiCfg.persona      || "").trim();
-      const effectiveInstructions = (subConfig?.instructions ? String(subConfig.instructions).trim() : "") || String(aiCfg.instructions || "").trim();
+      /* Build the API request body.
+         Context writing is handled by 00072-api-add-context on the API side,
+         so we do NOT set doNotWriteToContext.
+         Subchannel overrides are sent as promptAddition so the API-side system
+         can incorporate them (the API flow's core-ai-context-loader will apply
+         the subchannel context). We pass subchannelId so context is scoped. */
+      const apiUrl    = String(cfg.apiUrl || "http://localhost:3400/api").trim();
+      const apiSecret = getApiSecretForChannel(coreData?.config, channelID);
 
-      /* Set up wo for downstream AI pipeline modules */
-      wo.channelID    = channelID;
-      wo.subchannel   = subchannelId || null;
-      wo.payload      = payload;
-      wo.systemPrompt = effectiveSystemPrompt;
-      wo.persona      = effectivePersona;
-      wo.instructions = effectiveInstructions;
-      wo.contextSize  = aiCfg.contextSize;
+      const reqBody = {
+        channelID,
+        payload,
+        userId: String(wo.userId || wo.webAuth?.userId || "webpage-chat"),
+        ...(subchannelId ? { subchannel: subchannelId } : {})
+      };
 
-      /* Write user turn to context before AI runs */
-      if (wo.db && channelID && payload) {
-        try {
-          await setContext(
-            { ...wo, channelID, subchannel: subchannelId || null },
-            {
-              ts:         String(wo.timestamp || ""),
-              role:       "user",
-              turn_id:    typeof wo.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined,
-              content:    String(payload),
-              authorName: String(wo.webAuth?.username || wo.webAuth?.displayName || ""),
-              channelId:  String(channelID),
-              messageId:  "",
-              source:     "webpage-chat"
-            }
-          );
-        } catch {}
+      /* Carry subchannel prompt overrides as extra fields so api-add-context
+         or the system prompt builder on the API side can apply them */
+      if (subConfig?.system_prompt) reqBody.systemPrompt  = String(subConfig.system_prompt).trim();
+      if (subConfig?.persona)       reqBody.persona        = String(subConfig.persona).trim();
+      if (subConfig?.instructions)  reqBody.instructions   = String(subConfig.instructions).trim();
+
+      const headers = { "Content-Type": "application/json" };
+      if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
+
+      let data;
+      try {
+        const res = await fetch(apiUrl, { method: "POST", headers, body: JSON.stringify(reqBody) });
+        data = await res.json();
+        if (!res.ok) throw new Error(`API responded ${res.status}: ${data?.error || res.statusText}`);
+      } catch (fetchErr) {
+        throw new Error(`API call failed: ${fetchErr?.message || String(fetchErr)}`);
       }
 
-      /* Clear the webpage-flow 404 default so 09300 uses wo.response instead */
-      wo.http.response = { status: 200 };
-      /* Hand off to the AI pipeline — 09300 will format wo.response as JSON */
+      const responseText = String(data?.response || "").trim();
+      if (!responseText) throw new Error("API returned no response");
+
+      setJsonResp(wo, 200, { response: responseText });
+      wo.jump = true;
+      await setSendNow(wo);
       return coreData;
 
     } catch (e) {

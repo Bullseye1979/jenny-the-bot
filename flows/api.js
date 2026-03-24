@@ -400,10 +400,13 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     const silenceToken = String(workingObject.modSilence || "[silence]");
     const text = String(workingObject.response || "").trim();
 
+    const _subchannel = String(workingObject.subchannel || "").trim();
+
     return getJson(res, 200, {
       ok: true,
       flow: "api",
       channelID: workingObject.channelID,
+      ..._subchannel && { subchannel: _subchannel },
       turn_id: workingObject.turn_id,
       channelallowed: workingObject.channelallowed,
       response: text && text !== silenceToken ? text : "",

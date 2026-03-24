@@ -1906,20 +1906,32 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 **POST /api request:**
 ```json
 {
-  "payload":   "What is the weather in Berlin?",
-  "channelID": "optional-channel-id",
-  "userId":    "optional-user-id"
+  "payload":              "What is the weather in Berlin?",
+  "channelID":            "optional-channel-id",
+  "userId":               "optional-user-id",
+  "subchannel":           "optional-subchannel-id",
+  "doNotWriteToContext":  true
 }
 ```
+
+- `subchannel` — optional; routes the request through a specific subchannel context (applied by `00012-subchannel-config`)
+- `doNotWriteToContext` — optional boolean; when `true`, neither the user message (`00072`) nor the AI response (`01004`) are written to the MySQL context. Used for internal system calls (e.g. wiki article generation) that must not pollute the conversation history.
 
 **POST /api response:**
 ```json
 {
-  "turn_id":   "01JXXXXXXXXXXXXXXXXXXXXX",
-  "channelID": "optional-channel-id",
-  "response":  "The weather in Berlin is..."
+  "ok":             true,
+  "flow":           "api",
+  "turn_id":        "01JXXXXXXXXXXXXXXXXXXXXX",
+  "channelID":      "optional-channel-id",
+  "subchannel":     "optional-subchannel-id",
+  "channelallowed": true,
+  "response":       "The weather in Berlin is...",
+  "botname":        "Jenny"
 }
 ```
+
+`subchannel` is only present in the response when the request included one.
 
 ---
 
@@ -1966,10 +1978,11 @@ Also supports `*/N * * * *` (every N minutes).
 **Multi-port:** `config.webpage.ports` is an array — one HTTP server is started per port. Each incoming request sets `wo.http.port` so modules can route by port.
 
 **Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
-- Channel dropdown populated from `wo._webpageChannelConfig` (set by `00011-webpage-channel-config` from `webpage-chat.chats[]`)
-- `00048` is a **pure HTTP handler** — it sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally.
-- **Subchannels:** create, rename, and delete separate conversation threads from the UI; each subchannel has its own isolated context history stored in the `chat_subchannels` DB table
-- AI behaviour controlled by `systemPrompt`, `contextSize`, `maxTokens` keys in `webpage-chat` config (no separate `ai.*` sub-object)
+- Channel dropdown populated from `webpage-chat.chats[]` in `core.json`
+- `00048` is a **pure HTTP handler** — for AI requests it makes an internal `POST` to the API flow (`cfg.apiUrl`, default `http://localhost:3400/api`) and returns `{ response }` as JSON. The AI pipeline (model, tools, persona, context) is fully controlled by `core-channel-config` for the given `channelID`.
+- **Channel config:** per-channel AI settings (model, persona, systemPrompt, tools, etc.) live in `core-channel-config` — the same entries used by Discord and the browser extension. `webpage-channel-config` (`00011`) is **deactivated** (`flow: []`).
+- **Subchannels:** create, rename, and delete separate conversation threads from the UI; each subchannel has its own isolated context history stored in the `chat_subchannels` DB table. The subchannel ID is forwarded in the internal API call so `00012-subchannel-config` can apply per-subchannel overrides.
+- **Context writing:** handled by `00072-api-add-context` (user message) and `01004-core-ai-context-writer` (AI response) on the API side — `00048` does not write to context directly.
 - Last N context entries loaded from MySQL on channel/subchannel select (controlled by `contextSize`)
 - Large scrollable message window (top) + auto-resize input (bottom)
 - Enter = send, Shift+Enter = newline
@@ -2139,7 +2152,7 @@ export default async function myModule(coreData) {
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00007 | `webpage-router` | Maps HTTP port + path to a named flow and sets `wo.channelID`. Runs before `core-channel-config` so that flow-specific overrides (e.g. different trigger word for `/voice`) can be applied. Config key: `webpage-router`. Active only in `webpage` flow. |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
-| 00011 | `webpage-channel-config` | Stores the parsed `webpage-chat.chats[]` channel list in `wo._webpageChannelConfig` on every webpage request. Allows downstream modules (like `00048-webpage-chat`) to read channel config from `wo` without accessing foreign config keys. |
+| 00011 | `webpage-channel-config` | **Deactivated** (`flow: []`). Previously applied per-channel AI overrides for the webpage flow. Channel config for the web chat is now handled by `core-channel-config` (api flow), since `00048-webpage-chat` proxies all AI calls through `POST /api`. |
 | 00012 | `subchannel-config` | When `wo.subchannel` is set, loads `system_prompt`, `persona`, and `instructions` from the `chat_subchannels` table and overrides the corresponding workingObject fields. |
 | 00020 | `core-channel-gate` | Checks whether the bot is allowed to respond in this channel — sets `wo.stop = true` when `wo.channelallowed` is falsy |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
@@ -3113,10 +3126,10 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /chat/style.css` — serves shared CSS
 - `GET /chat/api/chats` — returns list of available chat channels (role-filtered)
 - `GET /chat/api/context?channelID=xxx` — fetches message history for a channel
-- `POST /chat/api/chat` — receives a user message; `00048` sets up `wo` fields and returns; the AI pipeline (01000–01003) processes the request and `09300-webpage-output` returns `{ response: ... }` as JSON
+- `POST /chat/api/chat` — receives a user message; `00048` forwards it to the internal API flow (`POST /api`) and returns `{ response }` directly as JSON
 - Subchannel CRUD: `GET/POST/PATCH/DELETE /chat/api/subchannels`
 
-**Architecture note:** `00048-webpage-chat` is a pure HTTP handler. It reads channel config from `wo._webpageChannelConfig` (populated by `00011-webpage-channel-config`), writes the user message to context, populates `wo.channelID`, `wo.payload`, `wo.systemPrompt`, etc., then returns without making any AI call. The pipeline continues through the AI modules (01000–01003) which produce `wo.response`, and `09300-webpage-output` sends `{ response: wo.response }` as JSON.
+**Architecture note:** `00048-webpage-chat` is a pure HTTP handler. On `POST /chat/api/chat` it makes an internal `POST http://localhost:3400/api` call with `channelID`, `payload`, `userId`, and `subchannel`. All AI processing (model, tools, persona, context write) happens inside the API pipeline — `00048` does not interact with AI or context directly. Channel config comes from `core-channel-config` (same entries used by Discord and the browser extension). `00011-webpage-channel-config` is deactivated (`flow: []`).
 
 ### 16.4 Inpainting SPA (`/inpainting`)
 
