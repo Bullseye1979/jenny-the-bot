@@ -380,6 +380,8 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     const _apiSubchannel = String(parsedBody.subchannel || "").trim();
     if (_apiSubchannel) workingObject.subchannel = _apiSubchannel;
 
+    if (parsedBody.doNotWriteToContext === true) workingObject.doNotWriteToContext = true;
+
     try {
       await runFlow("api", runCore);
     } catch {

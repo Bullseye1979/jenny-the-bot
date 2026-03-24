@@ -398,7 +398,7 @@ The live dashboard displays:
 | `contextSize` | number | `40` | Number of history rows to load |
 | `simplifiedContext` | boolean | `false` | Load simplified context (for fast/small models) |
 | `channelIds` | array | `[]` | Additional channel IDs whose history is included as quoted context |
-| `doNotWriteToContext` | boolean | `false` | Skip writing to MySQL (e.g. for status flows) |
+| `doNotWriteToContext` | boolean | `false` | Skip writing to MySQL. Honoured by `01004-core-ai-context-writer` and `00072-api-add-context`. Set by `discord-status` and `bard-label-gen` flows. Can also be passed in the API request body (`POST /api`) to prevent internal system calls (e.g. wiki article generation) from polluting the channel context. |
 
 #### Output & Reactions
 
@@ -2174,7 +2174,7 @@ export default async function myModule(coreData) {
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
-| 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user) |
+| 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user). Skipped when `wo.doNotWriteToContext === true` (e.g. internal wiki/system API calls). |
 | 00073 | *(deleted)* | `webpage-add-context` has been removed. Its logic was inlined into `00048-webpage-chat`. |
 | 00074 | `core-trigger-gate` | Flow-agnostic trigger gate. Stops the pipeline when `wo.payload` does not start with the configured trigger word. |
 | 00075 | `discord-trigger-gate` | Filters messages based on trigger words |

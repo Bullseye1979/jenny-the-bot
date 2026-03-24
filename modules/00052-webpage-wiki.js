@@ -457,7 +457,7 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
   const apiSecret = getStr(wo.apiSecret || "");
 
   const payload = `Topic: ${query}` + (promptAddition ? `\n\nAdditional context: ${promptAddition}` : "");
-  const reqBody = { channelID: channel.channelId, payload, userId: "wiki" };
+  const reqBody = { channelID: channel.channelId, payload, userId: "wiki", doNotWriteToContext: true };
 
   const headers = { "Content-Type": "application/json" };
   if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;

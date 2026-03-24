@@ -36,6 +36,17 @@ export default async function getApiAddContext(coreData) {
     message: "Begin append API message to context",
   });
 
+  if (workingObject.doNotWriteToContext === true) {
+    setPushLog(logging, {
+      timestamp,
+      severity: "info",
+      module: MODULE_NAME,
+      exitStatus: "skipped",
+      message: "doNotWriteToContext=true — skipped API context write",
+    });
+    return coreData;
+  }
+
   if (!workingObject.db || !workingObject.flow || !workingObject.channelID || !text) {
     setPushLog(logging, {
       timestamp,
