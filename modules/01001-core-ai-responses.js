@@ -14,6 +14,7 @@ import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { saveFile } from "../core/file.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSecret } from "../core/secrets.js";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -888,7 +889,7 @@ export default async function getCoreAi(coreData) {
   }
 
   const endpoint = getStr(wo?.endpointResponses, "");
-  const apiKey = getStr(wo?.apiKey, "");
+  const apiKey = await getSecret(wo, getStr(wo?.apiKey, ""));
   const model = getStr(wo?.model, "");
   const baseUrl = getStr(wo?.baseUrl ?? wo?.baseUrl ?? wo?.base_url, "");
   const endpointFilesContentTemplate = getStr(wo?.EndpointFilesContent, "");

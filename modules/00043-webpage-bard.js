@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { setSendNow, setJsonResp, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-bard";
 const __filename = fileURLToPath(import.meta.url);
@@ -140,7 +141,7 @@ function getExistingTagCategories(tracks) {
 }
 
 
-async function callTavily(title, atCfg) {
+async function callTavily(title, atCfg, wo) {
   const query = `"${title}" song music mood genre atmosphere RPG tabletop`;
   const body = {
     query,
@@ -156,7 +157,7 @@ async function callTavily(title, atCfg) {
   try {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${atCfg.tavilyApiKey}` },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, atCfg.tavilyApiKey || "")}` },
       body: JSON.stringify(body),
       signal: controller.signal
     });
@@ -171,7 +172,7 @@ async function callTavily(title, atCfg) {
 }
 
 
-async function callLlmForTags(title, tavilySnippet, tagCats, atCfg) {
+async function callLlmForTags(title, tavilySnippet, tagCats, atCfg, wo) {
   const locList  = tagCats.locations.length  ? tagCats.locations.join(", ")  : "tavern, dungeon, forest, city, camp";
   const sitList  = tagCats.situations.length ? tagCats.situations.join(", ") : "combat, exploration, rest, dialogue, travel";
   const moodList = tagCats.moods.length      ? tagCats.moods.join(", ")      : "dark, tense, calm, epic, eerie, intense, cozy, warm, dramatic, mysterious";
@@ -219,7 +220,7 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg) {
   try {
     const res = await fetch(atCfg.endpoint || "https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${atCfg.apiKey}` },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, atCfg.apiKey || "")}` },
       body: JSON.stringify(reqBody),
       signal: controller.signal
     });
@@ -443,8 +444,8 @@ export default async function getWebpageBard(coreData) {
       const title        = getTitleFromFilename(rawFilename);
       const tracks       = readTracks(musicDir);
       const tagCats = getExistingTagCategories(tracks);
-      const tavilySnippet = await callTavily(title, atCfg);
-      const tags = await callLlmForTags(title, tavilySnippet, tagCats, atCfg);
+      const tavilySnippet = await callTavily(title, atCfg, wo);
+      const tags = await callLlmForTags(title, tavilySnippet, tagCats, atCfg, wo);
       if (!fs.existsSync(musicDir)) fs.mkdirSync(musicDir, { recursive: true });
       fs.writeFileSync(path.join(musicDir, rawFilename), mp3File.buffer);
       const idx   = tracks.findIndex(t => t.file === rawFilename);

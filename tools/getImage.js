@@ -6,6 +6,7 @@
 /**********************************************************************************/
 
 import { saveFile } from "../core/file.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getImage";
 
@@ -273,7 +274,7 @@ function getBuiltSize({ size, aspect, targetLongEdge = 1024 }) {
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getImage || {};
-  const apiKey = String(args?.apiKey || toolCfg.apiKey || wo?.apiKey || "");
+  const apiKey = await getSecret(wo, String(args?.apiKey || toolCfg.apiKey || wo?.apiKey || ""));
   if (!apiKey) return { ok: false, error: "Missing API key for images (args.apiKey / toolsconfig.getImage.apiKey / workingObject.apiKey)" };
   const promptRaw = String(args?.prompt || "").trim();
   if (!promptRaw) return { ok: false, error: "Missing prompt" };

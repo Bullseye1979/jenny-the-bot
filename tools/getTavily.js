@@ -6,6 +6,7 @@
 /**********************************************************************************/
 
 import fetch from "node-fetch";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getTavily";
 
@@ -65,7 +66,7 @@ function getNormalizeResults(results) {
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getTavily || {};
-  const apiKey = getStr(toolCfg.apiKey, null);
+  const apiKey = await getSecret(wo, getStr(toolCfg.apiKey, "")) || null;
 
   if (!apiKey) return { ok: false, error: "Missing toolsconfig.getTavily.apiKey" };
 

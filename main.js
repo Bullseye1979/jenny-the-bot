@@ -32,7 +32,7 @@ function getPipelineSafeJson(wo) {
         if (seen.has(value)) return "[[Circular]]";
         seen.add(value);
       }
-      if (key === "apiKey" || key === "api_key") return "***";
+      if (key === "password") return "***redacted***";
       if (typeof value === "function") return "[Function]";
       if (typeof Buffer !== "undefined" && Buffer.isBuffer(value)) return `[Buffer:${value.length}]`;
       if (typeof value === "bigint") return value.toString();

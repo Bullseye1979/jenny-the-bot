@@ -27,6 +27,7 @@ import ffmpegImport from "fluent-ffmpeg";
 import { getPrefixedLogger }  from "../core/logging.js";
 import { getIsAllowedRoles }  from "../shared/webpage/utils.js";
 import { setContext, setPurgeContext } from "../core/context.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME  = "webpage-voice-record";
 const DEFAULT_PORT = 3119;
@@ -63,7 +64,7 @@ function getConvertToWav(inputFile, outputFile) {
 async function getTranscript(wavFile, cfg, wo) {
   const model    = String(cfg.recordModel || "gpt-4o-transcribe");
   const endpoint = String(wo.whisperEndpoint || "https://api.openai.com");
-  const apiKey   = String(cfg.whisperApiKey || wo.whisperApiKey || wo.apiKey || "");
+  const apiKey   = await getSecret(wo, cfg.whisperApiKey || wo.whisperApiKey || wo.apiKey || "");
   const url      = endpoint.replace(/\/$/, "") + "/v1/audio/transcriptions";
 
   const audioBuffer = fs.readFileSync(wavFile);

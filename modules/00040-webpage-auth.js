@@ -12,6 +12,7 @@
 import crypto from "node:crypto";
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { setSendNow, setJsonResp } from "../shared/webpage/utils.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-auth";
 const COOKIE_STATE = "jenny_oauth_state";
@@ -308,8 +309,8 @@ export default async function getWebpageAuth(coreData) {
   if (!ports.includes(reqPort)) return coreData;
 
   const clientId = String(cfg.clientId || "").trim();
-  const clientSecret = String(cfg.clientSecret || "").trim();
-  const secret = String(cfg.sessionSecret || "").trim();
+  const clientSecret = await getSecret(wo, cfg.clientSecret || "");
+  const secret = await getSecret(wo, cfg.sessionSecret || "");
 
   if (!clientId || !clientSecret || !secret) {
     setJsonResp(wo, 500, { error: "webpage-auth misconfigured" });

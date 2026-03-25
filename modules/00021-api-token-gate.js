@@ -6,6 +6,7 @@
 /************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "api-token-gate";
 
@@ -14,11 +15,6 @@ function getApiEnabled(wo) {
   const v = wo?.apiEnabled;
   if (v === undefined || v === null || v === "") return 1;
   return Number(v);
-}
-
-
-function getApiSecret(wo) {
-  return String(wo?.apiSecret || "").trim();
 }
 
 
@@ -46,7 +42,7 @@ export default async function getApiTokenGate(coreData) {
     return coreData;
   }
 
-  const secret = getApiSecret(wo);
+  const secret = await getSecret(wo, String(wo?.apiSecret || "").trim());
   if (!secret) {
     log("apiSecret not set — gate disabled", "debug", { moduleName: MODULE_NAME });
     return coreData;

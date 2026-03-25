@@ -6,6 +6,7 @@
 /**********************************************************************************/
 
 import { saveFile } from "../core/file.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getAnimatedPicture";
 
@@ -27,9 +28,9 @@ async function getDownloadToBuffer(url) {
 }
 
 
-function resolveToolConfig(wo = {}, args = {}) {
+async function resolveToolConfig(wo = {}, args = {}) {
   const tc = wo?.toolsconfig?.getAnimatedPicture || {};
-  const apiToken = String(args.videoApiToken || tc.videoApiToken || wo.videoApiToken || "").trim();
+  const apiToken = await getSecret(wo, String(args.videoApiToken || tc.videoApiToken || wo.videoApiToken || "").trim());
   const baseUrl = String(args.videoBaseUrl || tc.videoBaseUrl || wo.videoBaseUrl || "https://api.replicate.com/v1").trim();
   const model = String(args.videoModel || tc.videoModel || wo.videoModel || "google/veo-3").trim();
   const pollIntervalMs = Number.isFinite(args.videoPollIntervalMs)
@@ -151,7 +152,7 @@ async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   let cfg;
   try {
-    cfg = resolveToolConfig(wo, args);
+    cfg = await resolveToolConfig(wo, args);
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
   }

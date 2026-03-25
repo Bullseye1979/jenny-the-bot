@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getDb, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { setSendNow, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
+import { getSecret } from "../core/secrets.js";
 /* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
 let sharp = null;
 try { sharp = (await import("sharp")).default; } catch { /* sharp not available */ }
@@ -334,7 +335,7 @@ function wikiImgEnhancePrompt(raw) {
 }
 
 async function wikiGenImage(prompt, imgCfg, wo) {
-  const apiKey = getStr(imgCfg?.apiKey || wo?.apiKey || "");
+  const apiKey = await getSecret(wo, getStr(imgCfg?.apiKey || wo?.apiKey || ""));
   if (!apiKey) throw new Error("Wiki image generation requires imageGen.apiKey in webpage-wiki config");
 
   const endpoint = getStr(imgCfg?.endpoint || "https://api.openai.com/v1/images/generations");
@@ -404,7 +405,7 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
    * configured per channel-ID in core.json (api-channel-config / core-channel-config),
    * mirroring how the browser-extension channel is configured. */
   const apiUrl    = getStr(cfg.apiUrl || "http://localhost:3400/api");
-  const apiSecret = getStr(wo.apiSecret || "");
+  const apiSecret = await getSecret(wo, getStr(wo.apiSecret || ""));
 
   const payload = `Topic: ${query}` + (promptAddition ? `\n\nAdditional context: ${promptAddition}` : "");
   const reqBody = { channelID: channel.channelId, payload, userId: "wiki", doNotWriteToContext: true };

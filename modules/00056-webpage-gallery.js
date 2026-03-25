@@ -72,7 +72,11 @@ export default async function getWebpageGallery(coreData) {
       return { filename, url };
     });
 
-    setJsonResp(wo, 200, { ok: true, files });
+    wo.http.response = {
+      status: 200,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+      body: JSON.stringify({ ok: true, files }),
+    };
     wo.jump = true;
     return coreData;
   }
@@ -183,7 +187,7 @@ async function loadGallery(){
   var empty   = document.getElementById("gallery-empty");
   var loading = document.getElementById("gallery-loading");
   try {
-    var r = await fetch(BASE_PATH + "/api/files", { redirect: "error" });
+    var r = await fetch(BASE_PATH + "/api/files", { redirect: "error", cache: "no-store" });
     var d = await r.json();
     if (!d.ok || !d.files || !d.files.length) {
       empty.style.display = "block";

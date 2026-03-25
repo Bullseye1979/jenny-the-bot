@@ -5,6 +5,8 @@
 /*          as args.imageURL.                                                      *
 /**********************************************************************************/
 
+import { getSecret } from "../core/secrets.js";
+
 const MODULE_NAME = "getImageDescription";
 
 /**********************************************************************************/
@@ -79,7 +81,8 @@ function validateImageUrl(u) {
 /**********************************************************************************/
 async function getInvoke(args, coreData) {
   const workingObject = coreData?.workingObject || {};
-  const { apiKey, model, endpoint, temperature, maxTokens, timeoutMs } = getStrictConfig(workingObject);
+  const { apiKey: rawApiKey, model, endpoint, temperature, maxTokens, timeoutMs } = getStrictConfig(workingObject);
+  const apiKey = await getSecret(workingObject, rawApiKey);
 
   const imageUrl = validateImageUrl(args?.imageURL);
   if (!imageUrl) {

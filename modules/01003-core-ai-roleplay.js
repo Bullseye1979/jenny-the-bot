@@ -14,6 +14,7 @@
 /*******************************************************************************/
 import { getContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "core-ai-roleplay";
 
@@ -234,7 +235,7 @@ async function getCallChat(wo, body, timeoutMs) {
   try {
     const res = await fetch(wo.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.apiKey}` },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
       body: JSON.stringify(body),
       signal: controller.signal
     });

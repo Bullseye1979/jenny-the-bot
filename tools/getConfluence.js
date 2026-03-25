@@ -6,6 +6,8 @@
 /*          Markdown to storage HTML, enforced space, and v1 attachment upload.    *
 /**********************************************************************************/
 
+import { getSecret } from "../core/secrets.js";
+
 const MODULE_NAME = "getConfluence";
 const SPACE_ID_CACHE = new Map();
 
@@ -578,8 +580,8 @@ async function getInvoke(args, coreData){
   const wo = coreData?.workingObject || {};
   const cfg = wo?.toolsconfig?.getConfluence || {};
   const baseUrl = getStr(cfg?.baseUrl,"").replace(/\/+$/,"");
-  const email   = getStr(cfg?.email,"");
-  const token   = getStr(cfg?.token,"");
+  const email   = await getSecret(wo, getStr(cfg?.email,""));
+  const token   = await getSecret(wo, getStr(cfg?.token,""));
   const spaceKey = getStr(cfg?.project, "ST");
   const parentId = getStr(cfg?.mainPageId, "");
   const timeoutMs = 60000;

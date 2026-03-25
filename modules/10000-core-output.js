@@ -41,13 +41,7 @@ function setLog(wo, message, level = "info", extra = {}) {
 function getRedact(value, keyPath) {
   if (typeof value !== "string") return value;
   const lowerPath = String(keyPath || "").toLowerCase();
-  if (
-    lowerPath.endsWith(".apikey") ||
-    lowerPath.endsWith(".api_key") ||
-    lowerPath.includes("authorization")
-  ) {
-    if (value.startsWith("sk-")) return "sk-***redacted***";
-    if (/^bearer\s+/i.test(value)) return "Bearer ***redacted***";
+  if (lowerPath.endsWith(".password") || lowerPath === "password") {
     return "***redacted***";
   }
   const MAX = 4000;
@@ -104,11 +98,6 @@ function getSafeReplacerFactory() {
         message: value.message,
         stack: typeof value.stack === "string" ? value.stack.split("\n").slice(0, 6).join("\n") : undefined
       };
-    }
-    if (value && typeof value === "object" && value.headers && typeof value.headers === "object") {
-      const h = { ...value.headers };
-      for (const hk of Object.keys(h)) if (hk.toLowerCase() === "authorization") h[hk] = "Bearer ***redacted***";
-      return { ...value, headers: h };
     }
     const keyPath = this && this.__keyPath ? `${this.__keyPath}.${key}` : key;
     if (typeof value === "string") return getRedact(value, String(keyPath || key));

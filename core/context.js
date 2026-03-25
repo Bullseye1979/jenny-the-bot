@@ -66,7 +66,7 @@ function getSubchannelFilter(workingObject) {
 }
 
 
-async function getEnsurePool(workingObject) {
+export async function getEnsurePool(workingObject) {
   const db = workingObject?.db;
   if (!db) throw new Error("[context] missing db configuration");
   const dsnKey = getDsnKey(db);

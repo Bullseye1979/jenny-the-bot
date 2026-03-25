@@ -11,7 +11,7 @@
     "model": "gpt-4o-mini",
     "endpoint": "https://api.openai.com/v1/chat/completions",
     "endpointResponses": "https://api.openai.com/v1/responses",
-    "apiKey": "YOUR_OPENAI_API_KEY",
+    "apiKey": "OPENAI",
     "useAiModule": "completions",
     "temperature": 0.2,
     "maxTokens": 2000,
@@ -34,7 +34,7 @@
     "doNotWriteToContext": false,
     "modAdmin": "YOUR_DISCORD_USER_ID",
     "modSilence": "[silence]",
-    "apiSecret": "",
+    "apiSecret": "API_SECRET",
     "apiEnabled": 1,
     "botsAllow": [],
     "showReactions": true,
@@ -56,12 +56,12 @@
     "ttsModel": "gpt-4o-mini-tts",
     "ttsVoice": "nova",
     "ttsEndpoint": "https://api.openai.com/v1/audio/speech",
-    "ttsApiKey": "YOUR_OPENAI_API_KEY",
+    "ttsApiKey": "OPENAI",
     "transcribeModel": "gpt-4o-mini-transcribe",
     "transcribeLanguage": "",
     "transcribeEndpoint": "",
-    "transcribeApiKey": "YOUR_OPENAI_API_KEY",
-    "avatarApiKey": "YOUR_OPENAI_API_KEY",
+    "transcribeApiKey": "OPENAI",
+    "avatarApiKey": "OPENAI",
     "avatarEndpoint": "https://api.openai.com/v1/images/generations",
     "avatarModel": "dall-e-3",
     "avatarSize": "1024x1024",
@@ -271,8 +271,8 @@
       "__description": "Per-tool configuration — only fill in the tools you enable in 'tools' above",
       "getGoogle": {
         "__description": "Google Custom Search — requires apiKey and cseId",
-        "apiKey": "YOUR_GOOGLE_API_KEY",
-        "cseId": "YOUR_GOOGLE_CSE_ID",
+        "apiKey": "GOOGLE",
+        "cseId": "GOOGLE_CSE_ID",
         "num": 5,
         "safe": "off",
         "timeoutMs": 20000
@@ -283,7 +283,7 @@
         "maxInputChars": 100000,
         "wordThreshold": 1500,
         "endpoint": "https://api.openai.com/v1/chat/completions",
-        "apiKey": "YOUR_OPENAI_API_KEY",
+        "apiKey": "OPENAI",
         "model": "gpt-4o-mini",
         "temperature": 0.2,
         "max_tokens": 4000,
@@ -291,7 +291,7 @@
       },
       "getImage": {
         "__description": "DALL-E image generation — requires apiKey and publicBaseUrl",
-        "apiKey": "YOUR_OPENAI_API_KEY",
+        "apiKey": "OPENAI",
         "endpoint": "https://api.openai.com/v1/images/generations",
         "model": "dall-e-3",
         "size": "1024x1024",
@@ -299,7 +299,7 @@
         "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL/",
         "targetLongEdge": 1024,
         "enhancerEndpoint": "https://api.openai.com/v1/chat/completions",
-        "enhancerApiKey": "YOUR_OPENAI_API_KEY",
+        "enhancerApiKey": "OPENAI",
         "enhancerModel": "gpt-4o-mini",
         "enhancerTemperature": 0.2,
         "enhancerMaxTokens": 350,
@@ -334,7 +334,7 @@
         "max_tokens": 4000,
         "aiTimeoutMs": 45000,
         "endpoint": "https://api.openai.com/v1/chat/completions",
-        "apiKey": "YOUR_OPENAI_API_KEY",
+        "apiKey": "OPENAI",
         "include_tool_rows": false,
         "chunk_max_tokens": 600
       },
@@ -353,7 +353,7 @@
       },
       "getImageDescription": {
         "__description": "Vision model for image descriptions — requires apiKey",
-        "apiKey": "YOUR_OPENAI_API_KEY",
+        "apiKey": "OPENAI",
         "model": "gpt-4o-mini",
         "endpoint": "https://api.openai.com/v1/chat/completions",
         "temperature": 0.2,
@@ -367,7 +367,7 @@
     "discord": {
       "__description": "Fill in your Discord bot token",
       "flowName": "discord",
-      "token": "YOUR_DISCORD_BOT_TOKEN",
+      "token": "DISCORD",
       "intents": [
         "Guilds",
         "GuildMessages",
@@ -404,7 +404,7 @@
       "__description": "Rolling summary backend — fill in apiKey",
       "endpoint": "https://api.openai.com/v1/chat/completions",
       "model": "gpt-4o-mini",
-      "apiKey": "YOUR_OPENAI_API_KEY",
+      "apiKey": "OPENAI",
       "periodSize": 600
     },
     "webpage": {
@@ -419,7 +419,10 @@
         3116,
         3117,
         3118,
-        3119
+        3119,
+        3120,
+        3121,
+        3122
       ]
     },
     "webpage-router": {
@@ -446,12 +449,12 @@
       "__description": "Discord OAuth2 SSO for all web modules. The Jenny bot must be invited to every guild listed in 'guilds'. First guild where the user is a member wins. Backward compat: old top-level guildId still works.",
       "flow": ["webpage"],
       "clientId":         "YOUR_DISCORD_CLIENT_ID",
-      "clientSecret":     "YOUR_DISCORD_CLIENT_SECRET",
-      "sessionSecret":    "LONG_RANDOM_SECRET_STRING",
+      "clientSecret":     "DISCORD_CLIENT_SECRET",
+      "sessionSecret":    "SESSION_SECRET",
       "redirectUri":      "",
       "scope":            "identify guilds.members.read",
       "loginPort":        3111,
-      "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
+      "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120, 3121, 3122],
       "sessionMaxAgeSec": 43200,
       "sameSite":         "Lax",
       "ssoPartners":      [],
@@ -654,12 +657,12 @@
         {
           "label": "General",
           "channelID": "YOUR_CHANNEL_ID",
-          "apiSecret": ""
+          "apiSecret": "API_SECRET"
         },
         {
           "label": "Browser Extension",
           "channelID": "browser-extension",
-          "apiSecret": ""
+          "apiSecret": "API_SECRET"
         }
       ]
     },
@@ -766,10 +769,17 @@
         "all"
       ]
     },
+    "webpage-keymanager": {
+      "__description": "Admin UI for managing API secrets (placeholder → real value). Port 3122, /key-manager. Add 3122 to webpage.ports and webpage-auth.ports.",
+      "flow": ["webpage"],
+      "port": 3122,
+      "basePath": "/key-manager",
+      "allowedRoles": ["admin"]
+    },
     "bard": {
       "__description": "Bard bot — second Discord bot that plays D&D mood music in voice channels",
       "flow": [],
-      "token":          "YOUR_BARD_BOT_TOKEN",
+      "token":          "BARD_DISCORD",
       "musicDir":       "assets/bard",
       "idlePresence":   "Waiting for adventure...",
       "pollIntervalMs": 30000
@@ -907,7 +917,7 @@
           ],
           "overrides": {
             "apiEnabled": 1,
-            "apiSecret": "",
+            "apiSecret": "API_SECRET",
             "botName": "Jenny",
             "persona": "You are Jenny, a browser extension assistant. You help users summarize web pages and YouTube videos, and answer questions about page content.",
             "systemPrompt": "Answer in full sentences. Answer only in English.",

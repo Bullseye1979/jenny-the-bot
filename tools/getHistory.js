@@ -6,6 +6,7 @@
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getHistory";
 const POOLS = new Map();
@@ -193,10 +194,9 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
     (typeof cfg?.endpoint === "string" && cfg.endpoint)
       ? cfg.endpoint
       : (typeof wo?.endpoint === "string" && wo.endpoint ? wo.endpoint : "https://api.openai.com/v1/chat/completions");
-  const apiKey =
-    (typeof cfg?.apiKey === "string" && cfg.apiKey)
+  const apiKey = await getSecret(wo, (typeof cfg?.apiKey === "string" && cfg.apiKey)
       ? cfg.apiKey
-      : (typeof wo?.apiKey === "string" ? wo.apiKey : "");
+      : (typeof wo?.apiKey === "string" ? wo.apiKey : ""));
   if (!apiKey) {
     return { ok: false, error: "Missing OpenAI API key" };
   }

@@ -11,6 +11,7 @@ import fetch from "node-fetch";
 import discordJs from "discord.js";
 const { EmbedBuilder } = discordJs;
 import { getItem } from "../core/registry.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "discord-admin-avatar";
 
@@ -113,7 +114,7 @@ async function getDownloadUrlBuffer(urlStr) {
 async function getGenerateAvatarBuffer(wo) {
   const endpoint = String(wo?.avatarEndpoint || "");
   const model = String(wo?.avatarModel || "");
-  const apiKey = String(wo?.avatarApiKey || "");
+  const apiKey = await getSecret(wo, wo?.avatarApiKey || "");
   if (!endpoint) throw new Error("Missing avatarEndpoint");
   if (!model) throw new Error("Missing avatarModel");
   if (!apiKey) throw new Error("Missing avatarApiKey");

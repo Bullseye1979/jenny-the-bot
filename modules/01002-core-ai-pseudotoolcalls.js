@@ -12,6 +12,7 @@
 import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "core-ai-pseudotoolcalls";
 const ARG_PREVIEW_MAX = 400;
@@ -652,7 +653,7 @@ export default async function getCoreAi(coreData) {
 
       const res = await fetch(wo.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${wo.apiKey}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
         body: JSON.stringify(body),
         signal: controller.signal
       });

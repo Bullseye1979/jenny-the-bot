@@ -4,6 +4,8 @@
 /* Purpose: Fetch YouTube transcripts, then dump or summarize; optional search.    *
 /**********************************************************************************/
 
+import { getSecret } from "../core/secrets.js";
+
 const MODULE_NAME = "getYoutube";
 let YT_LIB = null;
 
@@ -158,11 +160,11 @@ async function getInvoke(args, coreData) {
   const started = Date.now();
   const wo = coreData?.workingObject || {};
   const cfg = wo?.toolsconfig?.getYoutube || {};
-  const googleApiKey = getStr(cfg.googleApiKey, "");
+  const googleApiKey = await getSecret(wo, getStr(cfg.googleApiKey, ""));
   const transcriptLangs = Array.isArray(cfg.transcriptLangs) ? cfg.transcriptLangs : [];
   const dumpThresholdChars = getNum(cfg.dumpThresholdChars, 24000);
   const endpoint = getStr(cfg.endpoint, wo?.endpoint || "https://api.openai.com/v1/chat/completions");
-  const apiKey = getStr(cfg.apiKey, wo?.apiKey || wo?.apiKey || process.env.OPENAI_API_KEY || "");
+  const apiKey = await getSecret(wo, getStr(cfg.apiKey, wo?.apiKey || process.env.OPENAI_API_KEY || ""));
   const model = getStr(cfg.model, wo?.model || "gpt-4o-mini");
   const temperature = getNum(cfg.temperature, 0.2);
   const maxTokens = getNum(cfg.maxTokens, 1400);

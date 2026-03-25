@@ -61,6 +61,7 @@
    - 9.1 [registry.js — In-Memory Key-Value Store](#91-registryjs--in-memory-key-value-store)
    - 9.2 [context.js — MySQL Conversation Storage](#92-contextjs--mysql-conversation-storage)
    - 9.3 [logging.js — Structured Logging](#93-loggingjs--structured-logging)
+   - 9.4 [secrets.js — Centralized Secret Store](#94-secretsjs--centralized-secret-store)
 10. [GDPR & Consent Workflow](#10-gdpr--consent-workflow)
 11. [Macro System](#11-macro-system)
 12. [Discord Slash Commands — Overview](#12-discord-slash-commands--overview)
@@ -84,6 +85,7 @@
    - 16.11 [Navigation Menu](#1611-navigation-menu)
    - 16.12 [Permission Concept](#1612-permission-concept)
    - 16.13 [Creating a New Web Module](#1613-creating-a-new-web-module)
+   - 16.14 [Key Manager (`/key-manager`)](#1614-key-manager-key-manager)
 17. [Bard Music System](#17-bard-music-system)
 18. [Dependencies](#18-dependencies)
 
@@ -161,6 +163,39 @@ CREATE TABLE gdpr (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, channel_id)
 );
+
+-- Secret store (placeholder name → real value)
+-- See Section 9.4 for details. The bot auto-creates this table on first start,
+-- but creating it here ensures it exists before the bot connects.
+CREATE TABLE IF NOT EXISTS bot_secrets (
+  name        VARCHAR(64)  NOT NULL,
+  value       TEXT         NOT NULL,
+  description VARCHAR(255) NULL,
+  PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Populate with your real secret values.
+-- Replace each '...' with the actual key/token for that service.
+INSERT INTO bot_secrets (name, value, description) VALUES
+  ('OPENAI',               '...',             'OpenAI API key — completions, responses, DALL-E, Whisper, TTS, vision'),
+  ('DISCORD',              '...',             'Discord bot token (main Jenny bot)'),
+  ('BARD_DISCORD',         '...',             'Discord bot token (Bard music bot — only if bard flow is active)'),
+  ('DISCORD_CLIENT_SECRET','...',             'Discord OAuth2 client secret (webpage-auth SSO)'),
+  ('SESSION_SECRET',       '...',             'Express session signing secret (webpage-auth)'),
+  ('TAVILY',               '...',             'Tavily Search API key'),
+  ('GOOGLE',               '...',             'Google Custom Search API key'),
+  ('GOOGLE_CSE_ID',        '...',             'Google Custom Search Engine ID'),
+  ('JIRA',                 '...',             'Jira API token'),
+  ('JIRA_EMAIL',           '...',             'Jira account email'),
+  ('CONFLUENCE',           '...',             'Confluence API token'),
+  ('CONFLUENCE_EMAIL',     '...',             'Confluence account email'),
+  ('ANIMATED_PICTURE',     '...',             'Animated picture generation API token'),
+  ('VIDEO_FROM_TEXT',      '...',             'Video generation API token'),
+  ('REPLICATE',            '...',             'Replicate API token (inpainting)'),
+  ('API_SECRET',           '...',             'Internal API bearer token for the bot /api endpoint')
+ON DUPLICATE KEY UPDATE
+  value       = VALUES(value),
+  description = COALESCE(VALUES(description), description);
 ```
 
 ### Step 3: Create core.json (or use the Setup Wizard)
@@ -185,21 +220,22 @@ The following fields are **mandatory** for the bot to start:
 
 | Field | Description |
 |---|---|
-| `workingObject.apiKey` | OpenAI API key (or compatible provider) |
+| `workingObject.apiKey` | Placeholder name for the LLM API key, e.g. `"OPENAI"` — resolved from `bot_secrets` at runtime |
 | `workingObject.db.host` | MySQL host |
 | `workingObject.db.user` | MySQL user |
-| `workingObject.db.password` | MySQL password |
+| `workingObject.db.password` | MySQL password (stored directly in `core.json`, not in `bot_secrets`) |
 | `workingObject.db.database` | MySQL database name |
-| `config.discord.token` | Discord bot token |
+| `config.discord.token` | Placeholder name for the Discord bot token, e.g. `"DISCORD"` |
 | `workingObject.modAdmin` | Discord user ID of the administrator |
 | `workingObject.baseUrl` | Public base URL of the server (for file links) |
 
 A minimal example file is provided as `core.json.example` in the same directory.
-Copy it to `core.json` and replace all `YOUR_*` placeholders with real values.
+Copy it to `core.json`. **API keys and tokens are not stored in `core.json`** — they are stored in the `bot_secrets` database table (see Step 2 above). The `core.json` fields that previously held real keys now hold **symbolic placeholder names** (e.g. `"OPENAI"`, `"DISCORD"`) that the bot resolves at runtime via `core/secrets.js`.
 
 ```bash
 cp core.json.example core.json
-# Now edit core.json and fill in all YOUR_* placeholders
+# core.json already uses symbolic placeholder names — no key values to fill in
+# Real secrets go into the bot_secrets table (see Step 2)
 ```
 
 ### Step 4: Start the Bot
@@ -2923,6 +2959,77 @@ The final log is written by module `10000-core-output` to `logs/events/` (human-
 
 ---
 
+### 9.4 secrets.js — Centralized Secret Store
+
+**File:** `core/secrets.js`
+
+All API keys, tokens, and other secrets are stored in the `bot_secrets` MySQL table rather than in `core.json`. `core.json` fields that previously held real key values now hold **symbolic placeholder names** (e.g. `"OPENAI"`, `"DISCORD"`). At runtime, every module that needs an API key calls `getSecret(wo, placeholder)`, which resolves the placeholder to its real value from the database.
+
+#### How it works
+
+1. `getSecret(wo, "OPENAI")` is called by a module or tool.
+2. `secrets.js` looks up `"OPENAI"` in the `bot_secrets` table.
+3. The real value (e.g. `sk-proj-...`) is returned and used for the API call.
+4. The real value is never written to `core.json`, never logged, and never appears in the pipeline dump files.
+5. Results are **TTL-cached** (60 seconds) per table to avoid repeated DB queries.
+
+If a placeholder is not found in the database, `getSecret` returns the placeholder string as-is. This means the bot never crashes due to a missing secret — it will simply fail at the API level with an authentication error.
+
+#### bot_secrets table
+
+```sql
+CREATE TABLE IF NOT EXISTS bot_secrets (
+  name        VARCHAR(64)  NOT NULL,
+  value       TEXT         NOT NULL,
+  description VARCHAR(255) NULL,
+  PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+The table is also created automatically on first use by the Key Manager (`/key-manager`) and on bot startup. See Section 1 (Quickstart) for the full INSERT statement.
+
+#### Placeholder names
+
+| Placeholder | Used by |
+|---|---|
+| `OPENAI` | LLM completions, TTS, Whisper, DALL-E, avatar generation, image description, history, wiki image gen |
+| `DISCORD` | Main Discord bot token (`config.discord.token`) |
+| `BARD_DISCORD` | Bard music bot token (`config.bard.token`) |
+| `DISCORD_CLIENT_SECRET` | OAuth2 SSO (`webpage-auth.clientSecret`) |
+| `SESSION_SECRET` | Session cookie signing (`webpage-auth.sessionSecret`) |
+| `TAVILY` | Tavily web search tool |
+| `GOOGLE` | Google Custom Search API key |
+| `GOOGLE_CSE_ID` | Google Custom Search Engine ID |
+| `JIRA` | Jira API token |
+| `JIRA_EMAIL` | Jira account email |
+| `CONFLUENCE` | Confluence API token |
+| `CONFLUENCE_EMAIL` | Confluence account email |
+| `ANIMATED_PICTURE` | Animated picture generation |
+| `VIDEO_FROM_TEXT` | Video-from-text generation |
+| `REPLICATE` | Replicate API token (inpainting) |
+| `API_SECRET` | Internal HTTP API bearer token |
+
+#### Exported functions
+
+| Function | Description |
+|---|---|
+| `getSecret(wo, placeholder)` | Resolve a placeholder to its real value. Returns the placeholder unchanged if not found. |
+| `listSecrets(wo)` | Return all rows from `bot_secrets` as `[{name, value, description}]`. |
+| `setSecret(wo, name, value, description)` | Insert or update a secret (upsert). Invalidates the cache. |
+| `deleteSecret(wo, name)` | Delete a secret by name. Returns the number of affected rows. |
+| `clearSecretsCache(table?)` | Force-expire the in-memory cache for a table (or all tables). |
+| `setEnsureSecretsTable(wo)` | Create the `bot_secrets` table if it does not yet exist (idempotent). |
+
+#### Redaction policy
+
+Only `db.password` and fields whose key path ends in `.password` are redacted in pipeline log files. API key fields are no longer redacted because they contain only placeholder strings, not real key values.
+
+#### wo.secretsTable
+
+By default, secrets are read from the `bot_secrets` table. Set `wo.secretsTable` in `workingObject` (or via a channel override) to use a different table name.
+
+---
+
 ## 10. GDPR & Consent Workflow
 
 **Legal bases:** EU GDPR 2016/679, German BDSG
@@ -4070,6 +4177,52 @@ export default async function getWebpageMyModule(coreData) {
    - `"allowedRoles": ["admin"]` — only users with the `admin` role can access the page
 
 See [§16.12 Permission Concept](#1612-permission-concept) for the full rules.
+
+---
+
+### 16.14 Key Manager (`/key-manager`)
+
+**Module:** `modules/00058-webpage-keymanager.js`
+**Port:** 3121 (default, set via `config["webpage-keymanager"].port`)
+**Base path:** `/key-manager`
+**Default roles:** `["admin"]`
+
+The Key Manager is an admin-only web UI for managing the `bot_secrets` database table. It lets you view, add, edit, and delete secret mappings (placeholder name → real value) without touching MySQL directly.
+
+#### Features
+
+- Lists all secrets with masked values (click **show** to reveal inline)
+- **Add** form: name (uppercase recommended), real value, optional description
+- **Edit** button: pre-fills the form; name is read-only during edit
+- **Delete** button: confirmation dialog before delete
+- Automatically creates the `bot_secrets` table on first visit (idempotent)
+
+#### Configuration
+
+```jsonc
+"webpage-keymanager": {
+  "flow": ["webpage"],
+  "port": 3121,
+  "basePath": "/key-manager",
+  "allowedRoles": ["admin"]
+}
+```
+
+The port must also be listed in `config.webpage.ports` so the webpage flow accepts connections on it.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `port` | number | `3121` | HTTP port to serve the Key Manager on |
+| `basePath` | string | `"/key-manager"` | URL prefix |
+| `allowedRoles` | array | `["admin"]` | Roles allowed to access the page |
+
+#### API endpoints (internal)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/key-manager/api/list` | Return all secrets as `{ok, secrets:[{name,value,description}]}` |
+| `POST` | `/key-manager/api/set` | Upsert a secret. Body: `{name, value, description?}` |
+| `POST` | `/key-manager/api/delete` | Delete a secret. Body: `{name}` |
 
 ---
 

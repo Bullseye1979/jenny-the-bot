@@ -10,6 +10,7 @@ import discordJs from "discord.js";
 const { Client, GatewayIntentBits, Partials, ChannelType } = discordJs;
 import { putItem, getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "discord";
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -167,8 +168,8 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
     partials: [Partials.Channel]
   });
 
+  const startupCore = createRunCore();
   {
-    const startupCore = createRunCore();
     const log = getPrefixedLogger(startupCore.workingObject, import.meta.url);
     client.once("clientReady", () => {
       const tag = client.user?.tag || "unknown";
@@ -177,7 +178,7 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
     log("Discord client login initiated.", "info", { moduleName: MODULE_NAME });
   }
 
-  await client.login(discordConfig.token);
+  await client.login(await getSecret(startupCore.workingObject, discordConfig.token || ""));
 
   const clientRegistryId = `${MODULE_NAME}:client`;
   putItem(client, clientRegistryId);

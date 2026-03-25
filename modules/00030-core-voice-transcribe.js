@@ -41,6 +41,7 @@ import os           from "node:os";
 import path         from "node:path";
 import ffmpegImport from "fluent-ffmpeg";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSecret } from "../core/secrets.js";
 
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath (process.env.FFMPEG_PATH  || "/usr/bin/ffmpeg");
@@ -286,7 +287,7 @@ export default async function getCoreVoiceTranscribe(coreData) {
   const SNR_DB_MIN    = Number.isFinite(wo.snrDbThreshold)     ? +wo.snrDbThreshold     : Number.isFinite(cfg.snrDbThreshold)    ? +cfg.snrDbThreshold    : 3.5;
   const MIN_VOICED_MS = Number.isFinite(wo.minVoicedMs)        ? +wo.minVoicedMs        : Number.isFinite(cfg.minVoicedMs)       ? +cfg.minVoicedMs       : 2000;
   const KEEP_WAV      = typeof wo.keepWav === "boolean"         ? wo.keepWav             : Boolean(cfg.keepWav);
-  const API_KEY       = (wo.transcribeApiKey || cfg.transcribeApiKey || process.env.OPENAI_API_KEY || "").trim();
+  const API_KEY       = await getSecret(wo, (wo.transcribeApiKey || cfg.transcribeApiKey || process.env.OPENAI_API_KEY || "").trim());
   const MODEL         = wo.transcribeOnly
     ? (wo.transcribeModel || cfg.transcribeModelDiarize || "gpt-4o-transcribe-diarize").trim()
     : (wo.transcribeModel || cfg.transcribeModel || "gpt-4o-mini-transcribe").trim();

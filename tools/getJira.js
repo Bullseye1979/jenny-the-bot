@@ -5,6 +5,8 @@
 /*          for requests and payloads.                                             *
 /**********************************************************************************/
 
+import { getSecret } from "../core/secrets.js";
+
 const MODULE_NAME = "getJira";
 
 
@@ -660,8 +662,8 @@ async function getInvoke(args, coreData){
   const wo = coreData?.workingObject || {};
   const cfg = wo?.toolsconfig?.getJira || {};
   const baseUrl = getStr(cfg?.baseUrl,"").replace(/\/+$/,"");
-  const email = getStr(cfg?.email,"");
-  const token = getStr(cfg?.token,"");
+  const email = await getSecret(wo, getStr(cfg?.email,""));
+  const token = await getSecret(wo, getStr(cfg?.token,""));
   const defaultProjectKey = getStr(cfg?.projectKey, "");
   if (!baseUrl || !email || !token){
     getDebug("Config Error", { hasBaseUrl: !!baseUrl, hasEmail: !!email, hasToken: !!token });

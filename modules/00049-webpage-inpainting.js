@@ -13,6 +13,7 @@ import { PNG } from "pngjs";
 import { getMenuHtml } from "../shared/webpage/interface.js";
 import { saveFile } from "../core/file.js";
 import { setSendNow, setJsonResp, getUserRoleLabels } from "../shared/webpage/utils.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-inpainting";
 
@@ -1374,6 +1375,10 @@ function getInpaintHtml(opts) {
         function loadImageFromSrc(src, options = {}) {
           const { scaleMode = "fit", maskMode = "fullBlack" } = options;
 
+          imageLoaded = false;
+          galleryBtn.disabled = true;
+          downloadBtn.disabled = true;
+
           const img = new Image();
 
           img.onload = () => {
@@ -1430,10 +1435,14 @@ overlayHint.classList.add("hidden");
             statusEl.textContent =
               "Error loading image (CORS / same-origin restrictions?).";
             setApiError(statusEl.textContent);
+            refreshCanEditFromServer();
           };
 
           img.crossOrigin = "anonymous";
-          img.src = src;
+          const _cacheBustedSrc = (src && (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("/")))
+            ? src + (src.includes("?") ? "&" : "?") + "_t=" + Date.now()
+            : src;
+          img.src = _cacheBustedSrc;
         }
 
 
@@ -1670,7 +1679,7 @@ overlayHint.classList.add("hidden");
               const r = await fetch("/gallery/api/files", {
                 method: "POST",
                 credentials: "include",
-                headers: { "Content-Type": "image/png", "X-Filename": "inpainting.png" },
+                headers: { "Content-Type": "image/png", "X-Filename": "inpaint-" + new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").slice(0, 19) + ".png" },
                 body: blob
               });
               if (!r.ok && r.headers.get("content-type") && !r.headers.get("content-type").includes("json")) {
@@ -1951,7 +1960,7 @@ overlayHint.classList.add("hidden");
               setApiError(statusEl.textContent);
             };
 
-            editedImg.src = data.url;
+            editedImg.src = data.url + (data.url.includes("?") ? "&" : "?") + "_t=" + Date.now();
           } catch (err) {
             statusEl.textContent = "Error: " + String(err && err.message ? err.message : err);
             setApiError(statusEl.textContent);
@@ -2542,7 +2551,7 @@ export default async function getWebpageInpainting(coreData) {
       let filename;
 
       if (type === "openai") {
-        const apiKey    = ecfg.apiKey;
+        const apiKey    = await getSecret(wo, ecfg.apiKey || "");
         const model     = ecfg.model || "dall-e-2";
         const size      = ecfg.size  || "1024x1024";
         const baseUrl   = String(ecfg.baseUrl || "https://api.openai.com").replace(/\/+$/, "");
@@ -2656,7 +2665,7 @@ export default async function getWebpageInpainting(coreData) {
         }
 
       } else if (type === "replicate") {
-        const apiToken     = ecfg.apiToken;
+        const apiToken     = await getSecret(wo, ecfg.apiToken || "");
         const apiUrl       = String(ecfg.apiUrl || "https://api.replicate.com/v1");
         const modelVersion = ecfg.modelVersion;
         if (!apiToken || !modelVersion) throw new Error("Missing Replicate apiToken or modelVersion");

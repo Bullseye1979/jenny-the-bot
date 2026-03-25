@@ -66,6 +66,7 @@ All key names follow **camelCase** throughout.
    - [webpage-inpaint](#webpage-inpaint)
    - [webpage-gallery](#webpage-gallery)
    - [webpage-gdpr](#webpage-gdpr)
+   - [webpage-keymanager](#webpage-keymanager)
    - [bard](#bard)
    - [bard-join](#bard-join)
    - [bard-cron](#bard-cron)
@@ -106,7 +107,7 @@ All key names follow **camelCase** throughout.
 | `model` | string | `"gpt-5"` | LLM model identifier |
 | `endpoint` | string | `"https://api.openai.com/v1/chat/completions"` | URL for the chat completions API |
 | `endpointResponses` | string | `"https://api.openai.com/v1/responses"` | URL for the Responses API |
-| `apiKey` | string | `"sk-proj-..."` | OpenAI (or compatible) API key |
+| `apiKey` | string | `"OPENAI"` | Placeholder name resolved at runtime from the `bot_secrets` DB table via `core/secrets.js`. Set to the symbolic name (e.g. `"OPENAI"`) — the real key value lives in `bot_secrets`. |
 | `useAiModule` | string | `"responses"` | AI pipeline to use: `"responses"` · `"completions"` · `"pseudotoolcalls"` |
 | `temperature` | number | `0.2` | Sampling temperature (0.0–2.0) |
 | `maxTokens` | number | `2000` | Maximum tokens the LLM may generate per reply |
@@ -129,7 +130,7 @@ All key names follow **camelCase** throughout.
 | `baseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving generated files (images, PDFs, etc.) |
 | `modAdmin` | string | `"406901027665870848"` | Discord user ID with elevated bot admin rights |
 | `modSilence` | string | `"[silence]"` | If this token appears in the AI response, output is suppressed |
-| `apiSecret` | string | `""` | Shared secret for the HTTP API token gate. When set, every `POST /api` request must supply `Authorization: Bearer <secret>`. Leave empty to disable token checking. |
+| `apiSecret` | string | `"API_SECRET"` | Placeholder name for the HTTP API bearer token — resolved from `bot_secrets` at runtime. Every `POST /api` request must supply `Authorization: Bearer <real-value>`. Set to `""` or omit to disable token checking. |
 | `apiEnabled` | number | `1` | Controls whether this channel can be reached via the HTTP API. `0` = always blocked (regardless of token). `1` = allowed when token matches or no secret is set. Can be overridden per channel via `core-channel-config`. |
 | `gdprDisclaimer` | string | Long legal text | Full GDPR disclaimer text sent as a DM on first contact |
 | `fileUrls` | array | `[]` | Attachment URLs extracted from the current Discord message |
@@ -147,8 +148,8 @@ All key names follow **camelCase** throughout.
 | `ttsModel` | string | `"gpt-4o-mini-tts"` | Text-to-speech model |
 | `ttsVoice` | string | `"nova"` | TTS voice name |
 | `ttsEndpoint` | string | `"https://api.openai.com/v1/audio/speech"` | TTS API endpoint |
-| `ttsApiKey` | string | `"sk-proj-..."` | API key for TTS calls |
-| `whisperApiKey` | string | `"sk-proj-..."` | API key for Whisper/transcription. Used as fallback by `core-voice-transcribe` |
+| `ttsApiKey` | string | `"OPENAI"` | Placeholder name for the TTS API key — resolved from `bot_secrets` at runtime |
+| `whisperApiKey` | string | `"OPENAI"` | Placeholder name for the Whisper/transcription API key — resolved from `bot_secrets` at runtime |
 | `whisperModel` | string | `"whisper-1"` | Whisper model identifier (legacy fallback). `core-voice-transcribe` defaults to `"gpt-4o-mini-transcribe"` unless overridden via `transcribeModel` in its config block |
 | `whisperLanguage` | string | `""` | Force a specific transcription language (ISO 639-1, or empty for auto) |
 | `whisperEndpoint` | string | `"https://api.openai.com"` | Base URL for the Whisper/transcription API |
@@ -1152,6 +1153,41 @@ The file is generated on demand; no data is cached or stored by the module itsel
 - The module requires `webpage-auth` to be active on port 3121 — unauthenticated requests are redirected to `/`
 - Requires the `exceljs` npm package (`npm install`)
 - Database connection is read from `wo.db` (set by the `context` config block)
+
+---
+
+### webpage-keymanager
+
+Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and delete secret mappings (placeholder name → real value) without touching MySQL directly. Values are masked in the UI by default and can be revealed per row. See [ADMIN_MANUAL §9.4](#94-secretsjs--centralized-secret-store) for the full secrets system description.
+
+```jsonc
+"webpage-keymanager": {
+  "flow":         ["webpage"],
+  "port":         3122,
+  "basePath":     "/key-manager",
+  "allowedRoles": ["admin"]
+}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `flow` | — | Must include `"webpage"` |
+| `port` | `3122` | HTTP port this module listens on |
+| `basePath` | `"/key-manager"` | URL prefix |
+| `allowedRoles` | `["admin"]` | Roles permitted to access the page |
+
+**HTTP routes:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/key-manager` | Required (admin) | Main UI page |
+| `GET` | `/key-manager/api/list` | Required (admin) | JSON list of all secrets `{ok, secrets:[{name,value,description}]}` |
+| `POST` | `/key-manager/api/set` | Required (admin) | Upsert a secret. Body: `{name, value, description?}` |
+| `POST` | `/key-manager/api/delete` | Required (admin) | Delete a secret. Body: `{name}` |
+
+- Add `3122` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /key-manager* localhost:3122` to your Caddyfile
+- The `bot_secrets` table is created automatically on first request (idempotent)
 
 ---
 

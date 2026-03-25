@@ -9,6 +9,7 @@
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getInformation";
 const POOLS = new Map();
@@ -492,7 +493,7 @@ async function getRunSearchPass(db, channelIds, groups, opts) {
 /* contentLines: array of { rn, content, sender } — may come from matched blocks OR bridge rows */
 async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
   const endpoint   = giCfg.aliasEndpoint   || wo.endpoint   || "";
-  const apiKey     = giCfg.aliasApiKey     || wo.apiKey     || "";
+  const apiKey     = await getSecret(wo, giCfg.aliasApiKey || wo.apiKey || "");
   const model      = giCfg.aliasModel      || wo.model      || "gpt-4o-mini";
   const maxAliases = Math.max(1, Math.floor(giCfg.aliasMaxCount   ?? DEFAULT_ALIAS_MAX));
   const timeoutMs  = Math.max(5000, Math.floor(giCfg.aliasTimeoutMs ?? DEFAULT_ALIAS_TIMEOUT_MS));
