@@ -374,7 +374,7 @@ ${getThemeHeadScript()}
         var txt = d.content || '';
         box.innerHTML = colorize(txt);
         stat.textContent = txt.length + ' chars';
-        if (scroll.checked) box.scrollTop = box.scrollHeight;
+        if (scroll.checked) requestAnimationFrame(function() { box.scrollTop = box.scrollHeight; });
       })
       .catch(function(e){ stat.textContent = 'Error: ' + e.message; });
   }
