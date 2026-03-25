@@ -15,13 +15,14 @@
 /* Flow: discord, discord-voice, discord-status, api, bard-label-gen, webpage      *
 /************************************************************************************/
 import { getContext } from "../core/context.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-ai-context-loader";
 
 
 export default async function getCoreAiContextLoader(coreData) {
   const wo = coreData?.workingObject;
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
 
   /* Idempotent — already populated by an earlier run or a calling module */
   if (Array.isArray(wo._contextSnapshot)) return coreData;
@@ -33,35 +34,17 @@ export default async function getCoreAiContextLoader(coreData) {
      getContext(wo) themselves once channelID is known (e.g. set by 00048 later) */
   const channelId = String(wo?.channelID ?? "").trim();
   if (!channelId) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: "Skipped: no channelID — AI modules will load context themselves"
-    });
+    log("Skipped: no channelID — AI modules will load context themselves");
     return coreData;
   }
 
   try {
     const snapshot = await getContext(wo);
     wo._contextSnapshot = Array.isArray(snapshot) ? snapshot : [];
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `Context loaded: ${wo._contextSnapshot.length} row(s) for channel "${channelId}"`
-    });
+    log(`Context loaded: ${wo._contextSnapshot.length} row(s) for channel "${channelId}"`);
   } catch (e) {
     wo._contextSnapshot = [];
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "warn",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `getContext failed — _contextSnapshot set to []: ${e?.message || String(e)}`
-    });
+    log(`getContext failed — _contextSnapshot set to []: ${e?.message || String(e)}`, "warn");
   }
 
   return coreData;

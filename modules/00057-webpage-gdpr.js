@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import ExcelJS from "exceljs";
 import mysql   from "mysql2/promise";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { setJsonResp } from "../shared/webpage/utils.js";
 import { getUserId } from "../core/file.js";
 
 const MODULE_NAME   = "webpage-gdpr";
@@ -27,14 +28,6 @@ function getDbConfig(wo) {
   const { host, user, password, database } = db;
   if (!host || !user || !database) return null;
   return { host, user, password: password || "", database, charset: "utf8mb4" };
-}
-
-function setJsonResp(wo, status, obj) {
-  wo.http.response = {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-    body: JSON.stringify(obj ?? {})
-  };
 }
 
 function getCssPath() {

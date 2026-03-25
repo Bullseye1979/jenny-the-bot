@@ -13,6 +13,7 @@
 import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { saveFile } from "../core/file.js";
+import { getPrefixedLogger } from "../core/logging.js";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -283,15 +284,16 @@ function getAppendRuntimeContextToUserContent(baseText, ctx) {
 
 
 async function getToolsByName(names, wo) {
+  const log = getPrefixedLogger(wo, import.meta.url);
   const loaded = [];
   for (const name of names || []) {
     try {
       const mod = await import(`../tools/${name}.js`);
       const tool = mod?.default ?? mod;
       if (tool && typeof tool.invoke === "function") loaded.push(tool);
-      else wo.logging?.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `Tool "${name}" invalid (missing invoke); skipped.` });
+      else log(`Tool "${name}" invalid (missing invoke); skipped.`, "warn");
     } catch (e) {
-      wo.logging?.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `Tool "${name}" load failed: ${e?.message || String(e)}` });
+      log(`Tool "${name}" load failed: ${e?.message || String(e)}`, "warn");
     }
   }
   return loaded;
@@ -299,20 +301,14 @@ async function getToolsByName(names, wo) {
 
 
 function getExpandedToolArgs(args, wo) {
+  const log = getPrefixedLogger(wo, import.meta.url);
   const full = typeof wo?._fullAssistantText === "string" ? wo._fullAssistantText : "";
   if (!full || !args || typeof args !== "object") return args;
   const candidateKeys = ["body", "content", "text", "message"];
   for (const key of candidateKeys) {
     const v = args[key];
     if (typeof v === "string" && v.length && full.length > v.length && full.includes(v)) {
-      wo.logging?.push({
-        timestamp: new Date().toISOString(),
-        severity: "info",
-        module: MODULE_NAME,
-        exitStatus: "success",
-        message: `Expanded tool argument "${key}" to full assistant text.`,
-        details: { original_length: v.length, full_length: full.length }
-      });
+      log(`Expanded tool argument "${key}" to full assistant text.`, "info", { original_length: v.length, full_length: full.length });
       return { ...args, [key]: full };
     }
   }
@@ -322,6 +318,7 @@ function getExpandedToolArgs(args, wo) {
 
 async function setExecGenericTool(toolModules, call, coreData) {
   const wo = coreData?.workingObject ?? {};
+  const log = getPrefixedLogger(wo, import.meta.url);
   const idemp = getIdemp(wo);
 
   const name = call?.function?.name || call?.name;
@@ -343,14 +340,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
 
   idemp.tools.add(callId);
 
-  wo.logging?.push({
-    timestamp: new Date().toISOString(),
-    severity: "info",
-    module: MODULE_NAME,
-    exitStatus: "started",
-    message: "Tool call start",
-    details: { tool: name, call_id: callId, args_preview: getPreview(args, ARG_PREVIEW_MAX) }
-  });
+  log("Tool call start", "info", { tool: name, call_id: callId, args_preview: getPreview(args, ARG_PREVIEW_MAX) });
 
   if (!tool) {
     return {
@@ -370,27 +360,13 @@ async function setExecGenericTool(toolModules, call, coreData) {
     const mapped = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
 
-    wo.logging?.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: "Tool call success",
-      details: { tool: name, call_id: callId, result_preview: getPreview(content, RESULT_PREVIEW_MAX) }
-    });
+    log("Tool call success", "info", { tool: name, call_id: callId, result_preview: getPreview(content, RESULT_PREVIEW_MAX) });
 
     return { ok: true, name, call_id: callId, content };
   } catch (e) {
     const mappedErr = { type: "tool_result", tool: name, call_id: callId, ok: false, error: e?.message || String(e) };
 
-    wo.logging?.push({
-      timestamp: new Date().toISOString(),
-      severity: "error",
-      module: MODULE_NAME,
-      exitStatus: "failed",
-      message: "Tool call error",
-      details: { tool: name, call_id: callId, error: String(e?.message || e) }
-    });
+    log("Tool call error", "error", { tool: name, call_id: callId, error: String(e?.message || e) });
 
     return { ok: false, name, call_id: callId, content: JSON.stringify(mappedErr) };
   } finally {
@@ -903,11 +879,11 @@ function setEnsureFinalSynthesisPrompt(messages, wo) {
 
 export default async function getCoreAi(coreData) {
   const wo = coreData?.workingObject ?? {};
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
 
   const gate = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
   if (gate && gate !== "responses") {
-    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: `Skipped: useAiModule="${gate}" != "responses"` });
+    log(`Skipped: useAiModule="${gate}" != "responses"`, "info");
     return coreData;
   }
 
@@ -927,28 +903,22 @@ export default async function getCoreAi(coreData) {
 
   if (!endpoint || !apiKey || !model) {
     wo.response = "[Empty AI response]";
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "error",
-      module: MODULE_NAME,
-      exitStatus: "failed",
-      message: `Missing required: ${!endpoint ? "endpointResponses " : ""}${!apiKey ? "apiKey " : ""}${!model ? "model" : ""}`.trim()
-    });
+    log(`Missing required: ${!endpoint ? "endpointResponses " : ""}${!apiKey ? "apiKey " : ""}${!model ? "model" : ""}`.trim(), "error");
     return coreData;
   }
 
   const responseToolsNormalized = getNormalizedResponseTools(getResponseToolsRaw(wo));
   const responseToolsInfo = responseToolsNormalized.length ? responseToolsNormalized.map(x => x?.type).filter(Boolean).join(", ") : "(none)";
 
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Using baseUrl="${baseUrl || "(relative /documents)"}"` });
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Responses built-in tools (workingObject.ResponseTools): ${responseToolsInfo}` });
+  log(`Using baseUrl="${baseUrl || "(relative /documents)"}"`, "info");
+  log(`Responses built-in tools (workingObject.ResponseTools): ${responseToolsInfo}`, "info");
 
   let snapshot = [];
   if (Array.isArray(wo._contextSnapshot)) {
     snapshot = wo._contextSnapshot;
   } else {
     try { snapshot = await getContext(wo); }
-    catch (e) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` }); }
+    catch (e) { log(`getContext failed; continuing: ${e?.message || String(e)}`, "warn"); }
   }
 
 
@@ -1002,7 +972,7 @@ export default async function getCoreAi(coreData) {
   const fromDb = getSnapshotMappedToChat(Array.isArray(snapshot) ? snapshot : []);
   const userPayloadRaw = getToString(wo?.payload ?? "");
   if (!userPayloadRaw.trim()) {
-    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: "Skipped: empty payload" });
+    log("Skipped: empty payload", "info");
     return coreData;
   }
   const runtimeCtx = getRuntimeContextFromLast(wo, snapshot);
@@ -1072,9 +1042,9 @@ export default async function getCoreAi(coreData) {
 
       if (!res.ok) {
         const retryable = (res.status >= 500 && res.status <= 599) || res.status === 429;
-        if (retryable && attempts < maxAttempts) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "retry", message: `Retrying due to HTTP ${res.status}` }); continue; }
+        if (retryable && attempts < maxAttempts) { log(`Retrying due to HTTP ${res.status}`, "warn"); continue; }
         wo.response = "[Empty AI response]";
-        wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "failed", message: `HTTP ${res.status} ${res.statusText}` });
+        log(`HTTP ${res.status} ${res.statusText}`, "warn");
         return coreData;
       }
 
@@ -1086,7 +1056,7 @@ export default async function getCoreAi(coreData) {
       if (reasoningEnabled) {
         const iterReasoningSummary = getReasoningSummaryFromResponse(data);
         setAppendReasoningBlock(reasoningParts, iter, iterReasoningSummary, parsed?.toolCalls);
-        if (!iterReasoningSummary) wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: `Reasoning summary requested but none found in iteration ${iter + 1}.` });
+        if (!iterReasoningSummary) log(`Reasoning summary requested but none found in iteration ${iter + 1}.`, "info");
       }
 
       const hostedLinks = [];
@@ -1100,11 +1070,11 @@ export default async function getCoreAi(coreData) {
           } catch (e) {
             const placeholder = getBuildUrl(`FAILED-${Date.now()}-${randomUUID()}.txt`, baseUrl);
             hostedLinks.push(`${placeholder}?error=${encodeURIComponent(e?.message || "persist failed")}`);
-            wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `Image persist failed: ${e?.message || String(e)}` });
+            log(`Image persist failed: ${e?.message || String(e)}`, "warn");
           }
         }
       } else {
-        wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "No images parsed from response." });
+        log("No images parsed from response.", "info");
       }
 
       if (hostedLinks.length) allHostedLinks.push(...hostedLinks);
@@ -1116,13 +1086,7 @@ export default async function getCoreAi(coreData) {
       const hasToolCalls = toolCalls.length > 0;
       const assistantText = (parsed.text || "").trim();
       const finish = getFinishReasonFromData(data);
-      wo.logging.push({
-        timestamp: new Date().toISOString(),
-        severity: "info",
-        module: MODULE_NAME,
-        exitStatus: "success",
-        message: `AI turn ${iter + 1}: finish_reason="${finish ?? "null"}" content_length=${assistantText.length} tool_calls=${toolCalls.length}`
-      });
+      log(`AI turn ${iter + 1}: finish_reason="${finish ?? "null"}" content_length=${assistantText.length} tool_calls=${toolCalls.length}`, "info");
 
       /********************************************************************************
       /* Fix v1.1: Persist assistant turn even when text is empty but images exist  *
@@ -1173,7 +1137,7 @@ export default async function getCoreAi(coreData) {
       }
 
       if (toolsDisabled && hasToolCalls) {
-        wo.logging?.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "tools disabled mode active; ignoring any tool-call requests in output." });
+        log("tools disabled mode active; ignoring any tool-call requests in output.", "info");
       }
 
       const truncated = getWasTruncatedOutput(data);
@@ -1186,13 +1150,7 @@ export default async function getCoreAi(coreData) {
         if (truncated && !assistantText.trim()) {
           emptyOutputConsec++;
           if (emptyOutputConsec >= 2) {
-            wo.logging.push({
-              timestamp: new Date().toISOString(),
-              severity: "warn",
-              module: MODULE_NAME,
-              exitStatus: "success",
-              message: `Empty-output loop guard: ${emptyOutputConsec} consecutive truncated iterations with no visible text — stopping loop. Increase maxTokens for reasoning models.`
-            });
+            log(`Empty-output loop guard: ${emptyOutputConsec} consecutive truncated iterations with no visible text — stopping loop. Increase maxTokens for reasoning models.`, "warn");
             break;
           }
         } else {
@@ -1201,13 +1159,7 @@ export default async function getCoreAi(coreData) {
         const cont = { role: "user", content: "continue" };
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
-        wo.logging.push({
-          timestamp: new Date().toISOString(),
-          severity: "info",
-          module: MODULE_NAME,
-          exitStatus: "success",
-          message: `Continue triggered: finish_reason="${finish ?? "null"}" truncated=${truncated} looks_cut_off=${looksCutOff}`
-        });
+        log(`Continue triggered: finish_reason="${finish ?? "null"}" truncated=${truncated} looks_cut_off=${looksCutOff}`, "info");
         /* Disable tools for the continuation pass — model should resume output, not call more tools */
         wo.__forceNoTools = true;
         continue;
@@ -1221,9 +1173,9 @@ export default async function getCoreAi(coreData) {
     } catch (err) {
       clearTimeout(timer);
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
-      if (isAbort && attempts < maxAttempts) { wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "retry", message: `Retrying due to timeout after ${timeoutMs}ms` }); continue; }
+      if (isAbort && attempts < maxAttempts) { log(`Retrying due to timeout after ${timeoutMs}ms`, "warn"); continue; }
       wo.response = "[Empty AI response]";
-      wo.logging.push({ timestamp: new Date().toISOString(), severity: isAbort ? "warn" : "error", module: MODULE_NAME, exitStatus: "failed", message: isAbort ? `AI request timed out after ${timeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}` });
+      log(isAbort ? `AI request timed out after ${timeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       setLogBig("responses-error", { message: err?.message || String(err), stack: err?.stack }, { toFile: debugOn });
       return coreData;
     }
@@ -1239,7 +1191,7 @@ export default async function getCoreAi(coreData) {
   setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: wo._contextPersistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
 
   wo.response = finalText || "[Empty AI response]";
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });
+  log("AI response received.", "info");
 
   return coreData;
 }

@@ -6,6 +6,7 @@
 /**************************************************************/
 
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
@@ -15,6 +16,99 @@ import { startSetupWizard } from "./core/setup.js";
 const MODULE_NAME = "main";
 const LOGS_DIR    = path.join(path.dirname(fileURLToPath(import.meta.url)), "logs");
 const JSON_ERR_LOG = path.join(LOGS_DIR, "json-error.log");
+
+// --- Pipeline diff logger ---
+const PIPELINE_DIR       = path.join(LOGS_DIR, "pipeline");
+const PIPELINE_BASENAME  = "pipeline";
+const PIPELINE_MAX_BYTES = 2 * 1024 * 1024;
+const PIPELINE_RE        = /^pipeline-(\d+)\.log$/;
+let   _pipelineChain     = Promise.resolve();
+
+function getPipelineSafeJson(wo) {
+  const seen = new WeakSet();
+  try {
+    return JSON.stringify(wo, (key, value) => {
+      if (typeof value === "object" && value !== null) {
+        if (seen.has(value)) return "[[Circular]]";
+        seen.add(value);
+      }
+      if (key === "apiKey" || key === "api_key") return "***";
+      if (typeof value === "function") return "[Function]";
+      if (typeof Buffer !== "undefined" && Buffer.isBuffer(value)) return `[Buffer:${value.length}]`;
+      if (typeof value === "bigint") return value.toString();
+      return value;
+    }, 2);
+  } catch {
+    return "{}";
+  }
+}
+
+function getPipelineDiff(aJson, bJson) {
+  if (aJson === bJson) return null;
+  const a = aJson.split("\n"), b = bJson.split("\n");
+  if (a.length > 2000 || b.length > 2000) {
+    return `[diff skipped: object too large (${a.length}/${b.length} lines)]`;
+  }
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  const edits = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      edits.push({ t: " ", l: a[i - 1] }); i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      edits.push({ t: "+", l: b[j - 1] }); j--;
+    } else {
+      edits.push({ t: "-", l: a[i - 1] }); i--;
+    }
+  }
+  edits.reverse();
+  const out = [];
+  for (let k = 0; k < edits.length; k++) {
+    const e = edits[k];
+    if (e.t !== " ") { out.push(e.t + " " + e.l); continue; }
+    const nearChange = edits.slice(Math.max(0, k - 2), k + 3).some(x => x.t !== " ");
+    if (nearChange) out.push("  " + e.l);
+  }
+  return out.length ? out.join("\n") : null;
+}
+
+async function setPipelineAppend(text) {
+  await fsp.mkdir(PIPELINE_DIR, { recursive: true });
+  const ents = await fsp.readdir(PIPELINE_DIR, { withFileTypes: true }).catch(() => []);
+  const files = ents
+    .filter(e => e.isFile() && PIPELINE_RE.test(e.name))
+    .map(e => ({ index: Number(e.name.match(PIPELINE_RE)[1]), full: path.join(PIPELINE_DIR, e.name) }))
+    .sort((a, b) => a.index - b.index);
+  let idx = files.length ? files[files.length - 1].index : 1;
+  let fp  = path.join(PIPELINE_DIR, `${PIPELINE_BASENAME}-${idx}.log`);
+  const buf  = Buffer.from(text, "utf8");
+  const size = (await fsp.stat(fp).catch(() => null))?.size || 0;
+  if (size === 0 && !files.length) await fsp.writeFile(fp, "");
+  if (size + buf.length > PIPELINE_MAX_BYTES) {
+    idx++;
+    fp = path.join(PIPELINE_DIR, `${PIPELINE_BASENAME}-${idx}.log`);
+    await fsp.writeFile(fp, "");
+    const keep = new Set([...files, { index: idx }].slice(-2).map(f => f.index));
+    for (const f of files) {
+      if (!keep.has(f.index)) fsp.rm(f.full, { force: true }).catch(() => {});
+    }
+  }
+  await fsp.appendFile(fp, buf);
+}
+
+function setPipelineLog(text) {
+  _pipelineChain = _pipelineChain.then(() => setPipelineAppend(text)).catch(() => {});
+}
+// --- End pipeline diff logger ---
+
 
 function logJsonError(err, context) {
   const entry = JSON.stringify({ ts: new Date().toISOString(), context, error: err?.message || String(err) });
@@ -542,8 +636,14 @@ async function getRunFlow(flowName, coreDataForRun) {
     const t0 = performance.now();
     try {
       const { default: fn } = await import(`./modules/${s.file}`);
+      const woBefore = getPipelineSafeJson(coreData?.workingObject || {});
       await fn(coreData);
       const dt = performance.now() - t0;
+      const woAfter = getPipelineSafeJson(coreData?.workingObject || {});
+      const diff = getPipelineDiff(woBefore, woAfter);
+      if (diff) {
+        setPipelineLog(`--- ${cleanName} | ${new Date().toISOString()} | ${dt.toFixed(1)}ms ---\n${diff}\n`);
+      }
       if (kind === "normal") state.ok += 1;
       state.lastModule = cleanName;
       state.lastError = "";

@@ -11,6 +11,7 @@ import fs   from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { setJsonResp } from "../shared/webpage/utils.js";
 import { saveFile, deleteFile, listUserImages, getUserId, getPublicBaseUrl } from "../core/file.js";
 
 const MODULE_NAME    = "webpage-gallery";
@@ -24,14 +25,6 @@ function getRequestBaseUrl(wo) {
   const host  = String(h["x-forwarded-host"] || h["host"] || "").trim();
   const proto = String(h["x-forwarded-proto"] || "https").trim();
   return host ? `${proto}://${host}` : "";
-}
-
-function setJsonResp(wo, status, obj) {
-  wo.http.response = {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-    body: JSON.stringify(obj ?? {})
-  };
 }
 
 export default async function getWebpageGallery(coreData) {

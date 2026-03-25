@@ -10,6 +10,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
 
 const MODULE_NAME = "webpage-context";
 const __filename   = fileURLToPath(import.meta.url);
@@ -29,37 +30,12 @@ function getBasePath(cfg) {
   return bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/context";
 }
 
-function setJsonResp(wo, status, data) {
-  wo.http.response = { status, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify(data) };
-}
-
 function setHtmlResp(wo, html) {
   wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: html };
 }
 
 function setCssResp(wo, css) {
   wo.http.response = { status: 200, headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" }, body: css };
-}
-
-async function setSendNow(wo) {
-  const res = wo?.http?.res;
-  if (!res) return;
-  const r = wo.http?.response || {};
-  res.writeHead(Number(r.status ?? 200), r.headers ?? { "Content-Type": "application/json" });
-  const body = r.body ?? "";
-  res.end(typeof body === "string" ? body : JSON.stringify(body));
-}
-
-function getIsAllowed(wo, allowedRoles) {
-  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
-  if (!req.length) return true;
-  const have = new Set();
-  const primary = getStr(wo?.webAuth?.role).trim().toLowerCase();
-  if (primary) have.add(primary);
-  if (Array.isArray(wo?.webAuth?.roles)) {
-    wo.webAuth.roles.forEach(r => { const v = getStr(r).trim().toLowerCase(); if (v) have.add(v); });
-  }
-  return req.some(r => have.has(getStr(r).trim().toLowerCase()));
 }
 
 function escLike(s) {
@@ -1077,7 +1053,7 @@ export default async function getWebpageContext(coreData) {
   }
 
   /* Auth */
-  const isAllowed = getIsAllowed(wo, allowedRoles);
+  const isAllowed = getIsAllowedRoles(wo, allowedRoles);
 
   /* Main SPA */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {

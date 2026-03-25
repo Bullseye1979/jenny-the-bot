@@ -5,6 +5,8 @@
 /*          as plain lines (one URL per line).                                     *
 /************************************************************************************/
 
+import { getPrefixedLogger } from "../core/logging.js";
+
 const MODULE_NAME = "discord-add-files";
 
 
@@ -83,36 +85,18 @@ function getShouldSkipForSource(wo) {
 
 export default async function getCore(coreData) {
   const wo = coreData?.workingObject || coreData?.working_object || {};
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
   if (wo.__filesAppendedToPayload) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: "Files already appended to payload in this turn (__filesAppendedToPayload=true)."
-    });
+    log("Files already appended to payload in this turn (__filesAppendedToPayload=true).");
     return coreData;
   }
   if (getShouldSkipForSource(wo)) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: `Skipped: source="${String(wo?.source ?? wo?.Source ?? "")}" is not 'discord'.`
-    });
+    log(`Skipped: source="${String(wo?.source ?? wo?.Source ?? "")}" is not 'discord'.`);
     return coreData;
   }
   const urls = getNormalizedFileUrls(wo);
   if (!urls.length) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: "No http/https fileUrls to append; payload unchanged."
-    });
+    log("No http/https fileUrls to append; payload unchanged.");
     return coreData;
   }
   const base = getBasePayload(wo);
@@ -121,16 +105,9 @@ export default async function getCore(coreData) {
   const combined = base + sep + filesBlock;
   setPayload(wo, combined);
   wo.__filesAppendedToPayload = true;
-  wo.logging.push({
-    timestamp: new Date().toISOString(),
-    severity: "info",
-    module: MODULE_NAME,
-    exitStatus: "success",
-    message: `Appended ${urls.length} file URL(s) to payload as plain lines.`,
-    details: {
-      urls_preview: urls.slice(0, 5),
-      payload_length: combined.length
-    }
+  log(`Appended ${urls.length} file URL(s) to payload as plain lines.`, "info", {
+    urls_preview: urls.slice(0, 5),
+    payload_length: combined.length
   });
   return coreData;
 }

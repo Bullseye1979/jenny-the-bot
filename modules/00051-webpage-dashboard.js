@@ -8,47 +8,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
+import { setSendNow, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
 
 const MODULE_NAME = "webpage-dashboard";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const LOGS_ROOT   = path.join(__dirname, "..", "logs");
+const EVENTS_DIR  = path.join(LOGS_ROOT, "events");
+const PIPELINE_DIR = path.join(LOGS_ROOT, "pipeline");
+const EVENTS_RE   = /^events-(\d+)\.log$/;
+const PIPELINE_RE = /^pipeline-(\d+)\.log$/;
 
 
 function getStr(v) { return v == null ? "" : String(v); }
 
-
-function escHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-
-function getUserRoleLabels(wo) {
-  const out = [], seen = new Set();
-  const primary = getStr(wo?.webAuth?.role).trim().toLowerCase();
-  if (primary && !seen.has(primary)) { seen.add(primary); out.push(primary); }
-  const roles = wo?.webAuth?.roles;
-  if (Array.isArray(roles)) {
-    for (const r of roles) {
-      const v = getStr(r).trim().toLowerCase();
-      if (v && !seen.has(v)) { seen.add(v); out.push(v); }
-    }
-  }
-  return out;
-}
-
-
-function getIsAllowed(wo, allowedRoles) {
-  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
-  if (!req.length) return true;
-  const have = new Set(getUserRoleLabels(wo));
-  return req.some(r => have.has(getStr(r).trim().toLowerCase()));
-}
 
 
 function getBasePath(cfg) {
@@ -56,19 +31,6 @@ function getBasePath(cfg) {
   return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/dashboard";
 }
 
-
-async function setSendNow(wo) {
-  const res = wo?.http?.res;
-  if (!res || res.writableEnded || res.headersSent) return;
-  const r = wo.http?.response || {};
-  const status  = Number(r.status  ?? 200);
-  const headers = r.headers ?? { "Content-Type": "text/html; charset=utf-8" };
-  const body    = r.body    ?? "";
-  try {
-    res.writeHead(status, headers);
-    res.end(typeof body === "string" ? body : JSON.stringify(body));
-  } catch {}
-}
 
 
 function getFmtElapsed(ms) {
@@ -269,6 +231,178 @@ ${flowCards}
 }
 
 
+function getLogFileList(dir, re) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+      .filter(e => e.isFile() && re.test(e.name))
+      .map(e => {
+        const n = Number(e.name.match(re)[1]);
+        const full = path.join(dir, e.name);
+        const size = (() => { try { return fs.statSync(full).size; } catch { return 0; } })();
+        return { n, name: e.name, size };
+      })
+      .sort((a, b) => a.n - b.n);
+  } catch {
+    return [];
+  }
+}
+
+
+function getLogFileText(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    const MAX = 512 * 1024;
+    if (content.length > MAX) return "[... truncated — showing last 512 KB ...]\n" + content.slice(-MAX);
+    return content;
+  } catch {
+    return "";
+  }
+}
+
+
+function buildLogViewerHtml(menu, role, basePath, webAuth) {
+  const menuHtml = getMenuHtml(menu, basePath, role, null, null, webAuth);
+  const evtFiles  = getLogFileList(EVENTS_DIR,  EVENTS_RE);
+  const pipeFiles = getLogFileList(PIPELINE_DIR, PIPELINE_RE);
+
+  function fileOpts(files, type) {
+    if (!files.length) return `<option disabled>— no files —</option>`;
+    return files.map(f =>
+      `<option value="${escHtml(String(f.n))}" data-type="${type}">${escHtml(f.name)} (${(f.size / 1024).toFixed(1)} KB)</option>`
+    ).reverse().join("");
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Logs &#8212; Jenny</title>
+${getThemeHeadScript()}
+<link rel="stylesheet" href="${basePath}/style.css">
+<style>
+.lwrap{margin-top:var(--hh);height:calc(100vh - var(--hh));height:calc(100dvh - var(--hh));overflow:hidden;display:flex;flex-direction:column;padding:10px;gap:8px}
+.ltabs{display:flex;gap:6px;flex-shrink:0}
+.ltab{padding:5px 14px;border-radius:6px;border:1px solid var(--bdr);background:var(--card);cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);user-select:none;transition:background .15s}
+.ltab.active{background:var(--acc);color:#fff;border-color:var(--acc)}
+.lbar{display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap}
+.lbar select{flex:1;min-width:180px;padding:4px 8px;border-radius:6px;border:1px solid var(--bdr);background:var(--card);color:var(--txt);font-size:12px}
+.lbar button{padding:4px 12px;border-radius:6px;border:1px solid var(--bdr);background:var(--card);color:var(--txt);font-size:12px;cursor:pointer}
+.lbar button:hover{background:var(--acc);color:#fff;border-color:var(--acc)}
+.lbar label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer}
+.lbox{flex:1;overflow-y:auto;background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);padding:8px 10px;font-family:monospace;font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-all}
+.lbox .ll-err{color:#f87171;font-weight:600}
+.lbox .ll-warn{color:#fbbf24;font-weight:600}
+.lbox .ll-add{color:#4ade80}
+.lbox .ll-del{color:#f87171}
+.lbox .ll-hdr{color:#67e8f9;font-weight:700}
+.lbox .ll-sep{color:var(--muted)}
+.lbox .ll-dim{color:var(--muted)}
+.lstat{font-size:11px;color:var(--muted);flex-shrink:0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Logs</h1>
+  ${menuHtml}
+</header>
+<div class="lwrap">
+  <div class="ltabs">
+    <div class="ltab active" data-tab="events">Events</div>
+    <div class="ltab" data-tab="pipeline">Pipeline Diffs</div>
+  </div>
+  <div class="lbar">
+    <select id="lfile">
+      <optgroup label="Events" id="lg-events">${fileOpts(evtFiles, "events")}</optgroup>
+    </select>
+    <button id="lreload">&#8635; Reload</button>
+    <label><input type="checkbox" id="lautoscroll" checked> Auto-scroll</label>
+    <span class="lstat" id="lstat"></span>
+  </div>
+  <div class="lbox" id="lbox"><span class="ll-dim">Select a file and click Reload.</span></div>
+</div>
+<script>
+(function(){
+  var tabs   = document.querySelectorAll('.ltab');
+  var sel    = document.getElementById('lfile');
+  var box    = document.getElementById('lbox');
+  var stat   = document.getElementById('lstat');
+  var reload = document.getElementById('lreload');
+  var scroll = document.getElementById('lautoscroll');
+
+  var fileData = {
+    events:   ${JSON.stringify(evtFiles.map(f => ({ n: f.n, name: f.name, size: f.size })))},
+    pipeline: ${JSON.stringify(pipeFiles.map(f => ({ n: f.n, name: f.name, size: f.size })))}
+  };
+
+  var currentTab = 'events';
+
+  function buildOpts(type) {
+    var files = fileData[type] || [];
+    if (!files.length) return '<option disabled>— no files —</option>';
+    return files.slice().reverse().map(function(f) {
+      return '<option value="' + f.n + '" data-type="' + type + '">' + escH(f.name) + ' (' + (f.size/1024).toFixed(1) + ' KB)</option>';
+    }).join('');
+  }
+
+  function escH(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function colorize(text) {
+    var lines = text.split('\\n');
+    return lines.map(function(ln) {
+      if (/^\\s*\\[ERROR\\]/.test(ln))   return '<span class="ll-err">'  + escH(ln) + '</span>';
+      if (/^\\s*\\[WARN\\]/.test(ln))    return '<span class="ll-warn">' + escH(ln) + '</span>';
+      if (/^---/.test(ln))              return '<span class="ll-hdr">'  + escH(ln) + '</span>';
+      if (/^={4,}/.test(ln))            return '<span class="ll-sep">'  + escH(ln) + '</span>';
+      if (/^\\+/.test(ln))              return '<span class="ll-add">'  + escH(ln) + '</span>';
+      if (/^-/.test(ln))               return '<span class="ll-del">'  + escH(ln) + '</span>';
+      return escH(ln);
+    }).join('\\n');
+  }
+
+  function loadFile() {
+    var opt = sel.options[sel.selectedIndex];
+    if (!opt || opt.disabled) return;
+    var n    = opt.value;
+    var type = currentTab;
+    stat.textContent = 'Loading…';
+    fetch('${basePath}/logs/api?type=' + type + '&file=' + n)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var txt = d.content || '';
+        box.innerHTML = colorize(txt);
+        stat.textContent = txt.length + ' chars';
+        if (scroll.checked) box.scrollTop = box.scrollHeight;
+      })
+      .catch(function(e){ stat.textContent = 'Error: ' + e.message; });
+  }
+
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      tabs.forEach(function(t){ t.classList.remove('active'); });
+      tab.classList.add('active');
+      currentTab = tab.dataset.tab;
+      sel.innerHTML = buildOpts(currentTab);
+      box.innerHTML = '<span class="ll-dim">Select a file and click Reload.</span>';
+      stat.textContent = '';
+      // auto-load most recent if available
+      if (sel.options.length && !sel.options[0].disabled) loadFile();
+    });
+  });
+
+  reload.addEventListener('click', loadFile);
+
+  // auto-load most recent events file on page load
+  if (sel.options.length && !sel.options[0].disabled) loadFile();
+})();
+</script>
+</body>
+</html>`;
+}
+
+
 export default async function getWebpageDashboard(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
@@ -310,7 +444,7 @@ export default async function getWebpageDashboard(coreData) {
 
   wo.stop = true; wo.stopReason = "dashboard_request_handled";
 
-  if (!getIsAllowed(wo, allowedRoles)) {
+  if (!getIsAllowedRoles(wo, allowedRoles)) {
     wo.http.response = {
       status: 403,
       headers: { "Content-Type": "text/plain; charset=utf-8" },
@@ -329,6 +463,41 @@ export default async function getWebpageDashboard(coreData) {
     await setSendNow(wo);
     return coreData;
   }
+
+  // --- Log viewer routes ---
+  if (urlPath === basePath + "/logs/api") {
+    const qp    = new URLSearchParams(url.includes("?") ? url.slice(url.indexOf("?") + 1) : "");
+    const type  = qp.get("type") || "events";
+    const fileN = qp.get("file");
+    if (fileN !== null) {
+      const dir = type === "pipeline" ? PIPELINE_DIR : EVENTS_DIR;
+      const re  = type === "pipeline" ? PIPELINE_RE : EVENTS_RE;
+      const n   = Number(fileN);
+      const basename = type === "pipeline" ? `pipeline-${n}.log` : `events-${n}.log`;
+      if (!Number.isFinite(n) || !re.test(basename)) {
+        wo.http.response = { status: 400, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "invalid file" }) };
+      } else {
+        const content = getLogFileText(path.join(dir, basename));
+        wo.http.response = { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ content }) };
+      }
+    } else {
+      const eFiles = getLogFileList(EVENTS_DIR,  EVENTS_RE);
+      const pFiles = getLogFileList(PIPELINE_DIR, PIPELINE_RE);
+      wo.http.response = { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ events: eFiles, pipeline: pFiles }) };
+    }
+    await setSendNow(wo);
+    return coreData;
+  }
+
+  if (urlPath === basePath + "/logs") {
+    const menu    = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];
+    const role    = getStr(wo?.webAuth?.role || "");
+    const html    = buildLogViewerHtml(menu, role, basePath, wo.webAuth);
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }, body: html };
+    await setSendNow(wo);
+    return coreData;
+  }
+  // --- End log viewer routes ---
 
   const data    = getItem("dashboard:state") || null;
   const menu    = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];

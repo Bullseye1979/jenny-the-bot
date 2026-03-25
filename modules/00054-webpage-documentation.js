@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 
 const MODULE_NAME = "webpage-documentation";
 const __filename = fileURLToPath(import.meta.url);
@@ -26,15 +26,6 @@ const EXTRA_DOCS = [
     filePath: path.resolve(__dirname, "../extensions/jenny-extension/README.md")
   }
 ];
-
-
-function escHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 
 function getDocFiles() {

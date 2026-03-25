@@ -5,19 +5,17 @@
 /*          DM-safe by removing only own hourglass in DMs.    *
 /***************************************************************/
 import { getItem } from "../core/registry.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-reaction-finish";
-
-
-function getNowIso() { return new Date().toISOString(); }
 
 
 function getFlowHadErrors(wo) {
   const logs = Array.isArray(wo?.logging) ? wo.logging : [];
   for (const entry of logs) {
-    const severity = String(entry?.severity || "").toLowerCase();
+    const level = String(entry?.level || entry?.severity || "").toLowerCase();
     const exitStatus = String(entry?.exitStatus || "").toLowerCase();
-    if (severity === "error" || exitStatus === "failed") return true;
+    if (level === "error" || exitStatus === "failed") return true;
   }
   return false;
 }
@@ -50,26 +48,14 @@ async function setRemoveHourglassSafely(message, client, isDM) {
 
 export default async function getDiscordReactionFinish(coreData) {
   const wo = coreData?.workingObject || {};
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
 
   if (wo?.showReactions !== true) {
-    wo.logging.push({
-      timestamp: getNowIso(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: "Reactions disabled → skip finalization"
-    });
+    log("Reactions disabled → skip finalization");
     return coreData;
   }
 
-  wo.logging.push({
-    timestamp: getNowIso(),
-    severity: "info",
-    module: MODULE_NAME,
-    exitStatus: "started",
-    message: "Finalizing reactions"
-  });
+  log("Finalizing reactions");
 
   try {
     const client = await getItem(wo.clientRef);
@@ -89,21 +75,9 @@ export default async function getDiscordReactionFinish(coreData) {
     const finalEmoji = hadErrors ? "❌" : "✅";
     await triggeringMessage.react(finalEmoji);
 
-    wo.logging.push({
-      timestamp: getNowIso(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `Finalized with ${finalEmoji}`
-    });
+    log(`Finalized with ${finalEmoji}`);
   } catch (err) {
-    wo.logging.push({
-      timestamp: getNowIso(),
-      severity: "error",
-      module: MODULE_NAME,
-      exitStatus: "failed",
-      message: `Finalize failed: ${err?.message || String(err)}`
-    });
+    log(`Finalize failed: ${err?.message || String(err)}`, "error");
   }
 
   return coreData;

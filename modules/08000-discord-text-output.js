@@ -12,6 +12,7 @@
 import discordJs from "discord.js";
 const { EmbedBuilder, PermissionFlagsBits, WebhookClient } = discordJs;
 import { getItem } from "../core/registry.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-text-output";
 const COLOR_PRIMARY = 0x22C55E;
@@ -94,6 +95,7 @@ async function getUrlExists(url, timeoutMs = 3000) {
 
 
 async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo) {
+  const log = getPrefixedLogger(wo, import.meta.url);
   const currChannel = message.channel;
   const parentChannel = getIsThreadChannel(currChannel) ? currChannel.parent : currChannel;
   if (!parentChannel) throw new Error(`${MODULE_NAME}: cannot resolve parent channel for webhook`);
@@ -110,13 +112,7 @@ async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo
 
   if (!hook) {
     hook = await parentChannel.createWebhook({ name: desiredName, reason: `${MODULE_NAME}: auto-create for ${desiredName}` });
-    (wo.logging ||= []).push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `created channel webhook "${desiredName}" in #${parentChannel.id}`
-    });
+    log(`created channel webhook "${desiredName}" in #${parentChannel.id}`, "info");
   }
 
   if (!hook || !getIsChannelWebhook(hook)) {
@@ -133,13 +129,7 @@ async function setEnsureOwnChannelWebhookClient(client, message, desiredName, wo
 
   const threadId = getIsThreadChannel(currChannel) ? currChannel.id : null;
 
-  (wo.logging ||= []).push({
-    timestamp: new Date().toISOString(),
-    severity: "info",
-    module: MODULE_NAME,
-    exitStatus: "success",
-    message: `using channel webhook: id=${hook.id} name="${hook.name}" type=${hook.type} parent=${parentChannel.id} thread=${threadId || "-"}`
-  });
+  log(`using channel webhook: id=${hook.id} name="${hook.name}" type=${hook.type} parent=${parentChannel.id} thread=${threadId || "-"}`, "info");
 
   return { webhookClient, threadId };
 }
@@ -645,17 +635,12 @@ async function setCanCreateMessageThread(client, channel) {
 
 
 async function setCreateReasoningMessageThread(client, channel, rootMessageId, threadName, wo) {
+  const log = getPrefixedLogger(wo, import.meta.url);
   if (!channel?.threads?.create) return null;
 
   const can = await setCanCreateMessageThread(client, channel);
   if (!can) {
-    (wo.logging ||= []).push({
-      timestamp: new Date().toISOString(),
-      severity: "warn",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: `Missing permission to create message thread in #${channel?.id || "-"}`
-    });
+    log(`Missing permission to create message thread in #${channel?.id || "-"}`, "warn");
     return null;
   }
 
@@ -667,23 +652,11 @@ async function setCreateReasoningMessageThread(client, channel, rootMessageId, t
       reason: `${MODULE_NAME}: attach reasoning`
     });
 
-    (wo.logging ||= []).push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `Created message thread ${th?.id || "-"} for message ${rootMessageId}`
-    });
+    log(`Created message thread ${th?.id || "-"} for message ${rootMessageId}`, "info");
 
     return th;
   } catch (err) {
-    (wo.logging ||= []).push({
-      timestamp: new Date().toISOString(),
-      severity: "error",
-      module: MODULE_NAME,
-      exitStatus: "failed",
-      message: `Failed to create message thread: ${err?.message || String(err)}`
-    });
+    log(`Failed to create message thread: ${err?.message || String(err)}`, "error");
     return null;
   }
 }
@@ -770,19 +743,13 @@ async function setSendDirectReasoningEmbeds(channel, reasoningText, meta) {
 export default async function getDiscordTextOutput(coreData) {
   const wo = coreData.workingObject || {};
   const config = coreData.config || {};
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
 
   const silence = (wo.modSilence || "[silence]").toString();
   const response = (typeof wo.response === "string" ? wo.response : "").trim();
 
   if (!response || response === silence) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "warn",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: !response ? "Missing response – nothing to send." : "Silence token – not sending."
-    });
+    log(!response ? "Missing response – nothing to send." : "Silence token – not sending.", "warn");
     return coreData;
   }
 
@@ -790,25 +757,13 @@ export default async function getDiscordTextOutput(coreData) {
   const client = clientKey ? await getItem(clientKey) : null;
 
   if (!client) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "error",
-      module: MODULE_NAME,
-      exitStatus: "failed",
-      message: "Discord client not available from registry"
-    });
+    log("Discord client not available from registry", "error");
     return coreData;
   }
 
   const channelId = String(wo.channelID || "");
   if (!channelId) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "warn",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: "Missing wo.channelID – cannot resolve channel."
-    });
+    log("Missing wo.channelID – cannot resolve channel.", "warn");
     return coreData;
   }
 
@@ -857,13 +812,7 @@ export default async function getDiscordTextOutput(coreData) {
         });
       }
 
-      wo.logging.push({
-        timestamp: new Date().toISOString(),
-        severity: "info",
-        module: MODULE_NAME,
-        exitStatus: "success",
-        message: `Sent ${sentEmbeds} DM embed message(s) and ${sentReasoning} reasoning embed message(s)`
-      });
+      log(`Sent ${sentEmbeds} DM embed message(s) and ${sentReasoning} reasoning embed message(s)`, "info");
 
       return coreData;
     }
@@ -916,13 +865,7 @@ export default async function getDiscordTextOutput(coreData) {
           timeStr
         });
 
-        (wo.logging ||= []).push({
-          timestamp: new Date().toISOString(),
-          severity: "warn",
-          module: MODULE_NAME,
-          exitStatus: "skipped",
-          message: "Cannot create a message-thread inside an existing thread; posted reasoning in the current thread instead."
-        });
+        log("Cannot create a message-thread inside an existing thread; posted reasoning in the current thread instead.", "warn");
       } else {
         const threadName = getReasoningThreadName(wo, askerDisplay);
         const th = await setCreateReasoningMessageThread(client, baseChannel, rootMessageId, threadName, wo);
@@ -944,21 +887,9 @@ export default async function getDiscordTextOutput(coreData) {
       }
     }
 
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `Sent ${answerResult.sent} embed(s) and ${sentReasoning} reasoning embed message(s) to channel ${baseChannel?.id || channelId} as "${identity.username}".`
-    });
+    log(`Sent ${answerResult.sent} embed(s) and ${sentReasoning} reasoning embed message(s) to channel ${baseChannel?.id || channelId} as "${identity.username}".`, "info");
   } catch (err) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "error",
-      module: MODULE_NAME,
-      exitStatus: "failed",
-      message: `Failed to send Discord message: ${err?.message || String(err)}`
-    });
+    log(`Failed to send Discord message: ${err?.message || String(err)}`, "error");
   }
 
   return coreData;

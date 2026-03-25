@@ -26,6 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getMenuHtml }       from "../shared/webpage/interface.js";
+import { getIsAllowedRoles } from "../shared/webpage/utils.js";
 
 const __filename   = fileURLToPath(import.meta.url);
 const __dirname    = path.dirname(__filename);
@@ -36,17 +37,6 @@ const ROUTE_SPA    = "/voice";
 const ROUTE_CSS    = "/voice/style.css";
 const ROUTE_AUDIO  = "/voice/audio";
 
-
-function getIsAllowedRoles(wo, allowedRoles) {
-  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
-  if (!req.length) return true;
-  const have = new Set();
-  const primary = String(wo?.webAuth?.role || "").trim().toLowerCase();
-  if (primary) have.add(primary);
-  const roles = wo?.webAuth?.roles;
-  if (Array.isArray(roles)) roles.forEach(r => { const v = String(r || "").trim().toLowerCase(); if (v) have.add(v); });
-  return req.some(r => { const n = String(r || "").trim().toLowerCase(); return n && have.has(n); });
-}
 
 
 function getAccessDeniedHtml(menuHtml) {

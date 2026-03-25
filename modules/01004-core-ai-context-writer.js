@@ -13,13 +13,14 @@
 /* Flow: discord, discord-voice, discord-status, api, bard-label-gen, webpage      *
 /************************************************************************************/
 import { setContext } from "../core/context.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-ai-context-writer";
 
 
 export default async function getCoreAiContextWriter(coreData) {
   const wo = coreData?.workingObject;
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
 
   const queue = Array.isArray(wo._contextPersistQueue) ? wo._contextPersistQueue : null;
 
@@ -27,13 +28,7 @@ export default async function getCoreAiContextWriter(coreData) {
   if (!queue || queue.length === 0) return coreData;
 
   if (wo?.doNotWriteToContext === true) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `doNotWriteToContext=true — skipped context persistence for ${queue.length} turn(s).`
-    });
+    log(`doNotWriteToContext=true — skipped context persistence for ${queue.length} turn(s).`);
     return coreData;
   }
 
@@ -42,23 +37,11 @@ export default async function getCoreAiContextWriter(coreData) {
     try { await setContext(wo, turn); }
     catch (e) {
       failed++;
-      wo.logging.push({
-        timestamp: new Date().toISOString(),
-        severity: "warn",
-        module: MODULE_NAME,
-        exitStatus: "success",
-        message: `Persist failed (role=${turn.role}): ${e?.message || String(e)}`
-      });
+      log(`Persist failed (role=${turn.role}): ${e?.message || String(e)}`, "warn");
     }
   }
 
-  wo.logging.push({
-    timestamp: new Date().toISOString(),
-    severity: "info",
-    module: MODULE_NAME,
-    exitStatus: "success",
-    message: `Context persisted: ${queue.length - failed} of ${queue.length} turn(s)${failed ? `, ${failed} failed` : ""}`
-  });
+  log(`Context persisted: ${queue.length - failed} of ${queue.length} turn(s)${failed ? `, ${failed} failed` : ""}`);
 
   /* Clear queue so a second run of this module is a no-op */
   wo._contextPersistQueue = [];

@@ -7,6 +7,7 @@
 ****************************************************************************************************************/
 
 import path from "node:path";
+import { setSendNow } from "../shared/webpage/utils.js";
 
 const MODULE_NAME = "webpage-inpaint";
 
@@ -39,22 +40,6 @@ function getShouldBypassRedirect(wo, inpaintingHost) {
   return isDiscord || isFromInpainting || likelyWantsBinaryImage || browserExplicitImageFetch;
 }
 
-async function setSendNow(wo) {
-  try {
-    const res = wo?.http?.res;
-    if (!res || res.writableEnded) return;
-
-    const resp = wo.http.response || {};
-    const status = resp.status || 200;
-    const headers = resp.headers || {};
-    const body = resp.body ?? "";
-
-    res.writeHead(status, headers);
-    res.end(body);
-  } catch {
-    return;
-  }
-}
 
 export default async function getWebpageInpaint(coreData) {
   const wo = coreData?.workingObject || {};

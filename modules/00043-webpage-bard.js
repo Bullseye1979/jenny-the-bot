@@ -11,6 +11,7 @@ import fs   from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { setSendNow, setJsonResp, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
 
 const MODULE_NAME = "webpage-bard";
 const __filename = fileURLToPath(import.meta.url);
@@ -49,42 +50,11 @@ async function setSendAudioStream(wo, filePath, rangeHeader) {
   return true;
 }
 
-async function setSendNow(wo) {
-  const res = wo?.http?.res;
-  if (!res) return;
-  const r = wo.http?.response || {};
-  const status  = Number(r.status  ?? 200);
-  const headers = r.headers ?? { "Content-Type": "application/json" };
-  const body    = r.body    ?? "";
-  res.writeHead(status, headers);
-  res.end(typeof body === "string" ? body : JSON.stringify(body));
-}
-
-function setJsonResp(wo, status, data) {
-  wo.http.response = { status, headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) };
-}
-
 function getStr(v) { return v == null ? "" : String(v); }
 
 function getBody(wo) {
   if (Buffer.isBuffer(wo.http?.rawBodyBytes)) return wo.http.rawBodyBytes.toString("utf8");
   return String(wo.http?.rawBody ?? wo.http?.body ?? "");
-}
-
-function getUserRoleLabels(wo) {
-  const out = [], seen = new Set();
-  const primary = getStr(wo?.webAuth?.role).trim().toLowerCase();
-  if (primary && !seen.has(primary)) { seen.add(primary); out.push(primary); }
-  const roles = wo?.webAuth?.roles;
-  if (Array.isArray(roles)) for (const r of roles) { const v = getStr(r).trim().toLowerCase(); if (v && !seen.has(v)) { seen.add(v); out.push(v); } }
-  return out;
-}
-
-function getIsAllowed(wo, allowedRoles) {
-  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
-  if (!req.length) return true;
-  const have = new Set(getUserRoleLabels(wo));
-  return req.some(r => have.has(getStr(r).trim().toLowerCase()));
 }
 
 function getBasePath(cfg) {
@@ -345,7 +315,7 @@ export default async function getWebpageBard(coreData) {
 
   const method  = getStr(wo.http?.method ?? "GET").toUpperCase();
   const urlPath = getStr(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
-  const isAllowed = getIsAllowed(wo, allowedRoles);
+  const isAllowed = getIsAllowedRoles(wo, allowedRoles);
 
   if (method === "GET" && urlPath === basePath + "/style.css") {
     const cssFile = new URL("../shared/webpage/style.css", import.meta.url);

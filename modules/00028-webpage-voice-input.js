@@ -26,6 +26,7 @@ import os   from "node:os";
 import path from "node:path";
 import ffmpegImport from "fluent-ffmpeg";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getIsAllowedRoles } from "../shared/webpage/utils.js";
 
 const MODULE_NAME  = "webpage-voice-input";
 const DEFAULT_PORT = 3119;
@@ -49,17 +50,6 @@ function getConvertToWav(inputFile, outputFile) {
   });
 }
 
-
-function getIsAllowedRoles(wo, allowedRoles) {
-  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
-  if (!req.length) return true;
-  const have = new Set();
-  const primary = String(wo?.webAuth?.role || "").trim().toLowerCase();
-  if (primary) have.add(primary);
-  const roles = wo?.webAuth?.roles;
-  if (Array.isArray(roles)) roles.forEach(r => { const v = String(r || "").trim().toLowerCase(); if (v) have.add(v); });
-  return req.some(r => { const n = String(r || "").trim().toLowerCase(); return n && have.has(n); });
-}
 
 
 async function sendError(wo, status, errorCode) {

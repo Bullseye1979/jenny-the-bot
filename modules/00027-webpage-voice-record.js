@@ -25,6 +25,7 @@ import path from "node:path";
 import { FormData, File, fetch } from "undici";
 import ffmpegImport from "fluent-ffmpeg";
 import { getPrefixedLogger }  from "../core/logging.js";
+import { getIsAllowedRoles }  from "../shared/webpage/utils.js";
 import { setContext, setPurgeContext } from "../core/context.js";
 
 const MODULE_NAME  = "webpage-voice-record";
@@ -34,17 +35,6 @@ const ROUTE_RECORD = "/voice/record";
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || "/usr/bin/ffmpeg");
 
-
-function getIsAllowedRoles(wo, allowedRoles) {
-  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
-  if (!req.length) return true;
-  const have = new Set();
-  const primary = String(wo?.webAuth?.role || "").trim().toLowerCase();
-  if (primary) have.add(primary);
-  const roles = wo?.webAuth?.roles;
-  if (Array.isArray(roles)) roles.forEach(r => { const v = String(r || "").trim().toLowerCase(); if (v) have.add(v); });
-  return req.some(r => { const n = String(r || "").trim().toLowerCase(); return n && have.has(n); });
-}
 
 
 async function sendJson(wo, status, data) {

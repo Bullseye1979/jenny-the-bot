@@ -6,6 +6,7 @@
 /********************************************************************************/
 import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-ai-completions";
 const ARG_PREVIEW_MAX = 400;
@@ -144,6 +145,7 @@ function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
 
 
 async function getToolsByName(names, wo) {
+  const log = getPrefixedLogger(wo, import.meta.url);
   const loaded = [];
   for (const name of names || []) {
     try {
@@ -152,22 +154,10 @@ async function getToolsByName(names, wo) {
       if (tool && typeof tool.invoke === "function") {
         loaded.push(tool);
       } else {
-        wo.logging?.push({
-          timestamp: new Date().toISOString(),
-          severity: "warn",
-          module: MODULE_NAME,
-          exitStatus: "success",
-          message: `Tool "${name}" invalid (missing invoke); skipped.`
-        });
+        log(`Tool "${name}" invalid (missing invoke); skipped.`, "warn");
       }
     } catch (e) {
-      wo.logging?.push({
-        timestamp: new Date().toISOString(),
-        severity: "warn",
-        module: MODULE_NAME,
-        exitStatus: "success",
-        message: `Tool "${name}" load failed: ${e?.message || String(e)}`
-      });
+      log(`Tool "${name}" load failed: ${e?.message || String(e)}`, "warn");
     }
   }
   return loaded;
@@ -182,20 +172,14 @@ function getToolDefs(toolModules) {
 
 
 function getExpandedToolArgs(args, wo) {
+  const log = getPrefixedLogger(wo, import.meta.url);
   const full = typeof wo?._fullAssistantText === "string" ? wo._fullAssistantText : "";
   if (!full || !args || typeof args !== "object") return args;
   const candidateKeys = ["body", "content", "text", "message"];
   for (const key of candidateKeys) {
     const v = args[key];
     if (typeof v === "string" && v.length && full.length > v.length && full.includes(v)) {
-      wo.logging?.push({
-        timestamp: new Date().toISOString(),
-        severity: "info",
-        module: MODULE_NAME,
-        exitStatus: "success",
-        message: `Expanded tool argument "${key}" to full assistant text.`,
-        details: { original_length: v.length, full_length: full.length }
-      });
+      log(`Expanded tool argument "${key}" to full assistant text.`, "info", { original_length: v.length, full_length: full.length });
       return { ...args, [key]: full };
     }
   }
@@ -205,34 +189,17 @@ function getExpandedToolArgs(args, wo) {
 
 async function getExecToolCall(toolModules, toolCall, coreData) {
   const wo = coreData?.workingObject || {};
+  const log = getPrefixedLogger(wo, import.meta.url);
   const name = toolCall?.function?.name || toolCall?.name;
   const argsRaw = toolCall?.function?.arguments ?? toolCall?.arguments ?? "{}";
   let args = typeof argsRaw === "string" ? getTryParseJSON(argsRaw, {}) : (argsRaw || {});
   const tool = toolModules.find(t => (t.definition?.function?.name || t.name) === name);
   const startTs = Date.now();
   args = getExpandedToolArgs(args, wo);
-  wo.logging?.push({
-    timestamp: new Date().toISOString(),
-    severity: "info",
-    module: MODULE_NAME,
-    exitStatus: "started",
-    message: "Tool call start",
-    details: {
-      tool_call_id: toolCall?.id || null,
-      tool: name || null,
-      args_preview: getPreview(getJsonSafe(args), ARG_PREVIEW_MAX)
-    }
-  });
+  log("Tool call start", "info", { tool_call_id: toolCall?.id || null, tool: name || null, args_preview: getPreview(getJsonSafe(args), ARG_PREVIEW_MAX) });
   if (!tool) {
     const msg = { error: `Tool "${name}" not found` };
-    wo.logging?.push({
-      timestamp: new Date().toISOString(),
-      severity: "error",
-      module: MODULE_NAME,
-      exitStatus: "failed",
-      message: "Tool call failed (not found)",
-      details: { tool_call_id: toolCall?.id || null, tool: name || null }
-    });
+    log("Tool call failed (not found)", "error", { tool_call_id: toolCall?.id || null, tool: name || null });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
@@ -241,31 +208,12 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
     const result = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
-    wo.logging?.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: "Tool call success",
-      details: {
-        tool_call_id: toolCall?.id || null,
-        tool: name,
-        duration_ms: durationMs,
-        result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX)
-      }
-    });
+    log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
     const durationMs = Date.now() - startTs;
-    wo.logging?.push({
-      timestamp: new Date().toISOString(),
-      severity: "error",
-      module: MODULE_NAME,
-      exitStatus: "failed",
-      message: "Tool call error",
-      details: { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, error: String(e?.message || e) }
-    });
+    log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, error: String(e?.message || e) });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
   } finally {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs)
@@ -331,31 +279,25 @@ async function getSystemContent(wo, kiCfg) {
 
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
   if (!getShouldRunForThisModule(wo)) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: `Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" != "completions"`
-    });
+    log(`Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" != "completions"`, "info");
     return coreData;
   }
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
   if (!userPromptRaw.trim()) {
-    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: "Skipped: empty payload" });
+    log("Skipped: empty payload", "info");
     return coreData;
   }
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "started", message: "AI request started" });
+  log("AI request started", "info");
   let snapshot = [];
   if (Array.isArray(wo._contextSnapshot)) {
     snapshot = wo._contextSnapshot;
   } else {
     try { snapshot = await getContext(wo); }
     catch (e) {
-      wo.logging.push({ timestamp: new Date().toISOString(), severity: "warn", module: MODULE_NAME, exitStatus: "success", message: `getContext failed; continuing: ${e?.message || String(e)}` });
+      log(`getContext failed; continuing: ${e?.message || String(e)}`, "warn");
     }
   }
   const systemContent = await getSystemContent(wo, kiCfg);
@@ -397,13 +339,7 @@ export default async function getCoreAi(coreData) {
       const raw = await res.text();
       if (!res.ok) {
         wo.response = "[Empty AI response]";
-        wo.logging.push({
-          timestamp: new Date().toISOString(),
-          severity: "warn",
-          module: MODULE_NAME,
-          exitStatus: "failed",
-          message: `HTTP ${res.status} ${res.statusText}`
-        });
+        log(`HTTP ${res.status} ${res.statusText}`, "warn");
         return coreData;
       }
       const data = getTryParseJSON(raw, null);
@@ -411,13 +347,7 @@ export default async function getCoreAi(coreData) {
       const finish = choice?.finish_reason;
       const msg = choice?.message || {};
       const toolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
-      wo.logging.push({
-        timestamp: new Date().toISOString(),
-        severity: "info",
-        module: MODULE_NAME,
-        exitStatus: "success",
-        message: `AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${typeof msg.content === "string" ? msg.content.length : 0} tool_calls=${toolCalls?.length ?? 0}`
-      });
+      log(`AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${typeof msg.content === "string" ? msg.content.length : 0} tool_calls=${toolCalls?.length ?? 0}`, "info");
       const assistantMsg = {
         role: "assistant",
         authorName: getAssistantAuthorName(wo),
@@ -439,14 +369,7 @@ export default async function getCoreAi(coreData) {
               : (tc?.function?.arguments ? JSON.stringify(tc.function.arguments) : "{}")
           }
         }));
-        wo.logging.push({
-          timestamp: new Date().toISOString(),
-          severity: "info",
-          module: MODULE_NAME,
-          exitStatus: "success",
-          message: `Assistant requested tool call(s): ${toolCalls.map(t => t?.function?.name).filter(Boolean).join(", ") || "(unknown)"}`,
-          details: { count: toolCalls.length, ids: toolCalls.map(t => t?.id).filter(Boolean) }
-        });
+        log(`Assistant requested tool call(s): ${toolCalls.map(t => t?.function?.name).filter(Boolean).join(", ") || "(unknown)"}`, "info", { count: toolCalls.length, ids: toolCalls.map(t => t?.id).filter(Boolean) });
       }
       messages.push(assistantMsg);
       if (assistantMsg.content || (Array.isArray(assistantMsg.tool_calls) && assistantMsg.tool_calls.length)) {
@@ -470,13 +393,7 @@ export default async function getCoreAi(coreData) {
         };
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
-        wo.logging.push({
-          timestamp: new Date().toISOString(),
-          severity: "info",
-          module: MODULE_NAME,
-          exitStatus: "success",
-          message: `Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`
-        });
+        log(`Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`, "info");
         wo.__forceNoTools = true;
         continue;
       }
@@ -484,27 +401,15 @@ export default async function getCoreAi(coreData) {
     } catch (err) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
       wo.response = "[Empty AI response]";
-      wo.logging.push({
-        timestamp: new Date().toISOString(),
-        severity: isAbort ? "warn" : "error",
-        module: MODULE_NAME,
-        exitStatus: "failed",
-        message: isAbort
-          ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
-          : `AI request failed: ${err?.message || String(err)}`
-      });
+      log(isAbort
+        ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
+        : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       return coreData;
     } finally {
       clearTimeout(timer);
     }
   }
   wo.response = (accumulatedText || "").trim() || "[Empty AI response]";
-  wo.logging.push({
-    timestamp: new Date().toISOString(),
-    severity: "info",
-    module: MODULE_NAME,
-    exitStatus: "success",
-    message: "AI response received."
-  });
+  log("AI response received.", "info");
   return coreData;
 }

@@ -8,27 +8,9 @@
 
 import fs from "node:fs";
 import { getMenuHtml, readJsonFile, writeJsonFile, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
 
 const MODULE_NAME = "webpage-config-editor";
-
-async function setSendNow(wo) {
-  const res = wo?.http?.res;
-  if (!res) return;
-  const r = wo.http?.response || {};
-  const status  = Number(r.status  ?? 200);
-  const headers = r.headers ?? { "Content-Type": "application/json" };
-  const body    = r.body    ?? "";
-  res.writeHead(status, headers);
-  res.end(typeof body === "string" ? body : JSON.stringify(body));
-}
-
-function setJsonResp(wo, status, data) {
-  wo.http.response = {
-    status,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data)
-  };
-}
 
 function setNotFound(wo) {
   wo.http.response = {
@@ -36,30 +18,6 @@ function setNotFound(wo) {
     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
     body: "Not Found"
   };
-}
-
-function getIsAllowedRoles(wo, allowedRoles) {
-  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
-  if (!req.length) return true;
-
-  const have = new Set();
-  const primary = String(wo?.webAuth?.role || "").trim().toLowerCase();
-  if (primary) have.add(primary);
-
-  const roles = wo?.webAuth?.roles;
-  if (Array.isArray(roles)) {
-    for (const r of roles) {
-      const v = String(r || "").trim().toLowerCase();
-      if (v) have.add(v);
-    }
-  }
-
-  for (const r of req) {
-    const need = String(r || "").trim().toLowerCase();
-    if (!need) continue;
-    if (have.has(need)) return true;
-  }
-  return false;
 }
 
 function getBasePath(cfg) {

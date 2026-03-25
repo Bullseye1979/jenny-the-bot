@@ -214,4 +214,4 @@ function getThemeHeadScript() {
 /**********************************************************************************/
 /* Named exports                                                                   *
 /**********************************************************************************/
-export { getBody, readJsonFile, writeJsonFile, isAuthorized, getDb, getMenuHtml, getThemeHeadScript };
+export { getBody, readJsonFile, writeJsonFile, isAuthorized, getDb, getMenuHtml, getThemeHeadScript, escHtml };

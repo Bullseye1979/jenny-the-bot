@@ -14,6 +14,7 @@ const MAX_FILE_BYTES = 3 * 1024 * 1024;
 const DIRNAME = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(DIRNAME, "..", "logs");
 const OBJECTS_DIR = path.join(LOG_DIR, "objects");
+const EVENTS_DIR = path.join(LOG_DIR, "events");
 const FILE_BASENAME = "objects";
 const FILE_EXT = ".log";
 const FILE_RE = /^objects-(\d+)\.log$/;
@@ -143,8 +144,10 @@ async function getVerifyWritable(dir) {
 async function setEnsureDirs() {
   await fsp.mkdir(LOG_DIR, { recursive: true });
   await fsp.mkdir(OBJECTS_DIR, { recursive: true });
+  await fsp.mkdir(EVENTS_DIR, { recursive: true });
   await getVerifyWritable(LOG_DIR);
   await getVerifyWritable(OBJECTS_DIR);
+  await getVerifyWritable(EVENTS_DIR);
 }
 
 
@@ -309,21 +312,21 @@ function getReadableLogBlock(wo) {
 
 
 function getBuildEventsPath(index) {
-  return path.join(LOG_DIR, `${EVENT_BASENAME}-${index}${EVENT_EXT}`);
+  return path.join(EVENTS_DIR, `${EVENT_BASENAME}-${index}${EVENT_EXT}`);
 }
 
 
 async function getListEventFiles() {
   await setEnsureDirs();
   const out = [];
-  const entries = await fsp.readdir(LOG_DIR, { withFileTypes: true });
+  const entries = await fsp.readdir(EVENTS_DIR, { withFileTypes: true });
   for (const ent of entries) {
     if (!ent.isFile()) continue;
     const m = ent.name.match(EVENT_RE);
     if (!m) continue;
     const idx = Number(m[1]);
     if (!Number.isFinite(idx)) continue;
-    out.push({ name: ent.name, index: idx, full: path.join(LOG_DIR, ent.name) });
+    out.push({ name: ent.name, index: idx, full: path.join(EVENTS_DIR, ent.name) });
   }
   out.sort((a, b) => a.index - b.index);
   return out;

@@ -10,7 +10,8 @@
 import fs   from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { getMenuHtml, getDb, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
+import { setSendNow, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
 /* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
 let sharp = null;
 try { sharp = (await import("sharp")).default; } catch { /* sharp not available */ }
@@ -79,52 +80,6 @@ async function ensureThumb(imageUrl, width) {
 
 
 function getStr(v) { return v == null ? "" : String(v); }
-
-
-function escHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-
-function getUserRoleLabels(wo) {
-  const out = [], seen = new Set();
-  const primary = getStr(wo?.webAuth?.role).trim().toLowerCase();
-  if (primary && !seen.has(primary)) { seen.add(primary); out.push(primary); }
-  const roles = wo?.webAuth?.roles;
-  if (Array.isArray(roles)) {
-    for (const r of roles) {
-      const v = getStr(r).trim().toLowerCase();
-      if (v && !seen.has(v)) { seen.add(v); out.push(v); }
-    }
-  }
-  return out;
-}
-
-
-function getIsAllowed(wo, allowedRoles) {
-  const req = Array.isArray(allowedRoles) ? allowedRoles : [];
-  if (!req.length) return true;
-  const have = new Set(getUserRoleLabels(wo));
-  return req.some(r => have.has(getStr(r).trim().toLowerCase()));
-}
-
-
-async function setSendNow(wo) {
-  const res = wo?.http?.res;
-  if (!res || res.writableEnded || res.headersSent) return;
-  const r = wo.http?.response || {};
-  const status  = Number(r.status  ?? 200);
-  const headers = r.headers ?? { "Content-Type": "text/html; charset=utf-8" };
-  const body    = r.body    ?? "";
-  try {
-    res.writeHead(status, headers);
-    res.end(typeof body === "string" ? body : JSON.stringify(body));
-  } catch { /* already sent */ }
-}
 
 
 async function sendJson(wo, status, data) {
@@ -1233,7 +1188,7 @@ export default async function getWebpageWiki(coreData) {
     const allChannels = Array.isArray(cfg.channels) ? cfg.channels : [];
     const visible = allChannels.filter(ch => {
       const allowed = Array.isArray(ch.allowedRoles) ? ch.allowedRoles : [];
-      return getIsAllowed(wo, allowed);
+      return getIsAllowedRoles(wo, allowed);
     });
     const html = buildIndexPage(visible, basePath, menu, role, webAuth);
     await sendHtml(wo, 200, html);
@@ -1253,7 +1208,7 @@ export default async function getWebpageWiki(coreData) {
 
   /* Read-access check */
   const allowedRoles = Array.isArray(channel.allowedRoles) ? channel.allowedRoles : [];
-  if (!getIsAllowed(wo, allowedRoles)) {
+  if (!getIsAllowedRoles(wo, allowedRoles)) {
     await sendText(wo, 403, "403 Forbidden");
     return coreData;
   }
@@ -1263,9 +1218,9 @@ export default async function getWebpageWiki(coreData) {
   const adminRoles   = Array.isArray(channel.adminRoles)   ? channel.adminRoles   : [];
   const editorRoles  = Array.isArray(channel.editorRoles)  ? channel.editorRoles  : [];
   const creatorRoles = Array.isArray(channel.creatorRoles) ? channel.creatorRoles : [];
-  const isAdmin   = adminRoles.length   > 0 && getIsAllowed(wo, adminRoles);
-  const isEditor  = isAdmin || (editorRoles.length  > 0 && getIsAllowed(wo, editorRoles));
-  const isCreator = isAdmin || (creatorRoles.length > 0 && getIsAllowed(wo, creatorRoles));
+  const isAdmin   = adminRoles.length   > 0 && getIsAllowedRoles(wo, adminRoles);
+  const isEditor  = isAdmin || (editorRoles.length  > 0 && getIsAllowedRoles(wo, editorRoles));
+  const isCreator = isAdmin || (creatorRoles.length > 0 && getIsAllowedRoles(wo, creatorRoles));
 
   /* Expiry config — 0 = no expiry */
   const maxAgeDays = getMaxAgeDays(channel);

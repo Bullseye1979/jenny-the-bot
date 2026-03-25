@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { getMenuHtml } from "../shared/webpage/interface.js";
 import { saveFile } from "../core/file.js";
+import { setSendNow, setJsonResp, getUserRoleLabels } from "../shared/webpage/utils.js";
 
 const MODULE_NAME = "webpage-inpainting";
 
@@ -24,32 +25,6 @@ const _inpaintAuthTokens = new Map();
 
 
 
-async function setSendNow(wo) {
-  const res = wo?.http?.res;
-  if (!res) return;
-
-  const r = wo.http?.response || {};
-  const status  = Number(r.status  ?? 200);
-  const headers = r.headers ?? { "Content-Type": "text/plain; charset=utf-8" };
-  const body    = r.body    ?? "";
-
-  res.writeHead(status, headers);
-  res.end(typeof body === "string" ? body : Buffer.isBuffer(body) ? body : JSON.stringify(body));
-}
-
-
-
-/**********************************************************************************/
-function setJsonResp(wo, status, obj) {
-  wo.http.response = {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-    body: JSON.stringify(obj ?? {})
-  };
-}
-
-
-
 /**********************************************************************************/
 function getBasePath(cfg) {
   const bp = String(cfg?.basePath ?? "/inpainting").trim();
@@ -58,28 +33,6 @@ function getBasePath(cfg) {
 }
 
 
-
-/**********************************************************************************/
-function getUserRoleLabels(wo) {
-  const out = [];
-  const seen = new Set();
-
-  const primary = String(wo?.webAuth?.role || "").trim().toLowerCase();
-  if (primary && !seen.has(primary)) { seen.add(primary); out.push(primary); }
-
-  const roles = wo?.webAuth?.roles;
-  if (Array.isArray(roles)) {
-    for (const r of roles) {
-      const v = String(r || "").trim().toLowerCase();
-      if (!v) continue;
-      if (seen.has(v)) continue;
-      seen.add(v);
-      out.push(v);
-    }
-  }
-
-  return out;
-}
 
 
 

@@ -5,6 +5,7 @@
 /*          and preserved turn_id when present.                                 *
 /********************************************************************************/
 import { setContext } from "../core/context.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "discord-add-context";
 
@@ -22,12 +23,11 @@ function getAttachmentUrlsFromWO(wo) {
 
 export default async function getDiscordAddContext(coreData) {
   const wo = coreData?.workingObject || {};
-  if (!Array.isArray(wo.logging)) wo.logging = [];
-  const ts = String(wo?.timestamp || new Date().toISOString());
+  const log = getPrefixedLogger(wo, import.meta.url);
   const text = typeof wo?.payload === "string" ? wo.payload.trim() : "";
-  wo.logging.push({ timestamp: ts, severity: "info", module: MODULE_NAME, exitStatus: "started", message: "Begin append message to context" });
+  log("Begin append message to context");
   if (!wo.db || !wo.flow || !wo.channelID || !text) {
-    wo.logging.push({ timestamp: ts, severity: "error", module: MODULE_NAME, exitStatus: "failed", message: "Missing required fields: db, flow, id, or payload" });
+    log("Missing required fields: db, flow, id, or payload", "error");
     return coreData;
   }
   const files = getAttachmentUrlsFromWO(wo);
@@ -48,9 +48,9 @@ export default async function getDiscordAddContext(coreData) {
   };
   try {
     await setContext(wo, record);
-    wo.logging.push({ timestamp: ts, severity: "info", module: MODULE_NAME, exitStatus: "success", message: "Message appended to context" });
+    log("Message appended to context");
   } catch (err) {
-    wo.logging.push({ timestamp: ts, severity: "error", module: MODULE_NAME, exitStatus: "failed", message: `Context write failed: ${err?.message || String(err)}` });
+    log(`Context write failed: ${err?.message || String(err)}`, "error");
   }
   return coreData;
 }

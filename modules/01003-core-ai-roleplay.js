@@ -13,6 +13,7 @@
 /* Persistence: Only persist the Pass-1 assistant text (NOT the prompt pass). *
 /*******************************************************************************/
 import { getContext } from "../core/context.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-ai-roleplay";
 
@@ -109,27 +110,16 @@ function getRecentContextForImage(rows, maxTurns) {
 
 
 async function getToolByName(name, wo) {
+  const log = getPrefixedLogger(wo, import.meta.url);
   try {
     const mod = await import(`../tools/${name}.js`);
     const tool = mod?.default ?? mod;
     if (tool && typeof tool.invoke === "function") return tool;
 
-    wo.logging?.push({
-      timestamp: new Date().toISOString(),
-      severity: "warn",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `Tool "${name}" invalid (missing invoke).`
-    });
+    log(`Tool "${name}" invalid (missing invoke).`, "warn");
     return null;
   } catch (e) {
-    wo.logging?.push({
-      timestamp: new Date().toISOString(),
-      severity: "warn",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `Tool "${name}" load failed: ${e?.message || String(e)}`
-    });
+    log(`Tool "${name}" load failed: ${e?.message || String(e)}`, "warn");
     return null;
   }
 }
@@ -277,23 +267,17 @@ function getCleanSingleLinePrompt(s) {
 
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
 
   if (!getShouldRunForThisModule(wo)) {
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "skipped",
-      message: `Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" not handled by ${MODULE_NAME}`
-    });
+    log(`Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" not handled by ${MODULE_NAME}`, "info");
     return coreData;
   }
 
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
   if (!userPromptRaw.trim()) {
-    wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "skipped", message: "Skipped: empty payload" });
+    log("Skipped: empty payload", "info");
     return coreData;
   }
 
@@ -324,26 +308,14 @@ export default async function getCoreAi(coreData) {
 
     if (!pass1.ok) {
       wo.response = "[Empty AI response]";
-      wo.logging.push({
-        timestamp: new Date().toISOString(),
-        severity: "warn",
-        module: MODULE_NAME,
-        exitStatus: "failed",
-        message: pass1.error === "timeout"
-          ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
-          : `AI request failed: ${String(pass1?.status || "")} ${String(pass1?.statusText || "")} ${String(pass1?.error || "")} ${String(pass1?.raw || "").slice(0, 300)}`
-      });
+      log(pass1.error === "timeout"
+        ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
+        : `AI request failed: ${String(pass1?.status || "")} ${String(pass1?.statusText || "")} ${String(pass1?.error || "")} ${String(pass1?.raw || "").slice(0, 300)}`, "warn");
       return coreData;
     }
 
     const chunkText = String(pass1.text ?? "").trim();
-    wo.logging.push({
-      timestamp: new Date().toISOString(),
-      severity: "info",
-      module: MODULE_NAME,
-      exitStatus: "success",
-      message: `AI pass1 turn ${i + 1}: finish_reason="${pass1.finish ?? "null"}" content_length=${chunkText.length}`
-    });
+    log(`AI pass1 turn ${i + 1}: finish_reason="${pass1.finish ?? "null"}" content_length=${chunkText.length}`, "info");
 
     textOut += (textOut ? "\n" : "") + chunkText;
     pass1Messages.push({ role: "assistant", content: chunkText });
@@ -351,13 +323,7 @@ export default async function getCoreAi(coreData) {
     const cutOff = pass1.finish === "length" || getLooksCutOff(chunkText);
     if (cutOff) {
       pass1Messages.push({ role: "user", content: "continue" });
-      wo.logging.push({
-        timestamp: new Date().toISOString(),
-        severity: "info",
-        module: MODULE_NAME,
-        exitStatus: "success",
-        message: `Continue triggered: finish_reason="${pass1.finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`
-      });
+      log(`Continue triggered: finish_reason="${pass1.finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`, "info");
       continue;
     }
     break;
@@ -434,6 +400,6 @@ export default async function getCoreAi(coreData) {
   wo._contextPersistQueue.push(getWithTurnId(assistantPass1, wo));
 
   wo.response = finalText || "[Empty AI response]";
-  wo.logging.push({ timestamp: new Date().toISOString(), severity: "info", module: MODULE_NAME, exitStatus: "success", message: "AI response received." });
+  log("AI response received.", "info");
   return coreData;
 }

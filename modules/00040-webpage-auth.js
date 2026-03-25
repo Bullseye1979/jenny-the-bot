@@ -11,28 +11,12 @@
 
 import crypto from "node:crypto";
 import { getItem, putItem, deleteItem } from "../core/registry.js";
+import { setSendNow, setJsonResp } from "../shared/webpage/utils.js";
 
 const MODULE_NAME = "webpage-auth";
 const COOKIE_STATE = "jenny_oauth_state";
 const COOKIE_SESS = "jenny_session";
 
-
-async function setSendNow(wo) {
-  const res = wo?.http?.res;
-  if (!res) return;
-  const r = wo.http?.response || {};
-  res.writeHead(Number(r.status ?? 200), r.headers ?? { "Content-Type": "text/plain; charset=utf-8" });
-  res.end(typeof r.body === "string" ? r.body : JSON.stringify(r.body ?? ""));
-}
-
-
-function setJsonResp(wo, status, obj) {
-  wo.http.response = {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-    body: JSON.stringify(obj)
-  };
-}
 
 
 function setRedirect(wo, url, cookies = []) {

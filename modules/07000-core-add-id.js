@@ -5,38 +5,15 @@
  *          config["core-add-id"].servers.
  ****************************************************************************************************************/
 
+import { getPrefixedLogger } from "../core/logging.js";
+
 const MODULE_NAME = "core-add-id";
-
-
-function getNowIso() {
-  try {
-    return new Date().toISOString();
-  } catch {
-    return "";
-  }
-}
 
 
 function getStr(v) {
   return v == null ? "" : String(v);
 }
 
-
-function setLog(wo, severity, exitStatus, message, details = {}) {
-  try {
-    if (!Array.isArray(wo.logging)) wo.logging = [];
-    wo.logging.push({
-      timestamp: getNowIso(),
-      severity: severity || "info",
-      module: MODULE_NAME,
-      exitStatus: exitStatus || "success",
-      message: getStr(message),
-      ...(details && typeof details === "object" && Object.keys(details).length
-        ? { details }
-        : {}),
-    });
-  } catch {}
-}
 
 
 function getIsLikelyImageUrl(url) {
@@ -143,28 +120,26 @@ export default async function getCoreAddId(coreData) {
   const wo = coreData?.workingObject || {};
   const config = coreData?.config || {};
 
-  if (!Array.isArray(wo.logging)) wo.logging = [];
+  const log = getPrefixedLogger(wo, import.meta.url);
 
   const response = typeof wo.response === "string" ? wo.response : "";
   if (!response.trim()) return coreData;
 
   const idValue = getStr(wo?.channelID).trim();
   if (!idValue) {
-    setLog(wo, "warn", "skipped", "Missing wo.channelID → cannot append id param.");
+    log("Missing wo.channelID → cannot append id param.", "warn");
     return coreData;
   }
 
   const allowedHosts = getAllowedHosts(config);
   if (!allowedHosts.length) {
-    setLog(wo, "warn", "skipped", `No servers found in config["${MODULE_NAME}"].servers.`);
+    log(`No servers found in config["${MODULE_NAME}"].servers.`, "warn");
     return coreData;
   }
 
   const { text: nextText, changed } = getRewriteAllImageLinks(response, idValue, allowedHosts);
   if (!changed) {
-    setLog(wo, "info", "success", "No eligible image links found to patch.", {
-      allowedHostsCount: allowedHosts.length,
-    });
+    log("No eligible image links found to patch.", "info", { allowedHostsCount: allowedHosts.length });
     return coreData;
   }
 
@@ -172,10 +147,7 @@ export default async function getCoreAddId(coreData) {
   wo._imageLinkIdPatched = true;
   wo._imageLinkIdPatchedCount = changed;
 
-  setLog(wo, "info", "success", `Patched ${changed} image link(s) with id param.`, {
-    id: idValue,
-    allowedHosts,
-  });
+  log(`Patched ${changed} image link(s) with id param.`, "info", { id: idValue, allowedHosts });
 
   return coreData;
 }

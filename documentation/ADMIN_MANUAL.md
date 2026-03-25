@@ -303,6 +303,10 @@ Event source (Discord / HTTP API / Cron / Voice / Webpage)
 │   ├── documents/           # Generated images, PDFs, videos
 │   └── debug/               # Debug logs
 └── logs/                    # Log directory
+    ├── events/              # Per-flow event logs (events-1.log, events-2.log)
+    ├── pipeline/            # WorkingObject diff logs (pipeline-1.log, pipeline-2.log)
+    ├── objects/             # Full coreData dumps per flow
+    └── json-error.log       # core.json parse errors
 ```
 
 ---
@@ -2369,7 +2373,25 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 
 | No. | File | Purpose |
 |---|---|---|
-| 10000 | `core-output` | Universal logger; writes the final `workingObject` as JSON to `./pub/debug/` |
+| 10000 | `core-output` | Universal logger; writes structured JSON to `logs/objects/<flowKey>/`, a human-readable event log to `logs/events/`, and `last-object.json` per flow |
+
+**`10000-core-output` log files:**
+
+| Path | Format | Rotation |
+|---|---|---|
+| `logs/events/events-N.log` | Human-readable, one line per log entry: `[ts] [LEVEL] module: prefix message ctx={…}` | 3 MB, 2 files |
+| `logs/objects/<flowKey>/objects-N.log` | Full `coreData` JSON dump (sensitive keys redacted) | 3 MB, 2 files per flow |
+| `logs/objects/<flowKey>/last-object.json` | Latest `coreData` for the flow (overwritten each run) | — |
+
+**Pipeline diff log (`main.js`):**
+
+Every time a module modifies the `workingObject`, `main.js` records a Unix-style diff of the before/after state:
+
+| Path | Format | Rotation |
+|---|---|---|
+| `logs/pipeline/pipeline-N.log` | `--- module-name \| timestamp \| Xms ---` followed by `+`/`-` diff lines with 2-line context | 2 MB, 2 files |
+
+Diffs are skipped for modules that leave the `workingObject` unchanged and for objects larger than 2 000 JSON lines.
 
 ---
 
@@ -2880,7 +2902,7 @@ log.error("API call failed", err);
 }
 ```
 
-The final log is written to `./pub/debug/` by module `10000-core-output`.
+The final log is written by module `10000-core-output` to `logs/events/` (human-readable) and `logs/objects/<flowKey>/` (full JSON). See [Section 7.4](#74-final-logging-10xxx) for rotation details.
 
 **`logs/json-error.log`:** Parse errors in `core.json` (startup and hot-reload) are written as newline-delimited JSON to `logs/json-error.log` in the bot root. Each entry has the shape `{ ts, context, error }` where `context` is `"startup"` or `"hot-reload"`. The log directory is created automatically.
 
@@ -3294,6 +3316,13 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /dashboard` — renders the live bot telemetry dashboard (role-gated)
 - Page auto-refreshes every `refreshSeconds` seconds (default: 5)
 - Data source: `dashboard:state` registry key, written by `main.js` every 2 seconds
+
+**Log Viewer (port 3115, /dashboard/logs):**
+- `GET /dashboard/logs` — log viewer page with two tabs: **Events** and **Pipeline Diffs**
+- Reads `logs/events/` and `logs/pipeline/` — shows available files with sizes, auto-loads the most recent on page load
+- Lines are colour-coded client-side: `[ERROR]` = red, `[WARN]` = amber, `+` = green, `-` = red, `---` section headers = cyan
+- `GET /dashboard/logs/api?type=events|pipeline&file=N` — returns `{content: "..."}` (last 512 KB of the file)
+- `GET /dashboard/logs/api?type=events|pipeline` (no `file`) — returns `{events: [...], pipeline: [...]}` with file list
 
 **core.json configuration:**
 ```json
