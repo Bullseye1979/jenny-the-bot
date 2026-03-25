@@ -530,8 +530,15 @@ export default async function getWebpageChat(coreData) {
       /* Purge context: delete non-frozen, promote frozen to main channel */
       let purgeResult = { deleted: 0, promoted: 0 };
       if (channelIDForSub) {
-        const purgeWo = { db: wo.db, config: wo.config, channelID: channelIDForSub };
-        purgeResult = await setPurgeSubchannel(purgeWo, subchannelId);
+        const [delRes] = await pool.execute(
+          "DELETE FROM context WHERE id = ? AND COALESCE(subchannel, '') = ? AND COALESCE(frozen, 0) = 0",
+          [channelIDForSub, subchannelId]
+        );
+        const [promRes] = await pool.execute(
+          "UPDATE context SET subchannel = NULL WHERE id = ? AND COALESCE(subchannel, '') = ? AND COALESCE(frozen, 0) = 1",
+          [channelIDForSub, subchannelId]
+        );
+        purgeResult = { deleted: delRes.affectedRows ?? 0, promoted: promRes.affectedRows ?? 0 };
       }
 
       setJsonResp(wo, 200, { deleted: true, subchannelId, ...purgeResult });

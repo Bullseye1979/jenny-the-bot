@@ -2035,6 +2035,24 @@ Also supports `*/N * * * *` (every N minutes).
 | `wo.stop` | boolean | Hard stop — breaks the normal loop **and** skips the output phase (≥9000). Use when the flow should be aborted entirely with no logging. |
 | `wo.stopReason` | string | Optional diagnostic label set alongside `wo.stop = true`. Logged by `core-output` for debugging (e.g. `"channel_not_allowed"`, `"bearer_invalid"`, `"admin_command_handled"`). Never read by pipeline logic — purely informational. |
 
+**Early-response pattern (`setSendNow`)**
+
+Most web modules set `wo.http.response` and `wo.jump = true` — `09300-webpage-output` then sends the response after the pipeline loop ends. However, some modules need to write to the socket immediately (e.g. before setting `wo.stop = true` which would skip the output phase). For those cases, include a local helper:
+
+```javascript
+async function setSendNow(wo) {
+  const res = wo?.http?.res;
+  if (!res || res.writableEnded) return;
+  const r = wo.http?.response || {};
+  try {
+    res.writeHead(r.status ?? 200, r.headers ?? {});
+    res.end(r.body ?? "");
+  } catch {}
+}
+```
+
+Call it after setting `wo.http.response`, then set `wo.stop = true` (or `wo.jump = true`). The helper reads `wo.http.res` directly — **never** use the old `getItem(requestKey)` pattern which is no longer set.
+
 ---
 
 ### 6.8.1 Adding a new webpage module
