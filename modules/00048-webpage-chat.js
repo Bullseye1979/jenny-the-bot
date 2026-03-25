@@ -12,6 +12,7 @@
 import fs     from "node:fs";
 import crypto from "node:crypto";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-chat";
 
