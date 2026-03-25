@@ -336,6 +336,8 @@ ${getThemeHeadScript()}
   };
 
   var currentTab = 'events';
+  var pollTimer  = null;
+  var POLL_MS    = 3000;
 
   function buildOpts(type) {
     var files = fileData[type] || [];
@@ -362,22 +364,40 @@ ${getThemeHeadScript()}
     }).join('\\n');
   }
 
-  function loadFile() {
+  function scrollToBottom() {
+    setTimeout(function() { box.scrollTop = box.scrollHeight; }, 50);
+  }
+
+  function loadFile(silent) {
     var opt = sel.options[sel.selectedIndex];
     if (!opt || opt.disabled) return;
     var n    = opt.value;
     var type = currentTab;
-    stat.textContent = 'Loading…';
+    if (!silent) stat.textContent = 'Loading…';
     fetch('${basePath}/logs/api?type=' + type + '&file=' + n)
       .then(function(r){ return r.json(); })
       .then(function(d){
         var txt = d.content || '';
         box.innerHTML = colorize(txt);
         stat.textContent = txt.length + ' chars';
-        if (scroll.checked) requestAnimationFrame(function() { box.scrollTop = box.scrollHeight; });
+        if (scroll.checked) scrollToBottom();
       })
-      .catch(function(e){ stat.textContent = 'Error: ' + e.message; });
+      .catch(function(e){ if (!silent) stat.textContent = 'Error: ' + e.message; });
   }
+
+  function startPoll() {
+    stopPoll();
+    pollTimer = setInterval(function() { loadFile(true); }, POLL_MS);
+  }
+
+  function stopPoll() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  scroll.addEventListener('change', function() {
+    if (scroll.checked) { loadFile(true); startPoll(); }
+    else stopPoll();
+  });
 
   tabs.forEach(function(tab) {
     tab.addEventListener('click', function() {
@@ -387,15 +407,17 @@ ${getThemeHeadScript()}
       sel.innerHTML = buildOpts(currentTab);
       box.innerHTML = '<span class="ll-dim">Select a file and click Reload.</span>';
       stat.textContent = '';
-      // auto-load most recent if available
       if (sel.options.length && !sel.options[0].disabled) loadFile();
     });
   });
 
-  reload.addEventListener('click', loadFile);
+  reload.addEventListener('click', function() { loadFile(); });
 
-  // auto-load most recent events file on page load
-  if (sel.options.length && !sel.options[0].disabled) loadFile();
+  // initial load + start polling if checkbox already checked
+  if (sel.options.length && !sel.options[0].disabled) {
+    loadFile();
+    if (scroll.checked) startPoll();
+  }
 })();
 </script>
 </body>

@@ -3321,6 +3321,7 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /dashboard/logs` — log viewer page with two tabs: **Events** and **Pipeline Diffs**
 - Reads `logs/events/` and `logs/pipeline/` — shows available files with sizes, auto-loads the most recent on page load
 - Lines are colour-coded client-side: `[ERROR]` = red, `[WARN]` = amber, `+` = green, `-` = red, `---` section headers = cyan
+- **Auto-scroll checkbox** (default: on) — polls the current file every **3 seconds** and scrolls to the bottom after each update; uncheck to stop polling
 - `GET /dashboard/logs/api?type=events|pipeline&file=N` — returns `{content: "..."}` (last 512 KB of the file)
 - `GET /dashboard/logs/api?type=events|pipeline` (no `file`) — returns `{events: [...], pipeline: [...]}` with file list
 
