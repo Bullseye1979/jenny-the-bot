@@ -2039,6 +2039,7 @@ Also supports `*/N * * * *` (every N minutes).
 | `wo.stop` | boolean | Hard stop — breaks the normal loop **and** skips the output phase (≥9000). Use when the flow should be aborted entirely with no logging. |
 | `wo.stopReason` | string | Optional diagnostic label set alongside `wo.stop = true`. Logged by `core-output` for debugging (e.g. `"channel_not_allowed"`, `"bearer_invalid"`, `"admin_command_handled"`). Never read by pipeline logic — purely informational. |
 | `wo.tracePipeline` | boolean | Set to `true` to enable the pipeline diff logger (see §7.4). When `false` or absent, no diffs are computed and `logs/pipeline/` is not written. Set in `core.json` under `workingObject`. |
+| `wo.tracePipelineExcludeFlows` | string[] | Optional blacklist for the pipeline diff logger. Flows matching any entry are **not** traced even when `tracePipeline` is `true`. Supports `*` wildcards — e.g. `"webpage*"` excludes all `webpage-*` flows. Omit or set to `[]` to trace all flows. Example: `["webpage*", "bard-*"]`. |
 
 **Early-response pattern (`setSendNow`)**
 
@@ -2395,6 +2396,17 @@ Every time a module modifies the `workingObject`, `main.js` records a Unix-style
 Diffs are skipped for modules that leave the `workingObject` unchanged and for objects larger than 2 000 JSON lines.
 
 **Activation:** Pipeline logging is **opt-in**. Set `tracePipeline: true` in `workingObject` in `core.json` to enable it. When `false` or absent, no snapshots are taken and no files are written (zero performance overhead). Hot-reload applies — no restart required.
+
+**Flow filtering (blacklist):** High-frequency flows like `webpage` can fill the 2 MB limit almost immediately. Use `tracePipelineExcludeFlows` to exclude them:
+
+```json
+"workingObject": {
+  "tracePipeline": true,
+  "tracePipelineExcludeFlows": ["webpage*", "bard-*"]
+}
+```
+
+Each entry is matched against `wo.flow` using glob-style wildcards — `*` matches any sequence of characters. Flows **not** matching any pattern are traced normally. Omit the key (or set it to `[]`) to trace all flows.
 
 ---
 

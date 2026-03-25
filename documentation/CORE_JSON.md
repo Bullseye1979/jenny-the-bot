@@ -27,6 +27,7 @@ All key names follow **camelCase** throughout.
    - [Avatar Generation](#avatar-generation)
    - [Discord Settings](#discord-settings)
    - [Database (db)](#database-db)
+   - [Diagnostics / Pipeline Logging](#diagnostics--pipeline-logging)
    - [Tool Configuration (toolsconfig)](#tool-configuration-toolsconfig)
      - [getImage](#getimage)
      - [getImageSD](#getimagesd)
@@ -530,6 +531,25 @@ Sends a ban request DM to the configured admin user.
 | Key | Type | Example | Description |
 |---|---|---|---|
 | `adminUserId` | string | `"406901027665870848"` | Discord user ID to send ban DMs to. Falls back to `workingObject.modAdmin` if omitted. |
+
+---
+
+### Diagnostics / Pipeline Logging
+
+Controls the pipeline diff logger in `main.js`. When enabled, every module call that changes the `workingObject` writes a `+`/`-` diff to `logs/pipeline/`. See [ADMIN_MANUAL §7.4](ADMIN_MANUAL.md#74-final-logging-10xxx) for full details.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `tracePipeline` | boolean | `false` | Master switch. Set to `true` to enable diff logging. No files are written and no snapshots are taken when `false`. |
+| `tracePipelineExcludeFlows` | string[] | `[]` | Blacklist of flow names to **skip**. Supports `*` wildcards — e.g. `"webpage*"` excludes all `webpage-*` flows. Omit or leave empty to trace every flow. |
+
+**Recommended production setting** (excludes high-frequency HTTP flows):
+```json
+"workingObject": {
+  "tracePipeline": true,
+  "tracePipelineExcludeFlows": ["webpage*", "bard-*"]
+}
+```
 
 ---
 

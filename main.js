@@ -107,6 +107,16 @@ async function setPipelineAppend(text) {
 function setPipelineLog(text) {
   _pipelineChain = _pipelineChain.then(() => setPipelineAppend(text)).catch(() => {});
 }
+
+function getPipelineExcluded(wo) {
+  const patterns = wo.tracePipelineExcludeFlows;
+  if (!Array.isArray(patterns) || !patterns.length) return false;
+  const flow = String(wo.flow || "");
+  return patterns.some(pat => {
+    const escaped = String(pat).replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+    return new RegExp(`^${escaped}$`).test(flow);
+  });
+}
 // --- End pipeline diff logger ---
 
 
@@ -636,8 +646,9 @@ async function getRunFlow(flowName, coreDataForRun) {
     const t0 = performance.now();
     try {
       const { default: fn } = await import(`./modules/${s.file}`);
-      const tracing = !!coreData?.workingObject?.tracePipeline;
-      const woBefore = tracing ? getPipelineSafeJson(coreData?.workingObject || {}) : null;
+      const wo0 = coreData?.workingObject || {};
+      const tracing = !!wo0.tracePipeline && !getPipelineExcluded(wo0);
+      const woBefore = tracing ? getPipelineSafeJson(wo0) : null;
       await fn(coreData);
       const dt = performance.now() - t0;
       if (tracing) {
