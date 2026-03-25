@@ -350,8 +350,8 @@ export default async function getWebpageChat(coreData) {
          Subchannel overrides are sent as promptAddition so the API-side system
          can incorporate them (the API flow's core-ai-context-loader will apply
          the subchannel context). We pass subchannelId so context is scoped. */
-      const apiUrl    = String(cfg.apiUrl    || "http://localhost:3400/api").trim();
-      const apiSecret = String(cfg.apiSecret || "").trim();
+      const apiUrl    = String(chatEntry.apiUrl    || cfg.apiUrl    || "http://localhost:3400/api").trim();
+      const apiSecret = String(chatEntry.apiSecret || cfg.apiSecret || "").trim();
 
       const reqBody = {
         channelID,

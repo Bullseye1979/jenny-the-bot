@@ -1210,7 +1210,13 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
     "contextSize":  20,
     "maxTokens":    1024,
     "chats": [
-      { "label": "General", "channelID": "YOUR_CHANNEL_ID", "roles": [] }
+      {
+        "label":     "General",
+        "channelID": "YOUR_CHANNEL_ID",
+        "apiUrl":    "http://localhost:3400/api",
+        "apiSecret": "your-secret-here",
+        "roles":     []
+      }
     ]
   }
 }
@@ -1227,7 +1233,11 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
 | `maxTokens` | Max tokens in AI response (default `1024`) |
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
+| `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Per-chat override — each entry can point to a different API. |
+| `chats[].apiSecret` | Bearer token sent with every AI request for this chat. Must match the `apiSecret` configured in `core-channel-config` for the target channel. Leave empty if the channel has no token gate. |
 | `chats[].roles` | Optional role restriction for this chat entry |
+
+> `apiUrl` and `apiSecret` are per chat entry. Different chats can use different API endpoints and secrets. There is no global fallback — each chat entry must declare its own values if token gating is active.
 
 > AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
 
@@ -1979,7 +1989,7 @@ Also supports `*/N * * * *` (every N minutes).
 
 **Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
 - Channel dropdown populated from `webpage-chat.chats[]` in `core.json`
-- `00048` is a **pure HTTP handler** — for AI requests it makes an internal `POST` to the API flow (`cfg.apiUrl`, default `http://localhost:3400/api`) and returns `{ response }` as JSON. The AI pipeline (model, tools, persona, context) is fully controlled by `core-channel-config` for the given `channelID`.
+- `00048` is a **pure HTTP handler** — for AI requests it makes an internal `POST` to the API flow and returns `{ response }` as JSON. The AI pipeline (model, tools, persona, context) is fully controlled by `core-channel-config` for the given `channelID`. `apiUrl` and `apiSecret` are read **per chat entry** from `webpage-chat.chats[x].apiUrl` / `.apiSecret` — different chats can use different endpoints and secrets.
 - **Channel config:** per-channel AI settings (model, persona, systemPrompt, tools, etc.) live in `core-channel-config` — the same entries used by Discord and the browser extension. `webpage-channel-config` (`00011`) is **deactivated** (`flow: []`).
 - **Subchannels:** create, rename, and delete separate conversation threads from the UI; each subchannel has its own isolated context history stored in the `chat_subchannels` DB table. The subchannel ID is forwarded in the internal API call so `00012-subchannel-config` can apply per-subchannel overrides.
 - **Context writing:** handled by `00072-api-add-context` (user message) and `01004-core-ai-context-writer` (AI response) on the API side — `00048` does not write to context directly.
