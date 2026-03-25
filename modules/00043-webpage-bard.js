@@ -11,18 +11,14 @@ import fs   from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
-import { getItem }     from "../core/registry.js";
 
 const MODULE_NAME = "webpage-bard";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 async function setSendAudioStream(wo, filePath, rangeHeader) {
-  const key = wo?.http?.requestKey;
-  if (!key) return false;
-  const entry = await Promise.resolve(getItem(key)).catch(() => null);
-  if (!entry?.res) return false;
-  const { res } = entry;
+  const res = wo?.http?.res;
+  if (!res) return false;
   let stat;
   try { stat = fs.statSync(filePath); } catch {
     res.writeHead(404, { "Content-Type": "application/json" });
@@ -54,11 +50,8 @@ async function setSendAudioStream(wo, filePath, rangeHeader) {
 }
 
 async function setSendNow(wo) {
-  const key = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = await Promise.resolve(getItem(key)).catch(() => null);
-  if (!entry?.res) return;
-  const { res } = entry;
+  const res = wo?.http?.res;
+  if (!res) return;
   const r = wo.http?.response || {};
   const status  = Number(r.status  ?? 200);
   const headers = r.headers ?? { "Content-Type": "application/json" };

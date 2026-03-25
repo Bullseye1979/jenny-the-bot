@@ -57,10 +57,11 @@ function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
 
 
 function setHardBlock(wo, body) {
-  wo.response = body ?? "";
-  wo.stop = true;
-  wo.blocked = true;
-  wo.skipLLM = true;
+  wo.response   = body ?? "";
+  wo.stop       = true;
+  wo.stopReason = "gdpr_not_accepted";
+  wo.blocked    = true;
+  wo.skipLLM    = true;
 }
 
 

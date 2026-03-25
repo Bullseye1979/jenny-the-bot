@@ -25,7 +25,6 @@ import fs   from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPrefixedLogger } from "../core/logging.js";
-import { getItem }           from "../core/registry.js";
 import { getMenuHtml }       from "../shared/webpage/interface.js";
 
 const __filename   = fileURLToPath(import.meta.url);
@@ -506,11 +505,8 @@ btnRec.addEventListener('click', async function() {
 }
 
 
-async function getRes(wo) {
-  const key = wo?.http?.requestKey;
-  if (!key) return null;
-  const entry = await Promise.resolve(getItem(key)).catch(() => null);
-  return entry?.res || null;
+function getRes(wo) {
+  return wo?.http?.res || null;
 }
 
 
@@ -541,7 +537,7 @@ export default async function getWebpageVoice(coreData) {
         res.end(css);
       } catch { res.writeHead(404); res.end(); }
     }
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "voice_request_handled";
     return coreData;
   }
 
@@ -552,7 +548,7 @@ export default async function getWebpageVoice(coreData) {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(isAllowed ? getSpaHtml(cfg, menuHtml) : getAccessDeniedHtml(menuHtml));
     }
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "voice_request_handled";
     return coreData;
   }
 
@@ -564,7 +560,7 @@ export default async function getWebpageVoice(coreData) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "forbidden" }));
       }
-      wo.stop = true;
+      wo.stop = true; wo.stopReason = "forbidden";
     }
     return coreData;
   }

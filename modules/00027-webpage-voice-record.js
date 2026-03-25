@@ -25,7 +25,6 @@ import path from "node:path";
 import { FormData, File, fetch } from "undici";
 import ffmpegImport from "fluent-ffmpeg";
 import { getPrefixedLogger }  from "../core/logging.js";
-import { getItem }            from "../core/registry.js";
 import { setContext, setPurgeContext } from "../core/context.js";
 
 const MODULE_NAME  = "webpage-voice-record";
@@ -49,10 +48,7 @@ function getIsAllowedRoles(wo, allowedRoles) {
 
 
 async function sendJson(wo, status, data) {
-  const key   = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = await Promise.resolve(getItem(key)).catch(() => null);
-  const res   = entry?.res;
+  const res = wo?.http?.res;
   if (!res || res.headersSent) return;
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(data));
@@ -157,7 +153,7 @@ export default async function getWebpageVoiceRecord(coreData) {
   const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
   if (!getIsAllowedRoles(wo, allowedRoles)) {
     await sendJson(wo, 403, { error: "forbidden" });
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "forbidden";
     return coreData;
   }
 
@@ -167,7 +163,7 @@ export default async function getWebpageVoiceRecord(coreData) {
   const channelId = (params.get("channelId") || "").trim();
   if (!channelId) {
     await sendJson(wo, 400, { error: "missing_channel_id" });
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "missing_channel_id";
     return coreData;
   }
 
@@ -175,7 +171,7 @@ export default async function getWebpageVoiceRecord(coreData) {
   const rawBody = wo.http?.rawBodyBytes;
   if (!rawBody?.length) {
     await sendJson(wo, 400, { error: "empty_body" });
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "empty_body";
     return coreData;
   }
 
@@ -239,7 +235,7 @@ export default async function getWebpageVoiceRecord(coreData) {
     await sendJson(wo, 500, { error: "transcription_failed", detail: String(e?.message || e).slice(0, 200) });
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "voice_record_handled";
   }
 
   return coreData;

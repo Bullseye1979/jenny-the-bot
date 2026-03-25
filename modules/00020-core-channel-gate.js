@@ -18,6 +18,7 @@ export default async function getChannelGate(coreData) {
 
   if (!isAllowed) {
     workingObject.stop = true;
+    workingObject.stopReason = "channel_not_allowed";
     log("Channel not allowed → stop=true", "warn", { moduleName: MODULE_NAME, channelId });
   } else {
     log("Channel allowed → continue", "info", { moduleName: MODULE_NAME, channelId });

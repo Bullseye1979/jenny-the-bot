@@ -56,9 +56,7 @@ function getWithCachebuster(url) {
 
 
 function getModuleConfigBaseURL(config) {
-  const a = config?.["discord-text-output"];
-  const b = config?.["discord_text-output"];
-  return (a && a.baseURL) || (b && b.baseURL) || null;
+  return config?.["discord-text-output"]?.baseURL || null;
 }
 
 

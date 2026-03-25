@@ -90,12 +90,20 @@ export default async function getWebpageRouter(coreData) {
 
     if (channelId) wo.channelID = channelId;
 
+    /* Optional: skip modules irrelevant to this route */
+    const removeModules = Array.isArray(route.removeModules) ? route.removeModules : [];
+    if (removeModules.length) {
+      const existing = Array.isArray(wo.flowModuleRemove) ? wo.flowModuleRemove : (wo.flowModuleRemove ? [wo.flowModuleRemove] : []);
+      wo.flowModuleRemove = [...new Set([...existing, ...removeModules])];
+    }
+
     log("Route matched — flow and channelID set", "info", {
       moduleName: MODULE_NAME,
       port,
       pathPrefix,
       flow,
-      channelId: channelId || "(none)"
+      channelId:     channelId || "(none)",
+      removedModules: removeModules.length ? removeModules : undefined
     });
 
     break;

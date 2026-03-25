@@ -10,7 +10,6 @@
 /************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
-import { getItem }           from "../core/registry.js";
 
 const MODULE_NAME = "webpage-voice-transcribe-gate";
 
@@ -26,9 +25,7 @@ export default async function getWebpageVoiceTranscribeGate(coreData) {
 
   if (!wo.isWebpageVoice || !wo.transcribeOnly) return coreData;
 
-  const key   = wo?.http?.requestKey;
-  const entry = key ? await Promise.resolve(getItem(key)).catch(() => null) : null;
-  const res   = entry?.res;
+  const res = wo?.http?.res;
 
   if (res && !res.headersSent) {
     if (wo.payload) {
@@ -45,7 +42,8 @@ export default async function getWebpageVoiceTranscribeGate(coreData) {
     }
   }
 
-  wo.stop = true;
+  wo.stop       = true;
+  wo.stopReason = "transcribe_only";
   log("transcribeOnly — response sent, stopping pipeline", "info", {
     moduleName: MODULE_NAME, payload: (wo.payload || "").slice(0, 80)
   });

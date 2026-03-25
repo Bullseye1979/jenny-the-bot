@@ -359,5 +359,7 @@ export default async function getCoreVoiceTranscribe(coreData) {
     }
   }
 
+  if (wo.stop && !wo.stopReason) wo.stopReason = wo.transcribeSkipped || "transcribe_error";
+
   return coreData;
 }

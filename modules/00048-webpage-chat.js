@@ -12,17 +12,13 @@
 import fs     from "node:fs";
 import crypto from "node:crypto";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
-import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-chat";
 
 
 async function setSendNow(wo) {
-  const key = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = await Promise.resolve(getItem(key)).catch(() => null);
-  if (!entry?.res) return;
-  const { res } = entry;
+  const res = wo?.http?.res;
+  if (!res) return;
   const r      = wo.http?.response || {};
   const status  = Number(r.status  ?? 200);
   const headers = r.headers ?? { "Content-Type": "application/json" };

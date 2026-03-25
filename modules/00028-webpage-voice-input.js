@@ -26,7 +26,6 @@ import os   from "node:os";
 import path from "node:path";
 import ffmpegImport from "fluent-ffmpeg";
 import { getPrefixedLogger } from "../core/logging.js";
-import { getItem }           from "../core/registry.js";
 
 const MODULE_NAME  = "webpage-voice-input";
 const DEFAULT_PORT = 3119;
@@ -64,10 +63,7 @@ function getIsAllowedRoles(wo, allowedRoles) {
 
 
 async function sendError(wo, status, errorCode) {
-  const key   = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = await Promise.resolve(getItem(key)).catch(() => null);
-  const res   = entry?.res;
+  const res = wo?.http?.res;
   if (!res || res.headersSent) return;
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: errorCode }));
@@ -90,7 +86,7 @@ export default async function getWebpageVoiceInput(coreData) {
   const rawBody = wo.http?.rawBodyBytes;
   if (!rawBody?.length) {
     await sendError(wo, 400, "empty_body");
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "empty_body";
     return coreData;
   }
 
@@ -103,7 +99,7 @@ export default async function getWebpageVoiceInput(coreData) {
 
   if (!channelId) {
     await sendError(wo, 400, "missing_channel_id");
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "missing_channel_id";
     return coreData;
   }
 
@@ -144,7 +140,7 @@ export default async function getWebpageVoiceInput(coreData) {
     log("Audio conversion failed", "error", { moduleName: MODULE_NAME, error: e?.message });
     try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
     await sendError(wo, 500, "audio_conversion_failed");
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "audio_conversion_failed";
   }
 
   return coreData;

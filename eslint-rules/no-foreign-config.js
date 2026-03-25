@@ -1,0 +1,92 @@
+/**
+ * ESLint rule: no-foreign-config
+ *
+ * Modules in modules/ must only read from their own config section.
+ *
+ * Detects string-literal computed access to a ".config" object where
+ * the key does not match the module's own config key (derived from filename).
+ *
+ * Examples flagged (in module 00050-discord-admin-commands.js):
+ *   coreData?.config?.["core-channel-config"]   ← foreign key → error
+ *   config["webpage-chat"]                       ← foreign key → error
+ *
+ * Allowed:
+ *   coreData?.config?.["discord-admin-commands"] ← own key    → ok
+ *   coreData?.config?.[MODULE_NAME]              ← variable   → ok (not a literal)
+ */
+
+import path from "node:path";
+
+export default {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Modules must only access their own config section in coreData.config",
+      category: "Architecture",
+    },
+    messages: {
+      foreignConfig:
+        "Config isolation: this module (\"{{own}}\") must not access config[\"{{foreign}}\"] — " +
+        "only config[\"{{own}}\"] is allowed.",
+    },
+    schema: [],
+  },
+
+  create(context) {
+    const filename = context.filename ?? context.getFilename?.() ?? "";
+    const basename = path.basename(filename, ".js");
+
+    // Only enforce on numbered module files (e.g. 00050-discord-admin-commands)
+    if (!/^\d+-.+/.test(basename)) return {};
+
+    // Derive own config key: strip leading digits and dash
+    // "00050-discord-admin-commands" → "discord-admin-commands"
+    const moduleKey = basename.replace(/^\d+-/, "");
+
+    return {
+      MemberExpression(node) {
+        // Only interested in computed bracket access: obj["key"]
+        if (!node.computed) return;
+        if (node.property.type !== "Literal") return;
+        if (typeof node.property.value !== "string") return;
+
+        const accessedKey = node.property.value;
+
+        // Check that the object of this access resolves to ".config"
+        if (!isConfigAccess(node.object)) return;
+
+        // Own key is always allowed
+        if (accessedKey === moduleKey) return;
+
+        context.report({
+          node,
+          messageId: "foreignConfig",
+          data: { own: moduleKey, foreign: accessedKey },
+        });
+      },
+    };
+  },
+};
+
+
+/**
+ * Returns true if the node represents access to a property named "config".
+ * Covers:
+ *   config                    — bare Identifier
+ *   something.config          — MemberExpression, non-computed
+ *   something?.config         — optional MemberExpression (inside ChainExpression)
+ */
+function isConfigAccess(node) {
+  if (node.type === "Identifier" && node.name === "config") return true;
+
+  if (node.type === "MemberExpression" && !node.computed) {
+    if (node.property.type === "Identifier" && node.property.name === "config") return true;
+  }
+
+  // Optional chaining wraps the inner expression in ChainExpression
+  if (node.type === "ChainExpression") {
+    return isConfigAccess(node.expression);
+  }
+
+  return false;
+}

@@ -18,12 +18,8 @@ const COOKIE_SESS = "jenny_session";
 
 
 async function setSendNow(wo) {
-  const key = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = await Promise.resolve(getItem(key)).catch(() => null);
-  if (!entry?.res) return;
-
-  const res = entry.res;
+  const res = wo?.http?.res;
+  if (!res) return;
   const r = wo.http?.response || {};
   res.writeHead(Number(r.status ?? 200), r.headers ?? { "Content-Type": "text/plain; charset=utf-8" });
   res.end(typeof r.body === "string" ? r.body : JSON.stringify(r.body ?? ""));

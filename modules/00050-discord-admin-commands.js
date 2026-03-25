@@ -198,8 +198,9 @@ async function setPurgeDmBotMessages(wo, payload, log) {
   const client = await getResolveClient(wo);
   const channelId = String(wo?.channelID || "");
   if (!client || !channelId) {
-    wo.response = "STOP";
-    wo.stop = true;
+    wo.response   = "STOP";
+    wo.stop       = true;
+    wo.stopReason = "admin_command_handled";
     return true;
   }
 
@@ -208,8 +209,9 @@ async function setPurgeDmBotMessages(wo, payload, log) {
     : await getResolveChannelById(wo, channelId);
 
   if (!channel?.messages?.fetch || !client?.user?.id) {
-    wo.response = "STOP";
-    wo.stop = true;
+    wo.response   = "STOP";
+    wo.stop       = true;
+    wo.stopReason = "admin_command_handled";
     return true;
   }
 
@@ -237,8 +239,9 @@ async function setPurgeDmBotMessages(wo, payload, log) {
 
   log("dm purge done", "info", { moduleName: MODULE_NAME, ...ctx, deleted: totalDeleted });
 
-  wo.response = "STOP";
-  wo.stop = true;
+  wo.response   = "STOP";
+  wo.stop       = true;
+  wo.stopReason = "admin_command_handled";
   return true;
 }
 

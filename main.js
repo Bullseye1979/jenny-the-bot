@@ -13,6 +13,16 @@ import { putItem } from "./core/registry.js";
 import { startSetupWizard } from "./core/setup.js";
 
 const MODULE_NAME = "main";
+const LOGS_DIR    = path.join(path.dirname(fileURLToPath(import.meta.url)), "logs");
+const JSON_ERR_LOG = path.join(LOGS_DIR, "json-error.log");
+
+function logJsonError(err, context) {
+  const entry = JSON.stringify({ ts: new Date().toISOString(), context, error: err?.message || String(err) });
+  try {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+    fs.appendFileSync(JSON_ERR_LOG, entry + "\n");
+  } catch {}
+}
 
 const art = `[48;5;239m [48;5;235m [48;5;234m [48;5;232m [48;5;232m [48;5;234m [48;5;233m [48;5;232m [48;5;233m [48;5;232m [48;5;234m [48;5;236m [48;5;233m [48;5;233m [48;5;233m [48;5;235m [48;5;237m [48;5;234m [48;5;234m [48;5;233m [48;5;235m [48;5;237m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;232m [48;5;232m [48;5;232m [48;5;233m [48;5;233m [48;5;233m [48;5;238m [48;5;235m [48;5;234m [48;5;234m [48;5;233m [48;5;233m [48;5;234m [48;5;234m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;234m [48;5;235m [48;5;234m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;237m [48;5;234m [48;5;235m [48;5;235m [48;5;239m [48;5;234m [48;5;233m [48;5;233m [48;5;233m [48;5;234m [48;5;235m [48;5;236m [48;5;234m [48;5;236m [48;5;236m [48;5;235m [48;5;235m [48;5;236m [48;5;236m [48;5;236m [48;5;234m [48;5;22m [48;5;235m [48;5;234m [48;5;234m [48;5;234m [48;5;234m [48;5;236m [0m
 [48;5;239m [48;5;234m [48;5;233m [48;5;232m [48;5;232m [48;5;233m [48;5;233m [48;5;232m [48;5;232m [48;5;232m [48;5;234m [48;5;236m [48;5;233m [48;5;233m [48;5;232m [48;5;234m [48;5;235m [48;5;233m [48;5;233m [48;5;233m [48;5;235m [48;5;71m [48;5;234m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;232m [48;5;232m [48;5;233m [48;5;233m [48;5;233m [48;5;235m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;234m [48;5;236m [48;5;238m [48;5;239m [48;5;238m [48;5;235m [48;5;236m [48;5;234m [48;5;235m [48;5;235m [48;5;234m [48;5;233m [48;5;234m [48;5;236m [48;5;234m [48;5;235m [48;5;234m [48;5;237m [48;5;234m [48;5;233m [48;5;233m [48;5;233m [48;5;234m [48;5;234m [48;5;235m [48;5;234m [48;5;236m [48;5;236m [48;5;235m [48;5;236m [48;5;237m [48;5;234m [48;5;234m [48;5;233m [48;5;22m [48;5;237m [48;5;233m [48;5;233m [48;5;234m [48;5;233m [48;5;235m [0m
@@ -337,7 +347,13 @@ if (!fs.existsSync(CORE_PATH)) {
   process.exit(0);
 }
 
-let currentBase = getInitCurrentBase();
+let currentBase;
+try {
+  currentBase = getInitCurrentBase();
+} catch (err) {
+  logJsonError(err, "startup");
+  throw err;
+}
 
 
 function getStartHotReload() {
@@ -350,6 +366,7 @@ function getStartHotReload() {
       Object.assign(currentBase, fresh);
     } catch (err) {
       console.error(`${C.red}[${MODULE_NAME}] core.json reload error:${C.reset} ${err.message}`);
+      logJsonError(err, "hot-reload");
     }
   };
   const reload = getDebounce(doReload, 250);

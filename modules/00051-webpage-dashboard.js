@@ -58,12 +58,8 @@ function getBasePath(cfg) {
 
 
 async function setSendNow(wo) {
-  const key = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = getItem(key);
-  if (!entry?.res) return;
-  const { res } = entry;
-  if (res.writableEnded || res.headersSent) return;
+  const res = wo?.http?.res;
+  if (!res || res.writableEnded || res.headersSent) return;
   const r = wo.http?.response || {};
   const status  = Number(r.status  ?? 200);
   const headers = r.headers ?? { "Content-Type": "text/html; charset=utf-8" };
@@ -307,12 +303,12 @@ export default async function getWebpageDashboard(coreData) {
         body: "Not Found"
       };
     }
-    wo.stop = true;
+    wo.stop = true; wo.stopReason = "dashboard_request_handled";
     await setSendNow(wo);
     return coreData;
   }
 
-  wo.stop = true;
+  wo.stop = true; wo.stopReason = "dashboard_request_handled";
 
   if (!getIsAllowed(wo, allowedRoles)) {
     wo.http.response = {

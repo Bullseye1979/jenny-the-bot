@@ -20,7 +20,8 @@ function getStr(value) {
 }
 
 function setStop(workingObject, responseText, responseValue = "STOP") {
-  workingObject.stop = true;
+  workingObject.stop       = true;
+  workingObject.stopReason = "admin_command_handled";
   const text = getStr(responseText);
   workingObject.response    = getStr(responseValue);
   workingObject.responseText = text;
@@ -87,8 +88,9 @@ export default async function getCoreAdminCommands(coreData) {
 
     const id = getStr(workingObject.channelID).trim();
     if (!id) {
-      workingObject.response = "STOP";
-      workingObject.stop = true;
+      workingObject.response   = "STOP";
+      workingObject.stop       = true;
+      workingObject.stopReason = "admin_command_handled";
       return coreData;
     }
 
@@ -98,8 +100,9 @@ export default async function getCoreAdminCommands(coreData) {
     } catch (e) {
       log("db purge failed (DM)", "error", { moduleName: MODULE_NAME, reason: e?.message || String(e) });
     }
-    workingObject.response = "STOP";
-    workingObject.stop = true;
+    workingObject.response   = "STOP";
+    workingObject.stop       = true;
+    workingObject.stopReason = "admin_command_handled";
     return coreData;
   }
 

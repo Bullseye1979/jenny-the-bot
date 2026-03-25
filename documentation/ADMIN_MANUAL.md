@@ -287,6 +287,11 @@ Event source (Discord / HTTP API / Cron / Voice / Webpage)
 │   └── webpage.js           # Multi-port HTTP server for web tools
 ├── modules/                 # Ordered modules (00xxx-10xxx)
 ├── tools/                   # LLM-callable tools
+├── types/
+│   └── workingObject.js     # JSDoc @typedef for WorkingObject (no runtime impact; for IDE/AI reference)
+├── eslint-rules/
+│   └── no-foreign-config.js # Custom ESLint rule: config isolation enforcement
+├── eslint.config.js         # ESLint flat config (applies rule to modules/)
 ├── shared/
 │   └── webpage/
 │       ├── interface.js     # Shared web utilities (menu, auth, DB, file I/O)
@@ -1612,6 +1617,7 @@ Maps HTTP endpoints (by port + path prefix) to named flows and sets `wo.channelI
 | `routes[].pathPrefix` | string | URL path prefix to match (e.g. `"/voice"`, `"/wiki"`) |
 | `routes[].flow` | string | Value written to `wo.flow` (used by `core-channel-config` `flowMatch`) |
 | `routes[].channelIdSource` | string | How `wo.channelID` is derived. Strategies: `"query:<param>"` — from URL query string param; `"path:<N>"` — path segment N after the prefix (0-based); any other string — treated as a literal static channel ID |
+| `routes[].removeModules` | array | Optional list of module filename prefixes (e.g. `"00043-webpage-bard"`) to skip for this route. Appended to `wo.flowModuleRemove` before the pipeline runs. |
 
 **`core-channel-config` flow overrides example:**
 
@@ -1957,6 +1963,8 @@ Also supports `*/N * * * *` (every N minutes).
 
 **Parallel execution:** Each job runs as a fire-and-forget async IIFE with its own `running` flag. This means long-running jobs (e.g. `discord-status`) do not delay other jobs (e.g. `bard-label-gen`) — all due jobs start concurrently.
 
+> **Implicit flows:** `discord-status` and `bard-label-gen` are **logical flow names** — they have no corresponding file in `flows/`. They exist only as string values passed to `runFlow()` by `cron.js`. Modules subscribe to them via their `flow` config array like any other flow (e.g. `"flow": ["discord-status", "discord"]`). If you search `flows/` for these names you will find nothing — that is expected.
+
 ```javascript
 // Internal pattern — each job:
 (async () => {
@@ -2019,11 +2027,13 @@ Also supports `*/N * * * *` (every N minutes).
 | `wo.http.rawBody` | string | Request body as UTF-8 string (populated for POST, PUT, PATCH, DELETE) |
 | `wo.http.rawBodyBytes` | Buffer | Request body as raw Buffer (same methods as above) |
 | `wo.http.json` | object | Parsed JSON body, if `Content-Type` is JSON and parsing succeeds (same methods) |
-| `wo.http.requestKey` | string | Registry key where `{ req, res }` is stored |
+| `wo.http.req` | `IncomingMessage` | Raw Node.js request object (set by `flows/webpage.js`) |
+| `wo.http.res` | `ServerResponse` | Raw Node.js response object (set by `flows/webpage.js`) |
 | `wo.http.response` | object | Set `{ status, headers, body }` here — `webpage-output` sends it |
 | `wo.web.menu` | array | Modules push `{ label, port, path }` here for nav cross-linking |
 | `wo.jump` | boolean | Set to `true` to stop the normal pipeline loop and jump directly to the ≥9000 output phase (e.g. `core-output`). Use after `setSendNow()` in webpage modules. |
 | `wo.stop` | boolean | Hard stop — breaks the normal loop **and** skips the output phase (≥9000). Use when the flow should be aborted entirely with no logging. |
+| `wo.stopReason` | string | Optional diagnostic label set alongside `wo.stop = true`. Logged by `core-output` for debugging (e.g. `"channel_not_allowed"`, `"bearer_invalid"`, `"admin_command_handled"`). Never read by pipeline logic — purely informational. |
 
 ---
 
@@ -2142,6 +2152,26 @@ Modules execute in **strict numeric order**. Naming convention: `NNNNN-PREFIX-NA
 - No module may import another module.
 - Exception: core-ai modules (01000–01003) may dynamically `import()` tools from `../tools/`.
 - `core/ai-completions.js` does NOT exist as a shared helper — AI calls always go through the pipeline modules.
+
+**Config isolation is enforced automatically by ESLint:**
+
+```bash
+npm run lint
+```
+
+The custom rule `local/no-foreign-config` in `eslint-rules/no-foreign-config.js` checks every file in `modules/`. It derives the expected config key from the filename (e.g. `00050-discord-admin-commands.js` → `"discord-admin-commands"`) and flags any string-literal bracket access to `.config` that uses a different key:
+
+```
+modules/00048-webpage-chat.js:52
+  coreData.config["core-channel-config"]
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  Config isolation: this module ("webpage-chat") must not access
+  config["core-channel-config"] — only config["webpage-chat"] is allowed.
+```
+
+Accesses via variable (`config?.[MODULE_NAME]`) are not flagged — only hardcoded string literals.
+
+Run `npm run lint` after any refactoring or before deploying changes to `modules/`.
 
 Every module is an async function:
 ```javascript
@@ -2833,6 +2863,8 @@ log.error("API call failed", err);
 ```
 
 The final log is written to `./pub/debug/` by module `10000-core-output`.
+
+**`logs/json-error.log`:** Parse errors in `core.json` (startup and hot-reload) are written as newline-delimited JSON to `logs/json-error.log` in the bot root. Each entry has the shape `{ ts, context, error }` where `context` is `"startup"` or `"hot-reload"`. The log directory is created automatically.
 
 ---
 

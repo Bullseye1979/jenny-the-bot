@@ -11,7 +11,6 @@ import fs   from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
-import { getItem } from "../core/registry.js";
 /* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
 let sharp = null;
 try { sharp = (await import("sharp")).default; } catch { /* sharp not available */ }
@@ -115,12 +114,8 @@ function getIsAllowed(wo, allowedRoles) {
 
 
 async function setSendNow(wo) {
-  const key = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = getItem(key);
-  if (!entry?.res) return;
-  const { res } = entry;
-  if (res.writableEnded || res.headersSent) return;
+  const res = wo?.http?.res;
+  if (!res || res.writableEnded || res.headersSent) return;
   const r = wo.http?.response || {};
   const status  = Number(r.status  ?? 200);
   const headers = r.headers ?? { "Content-Type": "text/html; charset=utf-8" };
@@ -1211,7 +1206,7 @@ export default async function getWebpageWiki(coreData) {
 
   if (!urlPath.startsWith(basePath)) return coreData;
 
-  wo.stop = true;
+  wo.stop = true; wo.stopReason = "wiki_request_handled";
 
   const menu    = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];
   const role    = getStr(wo?.webAuth?.role || "");

@@ -42,8 +42,9 @@ export default async function getCoreTriggerGate(coreData) {
   const text       = payloadRaw.trimStart().toLowerCase();
 
   if (!text) {
-    wo.response = "STOP";
-    wo.stop     = true;
+    wo.response   = "STOP";
+    wo.stop       = true;
+    wo.stopReason = "empty_payload";
     log("Blocked: empty payload", "warn", { moduleName: MODULE_NAME, trigger, wordWindow });
     return coreData;
   }
@@ -60,8 +61,9 @@ export default async function getCoreTriggerGate(coreData) {
   }
 
   if (!matches) {
-    wo.response = "STOP";
-    wo.stop     = true;
+    wo.response   = "STOP";
+    wo.stop       = true;
+    wo.stopReason = "trigger_not_found";
     log("Blocked: trigger not found in first words", "warn", {
       moduleName: MODULE_NAME, trigger, wordWindow, sample: payloadRaw.slice(0, 80)
     });

@@ -17,7 +17,6 @@
 /************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
-import { getItem }           from "../core/registry.js";
 
 const MODULE_NAME = "webpage-voice-output";
 
@@ -34,10 +33,7 @@ export default async function getWebpageVoiceOutput(coreData) {
   // Only handle voice-webpage requests — do NOT gate on wo.stop so we always respond
   if (!wo.isWebpageVoice) return coreData;
 
-  const key = wo?.http?.requestKey;
-  if (!key) return coreData;
-  const _entry = await Promise.resolve(getItem(key)).catch(() => null);
-  const res = _entry?.res;
+  const res = wo?.http?.res;
   if (!res || res.headersSent) return coreData;
 
   // ── TranscribeOnly mode — pipeline stopped after transcription; return transcript ──

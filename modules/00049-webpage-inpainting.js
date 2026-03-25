@@ -11,7 +11,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { getMenuHtml } from "../shared/webpage/interface.js";
-import { getItem } from "../core/registry.js";
 import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "webpage-inpainting";
@@ -26,11 +25,8 @@ const _inpaintAuthTokens = new Map();
 
 
 async function setSendNow(wo) {
-  const key = wo?.http?.requestKey;
-  if (!key) return;
-  const entry = await Promise.resolve(getItem(key)).catch(() => null);
-  if (!entry?.res) return;
-  const { res } = entry;
+  const res = wo?.http?.res;
+  if (!res) return;
 
   const r = wo.http?.response || {};
   const status  = Number(r.status  ?? 200);

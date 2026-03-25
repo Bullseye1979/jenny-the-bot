@@ -10,7 +10,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 /* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
 let sharp = null;
@@ -399,29 +398,11 @@ export default async function getWebpageOutput(coreData) {
 
   const log = getPrefixedLogger(wo, import.meta.url);
 
-  const requestKey = wo?.http?.requestKey;
-  if (!requestKey) {
-    log("Missing http.requestKey on workingObject", "error", { moduleName: MODULE_NAME });
-    return coreData;
-  }
-
-  let stored;
-  try {
-    stored = await getItem(requestKey);
-  } catch (e) {
-    log("Failed to get req/res from registry", "error", {
-      moduleName: MODULE_NAME,
-      requestKey,
-      error: e?.message || String(e)
-    });
-    return coreData;
-  }
-
-  const req = stored?.req;
-  const res = stored?.res;
+  const req = wo?.http?.req;
+  const res = wo?.http?.res;
 
   if (!req || !res) {
-    log("No req/res in registry entry", "error", { moduleName: MODULE_NAME, requestKey });
+    log("Missing http.req/res on workingObject", "error", { moduleName: MODULE_NAME });
     return coreData;
   }
 

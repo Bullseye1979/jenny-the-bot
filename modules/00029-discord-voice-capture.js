@@ -198,7 +198,8 @@ export default async function getDiscordVoiceCapture(coreData) {
   if (!receiver) {
     log("No voice receiver on session", "error", { moduleName: MODULE_NAME, sessionKey });
     wo.transcribeSkipped = "no_receiver";
-    wo.stop = true;
+    wo.stop       = true;
+    wo.stopReason = "no_receiver";
     return coreData;
   }
 
@@ -215,7 +216,7 @@ export default async function getDiscordVoiceCapture(coreData) {
       const st = await fs.promises.stat(seg.file).catch(() => null);
       if (!st || st.size < MIN_WAV_BYTES) {
         try { await fs.promises.rm(seg.dir, { recursive: true, force: true }); } catch {}
-        if (!segments.length) { wo.transcribeSkipped = "too_small"; wo.stop = true; return coreData; }
+        if (!segments.length) { wo.transcribeSkipped = "too_small"; wo.stop = true; wo.stopReason = "too_small"; return coreData; }
         break;
       }
       segments.push(seg);
@@ -224,7 +225,8 @@ export default async function getDiscordVoiceCapture(coreData) {
 
     if (!segments.length) {
       wo.transcribeSkipped = "no_segments";
-      wo.stop = true;
+      wo.stop       = true;
+      wo.stopReason = "no_segments";
       return coreData;
     }
 
@@ -250,7 +252,8 @@ export default async function getDiscordVoiceCapture(coreData) {
 
     if (!voicedChunks.length) {
       wo.transcribeSkipped = "no_voiced_frames";
-      wo.stop = true;
+      wo.stop       = true;
+      wo.stopReason = "no_voiced_frames";
       return coreData;
     }
 
@@ -286,7 +289,8 @@ export default async function getDiscordVoiceCapture(coreData) {
   } catch (e) {
     log("Voice capture error", "error", { moduleName: MODULE_NAME, error: e?.message });
     wo.transcribeSkipped = wo.transcribeSkipped || "capture_error";
-    wo.stop = true;
+    wo.stop       = true;
+    wo.stopReason = wo.transcribeSkipped;
   } finally {
     try { await deleteItem(activeKey); } catch {}
   }

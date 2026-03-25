@@ -7,7 +7,6 @@
 ****************************************************************************************************************/
 
 import path from "node:path";
-import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-inpaint";
 
@@ -42,11 +41,7 @@ function getShouldBypassRedirect(wo, inpaintingHost) {
 
 async function setSendNow(wo) {
   try {
-    const requestKey = wo?.http?.requestKey;
-    if (!requestKey) return;
-
-    const stored = await getItem(requestKey);
-    const res = stored?.res;
+    const res = wo?.http?.res;
     if (!res || res.writableEnded) return;
 
     const resp = wo.http.response || {};

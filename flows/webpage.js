@@ -10,7 +10,6 @@
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "webpage";
@@ -126,11 +125,6 @@ function getReadBody(req, maxBytes = 1e6) {
 }
 
 
-function getNewRequestKey() {
-  return `web:${getNewUlid()}`;
-}
-
-
 function getConfigFlowName(baseCore) {
   const name = baseCore?.config?.[MODULE_NAME]?.flowName;
   const s = typeof name === "string" ? name.trim() : "";
@@ -150,9 +144,6 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
       const wo = runCore.workingObject;
       const log = getPrefixedLogger(wo, import.meta.url);
 
-      const requestKey = getNewRequestKey();
-      putItem({ req, res }, requestKey);
-
       const nowIso = new Date().toISOString();
 
       wo.flow = flowName;
@@ -161,7 +152,8 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
       wo.timestamp = nowIso;
 
       wo.http = wo.http || {};
-      wo.http.requestKey = requestKey;
+      wo.http.req = req;
+      wo.http.res = res;
       wo.http.method = method;
       wo.http.url = req.url;
       wo.http.path = urlPath;
@@ -241,8 +233,7 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
         path: urlPath,
         method,
         kind: wo.http.kind,
-        port,
-        requestKey
+        port
       });
 
       try {

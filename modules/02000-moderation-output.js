@@ -71,8 +71,9 @@ export default async function getModerationOutput(coreData) {
     const silenceHit = !!(cfg.trigSilence && new RegExp(getEscapedRegex(cfg.trigSilence), "i").test(original));
 
     if (silenceHit) {
-      wo.response = "STOP";
-      wo.stop = true;
+      wo.response   = "STOP";
+      wo.stop       = true;
+      wo.stopReason = "moderation_silence";
       const decision = { action: "drop", tag: "silence", reason: "trigger_match" };
       wo.Moderation = decision;
 

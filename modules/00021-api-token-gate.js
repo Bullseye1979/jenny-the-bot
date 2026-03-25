@@ -39,9 +39,10 @@ export default async function getApiTokenGate(coreData) {
 
   if (enabled === 0) {
     log("apiEnabled=0 — channel blocked from API access", "warn", { moduleName: MODULE_NAME });
-    wo.stop     = true;
-    wo.blocked  = true;
-    wo.apiGated = true;
+    wo.stop       = true;
+    wo.stopReason = "api_disabled";
+    wo.blocked    = true;
+    wo.apiGated   = true;
     return coreData;
   }
 
@@ -58,9 +59,10 @@ export default async function getApiTokenGate(coreData) {
   }
 
   log("Bearer token invalid or missing — access denied", "warn", { moduleName: MODULE_NAME });
-  wo.stop     = true;
-  wo.blocked  = true;
-  wo.apiGated = true;
+  wo.stop       = true;
+  wo.stopReason = "bearer_invalid";
+  wo.blocked    = true;
+  wo.apiGated   = true;
 
   return coreData;
 }
