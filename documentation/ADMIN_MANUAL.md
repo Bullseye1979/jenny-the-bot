@@ -1701,12 +1701,12 @@ Every module can be restricted to specific flows via its config block:
 |---|---|
 | `webpage-router` | webpage |
 | `core-channel-config` | discord, discord-voice, discord-admin, discord-status, api, webpage |
-| `webpage-channel-config` | webpage |
-| `discord-channel-gate` | discord, discord-voice, discord-admin, api |
+| `webpage-channel-config` | *(deactivated — `flow: []`)* |
+| `core-channel-gate` | discord, discord-voice, discord-admin, api, webpage |
 | `api-token-gate` | api |
 | `discord-gdpr-gate` | discord, discord-voice, discord-admin, webpage |
 | `discord-add-context` | discord, discord-voice |
-| `discord-trigger-gate` | discord, discord-voice, webpage |
+| `core-trigger-gate` | discord, discord-voice, api, webpage |
 | `discord-reaction-start/finish` | discord |
 | `discord-text-output` | all |
 | `discord-voice-capture` | discord-voice |
@@ -2027,7 +2027,7 @@ New web tools can be added by dropping a single file into `modules/`. No flow ch
 modules/NNNNN-webpage-myapp.js
 ```
 
-Use a number between `00045` and `00049` to run before AI processing, or higher if needed.
+Use a number between `00076` and `00099` to run before AI processing, or higher if needed. The range `00042`–`00075` is occupied by existing webpage, bard, admin, and gate modules.
 
 **Step 2 — Module skeleton**
 
@@ -2176,12 +2176,12 @@ export default async function myModule(coreData) {
 | 00047 | `webpage-voice` | Webpage voice interface — serves a browser-based always-on SPA and handles incoming audio POST requests, bridging the browser microphone into the bot pipeline. |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
-| 00050 | `discord-admin-commands` | Processes slash commands and DM admin commands |
+| 00050 | `discord-admin-commands` | Discord-level admin commands only. `discord-admin` flow: `/purge` (bulk-delete Discord messages with rate-limit backoff), `/error` (simulated error). `discord` flow (DM only): `!purge [N]` (delete up to N bot messages from the DM channel). DB-level commands (`purgedb`, `freeze`) are handled by `00055-core-admin-commands`. |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
 | 00052 | `webpage-wiki` | AI-driven Fandom-style wiki (port 3117, `/wiki`) |
 | 00053 | `webpage-context` | Context DB editor SPA (port 3118, `/context`) — channel browser, field selector, search, search & replace, bulk delete |
 | 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) |
-| 00055 | `core-admin-commands` | Core admin operations (purge, freeze, DB commands) |
+| 00055 | `core-admin-commands` | DB-level admin commands for all relevant flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` in payload. `api`: `/purgedb`, `/freeze` slash-text in payload. No Discord-API access — pure DB operations only. |
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
 | 00057 | `webpage-gdpr` | GDPR data-export SPA (port 3121, `/gdpr`) — allows logged-in users to download an Excel file containing their context history, consent records, and stored files. Requires `exceljs` npm package. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
@@ -2190,7 +2190,7 @@ export default async function myModule(coreData) {
 | 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user). Skipped when `wo.doNotWriteToContext === true` (e.g. internal wiki/system API calls). |
 | 00073 | *(deleted)* | `webpage-add-context` has been removed. Its logic was inlined into `00048-webpage-chat`. |
 | 00074 | `core-trigger-gate` | Flow-agnostic trigger gate. Stops the pipeline when `wo.payload` does not start with the configured trigger word. |
-| 00075 | `discord-trigger-gate` | Filters messages based on trigger words |
+| 00075 | *(deleted)* | `discord-trigger-gate` has been removed. Flow-agnostic replacement: `00074-core-trigger-gate`. |
 | 00080 | `discord-reaction-start` | Adds a progress reaction emoji to the user's message |
 | 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelID` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. |
 
@@ -2771,7 +2771,7 @@ import {
 2. `workingObject.webAuth?.userId` (set by `webpage-auth` for all authenticated web requests)
 3. `workingObject.userId` (set directly for Discord/API flows)
 
-This means `add-context` modules (00070, 00072, 00073) do not include `userId` in the record they pass to `setContext` — it is resolved centrally.
+This means `add-context` modules (00070, 00072) do not include `userId` in the record they pass to `setContext` — it is resolved centrally.
 
 **Internal meta frames:** `setContext()` silently discards any record where `record.internal_meta === true`. Meta frames are generated dynamically at retrieval time by `getContext()` and injected into the AI context window; they are never stored in MySQL. This prevents ghost entries (e.g. `[assistant] Jenny` index strings) from appearing in the database or the chat UI.
 

@@ -12,8 +12,6 @@
 import fs     from "node:fs";
 import crypto from "node:crypto";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
-import { getItem }            from "../core/registry.js";
-import { setPurgeContext, setFreezeContext, setPurgeSubchannel } from "../core/context.js";
 
 const MODULE_NAME = "webpage-chat";
 
@@ -148,22 +146,6 @@ async function getEnsureChatSubchannelsTable(pool) {
 }
 
 
-/* Look up apiSecret for a channelID from core-channel-config.
-   The chat POST body delivers channelID after core-channel-config ran,
-   so wo.apiSecret is not populated. We scan the config directly. */
-function getApiSecretForChannel(config, channelID) {
-  const channels = config?.["core-channel-config"]?.channels;
-  if (!Array.isArray(channels) || !channelID) return "";
-  const id = String(channelID).trim().toUpperCase();
-  for (const ch of channels) {
-    const matches = Array.isArray(ch?.channelMatch) ? ch.channelMatch : [];
-    const hit = matches.some(m => String(m || "").trim().toUpperCase() === id);
-    if (!hit) continue;
-    const secret = String(ch?.overrides?.apiSecret || "").trim();
-    if (secret) return secret;
-  }
-  return "";
-}
 
 
 /* Channel-config helpers removed — AI is now handled via POST /api.
@@ -368,8 +350,8 @@ export default async function getWebpageChat(coreData) {
          Subchannel overrides are sent as promptAddition so the API-side system
          can incorporate them (the API flow's core-ai-context-loader will apply
          the subchannel context). We pass subchannelId so context is scoped. */
-      const apiUrl    = String(cfg.apiUrl || "http://localhost:3400/api").trim();
-      const apiSecret = getApiSecretForChannel(coreData?.config, channelID);
+      const apiUrl    = String(cfg.apiUrl    || "http://localhost:3400/api").trim();
+      const apiSecret = String(cfg.apiSecret || "").trim();
 
       const reqBody = {
         channelID,

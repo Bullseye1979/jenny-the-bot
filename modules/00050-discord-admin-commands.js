@@ -1,12 +1,16 @@
 /**************************************************************
 /* filename: 00050-discord-admin-commands.js                     *
-/* Version 1.0                                               *
-/* Purpose: Slash admin commands for "discord-admin" flow    *
-/*          plus DM-only text commands for purge and DB      *
+/* Version 2.0                                               *
+/* Purpose: Discord-level admin commands only.               *
+/*          discord-admin flow: /purge (delete Discord msgs), *
+/*            /error (simulated error).                      *
+/*          discord flow (DM only): !purge [N] (delete bot   *
+/*            messages from DM channel).                     *
+/*          DB-level commands (purgedb, freeze) are handled  *
+/*          by 00055-core-admin-commands.                    *
 /**************************************************************/
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
-import { setPurgeContext, setFreezeContext } from "../core/context.js";
 
 const MODULE_NAME = "discord-admin-commands";
 
@@ -69,11 +73,6 @@ function getParseBangPurgeCount(payload) {
   return 100;
 }
 
-
-function getIsBangPurgeDb(payload) {
-  const s = String(payload || "").trim();
-  return /^!purgedb$/i.test(s);
-}
 
 
 async function setDeleteMessagesIndividually(items, log, ctx, opts = {}) {
@@ -190,25 +189,6 @@ async function setPurgeLastN(channel, log, { maxTotal }) {
 }
 
 
-async function setPurgeDmDb(wo, payload, log) {
-  if (!getIsDMContext(wo)) return false;
-  if (!getIsBangPurgeDb(payload)) return false;
-
-  const channelId = String(wo?.channelID || "");
-  if (!channelId) {
-    wo.response = "STOP";
-    wo.stop = true;
-    return true;
-  }
-
-  const deleted = await setPurgeContext({ ...wo, channelID: channelId });
-  log("db purge done (DM)", "info", { moduleName: MODULE_NAME, channelId, deleted });
-
-  wo.response = "STOP";
-  wo.stop = true;
-  return true;
-}
-
 
 async function setPurgeDmBotMessages(wo, payload, log) {
   if (!getIsDMContext(wo)) return false;
@@ -271,7 +251,6 @@ export default async function getDiscordAdminCommands(coreData) {
   const flow = String(wo?.flow || "");
 
   if (flow === "discord" && payload) {
-    if (await setPurgeDmDb(wo, payload, log)) return coreData;
     if (await setPurgeDmBotMessages(wo, payload, log)) return coreData;
   }
 
@@ -279,42 +258,12 @@ export default async function getDiscordAdminCommands(coreData) {
     if (wo?.flow !== "discord-admin") return coreData;
 
     const cmd = String(wo?.admin?.command || "").toLowerCase();
-    if (cmd !== "purge" && cmd !== "error" && cmd !== "purgedb" && cmd !== "freeze") {
+    if (cmd !== "purge" && cmd !== "error") {
       return coreData;
     }
 
     if (cmd === "error") {
       throw new Error("Simulated error via /error");
-    }
-
-    if (cmd === "purgedb") {
-      const targetChannelId = String(wo?.admin?.channelId || wo?.channelID || "");
-      if (!targetChannelId) {
-        log("db purge failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
-        wo.response = "";
-        return coreData;
-      }
-
-      const purgeWO = { ...wo, channelID: targetChannelId };
-      const deleted = await setPurgeContext(purgeWO);
-      log("db purge done", "info", { moduleName: MODULE_NAME, channelId: targetChannelId, deleted });
-      wo.response = "";
-      return coreData;
-    }
-
-    if (cmd === "freeze") {
-      const targetChannelId = String(wo?.admin?.channelId || wo?.channelID || "");
-      if (!targetChannelId) {
-        log("freeze failed", "error", { moduleName: MODULE_NAME, reason: "missing channel id" });
-        wo.response = "";
-        return coreData;
-      }
-
-      const freezeWO = { ...wo, channelID: targetChannelId };
-      const updated = await setFreezeContext(freezeWO);
-      log("freeze done", "info", { moduleName: MODULE_NAME, channelId: targetChannelId, updated });
-      wo.response = "";
-      return coreData;
     }
 
     const channelId = String(wo?.admin?.channelId || wo?.channelID || "");
