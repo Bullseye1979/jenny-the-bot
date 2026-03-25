@@ -2038,6 +2038,7 @@ Also supports `*/N * * * *` (every N minutes).
 | `wo.jump` | boolean | Set to `true` to stop the normal pipeline loop and jump directly to the ≥9000 output phase (e.g. `core-output`). Use after `setSendNow()` in webpage modules. |
 | `wo.stop` | boolean | Hard stop — breaks the normal loop **and** skips the output phase (≥9000). Use when the flow should be aborted entirely with no logging. |
 | `wo.stopReason` | string | Optional diagnostic label set alongside `wo.stop = true`. Logged by `core-output` for debugging (e.g. `"channel_not_allowed"`, `"bearer_invalid"`, `"admin_command_handled"`). Never read by pipeline logic — purely informational. |
+| `wo.tracePipeline` | boolean | Set to `true` to enable the pipeline diff logger (see §7.4). When `false` or absent, no diffs are computed and `logs/pipeline/` is not written. Set in `core.json` under `workingObject`. |
 
 **Early-response pattern (`setSendNow`)**
 
@@ -2392,6 +2393,8 @@ Every time a module modifies the `workingObject`, `main.js` records a Unix-style
 | `logs/pipeline/pipeline-N.log` | `--- module-name \| timestamp \| Xms ---` followed by `+`/`-` diff lines with 2-line context | 2 MB, 2 files |
 
 Diffs are skipped for modules that leave the `workingObject` unchanged and for objects larger than 2 000 JSON lines.
+
+**Activation:** Pipeline logging is **opt-in**. Set `tracePipeline: true` in `workingObject` in `core.json` to enable it. When `false` or absent, no snapshots are taken and no files are written (zero performance overhead). Hot-reload applies — no restart required.
 
 ---
 
@@ -3319,11 +3322,11 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 
 **Log Viewer (port 3115, /dashboard/logs):**
 - `GET /dashboard/logs` — log viewer page with two tabs: **Events** and **Pipeline Diffs**
-- Reads `logs/events/` and `logs/pipeline/` — shows available files with sizes, auto-loads the most recent on page load
+- Reads `logs/events/` and `logs/pipeline/` — file list is always fetched live from the API (never stale after log rotation)
 - Lines are colour-coded client-side: `[ERROR]` = red, `[WARN]` = amber, `+` = green, `-` = red, `---` section headers = cyan
-- **Auto-scroll checkbox** (default: on) — polls the current file every **3 seconds** and scrolls to the bottom after each update; uncheck to stop polling
+- **Auto-scroll checkbox** (default: on) — re-fetches the file list + current file every **3 seconds** and scrolls to the bottom; automatically follows log rotation to the newest file; uncheck to stop polling
 - `GET /dashboard/logs/api?type=events|pipeline&file=N` — returns `{content: "..."}` (last 512 KB of the file)
-- `GET /dashboard/logs/api?type=events|pipeline` (no `file`) — returns `{events: [...], pipeline: [...]}` with file list
+- `GET /dashboard/logs/api?type=events|pipeline` (no `file`) — returns `{events: [...], pipeline: [...]}` with live file list
 
 **core.json configuration:**
 ```json

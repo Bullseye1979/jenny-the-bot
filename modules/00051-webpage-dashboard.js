@@ -330,22 +330,9 @@ ${getThemeHeadScript()}
   var reload = document.getElementById('lreload');
   var scroll = document.getElementById('lautoscroll');
 
-  var fileData = {
-    events:   ${JSON.stringify(evtFiles.map(f => ({ n: f.n, name: f.name, size: f.size })))},
-    pipeline: ${JSON.stringify(pipeFiles.map(f => ({ n: f.n, name: f.name, size: f.size })))}
-  };
-
   var currentTab = 'events';
   var pollTimer  = null;
   var POLL_MS    = 3000;
-
-  function buildOpts(type) {
-    var files = fileData[type] || [];
-    if (!files.length) return '<option disabled>— no files —</option>';
-    return files.slice().reverse().map(function(f) {
-      return '<option value="' + f.n + '" data-type="' + type + '">' + escH(f.name) + ' (' + (f.size/1024).toFixed(1) + ' KB)</option>';
-    }).join('');
-  }
 
   function escH(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -368,26 +355,58 @@ ${getThemeHeadScript()}
     setTimeout(function() { box.scrollTop = box.scrollHeight; }, 50);
   }
 
-  function loadFile(silent) {
-    var opt = sel.options[sel.selectedIndex];
-    if (!opt || opt.disabled) return;
-    var n    = opt.value;
-    var type = currentTab;
-    if (!silent) stat.textContent = 'Loading…';
+  // Always fetch the live file list from the API (never use stale embedded data)
+  function fetchFileList(type, cb) {
+    fetch('${basePath}/logs/api?type=' + type)
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(null, (d[type] || []).slice().sort(function(a,b){ return a.n - b.n; })); })
+      .catch(function(e){ cb(e, []); });
+  }
+
+  function buildOpts(files) {
+    if (!files.length) return '<option disabled value="">— no files —</option>';
+    return files.slice().reverse().map(function(f) {
+      return '<option value="' + f.n + '">' + escH(f.name) + ' (' + (f.size/1024).toFixed(1) + ' KB)</option>';
+    }).join('');
+  }
+
+  function loadContent(type, n, cb) {
     fetch('${basePath}/logs/api?type=' + type + '&file=' + n)
       .then(function(r){ return r.json(); })
-      .then(function(d){
-        var txt = d.content || '';
+      .then(function(d){ cb(null, d.content || ''); })
+      .catch(function(e){ cb(e, ''); });
+  }
+
+  // Refresh file list, optionally auto-select newest, then load content
+  function refresh(autoSelectNewest) {
+    var type = currentTab;
+    fetchFileList(type, function(err, files) {
+      if (err) { stat.textContent = 'Error: ' + err.message; return; }
+      var prevN = sel.value;
+      sel.innerHTML = buildOpts(files);
+      if (!files.length) { stat.textContent = 'No log files found.'; return; }
+      if (autoSelectNewest || !prevN || !files.some(function(f){ return String(f.n) === prevN; })) {
+        // Auto-select the newest (first option after reverse sort = highest n)
+        sel.selectedIndex = 0;
+      } else {
+        // Re-select the previously selected file
+        for (var i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].value === prevN) { sel.selectedIndex = i; break; }
+        }
+      }
+      var n = sel.value;
+      loadContent(type, n, function(err2, txt) {
+        if (err2) { stat.textContent = 'Error: ' + err2.message; return; }
         box.innerHTML = colorize(txt);
         stat.textContent = txt.length + ' chars';
         if (scroll.checked) scrollToBottom();
-      })
-      .catch(function(e){ if (!silent) stat.textContent = 'Error: ' + e.message; });
+      });
+    });
   }
 
   function startPoll() {
     stopPoll();
-    pollTimer = setInterval(function() { loadFile(true); }, POLL_MS);
+    pollTimer = setInterval(function() { refresh(false); }, POLL_MS);
   }
 
   function stopPoll() {
@@ -395,7 +414,7 @@ ${getThemeHeadScript()}
   }
 
   scroll.addEventListener('change', function() {
-    if (scroll.checked) { loadFile(true); startPoll(); }
+    if (scroll.checked) { refresh(false); startPoll(); }
     else stopPoll();
   });
 
@@ -404,20 +423,18 @@ ${getThemeHeadScript()}
       tabs.forEach(function(t){ t.classList.remove('active'); });
       tab.classList.add('active');
       currentTab = tab.dataset.tab;
-      sel.innerHTML = buildOpts(currentTab);
-      box.innerHTML = '<span class="ll-dim">Select a file and click Reload.</span>';
+      sel.innerHTML = '<option disabled>Loading…</option>';
+      box.innerHTML = '<span class="ll-dim">Loading…</span>';
       stat.textContent = '';
-      if (sel.options.length && !sel.options[0].disabled) loadFile();
+      refresh(true);
     });
   });
 
-  reload.addEventListener('click', function() { loadFile(); });
+  reload.addEventListener('click', function() { refresh(true); });
 
-  // initial load + start polling if checkbox already checked
-  if (sel.options.length && !sel.options[0].disabled) {
-    loadFile();
-    if (scroll.checked) startPoll();
-  }
+  // Initial load
+  refresh(true);
+  if (scroll.checked) startPoll();
 })();
 </script>
 </body>

@@ -636,13 +636,16 @@ async function getRunFlow(flowName, coreDataForRun) {
     const t0 = performance.now();
     try {
       const { default: fn } = await import(`./modules/${s.file}`);
-      const woBefore = getPipelineSafeJson(coreData?.workingObject || {});
+      const tracing = !!coreData?.workingObject?.tracePipeline;
+      const woBefore = tracing ? getPipelineSafeJson(coreData?.workingObject || {}) : null;
       await fn(coreData);
       const dt = performance.now() - t0;
-      const woAfter = getPipelineSafeJson(coreData?.workingObject || {});
-      const diff = getPipelineDiff(woBefore, woAfter);
-      if (diff) {
-        setPipelineLog(`--- ${cleanName} | ${new Date().toISOString()} | ${dt.toFixed(1)}ms ---\n${diff}\n`);
+      if (tracing) {
+        const woAfter = getPipelineSafeJson(coreData?.workingObject || {});
+        const diff = getPipelineDiff(woBefore, woAfter);
+        if (diff) {
+          setPipelineLog(`--- ${cleanName} | ${new Date().toISOString()} | ${dt.toFixed(1)}ms ---\n${diff}\n`);
+        }
       }
       if (kind === "normal") state.ok += 1;
       state.lastModule = cleanName;
