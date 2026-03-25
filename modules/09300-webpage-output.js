@@ -298,7 +298,7 @@ function getHandleStaticDocument(wo, req, res, log) {
     try {
       const ctype = getContentType(target);
       const isImage = IMAGE_MIMES.has(ctype);
-      const cacheControl = isImage ? "no-cache" : "no-store";
+      const cacheControl = isImage ? "public, max-age=604800, immutable" : "no-store";
 
       /* Serve thumbnail when ?w=N is requested and file is an image */
       if (thumbW > 0 && isImage) {

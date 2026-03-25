@@ -17,7 +17,7 @@
 /************************************************************************************/
 
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
-import { setSendNow, getIsAllowedRoles } from "../shared/webpage/utils.js";
+import { getIsAllowedRoles } from "../shared/webpage/utils.js";
 import { getSecret, listSecrets, setSecret, deleteSecret, setEnsureSecretsTable } from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-keymanager";
@@ -45,38 +45,40 @@ ${getThemeHeadScript()}
 <link rel="stylesheet" href="/dashboard/style.css">
 <style>
   .km-table { width:100%; border-collapse:collapse; margin-top:1rem; }
-  .km-table th, .km-table td { padding:.5rem .75rem; border:1px solid var(--color-border,#333); text-align:left; }
-  .km-table th { background:var(--color-surface2,#1e1e2e); font-weight:600; }
-  .km-table tr:nth-child(even) td { background:var(--color-surface,#181825); }
-  .km-val { font-family:monospace; color:var(--color-muted,#888); }
-  .km-val.revealed { color:var(--color-text,#cdd6f4); }
+  .km-table th, .km-table td { padding:.5rem .75rem; border:1px solid var(--bdr); text-align:left; }
+  .km-table th { background:var(--bg3); font-weight:600; }
+  .km-table tr:nth-child(even) td { background:var(--bg3); }
+  .km-val { font-family:monospace; color:var(--muted); }
+  .km-val.revealed { color:var(--txt); }
   .km-actions { white-space:nowrap; }
   .km-form { display:grid; gap:.6rem; max-width:560px; margin-top:1.5rem; }
-  .km-form label { font-size:.8rem; color:var(--color-muted,#888); margin-bottom:.1rem; display:block; }
+  .km-form label { font-size:.8rem; color:var(--muted); margin-bottom:.1rem; display:block; }
   .km-form input, .km-form textarea {
     width:100%; padding:.5rem .7rem; border-radius:4px;
-    border:1px solid var(--color-border,#333);
-    background:var(--color-surface2,#1e1e2e); color:var(--color-text,#cdd6f4);
+    border:1px solid var(--bdr);
+    background:var(--bg2); color:var(--txt);
     font-family:monospace; font-size:.85rem; box-sizing:border-box;
   }
   .km-form textarea { resize:vertical; min-height:60px; }
   .km-btn { padding:.4rem .9rem; border-radius:4px; border:none; cursor:pointer; font-size:.85rem; }
-  .km-btn-primary { background:var(--color-accent,#89b4fa); color:#1e1e2e; }
-  .km-btn-danger  { background:#f38ba8; color:#1e1e2e; }
-  .km-btn-muted   { background:var(--color-surface2,#2a2a3e); color:var(--color-muted,#888); border:1px solid var(--color-border,#333); }
+  .km-btn-primary { background:var(--acc); color:#fff; }
+  .km-btn-danger  { background:var(--dan); color:#fff; }
+  .km-btn-muted   { background:var(--bg3); color:var(--txt); border:1px solid var(--bdr); }
   .km-msg { padding:.5rem .75rem; border-radius:4px; margin-top:.5rem; }
-  .km-msg.ok  { background:#a6e3a122; color:#a6e3a1; border:1px solid #a6e3a1; }
-  .km-msg.err { background:#f38ba822; color:#f38ba8; border:1px solid #f38ba8; }
+  .km-msg.ok  { background:rgba(16,185,129,.15); color:var(--ok); border:1px solid var(--ok); }
+  .km-msg.err { background:rgba(239,68,68,.12); color:var(--dan); border:1px solid var(--dan); }
   .km-section-title { font-size:1.1rem; font-weight:600; margin:1.5rem 0 .5rem; }
   .km-edit-row input { width:100%; font-family:monospace; font-size:.85rem; padding:.3rem .5rem;
-    background:var(--color-surface,#181825); color:var(--color-text,#cdd6f4);
-    border:1px solid var(--color-accent,#89b4fa); border-radius:3px; }
+    background:var(--bg2); color:var(--txt);
+    border:1px solid var(--acc); border-radius:3px; }
 </style>
 </head>
 <body>
-${menu}
+<header>
+  <h1>&#128273; Key Manager</h1>
+  ${menu}
+</header>
 <div class="dashboard-wrapper" style="padding:1.5rem 2rem">
-  <h1 style="font-size:1.4rem;margin-bottom:.25rem">Key Manager</h1>
   <p style="color:var(--color-muted,#888);font-size:.85rem;margin:0 0 1rem">
     Manage placeholder → secret mappings stored in the <code>bot_secrets</code> database table.
     Values are never shown in logs.
@@ -255,10 +257,9 @@ export default async function getWebpageKeymanager(coreData) {
 
   if (!urlPath.startsWith(basePath)) return coreData;
 
-  const webAuth = wo.webAuth || {};
-
   if (!getIsAllowedRoles(wo, allowedRoles)) {
-    setSendNow(wo, 403, "text/plain; charset=utf-8", "403 Forbidden");
+    wo.http.response = { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8" }, body: "403 Forbidden" };
+    wo.jump = true;
     return coreData;
   }
 
@@ -266,7 +267,8 @@ export default async function getWebpageKeymanager(coreData) {
   try {
     await setEnsureSecretsTable(wo);
   } catch (err) {
-    setSendNow(wo, 500, "text/plain; charset=utf-8", "DB error: " + String(err?.message || err));
+    wo.http.response = { status: 500, headers: { "Content-Type": "text/plain; charset=utf-8" }, body: "DB error: " + String(err?.message || err) };
+    wo.jump = true;
     return coreData;
   }
 
@@ -274,10 +276,11 @@ export default async function getWebpageKeymanager(coreData) {
   if (method === "GET" && urlPath === basePath + "/api/list") {
     try {
       const secrets = await listSecrets(wo);
-      setSendNow(wo, 200, "application/json", JSON.stringify({ ok: true, secrets }));
+      wo.http.response = { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: true, secrets }) };
     } catch (err) {
-      setSendNow(wo, 500, "application/json", JSON.stringify({ ok: false, error: String(err?.message || err) }));
+      wo.http.response = { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: false, error: String(err?.message || err) }) };
     }
+    wo.jump = true;
     return coreData;
   }
 
@@ -289,18 +292,21 @@ export default async function getWebpageKeymanager(coreData) {
       const value = getStr(body.value);
       const description = body.description != null ? getStr(body.description).trim() : null;
       if (!name) {
-        setSendNow(wo, 400, "application/json", JSON.stringify({ ok: false, error: "Missing name" }));
+        wo.http.response = { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: false, error: "Missing name" }) };
+        wo.jump = true;
         return coreData;
       }
       if (!value) {
-        setSendNow(wo, 400, "application/json", JSON.stringify({ ok: false, error: "Missing value" }));
+        wo.http.response = { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: false, error: "Missing value" }) };
+        wo.jump = true;
         return coreData;
       }
       await setSecret(wo, name, value, description || null);
-      setSendNow(wo, 200, "application/json", JSON.stringify({ ok: true }));
+      wo.http.response = { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: true }) };
     } catch (err) {
-      setSendNow(wo, 500, "application/json", JSON.stringify({ ok: false, error: String(err?.message || err) }));
+      wo.http.response = { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: false, error: String(err?.message || err) }) };
     }
+    wo.jump = true;
     return coreData;
   }
 
@@ -310,26 +316,31 @@ export default async function getWebpageKeymanager(coreData) {
       const body = wo.http?.json || {};
       const name = getStr(body.name).trim();
       if (!name) {
-        setSendNow(wo, 400, "application/json", JSON.stringify({ ok: false, error: "Missing name" }));
+        wo.http.response = { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: false, error: "Missing name" }) };
+        wo.jump = true;
         return coreData;
       }
       const deleted = await deleteSecret(wo, name);
-      setSendNow(wo, 200, "application/json", JSON.stringify({ ok: true, deleted }));
+      wo.http.response = { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: true, deleted }) };
     } catch (err) {
-      setSendNow(wo, 500, "application/json", JSON.stringify({ ok: false, error: String(err?.message || err) }));
+      wo.http.response = { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ ok: false, error: String(err?.message || err) }) };
     }
+    wo.jump = true;
     return coreData;
   }
 
   // --- Main UI ---
   if (method === "GET" && urlPath === basePath) {
     try {
-      const menu = getMenuHtml(wo, webAuth, basePath);
-      const html = buildPageHtml(menu, basePath);
-      setSendNow(wo, 200, "text/html; charset=utf-8", html);
+      const menuItems = Array.isArray(wo.web?.menu) ? wo.web.menu : [];
+      const role      = String(wo.webAuth?.role || "").toLowerCase();
+      const menu      = getMenuHtml(menuItems, basePath, role, null, null, wo.webAuth);
+      const html      = buildPageHtml(menu, basePath);
+      wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: html };
     } catch (err) {
-      setSendNow(wo, 500, "text/plain; charset=utf-8", "Error: " + String(err?.message || err));
+      wo.http.response = { status: 500, headers: { "Content-Type": "text/plain; charset=utf-8" }, body: "Error: " + String(err?.message || err) };
     }
+    wo.jump = true;
     return coreData;
   }
 
