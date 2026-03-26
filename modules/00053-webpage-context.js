@@ -4,6 +4,21 @@
 /* Purpose: Context DB editor SPA — browse (paginated), search, edit,            */
 /*          search & replace, and bulk-delete conversation context rows.          */
 /*          Served on its own port with role-based access control.                */
+/*          Config section: config["webpage-context"].                            */
+/*                                                                                */
+/* Routes:                                                                        */
+/*   GET  /context                    — main SPA (HTML)                           */
+/*   GET  /context/style.css          — shared + module stylesheet                */
+/*   GET  /context/api/channels       — distinct channel IDs with row counts      */
+/*   GET  /context/api/columns        — column metadata from INFORMATION_SCHEMA   */
+/*   GET  /context/api/records        — paginated record browse                   */
+/*   GET  /context/api/search         — full-text search (paginated)              */
+/*   GET  /context/api/record         — single row by ctx_id                      */
+/*   PATCH /context/api/record        — update a single field of a row            */
+/*   DELETE /context/api/delete       — bulk delete by ctx_id list                */
+/*   POST /context/api/replace/find   — find search & replace matches             */
+/*   POST /context/api/replace/apply  — apply one replacement                     */
+/*   POST /context/api/replace/all    — replace all matches in one call           */
 /**********************************************************************************/
 
 import fs from "node:fs";
@@ -216,8 +231,14 @@ function getContextCss() {
 body{font-size:13px}
 .page-wrap{display:flex;flex-direction:column;height:calc(100vh - var(--hh));margin-top:var(--hh)}
 .ctx-layout{display:flex;flex:1;overflow:hidden}
-.ctx-sidebar{width:220px;min-width:160px;background:var(--card);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
-.sidebar-title{padding:9px 12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--bdr);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.ctx-sidebar{width:220px;min-width:160px;background:var(--card);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;transition:width .2s}
+.ctx-sidebar.collapsed{width:32px;min-width:32px}
+.sidebar-title{padding:9px 12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--bdr);font-size:11px;text-transform:uppercase;letter-spacing:.08em;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.ctx-sidebar.collapsed .sidebar-title{justify-content:center;padding:9px 4px}
+.ctx-sidebar.collapsed .sidebar-title-text{display:none}
+.ctx-sidebar.collapsed #channel-list{display:none}
+#sidebar-toggle{background:none;border:none;cursor:pointer;padding:0 2px;color:var(--muted);font-size:13px;line-height:1;flex-shrink:0}
+#sidebar-toggle:hover{color:var(--txt)}
 #channel-list{overflow-y:auto;flex:1}
 .channel-item{padding:7px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--bdr);user-select:none}
 .channel-item:hover{background:var(--bg)}
@@ -326,8 +347,11 @@ ${getThemeHeadScript()}
 <div class="page-wrap">
 ${dbBanner}
   <div class="ctx-layout">
-    <div class="ctx-sidebar">
-      <div class="sidebar-title">Channels</div>
+    <div class="ctx-sidebar" id="ctx-sidebar">
+      <div class="sidebar-title">
+        <span class="sidebar-title-text">Channels</span>
+        <button id="sidebar-toggle" title="Toggle channel list">&#9664;</button>
+      </div>
       <div id="channel-list"></div>
     </div>
     <div class="ctx-main">
@@ -442,7 +466,6 @@ var srSkippedSet = new Set();
 var editCtxId = null;
 var editOrig = {};
 
-/* ---- API ---- */
 async function api(path, method, body) {
   var opts = { method: method || 'GET', headers: {} };
   if (body != null) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
@@ -451,7 +474,6 @@ async function api(path, method, body) {
   return r.json();
 }
 
-/* ---- Utils ---- */
 function escHtml(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -468,7 +490,6 @@ function setStatus(msg, isError) {
 }
 function updateDeleteBtn() { document.getElementById('btn-delete-sel').disabled = selectedIds.size === 0; }
 
-/* ---- Channels ---- */
 async function loadChannels() {
   try {
     var data = await api('/api/channels');
@@ -506,7 +527,6 @@ function addChannelItem(container, id, label, cnt) {
   container.appendChild(div);
 }
 
-/* ---- Columns ---- */
 async function loadColumns() {
   var data = await api('/api/columns');
   allCols = data.columns;
@@ -534,7 +554,6 @@ function renderFieldPanel() {
   });
 }
 
-/* ---- Records ---- */
 async function loadPage() {
   selectedIds.clear(); updateDeleteBtn();
   var p = new URLSearchParams({ page: currentPage, limit: pageSize, fields: visibleCols.join(',') });
@@ -658,7 +677,6 @@ function renderPagination(total, page, pages) {
   document.getElementById('btn-next').disabled = page >= pages;
 }
 
-/* ---- Delete ---- */
 async function doDelete() {
   if (!selectedIds.size) return;
   var ids = Array.from(selectedIds);
@@ -670,7 +688,6 @@ async function doDelete() {
   } catch (e) { alert('Error deleting: ' + e.message); }
 }
 
-/* ---- Search ---- */
 function doSearch() {
   var q = document.getElementById('search-input').value.trim();
   if (!q) return;
@@ -681,7 +698,6 @@ function clearSearch() {
   lastQ = ''; isSearchMode = false; currentPage = 1; loadPage();
 }
 
-/* ---- Edit ---- */
 async function openEditModal(ctx_id) {
   document.getElementById('edit-status').textContent = 'Loading…';
   document.getElementById('modal-edit').classList.remove('hidden');
@@ -742,7 +758,6 @@ async function saveEdit() {
   }
 }
 
-/* ---- Search & Replace ---- */
 function getSrFields() {
   return Array.from(document.querySelectorAll('input[name="sr-field"]:checked')).map(function (c) { return c.value; });
 }
@@ -846,7 +861,6 @@ async function replaceAll() {
   } catch (e) { alert('Error: ' + e.message); }
 }
 
-/* ---- Expand ---- */
 function expandShow(content, type) {
   var box = document.getElementById('expand-content');
   if (type === 'json') {
@@ -855,7 +869,6 @@ function expandShow(content, type) {
   document.getElementById('expand-overlay').classList.remove('hidden');
 }
 
-/* ---- Inline cell editing ---- */
 var EDITABLE_COLS = new Set(['text', 'json', 'role', 'turn_id', 'id']);
 var LONG_COLS     = new Set(['text', 'json']);
 
@@ -935,8 +948,16 @@ function startInlineEdit(td, ctx_id, col) {
   });
 }
 
-/* ---- Events ---- */
+function toggleSidebar() {
+  var sb  = document.getElementById('ctx-sidebar');
+  var btn = document.getElementById('sidebar-toggle');
+  var collapsed = sb.classList.toggle('collapsed');
+  btn.innerHTML = collapsed ? '&#9654;' : '&#9664;';
+  try { localStorage.setItem('ctx_sidebar_collapsed', collapsed ? '1' : '0'); } catch {}
+}
+
 function setupEvents() {
+  document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
   document.getElementById('btn-search').addEventListener('click', doSearch);
   document.getElementById('search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
   document.getElementById('btn-clear-search').addEventListener('click', clearSearch);
@@ -990,6 +1011,14 @@ async function loadAll() {
 }
 (async function () {
   setupEvents();
+  try {
+    if (localStorage.getItem('ctx_sidebar_collapsed') === '1') {
+      var _sb = document.getElementById('ctx-sidebar');
+      var _btn = document.getElementById('sidebar-toggle');
+      if (_sb) _sb.classList.add('collapsed');
+      if (_btn) _btn.innerHTML = '&#9654;';
+    }
+  } catch {}
   var banner = document.getElementById('db-banner');
   if (banner && banner.style.display !== 'none') {
     setStatus('DB error - page started without database. Check bot logs.', true);

@@ -212,6 +212,12 @@
  * @property {string}      [subchannel]  - Active subchannel identifier
  * @property {string}      [subchannelId] - Alias for subchannel
  *
+ * Webpage modules (each reads wo.http.port to decide whether to handle the request):
+ *   00048 webpage-chat        port 3112  /chat        — AI chat SPA; toolcall status polled via GET /chat/api/toolstatus
+ *   00053 webpage-context     port 3118  /context     — context DB editor; sidebar collapsible (localStorage)
+ *   00058 webpage-keymanager  port 3122  /key-manager — bot_secrets CRUD; value column flex:1 (full available width)
+ *   00059 webpage-live        port 3123  /live        — live transcript monitor; GET /live/api/channels + /messages
+ *
  * ── Voice ─────────────────────────────────────────────────────────────────────
  * @property {TtsSegment[]} [ttsSegments]     - TTS audio buffers produced by 08100-core-voice-tts
  * @property {string}       [transcribeSkipped] - Why transcription was skipped (e.g. "too_small", "no_audio")

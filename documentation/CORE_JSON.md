@@ -1197,6 +1197,46 @@ Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and 
 
 ---
 
+### webpage-live
+
+Live context monitor SPA (`modules/00059-webpage-live.js`) on port 3123, `/live`. Polls the `context` table and streams new rows as a real-time chat transcript. Channel selection, field toggles (timestamp, channel ID, role), and autoscroll state persist in `localStorage`.
+
+**Message parsing:** the `json` column of each context row is parsed to extract `authorName` (displayed as the speaker label) and `content` (the message text). Rows with `internal_meta: true` or text starting with `META|` are suppressed.
+
+```jsonc
+"webpage-live": {
+  "flow":           ["webpage"],
+  "port":           3123,
+  "basePath":       "/live",
+  "allowedRoles":   ["admin"],
+  "pollIntervalMs": 2000,
+  "messageLimit":   300
+}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `flow` | — | Must include `"webpage"` |
+| `port` | `3123` | HTTP port |
+| `basePath` | `"/live"` | URL prefix |
+| `allowedRoles` | `["admin"]` | Roles permitted to access the page |
+| `pollIntervalMs` | `2000` | Default poll interval (ms); minimum 500; overridable in UI |
+| `messageLimit` | `300` | Maximum rows per API response; caps the initial load limit available in the UI |
+
+**HTTP routes:**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/live` | Main SPA |
+| `GET` | `/live/style.css` | Shared stylesheet |
+| `GET` | `/live/api/channels` | Distinct channel IDs with row counts |
+| `GET` | `/live/api/messages?channels=a,b&afterId=N&limit=L` | Rows newer than cursor `N` for the given channels |
+
+- Add `3123` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /live* localhost:3123` to your Caddyfile
+
+---
+
 ### bard
 
 Headless music scheduler flow. Polls the registry every `pollIntervalMs` milliseconds, selects tracks from `library.xml` based on AI mood labels, and writes `bard:stream:{guildId}` for the browser player.

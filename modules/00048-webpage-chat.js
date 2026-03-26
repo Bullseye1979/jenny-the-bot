@@ -9,7 +9,17 @@
 /*          is handled by core-channel-config (api flow), not webpage-channel-config.*
 /*                                                                                   *
 /* Routes:                                                                           *
+/*   GET  /chat                            — main SPA (HTML)                        *
+/*   GET  /chat/style.css                  — shared stylesheet                      *
+/*   GET  /chat/api/chats                  — visible chat list for current user      *
+/*   GET  /chat/api/context                — conversation history for a channel      *
 /*   GET  /chat/api/toolstatus?channelID=  — active toolcall name for channel        *
+/*   GET  /chat/api/subchannels            — list subchannels for a channel          *
+/*   POST /chat/api/subchannels            — create subchannel                       *
+/*   PATCH /chat/api/subchannels           — rename / update subchannel settings     *
+/*   DELETE /chat/api/subchannels          — delete subchannel                       *
+/*   POST /chat/api/chat                   — send message (proxy to /api)            *
+/*   POST /chat/api/upload                 — upload file attachment (proxy)          *
 /************************************************************************************/
 
 import fs     from "node:fs";
@@ -569,7 +579,7 @@ function getChatHtml(opts) {
     "#chat-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;flex:1}\n" +
     "#chat-file-clear{background:none;border:none;color:var(--muted);cursor:pointer;padding:0 4px;font-size:14px;line-height:1;flex-shrink:0}\n" +
     "#chat-file-clear:hover{color:var(--dan)}\n" +
-    "#chat-attach-btn{background:none;border:none;cursor:pointer;padding:0 4px;font-size:18px;color:var(--muted);line-height:1;flex-shrink:0;opacity:.75}\n" +
+    "#chat-attach-btn{background:none;border:none;cursor:pointer;padding:0 4px;font-size:18px;color:var(--muted);line-height:1;flex-shrink:0;opacity:.75;align-self:center}\n" +
     "#chat-attach-btn:hover{opacity:1}\n" +
     "</style>\n" +
     "</head>\n" +

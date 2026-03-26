@@ -49,11 +49,8 @@ ${getThemeHeadScript()}
   .km-table th { background:var(--bg3); font-weight:600; white-space:nowrap; }
   .km-table tr:nth-child(even) td { background:var(--bg3); }
   .km-name { font-family:monospace; font-weight:600; }
-  .km-val-row { display:flex; align-items:center; gap:.25rem; margin-top:.3rem; flex-wrap:nowrap; }
-  .km-val-box {
-    display:inline-block; width:240px; overflow:hidden;
-    vertical-align:middle; flex-shrink:1; min-width:0;
-  }
+  .km-val-row { display:flex; align-items:center; gap:.25rem; margin-top:.3rem; flex-wrap:nowrap; width:100%; }
+  .km-val-box { flex:1; overflow:hidden; min-width:0; }
   .km-val-text {
     display:block; font-family:monospace; font-size:.8rem; color:var(--muted);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; width:100%;
@@ -87,7 +84,6 @@ ${getThemeHeadScript()}
   .km-section-title { font-size:1.1rem; font-weight:600; margin:1.5rem 0 .5rem; }
   @media (max-width:600px) {
     .km-col-desc { display:none; }
-    .km-val-box { width:130px; }
   }
 </style>
 </head>

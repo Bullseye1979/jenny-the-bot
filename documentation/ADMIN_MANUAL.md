@@ -1290,6 +1290,34 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
 
 ---
 
+#### config.webpage-live
+
+Live context monitor SPA (`modules/00059-webpage-live.js`, port 3123, `/live`). Polls the `context` table at a configurable interval and streams new rows as a live chat transcript. Channels are shown as checkboxes (select one or more); fields (timestamp, channel ID, role) are toggleable. `json.authorName` and `json.content` are extracted from the stored JSON to produce readable author names and message texts — Discord user messages always carry both. Autoscroll and polling state persist in `localStorage`.
+
+```jsonc
+"webpage-live": {
+  "flow":             ["webpage"],
+  "port":             3123,
+  "basePath":         "/live",
+  "allowedRoles":     ["admin"],
+  "pollIntervalMs":   2000,
+  "messageLimit":     300
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3123`) — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `basePath` | URL prefix (default `"/live"`) |
+| `allowedRoles` | Roles allowed to access the page (default `["admin"]`) |
+| `pollIntervalMs` | Default poll interval in ms; overridable in the UI (default `2000`, min `500`) |
+| `messageLimit` | Max rows returned per API call; also the max initial load limit selectable in the UI (default `300`) |
+
+> Add `3123` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`, and add `reverse_proxy /live* localhost:3123` to your Caddyfile.
+
+---
+
 #### config.cron
 
 Runs scheduled background jobs.
@@ -2281,11 +2309,13 @@ export default async function myModule(coreData) {
 | 00050 | `discord-admin-commands` | Discord-level admin commands only. `discord-admin` flow: `/purge` (bulk-delete Discord messages with rate-limit backoff), `/error` (simulated error). `discord` flow (DM only): `!purge [N]` (delete up to N bot messages from the DM channel). DB-level commands (`purgedb`, `freeze`) are handled by `00055-core-admin-commands`. |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
 | 00052 | `webpage-wiki` | AI-driven Fandom-style wiki (port 3117, `/wiki`) |
-| 00053 | `webpage-context` | Context DB editor SPA (port 3118, `/context`) — channel browser, field selector, search, search & replace, bulk delete |
+| 00053 | `webpage-context` | Context DB editor SPA (port 3118, `/context`) — channel browser with collapsible sidebar (state persisted in `localStorage`), field selector, search, search & replace, bulk delete |
 | 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) |
 | 00055 | `core-admin-commands` | DB-level admin commands for all relevant flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` in payload. `api`: `/purgedb`, `/freeze` slash-text in payload. No Discord-API access — pure DB operations only. |
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
 | 00057 | `webpage-gdpr` | GDPR data-export SPA (port 3121, `/gdpr`) — allows logged-in users to download an Excel file containing their context history, consent records, and stored files. Requires `exceljs` npm package. |
+| 00058 | `webpage-keymanager` | Secret manager SPA (port 3122, `/key-manager`) — CRUD for `bot_secrets` table. Value column uses full available width (`flex:1`), responsive. Eye/copy buttons fixed outside the value box. |
+| 00059 | `webpage-live` | Live context monitor SPA (port 3123, `/live`) — selectable channel checkboxes, field toggles (timestamp, channel, role), configurable poll interval, autoscroll toggle with `localStorage` persistence. Parses `json.authorName` and `json.content` from Discord context entries to display chat transcripts in real time. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
@@ -3174,6 +3204,10 @@ Both domains share a single Caddyfile block. Caddy obtains a TLS certificate for
 | `/wiki`, `/wiki/*` | 3117 | `webpage-wiki` |
 | `/context`, `/context/*` | 3118 | `webpage-context` |
 | `/voice`, `/voice/*` | 3119 | `webpage-voice` |
+| `/gallery`, `/gallery/*` | 3120 | `webpage-gallery` |
+| `/gdpr`, `/gdpr/*` | 3121 | `webpage-gdpr` |
+| `/key-manager`, `/key-manager/*` | 3122 | `webpage-keymanager` |
+| `/live`, `/live/*` | 3123 | `webpage-live` |
 | `/` (root) | — | redirects to `/chat` (302) |
 
 **Access control for unknown paths:**
@@ -3290,6 +3324,8 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00053-webpage-context.js` | 3118 | `/context` | `webpage-context` | Context DB editor — browse, search, search & replace, bulk-delete conversation rows |
 | `00056-webpage-gallery.js` | 3120 | `/gallery` | `webpage-gallery` | Image gallery — browse, upload and delete the logged-in user's generated images |
 | `00057-webpage-gdpr.js` | 3121 | `/gdpr` | `webpage-gdpr` | GDPR data export — download personal data as Excel (context, consent, files) |
+| `00058-webpage-keymanager.js` | 3122 | `/key-manager` | `webpage-keymanager` | Secret manager — CRUD for `bot_secrets` table; value column full-width responsive |
+| `00059-webpage-live.js` | 3123 | `/live` | `webpage-live` | Live context monitor — real-time transcript stream, channel/field selection, autoscroll |
 
 ### How Web Modules Work
 
