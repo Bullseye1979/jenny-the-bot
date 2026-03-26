@@ -559,7 +559,7 @@ getThemeHeadScript() + "\n" +
 '  <div class="now-playing-row"><span class="now-playing-title" id="np-title">—</span><span class="now-playing-labels" id="np-labels"></span></div>\n' +
 '  <div id="np-file"></div>\n' +
 '  <div id="live-player">\n' +
-'    <div id="player-start"><button class="btn btn-p" onclick="unlockPlayer()" style="width:100%;margin-bottom:6px">▶ Zum Anhören klicken</button></div>\n' +
+'    <div id="player-start"><button class="btn btn-p" onclick="unlockPlayer()" style="width:100%;margin-bottom:6px">▶ Click to listen</button></div>\n' +
 '    <div id="player-track"><div id="player-bar"></div></div>\n' +
 '    <div class="player-controls">\n' +
 '      <span id="player-time">0:00 / 0:00</span>\n' +

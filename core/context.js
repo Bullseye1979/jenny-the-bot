@@ -1,6 +1,6 @@
 /************************************************************************************/
 /* filename: context.js                                                              *
-/* Version 1.2                                                                       *
+/* Version 1.0                                                                       *
 /* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline         *
 /*          summaries, user-block capping, extra channels, and subchannel support.   *
 /************************************************************************************/

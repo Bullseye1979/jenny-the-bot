@@ -1,12 +1,14 @@
-/****************************************************************************************************************
-* filename: 00055-core-admin-commands.js                                                                           *
-* Version 2.0                                                                                                  *
-* Purpose: DB-level admin commands (purgedb, freeze) for all relevant flows.                                   *
-*          discord-admin flow : reads wo.admin.command; target channel from wo.admin.channelId || wo.channelID.*
-*          discord flow (DM)  : parses "!purgedb" from wo.payload; purges current channelID.                   *
-*          api flow           : parses "/purgedb" or "/freeze" from wo.payload.                                *
-*          Discord-level commands (purge, error) are handled by 00050-discord-admin-commands.                  *
-****************************************************************************************************************/
+/************************************************************************************/
+/* filename: 00055-core-admin-commands.js                                           *
+/* Version 1.0                                                                      *
+/* Purpose: DB-level admin commands (purgedb, freeze) for all relevant flows.       *
+/*          discord-admin flow : reads wo.admin.command;                            *
+/*            target channel from wo.admin.channelId || wo.channelID.              *
+/*          discord flow (DM)  : parses "!purgedb" from wo.payload;                *
+/*            purges current channelID.                                             *
+/*          api flow           : parses "/purgedb" or "/freeze" from wo.payload.   *
+/*          Discord-level commands (purge, error) are handled by 00050.            *
+/************************************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
 import { setPurgeContext, setFreezeContext } from "../core/context.js";

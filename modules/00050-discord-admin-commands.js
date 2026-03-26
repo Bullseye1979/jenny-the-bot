@@ -1,14 +1,11 @@
-/**************************************************************
-/* filename: 00050-discord-admin-commands.js                     *
-/* Version 2.0                                               *
-/* Purpose: Discord-level admin commands only.               *
-/*          discord-admin flow: /purge (delete Discord msgs), *
-/*            /error (simulated error).                      *
-/*          discord flow (DM only): !purge [N] (delete bot   *
-/*            messages from DM channel).                     *
-/*          DB-level commands (purgedb, freeze) are handled  *
-/*          by 00055-core-admin-commands.                    *
-/**************************************************************/
+/************************************************************************************/
+/* filename: 00050-discord-admin-commands.js                                        *
+/* Version 1.0                                                                      *
+/* Purpose: Discord-level admin commands only.                                      *
+/*          discord-admin flow: /purge (delete Discord msgs), /error (sim. error). *
+/*          discord flow (DM only): !purge [N] (delete bot msgs from DM channel).  *
+/*          DB-level commands (purgedb, freeze) are handled by 00055.              *
+/************************************************************************************/
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
 

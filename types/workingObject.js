@@ -57,10 +57,37 @@
  * Authenticated user info set by 00040-webpage-auth.
  *
  * @typedef {Object} WebAuth
- * @property {string} userId   - Discord user ID
- * @property {string} id       - Alias for userId
- * @property {string} role     - Role name (e.g. "admin", "editor", "member", "dnd")
- * @property {string} guildId  - Discord guild ID the session was authenticated against
+ * @property {string}   userId    - Discord user ID
+ * @property {string}   id        - Alias for userId
+ * @property {string}   username  - Discord display name / username
+ * @property {string}   role      - Primary role name (e.g. "admin", "editor", "member", "dnd")
+ * @property {string[]} [roles]   - Additional role names (secondary roles, if any)
+ * @property {string}   guildId   - Discord guild ID the session was authenticated against
+ */
+
+/**
+ * Database connection config, copied from core.json `db` section into the working object
+ * by core/setup.js. Used by core/context.js, core/secrets.js, and any module calling them.
+ *
+ * @typedef {Object} DbConfig
+ * @property {string} host     - MySQL hostname
+ * @property {number} port     - MySQL port (default 3306)
+ * @property {string} user     - MySQL username
+ * @property {string} password - MySQL password
+ * @property {string} database - MySQL database name
+ */
+
+/**
+ * Admin command descriptor set by flows/discord-admin.js for every slash command interaction.
+ *
+ * @typedef {Object} AdminContext
+ * @property {string}      command          - Slash command name (e.g. "bardstart", "purge")
+ * @property {Object}      options          - Resolved option values keyed by option name
+ * @property {string|null} subcommand       - Subcommand name, if any
+ * @property {string|null} subcommandGroup  - Subcommand group name, if any
+ * @property {string}      userId           - Discord user ID who triggered the command
+ * @property {string}      channelId        - Channel ID the interaction occurred in
+ * @property {string}      guildId          - Guild ID the interaction occurred in
  */
 
 /**
@@ -98,6 +125,61 @@
  * @property {string|string[]} [flowModuleRemove] - Module name(s) to skip in this run
  * @property {string}   [baseUrl]        - Public-facing base URL used for media document links (e.g. "https://xbullseyegaming.de")
  *
+ * ── Bot identity (set by core/setup.js from core.json) ────────────────────────
+ * @property {string}   botName          - Display name of the bot
+ * @property {string}   trigger          - Trigger word / prefix (e.g. "jenny")
+ * @property {string}   persona          - Short persona description passed to AI
+ * @property {string}   instructions     - Behavioural instructions passed to AI
+ * @property {string}   timezone         - IANA timezone string (e.g. "Europe/Berlin")
+ *
+ * ── AI config (defaults from setup.js, overridable per-channel via core.json) ─
+ * @property {string}   apiKey           - OpenAI / AI provider API key (placeholder resolved via secrets.js)
+ * @property {string}   endpoint         - Chat completions endpoint URL
+ * @property {string}   endpointResponses - Responses API endpoint URL
+ * @property {string}   model            - Model name override (e.g. "gpt-4o", "claude-sonnet-4-6")
+ * @property {string}   useAiModule      - AI module selector: "completions" | "responses" | "pseudotoolcalls" | "roleplay"
+ * @property {string}   [systemPrompt]   - System prompt override for this request
+ * @property {number}   temperature      - Sampling temperature
+ * @property {number}   maxTokens        - Max tokens for AI response
+ * @property {number}   contextSize      - Max context rows loaded from DB
+ * @property {number}   contextTokenBudget - Max tokens allocated to context
+ * @property {number}   triggerWordWindow  - Number of words scanned for trigger detection
+ * @property {string}   toolChoice       - AI tool selection mode ("auto", "none", "required")
+ * @property {Array}    [tools]          - AI tool definitions; set to [] to disable all tools
+ * @property {Array}    [responseTools]  - Built-in Responses API tools (e.g. web_search, image_generation); consumed by 01001-core-ai-responses
+ * @property {boolean}  includeHistory   - Whether to include chat history in context
+ * @property {boolean}  includeRuntimeContext - Whether to include runtime context (time, channel info)
+ * @property {boolean}  moderationEnabled  - Whether to run output through the moderation module
+ * @property {number}   maxLoops         - Max agentic tool-call loops
+ * @property {number}   maxToolCalls     - Max individual tool calls per run
+ * @property {number}   requestTimeoutMs - HTTP request timeout for AI calls (ms)
+ * @property {boolean}  showReactions    - Whether to show Discord reaction spinner
+ * @property {string[]} [logging]        - Logging category flags
+ * @property {Object}   toolsconfig      - Per-tool configuration keyed by tool name
+ *
+ * ── TTS / Whisper ─────────────────────────────────────────────────────────────
+ * @property {string}   ttsModel            - TTS model name (e.g. "tts-1")
+ * @property {string}   ttsVoice            - TTS voice name (e.g. "nova")
+ * @property {string}   ttsEndpoint         - TTS API endpoint URL
+ * @property {string}   ttsApiKey           - TTS API key (placeholder resolved via secrets.js)
+ * @property {string}   transcribeModel     - Transcription model name (e.g. "gpt-4o-mini-transcribe")
+ * @property {string}   transcribeLanguage  - ISO 639-1 language hint for transcription (empty = auto-detect)
+ * @property {string}   transcribeEndpoint  - Transcription API base URL
+ * @property {string}   transcribeApiKey    - Transcription API key (placeholder resolved via secrets.js)
+ * @property {boolean}  [transcribeAudio]   - When true, 00030-core-voice-transcribe processes wo.audioFile
+ * @property {boolean}  [transcribeOnly]    - Transcribe speech but skip AI completion (uses diarize model)
+ * @property {number}   [transcribeChunkS]  - Audio chunk duration in seconds (overrides cfg)
+ * @property {number}   [transcribeOverlapS] - Audio chunk overlap in seconds (overrides cfg)
+ * @property {string}   [audioFile]         - Absolute path to the audio file to transcribe
+ *
+ * ── API gate ──────────────────────────────────────────────────────────────────
+ * @property {number}   apiEnabled       - 1 = API access allowed (with optional secret), 0 = always blocked
+ * @property {string}   apiSecret        - Placeholder name for the API bearer secret (resolved via secrets.js)
+ * @property {string}   [httpAuthorization] - Raw Authorization header value from the HTTP request (set by flows/api.js)
+ *
+ * ── Database ──────────────────────────────────────────────────────────────────
+ * @property {DbConfig} db               - MySQL connection config (copied from core.json by setup.js)
+ *
  * ── Discord ───────────────────────────────────────────────────────────────────
  * @property {string}   [id]             - Discord channel ID (same as channelID in discord flow)
  * @property {*}        [message]        - Raw Discord.js Message object
@@ -113,6 +195,9 @@
  * @property {string[]} [botsAllow]      - Bot user IDs allowed to trigger the flow without being filtered
  * @property {string}   [updateStatus]   - When truthy, 03000-discord-status-apply updates the bot presence
  * @property {boolean}  [useVoiceChannel] - Route TTS output to the Discord voice channel instead of text
+ *
+ * ── Discord Admin ─────────────────────────────────────────────────────────────
+ * @property {AdminContext} [admin]      - Slash command context; set by flows/discord-admin.js
  *
  * ── API ───────────────────────────────────────────────────────────────────────
  * @property {"http"|"api"} [source]     - "http" for webpage flow, "api" for api flow
@@ -131,12 +216,6 @@
  * @property {TtsSegment[]} [ttsSegments]     - TTS audio buffers produced by 08100-core-voice-tts
  * @property {string}       [transcribeSkipped] - Why transcription was skipped (e.g. "too_small", "no_audio")
  * @property {boolean}      [transcribeOnly]  - Transcribe speech but skip AI completion
- *
- * ── AI ────────────────────────────────────────────────────────────────────────
- * @property {string}  [aiType]          - AI module selector: "completions", "responses", "pseudotoolcalls", "roleplay"
- * @property {string}  [model]           - Model override (e.g. "gpt-4o", "claude-opus-4-6")
- * @property {string}  [systemPrompt]    - System prompt override for this request
- * @property {Array}   [tools]           - AI tool definitions; set to [] to disable all tools
  */
 
 export {};

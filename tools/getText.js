@@ -56,12 +56,12 @@ function getParsedArgs(args){
   if (args && typeof args === "object" && !Array.isArray(args)) {
     return {
       text: String(args.text || "").trim(),
-      dateiname: String(args.dateiname || "").trim()
+      filename: String(args.filename || "").trim()
     };
   }
   return {
     text: String(args || "").trim(),
-    dateiname: ""
+    filename: ""
   };
 }
 
@@ -77,17 +77,17 @@ async function getInvoke(args, coreData){
     const wo = coreData?.workingObject || {};
     const cfg = wo?.toolsconfig?.getText || {};
 
-    const { text, dateiname } = getParsedArgs(args);
+    const { text, filename } = getParsedArgs(args);
     if (!text) {
       return { ok: false, error: "GET_TEXT_INPUT — Missing 'text'." };
     }
 
     const baseName = getNormalizedFilename(
-      dateiname && !/\.[a-z0-9]+$/i.test(dateiname) ? dateiname : dateiname?.split(".")[0],
+      filename && !/\.[a-z0-9]+$/i.test(filename) ? filename : filename?.split(".")[0],
       "text"
     );
 
-    const ext = getDetectedExt(text, dateiname);
+    const ext = getDetectedExt(text, filename);
 
     const { filePath, fileName, publicUrl } = await setWrittenTextFile(text, baseName, ext, cfg, wo);
 
@@ -122,7 +122,7 @@ export default {
             type: "string",
             description: "Plaintext content to write. Can be code, HTML, JSON, etc."
           },
-          dateiname: {
+          filename: {
             type: "string",
             description: "Optional desired base filename. May include extension. If omitted, name is auto-generated."
           }

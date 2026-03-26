@@ -1,6 +1,6 @@
 /************************************************************************************/
 /* filename: 00048-webpage-chat.js                                                   *
-/* Version 2.0                                                                       *
+/* Version 1.0                                                                       *
 /* Purpose: Webpage chat SPA (port 3112, /chat). Handles channel listing, context    *
 /*          display, AI completions (via internal POST /api proxy), and subchannel   *
 /*          CRUD. Config section: config["webpage-chat"]. Reads wo.db for DB access. *

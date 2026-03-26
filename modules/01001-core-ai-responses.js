@@ -7,7 +7,7 @@
 /*          and returns a final combined summary.                                   *
 /*          When tool-call budget is exhausted, forces a final synthesis run        *
 /*          with tools disabled (tool_choice="none").                               *
-/*          Built-in Responses tools are controlled via workingObject.ResponseTools *
+/*          Built-in Responses tools are controlled via workingObject.responseTools *
 /*          (defaults to OFF when missing/empty).                                   *
 /************************************************************************************/
 import { getContext } from "../core/context.js";
@@ -220,7 +220,6 @@ function getReasoningEffort(wo) {
 
 
 function getResponseToolsRaw(wo) {
-  if (Array.isArray(wo?.ResponseTools)) return wo.ResponseTools;
   if (Array.isArray(wo?.responseTools)) return wo.responseTools;
   return [];
 }
@@ -912,7 +911,7 @@ export default async function getCoreAi(coreData) {
   const responseToolsInfo = responseToolsNormalized.length ? responseToolsNormalized.map(x => x?.type).filter(Boolean).join(", ") : "(none)";
 
   log(`Using baseUrl="${baseUrl || "(relative /documents)"}"`, "info");
-  log(`Responses built-in tools (workingObject.ResponseTools): ${responseToolsInfo}`, "info");
+  log(`Responses built-in tools (workingObject.responseTools): ${responseToolsInfo}`, "info");
 
   let snapshot = [];
   if (Array.isArray(wo._contextSnapshot)) {
