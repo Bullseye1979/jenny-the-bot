@@ -47,8 +47,8 @@ ${getThemeHeadScript()}
   .km-table { width:100%; border-collapse:collapse; margin-top:1rem; table-layout:fixed; }
   .km-table th, .km-table td { padding:.5rem .75rem; border:1px solid var(--bdr); text-align:left; vertical-align:top; overflow:hidden; }
   .km-table th { background:var(--bg3); font-weight:600; white-space:nowrap; }
-  .km-table th:first-child { width:50%; }
-  .km-table th:last-child  { width:90px; }
+  .km-table th:first-child { width:60%; }
+  .km-table th:last-child  { width:60px; }
   .km-table tr:nth-child(even) td { background:var(--bg3); }
   .km-name { font-family:monospace; font-weight:600; }
   .km-val-row { display:flex; align-items:center; gap:.25rem; margin-top:.3rem; flex-wrap:nowrap; width:100%; }
