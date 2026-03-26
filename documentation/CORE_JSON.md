@@ -682,14 +682,17 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 
 ### webpage-bard
 
-Bard music library manager SPA served as a **webpage-flow module** (`modules/00046`) on port 3114. Provides MP3 upload, tag editing, track deletion, and Bulk Auto-Tag upload.
+Bard music library manager SPA served as a **webpage-flow module** (`modules/00043`) on port 3114. Provides MP3 upload, tag editing, track deletion, and Bulk Auto-Tag upload.
+
+Access is **tiered**: `allowedRoles` grants basic access (Now Playing card + audio stream); `adminRoles` additionally grants full upload and library management rights. Users with no matching role in `allowedRoles` receive a full HTML 403 deny.
 
 ```jsonc
 "webpage-bard": {
   "flow":         ["webpage"],
   "port":         3114,
   "basePath":     "/bard",
-  "allowedRoles": ["admin"],
+  "allowedRoles": ["admin", "dnd"],
+  "adminRoles":   ["admin"],
   "autoTag": {
     "enabled":          false,
     "tavilyApiKey":     "tvly-…",
@@ -712,7 +715,8 @@ Bard music library manager SPA served as a **webpage-flow module** (`modules/000
 | `flow` | Must include `"webpage"` |
 | `port` | HTTP port (default `3114`) — must also be in `config.webpage.ports` |
 | `basePath` | URL base path (default `"/bard"`) |
-| `allowedRoles` | Roles allowed to access the UI (e.g. `["admin"]`). Set to `[]` for public access |
+| `allowedRoles` | Roles that may access the page at all (Now Playing + audio stream). Empty `[]` = public access. Example: `["admin","dnd"]` |
+| `adminRoles` | Roles that additionally get full admin rights (upload, tag editing, delete, autotag). Empty `[]` = nobody. Example: `["admin"]` |
 | `autoTag.enabled` | Set to `true` to enable the Bulk Auto-Tag Upload endpoint |
 | `autoTag.tavilyApiKey` | Tavily API key — used to look up song genre/mood context |
 | `autoTag.tavilyMaxResults` | Number of Tavily results to use for context (default `5`) |

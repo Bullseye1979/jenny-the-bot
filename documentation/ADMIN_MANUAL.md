@@ -2301,7 +2301,7 @@ export default async function myModule(coreData) {
 | 00040 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
 | 00041 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
 | 00042 | `webpage-inpaint` | Redirect `GET /documents/*.<ext>` (PNG, JPG, JPEG, WebP, GIF, BMP) to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. Use a fixed hostname (e.g. `"jenny.ralfreschke.de/inpainting"`) pointing to the domain where users log in, so the session cookie is valid on the inpainting SPA. |
-| 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
+| 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — tiered access (allowedRoles = basic listener access, adminRoles = full upload/manage rights, no matching role = 403 deny); bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00044 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. |
 | 00047 | `webpage-voice` | Webpage voice interface — serves a browser-based always-on SPA and handles incoming audio POST requests, bridging the browser microphone into the bot pipeline. |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
@@ -3470,13 +3470,27 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 
 ### 16.5 Bard Library Manager (`/bard`)
 
+Access is **tiered** — roles grant rights additively:
+
+| Role group | Access |
+|---|---|
+| Not in `allowedRoles` | Full deny — styled HTML 403 page |
+| `allowedRoles` | Basic access — Now Playing card + audio stream |
+| `adminRoles` | Full admin — upload, tag editing, track deletion, autotag |
+
+Configure in `core.json["webpage-bard"]`:
+- `allowedRoles: ["admin", "dnd"]` — grants access to all listeners
+- `adminRoles: ["admin"]` — additionally grants upload and management rights
+
 **Bard (port 3114, /bard):**
-- `GET /bard` — renders the music library manager UI
-- `GET /bard/style.css` — serves shared CSS
-- `GET /bard/api/library` — returns `{tracks: [...], files: [...]}`
-- `POST /bard/api/autotag-upload` — bulk upload: saves MP3, queries Tavily for song context, calls LLM to generate 6 structured tags (`[location, situation, mood1, mood2, mood3, mood4]`), writes library.xml entry. Returns `{ok, filename, title, tags}`. Requires `config["webpage-bard"].autoTag.enabled = true`.
-- `POST /bard/api/tags` — updates track metadata (title, tags, volume)
-- `DELETE /bard/api/track` — deletes a track and its MP3 file
+- `GET /bard` — renders the music library manager UI (requires any allowed role)
+- `GET /bard/style.css` — serves shared CSS (public)
+- `GET /bard/api/nowplaying` — current track info (requires any allowed role)
+- `GET /bard/api/audio` — MP3 audio stream (requires any allowed role)
+- `GET /bard/api/library` — track list + file list (admin only)
+- `POST /bard/api/autotag-upload` — upload + AI-tag MP3 file (admin only). Queries Tavily for song context, calls LLM to generate 6 structured tags (`[location, situation, mood1, mood2, mood3, mood4]`), writes library.xml entry. Requires `config["webpage-bard"].autoTag.enabled = true`.
+- `POST /bard/api/tags` — updates track metadata: title, tags, volume (admin only)
+- `DELETE /bard/api/track` — removes a track from the library and deletes the MP3 file (admin only)
 
 ### 16.6 Live Dashboard (`/dashboard`)
 
@@ -4022,12 +4036,14 @@ Sets `wo.web.menu` for every webpage request. Menu items are defined globally in
   "items": [
     { "text": "💬 Chat",          "link": "/chat"      },
     { "text": "🖼 Inpainting",    "link": "/inpainting"},
-    { "text": "🎵 Bard",          "link": "/bard",       "roles": ["admin"] },
-    { "text": "📊 Dashboard",     "link": "/dashboard",  "roles": ["admin"] },
-    { "text": "⚙️ Config",         "link": "/config",     "roles": ["admin"] },
-    { "text": "📚 Docs",           "link": "/docs"       },
-    { "text": "📖 Wiki",           "link": "/wiki"       },
-    { "text": "🗄 Context",        "link": "/context",    "roles": ["admin"] }
+    { "text": "🎵 Bard",          "link": "/bard",        "roles": ["admin"] },
+    { "text": "📊 Dashboard",     "link": "/dashboard",   "roles": ["admin"] },
+    { "text": "⚙️ Config",         "link": "/config",      "roles": ["admin"] },
+    { "text": "📚 Docs",           "link": "/docs"        },
+    { "text": "📖 Wiki",           "link": "/wiki"        },
+    { "text": "🗄 Context",        "link": "/context",     "roles": ["admin"] },
+    { "text": "🔑 Key Manager",    "link": "/key-manager", "roles": ["admin"] },
+    { "text": "📡 Live",           "link": "/live",        "roles": ["admin"] }
   ]
 }
 ```

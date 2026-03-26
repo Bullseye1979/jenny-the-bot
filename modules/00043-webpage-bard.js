@@ -1,17 +1,30 @@
 /**********************************************************************************/
 /* filename: 00043-webpage-bard.js                                                */
 /* Version 1.0                                                                    */
-/* Purpose: Bard music manager SPA (port 3114, /bard-admin). Provides MP3 upload */
-/*          with auto-tagging, tag editor, play-preview buttons, and a live Now  */
+/* Purpose: Bard music manager SPA (port 3114, /bard). Provides MP3 upload with  */
+/*          auto-tagging, tag editor, play-preview buttons, and a live Now        */
 /*          Playing card. Serves the audio stream for the browser player via      */
 /*          HTTP range requests. Reads config only from config["webpage-bard"].   */
+/*          Access is tiered: allowedRoles grants basic access (Now Playing +      */
+/*          audio stream); adminRoles additionally grants upload, library          */
+/*          management and autotag. No matching role = full 403 deny.             */
+/*                                                                                */
+/* Routes:                                                                        */
+/*   GET  /bard                       SPA main page (requires any allowed role)   */
+/*   GET  /bard/style.css             Shared stylesheet (public)                  */
+/*   GET  /bard/api/nowplaying        Current track info (requires any role)      */
+/*   GET  /bard/api/audio             MP3 stream (requires any role)              */
+/*   GET  /bard/api/library           Track list + file list (admin only)         */
+/*   POST /bard/api/tags              Save track title/tags/volume (admin only)   */
+/*   POST /bard/api/autotag-upload    Upload + AI-tag MP3 file (admin only)       */
+/*   DELETE /bard/api/track          Remove track from library + disk (admin only) */
 /**********************************************************************************/
 
 import fs   from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
-import { setSendNow, setJsonResp, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
+import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
 import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-bard";
@@ -307,13 +320,15 @@ export default async function getWebpageBard(coreData) {
   const port         = Number(cfg.port ?? 3114);
   const basePath     = getBasePath(cfg);
   const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
+  const adminRoles   = Array.isArray(cfg.adminRoles)   ? cfg.adminRoles   : [];
   const musicDir     = getMusicDir(cfg);
 
   if (Number(wo.http?.port) !== port) return coreData;
 
   const method  = getStr(wo.http?.method ?? "GET").toUpperCase();
   const urlPath = getStr(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
-  const isAllowed = getIsAllowedRoles(wo, allowedRoles);
+  const isAnyAllowed = getIsAllowedRoles(wo, allowedRoles);
+  const isAdmin      = adminRoles.length > 0 && getIsAllowedRoles(wo, adminRoles);
 
   if (method === "GET" && urlPath === basePath + "/style.css") {
     const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
@@ -322,15 +337,20 @@ export default async function getWebpageBard(coreData) {
   }
 
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
+    if (!isAnyAllowed) {
+      wo.http.response = { status: 403, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getBardForbiddenHtml({ menu: wo.web?.menu || [], activePath: urlPath, webAuth: wo.webAuth, base: basePath }) };
+      wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
+    }
     wo.http.response = {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body: getBardHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, isAdmin: isAllowed, webAuth: wo.webAuth })
+      body: getBardHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, base: basePath, isAdmin: isAdmin, webAuth: wo.webAuth })
     };
     wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
   }
 
   if (method === "GET" && urlPath === basePath + "/api/nowplaying") {
+    if (!isAnyAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
     let reg = null;
     try { reg = await getItem("bard:registry"); } catch {}
     const sessionKeys = Array.isArray(reg?.list) ? reg.list : [];
@@ -345,9 +365,6 @@ export default async function getWebpageBard(coreData) {
       } catch {}
     }
 
-/**********************************************************************************/
-    /* Always serve the latest AI-generated labels, not just the ones frozen at track start */
-/**********************************************************************************/
     if (streamEntry?.guildId) {
       try {
         const latestLabels = await getItem(`bard:labels:${streamEntry.guildId}`);
@@ -365,6 +382,7 @@ export default async function getWebpageBard(coreData) {
   }
 
   if (method === "GET" && urlPath === basePath + "/api/audio") {
+    if (!isAnyAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
     const query    = wo.http?.query || {};
     const filename = path.basename(getStr(query.file || ""));
     if (!filename || !/\.mp3$/i.test(filename)) {
@@ -378,7 +396,7 @@ export default async function getWebpageBard(coreData) {
     return coreData;
   }
 
-  if (!isAllowed) {
+  if (!isAdmin) {
     setJsonResp(wo, 403, { error: "forbidden" });
     wo.jump = true; await setSendNow(wo); return coreData;
   }
@@ -475,6 +493,27 @@ export default async function getWebpageBard(coreData) {
   }
 
   return coreData;
+}
+
+function getBardForbiddenHtml({ menu, activePath, webAuth, base }) {
+  const menuHtml = getMenuHtml(menu || [], activePath || "/bard", "", null, null, webAuth);
+  return (
+'<!DOCTYPE html>\n<html lang="en">\n<head>\n' +
+'<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">\n' +
+'<title>🎵 Bard — Access Denied</title>\n' +
+getThemeHeadScript() + "\n" +
+'<link rel="stylesheet" href="' + (base || "/bard") + '/style.css">\n' +
+'</head>\n<body>\n' +
+'<header><h1>🎵 Bard</h1>' + (menuHtml ? menuHtml : "") + '</header>\n' +
+'<div style="margin-top:var(--hh);display:flex;align-items:center;justify-content:center;height:calc(100vh - var(--hh))">\n' +
+'<div style="text-align:center;padding:32px">\n' +
+'<div style="font-size:48px;margin-bottom:16px">🔒</div>\n' +
+'<h2 style="margin-bottom:8px">Access Denied</h2>\n' +
+'<p style="color:var(--muted);margin-bottom:20px">You do not have permission to access Bard.</p>\n' +
+'<a href="/" style="color:var(--acc)">← Back to home</a>\n' +
+'</div>\n</div>\n' +
+'</body>\n</html>'
+  );
 }
 
 function getBardHtml({ menu, role, activePath, base, isAdmin, webAuth }) {
@@ -580,7 +619,6 @@ getThemeHeadScript() + "\n" +
 '  setTimeout(function(){t.classList.remove("on");},ms||2800);\n' +
 '}\n' +
 '\n' +
-'/* ── Bulk Auto-Tag Upload ── */\n' +
 'var bulkFiles=[];\n' +
 'var _bulkRunning=false;\n' +
 '\n' +
@@ -665,7 +703,6 @@ getThemeHeadScript() + "\n" +
 '  nextFile();\n' +
 '}\n' +
 '\n' +
-'/**********************************************************************************/\n' +
 'function loadLibrary(){\n' +
 '  fetch(BASE+"/api/library").then(function(r){return r.json();})\n' +
 '  .then(function(d){renderLibrary(d.tracks||[]);}).catch(function(e){toast("Load error: "+e.message,5000);});\n' +
