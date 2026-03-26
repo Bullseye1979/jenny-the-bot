@@ -1279,10 +1279,10 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
 | `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Per-chat override — each entry can point to a different API. |
-| `chats[].apiSecret` | Bearer token sent with every AI request for this chat. Must match the `apiSecret` configured in `core-channel-config` for the target channel. Leave empty if the channel has no token gate. |
+| `chats[].apiSecret` | Placeholder name resolved from `bot_secrets` at runtime via `getSecret()`, or a literal token. Sent as `Authorization: Bearer` with every AI request and file upload proxy request. Must match the `apiSecret` in `core-channel-config`. Falls back to top-level `cfg.apiSecret` if omitted. Leave empty if no token gate is active. |
 | `chats[].roles` | Optional role restriction for this chat entry |
 
-> `apiUrl` and `apiSecret` are per chat entry. Different chats can use different API endpoints and secrets. There is no global fallback — each chat entry must declare its own values if token gating is active.
+> `apiUrl` and `apiSecret` are per chat entry. Different chats can use different API endpoints and secrets. If a chat entry omits `apiSecret`, the top-level `cfg.apiSecret` is used as fallback. Both support `bot_secrets` placeholder resolution.
 
 > AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
 

@@ -671,7 +671,7 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
 | `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Also used to derive the upload endpoint (`/upload`). |
-| `chats[].apiSecret` | Bearer token sent with AI requests and file upload proxy requests. Leave empty if no token gate is configured. |
+| `chats[].apiSecret` | Placeholder name resolved from `bot_secrets` at runtime via `getSecret()`, or a literal token. Sent as `Authorization: Bearer` with AI requests and file upload proxy requests. Falls back to top-level `cfg.apiSecret` if omitted per entry. Leave empty if no token gate is configured. |
 | `chats[].roles` | Optional role restriction for this chat entry |
 
 > AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.

@@ -13,6 +13,7 @@ import fs     from "node:fs";
 import crypto from "node:crypto";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { setSendNow, setJsonResp, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-chat";
 
@@ -229,7 +230,7 @@ export default async function getWebpageChat(coreData) {
 
     try {
       const apiUrl     = String(cfg.apiUrl || "http://localhost:3400/api").trim();
-      const apiSecret  = String(cfg.apiSecret || "").trim();
+      const apiSecret  = await getSecret(wo, String(cfg.apiSecret || "").trim());
       const uploadUrl  = apiUrl.replace(/\/api\/?$/, "/upload");
       const headers    = { "Content-Type": contentType, "X-Filename": filename };
       if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
@@ -301,14 +302,8 @@ export default async function getWebpageChat(coreData) {
         } catch {}
       }
 
-      /* Build the API request body.
-         Context writing is handled by 00072-api-add-context on the API side,
-         so we do NOT set doNotWriteToContext.
-         Subchannel overrides are sent as promptAddition so the API-side system
-         can incorporate them (the API flow's core-ai-context-loader will apply
-         the subchannel context). We pass subchannelId so context is scoped. */
       const apiUrl    = String(chatEntry.apiUrl    || cfg.apiUrl    || "http://localhost:3400/api").trim();
-      const apiSecret = String(chatEntry.apiSecret || cfg.apiSecret || "").trim();
+      const apiSecret = await getSecret(wo, String(chatEntry.apiSecret || cfg.apiSecret || "").trim());
 
       const reqBody = {
         channelID,
