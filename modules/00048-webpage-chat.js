@@ -7,6 +7,9 @@
 /*          Subchannel names stored in chat_subchannels table.                       *
 /*          AI calls are routed through POST localhost:3400/api — channel config      *
 /*          is handled by core-channel-config (api flow), not webpage-channel-config.*
+/*                                                                                   *
+/* Routes:                                                                           *
+/*   GET  /chat/api/toolstatus?channelID=  — active toolcall name for channel        *
 /************************************************************************************/
 
 import fs     from "node:fs";
@@ -14,6 +17,7 @@ import crypto from "node:crypto";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { setSendNow, setJsonResp, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
 import { getSecret } from "../core/secrets.js";
+import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-chat";
 
@@ -145,7 +149,7 @@ export default async function getWebpageChat(coreData) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getChatHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, chatBase: basePath, webAuth: wo.webAuth })
+      body:    getChatHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, chatBase: basePath, webAuth: wo.webAuth, toolStatusPollMs: Number(cfg.toolStatusPollMs ?? 500) || 500 })
     };
     wo.web.useLayout = false;
     wo.jump = true;
@@ -461,6 +465,24 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
+  if (method === "GET" && urlPath === basePath + "/api/toolstatus") {
+    if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    const rawUrl    = String(wo.http?.url ?? "");
+    const urlObj    = new URL(rawUrl, "http://localhost");
+    const channelID = String(urlObj.searchParams.get("channelID") || "").trim();
+    if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    try {
+      const val  = await getItem("status:tool:" + channelID);
+      const tool = typeof val === "string" ? val.trim() : (typeof val?.name === "string" ? val.name.trim() : "");
+      setJsonResp(wo, 200, { tool });
+    } catch {
+      setJsonResp(wo, 200, { tool: "" });
+    }
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
   if (method === "DELETE" && urlPath === basePath + "/api/subchannels") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -517,10 +539,11 @@ export default async function getWebpageChat(coreData) {
 
 
 function getChatHtml(opts) {
-  const chatBase   = String(opts?.chatBase || "/chat").replace(/\/+$/, "") || "/chat";
-  const activePath = String(opts?.activePath || chatBase);
-  const role       = String(opts?.role || "").trim();
-  const menuHtml = getMenuHtml(opts?.menu || [], activePath, role, null, null, opts?.webAuth);
+  const chatBase      = String(opts?.chatBase || "/chat").replace(/\/+$/, "") || "/chat";
+  const activePath    = String(opts?.activePath || chatBase);
+  const role          = String(opts?.role || "").trim();
+  const pollMs        = Number(opts?.toolStatusPollMs ?? 500) || 500;
+  const menuHtml      = getMenuHtml(opts?.menu || [], activePath, role, null, null, opts?.webAuth);
 
   return (
     "<!DOCTYPE html>\n" +
@@ -600,6 +623,10 @@ function getChatHtml(opts) {
     "<script>\n" +
     "var CHAT_BASE=\"" + chatBase + "\";\n" +
     "var chatChannelID=\"\", chatSubchannelId=\"\", chatMessages=[], chatSending=false, chatSubchannelList=[], chatPendingFile=null;\n" +
+    "var toolPollTimer=null;\n" +
+    "\n" +
+    "function startToolPoll(channelID,lbl){stopToolPoll();toolPollTimer=setInterval(function(){fetch(CHAT_BASE+\"/api/toolstatus?channelID=\"+encodeURIComponent(channelID)).then(function(r){return r.json();}).then(function(d){lbl.textContent=d&&d.tool?d.tool+\" \":\"\";}).catch(function(){});},"+pollMs+");}\n" +
+    "function stopToolPoll(){if(toolPollTimer){clearInterval(toolPollTimer);toolPollTimer=null;}}\n" +
     "\n" +
     "function toast(msg,ms){var t=document.getElementById(\"toast\");t.textContent=msg;t.classList.add(\"on\");setTimeout(function(){t.classList.remove(\"on\");},ms||2400);}\n" +
     "\n" +
@@ -860,6 +887,7 @@ function getChatHtml(opts) {
     "  [1,2,3].forEach(function(){var d=document.createElement(\"span\");d.className=\"dot\";thinkBub.appendChild(d);});\n" +
     "  thinkWrap.appendChild(thinkBub);\n" +
     "  var msgsEl=document.getElementById(\"chat-msgs\");msgsEl.appendChild(thinkWrap);msgsEl.scrollTop=msgsEl.scrollHeight;\n" +
+    "  startToolPoll(chatChannelID,thinkLbl);\n" +
     "  var uploadPromise=fileToUpload\n" +
     "    ?uploadChatFile(fileToUpload).then(function(d){if(!d||!d.ok||!d.url)throw new Error(d&&d.error?d.error:\"upload_failed\");return d.url;})\n" +
     "    :Promise.resolve(null);\n" +
@@ -870,12 +898,14 @@ function getChatHtml(opts) {
     "    return fetch(CHAT_BASE+\"/api/chat\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify(payload)}).then(function(r){return r.json();});\n" +
     "  })\n" +
     "  .then(function(d){\n" +
+    "    stopToolPoll();\n" +
     "    if(thinkWrap.parentNode)thinkWrap.parentNode.removeChild(thinkWrap);\n" +
     "    chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
     "    if(d&&d.response!==undefined)appendMessage(\"assistant\",String(d.response||\"\"));\n" +
     "    else if(d&&d.error)toast(\"Error: \"+d.error,6000);\n" +
     "  })\n" +
     "  .catch(function(e){\n" +
+    "    stopToolPoll();\n" +
     "    if(thinkWrap.parentNode)thinkWrap.parentNode.removeChild(thinkWrap);\n" +
     "    chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
     "    toast(\"Send failed: \"+e.message,5000);\n" +

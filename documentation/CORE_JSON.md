@@ -642,20 +642,21 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 
 ```jsonc
 "webpage-chat": {
-  "flow":         ["webpage"],
-  "port":         3112,
-  "basePath":     "/chat",
-  "allowedRoles": ["member", "admin"],
-  "systemPrompt": "",
-  "contextSize":  20,
-  "maxTokens":    1024,
+  "flow":               ["webpage"],
+  "port":               3112,
+  "basePath":           "/chat",
+  "allowedRoles":       ["member", "admin"],
+  "systemPrompt":       "",
+  "contextSize":        20,
+  "maxTokens":          1024,
+  "toolStatusPollMs":   500,
   "chats": [
     { "label": "General", "channelID": "YOUR_CHANNEL_ID", "roles": [] }
   ]
 }
 ```
 
-**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), toolcall name polled per-channel every 800 ms from `/api/toolcall?channelID=<id>`, subchannel CRUD endpoints, file attachments (📎 button in footer).
+**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), active toolcall name polled per channel during AI calls via `GET /chat/api/toolstatus?channelID=<id>` (shown inside the thinking bubble), subchannel CRUD endpoints, file attachments (📎 button in footer).
 
 **File upload flow:** images → `POST /gallery/api/files` (session cookie auth, same-origin); non-images or gallery failure → `POST /chat/api/upload` (server-side proxy to `apiUrl.replace(/\/api/, '/upload')` with optional Bearer token). The uploaded URL is prepended to the message payload before the AI call.
 
@@ -668,6 +669,7 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 | `systemPrompt` | Optional system prompt prepended to every AI call (default `""`) |
 | `contextSize` | Recent user turns to include in AI context (default `20`) |
 | `maxTokens` | Max tokens in AI response (default `1024`) |
+| `toolStatusPollMs` | Polling interval in ms for toolcall status display in the thinking bubble (default `500`) |
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
 | `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Also used to derive the upload endpoint (`/upload`). |

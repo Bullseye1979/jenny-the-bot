@@ -1247,13 +1247,14 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
 ```jsonc
 {
   "webpage-chat": {
-    "flow":         ["webpage"],
-    "port":         3112,
-    "basePath":     "/chat",
-    "allowedRoles": ["member", "admin"],
-    "systemPrompt": "",
-    "contextSize":  20,
-    "maxTokens":    1024,
+    "flow":             ["webpage"],
+    "port":             3112,
+    "basePath":         "/chat",
+    "allowedRoles":     ["member", "admin"],
+    "systemPrompt":     "",
+    "contextSize":      20,
+    "maxTokens":        1024,
+    "toolStatusPollMs": 500,
     "chats": [
       {
         "label":     "General",
@@ -1276,6 +1277,7 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
 | `systemPrompt` | Optional system prompt prepended to every AI call (default `""`) |
 | `contextSize` | Recent user turns to include in AI context (default `20`) |
 | `maxTokens` | Max tokens in AI response (default `1024`) |
+| `toolStatusPollMs` | Polling interval in ms for the toolcall status display inside the thinking bubble (default `500`). The frontend polls `GET /chat/api/toolstatus?channelID=<id>` at this rate while waiting for an AI response. |
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
 | `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Per-chat override — each entry can point to a different API. |
