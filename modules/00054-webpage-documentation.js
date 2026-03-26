@@ -78,7 +78,7 @@ function getMdToHtml(md) {
       html += "</tr>";
     }
     html += "</tbody></table>";
-    out.push(html);
+    out.push(`<div class="table-wrap">${html}</div>`);
     tableRows = [];
     inTable = false;
   }
@@ -252,11 +252,14 @@ ${getThemeHeadScript()}
   #doc-sidebar-toggle{background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0 2px;line-height:1;flex-shrink:0}
   #doc-sidebar-toggle:hover{color:var(--txt)}
   .doc-sidebar-content{flex:1;overflow-y:auto;overflow-x:hidden}
-  .doc-main{flex:1;overflow-y:auto;padding:20px 28px;background:var(--bg)}
+  .doc-main{flex:1;min-width:0;overflow-y:auto;overflow-x:hidden;padding:20px 28px;background:var(--bg)}
   .doc-nav a{display:block;padding:7px 14px;color:var(--txt);text-decoration:none;font-size:13px;border-left:3px solid transparent;transition:background .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .doc-nav a:hover{background:var(--bg);color:var(--acc)}
   .doc-nav-active{background:var(--bg)!important;color:var(--acc)!important;border-left-color:var(--acc)!important;font-weight:600}
-  .doc-content{max-width:860px}
+  .doc-content{max-width:860px;overflow-wrap:break-word;word-break:break-word}
+  .doc-content img{max-width:100%;height:auto}
+  .table-wrap{overflow-x:auto;margin:.8em 0}
+  .table-wrap table{margin:0}
   .doc-content h1,.doc-content h2,.doc-content h3,.doc-content h4,.doc-content h5,.doc-content h6{margin:1.4em 0 .4em;color:var(--txt);line-height:1.3}
   .doc-content h1{font-size:1.7em;border-bottom:2px solid var(--bdr);padding-bottom:.3em}
   .doc-content h2{font-size:1.35em;border-bottom:1px solid var(--bdr);padding-bottom:.2em}
@@ -267,7 +270,7 @@ ${getThemeHeadScript()}
   .doc-content code{background:var(--bg3);border:1px solid var(--bdr);border-radius:3px;padding:1px 5px;font-family:monospace;font-size:.9em}
   .doc-content pre{background:var(--hdr);color:var(--hdr-txt);border-radius:var(--r);padding:14px 16px;overflow-x:auto;margin:.8em 0}
   .doc-content pre code{background:none;border:none;padding:0;color:inherit;font-size:.88em}
-  .doc-content table{border-collapse:collapse;width:100%;margin:.8em 0;font-size:13px}
+  .doc-content table{border-collapse:collapse;width:100%;font-size:13px}
   .doc-content th{background:var(--hdr);color:var(--hdr-txt);padding:7px 10px;text-align:left}
   .doc-content td{padding:6px 10px;border-bottom:1px solid var(--bdr)}
   .doc-content tr:nth-child(even) td{background:var(--bg3)}
