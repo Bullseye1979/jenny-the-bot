@@ -438,7 +438,6 @@ function stopRecVAD() {
 btnRec.addEventListener('click', async function() {
   if (btnRec.className === 'processing') return;
   if (!recActive) {
-    /* Start meeting recording */
     recActive = true;
     recChunks = [];
     /* Always open a dedicated stream for rec — never reuse the voice stream,
@@ -462,7 +461,6 @@ btnRec.addEventListener('click', async function() {
     btnRec.className = 'recording';
     setRecStatus('Recording meeting\u2026');
   } else {
-    /* Stop and transcribe */
     recActive = false;
     btnRec.className = 'processing';
     setRecStatus('Transcribing\u2026');
@@ -517,7 +515,6 @@ export default async function getWebpageVoice(coreData) {
   const role         = wo.webAuth?.role || "";
   const menuHtml     = getMenuHtml(menu, ROUTE_SPA, role, null, null, wo.webAuth);
 
-  /* GET /voice/style.css */
   if (method === "GET" && url === ROUTE_CSS) {
     const res = await getRes(wo);
     if (res && !res.headersSent) {
@@ -531,7 +528,6 @@ export default async function getWebpageVoice(coreData) {
     return coreData;
   }
 
-  /* GET /voice — serve SPA */
   if (method === "GET" && (url === ROUTE_SPA || url.startsWith(ROUTE_SPA + "?"))) {
     const res = await getRes(wo);
     if (res && !res.headersSent) {
@@ -542,7 +538,6 @@ export default async function getWebpageVoice(coreData) {
     return coreData;
   }
 
-  /* POST /voice/audio — auth gate (downstream modules handle the audio) */
   if (method === "POST" && url.startsWith(ROUTE_AUDIO)) {
     if (!isAllowed) {
       const res = await getRes(wo);

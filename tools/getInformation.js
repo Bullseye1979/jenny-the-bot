@@ -490,7 +490,6 @@ async function getRunSearchPass(db, channelIds, groups, opts) {
 
 /* Extract aliases from Pass 1 rows using a small AI call.
    Returns an array of lowercase alias strings (may be empty). */
-/* contentLines: array of { rn, content, sender } — may come from matched blocks OR bridge rows */
 async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
   const endpoint   = giCfg.aliasEndpoint   || wo.endpoint   || "";
   const apiKey     = await getSecret(wo, giCfg.aliasApiKey || wo.apiKey || "");
@@ -553,7 +552,6 @@ async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
 }
 
 
-/* Build a Set of "channel_id:rn" keys from a blocks array — used for diff. */
 function getBlockRowKeys(blocks) {
   const keys = new Set();
   for (const b of blocks)
@@ -563,7 +561,6 @@ function getBlockRowKeys(blocks) {
 }
 
 
-/* Return only the content lines from newBlocks whose (channel_id, rn) is NOT in existingKeys. */
 function getDiffLines(newBlocks, existingKeys) {
   const lines = [];
   for (const b of newBlocks)
@@ -575,7 +572,6 @@ function getDiffLines(newBlocks, existingKeys) {
 
 
 
-/* Merge blocks from two passes, deduplicate rows by (channel_id, rn), sort chronologically. */
 function getMergeBlocks(blocks1, blocks2) {
   const seenRN = new Set();
   const merged = [];
@@ -590,7 +586,6 @@ function getMergeBlocks(blocks1, blocks2) {
       seenRN.add(key);
       lines.push(l);
     }
-    /* Only keep block if it has at least one non-header row */
     if (lines.filter(l => Number.isInteger(l.rn)).length > 0) {
       merged.push({ ...b, lines });
     }
@@ -654,7 +649,6 @@ async function getInformationInvoke(args, coreData) {
   try {
     const db = await getPool(wo);
 
-    /* ── Pass 1: search for original keywords ── */
     const pass1 = await getRunSearchPass(db, channelIds, groups, passOpts);
 
     if (!pass1 || pass1.hitCount === 0) {
@@ -673,7 +667,6 @@ async function getInformationInvoke(args, coreData) {
       };
     }
 
-    /* ── Iterative alias search (depth-limited) ── */
     /* Strategy: aliases are added as variants to the ORIGINAL groups so that
        - SQL in each pass searches for ALL accumulated terms together
        - Scoring treats aliases as variants of the original entity (same coverage slot)
@@ -703,7 +696,6 @@ async function getInformationInvoke(args, coreData) {
 
         if (!newAliases.length) break;
 
-        /* Extend original groups' variants — aliases score as equivalent to original term */
         for (const g of groups)
           for (const a of newAliases)
             if (!g.variants.includes(a)) g.variants.push(a);
@@ -711,7 +703,6 @@ async function getInformationInvoke(args, coreData) {
         newAliases.forEach(a => allSearched.add(a));
         totalAliases = [...totalAliases, ...newAliases];
 
-        /* Search with fully extended groups */
         const passN = await getRunSearchPass(db, channelIds, groups, passOpts);
         clustersConsidered += passN?.analyzed?.length || 0;
 
@@ -743,7 +734,6 @@ async function getInformationInvoke(args, coreData) {
       };
     }
 
-    /* ── Build final output ── */
     const allPrinted = [];
     const seenGlobalRN = new Set();
 

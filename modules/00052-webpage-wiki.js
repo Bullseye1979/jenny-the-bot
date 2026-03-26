@@ -143,7 +143,6 @@ async function getWikiDb(coreData) {
       FULLTEXT KEY ft_search (title, intro, categories, related)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
-  /* Migrate existing tables that predate updated_at / model */
   await db.execute(
     "ALTER TABLE wiki_articles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL DEFAULT NULL"
   );
@@ -202,7 +201,6 @@ async function dbSearchArticles(db, channelId, query, maxAgeDays = 0) {
   const q = getStr(query).trim();
   if (!q) return [];
   const ageClause = maxAgeDays > 0 ? " AND (updated_at IS NOT NULL OR created_at >= DATE_SUB(NOW(), INTERVAL ? DAY))" : "";
-  /* FULLTEXT for longer queries; LIKE fallback for short ones */
   if (q.length >= 3) {
     try {
       const ftQuery = q.split(/\s+/).filter(Boolean).map(w => `+${w}*`).join(" ");
@@ -425,7 +423,6 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
   const responseText = getStr(data?.response || "").trim();
   if (!responseText) throw new Error("API returned no response: " + JSON.stringify(data).slice(0, 200));
 
-  /* Parse the JSON article from the AI response */
   let article = null;
   try { article = JSON.parse(responseText); } catch {
     const m = responseText.match(/\{[\s\S]*\}/);
@@ -435,7 +432,6 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     throw new Error("AI returned no valid JSON article: " + responseText.slice(0, 200));
   }
 
-  /* Generate article illustration via embedded image gen (independent of AI) */
   const imgCfg    = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
   const imgPrompt = getStr(article.infobox?.imageAlt || article.title || query);
   if (imgPrompt) {
@@ -729,7 +725,6 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
   const categories = safeParseJson(article.categories, []);
   const related    = safeParseJson(article.related, []);
 
-  /* --- Table of Contents --- */
   const tocItems = sections
     .filter(s => s.heading)
     .map((s, i) => {
@@ -741,7 +736,6 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
     ? `<div class="wiki-toc"><div class="wiki-toc-title">Contents</div><ol>${tocItems}</ol></div>`
     : "";
 
-  /* --- Sections --- */
   const sectionsHtml = sections.map((s, i) => {
     const tag = `h${Math.min(Math.max(Number(s.level) || 2, 2), 4)}`;
     return `<div class="wiki-section" id="section-${i}">
@@ -750,7 +744,6 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
 </div>`;
   }).join("");
 
-  /* --- Infobox --- */
   const fields = Array.isArray(infobox.fields) ? infobox.fields : [];
   const infoboxRows = fields.map(f =>
     `<tr><td>${escHtml(f.label || "")}</td><td>${escHtml(f.value || "")}</td></tr>`
@@ -762,25 +755,20 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
   ${infoboxRows ? `<table>${infoboxRows}</table>` : ""}
 </div>`;
 
-  /* --- Categories --- */
   const catChips = categories.map(c =>
     `<a class="wiki-chip" href="${escHtml(chPath)}/search?q=${encodeURIComponent(c)}">${escHtml(c)}</a>`
   ).join("");
 
-  /* --- See Also --- */
   const seeAlsoLinks = related.map(r =>
     `<a href="${escHtml(chPath)}/search?q=${encodeURIComponent(r)}">${escHtml(r)}</a>`
   ).join(" · ");
 
-  /* --- Editor buttons + expiry badge --- */
   const editBtn = isEditor
     ? `<a class="wiki-edit-btn" href="${escHtml(chPath)}/${escHtml(article.slug)}/edit">✏️ Edit</a>`
     : "";
   const deleteBtn = isEditor
     ? `<button class="wiki-delete-btn" onclick="wikiDeleteArticle('${escHtml(chId)}','${escHtml(article.slug)}')">🗑 Delete</button>`
     : "";
-  /* Expiry badge: only for articles never edited (updated_at IS NULL); visible to all users */
-  /* Expiry badge: always shown for unedited articles (updated_at IS NULL); colour by urgency */
   let expiryBadge = "";
   if (maxAgeDays > 0 && article.created_at && !article.updated_at) {
     const ageDays       = (Date.now() - new Date(article.created_at).getTime()) / 86400000;
@@ -835,7 +823,6 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
   const chPath  = `${basePath}/${chId}`;
   const editUrl = `${chPath}/${escHtml(article.slug)}/edit`;
 
-  /* Stringify JSON fields for textarea display */
   const sectionsJson    = JSON.stringify(safeParseJson(article.sections,   []), null, 2);
   const infoboxJson     = JSON.stringify(safeParseJson(article.infobox,    {}), null, 2);
   const categoriesText  = safeParseJson(article.categories, []).join("\n");
@@ -950,7 +937,6 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
     reader.readAsDataURL(file);
   }
 
-  /* Live URL preview */
   imgUrl.addEventListener('input', function() {
     if (imgUrl.value.trim()) { imgPrev.src = imgUrl.value.trim(); imgPrev.classList.remove('hidden'); }
     else { imgPrev.classList.add('hidden'); }
@@ -1179,7 +1165,6 @@ export default async function getWebpageWiki(coreData) {
     return coreData;
   }
 
-  /* Parse path segments after basePath */
   const rest     = urlPath.slice(basePath.length).replace(/^\//, "");
   const segments = rest ? rest.split("/") : [];
   const channelId = segments[0] || "";
@@ -1196,7 +1181,6 @@ export default async function getWebpageWiki(coreData) {
     return coreData;
   }
 
-  /* Find channel config */
   const channel = getChannelConfig(cfg, channelId);
   if (!channel) {
     await sendHtml(wo, 404, buildFullPage({
@@ -1207,7 +1191,6 @@ export default async function getWebpageWiki(coreData) {
     return coreData;
   }
 
-  /* Read-access check */
   const allowedRoles = Array.isArray(channel.allowedRoles) ? channel.allowedRoles : [];
   if (!getIsAllowedRoles(wo, allowedRoles)) {
     await sendText(wo, 403, "403 Forbidden");
@@ -1223,7 +1206,6 @@ export default async function getWebpageWiki(coreData) {
   const isEditor  = isAdmin || (editorRoles.length  > 0 && getIsAllowedRoles(wo, editorRoles));
   const isCreator = isAdmin || (creatorRoles.length > 0 && getIsAllowedRoles(wo, creatorRoles));
 
-  /* Expiry config — 0 = no expiry */
   const maxAgeDays = getMaxAgeDays(channel);
 
   const seg1 = segments[1] || "";
@@ -1238,7 +1220,6 @@ export default async function getWebpageWiki(coreData) {
     return coreData;
   }
 
-  /* Passive cleanup — delete expired articles in the background */
   dbPruneExpiredArticles(db, channelId, maxAgeDays).catch(() => {});
 
   if (method === "POST" && seg1 === "api" && seg2 === "generate") {
@@ -1253,7 +1234,6 @@ export default async function getWebpageWiki(coreData) {
       promptAddition  = getStr(bodyJson.promptAddition  || "").trim();
     } catch { query = ""; }
 
-    /* Search first — skip if user explicitly requested generation */
     if (!force) {
       let results = [];
       try { results = await dbSearchArticles(db, channelId, query, maxAgeDays); } catch { results = []; }
@@ -1267,7 +1247,6 @@ export default async function getWebpageWiki(coreData) {
       }
     }
 
-    /* Generate new article via pipeline (context loaded natively by core-ai) */
     try {
       const article   = await callPipelineForArticle(query, channel, coreData, promptAddition);
       const slug      = getSlug(article.title || query);
@@ -1295,7 +1274,6 @@ export default async function getWebpageWiki(coreData) {
             }
           } catch { /* no thumbnails dir */ }
         };
-        /* Uploaded wiki image */
         const wikiImgPrefix = `/wiki/${channelId}/images/`;
         if (imgUrlStr.startsWith(wikiImgPrefix)) {
           const filename = imgUrlStr.slice(wikiImgPrefix.length).split("?")[0];
@@ -1303,7 +1281,6 @@ export default async function getWebpageWiki(coreData) {
             deleteFileAndThumbs(path.join(__dirname, "..", "pub", "wiki", channelId, "images", filename));
           }
         }
-        /* AI-generated wiki image in pub/documents/wiki/ */
         const docsWikiMatch = imgUrlStr.match(/\/documents\/wiki\/([^?#/]+)$/);
         if (docsWikiMatch) {
           const filename = docsWikiMatch[1];
@@ -1334,7 +1311,6 @@ export default async function getWebpageWiki(coreData) {
     const params = new URLSearchParams(url.includes("?") ? url.slice(url.indexOf("?") + 1) : "");
     const query  = getStr(params.get("q") || "").trim();
     if (!query) {
-      /* Redirect to homepage if no query */
       wo.http.response = {
         status: 302,
         headers: { "Location": `${basePath}/${channelId}`, "Content-Type": "text/plain" },
@@ -1385,11 +1361,9 @@ export default async function getWebpageWiki(coreData) {
     try {
       const imageUrl = await callPipelineForImageOnly(articleForRegen, channel, coreData, regenPromptAddition);
 
-      /* Delete old image file + its thumbnail caches */
       const oldUrl = getStr(articleForRegen.image_url || "");
       const deleteOldImageFile = (absPath) => {
         try { fs.unlinkSync(absPath); } catch { /* already gone */ }
-        /* Remove cached thumbnails: thumbnails/{w}/{filename}.jpg next to the source file */
         const thumbsRoot = path.join(path.dirname(absPath), "thumbnails");
         try {
           const sizes = fs.readdirSync(thumbsRoot);
@@ -1398,7 +1372,6 @@ export default async function getWebpageWiki(coreData) {
           }
         } catch { /* no thumbnails dir — ignore */ }
       };
-      /* Delete uploaded wiki image (belongs exclusively to this article) */
       const wikiImgPrefix = `/wiki/${channelId}/images/`;
       if (oldUrl.startsWith(wikiImgPrefix)) {
         const oldFilename = oldUrl.slice(wikiImgPrefix.length).split("?")[0];

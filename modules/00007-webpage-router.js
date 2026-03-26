@@ -78,7 +78,6 @@ export default async function getWebpageRouter(coreData) {
     if (!urlPath.startsWith(pathPrefix))    continue;
 
     wo.flow    = flow;
-    /* core-channel-config re-applies the trigger if the channel matches */
     wo.trigger = "";
 
     const channelId = resolveChannelId(
@@ -89,7 +88,6 @@ export default async function getWebpageRouter(coreData) {
 
     if (channelId) wo.channelID = channelId;
 
-    /* Optional: skip modules irrelevant to this route */
     const removeModules = Array.isArray(route.removeModules) ? route.removeModules : [];
     if (removeModules.length) {
       const existing = Array.isArray(wo.flowModuleRemove) ? wo.flowModuleRemove : (wo.flowModuleRemove ? [wo.flowModuleRemove] : []);

@@ -50,7 +50,6 @@ export default async function getCoreAdminCommands(coreData) {
   const flow    = getStr(workingObject.flow);
   const payload = getStr(workingObject.payload).trim();
 
-  /* ── discord-admin flow: command already parsed into wo.admin by the flow handler ── */
   if (flow === "discord-admin") {
     const cmd = getStr(workingObject.admin?.command).toLowerCase();
     if (cmd !== "purgedb" && cmd !== "freeze") return coreData;
@@ -83,7 +82,6 @@ export default async function getCoreAdminCommands(coreData) {
     return coreData;
   }
 
-  /* ── discord flow (DM only): !purgedb bang-command ── */
   if (flow === "discord") {
     if (!getIsDMContext(workingObject)) return coreData;
     if (!/^!purgedb$/i.test(payload))   return coreData;
@@ -108,7 +106,6 @@ export default async function getCoreAdminCommands(coreData) {
     return coreData;
   }
 
-  /* ── api flow: /purgedb, /freeze slash-text commands ── */
   if (!payload) return coreData;
   const cmd = getSlashCommand(payload);
   if (!cmd) return coreData;

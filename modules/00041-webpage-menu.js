@@ -23,16 +23,12 @@ function getIsAllowed(role, rolesArr) {
     ? rolesArr.map(r => String(r || "").trim().toLowerCase()).filter(Boolean)
     : [];
 
-  /* No restriction configured => visible */
   if (!roles.length) return true;
 
-  /* No role assigned => deny restricted items */
   if (!role) return false;
 
-  /* admin sees everything */
   if (role === "admin") return true;
 
-  /* strict: must match explicitly */
   return roles.includes(role);
 }
 

@@ -444,7 +444,6 @@ function getInitCurrentBase() {
   return base;
 }
 
-/* First-run: if core.json is missing, start setup wizard and exit */
 if (!fs.existsSync(CORE_PATH)) {
   await startSetupWizard(CORE_PATH, 3400);
   console.log("\n\x1b[32m[main] core.json created — please restart the bot.\x1b[0m\n");

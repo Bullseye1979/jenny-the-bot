@@ -322,7 +322,6 @@ export default async function getWebpageAuth(coreData) {
   const path = String(wo.http?.path || "/");
   const cookies = getParseCookies(wo.http?.headers?.cookie);
 
-  /* getBaseUrl returns the public origin without internal port switching */
   const publicBase = getBaseUrl(wo);
   const redirectUri = cfg.redirectUri ? String(cfg.redirectUri).trim() : (publicBase ? (publicBase + "/auth/callback") : "");
   if (!redirectUri) {
@@ -386,7 +385,6 @@ export default async function getWebpageAuth(coreData) {
     const ssoKey = "sso:" + tokenId;
     const ssoData = await Promise.resolve(getItem(ssoKey)).catch(() => null);
 
-    /* Single-use: delete immediately regardless of validity */
     await Promise.resolve(deleteItem(ssoKey)).catch(() => null);
 
     if (!ssoData || typeof ssoData !== "object") {
@@ -419,7 +417,6 @@ export default async function getWebpageAuth(coreData) {
       maxAge: Number(cfg.sessionMaxAgeSec ?? 60 * 60 * 12)
     });
 
-    /* Validate returnTo: allow relative paths or URLs with allowed origins */
     const ssoPartners = Array.isArray(cfg.ssoPartners) ? cfg.ssoPartners.map(s => String(s).replace(/\/$/, "")) : [];
     let safeReturnTo = "/";
     if (returnTo.startsWith("/")) {
@@ -579,7 +576,6 @@ export default async function getWebpageAuth(coreData) {
           matchedGuildCfg = guildCfg;
           break;
         }
-        /* Member found but no matching roles in this guild — try next */
       }
     }
 
@@ -627,7 +623,6 @@ export default async function getWebpageAuth(coreData) {
 
     const ssoPartners = Array.isArray(cfg.ssoPartners) ? cfg.ssoPartners.map(s => String(s).replace(/\/$/, "")).filter(Boolean) : [];
     if (ssoPartners.length > 0) {
-      /* Issue a short-lived single-use token and chain through the first partner */
       const ssoTokenId = getRandId();
       await putItem({ ...sess, expiresAt: Date.now() + 60000 }, "sso:" + ssoTokenId);
       const next = String(stateObj.next || "/");

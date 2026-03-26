@@ -109,7 +109,6 @@ export default async function getWebpageChat(coreData) {
   const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
   const isAllowed    = getIsAllowedRoles(wo, allowedRoles);
 
-  /* ---- GET /chat/style.css ---- */
   if (method === "GET" && urlPath === basePath + "/style.css") {
     const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
     wo.http.response = {
@@ -123,7 +122,6 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
-  /* ---- GET /chat ---- */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     if (!isAllowed) {
       const menu = getMenuHtml(wo.web?.menu || [], urlPath, wo.webAuth?.role || "", null, null, wo.webAuth);
@@ -158,7 +156,6 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
-  /* ---- GET /chat/api/chats ---- */
   if (method === "GET" && urlPath === basePath + "/api/chats") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
     const publicChats = chats
@@ -171,7 +168,6 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
-  /* ---- GET /chat/api/context?channelID=xxx[&subchannelId=yyy] ---- */
   if (method === "GET" && urlPath === basePath + "/api/context") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -223,7 +219,37 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
-  /* ---- POST /chat/api/chat ---- */
+  if (method === "POST" && urlPath === basePath + "/api/upload") {
+    if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
+
+    const rawBody    = wo.http?.rawBodyBytes;
+    const contentType = String(wo.http?.headers?.["content-type"] || "application/octet-stream");
+    const filename    = String(wo.http?.headers?.["x-filename"] || "file");
+
+    if (!rawBody?.length) {
+      setJsonResp(wo, 400, { error: "empty body" });
+      wo.jump = true;
+      await setSendNow(wo);
+      return coreData;
+    }
+
+    try {
+      const apiUrl     = String(cfg.apiUrl || "http://localhost:3400/api").trim();
+      const apiSecret  = String(cfg.apiSecret || "").trim();
+      const uploadUrl  = apiUrl.replace(/\/api\/?$/, "/upload");
+      const headers    = { "Content-Type": contentType, "X-Filename": filename };
+      if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
+      const res  = await fetch(uploadUrl, { method: "POST", headers, body: rawBody });
+      const data = await res.json();
+      setJsonResp(wo, res.status, data);
+    } catch (e) {
+      setJsonResp(wo, 500, { error: String(e?.message || e) });
+    }
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
   if (method === "POST" && urlPath === basePath + "/api/chat") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -249,7 +275,6 @@ export default async function getWebpageChat(coreData) {
       wo.channelID = channelID;
       wo.subchannel = subchannelId || null;
 
-      /* ---- Admin slash commands — handled before AI call ---- */
       if (payload.startsWith("/")) {
         const cmdToken = payload.split(/\s+/)[0].slice(1).toLowerCase();
 
@@ -270,7 +295,6 @@ export default async function getWebpageChat(coreData) {
         }
       }
 
-      /* Load subchannel AI config overrides */
       let subConfig = null;
       if (subchannelId) {
         try {
@@ -333,7 +357,6 @@ export default async function getWebpageChat(coreData) {
     }
   }
 
-  /* ---- GET /chat/api/subchannels?channelID=xxx ---- */
   if (method === "GET" && urlPath === basePath + "/api/subchannels") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -362,7 +385,6 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
-  /* ---- POST /chat/api/subchannels — create ---- */
   if (method === "POST" && urlPath === basePath + "/api/subchannels") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -397,7 +419,6 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
-  /* ---- PATCH /chat/api/subchannels — rename ---- */
   if (method === "PATCH" && urlPath === basePath + "/api/subchannels") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -439,7 +460,6 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
-  /* ---- DELETE /chat/api/subchannels — delete ---- */
   if (method === "DELETE" && urlPath === basePath + "/api/subchannels") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -456,20 +476,17 @@ export default async function getWebpageChat(coreData) {
       const pool = await getDb(coreData);
       await getEnsureChatSubchannelsTable(pool);
 
-      /* Look up channelID before deleting so we can purge context entries */
       const [scRows] = await pool.query(
         "SELECT channel_id FROM chat_subchannels WHERE subchannel_id = ? LIMIT 1",
         [subchannelId]
       );
       const channelIDForSub = scRows?.[0]?.channel_id ? String(scRows[0].channel_id) : null;
 
-      /* Remove the subchannel name mapping */
       await pool.execute(
         "DELETE FROM chat_subchannels WHERE subchannel_id = ?",
         [subchannelId]
       );
 
-      /* Purge context: delete non-frozen, promote frozen to main channel */
       let purgeResult = { deleted: 0, promoted: 0 };
       if (channelIDForSub) {
         const [delRes] = await pool.execute(
@@ -526,6 +543,12 @@ function getChatHtml(opts) {
     "#sub-cfg-modal .modal-footer{display:flex;gap:8px;justify-content:flex-end}\n" +
     "#sub-cfg-modal .btn-cancel{padding:6px 14px;border:1px solid var(--bdr);background:transparent;color:var(--txt);border-radius:4px;cursor:pointer}\n" +
     "#sub-cfg-modal .btn-save{padding:6px 14px;border:none;background:var(--acc);color:#fff;border-radius:4px;cursor:pointer}\n" +
+    "#chat-file-bar{display:none;align-items:center;gap:6px;padding:4px 10px;background:var(--bg3);border-top:1px solid var(--bdr);font-size:12px;color:var(--muted);flex-shrink:0}\n" +
+    "#chat-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;flex:1}\n" +
+    "#chat-file-clear{background:none;border:none;color:var(--muted);cursor:pointer;padding:0 4px;font-size:14px;line-height:1;flex-shrink:0}\n" +
+    "#chat-file-clear:hover{color:var(--dan)}\n" +
+    "#chat-attach-btn{background:none;border:none;cursor:pointer;padding:0 4px;font-size:18px;color:var(--muted);line-height:1;flex-shrink:0;opacity:.75}\n" +
+    "#chat-attach-btn:hover{opacity:1}\n" +
     "</style>\n" +
     "</head>\n" +
     "<body>\n" +
@@ -547,7 +570,13 @@ function getChatHtml(opts) {
     "    </div>\n" +
     "    <div id=\"chat-msgs\"><div class=\"chat-loading\">Select a channel to start chatting.</div></div>\n" +
     "  </div>\n" +
+    "  <div id=\"chat-file-bar\">\n" +
+    "    <span>\uD83D\uDCCE</span><span id=\"chat-file-name\"></span>\n" +
+    "    <button id=\"chat-file-clear\" onclick=\"clearChatFile()\" title=\"Remove attachment\">\u2715</button>\n" +
+    "  </div>\n" +
     "  <div id=\"chat-footer\">\n" +
+    "    <input type=\"file\" id=\"chat-file-input\" style=\"display:none\">\n" +
+    "    <button id=\"chat-attach-btn\" onclick=\"document.getElementById('chat-file-input').click()\" title=\"Attach file\">\uD83D\uDCCE</button>\n" +
     "    <textarea id=\"chat-input\" placeholder=\"Type a message\u2026  (Enter = send \u2022 Shift+Enter = newline)\" rows=\"1\"></textarea>\n" +
     "    <button id=\"chat-send-btn\" onclick=\"sendMessage()\" title=\"Send\">\u27A4</button>\n" +
     "  </div>\n" +
@@ -571,7 +600,7 @@ function getChatHtml(opts) {
     "\n" +
     "<script>\n" +
     "var CHAT_BASE=\"" + chatBase + "\";\n" +
-    "var chatChannelID=\"\", chatSubchannelId=\"\", chatMessages=[], chatSending=false, chatSubchannelList=[];\n" +
+    "var chatChannelID=\"\", chatSubchannelId=\"\", chatMessages=[], chatSending=false, chatSubchannelList=[], chatPendingFile=null;\n" +
     "\n" +
     "function toast(msg,ms){var t=document.getElementById(\"toast\");t.textContent=msg;t.classList.add(\"on\");setTimeout(function(){t.classList.remove(\"on\");},ms||2400);}\n" +
     "\n" +
@@ -788,14 +817,47 @@ function getChatHtml(opts) {
     "  el.appendChild(buildMsgEl(role,text));el.scrollTop=el.scrollHeight;\n" +
     "}\n" +
     "\n" +
+    "/* ---- File upload ---- */\n" +
+    "function clearChatFile(){\n" +
+    "  chatPendingFile=null;\n" +
+    "  document.getElementById(\"chat-file-bar\").style.display=\"none\";\n" +
+    "  document.getElementById(\"chat-file-input\").value=\"\";\n" +
+    "}\n" +
+    "function uploadChatFileFallback(file){\n" +
+    "  return fetch(CHAT_BASE+\"/api/upload\",{\n" +
+    "    method:\"POST\",\n" +
+    "    headers:{\"Content-Type\":file.type||\"application/octet-stream\",\"X-Filename\":file.name},\n" +
+    "    body:file\n" +
+    "  }).then(function(r){return r.json();});\n" +
+    "}\n" +
+    "function uploadChatFile(file){\n" +
+    "  var ext=(file.name.match(/\\.[^.]+$/)||[\"\"])[0].toLowerCase();\n" +
+    "  var isImage=/\\.(png|jpe?g|gif|webp|avif)$/.test(ext);\n" +
+    "  if(isImage){\n" +
+    "    return fetch(\"/gallery/api/files\",{\n" +
+    "      method:\"POST\",credentials:\"include\",\n" +
+    "      headers:{\"Content-Type\":file.type||\"application/octet-stream\",\"X-Filename\":file.name},\n" +
+    "      body:file\n" +
+    "    })\n" +
+    "    .then(function(r){var ct=r.headers.get(\"content-type\")||\"\";if(!ct.includes(\"json\"))throw new Error(\"gallery_unavailable\");return r.json();})\n" +
+    "    .then(function(d){if(d&&d.ok&&d.url)return d;throw new Error(\"gallery_unavailable\");})\n" +
+    "    .catch(function(){return uploadChatFileFallback(file);});\n" +
+    "  }\n" +
+    "  return uploadChatFileFallback(file);\n" +
+    "}\n" +
+    "\n" +
     "/* ---- Send ---- */\n" +
     "function sendMessage(){\n" +
     "  if(chatSending)return;\n" +
     "  if(!chatChannelID){toast(\"Please select a channel first\");return;}\n" +
     "  var inp=document.getElementById(\"chat-input\");\n" +
-    "  var text=inp.value.trim();if(!text)return;\n" +
+    "  var text=inp.value.trim();\n" +
+    "  var fileToUpload=chatPendingFile;\n" +
+    "  if(!text&&!fileToUpload)return;\n" +
     "  inp.value=\"\";\n" +
-    "  appendMessage(\"user\",text);\n" +
+    "  clearChatFile();\n" +
+    "  var displayText=fileToUpload?(text?(text+\"\\n[\uD83D\uDCCE \"+fileToUpload.name+\"]\")):\"[\uD83D\uDCCE \"+fileToUpload.name+\"]\"):text;\n" +
+    "  appendMessage(\"user\",displayText);\n" +
     "  chatSending=true;\n" +
     "  var btn=document.getElementById(\"chat-send-btn\");btn.disabled=true;btn.textContent=\"\u23F3\";\n" +
     "  var thinkWrap=document.createElement(\"div\");thinkWrap.className=\"chat-msg assistant\";\n" +
@@ -805,24 +867,35 @@ function getChatHtml(opts) {
     "  [1,2,3].forEach(function(){var d=document.createElement(\"span\");d.className=\"dot\";thinkBub.appendChild(d);});\n" +
     "  thinkWrap.appendChild(thinkBub);\n" +
     "  var msgsEl=document.getElementById(\"chat-msgs\");msgsEl.appendChild(thinkWrap);msgsEl.scrollTop=msgsEl.scrollHeight;\n" +
-    "  var payload={channelID:chatChannelID,payload:text};\n" +
-    "  if(chatSubchannelId)payload.subchannelId=chatSubchannelId;\n" +
-    "  fetch(CHAT_BASE+\"/api/chat\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify(payload)})\n" +
-    "    .then(function(r){return r.json();})\n" +
-    "    .then(function(d){\n" +
-    "      if(thinkWrap.parentNode)thinkWrap.parentNode.removeChild(thinkWrap);\n" +
-    "      chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
-    "      if(d&&d.response!==undefined)appendMessage(\"assistant\",String(d.response||\"\"));\n" +
-    "      else if(d&&d.error)toast(\"Error: \"+d.error,6000);\n" +
-    "    })\n" +
-    "    .catch(function(e){\n" +
-    "      if(thinkWrap.parentNode)thinkWrap.parentNode.removeChild(thinkWrap);\n" +
-    "      chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
-    "      toast(\"Send failed: \"+e.message,5000);\n" +
-    "    });\n" +
+    "  var uploadPromise=fileToUpload\n" +
+    "    ?uploadChatFile(fileToUpload).then(function(d){if(!d||!d.ok||!d.url)throw new Error(d&&d.error?d.error:\"upload_failed\");return d.url;})\n" +
+    "    :Promise.resolve(null);\n" +
+    "  uploadPromise.then(function(uploadedUrl){\n" +
+    "    var finalText=uploadedUrl?(uploadedUrl+(text?\"\\n\"+text:\"\")):text;\n" +
+    "    var payload={channelID:chatChannelID,payload:finalText};\n" +
+    "    if(chatSubchannelId)payload.subchannelId=chatSubchannelId;\n" +
+    "    return fetch(CHAT_BASE+\"/api/chat\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify(payload)}).then(function(r){return r.json();});\n" +
+    "  })\n" +
+    "  .then(function(d){\n" +
+    "    if(thinkWrap.parentNode)thinkWrap.parentNode.removeChild(thinkWrap);\n" +
+    "    chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
+    "    if(d&&d.response!==undefined)appendMessage(\"assistant\",String(d.response||\"\"));\n" +
+    "    else if(d&&d.error)toast(\"Error: \"+d.error,6000);\n" +
+    "  })\n" +
+    "  .catch(function(e){\n" +
+    "    if(thinkWrap.parentNode)thinkWrap.parentNode.removeChild(thinkWrap);\n" +
+    "    chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
+    "    toast(\"Send failed: \"+e.message,5000);\n" +
+    "  });\n" +
     "}\n" +
     "\n" +
     "document.getElementById(\"chat-input\").addEventListener(\"keydown\",function(e){if(e.key===\"Enter\"&&!e.shiftKey){e.preventDefault();sendMessage();}});\n" +
+    "document.getElementById(\"chat-file-input\").addEventListener(\"change\",function(){\n" +
+    "  var f=this.files&&this.files[0];if(!f)return;\n" +
+    "  chatPendingFile=f;\n" +
+    "  document.getElementById(\"chat-file-name\").textContent=f.name;\n" +
+    "  document.getElementById(\"chat-file-bar\").style.display=\"flex\";\n" +
+    "});\n" +
     "\n" +
     "loadChats();\n" +
     "</script>\n" +

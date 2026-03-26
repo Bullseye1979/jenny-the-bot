@@ -655,7 +655,9 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 }
 ```
 
-**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), toolcall name polled per-channel every 800 ms from `/api/toolcall?channelID=<id>`, subchannel CRUD endpoints.
+**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), toolcall name polled per-channel every 800 ms from `/api/toolcall?channelID=<id>`, subchannel CRUD endpoints, file attachments (📎 button in footer).
+
+**File upload flow:** images → `POST /gallery/api/files` (session cookie auth, same-origin); non-images or gallery failure → `POST /chat/api/upload` (server-side proxy to `apiUrl.replace(/\/api/, '/upload')` with optional Bearer token). The uploaded URL is prepended to the message payload before the AI call.
 
 | Key | Description |
 |---|---|
@@ -668,6 +670,8 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 | `maxTokens` | Max tokens in AI response (default `1024`) |
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
+| `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Also used to derive the upload endpoint (`/upload`). |
+| `chats[].apiSecret` | Bearer token sent with AI requests and file upload proxy requests. Leave empty if no token gate is configured. |
 | `chats[].roles` | Optional role restriction for this chat entry |
 
 > AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
@@ -1158,7 +1162,7 @@ The file is generated on demand; no data is cached or stored by the module itsel
 
 ### webpage-keymanager
 
-Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and delete secret mappings (placeholder name → real value) without touching MySQL directly. Values are masked by default; each row has a **Show/Hide** toggle to reveal the value inline and a **Copy** button to copy it to the clipboard without revealing it. The table is horizontally scrollable on small screens (mobile-friendly); the description column is hidden on narrow viewports. See [ADMIN_MANUAL §9.4](#94-secretsjs--centralized-secret-store) for the full secrets system description.
+Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and delete secret mappings (placeholder name → real value) without touching MySQL directly. Each row shows the placeholder name with its masked value stacked below it. Icon buttons: **👁** reveal/hide, **📋** copy to clipboard, **✏️** edit, **🗑️** delete. The table fits on mobile without horizontal scroll; the description column is hidden on narrow viewports. See [ADMIN_MANUAL §9.4](#94-secretsjs--centralized-secret-store) for the full secrets system description.
 
 ```jsonc
 "webpage-keymanager": {

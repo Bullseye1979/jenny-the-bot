@@ -351,7 +351,6 @@ async function setExecGenericTool(toolModules, call, coreData) {
     };
   }
 
-  /* Channel-specific toolcall key (for API / browser-extension consumers) */
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   try {
     try { await putItem(name, "status:tool"); } catch {}
@@ -1160,7 +1159,6 @@ export default async function getCoreAi(coreData) {
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         log(`Continue triggered: finish_reason="${finish ?? "null"}" truncated=${truncated} looks_cut_off=${looksCutOff}`, "info");
-        /* Disable tools for the continuation pass — model should resume output, not call more tools */
         wo.__forceNoTools = true;
         continue;
       }

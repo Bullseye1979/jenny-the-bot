@@ -182,7 +182,6 @@ export function startSetupWizard(corePath, port) {
           const body   = Buffer.concat(chunks).toString("utf-8");
           const fields = parseFormBody(body);
 
-          /* Validate required fields */
           const missing = ["apiKey","dbHost","dbUser","dbPass","dbName"].filter(k => !fields[k]?.trim());
           if (missing.length) {
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });

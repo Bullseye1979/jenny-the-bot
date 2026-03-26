@@ -44,21 +44,26 @@ function buildPageHtml(menu, basePath) {
 ${getThemeHeadScript()}
 <link rel="stylesheet" href="/dashboard/style.css">
 <style>
-  .km-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; margin-top:1rem; border-radius:4px; }
-  .km-table { width:100%; border-collapse:collapse; min-width:420px; }
-  .km-table th, .km-table td { padding:.5rem .75rem; border:1px solid var(--bdr); text-align:left; vertical-align:middle; }
+  .km-table { width:100%; border-collapse:collapse; margin-top:1rem; }
+  .km-table th, .km-table td { padding:.5rem .75rem; border:1px solid var(--bdr); text-align:left; vertical-align:top; }
   .km-table th { background:var(--bg3); font-weight:600; white-space:nowrap; }
   .km-table tr:nth-child(even) td { background:var(--bg3); }
-  .km-val-cell { max-width:240px; }
+  .km-name { font-family:monospace; font-weight:600; }
+  .km-val-row { display:flex; align-items:center; gap:.25rem; margin-top:.3rem; flex-wrap:nowrap; }
   .km-val-text {
-    display:inline-block; max-width:160px;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-    vertical-align:middle; font-family:monospace; font-size:.85rem;
-    color:var(--muted);
+    font-family:monospace; font-size:.8rem; color:var(--muted);
+    max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .km-val-text.revealed { color:var(--txt); }
-  .km-val-btns { display:inline-flex; gap:.25rem; vertical-align:middle; margin-left:.3rem; }
-  .km-actions { white-space:nowrap; }
+  .km-icon-btn {
+    background:none; border:1px solid var(--bdr); border-radius:4px;
+    cursor:pointer; padding:.15rem .3rem; font-size:.95rem; line-height:1.2;
+    color:var(--txt); flex-shrink:0;
+  }
+  .km-icon-btn:hover { background:var(--bg3); }
+  .km-icon-danger { color:var(--dan); border-color:var(--dan); }
+  .km-icon-danger:hover { background:rgba(239,68,68,.1); }
+  .km-actions { white-space:nowrap; vertical-align:middle; text-align:center; width:1%; }
   .km-form { display:grid; gap:.6rem; max-width:560px; margin-top:1.5rem; }
   .km-form label { font-size:.8rem; color:var(--muted); margin-bottom:.1rem; display:block; }
   .km-form input, .km-form textarea {
@@ -69,7 +74,6 @@ ${getThemeHeadScript()}
   }
   .km-form textarea { resize:vertical; min-height:60px; }
   .km-btn { padding:.4rem .9rem; border-radius:4px; border:none; cursor:pointer; font-size:.85rem; }
-  .km-btn-sm { padding:.15rem .45rem; font-size:.75rem; }
   .km-btn-primary { background:var(--acc); color:#fff; }
   .km-btn-danger  { background:var(--dan); color:#fff; }
   .km-btn-muted   { background:var(--bg3); color:var(--txt); border:1px solid var(--bdr); }
@@ -77,12 +81,9 @@ ${getThemeHeadScript()}
   .km-msg.ok  { background:rgba(16,185,129,.15); color:var(--ok); border:1px solid var(--ok); }
   .km-msg.err { background:rgba(239,68,68,.12); color:var(--dan); border:1px solid var(--dan); }
   .km-section-title { font-size:1.1rem; font-weight:600; margin:1.5rem 0 .5rem; }
-  .km-edit-row input { width:100%; font-family:monospace; font-size:.85rem; padding:.3rem .5rem;
-    background:var(--bg2); color:var(--txt);
-    border:1px solid var(--acc); border-radius:3px; }
   @media (max-width:600px) {
     .km-col-desc { display:none; }
-    .km-val-text { max-width:90px; }
+    .km-val-text { max-width:120px; }
   }
 </style>
 </head>
@@ -99,17 +100,14 @@ ${getThemeHeadScript()}
   <div id="msg" style="display:none"></div>
 
   <div class="km-section-title">Secrets</div>
-  <div class="km-table-wrap">
-    <table class="km-table" id="secrets-table">
-      <thead><tr>
-        <th>Name (placeholder)</th>
-        <th>Value</th>
-        <th class="km-col-desc">Description</th>
-        <th>Actions</th>
-      </tr></thead>
-      <tbody id="secrets-body"><tr><td colspan="4" style="color:var(--color-muted)">Loading…</td></tr></tbody>
-    </table>
-  </div>
+  <table class="km-table" id="secrets-table">
+    <thead><tr>
+      <th>Name &amp; Value</th>
+      <th class="km-col-desc">Description</th>
+      <th></th>
+    </tr></thead>
+    <tbody id="secrets-body"><tr><td colspan="3" style="color:var(--color-muted)">Loading…</td></tr></tbody>
+  </table>
 
   <div class="km-section-title" id="form-title">Add Secret</div>
   <form class="km-form" id="secret-form" onsubmit="return handleSubmit(event)">
@@ -141,27 +139,26 @@ async function load() {
   const data = await res.json();
   const tbody = document.getElementById('secrets-body');
   if (!data.ok || !data.secrets.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--color-muted)">No secrets configured yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--color-muted)">No secrets configured yet.</td></tr>';
     return;
   }
   tbody.innerHTML = data.secrets.map(s => {
     const name = escHtml(s.name);
     const desc = escHtml(s.description || '');
     return \`<tr id="row-\${name}">
-      <td><code>\${name}</code></td>
-      <td class="km-val-cell" id="val-\${name}">
-        <span class="km-val-text masked">••••••••</span>
-        <span class="km-val-text revealed" style="display:none">\${escHtml(s.value)}</span>
-        <span class="km-val-btns">
-          <button class="km-btn km-btn-muted km-btn-sm" onclick="toggleReveal('\${name}')">Show</button>
-          <button class="km-btn km-btn-muted km-btn-sm" onclick="copyVal('\${name}', \${JSON.stringify(s.value)})" title="Copy to clipboard">Copy</button>
-        </span>
+      <td>
+        <div class="km-name">\${name}</div>
+        <div class="km-val-row" id="val-\${name}">
+          <span class="km-val-text masked">••••••••</span>
+          <span class="km-val-text revealed" style="display:none">\${escHtml(s.value)}</span>
+          <button class="km-icon-btn" id="show-btn-\${name}" onclick="toggleReveal('\${name}')" title="Show / Hide">👁</button>
+          <button class="km-icon-btn" id="copy-btn-\${name}" onclick="copyVal('\${name}', \${JSON.stringify(s.value)})" title="Copy to clipboard">📋</button>
+        </div>
       </td>
       <td class="km-col-desc">\${desc}</td>
       <td class="km-actions">
-        <button class="km-btn km-btn-muted km-btn-sm" onclick="startEdit('\${name}', \${JSON.stringify(s.value)}, \${JSON.stringify(s.description || '')})"
-          style="margin-right:.3rem">Edit</button>
-        <button class="km-btn km-btn-danger km-btn-sm" onclick="handleDelete('\${name}')">Delete</button>
+        <button class="km-icon-btn" onclick="startEdit('\${name}', \${JSON.stringify(s.value)}, \${JSON.stringify(s.description || '')})" title="Edit">✏️</button>
+        <button class="km-icon-btn km-icon-danger" onclick="handleDelete('\${name}')" title="Delete">🗑️</button>
       </td>
     </tr>\`;
   }).join('');
@@ -172,22 +169,21 @@ function escHtml(s) {
 }
 
 function toggleReveal(name) {
-  const cell = document.getElementById('val-' + name);
-  const masked = cell.querySelector('.masked');
-  const revealed = cell.querySelector('.revealed');
-  const btn = cell.querySelectorAll('button')[0];
+  const row = document.getElementById('val-' + name);
+  const masked   = row.querySelector('.masked');
+  const revealed = row.querySelector('.revealed');
+  const btn      = document.getElementById('show-btn-' + name);
   if (masked.style.display === 'none') {
-    masked.style.display = ''; revealed.style.display = 'none'; btn.textContent = 'Show';
+    masked.style.display = ''; revealed.style.display = 'none'; btn.title = 'Show / Hide';
   } else {
-    masked.style.display = 'none'; revealed.style.display = ''; btn.textContent = 'Hide';
+    masked.style.display = 'none'; revealed.style.display = ''; btn.title = 'Hide';
   }
 }
 
 async function copyVal(name, value) {
   try {
     await navigator.clipboard.writeText(value);
-    const cell = document.getElementById('val-' + name);
-    const btn = cell.querySelectorAll('button')[1];
+    const btn = document.getElementById('copy-btn-' + name);
     const orig = btn.textContent;
     btn.textContent = '✓';
     setTimeout(() => { btn.textContent = orig; }, 1500);

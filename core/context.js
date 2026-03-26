@@ -740,7 +740,6 @@ export async function setPurgeContext(workingObject) {
   );
   let deleted = Number(res1?.affectedRows || 0);
 
-  /* Purge timeline only when the full channel (not a subchannel) is being cleared */
   if (!subchannel) {
     const [res2] = await pool.execute(
       `DELETE FROM ${TIMELINE_TABLE} WHERE channel_id = ? AND COALESCE(frozen, 0) = 0`,
@@ -761,13 +760,11 @@ export async function setPurgeSubchannel(workingObject, subchannelId) {
 
   const pool = await getEnsurePool(workingObject);
 
-  /* Step 1 — delete non-frozen entries */
   const [res1] = await pool.execute(
     "DELETE FROM context WHERE id = ? AND COALESCE(subchannel, '') = ? AND COALESCE(frozen, 0) = 0",
     [id, sub]
   );
 
-  /* Step 2 — promote frozen entries to main channel */
   const [res2] = await pool.execute(
     "UPDATE context SET subchannel = NULL WHERE id = ? AND COALESCE(subchannel, '') = ? AND COALESCE(frozen, 0) = 1",
     [id, sub]

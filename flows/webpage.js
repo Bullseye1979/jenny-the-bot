@@ -161,7 +161,6 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
       wo.http.remoteAddress = req.socket?.remoteAddress || req.connection?.remoteAddress || null;
       wo.http.host = req.headers?.host || null;
       wo.http.receivedAt = nowIso;
-      /* Expose which port this request arrived on so modules can route by port */
       wo.http.port = port;
 
       if (urlPath.startsWith("/api/")) {

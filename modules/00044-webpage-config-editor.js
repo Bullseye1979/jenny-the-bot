@@ -45,13 +45,11 @@ export default async function getWebpageConfigEditor(coreData) {
   const method  = String(wo.http?.method ?? "GET").toUpperCase();
   const urlPath = String(wo.http?.path ?? wo.http?.url ?? "/").split("?")[0];
 
-  /* Never intercept auth paths on loginPort */
   if (urlPath === "/auth" || urlPath.startsWith("/auth/")) return coreData;
 
   const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
   const isAllowed = getIsAllowedRoles(wo, allowedRoles);
 
-/* ---- GET /config/style.css ---- */
   if (method === "GET" && urlPath === basePath + "/style.css") {
     const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
     wo.http.response = {
@@ -65,7 +63,6 @@ export default async function getWebpageConfigEditor(coreData) {
     return coreData;
   }
 
-  /* ---- GET /config ---- */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     if (!isAllowed) {
       wo.http.response = {
@@ -90,7 +87,6 @@ export default async function getWebpageConfigEditor(coreData) {
     return coreData;
   }
 
-  /* ---- GET /config/api/config ---- */
   if (method === "GET" && urlPath === basePath + "/api/config") {
     if (!isAllowed) {
       setJsonResp(wo, 403, { error: "forbidden" });
@@ -107,7 +103,6 @@ export default async function getWebpageConfigEditor(coreData) {
     return coreData;
   }
 
-  /* ---- POST /config/api/config ---- */
   if (method === "POST" && urlPath === basePath + "/api/config") {
     if (!isAllowed) {
       setJsonResp(wo, 403, { error: "forbidden" });
@@ -489,7 +484,6 @@ function renderObject(key, obj, path, depth) {
   var s = mkSection(getTitle(key, obj), depth, depth < 1);
   s.section.setAttribute('data-cfgpath', JSON.stringify(path));
 
-  /* ✏ pencil to edit _title inline */
   if ('_title' in obj) {
     var titleSpan = s.hdr.querySelector('.cs-title');
     var pencil = document.createElement('button');
@@ -523,7 +517,6 @@ function renderObject(key, obj, path, depth) {
     s.hdr.appendChild(pencil);
   }
 
-  /* × delete button in header */
   if (path.length > 0) {
     var del = document.createElement('button');
     del.className = 'cs-del'; del.type = 'button'; del.title = 'Remove block';
@@ -542,7 +535,6 @@ function renderObject(key, obj, path, depth) {
     s.body.appendChild(renderValue(k, obj[k], path.concat([k]), depth + 1));
   });
 
-  /* + add bar */
   var addBar = document.createElement('div');
   addBar.className = 'cs-add-bar';
   var btnAttr = document.createElement('button');
@@ -576,7 +568,6 @@ function renderObjectArray(key, arr, path, depth) {
   badge.className = 'cs-badge'; badge.textContent = arr.length;
   s.hdr.appendChild(badge);
 
-  /* × delete button in header */
   if (path.length > 0) {
     var del = document.createElement('button');
     del.className = 'cs-del'; del.type = 'button'; del.title = 'Remove array';
@@ -598,7 +589,6 @@ function renderObjectArray(key, arr, path, depth) {
     }
   });
 
-  /* + add item footer */
   var addBar = document.createElement('div');
   addBar.className = 'cs-add-bar';
   var btnItem = document.createElement('button');

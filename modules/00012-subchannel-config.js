@@ -59,7 +59,6 @@ export default async function getSubchannelConfig(coreData) {
     if (pe)  wo.persona       = pe;
     if (ins) wo.instructions  = ins;
   } catch {
-    /* table may not exist yet — silently skip */
   }
 
   return coreData;

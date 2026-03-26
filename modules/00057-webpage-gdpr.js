@@ -39,7 +39,6 @@ async function buildGdprWorkbook(userId, dbCfg, gdprTable) {
   wb.creator = "Jenny Bot";
   wb.created = new Date();
 
-  /* helper: bold header row */
   function setHeaderRow(sheet, headers) {
     const row = sheet.addRow(headers);
     row.eachCell(cell => {
@@ -122,7 +121,6 @@ async function buildGdprWorkbook(userId, dbCfg, gdprTable) {
 
   } catch (e) {
     if (conn) { try { await conn.end(); } catch {} }
-    /* still build the workbook with empty DB sheets + a note */
     wb.getWorksheet("Context")  || wb.addWorksheet("Context");
     wb.getWorksheet("GDPR Consent") || wb.addWorksheet("GDPR Consent");
     const errSheet = wb.addWorksheet("Export Errors");

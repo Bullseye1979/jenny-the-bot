@@ -3331,9 +3331,17 @@ All structural changes (add/remove) immediately re-render the tree and mark the 
 - `GET /chat/api/chats` — returns list of available chat channels (role-filtered)
 - `GET /chat/api/context?channelID=xxx` — fetches message history for a channel
 - `POST /chat/api/chat` — receives a user message; `00048` forwards it to the internal API flow (`POST /api`) and returns `{ response }` directly as JSON
+- `POST /chat/api/upload` — server-side file upload proxy; accepts raw binary body with `Content-Type` and `X-Filename` headers; forwards to `cfg.apiUrl` → `/upload` with optional Bearer token; returns `{ ok, url }` or error JSON
 - Subchannel CRUD: `GET/POST/PATCH/DELETE /chat/api/subchannels`
 
 **Architecture note:** `00048-webpage-chat` is a pure HTTP handler. On `POST /chat/api/chat` it makes an internal `POST http://localhost:3400/api` call with `channelID`, `payload`, `userId`, and `subchannel`. All AI processing (model, tools, persona, context write) happens inside the API pipeline — `00048` does not interact with AI or context directly. Channel config comes from `core-channel-config` (same entries used by Discord and the browser extension). `00011-webpage-channel-config` is deactivated (`flow: []`).
+
+**File attachment UI:**
+- 📎 attach button in the chat footer opens a file picker
+- Selected file is shown in a preview bar above the footer with a ✕ clear button
+- On send: images are uploaded via `POST /gallery/api/files` (same-origin, session cookie auth); non-images and gallery failures fall back to `POST /chat/api/upload` (server proxy)
+- The uploaded file URL is prepended to the message payload (`url\nmessage text`) before sending to the AI
+- Upload happens before the chat API call; the message is not sent if the upload fails
 
 ### 16.4 Inpainting SPA (`/inpainting`)
 
@@ -4191,14 +4199,14 @@ The Key Manager is an admin-only web UI for managing the `bot_secrets` database 
 
 #### Features
 
-- Lists all secrets with masked values
-- **Show / Hide** button: reveals the value inline (truncated with ellipsis for long keys)
-- **Copy** button: copies the real value to the clipboard without revealing it on screen
-- **Add** form: name (uppercase recommended), real value, optional description
-- **Edit** button: pre-fills the form; name is read-only during edit
-- **Delete** button: confirmation dialog before delete
+- Lists all secrets in a compact two-column table: **Name & Value** (stacked) + **Description**
+- Value is shown below the placeholder name, masked by default
+- **👁** — toggle reveal/hide the value inline (truncated with ellipsis)
+- **📋** — copy the real value to the clipboard without revealing it on screen; shows ✓ briefly
+- **✏️** — pre-fills the edit form below; name is read-only during edit
+- **🗑️** — delete with confirmation dialog
 - Automatically creates the `bot_secrets` table on first visit (idempotent)
-- Responsive layout: table scrolls horizontally on small screens; description column hidden on mobile
+- Responsive: description column hidden on mobile; table fits without horizontal scroll
 
 #### Configuration
 

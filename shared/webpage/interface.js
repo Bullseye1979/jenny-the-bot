@@ -93,14 +93,12 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, us
   const r0  = String(role || "").trim();
   const r   = r0 ? r0.toLowerCase() : "";
 
-  /* Collect role-filtered items */
   const filtered = [];
   for (const it of items) {
     const text  = String(it.text || it.label || it.name || "").trim();
     const link  = String(it.link || it.href  || it.url  || "").trim();
     const roles = Array.isArray(it.roles) ? it.roles : [];
     if (!text || !link) continue;
-    /* Role gate: roles empty => show; admin => show all; else must match */
     if (roles.length && r && r !== "admin") {
       const ok = roles.map(x => String(x || "").trim().toLowerCase()).filter(Boolean).includes(r);
       if (!ok) continue;
@@ -116,7 +114,6 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, us
       '">' + escHtml(it.text) + "</a>";
   }
 
-  /* All nav items go into the ... dropdown */
   let nav = '<nav class="nav-links">';
   nav += '<details class="nav-more has-overflow">';
   nav += '<summary class="nav-link nav-more-btn">&#xB7;&#xB7;&#xB7;</summary>';
@@ -126,7 +123,6 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, us
   nav += "</div></details>";
   nav += "</nav>";
 
-  /* Profile dropdown — role badge opens a panel with user info, theme toggle, logout */
   const ui      = userInfo && typeof userInfo === "object" ? userInfo : {};
   const uid     = String(ui.userId   || "");
   const uname   = String(ui.username || "");
@@ -152,7 +148,6 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, us
       '</div>' +
     '</details>';
 
-  /* Shared script: close-on-outside-click + theme toggle */
   const script =
     '<script>!function(){if(window._navMoreReady)return;window._navMoreReady=true;' +
     'document.addEventListener("click",function(e){' +

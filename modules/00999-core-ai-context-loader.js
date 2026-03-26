@@ -24,10 +24,8 @@ export default async function getCoreAiContextLoader(coreData) {
   const wo = coreData?.workingObject;
   const log = getPrefixedLogger(wo, import.meta.url);
 
-  /* Idempotent — already populated by an earlier run or a calling module */
   if (Array.isArray(wo._contextSnapshot)) return coreData;
 
-  /* No payload → no AI call will happen, skip the DB round-trip */
   if (!String(wo?.payload ?? "").trim()) return coreData;
 
   /* No channelID yet — leave _contextSnapshot unset so AI modules fall back to

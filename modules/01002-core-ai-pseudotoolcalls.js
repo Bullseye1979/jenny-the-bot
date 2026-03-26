@@ -82,7 +82,6 @@ function getKiCfg(wo) {
     maxLoops: getNum(wo?.maxLoops, 20),
     requestTimeoutMs: getNum(wo?.requestTimeoutMs, 120000),
 
-    /* Soft limits to avoid tool spam while still supporting multi-step flows */
     maxToolCallsTotal: getNum(wo?.MaxToolCallsTotal, 3),
     maxToolCallsPerTurn: getNum(wo?.MaxToolCallsPerTurn, 1)
   };
@@ -397,14 +396,10 @@ function getExtractPseudoToolCall(text) {
   let args = {};
   try { args = JSON.parse(jsonText); } catch { args = getTryParseJSON(jsonText, {}); }
 
-  /* Stable behavior: keep only content BEFORE the tool call */
   const before = s.slice(0, cutStart).trim();
 
-  /* If there is trailing content after the toolcall, ignore it (log once) */
   const after = s.slice(cutEnd).trim();
   if (after) {
-    /* best-effort logging; no side effects */
-    /* caller has access to wo, but this function does not. */
   }
 
   return { name, args, cleanText: before, toolText };
@@ -489,7 +484,6 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(errPayload) };
   }
 
-  /* Channel-specific toolcall key (for API / browser-extension consumers) */
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   try {
     try { await putItem(name, "status:tool"); } catch {}

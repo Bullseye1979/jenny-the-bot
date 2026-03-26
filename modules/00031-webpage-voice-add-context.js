@@ -35,17 +35,14 @@ function parseDiarizeSegments(text) {
   const segments   = [];
 
   for (const line of text.split("\n")) {
-    /* Matches: "A: text", "A_2: text", "speaker_0: text", "SPEAKER_00: text" */
     const m = line.match(/^([A-Za-z][A-Za-z0-9_]*):\s+(.+)$/);
     if (!m) continue;
 
     const raw = m[1];
     if (!speakerMap[raw]) {
       if (/^[A-Z](_\d+)?$/.test(raw)) {
-        /* Already a processed label (A or A_2) — use as-is */
         speakerMap[raw] = raw;
       } else {
-        /* Legacy speaker_N format — map to next available letter */
         const idx       = Object.keys(speakerMap).length;
         speakerMap[raw] = SPEAKER_LABELS[idx] ?? `S${idx}`;
       }

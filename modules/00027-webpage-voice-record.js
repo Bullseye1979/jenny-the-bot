@@ -92,7 +92,6 @@ async function getDiarizedText(transcript, cfg, wo) {
   const segments = Array.isArray(transcript.segments) ? transcript.segments : [];
   if (!segments.length) return transcript.text || "";
 
-  /* Build numbered segment list for the LLM */
   const segText = segments.map((s, i) =>
     `[${i + 1}] (${(s.start || 0).toFixed(1)}s\u2013${(s.end || 0).toFixed(1)}s) ${(s.text || "").trim()}`
   ).join("\n");
@@ -140,7 +139,6 @@ export default async function getWebpageVoiceRecord(coreData) {
   if (Number(wo.http?.port) !== port) return coreData;
   if (method !== "POST" || !url.startsWith(ROUTE_RECORD)) return coreData;
 
-  /* Auth gate */
   const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
   if (!getIsAllowedRoles(wo, allowedRoles)) {
     await sendJson(wo, 403, { error: "forbidden" });
@@ -148,7 +146,6 @@ export default async function getWebpageVoiceRecord(coreData) {
     return coreData;
   }
 
-  /* Parse channelId */
   const qIdx      = url.indexOf("?");
   const params    = new URLSearchParams(qIdx >= 0 ? url.slice(qIdx + 1) : "");
   const channelId = (params.get("channelId") || "").trim();
@@ -158,7 +155,6 @@ export default async function getWebpageVoiceRecord(coreData) {
     return coreData;
   }
 
-  /* Validate body */
   const rawBody = wo.http?.rawBodyBytes;
   if (!rawBody?.length) {
     await sendJson(wo, 400, { error: "empty_body" });
@@ -166,7 +162,6 @@ export default async function getWebpageVoiceRecord(coreData) {
     return coreData;
   }
 
-  /* Convert audio to WAV */
   const contentType = (wo.http?.headers?.["content-type"] || "audio/webm").split(";")[0].trim();
   const extMap      = { "audio/webm": ".webm", "audio/ogg": ".ogg", "audio/wav": ".wav",
                         "audio/mpeg": ".mp3",  "audio/mp4": ".mp4", "audio/x-m4a": ".m4a" };
@@ -180,34 +175,28 @@ export default async function getWebpageVoiceRecord(coreData) {
     if (ext !== ".wav") await getConvertToWav(inputFile, wavFile);
     const audioFile = ext === ".wav" ? inputFile : wavFile;
 
-    /* Transcribe */
     log("Transcribing meeting recording", "info", { moduleName: MODULE_NAME, channelId, bytes: rawBody.length });
     const transcript = await getTranscript(audioFile, cfg, wo);
 
-    /* Optionally diarize */
     const diarize = cfg.diarize !== false;
     let finalText = transcript.text || "";
     let speakers  = 1;
     if (diarize && Array.isArray(transcript.segments) && transcript.segments.length > 1) {
       finalText = await getDiarizedText(transcript, cfg, wo);
-      /* Rough speaker count: count unique "Speaker N:" patterns */
       const matches = new Set((finalText.match(/Speaker \d+:/g) || []));
       speakers = matches.size || 1;
     }
 
     const words = (finalText.match(/\S+/g) || []).length;
 
-    /* Set channelID so setContext writes to the right channel */
     const prevChannelId = wo.channelID;
     wo.channelID = channelId;
 
-    /* Optionally purge non-frozen context before storing */
     if (cfg.clearContextBeforeTranscription) {
       await setPurgeContext(wo);
       log("Context purged before transcription storage", "info", { moduleName: MODULE_NAME, channelId });
     }
 
-    /* Store in context */
     const ts = new Date().toISOString();
     await setContext(wo, {
       role:    "user",

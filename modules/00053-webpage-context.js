@@ -62,7 +62,6 @@ async function dbColumns(pool) {
     );
     if (rows.length) return rows.map(r => ({ name: getStr(r.COLUMN_NAME), type: getStr(r.DATA_TYPE) }));
   } catch (_) { /* fall through to defaults */ }
-  /* Fallback: default context table columns */
   return [
     { name: "ctx_id",   type: "bigint"   },
     { name: "ts",       type: "datetime" },
@@ -569,7 +568,6 @@ function renderTable(rows) {
   var tbody = document.getElementById('table-body');
   thead.innerHTML = ''; tbody.innerHTML = '';
 
-  /* Checkbox header */
   var thChk = document.createElement('th');
   thChk.style.cssText = 'width:28px;padding:6px 4px';
   var chkAll = document.createElement('input'); chkAll.type = 'checkbox'; chkAll.id = 'chk-all';
@@ -583,17 +581,14 @@ function renderTable(rows) {
   });
   thChk.appendChild(chkAll); thead.appendChild(thChk);
 
-  /* Edit header */
   var thEdit = document.createElement('th');
   thEdit.style.cssText = 'width:28px;padding:6px 4px';
   thead.appendChild(thEdit);
 
-  /* Data column headers */
   visibleCols.forEach(function (col) {
     var th = document.createElement('th'); th.textContent = col; thead.appendChild(th);
   });
 
-  /* Empty state */
   if (!rows.length) {
     var tr = document.createElement('tr');
     var td = document.createElement('td');
@@ -604,11 +599,9 @@ function renderTable(rows) {
     return;
   }
 
-  /* Rows */
   rows.forEach(function (row) {
     var tr = document.createElement('tr');
 
-    /* Checkbox cell */
     var tdChk = document.createElement('td');
     tdChk.style.cssText = 'padding:4px;';
     var chk = document.createElement('input');
@@ -624,7 +617,6 @@ function renderTable(rows) {
     });
     tdChk.appendChild(chk); tr.appendChild(tdChk);
 
-    /* Edit button cell */
     var tdEdit = document.createElement('td');
     tdEdit.style.cssText = 'padding:2px 4px;';
     var btnEdit = document.createElement('button');
@@ -634,7 +626,6 @@ function renderTable(rows) {
     })(row.ctx_id);
     tdEdit.appendChild(btnEdit); tr.appendChild(tdEdit);
 
-    /* Data cells */
     visibleCols.forEach(function (col) {
       var td = document.createElement('td'); td.dataset.col = col;
       var val = row[col];
@@ -952,7 +943,6 @@ function setupEvents() {
   document.getElementById('btn-delete-sel').addEventListener('click', doDelete);
   document.getElementById('btn-prev').addEventListener('click', function () { if (currentPage > 1) { currentPage--; loadPage(); } });
   document.getElementById('btn-next').addEventListener('click', function () { currentPage++; loadPage(); });
-  /* S&R modal */
   document.getElementById('btn-replace-open').addEventListener('click', function () {
     document.getElementById('modal-replace').classList.remove('hidden');
   });
@@ -974,7 +964,6 @@ function setupEvents() {
       if (srMatches.length && q) renderSrMatches(q);
     });
   });
-  /* Edit modal */
   document.getElementById('edit-close').addEventListener('click', function () {
     document.getElementById('modal-edit').classList.add('hidden');
   });
@@ -985,33 +974,27 @@ function setupEvents() {
   document.getElementById('modal-edit').addEventListener('click', function (e) {
     if (e.target === this) this.classList.add('hidden');
   });
-  /* Field panel */
   document.getElementById('btn-fields').addEventListener('click', function (e) {
     e.stopPropagation();
     document.getElementById('field-panel').classList.toggle('hidden');
   });
   document.addEventListener('click', function () { document.getElementById('field-panel').classList.add('hidden'); });
   document.getElementById('field-panel').addEventListener('click', function (e) { e.stopPropagation(); });
-  /* Expand */
   document.getElementById('expand-close').addEventListener('click', function () { document.getElementById('expand-overlay').classList.add('hidden'); });
   document.getElementById('expand-overlay').addEventListener('click', function (e) { if (e.target === this) this.classList.add('hidden'); });
 }
 
-/* ---- Init ---- */
 async function loadAll() {
   await loadChannels();
   await loadPage();
 }
 (async function () {
   setupEvents();
-  /* Show server-side DB status if there was an error at page-load time */
   var banner = document.getElementById('db-banner');
   if (banner && banner.style.display !== 'none') {
-    /* DB error banner is already visible in HTML; skip loading */
     setStatus('DB error - page started without database. Check bot logs.', true);
     return;
   }
-  /* If DB is OK, show total count from server-side ping */
   if (banner && banner.dataset.count !== undefined) {
     console.log('[Context] Server-side DB ping OK, total rows:', banner.dataset.count);
   }
@@ -1044,7 +1027,6 @@ export default async function getWebpageContext(coreData) {
   const urlPath = getStr(wo.http?.path);
   const query   = wo.http?.query || {};
 
-  /* CSS — shared stylesheet + module overrides, no auth required */
   if (method === "GET" && urlPath === basePath + "/style.css") {
     let sharedCss = "";
     try { sharedCss = fs.readFileSync(SHARED_CSS, "utf-8"); } catch { /* ignore */ }
@@ -1052,15 +1034,12 @@ export default async function getWebpageContext(coreData) {
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /* Auth */
   const isAllowed = getIsAllowedRoles(wo, allowedRoles);
 
-  /* Main SPA */
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     if (!isAllowed) {
       setHtmlResp(wo, "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:2rem'><h2>Access denied</h2></body></html>");
     } else {
-      /* Quick server-side DB ping so the client knows immediately if DB works */
       let dbStatus = "ok";
       let dbInfo = "";
       try {
@@ -1085,13 +1064,11 @@ export default async function getWebpageContext(coreData) {
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /* All API routes require auth */
   if (!isAllowed) {
     setJsonResp(wo, 403, { error: "forbidden" });
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /* DB pool */
   let pool;
   try { pool = await getDb(coreData); } catch (e) {
     setJsonResp(wo, 503, { error: "DB not available: " + e.message });
@@ -1099,21 +1076,18 @@ export default async function getWebpageContext(coreData) {
   }
 
   try {
-    /* GET /api/channels */
     if (method === "GET" && urlPath === basePath + "/api/channels") {
       const channels = await dbChannels(pool);
       setJsonResp(wo, 200, { channels });
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* GET /api/columns */
     if (method === "GET" && urlPath === basePath + "/api/columns") {
       const columns = await dbColumns(pool);
       setJsonResp(wo, 200, { columns });
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* GET /api/records */
     if (method === "GET" && urlPath === basePath + "/api/records") {
       const page    = Math.max(1, getInt(query.page, 1));
       const limit   = Math.min(200, Math.max(1, getInt(query.limit, PAGE_SIZE)));
@@ -1124,7 +1098,6 @@ export default async function getWebpageContext(coreData) {
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* GET /api/search */
     if (method === "GET" && urlPath === basePath + "/api/search") {
       const q            = getStr(query.q);
       const page         = Math.max(1, getInt(query.page, 1));
@@ -1137,7 +1110,6 @@ export default async function getWebpageContext(coreData) {
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* GET /api/record?ctx_id=N */
     if (method === "GET" && urlPath === basePath + "/api/record") {
       const ctx_id = getInt(query.ctx_id, 0);
       if (!ctx_id) { setJsonResp(wo, 400, { error: "ctx_id required" }); wo.jump = true; await setSendNow(wo); return coreData; }
@@ -1147,7 +1119,6 @@ export default async function getWebpageContext(coreData) {
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* PATCH /api/record */
     if (method === "PATCH" && urlPath === basePath + "/api/record") {
       const body   = wo.http?.json || {};
       const ctx_id = getInt(body.ctx_id, 0);
@@ -1159,7 +1130,6 @@ export default async function getWebpageContext(coreData) {
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* DELETE /api/delete */
     if (method === "DELETE" && urlPath === basePath + "/api/delete") {
       const body = wo.http?.json || {};
       const ids  = Array.isArray(body.ids) ? body.ids.map(Number).filter(n => Number.isFinite(n) && n > 0) : [];
@@ -1168,7 +1138,6 @@ export default async function getWebpageContext(coreData) {
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* POST /api/replace/find */
     if (method === "POST" && urlPath === basePath + "/api/replace/find") {
       const body    = wo.http?.json || {};
       const search  = getStr(body.search);
@@ -1182,7 +1151,6 @@ export default async function getWebpageContext(coreData) {
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* POST /api/replace/apply */
     if (method === "POST" && urlPath === basePath + "/api/replace/apply") {
       const body    = wo.http?.json || {};
       const ctx_id  = getInt(body.ctx_id, 0);
@@ -1195,7 +1163,6 @@ export default async function getWebpageContext(coreData) {
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    /* POST /api/replace/all */
     if (method === "POST" && urlPath === basePath + "/api/replace/all") {
       const body    = wo.http?.json || {};
       const search  = getStr(body.search);
