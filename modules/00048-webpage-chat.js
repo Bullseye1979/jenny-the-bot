@@ -87,10 +87,6 @@ async function getEnsureChatSubchannelsTable(pool) {
 
 
 
-/* Channel-config helpers removed — AI is now handled via POST /api.
-   core-channel-config (00010, api flow) applies per-channel overrides
-   on the API side. No local wo overrides needed here. */
-
 
 export default async function getWebpageChat(coreData) {
   const wo = coreData?.workingObject || {};
@@ -182,8 +178,6 @@ export default async function getWebpageChat(coreData) {
     if (!getIsChatVisibleForUser(wo, chatEntry)) { setNotFound(wo); wo.jump = true; await setSendNow(wo); return coreData; }
 
     try {
-      /* Use direct DB query for display — getContext() strips the last user
-         message by design (for AI calls). For the chat view we want all rows. */
       const pool = await getDb(coreData);
       let subSql = subchannelId ? "AND COALESCE(subchannel,'') = ?" : "AND subchannel IS NULL";
       const subArg = subchannelId ? [subchannelId] : [];
@@ -531,12 +525,10 @@ function getChatHtml(opts) {
     getThemeHeadScript() + "\n" +
     "<link rel=\"stylesheet\" href=\"" + chatBase + "/style.css\">\n" +
     "<style>\n" +
-    "/* Subchannel controls — added to shared channel bar */\n" +
     "#chat-sub-sel{max-width:150px;padding:4px 6px;border:1px solid var(--bdr);border-radius:4px;font-size:12px;background:var(--bg2);color:var(--txt);cursor:pointer}\n" +
     "#chat-sub-sel:focus{outline:none;border-color:var(--acc)}\n" +
     ".chat-sub-btn{width:26px;height:26px;border:1px solid var(--bdr);border-radius:4px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}\n" +
     ".chat-sub-btn:hover{border-color:var(--acc);color:var(--acc)}\n" +
-    "/* Sub-config modal */\n" +
     "#sub-cfg-modal textarea{width:100%;margin-top:4px;resize:vertical;background:var(--bg);color:var(--txt);border:1px solid var(--bdr);border-radius:4px;padding:6px;font-size:13px;box-sizing:border-box}\n" +
     "#sub-cfg-modal .modal-box{background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:20px;width:min(520px,95vw);max-height:80vh;overflow-y:auto;display:flex;flex-direction:column;gap:12px}\n" +
     "#sub-cfg-modal label{font-size:12px;color:var(--muted)}\n" +
@@ -604,7 +596,6 @@ function getChatHtml(opts) {
     "\n" +
     "function toast(msg,ms){var t=document.getElementById(\"toast\");t.textContent=msg;t.classList.add(\"on\");setTimeout(function(){t.classList.remove(\"on\");},ms||2400);}\n" +
     "\n" +
-    "/* ---- Channel loading ---- */\n" +
     "function loadChats(){\n" +
     "  fetch(CHAT_BASE+\"/api/chats\")\n" +
     "    .then(function(r){return r.json();})\n" +
@@ -625,7 +616,6 @@ function getChatHtml(opts) {
     "  loadSubchannels(channelID);\n" +
     "}\n" +
     "\n" +
-    "/* ---- Subchannel UI ---- */\n" +
     "function hideSubUI(){[\"chat-sub-sel\",\"sub-new-btn\",\"sub-ren-btn\",\"sub-del-btn\",\"sub-cfg-btn\"].forEach(function(id){document.getElementById(id).style.display=\"none\";});}\n" +
     "\n" +
     "function loadSubchannels(channelID, autoSelectId){\n" +
@@ -731,7 +721,6 @@ function getChatHtml(opts) {
     "    .catch(function(e){toast(\"Error: \"+e.message,5000);});\n" +
     "}\n" +
     "\n" +
-    "/* ---- Context loading ---- */\n" +
     "function reloadContext(){loadContext(chatChannelID,chatSubchannelId);}\n" +
     "\n" +
     "function loadContext(channelID,subchannelId){\n" +
@@ -748,7 +737,6 @@ function getChatHtml(opts) {
     "    .catch(function(e){toast(\"Context error: \"+e.message,4000);});\n" +
     "}\n" +
     "\n" +
-    "/* ---- Rendering ---- */\n" +
     "function renderMessages(){\n" +
     "  var el=document.getElementById(\"chat-msgs\");el.innerHTML=\"\";\n" +
     "  if(!chatMessages.length){el.innerHTML=\"<div class='chat-empty'>No messages yet. Send the first!</div>\";return;}\n" +
@@ -817,7 +805,6 @@ function getChatHtml(opts) {
     "  el.appendChild(buildMsgEl(role,text));el.scrollTop=el.scrollHeight;\n" +
     "}\n" +
     "\n" +
-    "/* ---- File upload ---- */\n" +
     "function clearChatFile(){\n" +
     "  chatPendingFile=null;\n" +
     "  document.getElementById(\"chat-file-bar\").style.display=\"none\";\n" +
@@ -846,7 +833,6 @@ function getChatHtml(opts) {
     "  return uploadChatFileFallback(file);\n" +
     "}\n" +
     "\n" +
-    "/* ---- Send ---- */\n" +
     "function sendMessage(){\n" +
     "  if(chatSending)return;\n" +
     "  if(!chatChannelID){toast(\"Please select a channel first\");return;}\n" +
@@ -856,7 +842,7 @@ function getChatHtml(opts) {
     "  if(!text&&!fileToUpload)return;\n" +
     "  inp.value=\"\";\n" +
     "  clearChatFile();\n" +
-    "  var displayText=fileToUpload?(text?(text+\"\\n[\uD83D\uDCCE \"+fileToUpload.name+\"]\")):\"[\uD83D\uDCCE \"+fileToUpload.name+\"]\"):text;\n" +
+    "  var displayText=fileToUpload?(text?(text+\"\\n[\uD83D\uDCCE \"+fileToUpload.name+\"]\"):\"[\uD83D\uDCCE \"+fileToUpload.name+\"]\"):text;\n" +
     "  appendMessage(\"user\",displayText);\n" +
     "  chatSending=true;\n" +
     "  var btn=document.getElementById(\"chat-send-btn\");btn.disabled=true;btn.textContent=\"\u23F3\";\n" +

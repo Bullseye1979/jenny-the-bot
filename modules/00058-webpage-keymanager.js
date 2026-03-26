@@ -158,12 +158,12 @@ async function load() {
             <span class="km-val-text revealed" style="display:none">\${escHtml(s.value)}</span>
           </div>
           <button class="km-icon-btn" id="show-btn-\${name}" onclick="toggleReveal('\${name}')" title="Show / Hide">👁</button>
-          <button class="km-icon-btn" id="copy-btn-\${name}" onclick="copyVal('\${name}', \${JSON.stringify(s.value)})" title="Copy to clipboard">📋</button>
+          <button class="km-icon-btn" id="copy-btn-\${name}" onclick="copyVal('\${name}', \${escHtml(JSON.stringify(s.value))})" title="Copy to clipboard">📋</button>
         </div>
       </td>
       <td class="km-col-desc">\${desc}</td>
       <td class="km-actions">
-        <button class="km-icon-btn" onclick="startEdit('\${name}', \${JSON.stringify(s.value)}, \${JSON.stringify(s.description || '')})" title="Edit">✏️</button>
+        <button class="km-icon-btn" onclick="startEdit('\${name}', \${escHtml(JSON.stringify(s.value))}, \${escHtml(JSON.stringify(s.description || ''))})" title="Edit">✏️</button>
         <button class="km-icon-btn km-icon-danger" onclick="handleDelete('\${name}')" title="Delete">🗑️</button>
       </td>
     </tr>\`;
