@@ -175,8 +175,8 @@ export default async function getWebpageGdpr(coreData) {
     return coreData;
   }
 
-  if (!wo.webAuth?.role) {
-    wo.http.response = { status: 302, headers: { "Location": "/" }, body: "" };
+  if (!wo.webAuth?.userId) {
+    wo.http.response = { status: 302, headers: { "Location": "/auth/login?next=" + encodeURIComponent(urlPath) }, body: "" };
     wo.jump = true;
     return coreData;
   }

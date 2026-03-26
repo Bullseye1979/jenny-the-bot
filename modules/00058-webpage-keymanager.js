@@ -17,7 +17,7 @@
 /************************************************************************************/
 
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
-import { getIsAllowedRoles } from "../shared/webpage/utils.js";
+import { getIsAllowedRoles, setSendNow } from "../shared/webpage/utils.js";
 import { getSecret, listSecrets, setSecret, deleteSecret, setEnsureSecretsTable } from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-keymanager";
@@ -286,8 +286,30 @@ export default async function getWebpageKeymanager(coreData) {
   if (!urlPath.startsWith(basePath)) return coreData;
 
   if (!getIsAllowedRoles(wo, allowedRoles)) {
-    wo.http.response = { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8" }, body: "403 Forbidden" };
+    if (!wo.webAuth?.userId) {
+      wo.http.response = { status: 302, headers: { "Location": "/auth/login?next=" + encodeURIComponent(urlPath) }, body: "" };
+    } else if (urlPath.startsWith(basePath + "/api/")) {
+      wo.http.response = { status: 403, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "forbidden" }) };
+    } else {
+      const menuHtml = getMenuHtml(wo.web?.menu || [], urlPath, wo.webAuth?.role || "", null, null, wo.webAuth);
+      wo.http.response = {
+        status: 403,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+        body: "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">" +
+              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+              "<title>Key Manager</title>" + getThemeHeadScript() +
+              "<link rel=\"stylesheet\" href=\"" + basePath + "/style.css\"></head><body>" +
+              "<header><h1>\uD83D\uDD11 Key Manager</h1>" + menuHtml + "</header>" +
+              "<div style=\"margin-top:var(--hh);padding:1.5rem;display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--hh))\">" +
+              "<div style=\"text-align:center;color:var(--txt)\">" +
+              "<div style=\"font-size:2rem;margin-bottom:0.5rem\">\uD83D\uDD12</div>" +
+              "<div style=\"font-weight:600;margin-bottom:0.5rem\">Access denied</div>" +
+              "<a href=\"/\" style=\"font-size:0.85rem;color:var(--acc)\">← Back to home</a>" +
+              "</div></div></body></html>"
+      };
+    }
     wo.jump = true;
+    await setSendNow(wo);
     return coreData;
   }
 

@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
+import { getIsAllowedRoles } from "../shared/webpage/utils.js";
 
 const MODULE_NAME = "webpage-documentation";
 const __filename = fileURLToPath(import.meta.url);
@@ -336,19 +337,29 @@ export default async function getWebpageDocumentation(coreData) {
 
   if (urlPath !== basePath && urlPath !== basePath + "/") return coreData;
 
-  if (allowedRoles.length > 0) {
-    const userRole = String(wo?.webAuth?.role || "").toLowerCase();
-    const userRoles = [userRole, ...(wo?.webAuth?.roles || []).map(r => String(r).toLowerCase())].filter(Boolean);
-    const hasRole = userRoles.some(r => r === "admin" || allowedRoles.map(a => a.toLowerCase()).includes(r));
-    if (!hasRole) {
+  if (!getIsAllowedRoles(wo, allowedRoles)) {
+    if (!wo.webAuth?.userId) {
+      wo.http.response = { status: 302, headers: { "Location": "/auth/login?next=" + encodeURIComponent(urlPath) }, body: "" };
+    } else {
+      const menuHtml = getMenuHtml(wo.web?.menu || [], urlPath, wo.webAuth?.role || "", null, null, wo.webAuth);
       wo.http.response = {
         status: 403,
         headers: { "Content-Type": "text/html; charset=utf-8" },
-        body: `<!DOCTYPE html><html><body><h1>Access Denied</h1></body></html>`
+        body: "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">" +
+              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+              "<title>Docs</title>" + getThemeHeadScript() +
+              "<link rel=\"stylesheet\" href=\"" + basePath + "/style.css\"></head><body>" +
+              "<header><h1>\uD83D\uDCDA Docs</h1>" + menuHtml + "</header>" +
+              "<div style=\"margin-top:var(--hh);padding:1.5rem;display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--hh))\">" +
+              "<div style=\"text-align:center;color:var(--txt)\">" +
+              "<div style=\"font-size:2rem;margin-bottom:0.5rem\">\uD83D\uDD12</div>" +
+              "<div style=\"font-weight:600;margin-bottom:0.5rem\">Access denied</div>" +
+              "<a href=\"/\" style=\"font-size:0.85rem;color:var(--acc)\">← Back to home</a>" +
+              "</div></div></body></html>"
       };
-      wo.jump = true;
-      return coreData;
     }
+    wo.jump = true;
+    return coreData;
   }
 
   const files = getDocFiles();

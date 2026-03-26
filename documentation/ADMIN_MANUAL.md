@@ -4114,22 +4114,22 @@ function getIsAllowed(wo, allowedRoles) {
 
 **Page access rules:**
 
-| `allowedRoles` config | User has matching role | Result |
+| `allowedRoles` config | Session state | Result |
 |---|---|---|
-| Empty array `[]` or not set | — | **Always accessible** (public) |
-| Non-empty, e.g. `["admin"]` | Yes | **Accessible** |
-| Non-empty, e.g. `["admin"]` | No | **Access Denied** (403 or HTML error page) |
-| Non-empty, e.g. `["admin"]` | No role (unauthenticated) | **Access Denied** |
+| Empty array `[]` or not set | any | **Always accessible** (public) |
+| Non-empty, e.g. `["admin"]` | Logged in, role matches | **Accessible** |
+| Non-empty, e.g. `["admin"]` | Logged in, role does not match | **403** — styled HTML deny page (with menu) |
+| Non-empty, e.g. `["admin"]` | Not logged in | **302 redirect** to `/auth/login?next=<path>` |
 
-> **Key difference from menu:** The page access check does **not** have a fallback for unauthenticated users. If `allowedRoles` is set, users without a matching role are denied — including unauthenticated users.
+Every module applies this two-step deny: first check `wo.webAuth?.userId` to distinguish "not logged in" from "wrong role", then respond accordingly. This ensures users are always sent to the login page rather than seeing a dead-end 403 when they simply have no session yet.
 
 ### Summary
 
-| Component | Empty roles config | Unauthenticated fallback |
-|---|---|---|
-| Menu item | Always shown | Always shown (fallback) |
-| Page content | Always accessible | Always accessible (no restriction) |
-| Page content (roles set) | N/A | Access Denied |
+| Component | Empty roles config | Not logged in | Wrong role |
+|---|---|---|---|
+| Menu item | Always shown | Shown (fallback) | Hidden |
+| Page content | Always accessible | Always accessible | Always accessible |
+| Page content (roles set) | N/A | Redirect to login | Styled 403 |
 
 ### Example Configurations
 
@@ -4157,60 +4157,116 @@ function getIsAllowed(wo, allowedRoles) {
 
 ### 16.13 Creating a New Web Module
 
-The following template shows the standard pattern for a new webpage module.
+The following template shows the standard pattern for a new webpage module including the mandatory auth flow.
 
 ```javascript
 /************************************************************************************/
-/* filename: webpage-mymodule.js                                                    */
+/* filename: 000xx-webpage-mymodule.js                                              */
 /* Version 1.0                                                                      */
-/* Purpose: Description of what this module does.                                   */
+/* Purpose: Description of what this module does. Reads config only from            */
+/*          config["webpage-my-module"].                                             */
+/*                                                                                  */
+/* Routes:                                                                          */
+/*   GET  /mymodule              Main SPA page                                      */
+/*   GET  /mymodule/style.css    Shared stylesheet (public)                         */
+/*   GET  /mymodule/api/data     Example JSON endpoint                              */
 /************************************************************************************/
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getMenuHtml, isAuthorized } from "../shared/webpage/interface.js";
+import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const MODULE_NAME = "webpage-my-module";
 
+function getStr(v) { return v == null ? "" : String(v); }
+
 export default async function getWebpageMyModule(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
-  const cfg = coreData?.config?.[MODULE_NAME] || {};
-  const port = Number(cfg.port ?? 3116); // pick the next available port
+
+  const cfg          = coreData?.config?.[MODULE_NAME] || {};
+  const port         = Number(cfg.port ?? 3120);
+  const basePath     = getStr(cfg.basePath ?? "/mymodule");
+  const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : [];
+
   if (Number(wo.http?.port) !== port) return coreData;
 
-  const method  = String(wo.http?.method ?? "GET").toUpperCase();
-  const urlPath = String(wo.http?.path ?? "/").split("?")[0];
-  const basePath = String(cfg.basePath ?? "/mymodule");
+  const method  = getStr(wo.http?.method ?? "GET").toUpperCase();
+  const urlPath = getStr(wo.http?.path ?? "/").split("?")[0];
 
-  /* --- CSS --- */
   if (method === "GET" && urlPath === basePath + "/style.css") {
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/css" },
-      body: fs.readFileSync(path.resolve(__dirname, "../shared/webpage/style.css"), "utf-8") };
-    wo.jump = true;
-    return coreData;
+    const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" },
+      body: fs.readFileSync(cssFile, "utf-8") };
+    wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
   }
 
-  /* --- Main page --- */
+  const isAllowed = getIsAllowedRoles(wo, allowedRoles);
+
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" },
-      body: "<html>...</html>" };
-    wo.jump = true;
-    return coreData;
+    if (!isAllowed) {
+      if (!wo.webAuth?.userId) {
+        wo.http.response = { status: 302, headers: { "Location": "/auth/login?next=" + encodeURIComponent(urlPath) }, body: "" };
+      } else {
+        const menuHtml = getMenuHtml(wo.web?.menu || [], urlPath, wo.webAuth?.role || "", null, null, wo.webAuth);
+        wo.http.response = {
+          status: 403,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+          body: "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">" +
+                "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+                "<title>My Module</title>" + getThemeHeadScript() +
+                "<link rel=\"stylesheet\" href=\"" + basePath + "/style.css\"></head><body>" +
+                "<header><h1>My Module</h1>" + menuHtml + "</header>" +
+                "<div style=\"margin-top:var(--hh);padding:1.5rem;display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--hh))\">" +
+                "<div style=\"text-align:center;color:var(--txt)\">" +
+                "<div style=\"font-size:2rem;margin-bottom:0.5rem\">\uD83D\uDD12</div>" +
+                "<div style=\"font-weight:600;margin-bottom:0.5rem\">Access denied</div>" +
+                "<a href=\"/\" style=\"font-size:0.85rem;color:var(--acc)\">← Back to home</a>" +
+                "</div></div></body></html>"
+        };
+      }
+      wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
+    }
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: "<html>...</html>" };
+    wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  if (!isAllowed) {
+    setJsonResp(wo, wo.webAuth?.userId ? 403 : 401, { error: wo.webAuth?.userId ? "forbidden" : "unauthorized" });
+    wo.jump = true; await setSendNow(wo); return coreData;
+  }
+
+  if (method === "GET" && urlPath === basePath + "/api/data") {
+    setJsonResp(wo, 200, { ok: true });
+    wo.jump = true; await setSendNow(wo); return coreData;
   }
 
   return coreData;
 }
+
+export const fn = getWebpageMyModule;
 ```
+
+**Auth deny pattern — rule:**
+
+| Situation | Check | Response |
+|---|---|---|
+| Not logged in | `!wo.webAuth?.userId` | `302` → `/auth/login?next=<urlPath>` |
+| Logged in, wrong role | `wo.webAuth?.userId` set | `403` styled HTML page (with menu + lock icon) |
+| API endpoint, not logged in | `!wo.webAuth?.userId` | JSON `401 unauthorized` |
+| API endpoint, wrong role | `wo.webAuth?.userId` set | JSON `403 forbidden` |
+
+This pattern is **mandatory** for all web modules. Never return a plain-text or bare-HTML 403 for the main page; always redirect unauthenticated users to login first.
 
 **core.json configuration entry:**
 ```json
 "webpage-my-module": {
   "flow": ["webpage"],
-  "port": 3116,
+  "port": 3120,
   "basePath": "/mymodule",
   "allowedRoles": ["admin"]
 }
@@ -4218,25 +4274,22 @@ export default async function getWebpageMyModule(coreData) {
 
 **Steps to register the module:**
 
-1. **Add port** to `config.webpage.ports[]` in core.json:
-   ```json
-   "webpage": { "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116] }
-   ```
+1. **Add port** to `config.webpage.ports[]` and `config["webpage-auth"].ports[]` in core.json.
 
-2. **Add Caddy route** (prepend to the existing block, before `reverse_proxy * localhost:3400`):
+2. **Add Caddy route** (before the default `reverse_proxy`):
    ```
-   reverse_proxy /mymodule*  localhost:3117
+   @mymodule { path /mymodule /mymodule/* }
+   handle @mymodule { reverse_proxy 127.0.0.1:3120 }
    ```
 
 3. **Add menu entry** in `config["webpage-menu"].items[]`:
    ```json
    { "text": "My Module", "link": "/mymodule", "roles": ["admin"] }
    ```
-   Omit `"roles"` (or leave it as `[]`) to make the menu item visible to everyone.
 
-4. **Set `allowedRoles`** in the module config:
-   - `"allowedRoles": []` — page is public (no login required)
-   - `"allowedRoles": ["admin"]` — only users with the `admin` role can access the page
+4. **Set `allowedRoles`**:
+   - `"allowedRoles": []` — public (no login required)
+   - `"allowedRoles": ["admin"]` — admin only; unauthenticated users are redirected to login
 
 See [§16.12 Permission Concept](#1612-permission-concept) for the full rules.
 

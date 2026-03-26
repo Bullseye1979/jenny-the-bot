@@ -338,7 +338,11 @@ export default async function getWebpageBard(coreData) {
 
   if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
     if (!isAnyAllowed) {
-      wo.http.response = { status: 403, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getBardForbiddenHtml({ menu: wo.web?.menu || [], activePath: urlPath, webAuth: wo.webAuth, base: basePath }) };
+      if (!wo.webAuth?.userId) {
+        wo.http.response = { status: 302, headers: { "Location": "/auth/login?next=" + encodeURIComponent(urlPath) }, body: "" };
+      } else {
+        wo.http.response = { status: 403, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getBardForbiddenHtml({ menu: wo.web?.menu || [], activePath: urlPath, webAuth: wo.webAuth, base: basePath }) };
+      }
       wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData;
     }
     wo.http.response = {
