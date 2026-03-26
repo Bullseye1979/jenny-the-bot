@@ -72,7 +72,6 @@ export default async function getWebpageVoiceInput(coreData) {
   if (Number(wo.http?.port) !== port) return coreData;
   if (method !== "POST" || !url.startsWith(ROUTE_AUDIO)) return coreData;
 
-  // ── Validate body ───────────────────────────────────────────────────────────────
   const rawBody = wo.http?.rawBodyBytes;
   if (!rawBody?.length) {
     await sendError(wo, 400, "empty_body");
@@ -80,7 +79,6 @@ export default async function getWebpageVoiceInput(coreData) {
     return coreData;
   }
 
-  // ── Parse channelId + query flags ───────────────────────────────────────────────
   const qIdx      = url.indexOf("?");
   const params    = new URLSearchParams(qIdx >= 0 ? url.slice(qIdx + 1) : "");
   const channelId      = (params.get("channelId") || "").trim();
@@ -93,7 +91,6 @@ export default async function getWebpageVoiceInput(coreData) {
     return coreData;
   }
 
-  // ── Convert audio to 16 kHz mono WAV ────────────────────────────────────────────
   const contentType = (wo.http?.headers?.["content-type"] || "audio/webm").split(";")[0].trim();
   const extMap      = { "audio/webm": ".webm", "audio/ogg": ".ogg", "audio/wav": ".wav",
                         "audio/mpeg": ".mp3",  "audio/mp4": ".mp4", "audio/x-m4a": ".m4a" };

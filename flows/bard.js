@@ -31,8 +31,6 @@ function getParseLibraryXml(xmlText) {
     const volumeM = /<volume>([^<]*)<\/volume>/.exec(inner);
     if (fileM && tagsM) {
       const rawVol   = volumeM ? parseFloat(volumeM[1]) : NaN;
-      // Structured tag format: tags[0]=location, tags[1]=situation, tags[2+]=moods.
-      // Positions 0-1 may be empty strings (wildcard = matches any).
       const rawParts = tagsM[1].split(",");
       const tLoc     = (rawParts[0] || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
       const tSit     = (rawParts[1] || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
@@ -80,31 +78,24 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   const aiMoods   = labels.slice(2).map(l => (l || "").trim().toLowerCase()).filter(Boolean);
   const aiMoodSet = new Set(aiMoods);
 
-  // Library empty tag = wildcard: matches any AI value (including empty).
   const locMatches = t => { const tl = (t.tags[0] || "").toLowerCase(); return !tl || !aiLoc || tl === aiLoc; };
   const sitMatches = t => { const ts = (t.tags[1] || "").toLowerCase(); return !ts || !aiSit || ts === aiSit; };
   const getMoodScore = t => t.tags.slice(2).map(x => x.toLowerCase()).filter(Boolean)
     .filter(m => aiMoodSet.has(m)).length;
 
-  // Build candidate pool (exclude variety-rotation file, not current for tie check).
   const pool = library.filter(t => t.file !== excludeFile);
 
-  let candidates = pool.filter(t => locMatches(t) && sitMatches(t));           // Tier 1
-  if (!candidates.length) candidates = pool.filter(t => locMatches(t) || sitMatches(t)); // Tier 2
-  if (!candidates.length) candidates = [...pool];                                         // Tier 3
+  let candidates = pool.filter(t => locMatches(t) && sitMatches(t));
+  if (!candidates.length) candidates = pool.filter(t => locMatches(t) || sitMatches(t));
+  if (!candidates.length) candidates = [...pool];
   if (!candidates.length) return null;
 
-  // Sort by mood score; pick the highest tier.
   const maxScore = Math.max(...candidates.map(getMoodScore));
   const best = candidates.filter(t => getMoodScore(t) === maxScore);
 
-  // Tie with currently playing song → stay (no switch needed).
-  // Only when labels carry meaningful data. With empty labels (startup / first cron
-  // cycle) every song scores 0 and "tie with current" is meaningless — pick directly.
   const hasMatchData = !!(aiLoc || aiSit || aiMoods.length);
   if (hasMatchData && currentFile && best.some(t => t.file === currentFile)) return null;
 
-  // Random pick among best (variety: prefer not to repeat excludeFile).
   return best[Math.floor(Math.random() * best.length)];
 }
 
@@ -213,16 +204,6 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
           log(`[label-debug] guild=${session.guildId} isPlaying=${isPlaying} labels=[${labels.join(",")}] labelsUpdatedAt=${labelsData?.updatedAt || "none"} currentFile=${currentFile || "none"}`, "info", { moduleName: MODULE_NAME });
 
           if (isPlaying) {
-            // Detect scene changes by comparing new AI labels vs previous active labels
-            // (stored in nowPlaying.labels from the last poll).
-            // Carry-forward in bard-label-output ensures empty AI slots retain the
-            // previous value, so only genuine AI changes produce a mismatch here.
-            //
-            // Rules (all three can trigger a mid-song switch):
-            //   1. Location changed   — both non-empty and different
-            //   2. Situation changed  — both non-empty and different
-            //   3. Mood drift >50%    — >50% of new moods are not in previous moods
-            //      (skipped if either new or previous mood list is empty)
             const prevLabels  = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
             const newLoc      = (labels[0] || "").trim().toLowerCase();
             const prevLoc     = (prevLabels[0] || "").trim().toLowerCase();
@@ -252,10 +233,8 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
                 await setPlayTrack(session, next, musicDir, log, triggerPoll);
                 continue;
               }
-              // getSelectSong returned null = current track is tied-best → stay, update UI only.
             }
 
-            // No switch — refresh UI labels so the page always shows current mood context.
             if (nowPlaying) await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
             try {
               const currentStream = await getItem(`bard:stream:${session.guildId}`);

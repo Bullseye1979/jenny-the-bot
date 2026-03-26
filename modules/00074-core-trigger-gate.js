@@ -21,8 +21,6 @@ export default async function getCoreTriggerGate(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
 
-  // Webpage flows that are not voice (wiki, chat, dashboard, …) don't use a
-  // conversational trigger — skip so the global default trigger doesn't block them.
   if (wo.flow && wo.flow.startsWith("webpage") && !wo.isWebpageVoice) {
     log("Skipped: non-voice webpage flow", "info", { moduleName: MODULE_NAME, flow: wo.flow });
     return coreData;

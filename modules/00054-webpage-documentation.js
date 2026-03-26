@@ -17,9 +17,6 @@ const __dirname = path.dirname(__filename);
 const CSS_PATH = path.resolve(__dirname, "../shared/webpage/style.css");
 const DOCS_DIR = path.resolve(__dirname, "../documentation");
 
-// Extra .md files from outside the documentation/ directory.
-// name: used as URL param and display label (must be unique, must end in .md)
-// filePath: absolute path to the actual file
 const EXTRA_DOCS = [
   {
     name: "Browser-Extension.md",
@@ -326,7 +323,6 @@ export default async function getWebpageDocumentation(coreData) {
 
   if (method !== "GET") return coreData;
 
-  // CSS
   if (urlPath === basePath + "/style.css") {
     try {
       const css = fs.readFileSync(CSS_PATH, "utf8");
@@ -340,7 +336,6 @@ export default async function getWebpageDocumentation(coreData) {
 
   if (urlPath !== basePath && urlPath !== basePath + "/") return coreData;
 
-  // Access control
   if (allowedRoles.length > 0) {
     const userRole = String(wo?.webAuth?.role || "").toLowerCase();
     const userRoles = [userRole, ...(wo?.webAuth?.roles || []).map(r => String(r).toLowerCase())].filter(Boolean);

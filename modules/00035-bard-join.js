@@ -76,7 +76,6 @@ export default async function getBardAdminJoin(coreData) {
       return coreData;
     }
 
-    // bardstart: clean up any existing session first
     if (live) {
       try { if (live._trackTimer) clearTimeout(live._trackTimer); } catch {}
       try { await deleteItem(sessionKey); } catch {}
@@ -93,12 +92,6 @@ export default async function getBardAdminJoin(coreData) {
 
     try { await putItem(liveSession, sessionKey); } catch {}
     await setAddBardSessionKey(sessionKey);
-
-    // Do NOT write startup labels — empty labels make getSelectSong pick a random track,
-    // which is the correct behaviour for the first song. The bard-label-gen cron will
-    // write real structured labels (location/situation/moods) after the first transcript run.
-    // Writing a legacy flat label like ["default"] here would be misread as location="default"
-    // by the new 6-position schema and cause all explicitly-located tracks to be filtered out.
 
     log("bardstart: bard session created", "info", {
       moduleName: MODULE_NAME,

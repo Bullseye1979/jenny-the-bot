@@ -43,27 +43,11 @@ export default async function getBardLabelOutput(coreData) {
     return coreData;
   }
 
-  // Parse structured 6-position response: "tavern,combat,dark,tense,intense,battle"
-  // Positions 0-1 (location, situation) may be empty strings → wildcard.
-  // Positions 2-5 (moods) are validated against validTags; invalid or overlong tags → blank.
   const rawParts = response.split(",").slice(0, 6);
   while (rawParts.length < 6) rawParts.push("");
 
   const sanitized = rawParts.map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""));
 
-  // Position rescue — three passes:
-  //
-  // Pass 1 (category rescue): scan ALL 6 positions for known location/situation words.
-  //   First location word found (anywhere) → loc slot.
-  //   First situation word found (anywhere) → sit slot.
-  //   Positions 0–1 are RESERVED: they are NEVER added to mood slots.
-  //
-  // Pass 2 (mood assignment): positions 2–5 only, pure mood words only
-  //   (words in locationSet or situationSet are excluded — they belong in pass 1).
-  //
-  // Pass 3 (position-based fallback): if loc/sit still empty, accept whatever
-  //   the AI wrote at position 0/1 as-is (handles novel words not yet in library).
-  // Read previous active labels upfront — used for change-preference logic and carry-forward.
   let prevLabels = [];
   try {
     const prev = await getItem(`bard:labels:${guildId}`);
@@ -77,7 +61,6 @@ export default async function getBardLabelOutput(coreData) {
   const moodValues  = [];
   const usedIndices = new Set();
 
-  // Pass 1 — category rescue
   for (let i = 0; i < sanitized.length; i++) {
     const v = sanitized[i];
     if (!v || v.length > 25) continue;
@@ -90,10 +73,6 @@ export default async function getBardLabelOutput(coreData) {
     }
   }
 
-  // Change-preference: if the first-found location/situation matches the PREVIOUS value,
-  // check whether a DIFFERENT known location/situation word also appears in the AI output.
-  // If yes, prefer the different word — the AI is signalling a scene change but repeated
-  // the old value first (common when the old value appears in the prompt as {{CURRENT_LABELS}}).
   if (loc && loc === prevLoc && locationSet.size > 0) {
     for (let i = 0; i < sanitized.length; i++) {
       if (usedIndices.has(i)) continue;
@@ -121,7 +100,6 @@ export default async function getBardLabelOutput(coreData) {
     }
   }
 
-  // Pass 2 — mood assignment (positions 2–5 only, never loc/sit words)
   for (let i = 2; i < sanitized.length; i++) {
     if (usedIndices.has(i)) continue;
     const v = sanitized[i];
@@ -132,15 +110,9 @@ export default async function getBardLabelOutput(coreData) {
     }
   }
 
-  // Pass 3 — position-based fallback for novel words at positions 0/1
   if (!loc && sanitized[0] && !usedIndices.has(0)) { loc = sanitized[0]; usedIndices.add(0); }
   if (!sit && sanitized[1] && !usedIndices.has(1)) { sit = sanitized[1]; usedIndices.add(1); }
 
-  // Fill empty location/situation slots with a three-level fallback chain:
-  //   1. Previous active labels (carry-forward: AI is uncertain, assume unchanged)
-  //   2. Current song's tag at that position (best known ground truth)
-  //   3. Random value from the allowed list (initialization when no history exists)
-  // Mood slots are NOT filled — empty mood = "unknown this cycle".
   if (!loc && prevLabels[0]) loc = String(prevLabels[0]);
   if (!sit && prevLabels[1]) sit = String(prevLabels[1]);
   if (!loc || !sit) {
@@ -193,10 +165,6 @@ export default async function getBardLabelOutput(coreData) {
     guildId
   });
 
-  // Write lastrun timestamp only after a successful label write.
-  // bard-cron intentionally does NOT write this so that a failed AI call
-  // does not advance the context window — the next run would otherwise find
-  // no new messages and skip forever (stuck-lastrun bug).
   const lastRunKey = getStr(wo._bardLastRunKey);
   const lastRunTs  = getStr(wo._bardLastRunTs);
   if (lastRunKey && lastRunTs) {

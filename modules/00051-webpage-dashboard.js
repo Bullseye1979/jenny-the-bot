@@ -355,7 +355,6 @@ ${getThemeHeadScript()}
     setTimeout(function() { box.scrollTop = box.scrollHeight; }, 50);
   }
 
-  // Always fetch the live file list from the API (never use stale embedded data)
   function fetchFileList(type, cb) {
     fetch('${basePath}/logs/api?type=' + type)
       .then(function(r){ return r.json(); })
@@ -377,7 +376,6 @@ ${getThemeHeadScript()}
       .catch(function(e){ cb(e, ''); });
   }
 
-  // Refresh file list, optionally auto-select newest, then load content
   function refresh(autoSelectNewest) {
     var type = currentTab;
     fetchFileList(type, function(err, files) {
@@ -386,10 +384,8 @@ ${getThemeHeadScript()}
       sel.innerHTML = buildOpts(files);
       if (!files.length) { stat.textContent = 'No log files found.'; return; }
       if (autoSelectNewest || !prevN || !files.some(function(f){ return String(f.n) === prevN; })) {
-        // Auto-select the newest (first option after reverse sort = highest n)
         sel.selectedIndex = 0;
       } else {
-        // Re-select the previously selected file
         for (var i = 0; i < sel.options.length; i++) {
           if (sel.options[i].value === prevN) { sel.selectedIndex = i; break; }
         }
@@ -432,7 +428,6 @@ ${getThemeHeadScript()}
 
   reload.addEventListener('click', function() { refresh(true); });
 
-  // Initial load
   refresh(true);
   if (scroll.checked) startPoll();
 })();
@@ -503,7 +498,6 @@ export default async function getWebpageDashboard(coreData) {
     return coreData;
   }
 
-  // --- Log viewer routes ---
   if (urlPath === basePath + "/logs/api") {
     const qp    = new URLSearchParams(url.includes("?") ? url.slice(url.indexOf("?") + 1) : "");
     const type  = qp.get("type") || "events";
@@ -536,7 +530,6 @@ export default async function getWebpageDashboard(coreData) {
     await setSendNow(wo);
     return coreData;
   }
-  // --- End log viewer routes ---
 
   const data    = getItem("dashboard:state") || null;
   const menu    = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];

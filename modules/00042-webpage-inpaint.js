@@ -56,8 +56,6 @@ export default async function getWebpageInpaint(coreData) {
   if (wo.source && wo.source !== "http") return coreData;
 
   const http = wo.http || {};
-  // If configHost contains a hostname (does not start with "/"), use it as-is.
-  // If configHost is path-only (starts with "/"), prepend the request host.
   const configHasHost = !configHost.startsWith("/");
   const reqHost = String(http.host || "").toLowerCase().replace(/:\d+$/, "");
   const inpaintingHost = configHasHost

@@ -19,13 +19,6 @@ const MODULE_NAME = "bard-cron";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-// Default prompt template for 6-label structured output:
-//   position 1 = location, position 2 = situation, positions 3-6 = 4 mood tags.
-// Placeholders filled by buildSystemPrompt():
-//   {{LOCATION_TAGS}}  — comma list of known location tags from library
-//   {{SITUATION_TAGS}} — comma list of known situation tags from library
-//   {{MOOD_TAGS}}      — comma list of known mood tags from library
-//   {{CURRENT_LABELS}} — current active labels for reference
 const DEFAULT_PROMPT_TEMPLATE =
   "You are a music classifier for a D&D tabletop RPG session. " +
   "Read the transcript and output EXACTLY 6 comma-separated tags describing what is happening RIGHT NOW.\n" +
@@ -101,11 +94,6 @@ function buildSystemPrompt(template, tagCategories, currentLabels) {
   const sitList  = sits.join(",")       || "combat,exploration,rest,dialogue";
   const moodList = moodsSorted.join(",") || "dark,tense,calm,ambient,intense,eerie";
 
-  // Build 4 illustrative examples from real library tags.
-  // Fallback values are used only when the library is still empty.
-  // L0 appears in examples 1 AND 2 so the LLM sees it as a location value both
-  // when situation is known and when situation is unknown. This prevents the LLM
-  // from learning that empty fields always appear at the very beginning.
   const L0 = locs[0]       || "dungeon";
   const S0 = sits[0]       || "combat";
   const S1 = sits[1]       || "rest";
@@ -139,7 +127,6 @@ export default async function getBardCron(coreData) {
   const config  = coreData?.config || {};
   const cfg     = config[MODULE_NAME] || {};
 
-  // Discover active bard sessions
   let reg = null;
   try { reg = await getItem("bard:registry"); } catch { reg = null; }
   const sessionKeys = Array.isArray(reg?.list) ? reg.list : [];
@@ -152,15 +139,12 @@ export default async function getBardCron(coreData) {
     return coreData;
   }
 
-  // Load tag list from library.xml
   const musicDir = path.resolve(
     __dirname, "..",
     typeof cfg.musicDir === "string" ? cfg.musicDir : "assets/bard"
   );
   const tagCategories = getLibraryTagCategories(musicDir);
 
-  // Find the target session: prefer the one whose textChannelId matches wo.channelID,
-  // otherwise use the first session that has new context.
   const woCh = getStr(wo.channelID);
   let targetSession = null;
   let targetLastRunAt = "";
@@ -174,9 +158,6 @@ export default async function getBardCron(coreData) {
       const textChannelId = getStr(session.textChannelId);
       if (!textChannelId) continue;
 
-      // If a specific channelID is configured on the cron job, match it.
-      // Only filter if woCh is a real Discord snowflake (numeric); synthetic IDs like
-      // "bard-label-gen" or "cron" mean "process all sessions".
       const isSnowflake = /^\d{10,}$/.test(woCh);
       if (isSnowflake && woCh !== textChannelId) continue;
 
@@ -201,34 +182,22 @@ export default async function getBardCron(coreData) {
       targetLastRunAt = lastRunAt;
       targetNowTs = getNowIso();
 
-      // Do NOT write lastrun here — bard-label-output writes it after successful AI response.
-      // Writing it here would cause the system to get stuck if the AI call fails:
-      // the next run would find no new context (since lastrun > all messages) and skip forever.
-
       const userText = rows
         .map(r => `${r.role === "assistant" ? "Bot" : "Player"}: ${r.text}`)
         .join("\n");
 
-      // Fetch current labels for context
       let currentLabels = [];
       try {
         const labelsData = await getItem(`bard:labels:${session.guildId}`);
         if (Array.isArray(labelsData?.labels)) currentLabels = labelsData.labels;
       } catch {}
 
-      // Build system prompt — always use DEFAULT_PROMPT_TEMPLATE as base;
-      // cfg.prompt can override via config, but workingObject.prompt is ignored
-      // to prevent the global systemPrompt from bleeding in.
       const promptTemplate = getStr(cfg.prompt || DEFAULT_PROMPT_TEMPLATE);
       const systemPrompt = buildSystemPrompt(promptTemplate, tagCategories, currentLabels);
 
-      // Set up the working object for the core-ai pipeline
       wo.systemPrompt = systemPrompt;
       wo.payload      = userText;
 
-      // Store bard-specific state so bard-label-output can use it.
-      // _bardLastRunKey and _bardLastRunTs are written to registry by bard-label-output
-      // only after a successful AI response — preventing the stuck-lastrun bug.
       wo._bardGuildId     = getStr(session.guildId);
       wo._bardValidTags   = [...tagCategories.all];
       wo._bardLocations   = [...tagCategories.locations];
@@ -236,8 +205,6 @@ export default async function getBardCron(coreData) {
       wo._bardLastRunKey  = lastRunKey;
       wo._bardLastRunTs   = targetNowTs;
 
-      // AI params come from workingObject defaults + core-channel-config overrides (bard-label-gen flow).
-      // Only set a model fallback if nothing was applied from channel config.
       if (!wo.model) wo.model = "gpt-4o-mini";
 
       wo.temperature       = 0.3;

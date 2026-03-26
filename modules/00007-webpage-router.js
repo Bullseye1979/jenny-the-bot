@@ -49,7 +49,6 @@ function resolveChannelId(source, url, pathPrefix) {
     return segment.trim();
   }
 
-  // Static value
   return source.trim();
 }
 

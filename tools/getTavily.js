@@ -80,7 +80,6 @@ async function getInvoke(args, coreData) {
   const includeAnswer = args?.includeAnswer ?? toolCfg.includeAnswer ?? false;
   const timeoutMs     = getNum(toolCfg.timeoutMs, 20000);
 
-  // Domain filters are admin-only (toolsconfig); the AI should not control these
   const includeDomains = Array.isArray(toolCfg.includeDomains) && toolCfg.includeDomains.length
     ? toolCfg.includeDomains : null;
   const excludeDomains = Array.isArray(toolCfg.excludeDomains) && toolCfg.excludeDomains.length

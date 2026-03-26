@@ -1158,7 +1158,7 @@ The file is generated on demand; no data is cached or stored by the module itsel
 
 ### webpage-keymanager
 
-Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and delete secret mappings (placeholder name → real value) without touching MySQL directly. Values are masked in the UI by default and can be revealed per row. See [ADMIN_MANUAL §9.4](#94-secretsjs--centralized-secret-store) for the full secrets system description.
+Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and delete secret mappings (placeholder name → real value) without touching MySQL directly. Values are masked by default; each row has a **Show/Hide** toggle to reveal the value inline and a **Copy** button to copy it to the clipboard without revealing it. The table is horizontally scrollable on small screens (mobile-friendly); the description column is hidden on narrow viewports. See [ADMIN_MANUAL §9.4](#94-secretsjs--centralized-secret-store) for the full secrets system description.
 
 ```jsonc
 "webpage-keymanager": {

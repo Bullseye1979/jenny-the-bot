@@ -11,7 +11,6 @@ import { getEnsurePool } from "./context.js";
 const DEFAULT_TABLE = "bot_secrets";
 const TTL_MS = 60_000;
 
-// Cache: key = `${table}` → { map: Map<name, value>, fetchedAt: number }
 const _cache = new Map();
 
 

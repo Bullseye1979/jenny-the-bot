@@ -58,8 +58,7 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
   const cronCore = createRunCore();
   const log = getPrefixedLogger(cronCore?.workingObject || {}, import.meta.url);
 
-  // Live job state — keyed by job id so reconciliation can preserve running/nextDueAt
-  const jobState = new Map(); // id → { running, nextDueAt }
+  const jobState = new Map();
 
 
   function getLiveCfg() {
@@ -105,11 +104,9 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
     const tickMs = Math.max(5000, getNum(cfg.tickMs, 15000));
     const jobs = getLiveJobs(cfg);
 
-    // Sync jobState with the live list
     for (const job of jobs) {
       const prev = jobState.get(job.id);
       if (!prev || (prev.expr !== job.expr)) {
-        // New job or schedule changed — schedule it
         if (!job.nextDueAt) job.nextDueAt = getNextDue(job, log);
       }
       jobState.set(job.id, job);
@@ -172,7 +169,5 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
     setTimeout(setTickLoop, Math.max(1, tickMs));
   }
 
-  // Start after 1 s — if no jobs are configured yet, the tick loop
-  // will simply idle and pick them up on the next hot-reload.
   setTimeout(setTickLoop, 1000);
 }

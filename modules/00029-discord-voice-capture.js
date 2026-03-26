@@ -207,7 +207,6 @@ export default async function getDiscordVoiceCapture(coreData) {
   try { await putItem({ ts: Date.now(), sessionKey, userId }, activeKey); } catch {}
 
   try {
-    // ── Capture raw segments ────────────────────────────────────────────────────
     const segments = [];
     while (segments.length < MAX_SEGMENTS) {
       const seg = await getCaptureOneSegment(receiver, userId, {
@@ -230,7 +229,6 @@ export default async function getDiscordVoiceCapture(coreData) {
       return coreData;
     }
 
-    // ── VAD: extract voiced PCM, accumulate stats ───────────────────────────────
     const voicedChunks = [];
     let totalUsefulMs = 0;
     let maxSnrDb      = 0;
@@ -257,7 +255,6 @@ export default async function getDiscordVoiceCapture(coreData) {
       return coreData;
     }
 
-    // ── Combine all voiced frames → single WAV ──────────────────────────────────
     const totalSamples = voicedChunks.reduce((a, v) => a + v.length, 0);
     const combined     = new Int16Array(totalSamples);
     let off = 0;
@@ -266,13 +263,11 @@ export default async function getDiscordVoiceCapture(coreData) {
     const { dir: outDir, file: outFile } = getTmpFile(".wav");
     await fs.promises.writeFile(outFile, getWriteWav(combined, { rate: 48000, channels: 1 }));
 
-    // ── Hand off to transcription module ────────────────────────────────────────
     wo.audioFile        = outFile;
     wo._audioCaptureDir = outDir;
     wo.audioStats       = { snrDb: maxSnrDb, usefulMs: totalUsefulMs };
     wo.transcribeAudio  = true;
 
-    // Capture log (non-critical)
     try {
       const captureKey = `discord-voice:capture:${sessionKey}`;
       const prev = (await getItem(captureKey)) || [];

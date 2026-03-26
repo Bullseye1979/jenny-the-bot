@@ -4183,7 +4183,7 @@ See [§16.12 Permission Concept](#1612-permission-concept) for the full rules.
 ### 16.14 Key Manager (`/key-manager`)
 
 **Module:** `modules/00058-webpage-keymanager.js`
-**Port:** 3121 (default, set via `config["webpage-keymanager"].port`)
+**Port:** 3122 (default, set via `config["webpage-keymanager"].port`)
 **Base path:** `/key-manager`
 **Default roles:** `["admin"]`
 
@@ -4191,18 +4191,21 @@ The Key Manager is an admin-only web UI for managing the `bot_secrets` database 
 
 #### Features
 
-- Lists all secrets with masked values (click **show** to reveal inline)
+- Lists all secrets with masked values
+- **Show / Hide** button: reveals the value inline (truncated with ellipsis for long keys)
+- **Copy** button: copies the real value to the clipboard without revealing it on screen
 - **Add** form: name (uppercase recommended), real value, optional description
 - **Edit** button: pre-fills the form; name is read-only during edit
 - **Delete** button: confirmation dialog before delete
 - Automatically creates the `bot_secrets` table on first visit (idempotent)
+- Responsive layout: table scrolls horizontally on small screens; description column hidden on mobile
 
 #### Configuration
 
 ```jsonc
 "webpage-keymanager": {
   "flow": ["webpage"],
-  "port": 3121,
+  "port": 3122,
   "basePath": "/key-manager",
   "allowedRoles": ["admin"]
 }
@@ -4212,7 +4215,7 @@ The port must also be listed in `config.webpage.ports` so the webpage flow accep
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `port` | number | `3121` | HTTP port to serve the Key Manager on |
+| `port` | number | `3122` | HTTP port to serve the Key Manager on |
 | `basePath` | string | `"/key-manager"` | URL prefix |
 | `allowedRoles` | array | `["admin"]` | Roles allowed to access the page |
 

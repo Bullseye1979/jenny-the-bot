@@ -73,7 +73,6 @@ export default async function getWebpageVoiceAddContext(coreData) {
     return coreData;
   }
 
-  // ── Purge channel context before storing (if configured) ──────────────────────
   const cfg = coreData?.config?.[MODULE_NAME] || {};
   if (cfg.clearContextBeforeTranscription === true) {
     try {

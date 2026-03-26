@@ -73,7 +73,6 @@ function getTTSSpeakerSegments(rawText) {
   const tail = src.slice(lastIndex);
   if (tail) segs.push({ voice: current, text: tail });
 
-  // Merge adjacent same-voice segments, sanitize text
   const out = [];
   for (const seg of segs) {
     const t     = getSanitizedTTSText(seg.text);
@@ -125,7 +124,6 @@ export default async function getCoreVoiceTTS(coreData) {
   const raw = typeof wo.response === "string" ? wo.response.trim() : "";
   if (!raw) return coreData;
 
-  // Gate: needs a voice session (Discord) OR explicit synthesis flag (any flow)
   if (!getIsVoiceSessionRefUsable(wo.voiceSessionRef) && wo.synthesizeSpeech !== true) {
     return coreData;
   }
@@ -159,7 +157,6 @@ export default async function getCoreVoiceTTS(coreData) {
     voice: (!seg.voice || seg.voice === "default") ? defaultVoice : (getNormalizedVoiceKey(seg.voice) || defaultVoice)
   }));
 
-  // Render all segments — parallel up to concurrency 2 for multi-segment
   const concurrency = renderItems.length <= 1 ? 1 : Math.min(2, renderItems.length);
   const results     = new Array(renderItems.length);
   let   nextIdx     = 0;

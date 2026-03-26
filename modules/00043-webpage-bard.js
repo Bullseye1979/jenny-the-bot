@@ -229,13 +229,11 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg, wo) {
   } catch (_e) { /* timeout or network error */ }
   finally { clearTimeout(timer); }
   const text = data?.choices?.[0]?.message?.content || "";
-  // Parse JSON array; fall back to regex extraction if JSON parse fails.
   let parsed = [];
   try { parsed = JSON.parse(text.trim()); } catch (_e) {
     const matches = text.match(/"([^"]*)"/g) || [];
     parsed = matches.map(m => m.replace(/"/g, ""));
   }
-  // Ensure exactly 6 elements: positions 0-1 may be "", positions 2-5 default to "ambient".
   while (parsed.length < 6) parsed.push("");
   parsed = parsed.slice(0, 6);
   const tags = parsed.map((t, i) => {
@@ -265,7 +263,6 @@ function parseTracks(xmlText) {
     const volumeM = /<volume>([^<]*)<\/volume>/i.exec(inner);
     const file  = fileM  ? fileM[1]  : "";
     const title = titleM ? titleM[1] : "";
-    // Preserve empty positions (wildcard slots). Trim trailing empty entries only.
     const rawTagParts = tagsM ? tagsM[1].split(",").map(t => t.trim().toLowerCase().replace(/[^a-z0-9_*-]/g, "").replace(/^\*$/, "")) : [];
     while (rawTagParts.length > 0 && rawTagParts[rawTagParts.length - 1] === "") rawTagParts.pop();
     const tags = rawTagParts;
@@ -398,7 +395,6 @@ export default async function getWebpageBard(coreData) {
 
     const filename = getStr(reqData?.file);
     const title    = getStr(reqData?.title);
-    // Preserve positional empty slots (* = wildcard → empty string). Trim trailing empties.
     const rawInTags = Array.isArray(reqData?.tags) ? reqData.tags.map(t => { const s = getStr(t).trim().toLowerCase().replace(/[^a-z0-9_*-]/g, ""); return s === "*" ? "" : s; }) : [];
     while (rawInTags.length > 0 && rawInTags[rawInTags.length - 1] === "") rawInTags.pop();
     const tags = rawInTags;

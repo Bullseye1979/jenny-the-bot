@@ -53,7 +53,6 @@ const DEFAULT_OVERLAP_S = 60;
 const SPEAKER_LABELS    = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const MODULE_NAME       = "core-voice-transcribe";
 
-// Optional local whisper fallback (core/whisper.js may not exist in all deployments).
 let transcribeWithWhisper = null;
 try {
   const mod = await import("../core/whisper.js").catch(() => null);
@@ -132,21 +131,17 @@ function buildSpeakerMapping(segments, overlapDur, prevGlobalSegments, counter, 
     return localMap;
   }
 
-  // Speakers appearing in current chunk's overlap region (start < overlapDur)
   const overlapCurrent = segments.filter(s => (s.start ?? 0) < overlapDur);
   const currentOrder   = getFirstAppearanceOrder(overlapCurrent, "speaker");
 
-  // Speakers appearing in previous chunk's tail (end > prevEnd - overlapDur)
   const prevEnd     = prevGlobalSegments.reduce((m, s) => Math.max(m, s.end ?? 0), 0);
   const overlapPrev = prevGlobalSegments.filter(s => (s.end ?? 0) > prevEnd - overlapDur);
   const prevOrder   = getFirstAppearanceOrder(overlapPrev, "globalLabel");
 
-  // Map by position in appearance order within the overlap
   for (let i = 0; i < Math.min(currentOrder.length, prevOrder.length); i++) {
     localMap[currentOrder[i]] = prevOrder[i];
   }
 
-  // Unmatched speakers: assign offset label (e.g. "C_2")
   for (const seg of segments) {
     if (!localMap[seg.speaker]) {
       const base = SPEAKER_LABELS[counter.n] ?? `S${counter.n}`;
@@ -219,7 +214,6 @@ async function getTranscribeAudio(filePath, { model, language, apiKey, endpoint,
 
   const apiOpts = { model, language, isDiarize, apiKey, url, Fetch, FormData, Blob };
 
-  // ── Single file ────────────────────────────────────────────────────────────────
   const stat = await fs.promises.stat(filePath);
   if (stat.size <= MAX_FILE_BYTES) {
     const data = await transcribeOneRaw(filePath, apiOpts);
@@ -231,7 +225,6 @@ async function getTranscribeAudio(filePath, { model, language, apiKey, endpoint,
     return data?.text || "";
   }
 
-  // ── Large file: overlapping chunks + speaker stitching ────────────────────────
   const chunkDir = fs.mkdtempSync(path.join(os.tmpdir(), "vtchunk-"));
   try {
     const chunks         = await splitAudioIntoChunks(filePath, chunkDir, chunkS, overlapS, isDiarize);
@@ -245,16 +238,13 @@ async function getTranscribeAudio(filePath, { model, language, apiKey, endpoint,
 
       if (isDiarize && Array.isArray(data?.segments) && data.segments.some(s => s.speaker)) {
         const localMap = buildSpeakerMapping(data.segments, overlapDur, prevGlobalSegs, counter, i);
-        // Overlap region is excluded by formatDiarizedSegments (start < overlapDur filtered out)
         const text     = formatDiarizedSegments(data.segments, localMap, overlapDur);
         if (text.trim()) parts.push(text.trim());
-        // Carry segments with resolved global labels forward for next chunk's stitching
         prevGlobalSegs = data.segments.map(seg => ({
           ...seg,
           globalLabel: localMap[seg.speaker] ?? seg.speaker
         }));
       } else {
-        // Non-diarize: no overlap handling needed — plain text concatenation
         const text = (typeof data?.text === "string" ? data.text : "").trim();
         if (text) parts.push(text);
         prevGlobalSegs = [];
@@ -299,7 +289,6 @@ export default async function getCoreVoiceTranscribe(coreData) {
   wo.voiceTranscribed = false;
 
   try {
-    // ── Quality gate (only when stats are available from capture module) ─────────
     if (wo.audioStats) {
       const { snrDb = 0, usefulMs = 0 } = wo.audioStats;
       if (usefulMs < MIN_VOICED_MS) {
@@ -316,14 +305,12 @@ export default async function getCoreVoiceTranscribe(coreData) {
       }
     }
 
-    // ── API key check ────────────────────────────────────────────────────────────
     if (!API_KEY) {
       wo.transcribeSkipped = "no_api_key";
       wo.stop = true;
       return coreData;
     }
 
-    // ── Transcription ────────────────────────────────────────────────────────────
     const text = transcribeWithWhisper
       ? await transcribeWithWhisper(audioFile, MODEL, LANGUAGE, API_KEY)
       : await getTranscribeAudio(audioFile, {
@@ -350,7 +337,6 @@ export default async function getCoreVoiceTranscribe(coreData) {
     wo.transcribeSkipped = wo.transcribeSkipped || "error";
     wo.stop = true;
   } finally {
-    // ── Cleanup temp files ───────────────────────────────────────────────────────
     if (!KEEP_WAV) {
       if (wo._audioCaptureDir) {
         try { await fs.promises.rm(wo._audioCaptureDir, { recursive: true, force: true }); } catch {}

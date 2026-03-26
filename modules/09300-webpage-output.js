@@ -393,7 +393,6 @@ function getHandleHttpResponse(wo, req, res, log) {
 export default async function getWebpageOutput(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
-  // Voice requests are handled exclusively by 09320-webpage-voice-output
   if (wo?.isWebpageVoice) return coreData;
 
   const log = getPrefixedLogger(wo, import.meta.url);
