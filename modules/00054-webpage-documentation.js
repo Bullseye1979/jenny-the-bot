@@ -243,7 +243,15 @@ ${getThemeHeadScript()}
 <link rel="stylesheet" href="${basePath}/style.css">
 <style>
   .doc-layout{display:flex;height:calc(100vh - var(--hh));margin-top:var(--hh);overflow:hidden}
-  .doc-sidebar{width:200px;min-width:160px;background:var(--card);border-right:1px solid var(--bdr);overflow-y:auto;overflow-x:hidden;padding:10px 0;flex-shrink:0}
+  .doc-sidebar{width:200px;min-width:160px;background:var(--card);border-right:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;transition:width .2s;overflow:hidden}
+  .doc-sidebar.collapsed{width:32px;min-width:32px}
+  .doc-sidebar.collapsed .doc-sidebar-content{display:none}
+  .doc-sidebar.collapsed .doc-sidebar-title-text{display:none}
+  .doc-sidebar-header{display:flex;justify-content:space-between;align-items:center;flex-shrink:0;padding:8px 8px 4px}
+  .doc-sidebar-title-text{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;padding-left:4px}
+  #doc-sidebar-toggle{background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0 2px;line-height:1;flex-shrink:0}
+  #doc-sidebar-toggle:hover{color:var(--txt)}
+  .doc-sidebar-content{flex:1;overflow-y:auto;overflow-x:hidden}
   .doc-main{flex:1;overflow-y:auto;padding:20px 28px;background:var(--bg)}
   .doc-nav a{display:block;padding:7px 14px;color:var(--txt);text-decoration:none;font-size:13px;border-left:3px solid transparent;transition:background .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .doc-nav a:hover{background:var(--bg);color:var(--acc)}
@@ -293,8 +301,14 @@ document.addEventListener("click", function(e) {
   ${menuHtml}
 </header>
 <div class="doc-layout">
-  <aside class="doc-sidebar">
-    ${navHtml}
+  <aside class="doc-sidebar" id="doc-sidebar">
+    <div class="doc-sidebar-header">
+      <span class="doc-sidebar-title-text">Files</span>
+      <button id="doc-sidebar-toggle" onclick="toggleDocSidebar()">&#9664;</button>
+    </div>
+    <div class="doc-sidebar-content">
+      ${navHtml}
+    </div>
   </aside>
   <main class="doc-main">
     <div class="doc-content">
@@ -302,6 +316,28 @@ document.addEventListener("click", function(e) {
     </div>
   </main>
 </div>
+<script>
+(function() {
+'use strict';
+function toggleDocSidebar() {
+  var sb  = document.getElementById('doc-sidebar');
+  var btn = document.getElementById('doc-sidebar-toggle');
+  var collapsed = sb.classList.toggle('collapsed');
+  btn.textContent = collapsed ? '\u25b6' : '\u25c0';
+  try { localStorage.setItem('doc_sidebar_collapsed', collapsed ? '1' : '0'); } catch {}
+}
+try {
+  if (localStorage.getItem('doc_sidebar_collapsed') === '1') {
+    var sb = document.getElementById('doc-sidebar');
+    if (sb) {
+      sb.classList.add('collapsed');
+      document.getElementById('doc-sidebar-toggle').textContent = '\u25b6';
+    }
+  }
+} catch {}
+window.toggleDocSidebar = toggleDocSidebar;
+})();
+</script>
 </body>
 </html>`;
 }

@@ -88,7 +88,14 @@ function getLiveCss() {
 body{font-size:13px}
 .page-wrap{display:flex;flex-direction:column;height:calc(100vh - var(--hh));margin-top:var(--hh)}
 .live-layout{display:flex;flex:1;overflow:hidden}
-.live-sidebar{width:210px;min-width:160px;background:var(--card);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;padding:10px 12px;gap:14px;overflow-y:auto}
+.live-sidebar{width:210px;min-width:160px;background:var(--card);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;padding:10px 12px;gap:14px;overflow-y:auto;transition:width .2s}
+.live-sidebar.collapsed{width:32px;min-width:32px;padding:10px 6px}
+.live-sidebar.collapsed .live-sidebar-content{display:none}
+.live-sidebar.collapsed .live-sidebar-title-text{display:none}
+.live-sidebar-header{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.live-sidebar-title-text{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+#live-sidebar-toggle{background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0 2px;line-height:1;flex-shrink:0}
+#live-sidebar-toggle:hover{color:var(--txt)}
 .live-sidebar h3{margin:0 0 5px;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
 .live-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .live-toolbar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--card);border-bottom:1px solid var(--bdr);flex-shrink:0;flex-wrap:wrap}
@@ -134,38 +141,44 @@ ${getThemeHeadScript()}
 <header><h1>📡 Live</h1>${menuHtml}</header>
 <div class="page-wrap">
   <div class="live-layout">
-    <div class="live-sidebar">
-      <div>
-        <h3>Channels</h3>
-        <div class="ch-all-row">
-          <button class="ch-all-btn" onclick="selAll(true)">All</button>
-          <button class="ch-all-btn" onclick="selAll(false)">None</button>
+    <div class="live-sidebar" id="live-sidebar">
+      <div class="live-sidebar-header">
+        <span class="live-sidebar-title-text">Settings</span>
+        <button id="live-sidebar-toggle" onclick="toggleSidebar()">&#9664;</button>
+      </div>
+      <div class="live-sidebar-content">
+        <div>
+          <h3>Channels</h3>
+          <div class="ch-all-row">
+            <button class="ch-all-btn" onclick="selAll(true)">All</button>
+            <button class="ch-all-btn" onclick="selAll(false)">None</button>
+          </div>
+          <div id="channel-list"><span style="color:var(--muted);font-size:11px">Loading…</span></div>
         </div>
-        <div id="channel-list"><span style="color:var(--muted);font-size:11px">Loading…</span></div>
-      </div>
-      <div>
-        <h3>Fields</h3>
-        <label class="field-check"><input type="checkbox" id="fld-ts" checked> Timestamp</label>
-        <label class="field-check"><input type="checkbox" id="fld-channel"> Channel</label>
-        <label class="field-check"><input type="checkbox" id="fld-role"> Role</label>
-      </div>
-      <div>
-        <h3>Poll interval</h3>
-        <select id="poll-interval" class="live-select">
-          <option value="1000">1 s</option>
-          <option value="2000"${pollIntervalMs <= 2000 ? ' selected' : ''}>2 s</option>
-          <option value="5000"${pollIntervalMs > 2000 ? ' selected' : ''}>5 s</option>
-          <option value="10000">10 s</option>
-        </select>
-      </div>
-      <div>
-        <h3>Initial load</h3>
-        <select id="init-limit" class="live-select">
-          <option value="50">50 messages</option>
-          <option value="100" selected>100 messages</option>
-          <option value="200">200 messages</option>
-          <option value="500">500 messages</option>
-        </select>
+        <div>
+          <h3>Fields</h3>
+          <label class="field-check"><input type="checkbox" id="fld-ts" checked> Timestamp</label>
+          <label class="field-check"><input type="checkbox" id="fld-channel"> Channel</label>
+          <label class="field-check"><input type="checkbox" id="fld-role"> Role</label>
+        </div>
+        <div>
+          <h3>Poll interval</h3>
+          <select id="poll-interval" class="live-select">
+            <option value="1000">1 s</option>
+            <option value="2000"${pollIntervalMs <= 2000 ? ' selected' : ''}>2 s</option>
+            <option value="5000"${pollIntervalMs > 2000 ? ' selected' : ''}>5 s</option>
+            <option value="10000">10 s</option>
+          </select>
+        </div>
+        <div>
+          <h3>Initial load</h3>
+          <select id="init-limit" class="live-select">
+            <option value="50">50 messages</option>
+            <option value="100" selected>100 messages</option>
+            <option value="200">200 messages</option>
+            <option value="500">500 messages</option>
+          </select>
+        </div>
       </div>
     </div>
     <div class="live-main">
@@ -346,6 +359,14 @@ function selAll(checked) {
   reloadStream();
 }
 
+function toggleSidebar() {
+  var sb  = document.getElementById('live-sidebar');
+  var btn = document.getElementById('live-sidebar-toggle');
+  var collapsed = sb.classList.toggle('collapsed');
+  btn.textContent = collapsed ? '\u25b6' : '\u25c0';
+  try { localStorage.setItem('live_sidebar_collapsed', collapsed ? '1' : '0'); } catch {}
+}
+
 async function loadChannels() {
   var list = document.getElementById('channel-list');
   try {
@@ -391,17 +412,25 @@ try {
     document.getElementById('btn-scroll').textContent = '\u2191 Manual';
     document.getElementById('btn-scroll').classList.remove('on');
   }
+  if (localStorage.getItem('live_sidebar_collapsed') === '1') {
+    var sbInit = document.getElementById('live-sidebar');
+    if (sbInit) {
+      sbInit.classList.add('collapsed');
+      document.getElementById('live-sidebar-toggle').textContent = '\u25b6';
+    }
+  }
 } catch {}
 
 loadChannels().then(function() {
   if (polling) schedulePoll();
 });
 
-window.togglePoll   = togglePoll;
-window.toggleScroll = toggleScroll;
-window.clearStream  = clearStream;
-window.reloadStream = reloadStream;
-window.selAll       = selAll;
+window.togglePoll     = togglePoll;
+window.toggleScroll   = toggleScroll;
+window.clearStream    = clearStream;
+window.reloadStream   = reloadStream;
+window.selAll         = selAll;
+window.toggleSidebar  = toggleSidebar;
 })();
 </script>
 </body></html>`;
