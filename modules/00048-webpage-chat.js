@@ -274,7 +274,15 @@ export default async function getWebpageChat(coreData) {
         const cmdToken = payload.split(/\s+/)[0].slice(1).toLowerCase();
 
         if (cmdToken === "purgedb") {
-          const deleted = await setPurgeContext(wo);
+          const pool    = await getDb(coreData);
+          const subSql  = subchannelId ? "AND COALESCE(subchannel, '') = ?" : "AND subchannel IS NULL";
+          const subArgs = subchannelId ? [subchannelId] : [];
+          const [r1] = await pool.execute(`DELETE FROM context WHERE id = ? ${subSql} AND COALESCE(frozen, 0) = 0`, [channelID, ...subArgs]);
+          let deleted = Number(r1?.affectedRows || 0);
+          if (!subchannelId) {
+            const [r2] = await pool.execute("DELETE FROM timeline_periods WHERE channel_id = ? AND COALESCE(frozen, 0) = 0", [channelID]);
+            deleted += Number(r2?.affectedRows || 0);
+          }
           setJsonResp(wo, 200, { response: `${deleted} items removed` });
           wo.jump = true;
           await setSendNow(wo);
@@ -282,8 +290,14 @@ export default async function getWebpageChat(coreData) {
         }
 
         if (cmdToken === "freeze") {
-          await setFreezeContext(wo);
-          setJsonResp(wo, 200, { response: `freeze ok` });
+          const pool    = await getDb(coreData);
+          const subSql  = subchannelId ? "AND COALESCE(subchannel, '') = ?" : "AND subchannel IS NULL";
+          const subArgs = subchannelId ? [subchannelId] : [];
+          await pool.execute(`UPDATE context SET frozen = 1 WHERE id = ? ${subSql}`, [channelID, ...subArgs]);
+          if (!subchannelId) {
+            await pool.execute("UPDATE timeline_periods SET frozen = 1 WHERE channel_id = ?", [channelID]);
+          }
+          setJsonResp(wo, 200, { response: "freeze ok" });
           wo.jump = true;
           await setSendNow(wo);
           return coreData;
@@ -312,8 +326,6 @@ export default async function getWebpageChat(coreData) {
         ...(subchannelId ? { subchannel: subchannelId } : {})
       };
 
-      /* Carry subchannel prompt overrides as extra fields so api-add-context
-         or the system prompt builder on the API side can apply them */
       if (subConfig?.system_prompt) reqBody.systemPrompt  = String(subConfig.system_prompt).trim();
       if (subConfig?.persona)       reqBody.persona        = String(subConfig.persona).trim();
       if (subConfig?.instructions)  reqBody.instructions   = String(subConfig.instructions).trim();

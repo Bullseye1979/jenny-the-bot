@@ -498,6 +498,7 @@
         "discord-status",
         "toolcall"
       ],
+      "allowedFlows": ["discord", "discord-voice"],
       "status": "online",
       "placeholderEnabled": false,
       "placeholderText": "",

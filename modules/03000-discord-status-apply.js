@@ -33,15 +33,16 @@ function getBool(v, d) {
 
 async function getToolStatusFromRegistry() {
   if (typeof getItem !== "function") {
-    return { hasTool: false, toolName: "" };
+    return { hasTool: false, toolName: "", toolFlow: "" };
   }
   try {
     const tool = await getItem(REGISTRY_TOOL_KEY);
-    const name = typeof tool === "string" ? tool : tool?.name || "";
+    const name = typeof tool === "string" ? tool : (tool?.name || "");
     const toolName = String(name || "").trim();
-    return { hasTool: !!toolName, toolName };
+    const toolFlow = typeof tool === "object" && tool ? String(tool.flow || "") : "";
+    return { hasTool: !!toolName, toolName, toolFlow };
   } catch {
-    return { hasTool: false, toolName: "" };
+    return { hasTool: false, toolName: "", toolFlow: "" };
   }
 }
 
@@ -123,9 +124,11 @@ export default async function getDiscordStatusApplyFlow(baseCore) {
     return;
   }
 
-  const { hasTool, toolName } = await getToolStatusFromRegistry();
+  const { hasTool, toolName, toolFlow } = await getToolStatusFromRegistry();
+  const allowedFlows = Array.isArray(cfg.allowedFlows) ? cfg.allowedFlows : [];
+  const toolAllowed = hasTool && (allowedFlows.length === 0 || allowedFlows.includes(toolFlow));
 
-  if (hasTool) {
+  if (toolAllowed) {
     const mappedText = getPresenceTextForTool(toolName, mapping);
     await setDiscordPresence(mappedText, status, log);
     lastUpdateAt = now;

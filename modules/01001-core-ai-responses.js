@@ -353,7 +353,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
 
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   try {
-    try { await putItem(name, "status:tool"); } catch {}
+    try { await putItem({ name, flow: String(coreData?.workingObject?.flow || "") }, "status:tool"); } catch {}
     if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
     const res = await tool.invoke(args, coreData);
     const mapped = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getJSON(res, res) : res) };

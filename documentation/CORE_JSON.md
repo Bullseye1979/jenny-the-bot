@@ -1960,7 +1960,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "discord-admin-commands":  { "flow": ["discord-admin","discord"] },
     "core-admin-commands":     { "flow": ["api"] },
     "discord-status-prepare":  { "flow": ["discord-status"], "allowedChannels": ["<STATUS_CHANNEL_ID>"] },
-    "discord-status-apply":    { "flow": ["discord-status","toolcall"], "status": "online" },
+    "discord-status-apply":    { "flow": ["discord-status","toolcall"], "allowedFlows": ["discord","discord-voice"], "status": "online" },
     "discord-reaction-start":  { "flow": ["discord"] },
     "discord-reaction-finish": { "flow": ["discord"] },
     "discord-admin-join":      { "flow": ["discord-admin"] },

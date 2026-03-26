@@ -486,7 +486,7 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
 
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   try {
-    try { await putItem(name, "status:tool"); } catch {}
+    try { await putItem({ name, flow: String(coreData?.workingObject?.flow || "") }, "status:tool"); } catch {}
     if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
     const result = await tool.invoke(normalizedArgs, coreData);
     const durationMs = Date.now() - startTs;

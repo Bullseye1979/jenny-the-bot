@@ -2022,9 +2022,9 @@ Also supports `*/N * * * *` (every N minutes).
 **Purpose:** Registry-triggered flow for async tool-call tracking
 
 **Flow:**
-1. A tool result is deposited into the `status:tool` registry key
-2. The flow is triggered and retrieves the result
-3. Updates the Discord presence status via `discord-status-apply`
+1. An AI module deposits `{ name, flow }` into the global `status:tool` registry key (channel-specific `status:tool:<channelID>` key stores only the tool name string)
+2. `flows/toolcall.js` polls the key every 400 ms; when hasTool or identity changes it triggers the `toolcall` flow
+3. `discord-status-apply` reads the tool entry, checks the `flow` field against `allowedFlows`, and updates Discord presence only if the originating flow is permitted
 
 ---
 
@@ -2387,7 +2387,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | No. | File | Purpose |
 |---|---|---|
 | 02000 | `moderation-output` | Content filtering; can suppress or replace the response |
-| 03000 | `discord-status-apply` | Applies the generated Discord presence status. Uses `wo.response` from the AI module; falls back to the `status:ai` registry cache, then to `placeholderText`. If the AI returns `[Empty AI response]` or `[Empty response]`, the presence is set to `"..."` instead of showing the literal marker string. Tool-call status (e.g. `"⏳ Generating an image …"`) takes priority over AI-generated text. |
+| 03000 | `discord-status-apply` | Applies the generated Discord presence status. Uses `wo.response` from the AI module; falls back to the `status:ai` registry cache, then to `placeholderText`. If the AI returns `[Empty AI response]` or `[Empty response]`, the presence is set to `"..."` instead of showing the literal marker string. Tool-call status (e.g. `"⏳ Generating an image …"`) takes priority over AI-generated text — but only if the originating flow matches `cfg.allowedFlows` (e.g. `["discord","discord-voice"]`). If `allowedFlows` is empty or absent, all flows are shown. |
 | 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
 | 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow into a **6-position structured label array** `[location, situation, mood1, mood2, mood3, mood4]`. Applies **category-based position rescue**: scans all 6 AI values and assigns each to the correct slot by checking `wo._bardLocations` / `wo._bardSituations` regardless of where the AI placed them (e.g. `'',dungeon,joy,fun,tense,battle` → `dungeon,battle,joy,fun,tense,''`). Unknown words at positions 0/1 are accepted as fallback. Mood slots are validated against `wo._bardValidTags`; invalid entries are replaced with empty string. Writes `bard:labels:{guildId}` and `bard:lastrun:{guildId}` only on success (prevents context window from advancing on AI failure). |
