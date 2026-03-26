@@ -50,9 +50,13 @@ ${getThemeHeadScript()}
   .km-table tr:nth-child(even) td { background:var(--bg3); }
   .km-name { font-family:monospace; font-weight:600; }
   .km-val-row { display:flex; align-items:center; gap:.25rem; margin-top:.3rem; flex-wrap:nowrap; }
+  .km-val-box {
+    display:inline-block; width:240px; overflow:hidden;
+    vertical-align:middle; flex-shrink:1; min-width:0;
+  }
   .km-val-text {
-    font-family:monospace; font-size:.8rem; color:var(--muted);
-    max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    display:block; font-family:monospace; font-size:.8rem; color:var(--muted);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; width:100%;
   }
   .km-val-text.revealed { color:var(--txt); }
   .km-icon-btn {
@@ -83,7 +87,7 @@ ${getThemeHeadScript()}
   .km-section-title { font-size:1.1rem; font-weight:600; margin:1.5rem 0 .5rem; }
   @media (max-width:600px) {
     .km-col-desc { display:none; }
-    .km-val-text { max-width:120px; }
+    .km-val-box { width:130px; }
   }
 </style>
 </head>
@@ -149,8 +153,10 @@ async function load() {
       <td>
         <div class="km-name">\${name}</div>
         <div class="km-val-row" id="val-\${name}">
-          <span class="km-val-text masked">••••••••</span>
-          <span class="km-val-text revealed" style="display:none">\${escHtml(s.value)}</span>
+          <div class="km-val-box">
+            <span class="km-val-text masked">••••••••••••••••••••</span>
+            <span class="km-val-text revealed" style="display:none">\${escHtml(s.value)}</span>
+          </div>
           <button class="km-icon-btn" id="show-btn-\${name}" onclick="toggleReveal('\${name}')" title="Show / Hide">👁</button>
           <button class="km-icon-btn" id="copy-btn-\${name}" onclick="copyVal('\${name}', \${JSON.stringify(s.value)})" title="Copy to clipboard">📋</button>
         </div>
