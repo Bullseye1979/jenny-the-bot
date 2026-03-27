@@ -1632,7 +1632,7 @@ Handles `POST /voice/record` — full meeting recording: transcribes with Whispe
 
 #### config.webpage-voice-add-context
 
-Writes the voice transcription to the context DB immediately after transcription (position 00031, before the pipeline stop at 00032). Reads config from `config["webpage-voice-add-context"]`.
+Writes the voice transcription to the context DB immediately after transcription for the **always-on voice path only** (position 00031). Skips when `wo.transcribeOnly === true` (meeting recorder) — those transcripts are stored in the diarize review DB and written to context only when the user clicks **Apply to Channel**. Reads config from `config["webpage-voice-add-context"]`.
 
 ```json
 "webpage-voice-add-context": {
@@ -2302,7 +2302,7 @@ export default async function myModule(coreData) {
 | 00028 | `webpage-voice-input` | Handles `POST /voice/audio` (webpage flow) — validates auth + `channelId`, converts the incoming audio body to a 16 kHz mono WAV temp file, and sets `wo` fields so the shared transcription → AI → TTS pipeline runs identically to the Discord voice flow. Sets `wo.audioFile`, `wo.transcribeAudio`, `wo.isWebpageVoice`, `wo.ttsFormat = "mp3"`. Must run before `00030-core-voice-transcribe`. |
 | 00029 | `discord-voice-capture` | Captures PCM from the Discord voice receiver (Opus → PCM via prism-media), applies RMS/ZCR-based VAD, extracts voiced frames, and combines them into a single 16kHz mono WAV. Outputs `wo.audioFile`, `wo.audioStats = {snrDb, usefulMs}`, and `wo.transcribeAudio = true`. Does not make quality decisions — deferred to the transcription module. Only runs when `wo.voiceIntent.action === "describe_and_transcribe"` |
 | 00030 | `core-voice-transcribe` | Source-agnostic transcription module. Runs when `wo.transcribeAudio === true`. When `wo.audioStats` is set, applies a quality gate. Large files (>20 MB) are split into overlapping chunks; speaker labels are stitched across chunk boundaries. When `wo.transcribeOnly === true` and the model name contains `"diarize"`, calls `getDiarizeWithSamples`: loads registered speaker profiles from `voice_speakers`, builds a preamble WAV (speaker samples + pure-Node.js silence), concatenates it before the meeting audio, transcribes with the diarize model, resolves label→speaker mappings via `resolveSpeakerMapping`, and stores a session + chunks + assignments in `voice_sessions`/`voice_chunks`/`voice_chunk_speakers`. Sets `wo.voiceDiarizeSessionId`. Active in `discord-voice` and `webpage` flows. |
-| 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB immediately after transcription (before 00032 stops the pipeline). Active when `wo.isWebpageVoice === true` and `wo.payload` is set. Reads config from `config["webpage-voice-add-context"]`. Diarized transcripts (`A: text`, `A_2: text`, or legacy `speaker_N: text` lines) are parsed into one DB entry per speaker turn with `role: "user"`, plain text `content`, `userId` = speaker label, `authorName: ""`, `source: "voice-transcribe"`. Offset labels (`A_2`) are stored as-is. When `clearContextBeforeTranscription === true`, purges non-frozen context for the channel first. |
+| 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB for the **always-on voice path only**. Skips when `wo.transcribeOnly === true` (meeting recorder path) — those transcripts only reach context via the Review tab Apply button. Active when `wo.isWebpageVoice === true`, `wo.transcribeOnly !== true`, and `wo.payload` is set. Diarized transcripts are parsed into one DB entry per speaker turn (`source: "voice-transcribe"`). When `clearContextBeforeTranscription === true`, purges non-frozen context for the channel first. |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
 | 00033 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends HTTP 200 JSON `{ transcript, sessionId }` and sets `wo.stop = true` so AI/TTS never run. The transcript is NOT written to context here — that happens when the user clicks **Apply to Channel** in the Review tab (`POST /voice/api/session/:id/apply`). Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
 | 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
@@ -3889,7 +3889,7 @@ When `?transcribeOnly=1` is sent and at least one speaker has a sample, `getDiar
 POST /voice/audio?channelId=<id>
  → 00028-webpage-voice-input    (set wo fields)
  → 00030-core-voice-transcribe  (transcribe WAV → wo.payload, model: transcribeModel)
- → 00031-webpage-voice-add-context  (write one DB entry per speaker turn to context DB)
+ → 00031-webpage-voice-add-context  (always-on path only: write one DB entry per speaker turn — skips when transcribeOnly)
  → 00070-discord-add-context    (load context window for AI)
  → core-ai-completions          (generate response → wo.response)
  → 08100-core-voice-tts         (render TTS → wo.ttsSegments, format: mp3)

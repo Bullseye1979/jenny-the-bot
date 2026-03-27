@@ -2,8 +2,10 @@
 /* filename: 00031-webpage-voice-add-context.js                                    *
 /* Version 1.0                                                                     *
 /* Purpose: Writes the voice transcription to the context DB immediately after     *
-/*          transcription — before module 00032 sets wo.stop — so this executes    *
-/*          for both transcribeOnly (meeting recorder) and full voice-AI flows.    *
+/*          transcription for the always-on voice path only.                       *
+/*          Skips when wo.transcribeOnly is true (meeting recorder) — those        *
+/*          transcripts are stored in the diarize review DB and written to context *
+/*          only when the user explicitly clicks Apply in the Review tab.          *
 /*                                                                                 *
 /*          Diarized transcripts contain lines of the form "LABEL: text" where     *
 /*          LABEL is either a single letter (A, B, …) for matched speakers or an  *
@@ -12,8 +14,8 @@
 /*          speaker turn produces one context DB entry.                             *
 /*          Plain (non-diarized) transcripts produce a single entry with userId A. *
 /*                                                                                 *
-/* Gate:    wo.isWebpageVoice === true  AND  wo.payload non-empty                  *
-/*          AND  wo.channelID set  AND  wo.db available                            *
+/* Gate:    wo.isWebpageVoice === true  AND  wo.transcribeOnly !== true            *
+/*          AND  wo.payload non-empty  AND  wo.channelID set  AND  wo.db available *
 /*                                                                                 *
 /* Config (config["webpage-voice-add-context"]):                                   *
 /*   clearContextBeforeTranscription — when true, purges non-frozen context rows   *
@@ -60,7 +62,8 @@ export default async function getWebpageVoiceAddContext(coreData) {
   const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
 
-  if (!wo.isWebpageVoice) return coreData;
+  if (!wo.isWebpageVoice)  return coreData;
+  if (wo.transcribeOnly)   return coreData;
 
   const text = typeof wo.payload === "string" ? wo.payload.trim() : "";
   if (!text) return coreData;
