@@ -117,7 +117,13 @@ Type `/leave` and Jenny will disconnect.
 
 ### Browser voice interface (`/voice`)
 
-The `/voice` page lets you talk to Jenny directly from any device with a microphone — no Discord required.
+The `/voice` page lets you talk to Jenny directly from any device with a microphone — no Discord required. It has three tabs: **Voice**, **Speakers**, and **Review**.
+
+---
+
+#### Voice tab
+
+**Channel selector:** Choose a channel from the dropdown (or type a channel ID). All conversation context and AI settings for that channel apply to your session.
 
 **Mic button (always-on mode):**
 - Click once to start continuous listening. Jenny sends audio automatically when you stop speaking, transcribes it, and plays the AI response back through your browser's speaker.
@@ -125,12 +131,41 @@ The `/voice` page lets you talk to Jenny directly from any device with a microph
 - A pulsing animation and volume meter show that the mic is active.
 
 **REC button (meeting recorder):**
-- Click to start recording the full meeting/session.
-- Click again to stop. The recording is then transcribed using `gpt-4o-transcribe` with speaker diarization, and the resulting transcript (with speaker labels and timestamps) is stored in the configured channel's conversation context so Jenny can reference it later.
-- Returns a word-level transcript with speaker identifications.
+- Click to start recording the full meeting or conversation.
+- Click again to stop. The recording is transcribed with automatic speaker diarization (each speaker is assigned a label or a known name if registered — see Speakers tab below).
+- The transcript is stored as a **session** in the Review tab, where you can verify and correct speaker assignments before writing it to the channel context.
 
-**Channel selector:**
-- Choose a Discord channel from the dropdown (or type a channel ID). All conversation context and AI settings for that channel apply to your voice session.
+---
+
+#### Speakers tab
+
+Register known voices so the recorder can identify them automatically:
+
+1. Type a name and click **+ Add** to create a speaker profile.
+2. Click the 🎤 button next to a speaker, say a few sentences, then click the stop button (⏹). The sample is saved and used as a voice reference during future recordings.
+3. Click 🗑️ to delete a speaker and their sample.
+
+During transcription, the bot prepends each registered speaker's sample to the recorded audio and uses the diarization model to determine which label in the meeting corresponds to which known voice. Recognised speakers appear by name; unrecognised speakers appear as generic labels (e.g. `Chunk1SpeakerSPEAKER_00`).
+
+---
+
+#### Review tab
+
+Each completed meeting recording appears as a session in the Review tab.
+
+1. **Select a session** from the list on the left to see its transcription chunks.
+2. Each chunk shows the speaker label and transcript text. Use the dropdown next to each label to assign or re-assign a known speaker.
+3. To create a new speaker profile directly from a review, select **+ New speaker…** in the dropdown.
+4. Click **💾 Save All** to persist all current assignments to the database without writing to the channel.
+5. When the assignments look correct, click **✓ Apply to Channel**. This:
+   - Saves all current assignments first (same as Save All).
+   - Rebuilds the transcript with the correct speaker names.
+   - Writes one context entry per speaker line, with the speaker name as author.
+   - Optionally purges existing context for the channel first (controlled by `clearContextBeforeTranscription` in the admin config).
+   - Deletes the session from the Review list.
+6. Use the 🗑️ button next to a session to discard it without writing to context.
+
+**Channel selector:** The Review tab loads sessions and speakers for the currently selected channel.
 
 ### Multiple voices (Discord and browser)
 

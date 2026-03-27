@@ -29,12 +29,14 @@ export default async function getWebpageVoiceTranscribeGate(coreData) {
 
   if (res && !res.headersSent) {
     if (wo.payload) {
-      res.writeHead(200, {
+      const headers = {
         "Content-Type":  "application/json",
         "Cache-Control": "no-store",
         "X-Transcript":  getSafeHeaderValue(wo.payload)
-      });
-      res.end(JSON.stringify({ transcript: wo.payload }));
+      };
+      if (wo.voiceDiarizeSessionId) headers["X-Diarize-Session"] = String(wo.voiceDiarizeSessionId);
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ transcript: wo.payload, sessionId: wo.voiceDiarizeSessionId || null }));
     } else {
       const reason = wo.transcribeSkipped || "no_transcript";
       res.writeHead(400, { "Content-Type": "application/json" });
@@ -42,8 +44,8 @@ export default async function getWebpageVoiceTranscribeGate(coreData) {
     }
   }
 
-  wo.stop       = true;
-  wo.stopReason = "transcribe_only";
+  wo.jump       = true;
+  wo.jumpReason = "transcribe_only";
   log("transcribeOnly — response sent, stopping pipeline", "info", {
     moduleName: MODULE_NAME, payload: (wo.payload || "").slice(0, 80)
   });

@@ -536,7 +536,10 @@ function getBardHtml({ menu, role, activePath, base, isAdmin, webAuth }) {
 '</div>\n' +
 '</div>\n' +
 '<div class="card">\n' +
-'<h2>Library</h2>\n' +
+'<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">\n' +
+'<h2 style="margin:0">Library</h2>\n' +
+'<button class="btn btn-p" id="save-all-tracks-btn" onclick="saveAllTracks()">Save All</button>\n' +
+'</div>\n' +
 '<div id="lib-list"><div id="lib-empty">Loading…</div></div>\n' +
 '</div>\n';
 
@@ -726,29 +729,36 @@ getThemeHeadScript() + "\n" +
 '      \'<input class="inp track-vol" type="number" min="0.1" max="4" step="0.1" value="\'+parseFloat(t.volume||1).toFixed(1)+\'" title="Volume" data-file="\'+esc(t.file)+\'">\'+\n' +
 '      \'<div class="track-actions">\'+\n' +
 '      \'<button class="btn btn-s" onclick="previewTrack(this)" data-file="\'+esc(t.file)+\'" title="Preview">▶</button>\'+\n' +
-'      \'<button class="btn btn-p" onclick="saveTrack(this)" data-file="\'+esc(t.file)+\'">Save</button>\'+\n' +
 '      \'<button class="btn btn-d" onclick="deleteTrack(this)" data-file="\'+esc(t.file)+\'">✕</button>\'+\n' +
 '      \'</div></div>\';\n' +
 '  });\n' +
 '  el.innerHTML=html;\n' +
 '}\n' +
 '\n' +
-'function saveTrack(btn){\n' +
-'  var row=btn.closest(".track-row");\n' +
-'  var file=btn.getAttribute("data-file");\n' +
-'  var title=row.querySelector(".track-title").value.trim();\n' +
-'  var rawT=row.querySelector(".track-tags").value.split(",").map(function(t){var s=t.trim().toLowerCase().replace(/[^a-z0-9_*-]/g,"");return s==="*"?"":s;});\n' +
-'  while(rawT.length>0&&rawT[rawT.length-1]==="")rawT.pop();\n' +
-'  var tags=rawT;\n' +
-'  var vol=parseFloat(row.querySelector(".track-vol").value)||1.0;\n' +
-'  btn.disabled=true;\n' +
-'  fetch(BASE+"/api/tags",{method:"POST",headers:{"Content-Type":"application/json"},\n' +
-'    body:JSON.stringify({file:file,title:title,tags:tags,volume:vol})})\n' +
-'  .then(function(r){return r.json();})\n' +
-'  .then(function(d){\n' +
-'    btn.disabled=false;\n' +
-'    if(d.ok) toast("Saved",2000); else toast("Error: "+(d.error||"?"),5000);\n' +
-'  }).catch(function(e){btn.disabled=false;toast("Error: "+e.message,5000);});\n' +
+'async function saveAllTracks(){\n' +
+'  var saveBtn=document.getElementById("save-all-tracks-btn");\n' +
+'  if(saveBtn) saveBtn.disabled=true;\n' +
+'  var rows=document.querySelectorAll(".track-row");\n' +
+'  var errors=0;\n' +
+'  for(var i=0;i<rows.length;i++){\n' +
+'    var row=rows[i];\n' +
+'    var fileEl=row.querySelector("[data-file]");\n' +
+'    if(!fileEl) continue;\n' +
+'    var file=fileEl.getAttribute("data-file");\n' +
+'    var title=row.querySelector(".track-title").value.trim();\n' +
+'    var rawT=row.querySelector(".track-tags").value.split(",").map(function(t){var s=t.trim().toLowerCase().replace(/[^a-z0-9_*-]/g,"");return s==="*"?"":s;});\n' +
+'    while(rawT.length>0&&rawT[rawT.length-1]==="")rawT.pop();\n' +
+'    var tags=rawT;\n' +
+'    var vol=parseFloat(row.querySelector(".track-vol").value)||1.0;\n' +
+'    try{\n' +
+'      var r=await fetch(BASE+"/api/tags",{method:"POST",headers:{"Content-Type":"application/json"},\n' +
+'        body:JSON.stringify({file:file,title:title,tags:tags,volume:vol})});\n' +
+'      var d=await r.json();\n' +
+'      if(!d.ok) errors++;\n' +
+'    }catch(e){errors++;}\n' +
+'  }\n' +
+'  if(saveBtn) saveBtn.disabled=false;\n' +
+'  if(errors) toast("Saved with "+errors+" error(s)",4000); else toast("All tracks saved",2000);\n' +
 '}\n' +
 '\n' +
 'function deleteTrack(btn){\n' +

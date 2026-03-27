@@ -42,6 +42,11 @@ import path         from "node:path";
 import ffmpegImport from "fluent-ffmpeg";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
+import {
+  getEnsureDiarizePool, ensureDiarizeTables, listSpeakers,
+  buildSamplePreamble, concatPreambleWithAudio, resolveSpeakerMapping,
+  createSession, createChunk, upsertChunkSpeaker
+} from "../core/voice-diarize.js";
 
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath (process.env.FFMPEG_PATH  || "/usr/bin/ffmpeg");
@@ -258,6 +263,147 @@ async function getTranscribeAudio(filePath, { model, language, apiKey, endpoint,
 }
 
 
+async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoint, chunkDurationS, diarizeChunkDurationS, wo }) {
+  const log = getPrefixedLogger(wo, import.meta.url);
+
+  let Fetch = globalThis.fetch, FormData = globalThis.FormData, Blob = globalThis.Blob;
+  if (!Fetch || !FormData || !Blob) {
+    const undici = await import("undici");
+    Fetch = undici.fetch; FormData = undici.FormData; Blob = undici.Blob;
+  }
+
+  const url          = getAudioTranscribeUrl(endpoint);
+  const apiOpts      = { model, language, isDiarize: true, apiKey, url, Fetch, FormData, Blob };
+  const channelId    = String(wo.channelID || "");
+  const diarizeChunkS = Number.isFinite(diarizeChunkDurationS) && diarizeChunkDurationS > 0 ? diarizeChunkDurationS : 30;
+
+  log("getDiarizeWithSamples start", "info", { moduleName: MODULE_NAME, channelId, model });
+
+  let pool     = null;
+  let speakers = [];
+  try {
+    pool     = await getEnsureDiarizePool(wo);
+    await ensureDiarizeTables(pool);
+    if (channelId) speakers = await listSpeakers(pool, channelId);
+    log("DB pool ready", "info", { moduleName: MODULE_NAME, speakerCount: speakers.length });
+  } catch (e) {
+    log("DB init failed", "error", { moduleName: MODULE_NAME, error: e?.message });
+  }
+
+  const withSamples = speakers.filter(s => s.sample_audio_path);
+  log(`[diarize-debug] speakers total=${speakers.length} withSamples=${withSamples.length} names=[${withSamples.map(s => s.name).join(",")}]`, "info", { moduleName: MODULE_NAME, channelId });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vdiar-"));
+  let preamble = null;
+  try {
+    if (speakers.length > 0) preamble = await buildSamplePreamble(speakers, tmpDir);
+  } catch (e) {
+    log(`[diarize-debug] buildSamplePreamble failed: ${e?.message}`, "error", { moduleName: MODULE_NAME });
+    preamble = null;
+  }
+  log(`[diarize-debug] preamble=${!!preamble} durationS=${preamble?.preambleDurationS ?? "n/a"} speakerIds=[${(preamble?.orderedSpeakerIds||[]).join(",")}]`, "info", { moduleName: MODULE_NAME });
+
+  let sessionId = null;
+  try {
+    if (pool && channelId) {
+      sessionId = await createSession(pool, channelId);
+      wo.voiceDiarizeSessionId = sessionId;
+      log("Session created", "info", { moduleName: MODULE_NAME, sessionId, channelId });
+    } else {
+      log("Session skipped", "warn", { moduleName: MODULE_NAME, hasPool: !!pool, channelId });
+    }
+  } catch (e) {
+    log("Session creation failed", "error", { moduleName: MODULE_NAME, error: e?.message });
+  }
+
+  const chunkDir = path.join(tmpDir, "chunks");
+  fs.mkdirSync(chunkDir, { recursive: true });
+  const rawChunks = await splitAudioIntoChunks(filePath, chunkDir, diarizeChunkS, 0, false);
+  const audioParts = rawChunks.map((c, i) => ({ file: c.file, index: i }));
+
+  const parts = [];
+
+  for (const { file, index } of audioParts) {
+    const chunkNum = index + 1;
+    let transcribeFile = file;
+    let didConcat      = false;
+
+    if (preamble) {
+      const concatOut = path.join(tmpDir, `concat_${index}.wav`);
+      try {
+        await concatPreambleWithAudio(preamble, file, concatOut);
+        transcribeFile = concatOut;
+        didConcat      = true;
+      } catch { transcribeFile = file; }
+    }
+
+    const data     = await transcribeOneRaw(transcribeFile, apiOpts);
+    const segments = Array.isArray(data?.segments) ? data.segments.filter(s => s.speaker) : [];
+    log(`[diarize-debug] segments=${segments.length} first3=${JSON.stringify(segments.slice(0,3).map(s=>({sp:s.speaker,t0:s.start,t1:s.end,tx:(s.text||"").slice(0,30)})))}`, "info", { moduleName: MODULE_NAME });
+
+    let chunkTranscript    = "";
+    let mapping            = {};
+    let nameMap            = {};
+    let cleanSegsToPersist = segments;
+
+    if (preamble && segments.length > 0) {
+      const resolved     = resolveSpeakerMapping(segments, preamble.preambleDurationS, preamble.orderedSpeakerIds);
+      mapping            = resolved.mapping;
+      cleanSegsToPersist = resolved.cleanSegments;
+      log(`[diarize-debug] resolved: preambleSegs=${segments.filter(s=>(s.start??0)<preamble.preambleDurationS).length} cleanSegs=${resolved.cleanSegments.length} mapping=${JSON.stringify(mapping)}`, "info", { moduleName: MODULE_NAME });
+      for (const [label, spId] of Object.entries(mapping)) {
+        const sp = speakers.find(s => s.id === spId);
+        nameMap[label] = sp ? sp.name : `Chunk${chunkNum}Speaker${label}`;
+      }
+      chunkTranscript = resolved.cleanSegments
+        .map(s => {
+          const name = nameMap[s.speaker] ?? `Chunk${chunkNum}Speaker${s.speaker}`;
+          const text = (s.text || "").trim();
+          return text ? `${name}: ${text}` : "";
+        })
+        .filter(Boolean).join("\n");
+    } else if (segments.length > 0) {
+      const seenRaw = [];
+      chunkTranscript = segments
+        .map(s => {
+          const lbl  = `Chunk${chunkNum}Speaker${s.speaker}`;
+          if (!seenRaw.includes(s.speaker)) { seenRaw.push(s.speaker); mapping[s.speaker] = null; }
+          const text = (s.text || "").trim();
+          return text ? `${lbl}: ${text}` : "";
+        })
+        .filter(Boolean).join("\n");
+    } else {
+      chunkTranscript = (data?.text || "").trim();
+    }
+
+    if (chunkTranscript) parts.push(chunkTranscript);
+
+    if (pool && sessionId) {
+      try {
+        const chunkId    = await createChunk(pool, { sessionId, chunkIndex: index, transcript: chunkTranscript });
+        const seenLabels = new Set();
+        for (const seg of cleanSegsToPersist) {
+          // Use the same label format as the transcript so the review UI can match them.
+          // With preamble: recognised speakers use their name, others use Chunk#Speaker#.
+          // Without preamble: always Chunk#Speaker# (nameMap is empty).
+          const chunkLabel = nameMap[seg.speaker] ?? `Chunk${chunkNum}Speaker${seg.speaker}`;
+          if (!seenLabels.has(chunkLabel)) {
+            seenLabels.add(chunkLabel);
+            const speakerId = mapping[seg.speaker] ?? null;
+            await upsertChunkSpeaker(pool, { chunkId, chunkLabel, speakerId });
+          }
+        }
+      } catch {}
+    }
+
+    if (didConcat) { try { await fs.promises.unlink(transcribeFile); } catch {} }
+  }
+
+  try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
+  return parts.join("\n\n");
+}
+
+
 export default async function getCoreVoiceTranscribe(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);
@@ -268,7 +414,7 @@ export default async function getCoreVoiceTranscribe(coreData) {
   if (!audioFile) {
     log("wo.transcribeAudio is true but wo.audioFile is missing", "warn", { moduleName: MODULE_NAME });
     wo.transcribeSkipped = "no_audio_file";
-    wo.stop = true;
+    wo.jump = true;
     return coreData;
   }
 
@@ -279,14 +425,19 @@ export default async function getCoreVoiceTranscribe(coreData) {
   const KEEP_WAV      = typeof wo.keepWav === "boolean"         ? wo.keepWav             : Boolean(cfg.keepWav);
   const API_KEY       = await getSecret(wo, (wo.transcribeApiKey || cfg.transcribeApiKey || process.env.OPENAI_API_KEY || "").trim());
   const MODEL         = wo.transcribeOnly
-    ? (wo.transcribeModel || cfg.transcribeModelDiarize || "gpt-4o-transcribe-diarize").trim()
+    ? (cfg.transcribeModelDiarize || wo.transcribeModel || "gpt-4o-transcribe-diarize").trim()
     : (wo.transcribeModel || cfg.transcribeModel || "gpt-4o-mini-transcribe").trim();
   const LANGUAGE      = (wo.transcribeLanguage || cfg.transcribeLanguage || "auto").trim();
   const ENDPOINT      = (wo.transcribeEndpoint || cfg.transcribeEndpoint || "").trim();
-  const CHUNK_S       = Number.isFinite(wo.transcribeChunkS)   ? +wo.transcribeChunkS   : Number.isFinite(cfg.chunkDurationS)    ? +cfg.chunkDurationS    : DEFAULT_CHUNK_S;
-  const OVERLAP_S     = Number.isFinite(wo.transcribeOverlapS) ? +wo.transcribeOverlapS : Number.isFinite(cfg.overlapDurationS)  ? +cfg.overlapDurationS  : DEFAULT_OVERLAP_S;
+  const CHUNK_S        = Number.isFinite(wo.transcribeChunkS)        ? +wo.transcribeChunkS        : Number.isFinite(cfg.chunkDurationS)        ? +cfg.chunkDurationS        : DEFAULT_CHUNK_S;
+  const OVERLAP_S      = Number.isFinite(wo.transcribeOverlapS)      ? +wo.transcribeOverlapS      : Number.isFinite(cfg.overlapDurationS)      ? +cfg.overlapDurationS      : DEFAULT_OVERLAP_S;
+  const DIARIZE_CHUNK_S = Number.isFinite(wo.diarizeChunkDurationS) ? +wo.diarizeChunkDurationS   : Number.isFinite(cfg.diarizeChunkDurationS) ? +cfg.diarizeChunkDurationS : 30;
 
   wo.voiceTranscribed = false;
+
+  const isDiarize = String(MODEL).toLowerCase().includes("diarize");
+
+  log("transcribe path", "info", { moduleName: MODULE_NAME, model: MODEL, isDiarize, transcribeOnly: !!wo.transcribeOnly, hasApiKey: !!API_KEY });
 
   try {
     if (wo.audioStats) {
@@ -294,38 +445,44 @@ export default async function getCoreVoiceTranscribe(coreData) {
       if (usefulMs < MIN_VOICED_MS) {
         log(`Skipping: usefulMs ${usefulMs} < ${MIN_VOICED_MS}`, "debug", { moduleName: MODULE_NAME });
         wo.transcribeSkipped = "insufficient_voiced_ms";
-        wo.stop = true;
+        wo.jump = true;
         return coreData;
       }
       if (snrDb < SNR_DB_MIN) {
         log(`Skipping: snrDb ${snrDb.toFixed(1)} < ${SNR_DB_MIN}`, "debug", { moduleName: MODULE_NAME });
         wo.transcribeSkipped = "low_snr";
-        wo.stop = true;
+        wo.jump = true;
         return coreData;
       }
     }
 
     if (!API_KEY) {
+      log("no_api_key — stopping", "warn", { moduleName: MODULE_NAME });
       wo.transcribeSkipped = "no_api_key";
-      wo.stop = true;
+      wo.jump = true;
       return coreData;
     }
 
     const text = transcribeWithWhisper
       ? await transcribeWithWhisper(audioFile, MODEL, LANGUAGE, API_KEY)
-      : await getTranscribeAudio(audioFile, {
-          model:            MODEL,
-          language:         LANGUAGE,
-          apiKey:           API_KEY,
-          endpoint:         ENDPOINT,
-          chunkDurationS:   CHUNK_S,
-          overlapDurationS: OVERLAP_S
-        });
+      : (isDiarize && wo.transcribeOnly)
+        ? await getDiarizeWithSamples(audioFile, {
+            model: MODEL, language: LANGUAGE, apiKey: API_KEY,
+            endpoint: ENDPOINT, chunkDurationS: CHUNK_S, diarizeChunkDurationS: DIARIZE_CHUNK_S, wo
+          })
+        : await getTranscribeAudio(audioFile, {
+            model:            MODEL,
+            language:         LANGUAGE,
+            apiKey:           API_KEY,
+            endpoint:         ENDPOINT,
+            chunkDurationS:   CHUNK_S,
+            overlapDurationS: OVERLAP_S
+          });
 
     const cleaned = String(text || "").trim();
     if (!cleaned) {
       wo.transcribeSkipped = "empty_result";
-      wo.stop = true;
+      wo.jump = true;
       return coreData;
     }
 
@@ -335,7 +492,7 @@ export default async function getCoreVoiceTranscribe(coreData) {
   } catch (e) {
     log("Transcription error", "error", { moduleName: MODULE_NAME, error: e?.message });
     wo.transcribeSkipped = wo.transcribeSkipped || "error";
-    wo.stop = true;
+    wo.jump = true;
   } finally {
     if (!KEEP_WAV) {
       if (wo._audioCaptureDir) {
@@ -346,7 +503,7 @@ export default async function getCoreVoiceTranscribe(coreData) {
     }
   }
 
-  if (wo.stop && !wo.stopReason) wo.stopReason = wo.transcribeSkipped || "transcribe_error";
+  if (wo.jump && !wo.jumpReason) wo.jumpReason = wo.transcribeSkipped || "transcribe_error";
 
   return coreData;
 }

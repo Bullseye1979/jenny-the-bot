@@ -1489,6 +1489,7 @@ API credentials fall back to `workingObject.transcribeApiKey` / `OPENAI_API_KEY`
 | `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
 | `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model for always-on voice turns and discord-voice. Overridable per-turn via `wo.transcribeModel`. |
 | `transcribeModelDiarize` | string | `"gpt-4o-transcribe-diarize"` | Transcription model used when `wo.transcribeOnly === true` (meeting recorder). |
+| `diarizeChunkDurationS` | number | `30` | Duration in seconds of each audio chunk when the diarize model is used with `transcribeOnly`. Smaller values produce more granular Review chunks. Does not affect always-on or non-diarize paths. |
 | `chunkDurationS` | number | `300` | Duration (seconds) of each chunk when splitting large audio files. Files >20 MB are split automatically. |
 | `overlapDurationS` | number | `60` | Seconds of audio overlap between consecutive chunks when splitting large files in diarize mode. The overlap is used to match speaker labels across chunks; the overlapping audio is excluded from the final transcript to avoid duplicate text. |
 | `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect. |
@@ -1542,7 +1543,7 @@ Discord-specific TTS playback. Plays `wo.ttsSegments` into the active voice chan
 
 #### config.webpage-voice
 
-Browser-based always-on voice interface with meeting recorder. Serves the SPA at `GET /voice` and accepts audio at `POST /voice/audio` (both always-on turns and meeting recordings). The meeting recorder uses `?transcribeOnly=1` to skip AI/TTS and return only the transcript.
+Browser-based always-on voice interface with meeting recorder, speaker management, and diarization review. Serves the SPA at `GET /voice` and accepts audio at `POST /voice/audio`. The meeting recorder uses `?transcribeOnly=1` to skip AI/TTS, store a diarized session in the DB, and let the user review/correct speaker assignments before applying the transcript to the channel context.
 
 ```json
 "webpage-voice": {
@@ -1552,6 +1553,10 @@ Browser-based always-on voice interface with meeting recorder. Serves the SPA at
   "silenceTimeoutMs":              2500,
   "maxDurationMs":                 30000,
   "allowedRoles":                  [],
+  "clearContextBeforeTranscription": false,
+  "sampleModel":                   "gpt-4o-mini-transcribe",
+  "transcribeApiKey":              "",
+  "transcribeEndpoint":            "",
   "channels": [
     { "id": "YOUR_CHANNEL_ID", "label": "General" }
   ]
@@ -1566,6 +1571,10 @@ Browser-based always-on voice interface with meeting recorder. Serves the SPA at
 | `silenceTimeoutMs` | number | `2500` | Silence duration (ms) before the always-on mic auto-sends audio |
 | `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
 | `allowedRoles` | array | `[]` | Roles that may access the voice interface. Empty array = public |
+| `clearContextBeforeTranscription` | boolean | `false` | When `true`, purges all non-frozen context rows for the channel before writing the transcript on Apply |
+| `sampleModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model used to transcribe speaker sample recordings in the Speakers tab |
+| `transcribeApiKey` | string | `OPENAI_API_KEY` env fallback | API key used for speaker sample transcription |
+| `transcribeEndpoint` | string | `""` | Optional custom OpenAI-compatible base URL for sample transcription |
 | `channels` | array | `[]` | Channel list shown in the SPA dropdown. Each entry: `{ "id": "...", "label": "..." }`. If empty, a free-text input is shown instead. |
 
 ---
@@ -2291,10 +2300,10 @@ export default async function myModule(coreData) {
 | 00027 | `webpage-voice-record` | Handles `POST /voice/record` (port 3119) — receives a full meeting recording, transcribes it (default model: `gpt-4o-transcribe`), optionally runs a GPT-4o diarization pass, optionally purges non-frozen channel context, and stores the formatted transcript via `setContext`. Config key: `webpage-voice-record`. |
 | 00028 | `webpage-voice-input` | Handles `POST /voice/audio` (webpage flow) — validates auth + `channelId`, converts the incoming audio body to a 16 kHz mono WAV temp file, and sets `wo` fields so the shared transcription → AI → TTS pipeline runs identically to the Discord voice flow. Sets `wo.audioFile`, `wo.transcribeAudio`, `wo.isWebpageVoice`, `wo.ttsFormat = "mp3"`. Must run before `00030-core-voice-transcribe`. |
 | 00029 | `discord-voice-capture` | Captures PCM from the Discord voice receiver (Opus → PCM via prism-media), applies RMS/ZCR-based VAD, extracts voiced frames, and combines them into a single 16kHz mono WAV. Outputs `wo.audioFile`, `wo.audioStats = {snrDb, usefulMs}`, and `wo.transcribeAudio = true`. Does not make quality decisions — deferred to the transcription module. Only runs when `wo.voiceIntent.action === "describe_and_transcribe"` |
-| 00030 | `core-voice-transcribe` | Source-agnostic transcription module. Runs when `wo.transcribeAudio === true`. When `wo.audioStats` is set, applies a quality gate before calling the API. Large files (>20 MB) are split into overlapping chunks (`overlapDurationS` seconds overlap, default 60s); for diarize models, speaker labels are stitched across chunk boundaries by matching speakers in the overlap region to global labels from the previous chunk — matched speakers keep their label (A, B, …), unmatched speakers receive an offset label (e.g. `C_2`). The overlap region is excluded from the output to prevent duplicate text. When `wo.transcribeOnly === true`, uses `transcribeModelDiarize` (default `gpt-4o-transcribe-diarize`). Active in `discord-voice` and `webpage` flows |
+| 00030 | `core-voice-transcribe` | Source-agnostic transcription module. Runs when `wo.transcribeAudio === true`. When `wo.audioStats` is set, applies a quality gate. Large files (>20 MB) are split into overlapping chunks; speaker labels are stitched across chunk boundaries. When `wo.transcribeOnly === true` and the model name contains `"diarize"`, calls `getDiarizeWithSamples`: loads registered speaker profiles from `voice_speakers`, builds a preamble WAV (speaker samples + pure-Node.js silence), concatenates it before the meeting audio, transcribes with the diarize model, resolves label→speaker mappings via `resolveSpeakerMapping`, and stores a session + chunks + assignments in `voice_sessions`/`voice_chunks`/`voice_chunk_speakers`. Sets `wo.voiceDiarizeSessionId`. Active in `discord-voice` and `webpage` flows. |
 | 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB immediately after transcription (before 00032 stops the pipeline). Active when `wo.isWebpageVoice === true` and `wo.payload` is set. Reads config from `config["webpage-voice-add-context"]`. Diarized transcripts (`A: text`, `A_2: text`, or legacy `speaker_N: text` lines) are parsed into one DB entry per speaker turn with `role: "user"`, plain text `content`, `userId` = speaker label, `authorName: ""`, `source: "voice-transcribe"`. Offset labels (`A_2`) are stored as-is. When `clearContextBeforeTranscription === true`, purges non-frozen context for the channel first. |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
-| 00033 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends the HTTP 200 JSON response with the transcript directly, then sets `wo.stop = true` so AI and TTS never run. Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
+| 00033 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends HTTP 200 JSON `{ transcript, sessionId }` and sets `wo.stop = true` so AI/TTS never run. The transcript is NOT written to context here — that happens when the user clicks **Apply to Channel** in the Review tab (`POST /voice/api/session/:id/apply`). Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
 | 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00037 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
@@ -2303,7 +2312,7 @@ export default async function myModule(coreData) {
 | 00042 | `webpage-inpaint` | Redirect `GET /documents/*.<ext>` (PNG, JPG, JPEG, WebP, GIF, BMP) to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. Use a fixed hostname (e.g. `"jenny.ralfreschke.de/inpainting"`) pointing to the domain where users log in, so the session cookie is valid on the inpainting SPA. |
 | 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — tiered access (allowedRoles = basic listener access, adminRoles = full upload/manage rights, no matching role = 403 deny); bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
 | 00044 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. |
-| 00047 | `webpage-voice` | Webpage voice interface — serves a browser-based always-on SPA and handles incoming audio POST requests, bridging the browser microphone into the bot pipeline. |
+| 00047 | `webpage-voice` | Webpage voice interface — three-tab SPA (Voice / Speakers / Review). Voice tab: always-on mic + meeting recorder. Speakers tab: register known voices with sample audio for automatic speaker identification. Review tab: inspect diarized sessions, correct speaker assignments, and apply the final transcript to the channel context via `POST /voice/api/session/:id/apply`. On Apply: rebuilds transcript with DB speaker names, sets `authorName` to participant list, optionally purges context, writes via `setContext`, deletes session. |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-admin-commands` | Discord-level admin commands only. `discord-admin` flow: `/purge` (bulk-delete Discord messages with rate-limit backoff), `/error` (simulated error). `discord` flow (DM only): `!purge [N]` (delete up to N bot messages from the DM channel). DB-level commands (`purgedb`, `freeze`) are handled by `00055-core-admin-commands`. |
@@ -3790,44 +3799,94 @@ Add `3118` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`.
 **File:** `modules/00047-webpage-voice.js`
 **Port:** 3119
 **Config key:** `webpage-voice`
+**DB helper:** `core/voice-diarize.js` (tables: `voice_speakers`, `voice_sessions`, `voice_chunks`, `voice_chunk_speakers`)
 
-A browser-based voice interface with two modes: **always-on continuous listening** and a **meeting recorder**. Both modes can run simultaneously. Both use the same `POST /voice/audio` endpoint. Always-on runs the full transcription → AI → TTS pipeline and returns spoken audio; the meeting recorder uses `?transcribeOnly=1` to skip AI/TTS and return only the diarized transcript.
+A browser-based voice interface with three tabs: **Voice** (always-on + meeting recorder), **Speakers** (register known voices with sample audio), and **Review** (inspect, correct, and apply diarized meeting transcripts).
 
-**Concurrent use:** When both modes are active, each uses its own independent microphone stream so that stopping one mode never interrupts the other. The volume meter is driven by whichever mode is currently active (rec takes over when always-on is stopped).
+**Concurrent use:** Always-on mode and the meeting recorder use independent microphone streams — stopping one never interrupts the other. The volume meter follows whichever mode is active.
 
 #### HTTP Routes
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/voice` | Serves the SPA (embedded HTML/CSS/JS, no external dependencies) |
-| `POST` | `/voice/audio?channelId=<id>` | Always-on turn: receives a short audio segment (webm/ogg/mp3), converts to 16kHz mono WAV, runs the full transcription → AI → TTS pipeline, returns MP3 with `X-Transcript` and `X-Response` headers |
-| `POST` | `/voice/audio?channelId=<id>&transcribeOnly=1` | Meeting recorder: receives the full meeting audio, transcribes with `transcribeModelDiarize` (default `gpt-4o-transcribe-diarize`), writes speaker-labelled transcript to context DB, returns `{ "transcript": "A: ...\nB: ..." }` |
+| `GET` | `/voice/style.css` | Shared stylesheet |
+| `POST` | `/voice/audio?channelId=<id>` | Always-on turn: receives short audio (webm/ogg/mp3), converts to 16kHz mono WAV, runs full transcription → AI → TTS pipeline, returns MP3 with `X-Transcript` / `X-Response` headers |
+| `POST` | `/voice/audio?channelId=<id>&transcribeOnly=1` | Meeting recorder: receives full meeting audio, transcribes with `transcribeModelDiarize`, stores diarized session in DB, returns `{ "transcript": "...", "sessionId": N }` |
+| `GET` | `/voice/api/speakers?channelId=<id>` | List registered speakers for a channel |
+| `POST` | `/voice/api/speakers` | Create speaker: `{ name, channelId }` |
+| `DELETE` | `/voice/api/speakers/:id` | Delete speaker + sample file |
+| `POST` | `/voice/api/sample/:speakerId` | Upload audio sample → transcribe → store in `pub/documents/voice-samples/sample_<id>.wav` |
+| `GET` | `/voice/api/sessions?channelId=<id>` | List diarized sessions (most recent first) |
+| `GET` | `/voice/api/session/:id` | Get chunks + speaker mappings for a session |
+| `DELETE` | `/voice/api/session/:id` | Delete session + all chunks + speaker assignments |
+| `POST` | `/voice/api/session/:id/apply` | Apply session: rebuild transcript with resolved speaker names, write to channel context, delete session |
+| `POST` | `/voice/api/assign` | Update speaker assignment: `{ chunkId, chunkLabel, speakerId }` |
+| `POST` | `/voice/api/speakers/new-and-assign` | Create new speaker and assign: `{ name, channelId, chunkId, chunkLabel }` |
 
-#### SPA buttons
+#### SPA tabs
+
+**Voice tab:**
 
 | Button | Behaviour |
 |---|---|
-| **Mic button** (always-on) | Click once to start continuous listening mode. Jenny sends audio automatically after silence and plays the response back. Click again to stop. Pulsing animation and volume meter indicate active state. |
-| **REC button** (meeting recorder) | Click to start recording. Click again to stop and trigger transcription. The recorder always opens its own microphone stream independently of the always-on mic, so both modes can run simultaneously without interfering. The volume meter stays active as long as either mode is recording. The spinner shows while the transcript is being processed. The diarized transcript is stored in the channel context DB — one entry per speaker paragraph, with `userId` = speaker label (`A`, `B`, `A_2` for uncertain cross-chunk speakers, …) and `content` = spoken text. |
+| **Mic button** (always-on) | Click once to start continuous listening. Jenny sends audio after silence and plays the response back. Click again to stop. |
+| **REC button** (meeting recorder) | Click to start recording. Click again to stop. The full audio is transcribed with the diarize model, a session is created in the DB, and the result appears in the Review tab for inspection before applying to the channel. |
+
+**Speakers tab:**
+
+- Add, rename, and delete speaker profiles per channel.
+- Click 🎤 next to a speaker to record a voice sample with the currently selected microphone. The sample is stored as `pub/documents/voice-samples/sample_<id>.wav` and transcribed for preview text.
+- During meeting transcription, all speakers with saved samples are prepended as a preamble to the meeting audio. The diarization model labels the preamble segments; those labels are mapped to known speaker IDs. Recognised speakers appear by name in the transcript; unrecognised speakers receive a generic label.
+- **FFmpeg note:** Silence gaps between preamble segments are generated in pure Node.js (no `lavfi`/`anullsrc` required). All FFmpeg builds are supported.
+
+**Review tab:**
+
+- Select a session from the left list to view its chunks. Both lists scroll independently.
+- Each chunk shows one block per unique speaker label. Use the dropdown to assign a known speaker or create one inline.
+- **💾 Save All:** Persists all speaker assignments currently shown in the chunk panel to the database in one pass. Does not write to channel context.
+- **✓ Apply to Channel:** First saves all assignments (same as Save All), then rebuilds the transcript using DB-resolved speaker names, writes one context row per speaker line with `authorName` set to the speaker name, optionally purges existing context (`clearContextBeforeTranscription`), and deletes the session from the review list.
+- 🗑️ deletes a session without writing to context.
+
+#### Diarization with speaker samples (preamble approach)
+
+When `?transcribeOnly=1` is sent and at least one speaker has a sample, `getDiarizeWithSamples` in `00030` follows this pipeline:
+
+1. Query `voice_speakers` for speakers with `sample_audio_path` for this `channelId`.
+2. Build a preamble WAV: sample 1 + 2 s silence + sample 2 + 2 s silence + … (`buildSamplePreamble`).
+3. Concatenate preamble before the meeting audio via FFmpeg.
+4. Send combined file to the diarize model (`gpt-4o-transcribe-diarize`).
+5. `resolveSpeakerMapping`: segments with `start < preambleDurationS` → preamble → map labels to speaker IDs in order. Segments with `start >= preambleDurationS` → meeting → use the mapping.
+6. Store session, chunks, and `voice_chunk_speakers` in the DB.
+7. On **Apply**, the endpoint rebuilds the transcript using DB speaker names (not raw labels).
+
+#### Database tables (auto-created on first request)
+
+| Table | Purpose |
+|---|---|
+| `voice_speakers` | Speaker profiles: `id`, `channel_id`, `name`, `sample_audio_path`, `sample_text` |
+| `voice_sessions` | One row per meeting recording: `id`, `channel_id`, `started_at` |
+| `voice_chunks` | Audio chunks within a session: `id`, `session_id`, `chunk_index`, `transcript` |
+| `voice_chunk_speakers` | Label → speaker ID mapping per chunk: `chunk_id`, `chunk_label`, `speaker_id` |
 
 #### WorkingObject fields set by this module
 
 | Field | Value | Description |
 |---|---|---|
-| `wo.channelID` | from `?channelId=` query param | Channel for AI context |
+| `wo.channelID` | from `?channelId=` | Channel for AI context |
 | `wo.audioFile` | path to converted WAV | Input for `core-voice-transcribe` |
 | `wo.transcribeAudio` | `true` | Triggers transcription |
-| `wo.synthesizeSpeech` | `true` | Triggers TTS rendering (always set; 00032 stops the pipeline before TTS runs for `transcribeOnly`) |
-| `wo.ttsFormat` | `"mp3"` | Overrides the default `"opus"` — browser playback requires MP3 |
+| `wo.synthesizeSpeech` | `true` | Triggers TTS (always-on only) |
+| `wo.ttsFormat` | `"mp3"` | Browser playback requires MP3 |
 | `wo.isWebpageVoice` | `true` | Triggers voice pipeline modules |
-| `wo.transcribeOnly` | `true` | Set when `?transcribeOnly=1`; stops pipeline after transcription |
-| `wo.isAlwaysOn` | `true` | Set when `?alwaysOn=1` (always-on mic mode) |
+| `wo.transcribeOnly` | `true` | Set when `?transcribeOnly=1` |
+| `wo.isAlwaysOn` | `true` | Set when `?alwaysOn=1` |
 
 #### Full always-on pipeline
 
 ```
 POST /voice/audio?channelId=<id>
- → 00028-webpage-voice-input    (set wo.audioFile, wo.channelID, wo.synthesizeSpeech, etc.)
+ → 00028-webpage-voice-input    (set wo fields)
  → 00030-core-voice-transcribe  (transcribe WAV → wo.payload, model: transcribeModel)
  → 00031-webpage-voice-add-context  (write one DB entry per speaker turn to context DB)
  → 00070-discord-add-context    (load context window for AI)
@@ -3840,11 +3899,18 @@ POST /voice/audio?channelId=<id>
 
 ```
 POST /voice/audio?channelId=<id>&transcribeOnly=1
- → 00028-webpage-voice-input    (set wo.audioFile, wo.channelID, wo.transcribeOnly=true)
- → 00030-core-voice-transcribe  (transcribe WAV → wo.payload, model: transcribeModelDiarize)
- → 00031-webpage-voice-add-context  (purge if configured, write one DB entry per speaker turn)
- → 00033-webpage-voice-transcribe-gate  (send HTTP 200 {transcript: ...}, set wo.stop=true)
- [AI and TTS skipped]
+ → 00028-webpage-voice-input       (set wo fields, wo.transcribeOnly=true)
+ → 00030-core-voice-transcribe     (getDiarizeWithSamples: build preamble, transcribe,
+                                    resolve speaker mapping, store session+chunks in DB
+                                    → wo.payload, wo.voiceDiarizeSessionId)
+ → 00033-webpage-voice-transcribe-gate  (send HTTP 200 {transcript, sessionId}, set wo.stop=true)
+[AI and TTS skipped — user reviews and applies from the Review tab]
+
+User clicks "Apply to Channel" in Review tab:
+POST /voice/api/session/:id/apply
+ → rebuild transcript with DB speaker names
+ → setContext (+ optionally setPurgeContext) → channel context DB
+ → deleteSession → session removed from DB
 ```
 
 #### core.json configuration
@@ -3857,6 +3923,9 @@ POST /voice/audio?channelId=<id>&transcribeOnly=1
   "silenceTimeoutMs":                2500,
   "maxDurationMs":                   30000,
   "clearContextBeforeTranscription": false,
+  "sampleModel":                     "gpt-4o-mini-transcribe",
+  "transcribeApiKey":                "",
+  "transcribeEndpoint":              "",
   "allowedRoles":                    [],
   "channels": [
     { "id": "YOUR_CHANNEL_ID", "label": "General" }
@@ -3867,6 +3936,7 @@ POST /voice/audio?channelId=<id>&transcribeOnly=1
   "transcribeModel":        "gpt-4o-mini-transcribe",
   "transcribeModelDiarize": "gpt-4o-transcribe-diarize",
   "chunkDurationS":         300,
+  "diarizeChunkDurationS":  30,
   "transcribeApiKey":       ""
 },
 "webpage-voice-output": {
@@ -3877,8 +3947,9 @@ POST /voice/audio?channelId=<id>&transcribeOnly=1
 - Add `3119` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /voice* localhost:3119` to your Caddyfile
 - See `config.webpage-router` to assign flow-specific `core-channel-config` overrides to `/voice` requests
-- `clearContextBeforeTranscription: true` purges all non-frozen context rows for the channel before the meeting transcript is stored — useful for "start-of-session" mode
-- The diarize model (`gpt-4o-transcribe-diarize`) is used automatically when `?transcribeOnly=1`; the regular model is used for always-on turns
+- `clearContextBeforeTranscription: true` purges all non-frozen context rows for the channel when **Apply** is clicked — useful for "start-of-session" mode
+- The diarize model (`gpt-4o-transcribe-diarize`) is used automatically for `?transcribeOnly=1`; the regular model is used for always-on turns
+- Speaker samples are stored in `pub/documents/voice-samples/`. Ensure this path is writable.
 
 ---
 

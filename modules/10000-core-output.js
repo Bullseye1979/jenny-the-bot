@@ -109,6 +109,11 @@ function getSafeReplacerFactory() {
 function getWithKeyPath(obj, keyPath = "", seen = new WeakSet()) {
   if (obj && typeof obj === "object") {
     if (seen.has(obj)) return `[[Circular:${keyPath}]]`;
+    if (ArrayBuffer.isView(obj)) {
+      return typeof Buffer !== "undefined" && Buffer.isBuffer(obj)
+        ? `[Buffer length=${obj.length}]`
+        : `[TypedArray ${obj.constructor?.name || "unknown"} length=${obj.byteLength}]`;
+    }
     seen.add(obj);
     const proxy = Array.isArray(obj) ? [] : Object.create(Object.getPrototypeOf(obj));
     Object.defineProperty(proxy, "__keyPath", { value: keyPath, enumerable: false });
