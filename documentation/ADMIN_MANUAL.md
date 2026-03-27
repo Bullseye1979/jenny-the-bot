@@ -1489,7 +1489,8 @@ API credentials fall back to `workingObject.transcribeApiKey` / `OPENAI_API_KEY`
 | `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
 | `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model for always-on voice turns and discord-voice. Overridable per-turn via `wo.transcribeModel`. |
 | `transcribeModelDiarize` | string | `"gpt-4o-transcribe-diarize"` | Transcription model used when `wo.transcribeOnly === true` (meeting recorder). |
-| `diarizeChunkDurationS` | number | `30` | Duration in seconds of each audio chunk when the diarize model is used with `transcribeOnly`. Smaller values produce more granular Review chunks. Does not affect always-on or non-diarize paths. |
+| `diarizeChunkMB` | number | `1` | Maximum chunk size in MB for the diarize meeting path (`transcribeOnly`). Chunks are encoded as Opus/OGG. Actual duration per chunk is derived from this value and `opusBitrateKbps`: `MB × 8 × 1024² / (bitrate_bps)`. At 32 kbps, 1 MB ≈ 4 min. Smaller values produce more granular Review chunks but more API calls. |
+| `opusBitrateKbps` | number | `32` | Opus audio bitrate (kbps) used when encoding diarize chunks. 32 kbps is sufficient quality for mono speech and keeps chunk files small. |
 | `chunkDurationS` | number | `300` | Duration (seconds) of each chunk when splitting large audio files. Files >20 MB are split automatically. |
 | `overlapDurationS` | number | `60` | Seconds of audio overlap between consecutive chunks when splitting large files in diarize mode. The overlap is used to match speaker labels across chunks; the overlapping audio is excluded from the final transcript to avoid duplicate text. |
 | `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect. |
@@ -3936,7 +3937,8 @@ POST /voice/api/session/:id/apply
   "transcribeModel":        "gpt-4o-mini-transcribe",
   "transcribeModelDiarize": "gpt-4o-transcribe-diarize",
   "chunkDurationS":         300,
-  "diarizeChunkDurationS":  30,
+  "diarizeChunkMB":         1,
+  "opusBitrateKbps":        32,
   "transcribeApiKey":       ""
 },
 "webpage-voice-output": {

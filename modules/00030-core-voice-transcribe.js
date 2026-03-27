@@ -15,6 +15,10 @@
 /*          identity. The overlap region is excluded from the final output so that  *
 /*          no text appears twice in wo.payload.                                   *
 /*                                                                                 *
+/*          The diarize meeting path (wo.transcribeOnly=true) splits audio into    *
+/*          Opus/OGG chunks. Chunk size is configured in MB; duration is derived   *
+/*          from the configured Opus bitrate.                                      *
+/*                                                                                 *
 /* Trigger: wo.transcribeAudio === true                                             *
 /*                                                                                 *
 /* Input:   wo.audioFile   — absolute path to WAV file                             *
@@ -28,6 +32,9 @@
 /*   transcribeModelDiarize — model for meeting recorder (wo.transcribeOnly=true)  *
 /*   chunkDurationS         — seconds per chunk for large files (default 300)      *
 /*   overlapDurationS       — overlap seconds between chunks for stitching (def 60)*
+/*   diarizeChunkMB         — max chunk size in MB for diarize meeting path        *
+/*                            (default 1). Duration derived from opusBitrateKbps. *
+/*   opusBitrateKbps        — Opus bitrate for diarize chunks (default 32 kbps)   *
 /*   transcribeLanguage     — force language (ISO 639-1); empty = auto-detect      *
 /*   transcribeEndpoint     — OpenAI-compatible API base URL                       *
 /*   transcribeApiKey       — API key (falls back to wo fields / env var)          *
@@ -52,17 +59,24 @@ const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath (process.env.FFMPEG_PATH  || "/usr/bin/ffmpeg");
 ffmpeg.setFfprobePath(process.env.FFPROBE_PATH || "/usr/bin/ffprobe");
 
-const MAX_FILE_BYTES    = 20 * 1024 * 1024;
-const DEFAULT_CHUNK_S   = 300;
-const DEFAULT_OVERLAP_S = 60;
-const SPEAKER_LABELS    = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const MODULE_NAME       = "core-voice-transcribe";
+const MAX_FILE_BYTES           = 20 * 1024 * 1024;
+const DEFAULT_CHUNK_S          = 300;
+const DEFAULT_OVERLAP_S        = 60;
+const DEFAULT_DIARIZE_CHUNK_MB = 1;
+const DEFAULT_OPUS_BITRATE_KBPS = 32;
+const SPEAKER_LABELS           = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const MODULE_NAME              = "core-voice-transcribe";
 
 let transcribeWithWhisper = null;
 try {
   const mod = await import("../core/whisper.js").catch(() => null);
   if (mod?.transcribeWithWhisper) transcribeWithWhisper = mod.transcribeWithWhisper;
 } catch {}
+
+
+function mbToChunkDurationS(targetMB, bitrateKbps) {
+  return (targetMB * 1024 * 1024 * 8) / (bitrateKbps * 1000);
+}
 
 
 function getAudioDurationS(filePath) {
@@ -88,30 +102,33 @@ function getFirstAppearanceOrder(segments, field) {
 }
 
 
-async function splitAudioIntoChunks(filePath, chunkDir, chunkDurationS, overlapS, isDiarize) {
+async function splitAudioIntoChunks(filePath, chunkDir, chunkDurationS, overlapS, isDiarize, useOpus, opusBitrateKbps) {
   const duration = await getAudioDurationS(filePath);
   const chunks   = [];
   let   logStart = 0;
   let   idx      = 0;
+  const ext      = useOpus ? ".ogg" : ".wav";
+  const bitrate  = Number.isFinite(opusBitrateKbps) && opusBitrateKbps > 0 ? opusBitrateKbps : DEFAULT_OPUS_BITRATE_KBPS;
 
   while (logStart < duration) {
     const audioStart = (isDiarize && idx > 0) ? Math.max(0, logStart - overlapS) : logStart;
     const overlapDur = logStart - audioStart;
     const segDur     = Math.min(chunkDurationS + overlapDur, duration - audioStart);
-    const out        = path.join(chunkDir, `chunk_${String(idx).padStart(4, "0")}.wav`);
+    const out        = path.join(chunkDir, `chunk_${String(idx).padStart(4, "0")}${ext}`);
 
     await new Promise((resolve, reject) => {
-      ffmpeg()
+      let cmd = ffmpeg()
         .input(filePath)
         .setStartTime(audioStart)
         .setDuration(segDur)
-        .audioCodec("pcm_s16le")
         .audioFrequency(16000)
-        .audioChannels(1)
-        .format("wav")
-        .save(out)
-        .on("end",   resolve)
-        .on("error", reject);
+        .audioChannels(1);
+      if (useOpus) {
+        cmd = cmd.audioCodec("libopus").audioBitrate(bitrate).format("ogg");
+      } else {
+        cmd = cmd.audioCodec("pcm_s16le").format("wav");
+      }
+      cmd.save(out).on("end", resolve).on("error", reject);
     });
 
     chunks.push({ file: out, overlapDur });
@@ -191,8 +208,10 @@ async function transcribeOneRaw(fp, { model, language, isDiarize, apiKey, url, F
     fd.set("response_format",   "diarized_json");
     fd.set("chunking_strategy", "auto");
   }
-  const buf = await fs.promises.readFile(fp);
-  fd.set("file", new Blob([buf], { type: "audio/wav" }), path.basename(fp));
+  const buf      = await fs.promises.readFile(fp);
+  const ext      = path.extname(fp).toLowerCase();
+  const mimeType = ext === ".ogg" ? "audio/ogg" : ext === ".mp3" ? "audio/mpeg" : "audio/wav";
+  fd.set("file", new Blob([buf], { type: mimeType }), path.basename(fp));
   const res = await Fetch(url, {
     method:  "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -263,7 +282,7 @@ async function getTranscribeAudio(filePath, { model, language, apiKey, endpoint,
 }
 
 
-async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoint, chunkDurationS, diarizeChunkDurationS, wo }) {
+async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoint, diarizeChunkMB, opusBitrateKbps, wo }) {
   const log = getPrefixedLogger(wo, import.meta.url);
 
   let Fetch = globalThis.fetch, FormData = globalThis.FormData, Blob = globalThis.Blob;
@@ -272,10 +291,12 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
     Fetch = undici.fetch; FormData = undici.FormData; Blob = undici.Blob;
   }
 
-  const url          = getAudioTranscribeUrl(endpoint);
-  const apiOpts      = { model, language, isDiarize: true, apiKey, url, Fetch, FormData, Blob };
-  const channelId    = String(wo.channelID || "");
-  const diarizeChunkS = Number.isFinite(diarizeChunkDurationS) && diarizeChunkDurationS > 0 ? diarizeChunkDurationS : 30;
+  const url           = getAudioTranscribeUrl(endpoint);
+  const apiOpts       = { model, language, isDiarize: true, apiKey, url, Fetch, FormData, Blob };
+  const channelId     = String(wo.channelID || "");
+  const chunkMB       = Number.isFinite(diarizeChunkMB) && diarizeChunkMB > 0 ? diarizeChunkMB : DEFAULT_DIARIZE_CHUNK_MB;
+  const bitrate       = Number.isFinite(opusBitrateKbps) && opusBitrateKbps > 0 ? opusBitrateKbps : DEFAULT_OPUS_BITRATE_KBPS;
+  const diarizeChunkS = mbToChunkDurationS(chunkMB, bitrate);
 
   log("getDiarizeWithSamples start", "info", { moduleName: MODULE_NAME, channelId, model });
 
@@ -316,9 +337,9 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
     log("Session creation failed", "error", { moduleName: MODULE_NAME, error: e?.message });
   }
 
-  const chunkDir = path.join(tmpDir, "chunks");
+  const chunkDir  = path.join(tmpDir, "chunks");
   fs.mkdirSync(chunkDir, { recursive: true });
-  const rawChunks = await splitAudioIntoChunks(filePath, chunkDir, diarizeChunkS, 0, false);
+  const rawChunks  = await splitAudioIntoChunks(filePath, chunkDir, diarizeChunkS, 0, false, true, bitrate);
   const audioParts = rawChunks.map((c, i) => ({ file: c.file, index: i }));
 
   const parts = [];
@@ -429,9 +450,10 @@ export default async function getCoreVoiceTranscribe(coreData) {
     : (wo.transcribeModel || cfg.transcribeModel || "gpt-4o-mini-transcribe").trim();
   const LANGUAGE      = (wo.transcribeLanguage || cfg.transcribeLanguage || "auto").trim();
   const ENDPOINT      = (wo.transcribeEndpoint || cfg.transcribeEndpoint || "").trim();
-  const CHUNK_S        = Number.isFinite(wo.transcribeChunkS)        ? +wo.transcribeChunkS        : Number.isFinite(cfg.chunkDurationS)        ? +cfg.chunkDurationS        : DEFAULT_CHUNK_S;
-  const OVERLAP_S      = Number.isFinite(wo.transcribeOverlapS)      ? +wo.transcribeOverlapS      : Number.isFinite(cfg.overlapDurationS)      ? +cfg.overlapDurationS      : DEFAULT_OVERLAP_S;
-  const DIARIZE_CHUNK_S = Number.isFinite(wo.diarizeChunkDurationS) ? +wo.diarizeChunkDurationS   : Number.isFinite(cfg.diarizeChunkDurationS) ? +cfg.diarizeChunkDurationS : 30;
+  const CHUNK_S           = Number.isFinite(wo.transcribeChunkS)   ? +wo.transcribeChunkS   : Number.isFinite(cfg.chunkDurationS)        ? +cfg.chunkDurationS        : DEFAULT_CHUNK_S;
+  const OVERLAP_S         = Number.isFinite(wo.transcribeOverlapS) ? +wo.transcribeOverlapS : Number.isFinite(cfg.overlapDurationS)      ? +cfg.overlapDurationS      : DEFAULT_OVERLAP_S;
+  const DIARIZE_CHUNK_MB  = Number.isFinite(wo.diarizeChunkMB)     ? +wo.diarizeChunkMB     : Number.isFinite(cfg.diarizeChunkMB)         ? +cfg.diarizeChunkMB         : DEFAULT_DIARIZE_CHUNK_MB;
+  const OPUS_BITRATE_KBPS = Number.isFinite(wo.opusBitrateKbps)    ? +wo.opusBitrateKbps    : Number.isFinite(cfg.opusBitrateKbps)        ? +cfg.opusBitrateKbps        : DEFAULT_OPUS_BITRATE_KBPS;
 
   wo.voiceTranscribed = false;
 
@@ -468,7 +490,7 @@ export default async function getCoreVoiceTranscribe(coreData) {
       : (isDiarize && wo.transcribeOnly)
         ? await getDiarizeWithSamples(audioFile, {
             model: MODEL, language: LANGUAGE, apiKey: API_KEY,
-            endpoint: ENDPOINT, chunkDurationS: CHUNK_S, diarizeChunkDurationS: DIARIZE_CHUNK_S, wo
+            endpoint: ENDPOINT, diarizeChunkMB: DIARIZE_CHUNK_MB, opusBitrateKbps: OPUS_BITRATE_KBPS, wo
           })
         : await getTranscribeAudio(audioFile, {
             model:            MODEL,
