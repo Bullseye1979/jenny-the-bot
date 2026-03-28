@@ -208,20 +208,25 @@ function getSystemContentImagePromptRun(personaText, imagePersonaHint) {
   const hint = String(imagePersonaHint ?? "").trim();
 
   const anchor = [
-    "Character anchor (MUST keep consistent across images):",
+    "Character anchor (MUST keep consistent across ALL images):",
     persona ? `- persona: ${persona}` : "- persona: (none provided)",
     hint ? `- Fixed look hint: ${hint}` : ""
   ].filter(Boolean).join("\n");
 
   const rules = [
-    "You convert the provided ROLEPLAY CONTEXT into ONE image generation prompt that depicts a concrete event.",
+    "You create a Stable Diffusion image prompt from the ROLEPLAY CONTEXT.",
     "Rules:",
-    "- Output ONLY the prompt text. No quotes. No markdown. No JSON. No extra lines.",
-    "- The image MUST depict the most recent specific event/action from the context (not a generic mood shot).",
-    "- Start by describing the main character using the Character anchor, then the event scene.",
-    "- Include: setting, props, body language, facial expression, lighting, camera framing (e.g., close-up/medium/wide).",
-    "- Do NOT include any URLs.",
-    "- Keep it under 80 words."
+    "- Output ONLY a comma-separated list of descriptive tags. NO sentences. NO prose. NO quotes. NO markdown. NO extra lines.",
+    "- Follow this exact tag order:",
+    "  1. Main character: physical features (age, hair color/style, eye color, build), clothing/accessories, facial expression, body pose/action",
+    "  2. Other characters present (if any): same detail level",
+    "  3. Scene: specific location, furniture/props, background details",
+    "  4. Camera framing: one of (close-up | medium shot | wide shot | over-the-shoulder shot)",
+    "  5. Lighting: one specific descriptor (e.g. dramatic window light, harsh fluorescent, warm candlelight, dim office lamp)",
+    "  6. Quality tags — ALWAYS end with exactly: masterpiece, best quality, highly detailed, sharp focus",
+    "- Depict the MOST RECENT concrete action/event from the context. Not a mood or atmosphere shot.",
+    "- Keep total output under 60 words.",
+    "- Do NOT include any URLs, narrative text, or explanations."
   ].join("\n");
 
   return [anchor, rules].filter(Boolean).join("\n\n");
