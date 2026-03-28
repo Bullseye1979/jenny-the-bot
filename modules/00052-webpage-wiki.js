@@ -433,14 +433,10 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
   }
 
   if (!article._model) {
-    const chanId  = String(channel.channelId || "").toLowerCase();
-    const chans   = Array.isArray(coreData?.config?.["core-channel-config"]?.channels)
-      ? coreData.config["core-channel-config"].channels : [];
-    for (const ch of chans) {
-      const matches = Array.isArray(ch.channelMatch)
-        ? ch.channelMatch.some(m => String(m).toLowerCase() === chanId) : false;
-      if (matches && ch.overrides?.model) { article._model = getStr(ch.overrides.model); break; }
-    }
+    const globalOvr = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
+    const chanOvr   = (channel.overrides && typeof channel.overrides === "object") ? channel.overrides : {};
+    const modelName = getStr(chanOvr.model || globalOvr.model || "");
+    if (modelName) article._model = modelName;
   }
 
   const imgCfg    = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
