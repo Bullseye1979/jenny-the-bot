@@ -232,6 +232,8 @@ function formatTs(ts) {
 function buildMsgEl(msg) {
   var row = document.createElement('div');
   row.className = 'msg-row';
+  row.dataset.ts    = msg.ts    || '';
+  row.dataset.ctxId = msg.ctx_id || 0;
   if (getShowTs()) {
     var ts = document.createElement('span');
     ts.className = 'msg-ts';
@@ -261,8 +263,26 @@ function appendMessages(msgs) {
   var stream = document.getElementById('live-stream');
   var empty = stream.querySelector('[data-empty]');
   if (empty) empty.remove();
-  for (var i = 0; i < msgs.length; i++) {
-    stream.appendChild(buildMsgEl(msgs[i]));
+  var sorted = msgs.slice().sort(function(a, b) {
+    if (a.ts < b.ts) return -1;
+    if (a.ts > b.ts) return 1;
+    return (a.ctx_id || 0) - (b.ctx_id || 0);
+  });
+  for (var i = 0; i < sorted.length; i++) {
+    var msg = sorted[i];
+    var el  = buildMsgEl(msg);
+    var children = stream.children;
+    var inserted = false;
+    for (var j = children.length - 1; j >= 0; j--) {
+      var c = children[j];
+      if (!c.dataset.ts) continue;
+      if (c.dataset.ts < msg.ts || (c.dataset.ts === msg.ts && (parseInt(c.dataset.ctxId, 10) || 0) <= (msg.ctx_id || 0))) {
+        c.after(el);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) stream.insertBefore(el, stream.firstChild);
     totalShown++;
   }
   if (autoScroll && msgs.length) {

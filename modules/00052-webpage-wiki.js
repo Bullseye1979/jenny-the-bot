@@ -432,7 +432,16 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     throw new Error("AI returned no valid JSON article: " + responseText.slice(0, 200));
   }
 
-  if (!article._model && data.model) article._model = getStr(data.model);
+  if (!article._model) {
+    const chanId  = String(channel.channelId || "").toLowerCase();
+    const chans   = Array.isArray(coreData?.config?.["core-channel-config"]?.channels)
+      ? coreData.config["core-channel-config"].channels : [];
+    for (const ch of chans) {
+      const matches = Array.isArray(ch.channelMatch)
+        ? ch.channelMatch.some(m => String(m).toLowerCase() === chanId) : false;
+      if (matches && ch.overrides?.model) { article._model = getStr(ch.overrides.model); break; }
+    }
+  }
 
   const imgCfg    = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
   const imgPrompt = getStr(article.infobox?.imageAlt || article.title || query);
