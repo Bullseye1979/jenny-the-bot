@@ -374,7 +374,7 @@ function getHandleHttpResponse(wo, req, res, log) {
     }
     /* If the AI pipeline produced a response, forward it as JSON */
     if (typeof wo.response === "string" && wo.response) {
-      body = JSON.stringify({ response: wo.response });
+      body = JSON.stringify({ response: wo.response, model: (typeof wo.model === "string" && wo.model) ? wo.model : null });
     } else {
       body = JSON.stringify({ ok: false, error: "Empty response" });
     }
