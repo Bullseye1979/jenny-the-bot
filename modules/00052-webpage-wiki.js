@@ -446,7 +446,7 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
 }
 
 
-async function callPipelineForImageOnly(article, channel, coreData, promptAddition) {
+async function callPipelineForImageOnly(article, channel, coreData, promptAddition, promptOverride) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
 
@@ -456,7 +456,7 @@ async function callPipelineForImageOnly(article, channel, coreData, promptAdditi
 
   const infobox     = safeParseJson(article.infobox, {});
   const basePrompt  = getStr(article.image_prompt || infobox.imageAlt || article.title);
-  const imagePrompt = basePrompt + (promptAddition ? `\n${promptAddition}` : "");
+  const imagePrompt = getStr(promptOverride) || (basePrompt + (promptAddition ? `\n${promptAddition}` : ""));
 
   if (!imagePrompt.trim()) throw new Error("No image prompt available for this article");
 
@@ -855,7 +855,13 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
       <label>Article Image</label>
       <input id="wiki-img-url" class="wiki-edit-input" type="text" value="${escHtml(imageUrl)}" placeholder="https://... or /wiki/${escHtml(chId)}/images/filename.png">
       <button type="button" class="wiki-regen-btn" id="wiki-regen-btn" onclick="wikiRegenImage()">🔄 Regenerate Image via AI</button>
-      <textarea id="wiki-regen-addition" class="wiki-edit-textarea" rows="2" style="max-width:600px;margin-top:6px" placeholder="Optional: additional context for image (e.g. Irene has long red hair and wears leather armor)"></textarea>
+      <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+        <label style="font-size:0.82em;color:var(--wiki-text-muted);display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="wiki-regen-override-mode" onchange="wikiRegenModeChange()">
+          Replace base prompt entirely
+        </label>
+      </div>
+      <textarea id="wiki-regen-addition" class="wiki-edit-textarea" rows="3" style="max-width:600px;margin-top:4px" placeholder="Optional: additional context for image (e.g. Irene has long red hair and wears leather armor)"></textarea>
       <p id="wiki-regen-status" class="wiki-edit-notice"></p>
       <p class="wiki-edit-notice">Paste a URL or upload a new image below. Uploading replaces the URL automatically.</p>
       ${imageUrl ? `<img id="wiki-img-preview" class="wiki-edit-img-preview" src="${escHtml(imageUrl)}" alt="Current image">` : `<img id="wiki-img-preview" class="wiki-edit-img-preview hidden" src="" alt="">`}
@@ -944,18 +950,34 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
     else { imgPrev.classList.add('hidden'); }
   });
 
+  window.wikiRegenModeChange = function() {
+    const cb = document.getElementById('wiki-regen-override-mode');
+    const ta = document.getElementById('wiki-regen-addition');
+    if (!ta) return;
+    if (cb && cb.checked) {
+      ta.placeholder = 'Full image prompt (replaces the article\u2019s base prompt entirely)';
+      ta.rows = 4;
+    } else {
+      ta.placeholder = 'Optional: additional context for image (e.g. Irene has long red hair and wears leather armor)';
+      ta.rows = 3;
+    }
+  };
+
   window.wikiRegenImage = async function() {
-    const btn    = document.getElementById('wiki-regen-btn');
-    const status = document.getElementById('wiki-regen-status');
-    const pa     = document.getElementById('wiki-regen-addition');
-    const promptAddition = pa ? pa.value.trim() : '';
+    const btn      = document.getElementById('wiki-regen-btn');
+    const status   = document.getElementById('wiki-regen-status');
+    const pa       = document.getElementById('wiki-regen-addition');
+    const override = document.getElementById('wiki-regen-override-mode');
+    const text     = pa ? pa.value.trim() : '';
+    const isOverride = !!(override && override.checked);
+    const body = isOverride ? { promptOverride: text } : { promptAddition: text };
     if (btn) btn.disabled = true;
     status.textContent = '⏳ Regenerating image\u2026 this may take a moment.';
     try {
       const resp = await fetch('/wiki/' + chId + '/api/regen-image/' + slug, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promptAddition: promptAddition })
+        body: JSON.stringify(body)
       });
       const data = await resp.json();
       if (data.ok && data.image_url) {
@@ -1356,12 +1378,14 @@ export default async function getWebpageWiki(coreData) {
     try { articleForRegen = await dbGetArticle(db, channelId, seg3, 0); } catch { /* ignore */ }
     if (!articleForRegen) { await sendJson(wo, 404, { ok: false, error: "Article not found" }); return coreData; }
     let regenPromptAddition = "";
+    let regenPromptOverride = "";
     try {
       const bodyJson = wo.http?.json || (wo.http?.rawBody ? JSON.parse(wo.http.rawBody) : {});
       regenPromptAddition = getStr(bodyJson.promptAddition || "").trim();
+      regenPromptOverride = getStr(bodyJson.promptOverride || "").trim();
     } catch { /* ignore */ }
     try {
-      const imageUrl = await callPipelineForImageOnly(articleForRegen, channel, coreData, regenPromptAddition);
+      const imageUrl = await callPipelineForImageOnly(articleForRegen, channel, coreData, regenPromptAddition, regenPromptOverride);
 
       const oldUrl = getStr(articleForRegen.image_url || "");
       const deleteOldImageFile = (absPath) => {
