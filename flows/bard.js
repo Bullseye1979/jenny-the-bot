@@ -90,10 +90,16 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
   if (!candidates.length) candidates = [...pool];
   if (!candidates.length) return null;
 
+  const hasMatchData = !!(aiLoc || aiSit || aiMoods.length);
+
+  if (!hasMatchData) {
+    const defaults = candidates.filter(t => t.tags.some(tag => tag.toLowerCase() === "default"));
+    if (defaults.length > 0) return defaults[Math.floor(Math.random() * defaults.length)];
+  }
+
   const maxScore = Math.max(...candidates.map(getMoodScore));
   const best = candidates.filter(t => getMoodScore(t) === maxScore);
 
-  const hasMatchData = !!(aiLoc || aiSit || aiMoods.length);
   if (hasMatchData && currentFile && best.some(t => t.file === currentFile)) return null;
 
   return best[Math.floor(Math.random() * best.length)];

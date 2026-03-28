@@ -68,6 +68,7 @@ export default async function getBardAdminJoin(coreData) {
       try { if (live?._trackTimer) clearTimeout(live._trackTimer); } catch {}
       try { await deleteItem(sessionKey); } catch {}
       try { await deleteItem(`bard:labels:${guildId}`); } catch {}
+      try { await deleteItem(`bard:lastrun:${guildId}`); } catch {}
       try { await deleteItem(`bard:nowplaying:${guildId}`); } catch {}
       try { await deleteItem(`bard:stream:${guildId}`); } catch {}
       await setRemoveBardSessionKey(sessionKey);

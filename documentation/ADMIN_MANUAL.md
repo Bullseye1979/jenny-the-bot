@@ -2311,7 +2311,7 @@ export default async function myModule(coreData) {
 | 00040 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
 | 00041 | `webpage-menu` | Global menu provider for webpage flows. Reads `config["webpage-menu"].items[]`, filters items by `wo.webAuth.role`, and sets `wo.web.menu`. If no role is set, all items without role restriction are shown. Runs before any page module to ensure the menu is always populated |
 | 00042 | `webpage-inpaint` | Redirect `GET /documents/*.<ext>` (PNG, JPG, JPEG, WebP, GIF, BMP) to the inpainting SPA. The target host is taken from `config["webpage-inpaint"].inpaintHost` — when the value contains a hostname, it is used directly; when it starts with `/`, it is appended to the request's own hostname. Use a fixed hostname (e.g. `"jenny.ralfreschke.de/inpainting"`) pointing to the domain where users log in, so the session cookie is valid on the inpainting SPA. |
-| 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — tiered access (allowedRoles = basic listener access, adminRoles = full upload/manage rights, no matching role = 403 deny); bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card |
+| 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — tiered access (allowedRoles = basic listener access, adminRoles = full upload/manage rights, no matching role = 403 deny); bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card. Reads `bard:registry`, `bard:stream`, `bard:labels` from registry via `getItem` for the `/api/nowplaying` endpoint. |
 | 00044 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. |
 | 00047 | `webpage-voice` | Webpage voice interface — three-tab SPA (Voice / Speakers / Review). Voice tab: always-on mic + meeting recorder. Speakers tab: register known voices with sample audio for automatic speaker identification. Review tab: inspect diarized sessions, correct speaker assignments, and apply the final transcript to the channel context via `POST /voice/api/session/:id/apply`. On Apply: rebuilds transcript with DB speaker names, sets `authorName` to participant list, optionally purges context, writes via `setContext`, deletes session. |
 | 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
@@ -4437,8 +4437,11 @@ The bard music system automatically plays mood-appropriate background music for 
 /bardstop command
   -> 00035-bard-join.js
   -> cancels the track advancement timer (session._trackTimer)
-  -> removes bard:session:{guildId}, bard:labels:{guildId}, bard:nowplaying:{guildId},
-     bard:stream:{guildId} from registry
+  -> removes bard:session:{guildId}, bard:labels:{guildId}, bard:lastrun:{guildId},
+     bard:nowplaying:{guildId}, bard:stream:{guildId} from registry
+  -> bard:lastrun is deleted so the next /bardstart fetches fresh context from scratch
+     (without it the cron would only look at context since the old timestamp, finding
+      nothing and generating no labels until new conversation happens)
 
 Cron job (every N minutes, flow: bard-label-gen)
   -> 00036-bard-cron.js (preparer)
@@ -4463,7 +4466,12 @@ Cron job (every N minutes, flow: bard-label-gen)
            from the prompt while signalling a scene change with a new word later.
          Pass 2 (mood assignment): positions 2–5 only, pure mood words (not loc/sit words).
          Pass 3 (position fallback): novel words at positions 0/1 accepted as-is.
-     - carry-forward for empty slots: prev labels → current song's trackTags → random from allowed list
+     - carry-forward rules (differ by slot type):
+         Location: AI empty → prev labels[0] → current song's trackTags[0] → random from locationSet
+         Situation: AI empty → left empty (wildcard). No carry-forward, no random init.
+           Rationale: situations change rapidly (combat starts/ends); carrying forward a situation
+           causes a self-reinforcing loop (battle track → songTags="battle" → bard:labels="battle"
+           → new battle track → …). Empty situation = wildcard in the selector → any track matches.
      - writes bard:labels:{guildId} to registry
      - writes bard:lastrun:{guildId} only on success (prevents context window from advancing on AI failure)
 
@@ -4501,10 +4509,10 @@ Track end timer — song ended naturally
 |-----|---------|
 | `bard:registry` | `{ list: ["bard:session:{guildId}"] }` |
 | `bard:session:{guildId}` | `{ guildId, textChannelId, status, _trackEndAt, _trackTimer, _lastPlayedFile, _lastLabels }` |
-| `bard:labels:{guildId}` | `{ labels: ["tavern","combat","dark","tense","intense","battle"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels[0]` = location, `labels[1]` = situation, `labels[2–5]` = 4 mood tags; empty string = wildcard. `rejected` = mood tokens returned by the LLM that are not in the library (up to 5). **Not written on `/bardstart`** — absence of labels causes the first poll to pick a random track. Deleted on `/bardstop`. |
+| `bard:labels:{guildId}` | `{ labels: ["tavern","combat","dark","tense","intense","battle"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels[0]` = location, `labels[1]` = situation, `labels[2–5]` = 4 mood tags; empty string = wildcard. `rejected` = mood tokens returned by the LLM that are not in the library (up to 5). **Not written on `/bardstart`** — absence of labels causes the first poll to prefer a `default`-tagged track (see below), or a random track if none is tagged `default`. Deleted on `/bardstop`. |
 | `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
 | `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, rejectedLabels, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`; `rejectedLabels` = LLM tokens not in the library (shown red in Now Playing). Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardstop` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
-| `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written by `bard-label-output` **only after a successful label write**. On AI failure the timestamp is not updated, so the next run retries from the same context window. |
+| `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written by `bard-label-output` **only after a successful label write**. On AI failure the timestamp is not updated, so the next run retries from the same context window. **Deleted on `/bardstop`** — this forces the next `/bardstart` + cron run to fetch fresh context (last 300 s) instead of looking only at conversation after the old timestamp. |
 
 ### Music Library (library.xml)
 
@@ -4543,6 +4551,7 @@ Fields:
   - **Empty position** = wildcard — the track matches any AI value for that slot
   - A track with `,,calm,peaceful` matches any location and any situation
   - In the **Bard UI**, wildcard positions are displayed as `*` and must be entered as `*`. Example: entering `*,*,released,free,joy` leaves positions 0 and 1 empty (wildcard) and sets three moods. Raw XML uses leading commas (`,,released,free,joy`); the UI converts between the two automatically.
+  - **Special tag `default`**: a track tagged `default` (in any position) is played first when no AI labels are available yet (e.g. after `/bardstart` before the first cron run, or after `/bardstop`+`/bardstart`). Use this to define the "startup track" — e.g. a neutral ambient piece to play while the AI hasn't classified the scene yet. If multiple tracks carry the `default` tag one is picked at random; if none do, normal random selection is used as fallback.
 - `volume`: Playback volume multiplier, 0.1–4.0 (default: 1.0)
 
 ### Tag Vocabulary
@@ -4558,7 +4567,8 @@ The allowed-list sets (`locationSet`, `situationSet`, `moodSet`) are built dynam
 | Source | Empty means |
 |--------|-------------|
 | `library.xml` track tag | **Wildcard** — the track fits any location/situation |
-| AI output label | **Unknown** — treated as unchanged (carry-forward applied) |
+| AI output label (location) | **Unknown** — carry-forward applied (location rarely changes) |
+| AI output label (situation) | **Unknown** — left empty (wildcard). No carry-forward. |
 
 **Label processing pipeline** (`bard-label-output`):
 
@@ -4568,10 +4578,9 @@ The allowed-list sets (`locationSet`, `situationSet`, `moodSet`) are built dynam
    - *Pass 2*: positions 2–5 only; pure mood words (not in locationSet/situationSet).
    - *Pass 3*: novel words at AI positions 0/1 accepted as-is (new concepts not yet in library).
 
-2. **Carry-forward** for empty slots (three-level):
-   - Previous active labels (`bard:labels`) — AI uncertain, assume unchanged
-   - Current song's own tag (`bard:stream.trackTags`) — ground truth fallback
-   - Random from allowed list — initialization only, no prior history
+2. **Carry-forward** for empty slots:
+   - **Location** (three-level): previous `bard:labels[0]` → current song's `trackTags[0]` → random from `locationSet`
+   - **Situation** (none): if the AI outputs empty/unclear for situation, the slot stays empty (= wildcard in the selector). No carry-forward, no random init. This prevents the self-reinforcing battle-loop: if a battle track is playing and the AI no longer detects combat, the situation goes to wildcard and the selector opens up to all tracks again.
 
    Mood slots are **not** filled — empty mood = "unknown this cycle."
 
@@ -4609,8 +4618,11 @@ Empty library tag = wildcard → always satisfies the match condition for that p
 - If the **currently playing track** is among the highest-scoring candidates → return `null` (no switch — current track is as good as any alternative).
 - Otherwise → **random pick** from the tied-best candidates. The recently-played file is excluded for variety where possible.
 
+**Default track (startup behaviour):**
+When no AI labels are active (labels array is empty — e.g. immediately after `/bardstart` or after `/bardstop`+`/bardstart`), `getSelectSong` first checks whether any candidate track has the literal tag `default` in any tag position. If found, one of those tracks is chosen at random. If no track carries `default`, a fully random track is used as fallback. Once the cron job has generated real labels, the normal tier+mood logic takes over and the default track may be replaced by a better-fitting one.
+
 **Full lifecycle:**
-1. **Scheduler started** (`/bardstart`) — no labels written. First poll picks a random track from tier 3. The cron job writes real structured labels on its first run.
+1. **Scheduler started** (`/bardstart`) — no labels written. First poll picks a `default`-tagged track (if any) or a random track. The cron job writes real structured labels on its first run.
 2. **Track playing** — every poll compares new AI labels vs `nowPlaying.labels`. If any switch rule fires, `getSelectSong` finds the best track in its tier and starts it immediately. Otherwise, `nowPlaying.labels` and `bard:stream.labels` are refreshed for the UI only.
 3. **Song ends naturally** — `setTimeout` fires (ffprobe duration + 200 ms), calls `triggerPoll()` immediately. The next poll runs `getSelectSong` with the current labels and starts the best-matching track.
 
@@ -4776,11 +4788,14 @@ This means the label-gen AI call:
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | No audio in browser player | Scheduler not started | Use `/bardstart` in Discord |
+| "Nothing playing right now" despite `/bardstart` | `getItem` import missing in `00043-webpage-bard.js` — `GET /bard/api/nowplaying` would silently return `null` because `ReferenceError: getItem is not defined` was caught by `try/catch` | Ensure `import { getItem } from "../core/registry.js"` is present in `00043-webpage-bard.js` |
+| After `/bardstop` + `/bardstart`, labels still feel like the old session | `bard:lastrun` was not deleted on `/bardstop`, so the next label-gen run found no new context and skipped — old labels were effectively carried over | Fixed: `/bardstop` now deletes `bard:lastrun:{guildId}`. After a fresh `/bardstart`, the cron fetches the last 300 s of context and generates new labels on the first run. |
+| Stuck in one situation (e.g. only battle tracks after a combat scene) | Situation carry-forward loop: battle track's `trackTags[1]="battle"` was carried into `bard:labels[1]`, which caused the selector to keep picking battle/wildcard-situation tracks, whose tags fed back into the next cycle | Fixed: `bard-label-output` no longer carries forward the situation slot. If the AI outputs empty for situation, it stays empty (wildcard), allowing all tracks to be candidates until the AI identifies the new situation. |
 | Labels not updating | Cron job disabled or AI failure | Enable `bard-label-gen` job in `core.json`. Check logs for AI errors — if the AI call fails, `bard:lastrun` is not advanced and the next run retries automatically. |
 | Same song repeats | Only one track matches labels | Add more tracks or broaden their tags |
 | Gap between tracks | Library empty or no matching tracks | Song-end triggers an immediate server poll. If no matching track is found, `bard:stream` is cleared and nothing plays until the next poll. |
 | First few seconds of next track missing (browser player) | Browser detected the new track late | Browser poll interval is 2 s; the browser retries every 500 ms (up to 10×) after `ended` until the server reports the new track. If the gap persists, check the browser console for errors in `pollNowPlaying`. |
-| Stream out of sync after delayed play button press | Elapsed position was calculated at page-load time | The catch-up seek is recalculated at the moment the user clicks "▶ Zum Anhören klicken", so the stream is always in sync regardless of how long the user waited before pressing play. |
+| Stream out of sync after delayed play button press | Elapsed position was calculated at page-load time | The catch-up seek is recalculated at the moment the user clicks "▶ Click to listen", so the stream is always in sync regardless of how long the user waited before pressing play. |
 
 ---
 

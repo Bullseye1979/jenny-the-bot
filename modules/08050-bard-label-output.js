@@ -114,24 +114,17 @@ export default async function getBardLabelOutput(coreData) {
   if (!sit && sanitized[1] && !usedIndices.has(1)) { sit = sanitized[1]; usedIndices.add(1); }
 
   if (!loc && prevLabels[0]) loc = String(prevLabels[0]);
-  if (!sit && prevLabels[1]) sit = String(prevLabels[1]);
-  if (!loc || !sit) {
+  if (!loc) {
     try {
       const stream = await getItem(`bard:stream:${guildId}`);
       const songTags = Array.isArray(stream?.trackTags) ? stream.trackTags : [];
       if (!loc && songTags[0]) { loc = String(songTags[0]); log(`location fallback from current song: "${loc}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME }); }
-      if (!sit && songTags[1]) { sit = String(songTags[1]); log(`situation fallback from current song: "${sit}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME }); }
     } catch {}
   }
   if (!loc && locationSet.size > 0) {
     const locs = [...locationSet];
     loc = locs[Math.floor(Math.random() * locs.length)];
     log(`location initialized to random value "${loc}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
-  }
-  if (!sit && situationSet.size > 0) {
-    const sits = [...situationSet];
-    sit = sits[Math.floor(Math.random() * sits.length)];
-    log(`situation initialized to random value "${sit}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
   }
 
   while (moodValues.length < 4) moodValues.push("");
