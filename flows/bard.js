@@ -244,6 +244,8 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
                 const trackSitFits = !ts || !newSit || ts === newSit;
                 if (!trackLocFits && !trackSitFits)
                   switchReason = `track-mismatch:loc(${tl || "*"})≠${newLoc} sit(${ts || "*"})≠${newSit}`;
+                else if (!tl && newLoc)
+                  switchReason = `wildcard-location:*→${newLoc}`;
               }
             }
 

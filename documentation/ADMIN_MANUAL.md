@@ -4594,6 +4594,7 @@ The allowed-list sets (`locationSet`, `situationSet`, `moodSet`) are built dynam
 | **Situation changed** | new and previous situation are both non-empty and differ |
 | **Mood drift >50%** | >50% of new mood labels are not present in the previous mood labels (skipped if either list is empty) |
 | **Track mismatch** | AI has active labels (location or situation non-empty) AND the currently-playing track fits neither the active location nor the active situation (both `trackLoc ≠ newLoc` and `trackSit ≠ newSit`, ignoring wildcard tracks whose own tag is empty). This catches the case where a track was selected from Tier 3 (random fallback) at a time when labels were already specific — the track never fit but there was no label *change* to trigger the other rules. |
+| **Wildcard location upgrade** | The currently-playing track has an empty location tag (wildcard — fits all locations) AND the AI now reports a specific location. A potential switch is triggered; `getSelectSong` then decides whether a better-fitting track exists. If one does, the switch happens. If the wildcard track is already the best available match (e.g. no tracks tagged with the new location exist), `getSelectSong` returns `null` and the wildcard track keeps playing. |
 
 If `getSelectSong` returns `null` after a switch trigger (current track is tied-best in its tier), the switch is suppressed and only the UI labels are refreshed.
 
