@@ -230,6 +230,19 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
                 switchReason = `mood:${changed}/${newMoods.length} changed`;
             }
 
+            const hasMatchData = !!(newLoc || newSit || newMoods.length);
+            if (!switchReason && hasMatchData && currentFile) {
+              const currentTrack = library.find(t => t.file === currentFile);
+              if (currentTrack) {
+                const tl = (currentTrack.tags?.[0] || "").toLowerCase();
+                const ts = (currentTrack.tags?.[1] || "").toLowerCase();
+                const trackLocFits = !tl || !newLoc || tl === newLoc;
+                const trackSitFits = !ts || !newSit || ts === newSit;
+                if (!trackLocFits && !trackSitFits)
+                  switchReason = `track-mismatch:loc(${tl || "*"})≠${newLoc} sit(${ts || "*"})≠${newSit}`;
+              }
+            }
+
             if (switchReason) {
               log(`mid-song switch (${switchReason}) for guild ${session.guildId}`, "info", { moduleName: MODULE_NAME });
               const next = getSelectSong(labels, library, currentFile);
