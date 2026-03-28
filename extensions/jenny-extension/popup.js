@@ -340,17 +340,17 @@ function sendMessage(payload) {
    Summarize current tab
    ============================================================ */
 function summarizePage() {
-  /* Ask the background service worker for the active tab URL.
-     The service worker tracks tab changes via onActivated/onUpdated events,
-     so it always knows the last active normal-window tab regardless of which
-     window currently has focus (avoids the side-panel-as-last-focused-window
-     problem introduced in Chrome 117+). */
-  chrome.runtime.sendMessage({ type: "getActiveTabUrl" }, function(resp) {
-    if (chrome.runtime.lastError || !resp || !resp.url) {
+  /* Query the active tab in the current window directly.
+     From the side-panel context, currentWindow:true refers to the browser
+     window the panel is attached to — no background service-worker roundtrip
+     needed, and immune to service-worker restart (which would wipe the
+     in-memory tab-tracking state and cause a random tab to be selected). */
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (chrome.runtime.lastError || !tabs || !tabs.length || !tabs[0].url) {
       appendMsg("assistant", "\u26a0\ufe0f Could not get current tab URL.");
       return;
     }
-    var url = resp.url;
+    var url = tabs[0].url;
     var isYT = /youtube\.com\/watch|youtu\.be\//.test(url);
     var task = isYT
       ? "Please summarize this YouTube video: " + url
