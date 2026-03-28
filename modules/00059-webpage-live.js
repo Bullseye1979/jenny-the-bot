@@ -61,7 +61,7 @@ function setCssResp(wo, css) {
 
 
 function parseContextRow(row) {
-  let text   = getStr(row.text);
+  let text   = "";
   let author = "";
   const role = getStr(row.role);
   try {
