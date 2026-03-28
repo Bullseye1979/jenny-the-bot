@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
 import { getSecret } from "../core/secrets.js";
+import { getItem } from "../core/registry.js";
 
 const MODULE_NAME = "webpage-bard";
 const __filename = fileURLToPath(import.meta.url);
