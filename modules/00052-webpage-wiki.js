@@ -432,6 +432,8 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     throw new Error("AI returned no valid JSON article: " + responseText.slice(0, 200));
   }
 
+  if (!article._model && typeof data.model === "string" && data.model) article._model = data.model;
+
   const imgCfg    = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
   const imgPrompt = getStr(article.infobox?.imageAlt || article.title || query);
   if (imgPrompt) {
@@ -458,9 +460,9 @@ async function callPipelineForImageOnly(article, channel, coreData, promptAdditi
 
   if (!imagePrompt.trim()) throw new Error("No image prompt available for this article");
 
-  const imgCfg  = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
-  const imgBase = { apiKey: getStr(overrides.apiKey || wo.apiKey || "") };
-  return wikiGenImage(imagePrompt, imgCfg, imgBase);
+  const imgCfgBase = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
+  const imgCfg = overrides.apiKey ? { ...imgCfgBase, apiKey: overrides.apiKey } : imgCfgBase;
+  return wikiGenImage(imagePrompt, imgCfg, wo);
 }
 
 
