@@ -118,7 +118,8 @@ export default async function getBardLabelOutput(coreData) {
     try {
       const stream = await getItem(`bard:stream:${guildId}`);
       const songTags = Array.isArray(stream?.trackTags) ? stream.trackTags : [];
-      if (!loc && songTags[0]) { loc = String(songTags[0]); log(`location fallback from current song: "${loc}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME }); }
+      const isSelectedAsDefault = !!stream?.selectedAsDefault;
+      if (!isSelectedAsDefault && songTags[0]) { loc = String(songTags[0]); log(`location fallback from current song: "${loc}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME }); }
     } catch {}
   }
   if (!loc && locationSet.size > 0) {

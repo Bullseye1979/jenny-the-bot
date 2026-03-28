@@ -94,7 +94,10 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
 
   if (!hasMatchData) {
     const defaults = candidates.filter(t => t.tags.some(tag => tag.toLowerCase() === "default"));
-    if (defaults.length > 0) return defaults[Math.floor(Math.random() * defaults.length)];
+    if (defaults.length > 0) {
+      const chosen = defaults[Math.floor(Math.random() * defaults.length)];
+      return { ...chosen, _selectedAsDefault: true };
+    }
   }
 
   const maxScore = Math.max(...candidates.map(getMoodScore));
@@ -138,6 +141,7 @@ async function setPlayTrack(session, track, musicDir, log, triggerPoll) {
         labels: session._lastLabels || [],
         trackTags: Array.isArray(track.tags) ? track.tags : [],
         rejectedLabels: session._lastRejectedLabels || [],
+        selectedAsDefault: !!track._selectedAsDefault,
         startedAt: nowTs,
         musicDir
       },

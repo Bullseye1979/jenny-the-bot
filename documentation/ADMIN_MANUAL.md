@@ -4579,7 +4579,7 @@ The allowed-list sets (`locationSet`, `situationSet`, `moodSet`) are built dynam
    - *Pass 3*: novel words at AI positions 0/1 accepted as-is (new concepts not yet in library).
 
 2. **Carry-forward** for empty slots:
-   - **Location** (three-level): previous `bard:labels[0]` → current song's `trackTags[0]` → random from `locationSet`
+   - **Location** (three-level): previous `bard:labels[0]` → current song's `trackTags[0]` (skipped if the current song was *selected as default*, i.e. `bard:stream.selectedAsDefault = true` — not just because it carries the `default` tag. A track that happens to carry `default` but was selected normally by the scoring algorithm contributes its location like any other track.) → random from `locationSet`
    - **Situation** (none): if the AI outputs empty/unclear for situation, the slot stays empty (= wildcard in the selector). No carry-forward, no random init. This prevents the self-reinforcing battle-loop: if a battle track is playing and the AI no longer detects combat, the situation goes to wildcard and the selector opens up to all tracks again.
 
    Mood slots are **not** filled — empty mood = "unknown this cycle."
