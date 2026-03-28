@@ -432,7 +432,7 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     throw new Error("AI returned no valid JSON article: " + responseText.slice(0, 200));
   }
 
-  if (!article._model && typeof data.model === "string" && data.model) article._model = data.model;
+  if (!article._model && wo.model) article._model = getStr(wo.model);
 
   const imgCfg    = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
   const imgPrompt = getStr(article.infobox?.imageAlt || article.title || query);
