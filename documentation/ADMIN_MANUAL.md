@@ -62,6 +62,7 @@
    - 9.2 [context.js — MySQL Conversation Storage](#92-contextjs--mysql-conversation-storage)
    - 9.3 [logging.js — Structured Logging](#93-loggingjs--structured-logging)
    - 9.4 [secrets.js — Centralized Secret Store](#94-secretsjs--centralized-secret-store)
+   - 9.5 [shared/webpage/ — Shared Web Helpers](#95-sharedwebpage--shared-web-helpers)
 10. [GDPR & Consent Workflow](#10-gdpr--consent-workflow)
 11. [Macro System](#11-macro-system)
 12. [Discord Slash Commands — Overview](#12-discord-slash-commands--overview)
@@ -331,6 +332,7 @@ Event source (Discord / HTTP API / Cron / Voice / Webpage)
 ├── shared/
 │   └── webpage/
 │       ├── interface.js     # Shared web utilities (menu, auth, DB, file I/O)
+│       ├── utils.js         # HTTP response helpers (setSendNow, setJsonResp, role checks)
 │       └── style.css        # Shared CSS for all web modules
 ├── assets/
 │   └── bard/
@@ -2892,7 +2894,7 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 
 **API:**
 ```javascript
-import { putItem, getItem, deleteItem, listKeys, clearAll } from "./core/registry.js";
+import { putItem, getItem, deleteItem, listKeys, clearAll } from "../core/registry.js";
 
 putItem(object, id);       // Store object; returns the key
 getItem(id);               // Retrieve object; null if expired or missing
@@ -2977,13 +2979,17 @@ const rows = lastRun?.ts
 
 **API:**
 ```javascript
-import { getLog } from "./core/logging.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
-const log = getLog("my-module");
-log.info("Processing started", { userId });
-log.warn("Rate limit hit");
-log.error("API call failed", err);
+// workingObject = wo from coreData; import.meta.url derives the module name automatically.
+const log = getPrefixedLogger(workingObject, import.meta.url);
+
+log("Processing started");                       // default level: "info"
+log("Rate limit hit", "warn");
+log("API call failed", "error", { detail: "..." });
 ```
+
+The module name/prefix is derived from the calling file's URL via `import.meta.url` — you do not need to pass a name manually.
 
 **Log entry structure:**
 ```javascript
@@ -3071,6 +3077,104 @@ Only `db.password` and fields whose key path ends in `.password` are redacted in
 #### wo.secretsTable
 
 By default, secrets are read from the `bot_secrets` table. Set `wo.secretsTable` in `workingObject` (or via a channel override) to use a different table name.
+
+---
+
+### 9.5 shared/webpage/ — Shared Web Helpers
+
+All web modules (`modules/000xx-webpage-*.js`) should import shared helpers from `shared/webpage/` instead of duplicating them locally.
+
+#### shared/webpage/interface.js
+
+```javascript
+import {
+  getBody,          // Read full HTTP request body as UTF-8 string
+  readJsonFile,     // Synchronously parse a JSON file → { ok, data } | { ok:false, error }
+  writeJsonFile,    // Synchronously stringify + write a JSON file → { ok } | { ok:false, error }
+  isAuthorized,     // Check Authorization header against a token (Bearer or Basic)
+  getDb,            // Lazy-initialize + return a mysql2 connection pool
+  getMenuHtml,      // Render the shared navigation menu HTML
+  getThemeHeadScript, // Return <script> block for dark/light theme toggle
+  escHtml           // HTML-escape a string (for safe template insertion)
+} from "../shared/webpage/interface.js";
+```
+
+| Function | Signature | Notes |
+|---|---|---|
+| `getBody(req)` | `Promise<string>` | Reads all chunks; resolves as UTF-8 |
+| `readJsonFile(filePath)` | `{ ok, data } \| { ok:false, error }` | Sync; catches parse errors |
+| `writeJsonFile(filePath, data)` | `{ ok } \| { ok:false, error }` | Sync; pretty-prints with 2-space indent |
+| `isAuthorized(req, token)` | `boolean` | Returns `true` when no token configured |
+| `getDb(coreData)` | `Promise<Pool>` | Pool is created once and reused (singleton) |
+| `getMenuHtml(menu, activePath, role, rightHtml?, extraDropdown?, userInfo?)` | `string` | Renders `<nav>` HTML; filters items by role |
+| `getThemeHeadScript()` | `string` | Inline `<script>` that applies saved theme on load |
+| `escHtml(s)` | `string` | Escapes `& < > " '` |
+
+#### shared/webpage/utils.js
+
+```javascript
+import {
+  setSendNow,          // Flush wo.http.response to the socket immediately
+  setJsonResp,         // Set a JSON response on wo.http.response
+  getUserRoleLabels,   // Extract all role labels from wo.webAuth (lower-cased, deduped)
+  getIsAllowedRoles    // Return true if the user holds at least one required role
+} from "../shared/webpage/utils.js";
+```
+
+| Function | Signature | Notes |
+|---|---|---|
+| `setSendNow(wo)` | `Promise<void>` | Guards `writableEnded`/`headersSent`; safe to call multiple times |
+| `setJsonResp(wo, status, data)` | `void` | Sets `wo.http.response` with JSON body + Content-Type header |
+| `getUserRoleLabels(wo)` | `string[]` | Returns `[primaryRole, ...roles]`, lower-cased, deduplicated |
+| `getIsAllowedRoles(wo, allowedRoles)` | `boolean` | Empty `allowedRoles` → everyone allowed |
+
+#### shared/webpage/style.css
+
+Shared stylesheet included by all web module HTML pages via `<link rel="stylesheet">` or inline `<style>`. Provides base layout, dark/light theme variables, nav bar styling, and common UI components. Import path from a web module's served HTML: `/style.css` (the webpage flow serves static files from `shared/webpage/`).
+
+#### Usage example (web module skeleton)
+
+```javascript
+import { getBody, getDb, getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
+import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
+
+export default async function getMyWebModule(coreData) {
+  const wo  = coreData.workingObject;
+  const cfg = coreData?.config?.["my-web-module"] || {};
+
+  // Only handle requests on the configured port and path
+  if (wo.http?.port !== cfg.port) return coreData;
+  if (wo.http?.path !== "/my-path") return coreData;
+
+  // Role check
+  if (!getIsAllowedRoles(wo, cfg.allowedRoles || [])) {
+    wo.http.response = { status: 403, headers: { "Content-Type": "text/plain" }, body: "Forbidden" };
+    await setSendNow(wo);
+    wo.stop = true;
+    return coreData;
+  }
+
+  // Handle API endpoint
+  if (wo.http?.path === "/my-path/api/data" && wo.http?.method === "GET") {
+    const db  = await getDb(coreData);
+    const [rows] = await db.execute("SELECT * FROM my_table LIMIT 10");
+    setJsonResp(wo, 200, { ok: true, rows });
+    await setSendNow(wo);
+    wo.stop = true;
+    return coreData;
+  }
+
+  // Serve HTML page
+  const menu = getMenuHtml(wo.web?.menu || [], "/my-path", wo.webAuth?.role);
+  wo.http.response = {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+    body: `<!DOCTYPE html><html><head>${getThemeHeadScript()}</head><body>${menu}<h1>My Module</h1></body></html>`
+  };
+  wo.jump = true;   // let 09300-webpage-output send the response
+  return coreData;
+}
+```
 
 ---
 

@@ -39,6 +39,8 @@ Jenny is a modular, production-grade Discord AI assistant built on Node.js. It f
    - [core/context.js — Conversation Storage](#corecontextjs--conversation-storage)
    - [core/registry.js — In-Memory Store](#coreregistryjs--in-memory-store)
    - [core/logging.js — Structured Logging](#coreloggingjs--structured-logging)
+   - [core/secrets.js — Centralized Secret Store](#coresecretsjs--centralized-secret-store)
+   - [shared/webpage/ — Shared Web Helpers](#sharedwebpage--shared-web-helpers)
 12. [GDPR & Consent](#gdpr--consent)
 13. [Macro System](#macro-system)
 14. [Channel Configuration & Overrides](#channel-configuration--overrides)
@@ -920,12 +922,13 @@ import {
 A lightweight key-value store for ephemeral runtime data (voice sessions, tool-call tracking, client references, etc.).
 
 ```js
-import { setItem, getItem, delItem, listKeys } from "./core/registry.js";
+import { putItem, getItem, deleteItem, listKeys, clearAll } from "../core/registry.js";
 
-setItem("my-key", { data: 123 }, 3600); // TTL in seconds
-const val = getItem("my-key");
-delItem("my-key");
-const keys = listKeys("prefix:");
+putItem({ data: 123 }, "my-key");  // store object under key; returns the key
+const val  = getItem("my-key");    // retrieve; null if expired/missing
+deleteItem("my-key");              // remove
+const keys = listKeys("prefix:");  // list all keys starting with prefix
+clearAll();                        // wipe entire registry
 ```
 
 | Feature | Detail |
@@ -942,15 +945,72 @@ const keys = listKeys("prefix:");
 Appends structured log entries to `workingObject.logging[]`.
 
 ```js
-import { getLog } from "./core/logging.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
-const log = getLog("my-module");
-log.info("Processing started", { userId });
-log.warn("Rate limit hit");
-log.error("API call failed", err);
+// Pass workingObject and import.meta.url — the module name is derived automatically.
+const log = getPrefixedLogger(workingObject, import.meta.url);
+
+log("Processing started");           // default level: "info"
+log("Rate limit hit", "warn");
+log("API call failed", "error", { detail: err.message });
 ```
 
-Log entries include: `level`, `prefix`, `name`, `message`, `timestamp`, optional `context` object.
+Log entries include: `level`, `prefix`, `moduleName`, `message`, `ts`, optional `context` object.
+
+---
+
+### core/secrets.js — Centralized Secret Store
+
+Resolves symbolic placeholder names (e.g. `"OPENAI"`) to real secret values stored in the `bot_secrets` MySQL table. Real keys are never stored in `core.json`.
+
+```js
+import { getSecret } from "../core/secrets.js";
+
+const apiKey = await getSecret(wo, "OPENAI");        // resolve placeholder → real value
+const apiKey = await getSecret(wo, cfg.apiKey);      // cfg.apiKey is a placeholder string
+```
+
+If the placeholder is not found in the DB, the placeholder string is returned unchanged (the bot fails at the API level, not at startup).
+
+---
+
+### shared/webpage/ — Shared Web Helpers
+
+All web modules must import helpers from `shared/webpage/` instead of implementing them locally.
+
+**`shared/webpage/interface.js`** — menu, DB, file I/O, auth:
+
+```js
+import { getBody, getDb, getMenuHtml, getThemeHeadScript, escHtml,
+         readJsonFile, writeJsonFile, isAuthorized } from "../shared/webpage/interface.js";
+```
+
+| Export | Description |
+|---|---|
+| `getBody(req)` | Read full HTTP request body → `Promise<string>` |
+| `getDb(coreData)` | Lazy-init mysql2 pool (singleton) → `Promise<Pool>` |
+| `getMenuHtml(menu, path, role, ...)` | Render shared `<nav>` HTML |
+| `getThemeHeadScript()` | Inline `<script>` for dark/light theme |
+| `escHtml(s)` | HTML-escape `& < > " '` |
+| `readJsonFile(path)` | Sync JSON read → `{ ok, data }` |
+| `writeJsonFile(path, data)` | Sync JSON write → `{ ok }` |
+| `isAuthorized(req, token)` | Validate Bearer/Basic `Authorization` header |
+
+**`shared/webpage/utils.js`** — HTTP response helpers, role checks:
+
+```js
+import { setSendNow, setJsonResp, getUserRoleLabels, getIsAllowedRoles }
+  from "../shared/webpage/utils.js";
+```
+
+| Export | Description |
+|---|---|
+| `setSendNow(wo)` | Flush `wo.http.response` to socket immediately; safe to call multiple times |
+| `setJsonResp(wo, status, data)` | Set JSON response on `wo.http.response` |
+| `getUserRoleLabels(wo)` | All role labels from `wo.webAuth` (lower-cased, deduplicated) |
+| `getIsAllowedRoles(wo, allowedRoles)` | `true` if user has any of the required roles; empty array = everyone allowed |
+
+**`shared/webpage/style.css`** — Shared CSS (dark/light theme, nav bar, common UI). Served at `/style.css` by the webpage flow.
 
 ---
 
@@ -1078,6 +1138,7 @@ Configuration in `core.json`:
 - Modules read their own config ONLY from `coreData?.config?.[MODULE_NAME]` — never from another module's config key.
 - No module may import another module.
 - Exception: core-ai modules (01000–01003) may dynamically `import()` tools from `../tools/`.
+- Config isolation is enforced by ESLint (`npm run lint`).
 
 1. Create a file in `modules/` with the naming pattern `[NUMBER]-[PREFIX]-[NAME].js`. Choose a number that places it correctly in the pipeline order.
 
@@ -1085,24 +1146,57 @@ Configuration in `core.json`:
 
 ```js
 // modules/04500-myprefix-mymodule.js
+import { putItem, getItem, deleteItem } from "../core/registry.js";
+import { getPrefixedLogger }           from "../core/logging.js";
+import { getSecret }                   from "../core/secrets.js";
+
+const MODULE_NAME = "myprefix-mymodule";
 
 export default async function getMyModule(coreData) {
-  const { workingObject } = coreData;
-  const cfg = coreData?.config?.["myprefix-mymodule"] || {};
+  const wo  = coreData.workingObject;
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
+  const log = getPrefixedLogger(wo, import.meta.url);
 
   // Guard: only run for the discord flow
-  if (workingObject.flow !== "discord") return;
+  if (wo.flow !== "discord") return coreData;
+
+  // Read own config (never another module's key)
+  const myOption = cfg.myOption || "default";
+
+  // Registry: ephemeral in-memory KV store
+  putItem({ status: "running" }, `mymodule:${wo.channelID}`);
+  const prev = getItem(`mymodule:${wo.channelID}`);
+
+  // Secrets: resolve a placeholder name to the real secret from DB
+  const apiKey = await getSecret(wo, "MY_API_KEY_PLACEHOLDER");
+
+  // Logging
+  log(`Running for channel ${wo.channelID}`, "info");
 
   // Do work
-  const result = await doSomething(workingObject.payload);
-  workingObject.myResult = result;
+  wo.myResult = "done";
 
   // Optionally stop the pipeline
-  // workingObject.stop = true;
+  // wo.stop = true;
+
+  return coreData;
 }
 ```
 
-3. Register the module in `core.json` under the appropriate flow's module list (if flow-based subscriptions are configured), or it will run for all flows by default.
+3. Register the module in `core.json` so it only runs for the desired flows:
+
+```jsonc
+{
+  "config": {
+    "myprefix-mymodule": {
+      "flow": ["discord"],
+      "myOption": "value"
+    }
+  }
+}
+```
+
+If `"flow"` is omitted or empty, the module runs for **all** flows. The `flow` array must match the flow name(s) the module should be active in (`"discord"`, `"api"`, `"webpage"`, `"cron"`, etc.).
 
 ---
 
@@ -1111,13 +1205,33 @@ export default async function getMyModule(coreData) {
 1. Create a file in `tools/myTool.js`:
 
 ```js
+// tools/myTool.js
+import { getSecret } from "../core/secrets.js";
+
+const MODULE_NAME = "myTool";
+
+async function getInvoke(args, coreData) {
+  // coreData is the full pipeline object — workingObject lives inside it
+  const wo      = coreData?.workingObject || {};
+  const { query } = args;
+
+  // Tools read config ONLY from wo.toolsconfig?.[toolName]
+  const toolCfg = wo?.toolsconfig?.[MODULE_NAME] || {};
+
+  // Resolve secrets via the centralized secret store (never hardcode keys)
+  const apiKey  = await getSecret(wo, toolCfg.apiKey || "MY_SERVICE_KEY");
+
+  // perform work ...
+  return { ok: true, result: "..." };
+}
+
 export default {
-  name: "myTool",
+  name: MODULE_NAME,
 
   definition: {
     type: "function",
     function: {
-      name: "myTool",
+      name: MODULE_NAME,
       description: "What this tool does, in one sentence.",
       parameters: {
         type: "object",
@@ -1127,21 +1241,17 @@ export default {
             description: "The search query"
           }
         },
-        required: ["query"]
+        required: ["query"],
+        additionalProperties: false
       }
     }
   },
 
-  invoke: async (args, workingObject) => {
-    const { query } = args;
-    // Tools read config ONLY from wo.toolsconfig?.[toolName]
-    const toolCfg = workingObject?.toolsconfig?.myTool || {};
-    const apiKey = toolCfg.apiKey;
-    // perform work ...
-    return { ok: true, result: "..." };
-  }
+  invoke: getInvoke
 };
 ```
+
+> **Important:** The second parameter of `invoke` is always `coreData` (the full pipeline object), **not** `workingObject`. Always access `coreData.workingObject` explicitly.
 
 2. Add the tool name to `workingObject.tools` in `core.json`:
 
@@ -1153,7 +1263,23 @@ export default {
 }
 ```
 
-3. Add any tool-specific config under `workingObject.toolsconfig.myTool`.
+3. Add any tool-specific config under `workingObject.toolsconfig.myTool`:
+
+```jsonc
+{
+  "workingObject": {
+    "toolsconfig": {
+      "myTool": {
+        "apiKey": "MY_SERVICE_KEY",
+        "baseUrl": "https://api.example.com",
+        "timeoutMs": 30000
+      }
+    }
+  }
+}
+```
+
+The `apiKey` value (`"MY_SERVICE_KEY"`) is a **placeholder name** that must exist as a row in the `bot_secrets` MySQL table. The real API key is stored there, not in `core.json`. See [core/secrets.js](#coreinfrastructure) for details.
 
 ---
 
