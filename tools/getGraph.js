@@ -1081,6 +1081,60 @@ async function getOperationDeleteUser(toolCfg, args) {
 
 
 /**********************************************************************************/
+/* getOperationSendMail                                                           */
+/**********************************************************************************/
+async function getOperationSendMail(toolCfg, args) {
+  const userId = getResolveUserId(args, toolCfg);
+  if (!userId) return { operation: "sendMail", ok: false, error: "No userId resolved. Configure defaultUserId or forcedUserId." };
+
+  const subject = getStr(args.subject, "").trim();
+  if (!subject) return { operation: "sendMail", ok: false, error: "Missing subject" };
+
+  const toRaw = getArr(args.to, []);
+  if (!toRaw.length) return { operation: "sendMail", ok: false, error: "Missing to (recipients)" };
+
+  const body = getStr(args.body, "").trim();
+  if (!body) return { operation: "sendMail", ok: false, error: "Missing body" };
+
+  const bodyType = getStr(args.bodyType, "text").toLowerCase() === "html" ? "HTML" : "Text";
+
+  const toRecipients = toRaw.map(addr => ({ emailAddress: { address: getStr(addr, "") } })).filter(r => r.emailAddress.address);
+  if (!toRecipients.length) return { operation: "sendMail", ok: false, error: "No valid recipient addresses in to" };
+
+  const ccRaw = getArr(args.cc, []);
+  const bccRaw = getArr(args.bcc, []);
+  const ccRecipients = ccRaw.map(addr => ({ emailAddress: { address: getStr(addr, "") } })).filter(r => r.emailAddress.address);
+  const bccRecipients = bccRaw.map(addr => ({ emailAddress: { address: getStr(addr, "") } })).filter(r => r.emailAddress.address);
+
+  const message = {
+    subject,
+    body: { contentType: bodyType, content: body },
+    toRecipients
+  };
+
+  if (ccRecipients.length) message.ccRecipients = ccRecipients;
+  if (bccRecipients.length) message.bccRecipients = bccRecipients;
+
+  const replyTo = getStr(args.replyTo, "").trim();
+  if (replyTo) message.replyTo = [{ emailAddress: { address: replyTo } }];
+
+  const saveToSentItems = typeof args.saveToSentItems === "boolean" ? args.saveToSentItems : true;
+
+  const version = getResolveApiVersion(args, toolCfg);
+  const baseUrl = getResolveBaseUrl(toolCfg, version);
+
+  const res = await getGraphRequest(toolCfg, {
+    baseUrl,
+    path: `/users/${encodeURIComponent(userId)}/sendMail`,
+    method: "POST",
+    body: { message, saveToSentItems }
+  });
+
+  return { operation: "sendMail", ok: res.ok, status: res.status, statusText: res.statusText, userId, subject, to: toRecipients.map(r => r.emailAddress.address) };
+}
+
+
+/**********************************************************************************/
 /* getOperationGraphRequest                                                       */
 /**********************************************************************************/
 async function getOperationGraphRequest(toolCfg, args) {
@@ -1133,6 +1187,7 @@ async function getInvoke(args, coreData) {
       case "deleteMails":             return await getOperationDeleteMails(enrichedToolCfg, safeArgs);
       case "renameFiles":             return await getOperationRenameFiles(enrichedToolCfg, safeArgs);
       case "moveEmails":              return await getOperationMoveEmails(enrichedToolCfg, safeArgs);
+      case "sendMail":                return await getOperationSendMail(enrichedToolCfg, safeArgs);
       case "searchUsers":             return await getOperationSearchUsers(enrichedToolCfg, safeArgs);
       case "showUser":                return await getOperationShowUser(enrichedToolCfg, safeArgs);
       case "createUser":              return await getOperationCreateUser(enrichedToolCfg, safeArgs);
@@ -1164,7 +1219,7 @@ const definition = {
       "",
       "Operation groups:",
       "  File/Drive : showFile · listFiles · downloadFile · uploadFile · createUploadSession · deleteFiles · renameFiles",
-      "  Mail       : searchEmails · showEmails · listMailFolders · searchMailFolders · deleteMails · moveEmails",
+      "  Mail       : searchEmails · showEmails · listMailFolders · searchMailFolders · deleteMails · moveEmails · sendMail",
       "  Users/AAD  : searchUsers · showUser · createUser · updateUser · deleteUser",
       "  Utility    : fulltextSearch · resolveDefaultTargets · graphRequest",
       "",
@@ -1180,7 +1235,7 @@ const definition = {
           enum: [
             "resolveDefaultTargets", "fulltextSearch",
             "showFile", "listFiles", "downloadFile", "uploadFile", "createUploadSession", "deleteFiles", "renameFiles",
-            "searchEmails", "showEmails", "listMailFolders", "searchMailFolders", "deleteMails", "moveEmails",
+            "searchEmails", "showEmails", "listMailFolders", "searchMailFolders", "deleteMails", "moveEmails", "sendMail",
             "searchUsers", "showUser", "createUser", "updateUser", "deleteUser",
             "graphRequest"
           ]
@@ -1209,6 +1264,13 @@ const definition = {
         downloadMode: { type: "string", description: "How to encode the downloaded content: base64 (default), text, or auto (detects from content-type)." },
         timeoutMs: { type: "number", description: "Request timeout in milliseconds. Overrides the configured default." },
         messageIds: { type: "array", description: "List of message IDs for showEmails, deleteMails, or moveEmails.", items: { type: "string" } },
+        to: { type: "array", description: "Recipient email addresses for sendMail.", items: { type: "string" } },
+        cc: { type: "array", description: "CC recipient email addresses for sendMail.", items: { type: "string" } },
+        bcc: { type: "array", description: "BCC recipient email addresses for sendMail.", items: { type: "string" } },
+        subject: { type: "string", description: "Email subject line for sendMail." },
+        body: { type: "string", description: "Email body content for sendMail. Plain text by default; set bodyType to html for HTML content." },
+        replyTo: { type: "string", description: "Reply-To email address for sendMail." },
+        saveToSentItems: { type: "boolean", description: "Whether to save the sent message in Sent Items (default: true)." },
         batch: { type: "boolean", description: "Use Graph $batch API for multi-item operations (default: true)." },
         includeSharePointLookup: { type: "boolean", description: "For resolveDefaultTargets: also fetch and return the resolved SharePoint site object." },
         items: {

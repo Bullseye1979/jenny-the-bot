@@ -2985,6 +2985,7 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 | `searchMailFolders` | Find mail folders by name | `query` |
 | `deleteMails` | Delete messages | `messageIds[]` |
 | `moveEmails` | Move messages to a folder | `messageIds[]`, `destinationFolderId` |
+| `sendMail` | Send an email | `to[]`, `subject`, `body`, `cc[]`, `bcc[]`, `replyTo`, `bodyType`, `saveToSentItems` |
 
 Well-known `mailFolderId` values: `inbox`, `sentitems`, `deleteditems`, `drafts`, `junkemail`
 
@@ -3021,6 +3022,13 @@ Well-known `mailFolderId` values: `inbox`, `sentitems`, `deleteditems`, `drafts`
 | `select` | string | OData `$select` to restrict returned fields |
 | `version` | string | Graph API version (`v1.0` or `beta`) |
 | `timeoutMs` | number | Per-request timeout override in ms |
+| `to` | array | Recipient email addresses for `sendMail` |
+| `cc` | array | CC recipients for `sendMail` |
+| `bcc` | array | BCC recipients for `sendMail` |
+| `subject` | string | Email subject for `sendMail` |
+| `body` | string | Email body for `sendMail` (plain text by default; use `bodyType: "html"` for HTML) |
+| `replyTo` | string | Reply-To address for `sendMail` |
+| `saveToSentItems` | boolean | Save sent message in Sent Items (default: `true`) |
 
 #### Return values
 
