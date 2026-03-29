@@ -57,6 +57,7 @@
    - [getTimeline](#gettimeline)
    - [getToken](#gettoken)
    - [getBan](#getban)
+   - [getGraph](#getgraph)
 9. [Core Infrastructure](#9-core-infrastructure)
    - 9.1 [registry.js — In-Memory Key-Value Store](#91-registryjs--in-memory-key-value-store)
    - 9.2 [context.js — MySQL Conversation Storage](#92-contextjs--mysql-conversation-storage)
@@ -1158,6 +1159,69 @@ Animated GIF generator from images or video.
 | `useGifsicleLossy` | boolean | Use gifsicle for lossy compression |
 | `gifsiclePath` | string | Path to `gifsicle` |
 | `gifsicleLossyLevels` | array | Gifsicle lossy compression levels |
+
+---
+
+#### toolsconfig.getGraph
+
+Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user management.
+
+```json
+"getGraph": {
+  "auth": {
+    "tenantId":     "SECRET:graph_tenant_id",
+    "clientId":     "SECRET:graph_client_id",
+    "clientSecret": "SECRET:graph_client_secret"
+  },
+  "defaultSharePointHostname": "mycompany.sharepoint.com",
+  "defaultUserId":             "user@mycompany.com",
+  "defaultSiteId":             "",
+  "defaultDriveId":            "",
+  "defaultMailFolderId":       "inbox",
+  "defaultDestinationFolderId": "",
+  "forcedUserId":              "",
+  "forcedSiteId":              "",
+  "forcedDriveId":             "",
+  "forcedMailFolderId":        "",
+  "forcedDestinationFolderId": "",
+  "version":                   "v1.0",
+  "defaultPageSize":           25,
+  "defaultEntityTypes":        ["driveItem", "message"],
+  "timeoutMs":                 30000
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `auth.tenantId` | string | **Required.** Azure AD tenant ID or secret reference |
+| `auth.clientId` | string | **Required.** App registration client ID or secret reference |
+| `auth.clientSecret` | string | **Required.** App registration client secret or secret reference |
+| `auth.scope` | string | OAuth scope (default: `https://graph.microsoft.com/.default`) |
+| `auth.tokenUrl` | string | Override token URL (auto-derived from tenantId if omitted) |
+| `defaultSharePointHostname` | string | SharePoint host (e.g. `mycompany.sharepoint.com`). Used for siteId auto-discovery. |
+| `defaultUserId` | string | Fallback user ID / UPN when the AI does not specify one. Prevents AI drift to wrong users. |
+| `defaultSiteId` | string | Fallback SharePoint site ID. Auto-discovered from `defaultSharePointHostname` when omitted. |
+| `defaultDriveId` | string | Fallback drive ID. Auto-discovered from site or user when omitted. |
+| `defaultMailFolderId` | string | Fallback mail folder ID or well-known name (`inbox`, `sentitems`, `deleteditems`, `drafts`, `junkemail`) |
+| `defaultDestinationFolderId` | string | Fallback destination folder for `moveEmails` |
+| `forcedUserId` | string | Overrides all user IDs (AI cannot override). Use for strict single-user deployments. |
+| `forcedSiteId` | string | Overrides all site IDs (AI cannot override) |
+| `forcedDriveId` | string | Overrides all drive IDs (AI cannot override) |
+| `forcedMailFolderId` | string | Overrides all mail folder IDs (AI cannot override) |
+| `forcedDestinationFolderId` | string | Overrides destination folder ID (AI cannot override) |
+| `version` | string | Default Graph API version (`v1.0` or `beta`) |
+| `defaultPageSize` | number | Default page size for list/search operations |
+| `defaultEntityTypes` | array | Default entity types for `fulltextSearch` |
+| `timeoutMs` | number | HTTP request timeout in ms (default: 30000) |
+
+**Auto-discovery (no secret DB entries needed for IDs):**
+- `siteId` is auto-discovered via `GET /sites/{hostname}:/` when `defaultSharePointHostname` is set and `defaultSiteId` is not
+- `driveId` is auto-discovered via `GET /sites/{siteId}/drive` (or `/users/{userId}/drive`) when not set
+- Discovery results are cached for 5 minutes per process
+
+**All config values can be secret references** (e.g. `"SECRET:graph_tenant_id"`). The tool resolves them through `core/secrets.js` before use.
+
+**Minimum required config:** `auth.tenantId` + `auth.clientId` + `auth.clientSecret`. Everything else is optional depending on the operations used.
 
 ---
 
@@ -2883,6 +2947,91 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 | `delete_message_days` | number | — | Delete messages from the last N days (0–7) |
 
 **Security:** Only executable when the calling user is listed in `modAdmin`.
+
+---
+
+### getGraph
+
+**File:** `tools/getGraph.js`
+**Purpose:** Microsoft 365 integration via the Microsoft Graph API — SharePoint files, OneDrive, Exchange mail, Azure AD/Entra users, and arbitrary Graph API calls.
+
+**Authentication:** OAuth 2.0 `client_credentials` flow (app permissions, no user login required). Configure `auth.tenantId`, `auth.clientId`, `auth.clientSecret` in `toolsconfig.getGraph`.
+
+**Auto-discovery:** When `defaultSiteId` or `defaultDriveId` are not configured, the tool discovers them automatically from `defaultSharePointHostname` (siteId) and from the resolved site or `defaultUserId` (driveId). Results are cached for 5 minutes.
+
+**LLM parameter: `operation`** — selects the operation to execute. All others are optional depending on the operation.
+
+#### Operation groups
+
+**File / Drive operations**
+
+| Operation | Purpose | Key args |
+|---|---|---|
+| `showFile` | Get metadata of a single file or folder | `path`, `itemId`, `driveId`, `siteId`, `userId` |
+| `listFiles` | List children of a folder | `path`, `itemId`, `top` |
+| `downloadFile` | Download file content | `path`, `itemId`, `downloadMode` (`base64`/`text`/`auto`) |
+| `uploadFile` | Upload a file ≤ 4 MB | `fileName`, `contentBase64`, `parentPath`, `contentType`, `conflictBehavior` |
+| `createUploadSession` | Create a resumable upload session for large files | `fileName`, `parentPath`, `conflictBehavior` |
+| `deleteFiles` | Delete one or more files/folders | `items[]` (each with `itemId` or `path`) |
+| `renameFiles` | Rename one or more files | `items[]` (each with `itemId`/`path` + `newName`) |
+
+**Mail operations** (require `userId` / `defaultUserId`)
+
+| Operation | Purpose | Key args |
+|---|---|---|
+| `searchEmails` | Search messages with a keyword | `query`, `mailFolderId`, `top` |
+| `showEmails` | Fetch full message bodies | `messageIds[]`, `bodyType` (`text`/`html`) |
+| `listMailFolders` | List all mail folders | `top` |
+| `searchMailFolders` | Find mail folders by name | `query` |
+| `deleteMails` | Delete messages | `messageIds[]` |
+| `moveEmails` | Move messages to a folder | `messageIds[]`, `destinationFolderId` |
+
+Well-known `mailFolderId` values: `inbox`, `sentitems`, `deleteditems`, `drafts`, `junkemail`
+
+**User / Azure AD operations**
+
+| Operation | Purpose | Key args |
+|---|---|---|
+| `searchUsers` | Full-text search across the directory | `query`, `top` |
+| `showUser` | Get full profile of a user | `userId` |
+| `createUser` | Create a new user | `user` (Graph user resource object) |
+| `updateUser` | Update user properties | `userId`, `user` (partial) |
+| `deleteUser` | Delete a user account | `userId` |
+
+**Utility operations**
+
+| Operation | Purpose | Key args |
+|---|---|---|
+| `fulltextSearch` | Search across drives and mail in one call | `query`, `entityTypes[]`, `size`, `from` |
+| `resolveDefaultTargets` | Show the resolved IDs the tool would use | `includeSharePointLookup` |
+| `graphRequest` | Call any Graph API endpoint | `request.path`, `request.method`, `request.query`, `request.body` |
+
+#### Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `operation` | string | **Required.** One of the operations listed above |
+| `storageScope` | string | Target hint: `onedrive`, `sharepoint`, or `drive` — auto-inferred when omitted |
+| `userId` | string | User ID or UPN. Falls back to `defaultUserId` in config |
+| `driveId` | string | Explicit drive ID. Auto-discovered when omitted |
+| `siteId` | string | SharePoint site ID. Auto-discovered from configured hostname |
+| `path` | string | Drive-relative file path, e.g. `Documents/Report.xlsx` |
+| `itemId` | string | Drive item ID (alternative to `path`) |
+| `top` | number | Max results for list/search operations |
+| `select` | string | OData `$select` to restrict returned fields |
+| `version` | string | Graph API version (`v1.0` or `beta`) |
+| `timeoutMs` | number | Per-request timeout override in ms |
+
+#### Return values
+
+Every operation returns an object with:
+- `ok: boolean` — `true` on success
+- `operation: string` — the operation that ran
+- `status / statusText` — HTTP status from Graph API
+- `error: string` — present only when `ok: false`
+- Operation-specific fields (`item`, `result`, `messages`, `user`, etc.)
+
+The tool never throws — if authentication fails or an ID cannot be resolved the AI always receives a structured `{ ok: false, error: "..." }` response.
 
 ---
 
