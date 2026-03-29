@@ -2967,6 +2967,7 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 
 | Operation | Purpose | Key args |
 |---|---|---|
+| `searchFiles` | Search files by name/content within a specific drive | `query`, `top`, `driveId`, `siteId`, `userId` |
 | `showFile` | Get metadata of a single file or folder | `path`, `itemId`, `driveId`, `siteId`, `userId` |
 | `listFiles` | List children of a folder | `path`, `itemId`, `top` |
 | `downloadFile` | Download file content | `path`, `itemId`, `downloadMode` (`base64`/`text`/`auto`) |

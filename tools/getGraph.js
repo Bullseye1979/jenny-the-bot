@@ -642,6 +642,45 @@ async function getOperationFulltextSearch(toolCfg, args) {
 
 
 /**********************************************************************************/
+/* getOperationSearchFiles                                                        */
+/**********************************************************************************/
+async function getOperationSearchFiles(toolCfg, args) {
+  const query = getStr(args.query, "").trim();
+  if (!query) return { operation: "searchFiles", ok: false, error: "Missing search query" };
+
+  const driveId = getResolveDriveId(args, toolCfg);
+  const userId = getResolveUserId(args, toolCfg);
+  const scope = getResolveStorageScope(args, toolCfg);
+
+  let searchPath;
+  if (driveId) {
+    searchPath = `/drives/${encodeURIComponent(driveId)}/search(q='${encodeURIComponent(query)}')`;
+  } else if (scope === "sharepoint") {
+    const siteBase = getResolveSharePointSiteBase(args, toolCfg);
+    searchPath = `${siteBase}/drive/search(q='${encodeURIComponent(query)}')`;
+  } else if (userId) {
+    searchPath = `/users/${encodeURIComponent(userId)}/drive/search(q='${encodeURIComponent(query)}')`;
+  } else {
+    return { operation: "searchFiles", ok: false, error: "Could not resolve drive target. Configure defaultUserId, defaultDriveId, defaultSiteId, or defaultSharePointHostname." };
+  }
+
+  const version = getResolveApiVersion(args, toolCfg);
+  const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const top = getClamp(getNum(args.top, getNum(toolCfg.defaultPageSize, 25)), 1, 999);
+
+  const res = await getGraphRequest(toolCfg, {
+    baseUrl, path: searchPath, method: "GET",
+    query: {
+      $top: top,
+      $select: getStr(args.select, "id,name,size,file,folder,webUrl,lastModifiedDateTime,parentReference")
+    }
+  });
+
+  return { operation: "searchFiles", ok: res.ok, status: res.status, statusText: res.statusText, query, result: res.data };
+}
+
+
+/**********************************************************************************/
 /* getOperationShowFile                                                           */
 /**********************************************************************************/
 async function getOperationShowFile(toolCfg, args) {
@@ -1174,6 +1213,7 @@ async function getInvoke(args, coreData) {
     switch (operation) {
       case "resolveDefaultTargets":   return await getOperationResolveDefaultTargets(enrichedToolCfg, safeArgs);
       case "fulltextSearch":          return await getOperationFulltextSearch(enrichedToolCfg, safeArgs);
+      case "searchFiles":             return await getOperationSearchFiles(enrichedToolCfg, safeArgs);
       case "showFile":                return await getOperationShowFile(enrichedToolCfg, safeArgs);
       case "listFiles":               return await getOperationListFiles(enrichedToolCfg, safeArgs);
       case "downloadFile":            return await getOperationDownloadFile(enrichedToolCfg, safeArgs);
@@ -1225,7 +1265,7 @@ const definition = {
       "",
       "Operation groups:",
       "  Mail       : sendMail · searchEmails · showEmails · listMailFolders · searchMailFolders · deleteMails · moveEmails",
-      "  File/Drive : showFile · listFiles · downloadFile · uploadFile · createUploadSession · deleteFiles · renameFiles",
+      "  File/Drive : searchFiles · showFile · listFiles · downloadFile · uploadFile · createUploadSession · deleteFiles · renameFiles",
       "  Users/AAD  : searchUsers · showUser · createUser · updateUser · deleteUser",
       "  Utility    : fulltextSearch · resolveDefaultTargets · graphRequest",
       "",
@@ -1240,7 +1280,7 @@ const definition = {
           description: "Operation to perform. Choose from the file, mail, user or utility groups described above.",
           enum: [
             "resolveDefaultTargets", "fulltextSearch",
-            "showFile", "listFiles", "downloadFile", "uploadFile", "createUploadSession", "deleteFiles", "renameFiles",
+            "searchFiles", "showFile", "listFiles", "downloadFile", "uploadFile", "createUploadSession", "deleteFiles", "renameFiles",
             "searchEmails", "showEmails", "listMailFolders", "searchMailFolders", "deleteMails", "moveEmails", "sendMail",
             "searchUsers", "showUser", "createUser", "updateUser", "deleteUser",
             "graphRequest"
