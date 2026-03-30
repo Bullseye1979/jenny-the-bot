@@ -353,14 +353,18 @@ function getResolveDriveItemPath(args, toolCfg) {
   if (driveId) return `/drives/${encodeURIComponent(driveId)}/root`;
 
   if (scope === "sharepoint") {
+    const siteDriveId = getStr(toolCfg._siteDriveId, "");
+    if (siteDriveId && itemId)   return `/drives/${encodeURIComponent(siteDriveId)}/items/${encodeURIComponent(itemId)}`;
+    if (siteDriveId && filePath) return `/drives/${encodeURIComponent(siteDriveId)}/root:/${filePath.replace(/^\/+/, "")}`;
+    if (siteDriveId)             return `/drives/${encodeURIComponent(siteDriveId)}/root`;
     const siteBase = getResolveSharePointSiteBase(args, toolCfg);
-    if (itemId) return `${siteBase}/drive/items/${encodeURIComponent(itemId)}`;
+    if (itemId)   return `${siteBase}/drive/items/${encodeURIComponent(itemId)}`;
     if (filePath) return `${siteBase}/drive/root:/${filePath.replace(/^\/+/, "")}`;
     return `${siteBase}/drive/root`;
   }
 
   const userBase = getResolveUserBase(args, toolCfg);
-  if (itemId) return `${userBase}/drive/items/${encodeURIComponent(itemId)}`;
+  if (itemId)   return `${userBase}/drive/items/${encodeURIComponent(itemId)}`;
   if (filePath) return `${userBase}/drive/root:/${filePath.replace(/^\/+/, "")}`;
   return `${userBase}/drive/root`;
 }
@@ -376,7 +380,11 @@ function getResolveUploadRootPath(args, toolCfg) {
   const scope = getResolveStorageScope(args, toolCfg);
 
   if (driveId) return `/drives/${encodeURIComponent(driveId)}`;
-  if (scope === "sharepoint") return `${getResolveSharePointSiteBase(args, toolCfg)}/drive`;
+  if (scope === "sharepoint") {
+    const siteDriveId = getStr(toolCfg._siteDriveId, "");
+    if (siteDriveId) return `/drives/${encodeURIComponent(siteDriveId)}`;
+    return `${getResolveSharePointSiteBase(args, toolCfg)}/drive`;
+  }
   return `${getResolveUserBase(args, toolCfg)}/drive`;
 }
 
@@ -544,6 +552,9 @@ async function getAutoDiscoverIds(toolCfg) {
           if (driveId) setCachedDiscovery(cacheKey, driveId);
         } catch {}
       }
+      // Store SharePoint site drive separately — must NOT overwrite defaultDriveId
+      // which would cause OneDrive operations to land on SharePoint.
+      if (driveId) result._siteDriveId = driveId;
     } else {
       const cacheKey = userId ? `driveId:user:${userId}` : `driveId:me`;
       driveId = getCachedDiscovery(cacheKey);
@@ -555,9 +566,8 @@ async function getAutoDiscoverIds(toolCfg) {
           if (driveId) setCachedDiscovery(cacheKey, driveId);
         } catch {}
       }
+      if (driveId) result.defaultDriveId = driveId;
     }
-
-    if (driveId) result.defaultDriveId = driveId;
   }
 
   return result;
@@ -1238,6 +1248,11 @@ const definition = {
       "  Utility    : fulltextSearch · resolveDefaultTargets · graphRequest",
       "",
       "When no driveId or siteId is provided they are auto-discovered from the configured hostname or defaultUserId.",
+      "IMPORTANT storageScope rules: always set storageScope explicitly for file operations.",
+      "  • storageScope='onedrive'   — user's personal OneDrive (/me/drive). Use this when the user says 'OneDrive', 'meine Dateien', 'mein Laufwerk'.",
+      "  • storageScope='sharepoint' — SharePoint document library. Use this when the user says 'SharePoint', 'Dokumentenbibliothek', 'Teamdateien'.",
+      "  • storageScope='drive'      — only when an explicit driveId is provided.",
+      "If the user does not specify a storage target, default to storageScope='onedrive'.",
       "Mail folder names can be well-known strings such as inbox, sentitems, deleteditems, drafts, or junkemail.",
       "",
       "IMPORTANT: This tool uses delegated OAuth2. The user must have connected their Microsoft account at /graph-auth.",

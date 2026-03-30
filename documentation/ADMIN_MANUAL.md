@@ -2935,7 +2935,17 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 
 **Authentication:** OAuth 2.0 **delegated** flow. Each Discord user must connect their Microsoft account once at `/graph-auth`. The access token is stored in the `graph_tokens` DB table and refreshed automatically by the `cron-graph-token-refresh` module. No app-level token is required in `toolsconfig.getGraph`. If a user has not authenticated, the tool returns `{ ok: false, error: "No Microsoft account connected ... Please authenticate at /graph-auth" }`.
 
-**Auto-discovery:** When `defaultSiteId` or `defaultDriveId` are not configured, the tool discovers them automatically from `defaultSharePointHostname` (siteId) and from the resolved site or `/me/drive` (driveId). Results are cached for 5 minutes.
+**Auto-discovery:** When `defaultSiteId` is not configured, the tool discovers it from `defaultSharePointHostname`. The SharePoint site's drive ID is cached separately from the user's OneDrive — OneDrive operations always use `/me/drive` and are never redirected to SharePoint.
+
+**`storageScope` — always set explicitly for file operations:**
+
+| Value | Target | When to use |
+|---|---|---|
+| `onedrive` | User's personal OneDrive (`/me/drive`) | User says "OneDrive", "meine Dateien", "mein Laufwerk" |
+| `sharepoint` | SharePoint document library | User says "SharePoint", "Dokumentenbibliothek", "Teamdateien" |
+| `drive` | Explicit `driveId` | Only when a specific `driveId` is provided |
+
+If the user does not specify a storage target, default to `storageScope='onedrive'`. Without an explicit `storageScope`, the tool may fall back to SharePoint when `defaultSharePointHostname` is configured.
 
 #### Entra App Registration (required once per tenant)
 
@@ -3542,6 +3552,29 @@ CREATE TABLE IF NOT EXISTS graph_tokens (
   PRIMARY KEY (user_id)
 ) CHARACTER SET utf8mb4;
 ```
+
+### Table: graph_auth_states
+
+Created automatically on first access to `/graph-auth` alongside `graph_tokens`. Stores CSRF state tokens for the OAuth2 Authorization Code flow.
+
+| Column | Type | Description |
+|---|---|---|
+| `state_token` | VARCHAR(64) PRIMARY KEY | Random hex state token (48 chars) |
+| `user_id` | VARCHAR(64) NOT NULL | Discord user ID that initiated the flow |
+| `created_at` | BIGINT NOT NULL | Creation time (Unix epoch ms) |
+| `expires_at` | BIGINT NOT NULL | Expiry time (Unix epoch ms; TTL = 10 minutes) |
+
+```sql
+CREATE TABLE IF NOT EXISTS graph_auth_states (
+  state_token  VARCHAR(64)  NOT NULL,
+  user_id      VARCHAR(64)  NOT NULL,
+  created_at   BIGINT       NOT NULL,
+  expires_at   BIGINT       NOT NULL,
+  PRIMARY KEY (state_token)
+) CHARACTER SET utf8mb4;
+```
+
+Rows are deleted on use (callback validates + deletes) and expired rows are cleaned up on each `/start` and callback request.
 
 ---
 
@@ -4817,9 +4850,9 @@ Allows logged-in users to connect or disconnect their personal Microsoft account
 5. Upserts into `graph_tokens` keyed by Discord `user_id`
 6. Redirects to `/graph-auth` (status page)
 
-CSRF protection: a random `state` token is stored in a module-level `Map` with a 10-minute TTL and validated on callback.
+CSRF protection: a random `state` token is stored in the `graph_auth_states` DB table with a 10-minute TTL and validated on callback. Using the DB (instead of an in-memory Map) ensures correctness across bot restarts and between the `/start` and `/callback` requests.
 
-The table `graph_tokens` is created automatically on first page load (idempotent `CREATE TABLE IF NOT EXISTS`).
+Both tables (`graph_tokens` and `graph_auth_states`) are created automatically on first page load (idempotent `CREATE TABLE IF NOT EXISTS`). Multiple users can each connect their own Microsoft account — tokens are keyed by Discord `user_id` and are fully independent.
 
 #### core.json config
 

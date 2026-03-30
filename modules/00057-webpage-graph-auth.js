@@ -12,9 +12,9 @@
 "use strict";
 
 import crypto from "node:crypto";
-import { getSecret }          from "../core/secrets.js";
-import { getPrefixedLogger }  from "../core/logging.js";
-import { getDb }              from "../shared/webpage/interface.js";
+import { getSecret }                             from "../core/secrets.js";
+import { getPrefixedLogger }                     from "../core/logging.js";
+import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 
 const MODULE_NAME  = "webpage-graph-auth";
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -169,16 +169,16 @@ async function upsertToken(db, userId, fields) {
 }
 
 
-function getPageHtml(title, bodyHtml) {
+function getPageHtml(title, bodyHtml, menuHtml = "") {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escHtml(title)}</title>
+${getThemeHeadScript()}
 <style>
-  body{font-family:system-ui,sans-serif;background:#f4f6f9;color:#1a202c;margin:0;padding:0}
-  .wrap{max-width:480px;margin:80px auto;padding:24px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+  .wrap{max-width:480px;margin:40px auto;padding:24px;background:var(--card-bg,#fff);border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
   h2{margin:0 0 20px;font-size:1.3rem}
   .info{background:#eef2ff;border-radius:6px;padding:14px;margin-bottom:18px}
   .info p{margin:4px 0;font-size:.92rem}
@@ -192,6 +192,7 @@ function getPageHtml(title, bodyHtml) {
 </style>
 </head>
 <body>
+<header><h1>🔗 Microsoft Account</h1>${menuHtml}</header>
 <div class="wrap">
 ${bodyHtml}
 </div>
@@ -200,7 +201,7 @@ ${bodyHtml}
 }
 
 
-async function handleStatus(wo, db, userId) {
+async function handleStatus(wo, db, userId, menuHtml) {
   const row = await getTokenRow(db, userId);
 
   let body;
@@ -222,7 +223,7 @@ async function handleStatus(wo, db, userId) {
       `<a class="btn btn-primary" href="/graph-auth/start">Connect Microsoft Account</a>`;
   }
 
-  wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Microsoft Account", body) };
+  wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Microsoft Account", body, menuHtml) };
 }
 
 
@@ -252,7 +253,7 @@ async function handleStart(wo, cfg, db, userId) {
 }
 
 
-async function handleCallback(wo, cfg, db, userId, query) {
+async function handleCallback(wo, cfg, db, userId, query, menuHtml) {
   const log   = getPrefixedLogger(wo, import.meta.url);
   const code  = String(query.code  || "").trim();
   const state = String(query.state || "").trim();
@@ -260,7 +261,7 @@ async function handleCallback(wo, cfg, db, userId, query) {
 
   if (error) {
     const desc = escHtml(String(query.error_description || error));
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Authentication Error</h2><p>${desc}</p><a class="btn btn-primary" href="/graph-auth">Back</a>`) };
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Authentication Error</h2><p>${desc}</p><a class="btn btn-primary" href="/graph-auth">Back</a>`, menuHtml) };
     return;
   }
 
@@ -269,7 +270,7 @@ async function handleCallback(wo, cfg, db, userId, query) {
     [state, Date.now()]
   );
   if (!stateRows || stateRows.length === 0) {
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Invalid or expired state</h2><p>Please try again.</p><a class="btn btn-primary" href="/graph-auth/start">Retry</a>`) };
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Invalid or expired state</h2><p>Please try again.</p><a class="btn btn-primary" href="/graph-auth/start">Retry</a>`, menuHtml) };
     return;
   }
   await db.query("DELETE FROM graph_auth_states WHERE state_token = ?", [state]);
@@ -296,14 +297,14 @@ async function handleCallback(wo, cfg, db, userId, query) {
     );
   } catch (e) {
     log(`[${MODULE_NAME}] Token exchange error: ${e?.message || e}`, "error");
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Token exchange failed</h2><p>Server error. Please try again.</p><a class="btn btn-primary" href="/graph-auth">Back</a>`) };
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Token exchange failed</h2><p>Server error. Please try again.</p><a class="btn btn-primary" href="/graph-auth">Back</a>`, menuHtml) };
     return;
   }
 
   const tok = tokenResp.json;
   if (!tok?.access_token) {
     const desc = escHtml(String(tok?.error_description || tok?.error || "No access token returned"));
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Token error</h2><p>${desc}</p><a class="btn btn-primary" href="/graph-auth">Back</a>`) };
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Token error</h2><p>${desc}</p><a class="btn btn-primary" href="/graph-auth">Back</a>`, menuHtml) };
     return;
   }
 
@@ -351,17 +352,19 @@ export default async function webpageGraphAuth(coreData) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
 
-  const log      = getPrefixedLogger(wo, import.meta.url);
-  const port     = cfg.port || 3124;
-  const woPort   = Number(wo?.http?.port);
+  const log       = getPrefixedLogger(wo, import.meta.url);
+  const port      = cfg.port || 3124;
+  const woPort    = Number(wo?.http?.port);
   const cleanPath = getCleanPath(wo);
 
   if (woPort !== port) return coreData;
   if (!cleanPath.startsWith("/graph-auth")) return coreData;
 
+  const menuHtml = getMenuHtml(wo.web?.menu || [], cleanPath, wo.webAuth?.role || "", null, null, wo.webAuth);
+
   const userId = wo.webAuth?.userId || null;
   if (!userId) {
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Login Required", `<h2>Login Required</h2><p class="muted">You must be logged in to manage your Microsoft account connection.</p>`) };
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Login Required", `<h2>Login Required</h2><p class="muted">You must be logged in to manage your Microsoft account connection.</p>`, menuHtml) };
     return coreData;
   }
 
@@ -371,23 +374,23 @@ export default async function webpageGraphAuth(coreData) {
     await ensureTable(db);
   } catch (e) {
     log(`[${MODULE_NAME}] DB error: ${e?.message || e}`, "error");
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Error", `<h2>Database error</h2><p>Could not connect to database.</p>`) };
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Error", `<h2>Database error</h2><p>Could not connect to database.</p>`, menuHtml) };
     return coreData;
   }
 
   try {
     if (cleanPath === "/graph-auth" || cleanPath === "/graph-auth/") {
-      await handleStatus(wo, db, userId);
+      await handleStatus(wo, db, userId, menuHtml);
     } else if (cleanPath === "/graph-auth/start") {
       await handleStart(wo, cfg, db, userId);
     } else if (cleanPath === "/graph-auth/callback") {
-      await handleCallback(wo, cfg, db, userId, wo.http.query || {});
+      await handleCallback(wo, cfg, db, userId, wo.http.query || {}, menuHtml);
     } else if (cleanPath === "/graph-auth/disconnect") {
       await handleDisconnect(wo, db, userId);
     }
   } catch (e) {
     log(`[${MODULE_NAME}] Handler error on ${cleanPath}: ${e?.message || e}`, "error");
-    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Error", `<h2>Unexpected error</h2><p>${escHtml(String(e?.message || e))}</p>`) };
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Error", `<h2>Unexpected error</h2><p>${escHtml(String(e?.message || e))}</p>`, menuHtml) };
   }
 
   return coreData;
