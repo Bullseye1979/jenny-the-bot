@@ -1614,6 +1614,7 @@ Browser-based always-on voice interface with meeting recorder, speaker managemen
   "port":                          3119,
   "basePath":                      "/voice",
   "silenceTimeoutMs":              2500,
+  "silenceRmsThreshold":           0.015,
   "maxDurationMs":                 30000,
   "allowedRoles":                  [],
   "clearContextChannels":          [],
@@ -1632,6 +1633,7 @@ Browser-based always-on voice interface with meeting recorder, speaker managemen
 | `port` | number | `3119` | HTTP port — must also be in `config.webpage.ports` |
 | `basePath` | string | `"/voice"` | URL prefix for this module |
 | `silenceTimeoutMs` | number | `2500` | Silence duration (ms) before the always-on mic auto-sends audio |
+| `silenceRmsThreshold` | number | `0.015` | RMS amplitude threshold below which audio is considered silence. Raise this value (e.g. `0.04`) in noisy environments to prevent background noise from resetting the silence counter and blocking auto-send. |
 | `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
 | `allowedRoles` | array | `[]` | Roles that may access the voice interface. Empty array = public |
 | `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before writing a transcript. Frozen rows are never deleted. Add a channel ID here for "start-of-session" mode on that channel. |
@@ -2365,7 +2367,7 @@ export default async function myModule(coreData) {
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
 | 00025 | `discord-admin-gdpr` | Handles admin GDPR management commands |
 | 00027 | `webpage-voice-record` | Handles `POST /voice/record` (port 3119) — receives a full meeting recording, transcribes it (default model: `gpt-4o-transcribe`), optionally runs a GPT-4o diarization pass, optionally purges non-frozen channel context, and stores the formatted transcript via `setContext`. Config key: `webpage-voice-record`. |
-| 00028 | `webpage-voice-input` | Handles `POST /voice/audio` (webpage flow) — validates auth + `channelId`, converts the incoming audio body to a 16 kHz mono WAV temp file, and sets `wo` fields so the shared transcription → AI → TTS pipeline runs identically to the Discord voice flow. Sets `wo.audioFile`, `wo.transcribeAudio`, `wo.isWebpageVoice`, `wo.ttsFormat = "mp3"`, `wo.userId` (copied from `wo.webAuth.userId` — required for tools that look up per-user credentials, e.g. `getGraph` delegated token). Must run before `00030-core-voice-transcribe`. |
+| 00028 | `webpage-voice-input` | Handles `POST /voice/audio` (webpage flow) — validates auth + `channelId`, converts the incoming audio body to a 16 kHz mono WAV temp file, and sets `wo` fields so the shared transcription → AI → TTS pipeline runs identically to the Discord voice flow. Sets `wo.audioFile`, `wo.transcribeAudio`, `wo.isWebpageVoice`, `wo.ttsFormat = "mp3"`. Must run before `00030-core-voice-transcribe`. |
 | 00029 | `discord-voice-capture` | Captures PCM from the Discord voice receiver (Opus → PCM via prism-media), applies RMS/ZCR-based VAD, extracts voiced frames, and combines them into a single 16kHz mono WAV. Outputs `wo.audioFile`, `wo.audioStats = {snrDb, usefulMs}`, and `wo.transcribeAudio = true`. Does not make quality decisions — deferred to the transcription module. Only runs when `wo.voiceIntent.action === "describe_and_transcribe"` |
 | 00030 | `core-voice-transcribe` | Source-agnostic transcription module. Runs when `wo.transcribeAudio === true`. When `wo.audioStats` is set, applies a quality gate. Large files (>20 MB) are split into overlapping chunks; speaker labels are stitched across chunk boundaries. When `wo.transcribeOnly === true` and the model name contains `"diarize"`, calls `getDiarizeWithSamples`: loads registered speaker profiles from `voice_speakers`, builds a preamble WAV (speaker samples + pure-Node.js silence), concatenates it before the meeting audio, transcribes with the diarize model, resolves label→speaker mappings via `resolveSpeakerMapping`, and stores a session + chunks + assignments in `voice_sessions`/`voice_chunks`/`voice_chunk_speakers`. Sets `wo.voiceDiarizeSessionId`. Active in `discord-voice` and `webpage` flows. |
 | 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB for the **always-on voice path only**. Skips when `wo.transcribeOnly === true` (meeting recorder path) — those transcripts only reach context via the Review tab Apply button. Active when `wo.isWebpageVoice === true`, `wo.transcribeOnly !== true`, and `wo.payload` is set. Diarized transcripts are parsed into one DB entry per speaker turn (`source: "voice-transcribe"`). When the channel ID is listed in `clearContextChannels`, purges non-frozen context rows (via `setPurgeContext`) for the channel first. |
@@ -4878,7 +4880,7 @@ When `inpaintHost` contains a hostname (does not start with `/`), the redirect t
 
 Provides Discord OAuth2 SSO (Single Sign-On) for all web modules. Runs as a **passive module** — it processes every request on listed ports, sets `wo.webAuth` if a valid session cookie is present, and lets the request continue normally. It does not block or respond unless the URL is an `/auth/*` route.
 
-`userId` is **not** copied to `wo.userId` by this module. Instead, `setContext` in `core/context.js` reads `wo.webAuth.userId` directly when writing to the DB, so no per-module fallback chains are needed.
+`wo.userId` is set to `wo.webAuth.userId` by this module after the session is resolved. This makes the authenticated user ID available to tools that look up per-user credentials (e.g. `getGraph` delegated token, `getSpotify` OAuth token).
 
 **Routes:**
 - `GET /auth/login` — redirects to Discord OAuth2 authorize URL
