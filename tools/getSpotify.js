@@ -10,7 +10,8 @@
 
 const MODULE_NAME    = "getSpotify";
 const SPOTIFY_BASE   = "https://api.spotify.com/v1";
-const DEFAULT_LIMIT  = 20;
+const DEFAULT_LIMIT  = 10;
+const DEFAULT_SEARCH_LIMIT = 50;
 const DEFAULT_TIMEOUT_MS = 15000;
 
 let _dbPool = null;
@@ -166,7 +167,7 @@ async function getOperationSearch(token, args) {
   if (!query) return { ok: false, error: "Missing required argument: query" };
 
   const types  = getArr(args.types, ["track"]).filter(t => ["track","album","artist","playlist"].includes(t));
-  const limit  = Math.min(50, Math.max(1, getNum(args.limit, DEFAULT_LIMIT)));
+  const limit  = Math.min(50, Math.max(1, getNum(args.limit, DEFAULT_SEARCH_LIMIT)));
   const offset = Math.max(0, getNum(args.offset, 0));
   const market = getStr(args.market, "");
 
@@ -457,7 +458,10 @@ const definition = {
       "REQUIRED play workflow — always follow these steps in order:",
       "  1. Call search with the EXACT track name and artist to get the specific track URI.",
       "     Always search fresh — never reuse a URI from a previous tool call.",
-      "     When the user requests a specific song, search types must be [\"track\"] and pick the closest match by name + artist.",
+      "     When the user requests a specific song, search types must be [\"track\"].",
+      "     After receiving search results, find the result whose 'name' field most closely matches the requested track name.",
+      "     Do NOT blindly take the first result — verify name AND artist match before using the URI.",
+      "     Example: user asks for 'In the End' by Linkin Park → look for result with name='In the End' and artists containing 'Linkin Park'.",
       "  2. Call listDevices to get the available device IDs.",
       "  3. Call play with uris set to [trackUri] AND deviceId set to the target device.",
       "     ALWAYS use uris with the specific track URI when playing a named song.",
