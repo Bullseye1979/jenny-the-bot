@@ -10,8 +10,7 @@
 
 const MODULE_NAME    = "getSpotify";
 const SPOTIFY_BASE   = "https://api.spotify.com/v1";
-const DEFAULT_LIMIT  = 10;
-const DEFAULT_SEARCH_LIMIT = 50;
+const DEFAULT_LIMIT  = 20;
 const DEFAULT_TIMEOUT_MS = 15000;
 
 let _dbPool = null;
@@ -167,7 +166,7 @@ async function getOperationSearch(token, args) {
   if (!query) return { ok: false, error: "Missing required argument: query" };
 
   const types  = getArr(args.types, ["track"]).filter(t => ["track","album","artist","playlist"].includes(t));
-  const limit  = Math.min(50, Math.max(1, getNum(args.limit, DEFAULT_SEARCH_LIMIT)));
+  const limit  = Math.min(50, Math.max(1, getNum(args.limit, DEFAULT_LIMIT)));
   const offset = Math.max(0, getNum(args.offset, 0));
   const market = getStr(args.market, "");
 
