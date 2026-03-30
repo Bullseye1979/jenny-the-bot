@@ -1698,15 +1698,15 @@ Writes the voice transcription to the context DB immediately after transcription
 
 ```json
 "webpage-voice-add-context": {
-  "flow":                 ["webpage"],
-  "clearContextChannels": []
+  "flow": ["webpage"]
 }
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `flow` | array | — | Must include `"webpage"` |
-| `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before storing the transcript. Frozen rows are never deleted. Useful for start-of-session mode on specific channels. |
+
+> **Note:** This module does **not** purge context. Context purging (`clearContextChannels`) is intentionally restricted to the meeting transcript apply path (`00047`, Apply button) and the recording endpoint (`00027`, `POST /voice/record`). Always-on voice turns must never clear the context, so that follow-up questions about a stored transcript continue to work.
 
 ---
 
@@ -4662,11 +4662,17 @@ A browser-based voice interface with three tabs: **Voice** (always-on + meeting 
 
 **Review tab:**
 
+- After a meeting recording finishes on the **Record** tab, the SPA automatically switches to the Review tab and loads the new session — no manual navigation required.
+- The session list has a **🔄** button next to the "Sessions" heading. Click it to manually reload the list at any time — useful when a recording was made on another device with the same channel selected.
 - Select a session from the left list to view its chunks. Both lists scroll independently.
 - Each chunk shows one block per unique speaker label. Use the dropdown to assign a known speaker or create one inline.
 - **💾 Save All:** Persists all speaker assignments currently shown in the chunk panel to the database in one pass. Does not write to channel context.
-- **✓ Apply to Channel:** First saves all assignments (same as Save All), then rebuilds the transcript using DB-resolved speaker names, writes one context row per speaker line with `authorName` set to the speaker name, optionally purges existing non-frozen context rows if the channel is listed in `clearContextChannels`, and deletes the session from the review list.
+- **✓ Apply to Channel:** First saves all assignments (same as Save All), then rebuilds the transcript using DB-resolved speaker names, writes one context row per speaker line with `authorName` set to the speaker name, optionally purges existing non-frozen context rows if the channel is listed in `clearContextChannels` (configured in `webpage-voice` and `webpage-voice-record`), and deletes the session from the review list.
 - 🗑️ deletes a session without writing to context.
+
+> **Cross-device usage:** Sessions are stored in the database keyed by `channel_id`. A session recorded on one device is visible on any other device that has the same channel selected in the dropdown. Use the 🔄 refresh button to reload the list after a remote recording finishes.
+
+> **Context purge scope:** `clearContextChannels` purges context only when a transcript is **applied** (Apply to Channel) or when a full recording is submitted via `POST /voice/record`. Always-on voice turns never purge context, so follow-up questions about a stored transcript continue to work.
 
 #### Diarization with speaker samples (preamble approach)
 

@@ -619,7 +619,6 @@ btnRec.addEventListener('click', async function() {
 });
 
 var CURRENT_TAB = 'voice';
-var reviewPollTimer = null;
 function showTab(name) {
   CURRENT_TAB = name;
   document.querySelectorAll('.tab-pane').forEach(function(el) { el.classList.remove('active'); });
@@ -630,12 +629,7 @@ function showTab(name) {
     if (el.getAttribute('onclick') === "showTab('" + name + "')") el.classList.add('active');
   });
   if (name === 'speakers') loadSpeakers();
-  if (name === 'review') {
-    loadSessions();
-    if (!reviewPollTimer) reviewPollTimer = setInterval(function() { if (CURRENT_TAB === 'review') loadSessions(); }, 10000);
-  } else {
-    if (reviewPollTimer) { clearInterval(reviewPollTimer); reviewPollTimer = null; }
-  }
+  if (name === 'review')   loadSessions();
 }
 
 var spRecStream = null, spRecRecorder = null;

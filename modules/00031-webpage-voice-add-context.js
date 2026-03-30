@@ -18,14 +18,13 @@
 /*          AND  wo.payload non-empty  AND  wo.channelID set  AND  wo.db available *
 /*                                                                                 *
 /* Config (config["webpage-voice-add-context"]):                                   *
-/*   clearContextChannels — array of channel IDs for which the context DB is       *
-/*                          purged (non-frozen rows only, via setPurgeContext)     *
-/*                          before storing the transcription. Default: []          *
+/*   (none — no context purge on always-on turns; purging only happens when       *
+/*    applying a meeting transcript in 00047 or via POST /voice/record in 00027)  *
 /*                                                                                 *
 /* Flow:    webpage                                                                 *
 /************************************************************************************/
 
-import { setContext, setPurgeContext } from "../core/context.js";
+import { setContext } from "../core/context.js";
 import { getPrefixedLogger }           from "../core/logging.js";
 
 const MODULE_NAME    = "webpage-voice-add-context";
@@ -71,17 +70,6 @@ export default async function getWebpageVoiceAddContext(coreData) {
   if (!wo.db || !wo.flow || !wo.channelID) {
     log("Missing db/flow/channelID — skipping context write", "warn", { moduleName: MODULE_NAME });
     return coreData;
-  }
-
-  const cfg             = coreData?.config?.[MODULE_NAME] || {};
-  const clearChannels   = Array.isArray(cfg.clearContextChannels) ? cfg.clearContextChannels : [];
-  if (clearChannels.includes(wo.channelID)) {
-    try {
-      const purged = await setPurgeContext(wo);
-      log("Context purged before transcription store", "info", { moduleName: MODULE_NAME, purged });
-    } catch (err) {
-      log("Context purge failed", "error", { moduleName: MODULE_NAME, error: err?.message || String(err) });
-    }
   }
 
   const ts     = String(wo.timestamp || new Date().toISOString());

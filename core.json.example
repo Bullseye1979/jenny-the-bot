@@ -847,11 +847,10 @@
       "clearContextChannels": []
     },
     "webpage-voice-add-context": {
-      "__description": "Writes each voice transcription turn to the context DB. One DB entry per speaker paragraph. clearContextChannels: array of channel IDs whose context DB is purged (non-frozen rows only, via setPurgeContext) before storing the transcription. Use this for start-of-session mode on specific channels.",
+      "__description": "Writes each always-on voice turn to the context DB. One DB entry per speaker paragraph. Does NOT purge context — purging is only done when applying a meeting transcript (00047 Apply button) or via POST /voice/record (00027), so follow-up voice questions about a stored transcript continue to work.",
       "flow": [
         "webpage"
-      ],
-      "clearContextChannels": []
+      ]
     },
     "webpage-voice-output": {
       "__description": "Sends TTS MP3 audio back to the browser voice caller. Must be active in webpage flow.",
