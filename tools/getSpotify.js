@@ -460,6 +460,9 @@ const definition = {
       "  3. Call play with both uris (or contextUri) AND deviceId set to the target device.",
       "     Never call play without a deviceId — it will fail if no device is currently active.",
       "     Pick the most appropriate device automatically (prefer the active one, otherwise the first available).",
+      "  4. If play returns ok: true, report SUCCESS to the user immediately.",
+      "     Do NOT call getPlayback after play to verify — Spotify mobile devices take 1-3 seconds",
+      "     to update their state. getPlayback returning isPlaying: false right after play is normal and does NOT mean playback failed.",
       "",
       "IMPORTANT: This tool uses delegated OAuth2. The user must have connected their Spotify account at /spotify-auth.",
       "If the tool returns an error about missing token or authentication, tell the user to visit /spotify-auth to connect their Spotify account."
