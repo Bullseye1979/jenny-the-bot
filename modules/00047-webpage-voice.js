@@ -241,6 +241,10 @@ function getSpaHtml(cfg, menuHtml) {
   .t-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
   .t-text{font-size:.95rem;color:var(--txt);line-height:1.5;white-space:pre-wrap}
   #error-msg{color:var(--dan);font-size:.85rem;text-align:center;min-height:1em}
+  body{overflow-y:auto}
+  @media(max-width:640px){
+    .content{justify-content:flex-start;padding-top:28px}
+  }
 </style>
 </head>
 <body>
@@ -604,7 +608,8 @@ btnRec.addEventListener('click', async function() {
       var transcript = resp.headers.get('X-Transcript') || '';
       if (resp.ok) {
         var words = transcript.trim().split(' ').filter(function(w){return w.length>0;}).length;
-        setRecStatus('Done \u2014 ' + words + ' word(s)' + (transcript ? ': ' + transcript.substring(0, 100) + (transcript.length > 100 ? '\u2026' : '') : ''));
+        setRecStatus('Done \u2014 ' + words + ' word(s)');
+        showTab('review');
       } else {
         setRecStatus('Error: ' + resp.status);
       }
@@ -614,6 +619,7 @@ btnRec.addEventListener('click', async function() {
 });
 
 var CURRENT_TAB = 'voice';
+var reviewPollTimer = null;
 function showTab(name) {
   CURRENT_TAB = name;
   document.querySelectorAll('.tab-pane').forEach(function(el) { el.classList.remove('active'); });
@@ -624,7 +630,12 @@ function showTab(name) {
     if (el.getAttribute('onclick') === "showTab('" + name + "')") el.classList.add('active');
   });
   if (name === 'speakers') loadSpeakers();
-  if (name === 'review')   loadSessions();
+  if (name === 'review') {
+    loadSessions();
+    if (!reviewPollTimer) reviewPollTimer = setInterval(function() { if (CURRENT_TAB === 'review') loadSessions(); }, 10000);
+  } else {
+    if (reviewPollTimer) { clearInterval(reviewPollTimer); reviewPollTimer = null; }
+  }
 }
 
 var spRecStream = null, spRecRecorder = null;
@@ -977,7 +988,7 @@ function handleSpeakerSelChange(sel) {
 <div class="tab-pane left" id="tab-review">
   <div style="display:flex;gap:10px;flex-wrap:wrap;width:100%">
     <div style="flex:1;min-width:180px">
-      <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:6px">Sessions</div>
+      <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px">Sessions <button class="ic-btn" onclick="loadSessions()" title="Refresh" style="font-size:.75rem;padding:1px 5px">&#x1F504;</button></div>
       <div class="sess-list" id="sess-list"><p style="color:var(--muted);font-size:.85rem">Select a channel first.</p></div>
     </div>
     <div style="flex:3;min-width:260px">

@@ -87,6 +87,7 @@ ${getThemeHeadScript()}
   @media (max-width:600px) {
     .km-col-desc { display:none; }
   }
+  body { overflow-y: auto; }
 </style>
 </head>
 <body>
