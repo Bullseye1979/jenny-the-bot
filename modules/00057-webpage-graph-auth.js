@@ -215,7 +215,7 @@ async function handleStatus(wo, db, userId) {
       `<a class="btn btn-primary" href="/graph-auth/start">Connect Microsoft Account</a>`;
   }
 
-  wo.html = getPageHtml("Microsoft Account", body);
+  wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Microsoft Account", body) };
 }
 
 
@@ -248,13 +248,13 @@ async function handleCallback(wo, cfg, db, userId, query) {
 
   if (error) {
     const desc = escHtml(String(query.error_description || error));
-    wo.html = getPageHtml("Auth Error", `<h2>Authentication Error</h2><p>${desc}</p><a class="btn btn-primary" href="/graph-auth">Back</a>`);
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Authentication Error</h2><p>${desc}</p><a class="btn btn-primary" href="/graph-auth">Back</a>`) };
     return;
   }
 
   const stateTs = pendingStates.get(state);
   if (!stateTs || Date.now() - stateTs > STATE_TTL_MS) {
-    wo.html = getPageHtml("Auth Error", `<h2>Invalid or expired state</h2><p>Please try again.</p><a class="btn btn-primary" href="/graph-auth/start">Retry</a>`);
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Invalid or expired state</h2><p>Please try again.</p><a class="btn btn-primary" href="/graph-auth/start">Retry</a>`) };
     return;
   }
   pendingStates.delete(state);
@@ -284,14 +284,14 @@ async function handleCallback(wo, cfg, db, userId, query) {
     );
   } catch (e) {
     log(`[${MODULE_NAME}] Token exchange error: ${e?.message || e}`, "error");
-    wo.html = getPageHtml("Auth Error", `<h2>Token exchange failed</h2><p>Server error. Please try again.</p><a class="btn btn-primary" href="/graph-auth">Back</a>`);
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Token exchange failed</h2><p>Server error. Please try again.</p><a class="btn btn-primary" href="/graph-auth">Back</a>`) };
     return;
   }
 
   const tok = tokenResp.json;
   if (!tok?.access_token) {
     const desc = escHtml(String(tok?.error_description || tok?.error || "No access token returned"));
-    wo.html = getPageHtml("Auth Error", `<h2>Token error</h2><p>${desc}</p><a class="btn btn-primary" href="/graph-auth">Back</a>`);
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Token error</h2><p>${desc}</p><a class="btn btn-primary" href="/graph-auth">Back</a>`) };
     return;
   }
 
@@ -363,10 +363,7 @@ export default async function webpageGraphAuth(coreData) {
 
   const userId = wo.webAuth?.userId || null;
   if (!userId) {
-    wo.html = getPageHtml(
-      "Login Required",
-      `<h2>Login Required</h2><p class="muted">You must be logged in to manage your Microsoft account connection.</p>`
-    );
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Login Required", `<h2>Login Required</h2><p class="muted">You must be logged in to manage your Microsoft account connection.</p>`) };
     return coreData;
   }
 
@@ -376,7 +373,7 @@ export default async function webpageGraphAuth(coreData) {
     await ensureTable(db);
   } catch (e) {
     log(`[${MODULE_NAME}] DB error: ${e?.message || e}`, "error");
-    wo.html = getPageHtml("Error", `<h2>Database error</h2><p>Could not connect to database.</p>`);
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Error", `<h2>Database error</h2><p>Could not connect to database.</p>`) };
     return coreData;
   }
 
@@ -393,7 +390,7 @@ export default async function webpageGraphAuth(coreData) {
     }
   } catch (e) {
     log(`[${MODULE_NAME}] Handler error on ${cleanPath}: ${e?.message || e}`, "error");
-    wo.html = getPageHtml("Error", `<h2>Unexpected error</h2><p>${escHtml(String(e?.message || e))}</p>`);
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Error", `<h2>Unexpected error</h2><p>${escHtml(String(e?.message || e))}</p>`) };
   }
 
   return coreData;
