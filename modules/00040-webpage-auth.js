@@ -269,6 +269,7 @@ function setApplyAuthToWorkingObject(wo, cfg, sess) {
     roles:    Array.isArray(sess?.roles)   ? sess.roles.map(String)   : [],
     roleIds:  Array.isArray(sess?.roleIds) ? sess.roleIds.map(String) : []
   };
+  wo.userId = wo.webAuth.userId;
 }
 
 
