@@ -16,6 +16,28 @@ const SMALL_UPLOAD_LIMIT = 4 * 1024 * 1024;
 const DISCOVERY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const discoveryCache = new Map();
+let   _dbPool        = null;
+
+
+/**********************************************************************************/
+/* getDbPool                                                                      */
+/**********************************************************************************/
+async function getDbPool(coreData) {
+  if (_dbPool) return _dbPool;
+  const mysql2 = await import("mysql2/promise");
+  const db = coreData?.workingObject?.db || {};
+  _dbPool = mysql2.default.createPool({
+    host:             String(db.host     || "localhost"),
+    port:             Number(db.port     || 3306),
+    user:             String(db.user     || ""),
+    password:         String(db.password || ""),
+    database:         String(db.database || ""),
+    charset:          String(db.charset  || "utf8mb4"),
+    connectionLimit:  3,
+    waitForConnections: true,
+  });
+  return _dbPool;
+}
 
 
 /**********************************************************************************/
@@ -198,11 +220,11 @@ function getNormalizeToolConfig(rawToolCfg) {
 /**********************************************************************************/
 /* getDelegatedToken                                                              */
 /**********************************************************************************/
-async function getDelegatedToken(wo) {
-  const db = wo?.db;
-  if (!db) throw new Error("Database not available in working object");
+async function getDelegatedToken(coreData) {
+  const wo     = getObj(coreData?.workingObject, {});
   const userId = String(wo?.userId || "").trim();
   if (!userId) throw new Error("No userId in working object — cannot resolve Graph token");
+  const db = await getDbPool(coreData);
   const [rows] = await db.query(
     "SELECT access_token, expires_at FROM graph_tokens WHERE user_id = ?",
     [userId]
@@ -1148,7 +1170,7 @@ async function getInvoke(args, coreData) {
     const wo = getObj(coreData?.workingObject, {});
     const rawToolCfg = getObj(getObj(wo.toolsconfig, {})[MODULE_NAME], {});
     const toolCfg = getNormalizeToolConfig(rawToolCfg);
-    const delegatedToken = await getDelegatedToken(wo);
+    const delegatedToken = await getDelegatedToken(coreData);
     const toolCfgWithToken = { ...toolCfg, _token: delegatedToken };
     const enrichedToolCfg = await getAutoDiscoverIds(toolCfgWithToken);
     const safeArgs = getApplyConfiguredIds(args, enrichedToolCfg);
