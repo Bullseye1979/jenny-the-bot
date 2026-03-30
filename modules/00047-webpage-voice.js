@@ -522,7 +522,9 @@ async function stopAndSend() {
   if (alwaysOn) postUrl += '&alwaysOn=1';
   handleRequest(blob, postUrl);
   processing = false;
-  if (!alwaysOn) {
+  if (alwaysOn) {
+    if (!audioPlaying) startRecording();
+  } else {
     btn.className = 'idle';
     setStatus('Ready');
   }
