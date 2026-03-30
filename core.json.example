@@ -835,6 +835,7 @@
       "port": 3119,
       "basePath": "/voice",
       "silenceTimeoutMs": 2500,
+      "silenceRmsThreshold": 0.015,
       "maxDurationMs": 30000,
       "allowedRoles": [],
       "channels": [

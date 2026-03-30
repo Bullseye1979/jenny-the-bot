@@ -138,8 +138,9 @@ function getAccessDeniedHtml(menuHtml) {
 
 
 function getSpaHtml(cfg, menuHtml) {
-  const silenceMs = Number(cfg.silenceTimeoutMs ?? 2500);
-  const maxMs     = Number(cfg.maxDurationMs    ?? 30000);
+  const silenceMs       = Number(cfg.silenceTimeoutMs    ?? 2500);
+  const maxMs           = Number(cfg.maxDurationMs       ?? 30000);
+  const silenceRmsThresh = Number(cfg.silenceRmsThreshold ?? 0.015);
 
   const channels    = Array.isArray(cfg.channels) ? cfg.channels : [];
   const chanCfgMap  = {};
@@ -288,7 +289,7 @@ ${channelRowHtml}
 /* server config */
 var SILENCE_TIMEOUT_MS  = ${silenceMs};
 var MAX_DURATION_MS     = ${maxMs};
-var SILENCE_RMS_THRESH  = 0.015;
+var SILENCE_RMS_THRESH  = ${silenceRmsThresh};
 var CHECK_INTERVAL_MS   = 80;
 var MIN_SPEECH_MS       = 500;
 var CHANNELS_CONFIGURED = ${channels.length > 0 ? "true" : "false"};
