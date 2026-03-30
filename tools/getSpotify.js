@@ -454,6 +454,13 @@ const definition = {
       "Use search results to obtain URIs before calling play, addToPlaylist, etc.",
       "Playback control (play, pause, transferPlayback) requires a Spotify Premium account.",
       "",
+      "REQUIRED play workflow — always follow these steps in order:",
+      "  1. Call search to find the track/album/playlist and get its URI.",
+      "  2. Call listDevices to get the available device IDs.",
+      "  3. Call play with both uris (or contextUri) AND deviceId set to the target device.",
+      "     Never call play without a deviceId — it will fail if no device is currently active.",
+      "     Pick the most appropriate device automatically (prefer the active one, otherwise the first available).",
+      "",
       "IMPORTANT: This tool uses delegated OAuth2. The user must have connected their Spotify account at /spotify-auth.",
       "If the tool returns an error about missing token or authentication, tell the user to visit /spotify-auth to connect their Spotify account."
     ].join("\n"),
