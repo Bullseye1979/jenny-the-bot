@@ -959,6 +959,26 @@
         "clientSecret": "SECRET:graph_client_secret"
       },
       "refreshBufferMinutes": 10
+    },
+
+    "webpage-spotify-auth": {
+      "flow": ["webpage"],
+      "port": 3125,
+      "auth": {
+        "clientId":     "SECRET:spotify_client_id",
+        "clientSecret": "SECRET:spotify_client_secret",
+        "redirectUri":  "https://YOUR_DOMAIN/spotify-auth/callback",
+        "scope":        "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private"
+      }
+    },
+
+    "cron-spotify-token-refresh": {
+      "flow": ["cron"],
+      "auth": {
+        "clientId":     "SECRET:spotify_client_id",
+        "clientSecret": "SECRET:spotify_client_secret"
+      },
+      "refreshBufferMinutes": 10
     }
   }
 }

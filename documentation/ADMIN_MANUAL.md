@@ -90,6 +90,8 @@
    - 16.14 [Key Manager (`/key-manager`)](#1614-key-manager-key-manager)
    - 16.15 [Microsoft Graph Auth (`/graph-auth`)](#1615-microsoft-graph-auth-graph-auth)
    - 16.16 [Token Refresh Cron (`cron-graph-token-refresh`)](#1616-token-refresh-cron-cron-graph-token-refresh)
+   - 16.17 [Spotify Auth (`/spotify-auth`)](#1617-spotify-auth-spotify-auth)
+   - 16.18 [Spotify Token Refresh Cron (`cron-spotify-token-refresh`)](#1618-spotify-token-refresh-cron-cron-spotify-token-refresh)
 17. [Bard Music System](#17-bard-music-system)
 18. [Dependencies](#18-dependencies)
 
@@ -1200,6 +1202,24 @@ Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user
 - Discovery results are cached for 5 minutes per process
 
 **Minimum required config:** none — the tool works with an empty config object as long as the user has authenticated at `/graph-auth`. Add `defaultSharePointHostname` to enable SharePoint auto-discovery.
+
+---
+
+#### toolsconfig.getSpotify
+
+Spotify API — playback control, device management, playlist operations, and search. Uses **delegated OAuth2** tokens stored per Discord user in the `spotify_tokens` database table. No app-level credentials are needed here; credentials are managed by `webpage-spotify-auth` (module 00061) and `cron-spotify-token-refresh` (module 00062). **Spotify Premium is required for playback control operations** (play, pause, transfer).
+
+```json
+"getSpotify": {}
+```
+
+No additional config keys are required. The tool reads the authenticated user's token directly from the DB.
+
+| Parameter | Type | Description |
+|---|---|---|
+| *(none required)* | | The tool resolves all credentials from `spotify_tokens` keyed by Discord `user_id` |
+
+**Minimum required config:** none — the tool works with an empty config object as long as the user has authenticated at `/spotify-auth`.
 
 ---
 
@@ -2371,6 +2391,8 @@ export default async function myModule(coreData) {
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
 | 00057 | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth page (port 3124, `/graph-auth`). Logged-in users connect or disconnect their Microsoft account. Stores access + refresh tokens in `graph_tokens` DB table. Required before the `getGraph` tool can be used. |
 | 00058 | `cron-graph-token-refresh` | Cron module — refreshes expiring Microsoft Graph tokens. Queries `graph_tokens` for rows with `expires_at` within the configured buffer window and calls the MS token refresh endpoint. Skips on failure (does not delete). Only runs in the `cron` flow. |
+| 00061 | `webpage-spotify-auth` | Spotify OAuth2 delegated auth page (port 3125, `/spotify-auth`). Logged-in users connect or disconnect their Spotify account. Stores access + refresh tokens in `spotify_tokens` DB table. Required before the `getSpotify` tool can be used. Uses `Authorization: Basic` header for token exchange (Spotify-specific). |
+| 00062 | `cron-spotify-token-refresh` | Cron module — refreshes expiring Spotify tokens. Queries `spotify_tokens` for rows with `expires_at` within the configured buffer window. Uses `Authorization: Basic` header. Stores new refresh token if Spotify issues one. Skips on failure (does not delete). Only runs in the `cron` flow. |
 | 00059 | `webpage-live` | Live context monitor SPA (port 3123, `/live`) — selectable channel checkboxes, field toggles (timestamp, channel, role), configurable poll interval, autoscroll toggle. Collapsible settings sidebar (◀/▶). All UI state persists in `localStorage`. Parses `json.authorName` and `json.content` from Discord context entries to display chat transcripts in real time. New messages are inserted into the DOM sorted by `ts` (tiebreaker: `ctx_id`) regardless of arrival order — each message element carries `data-ts` and `data-ctx-id` attributes so out-of-order poll responses (race condition) are placed at the correct position rather than appended at the bottom. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
@@ -3123,6 +3145,58 @@ The tool never throws — if authentication fails or an ID cannot be resolved th
 
 ---
 
+### getSpotify
+
+**File:** `tools/getSpotify.js`
+**Purpose:** Spotify integration — playback control, device management, playlist operations, and search.
+
+**Authentication:** OAuth 2.0 **delegated** flow. Each Discord user must connect their Spotify account once at `/spotify-auth`. The access token is stored in the `spotify_tokens` DB table and refreshed automatically by the `cron-spotify-token-refresh` module. No app-level token is required in `toolsconfig.getSpotify`. If a user has not authenticated, the tool returns `{ ok: false, error: "No Spotify account connected ... Please authenticate at /spotify-auth" }`.
+
+**Spotify Premium:** Playback control operations (`play`, `pause`, `transferPlayback`) require the user to have an active Spotify Premium subscription. Free-tier users can still use `search`, `getPlayback`, `listDevices`, and playlist operations.
+
+#### Supported Operations
+
+| Operation | Description |
+|---|---|
+| `search` | Search Spotify for tracks, albums, artists, or playlists |
+| `getPlayback` | Get current playback state (track, device, progress, shuffle, repeat) |
+| `play` | Start or resume playback; optionally play a specific URI on a specific device |
+| `pause` | Pause playback on the active or specified device |
+| `listDevices` | List available Spotify Connect devices for the user |
+| `transferPlayback` | Transfer playback to a different device |
+| `getPlaylists` | List the user's playlists |
+| `createPlaylist` | Create a new playlist |
+| `addToPlaylist` | Add one or more tracks to a playlist |
+| `removeFromPlaylist` | Remove one or more tracks from a playlist |
+
+#### LLM Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `operation` | string | Yes | One of the operations listed above |
+| `query` | string | For `search` | Search query string |
+| `type` | string | For `search` | Resource type: `track`, `album`, `artist`, `playlist` (default: `track`) |
+| `limit` | number | — | Number of results (default: 20) |
+| `contextUri` | string | For `play` | Spotify context URI to play (`spotify:album:...`, `spotify:playlist:...`, `spotify:artist:...`) |
+| `trackUris` | array | For `play` | List of track URIs to play |
+| `deviceId` | string | — | Target Spotify Connect device ID |
+| `positionMs` | number | For `play` | Seek position in milliseconds |
+| `playlistId` | string | For playlist ops | Spotify playlist ID |
+| `name` | string | For `createPlaylist` | New playlist name |
+| `description` | string | For `createPlaylist` | New playlist description |
+| `public` | boolean | For `createPlaylist` | Whether the playlist is public (default: false) |
+| `uris` | array | For `addToPlaylist`, `removeFromPlaylist` | Track URIs to add or remove |
+
+#### Response Shape
+
+All responses follow `{ ok: boolean, error?: string, ...operationData }`:
+- `ok: true` — operation succeeded; operation-specific fields are present
+- `ok: false` — failure; `error` contains the reason
+
+The tool never throws — failures always return a structured `{ ok: false, error: "..." }` response.
+
+---
+
 ## 9. Core Infrastructure
 
 ### 9.1 registry.js — In-Memory Key-Value Store
@@ -3864,6 +3938,7 @@ Both domains share a single Caddyfile block. Caddy obtains a TLS certificate for
 | `/key-manager`, `/key-manager/*` | 3122 | `webpage-keymanager` |
 | `/live`, `/live/*` | 3123 | `webpage-live` |
 | `/graph-auth`, `/graph-auth/*` | 3124 | `webpage-graph-auth` |
+| `/spotify-auth`, `/spotify-auth/*` | 3125 | `webpage-spotify-auth` |
 | `/` (root) | — | redirects to `/chat` (302) |
 
 **Access control for unknown paths:**
@@ -3951,6 +4026,7 @@ If `redirectUri` is set to a specific URL, only that domain is used for all OAut
 | 3122 | Key Manager (`/key-manager`) |
 | 3123 | Live Context Monitor (`/live`) |
 | 3124 | Microsoft Graph Auth (`/graph-auth`) |
+| 3125 | Spotify Auth (`/spotify-auth`) |
 
 ---
 
@@ -4036,6 +4112,8 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00057-webpage-graph-auth.js` | 3124 | `/graph-auth` | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth — connect/disconnect Microsoft account, stores token in `graph_tokens` |
 | `00058-cron-graph-token-refresh.js` | — | — | `cron-graph-token-refresh` | Cron — refreshes expiring Microsoft Graph tokens in `graph_tokens` |
 | `00059-webpage-live.js` | 3123 | `/live` | `webpage-live` | Live context monitor — real-time transcript stream, channel/field selection, autoscroll, collapsible settings sidebar |
+| `00061-webpage-spotify-auth.js` | 3125 | `/spotify-auth` | `webpage-spotify-auth` | Spotify OAuth2 delegated auth — connect/disconnect Spotify account, stores token in `spotify_tokens` |
+| `00062-cron-spotify-token-refresh.js` | — | — | `cron-spotify-token-refresh` | Cron — refreshes expiring Spotify tokens in `spotify_tokens` using Basic auth |
 
 ### How Web Modules Work
 
@@ -5234,6 +5312,164 @@ And add the module subscription:
 
 ```json
 "cron-graph-token-refresh": {
+  "flow": ["cron"]
+}
+```
+
+---
+
+### 16.17 Spotify Auth (`/spotify-auth`)
+
+**Module:** `modules/00061-webpage-spotify-auth.js`
+**Port:** 3125 (default; override with `cfg.port`)
+**Flow:** `webpage`
+
+Allows logged-in users to connect or disconnect their personal Spotify account to the bot. Once connected, the `getSpotify` tool can control playback, manage playlists, and search Spotify on behalf of the user. Spotify Premium is required for playback control operations (play, pause, transfer).
+
+#### Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/spotify-auth` | Status page — shows connected account or a "Connect" button |
+| `GET` | `/spotify-auth/start` | Starts OAuth2 Authorization Code flow → redirects to Spotify login |
+| `GET` | `/spotify-auth/callback` | OAuth2 callback — exchanges code for tokens, fetches `/me`, stores in DB |
+| `GET` | `/spotify-auth/disconnect` | Deletes the `spotify_tokens` row for the current user |
+
+#### Flow
+
+1. User visits `/spotify-auth/start` → redirected to `accounts.spotify.com/authorize`
+2. Spotify redirects back to `/spotify-auth/callback?code=...&state=...`
+3. Module exchanges the code using `Authorization: Basic base64(clientId:clientSecret)` — credentials are **not** sent in the POST body (Spotify-specific requirement)
+4. Calls `GET https://api.spotify.com/v1/me` to enrich the row with Spotify user ID, email, and display name
+5. Upserts into `spotify_tokens` keyed by Discord `user_id`
+6. Redirects to `/spotify-auth` (status page)
+
+CSRF protection: a random `state` token is stored in the `spotify_auth_states` DB table with a 10-minute TTL and validated on callback.
+
+Both tables (`spotify_tokens` and `spotify_auth_states`) are created automatically on first page load (idempotent `CREATE TABLE IF NOT EXISTS`).
+
+#### DB Tables
+
+```sql
+CREATE TABLE IF NOT EXISTS spotify_tokens (
+  user_id         VARCHAR(64)   NOT NULL,
+  sp_user_id      VARCHAR(128),
+  sp_email        VARCHAR(256),
+  sp_display_name VARCHAR(256),
+  access_token    MEDIUMTEXT    NOT NULL,
+  refresh_token   MEDIUMTEXT,
+  expires_at      BIGINT        NOT NULL,
+  scope           TEXT,
+  created_at      BIGINT        NOT NULL,
+  updated_at      BIGINT        NOT NULL,
+  PRIMARY KEY (user_id)
+) CHARACTER SET utf8mb4;
+
+CREATE TABLE IF NOT EXISTS spotify_auth_states (
+  state_token  VARCHAR(64)  NOT NULL,
+  user_id      VARCHAR(64)  NOT NULL,
+  created_at   BIGINT       NOT NULL,
+  expires_at   BIGINT       NOT NULL,
+  PRIMARY KEY (state_token)
+) CHARACTER SET utf8mb4;
+```
+
+#### core.json config
+
+```json
+"webpage-spotify-auth": {
+  "port": 3125,
+  "auth": {
+    "clientId":     "SECRET:spotify_client_id",
+    "clientSecret": "SECRET:spotify_client_secret",
+    "redirectUri":  "https://yourdomain.com/spotify-auth/callback",
+    "scope":        "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private"
+  }
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `port` | number | `3125` — must also be in `config.webpage.ports[]` and `config.webpage-auth.ports[]` |
+| `auth.clientId` | string | **Required.** Spotify app client ID or secret reference |
+| `auth.clientSecret` | string | **Required.** Spotify app client secret or secret reference |
+| `auth.redirectUri` | string | **Required.** Must exactly match the redirect URI registered in the Spotify Developer Dashboard |
+| `auth.scope` | string | OAuth2 scopes to request (defaults to full playback + playlist set shown above) |
+
+#### Spotify App Registration (required once)
+
+1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in
+2. Click **Create app**
+3. Fill in App name and description
+4. Set **Redirect URI**: `https://yourdomain.com/spotify-auth/callback`
+5. Enable the required APIs: check **Web API** (and **Web Playback SDK** if needed)
+6. Click **Save**; note the **Client ID** and **Client Secret**
+7. Store them as secrets and reference via `SECRET:spotify_client_id` / `SECRET:spotify_client_secret`
+
+#### Required Spotify OAuth2 Scopes
+
+| Scope | Purpose |
+|---|---|
+| `user-read-playback-state` | Read current playback state and active devices |
+| `user-modify-playback-state` | Control playback (play, pause, seek, volume, transfer) |
+| `user-read-currently-playing` | Read currently playing track |
+| `playlist-read-private` | List private playlists |
+| `playlist-read-collaborative` | List collaborative playlists |
+| `playlist-modify-public` | Add/remove tracks in public playlists, create public playlists |
+| `playlist-modify-private` | Add/remove tracks in private playlists, create private playlists |
+
+**Setup:**
+- Add `3125` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add the Caddy block (see Caddy section) for `/spotify-auth → 127.0.0.1:3125`
+- Register the Spotify app and configure secrets
+
+---
+
+### 16.18 Spotify Token Refresh Cron (`cron-spotify-token-refresh`)
+
+**Module:** `modules/00062-cron-spotify-token-refresh.js`
+**Flow:** `cron`
+
+Automatically refreshes Spotify tokens before they expire. Runs every 5 minutes (or whichever interval the cron job specifies).
+
+**Behavior:**
+- Queries `spotify_tokens WHERE expires_at < (NOW + bufferMs) AND refresh_token IS NOT NULL`
+- For each row: calls `POST https://accounts.spotify.com/api/token` with `grant_type=refresh_token` using `Authorization: Basic base64(clientId:clientSecret)` header
+- On success: updates `access_token`, `refresh_token` (Spotify may issue a new refresh token — always stored if present), `expires_at`, `updated_at`
+- On failure: logs the error and skips — does **not** delete the row
+
+#### core.json config
+
+```json
+"cron-spotify-token-refresh": {
+  "auth": {
+    "clientId":     "SECRET:spotify_client_id",
+    "clientSecret": "SECRET:spotify_client_secret"
+  },
+  "refreshBufferMinutes": 10
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `auth.clientId` | string | — | **Required.** Spotify app client ID or secret reference |
+| `auth.clientSecret` | string | — | **Required.** Spotify app client secret or secret reference |
+| `refreshBufferMinutes` | number | `10` | Refresh tokens that expire within this many minutes |
+
+Add the cron job to `core.json`:
+
+```json
+"cron": {
+  "jobs": [
+    { "id": "cron-spotify-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelID": "cron-spotify-token-refresh" }
+  ]
+}
+```
+
+And add the module subscription:
+
+```json
+"cron-spotify-token-refresh": {
   "flow": ["cron"]
 }
 ```
