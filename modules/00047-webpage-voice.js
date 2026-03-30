@@ -370,20 +370,26 @@ var hasSpokeFirst = false;
 /* audio playback queue — responses play in order, never overlap */
 var audioQueue   = [];
 var audioPlaying = false;
+var currentAudio = null;
 
 function playNextAudio() {
   if (audioPlaying || !audioQueue.length) return;
   audioPlaying = true;
   var item  = audioQueue.shift();
-  var audio = new Audio(item.url);
+  currentAudio = new Audio(item.url);
   setStatus('Playing response\u2026');
   function done() {
     URL.revokeObjectURL(item.url);
     audioPlaying = false;
-    if (audioQueue.length) { playNextAudio(); }
-    else { setStatus(alwaysOn ? 'Always on \u2014 listening\u2026' : 'Ready'); }
+    currentAudio = null;
+    if (audioQueue.length) {
+      playNextAudio();
+    } else {
+      setStatus(alwaysOn ? 'Always on \u2014 listening\u2026' : 'Ready');
+      if (alwaysOn && !recording && !processing) startRecording();
+    }
   }
-  audio.onended = done; audio.onerror = done; audio.play().catch(done);
+  currentAudio.onended = done; currentAudio.onerror = done; currentAudio.play().catch(done);
 }
 
 /* fire-and-forget request — no mutex, responses queue for playback */
@@ -510,7 +516,7 @@ async function stopAndSend() {
   handleRequest(blob, postUrl);
   processing = false;
   if (alwaysOn) {
-    startRecording();
+    if (!audioPlaying) startRecording();
   } else {
     btn.className = 'idle';
     setStatus('Ready');
