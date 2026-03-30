@@ -3,18 +3,14 @@
 /* Version 1.0                                                                    */
 /* Purpose: Microsoft Graph API tool — SharePoint files, OneDrive, Exchange mail, */
 /*          Azure AD users and generic Graph API access.                          */
-/*          Auto-discovers siteId (from configured hostname) and driveId (from    */
-/*          site or user) so only auth credentials plus an optional defaultUserId */
-/*          or defaultSharePointHostname need to be configured.                   */
-/*          All operations return { ok, error } instead of throwing so the AI    */
-/*          always receives a structured response even when IDs are missing.      */
+/*          Uses delegated OAuth2 tokens stored per Discord user in graph_tokens. */
+/*          Token is resolved via wo.userId + wo.db at runtime.                  */
+/*          Auto-discovers siteId and driveId; uses /me paths when no userId set. */
+/*          All operations return { ok, error } instead of throwing.             */
 /**********************************************************************************/
-
-import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getGraph";
 const GRAPH_BASE = "https://graph.microsoft.com";
-const GRAPH_SCOPE = "https://graph.microsoft.com/.default";
 const DEFAULT_TIMEOUT_MS = 30000;
 const SMALL_UPLOAD_LIMIT = 4 * 1024 * 1024;
 const DISCOVERY_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -173,22 +169,10 @@ async function getFetchBinary(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS)
 
 
 /**********************************************************************************/
-/* getMaybeSecretValue                                                            */
-/**********************************************************************************/
-async function getMaybeSecretValue(wo, value) {
-  const raw = getStr(value, "");
-  if (!raw) return "";
-  return getStr(await getSecret(wo, raw), raw);
-}
-
-
-/**********************************************************************************/
 /* getNormalizeToolConfig                                                         */
 /**********************************************************************************/
-async function getNormalizeToolConfig(wo, rawToolCfg) {
+function getNormalizeToolConfig(rawToolCfg) {
   const toolCfg = getObj(rawToolCfg, {});
-  const auth = getObj(toolCfg.auth, {});
-
   return {
     ...toolCfg,
     baseUrl: getStr(toolCfg.baseUrl, GRAPH_BASE),
@@ -196,28 +180,37 @@ async function getNormalizeToolConfig(wo, rawToolCfg) {
     timeoutMs: getNum(toolCfg.timeoutMs, DEFAULT_TIMEOUT_MS),
     defaultPageSize: getNum(toolCfg.defaultPageSize, 25),
     defaultEntityTypes: getArr(toolCfg.defaultEntityTypes, ["driveItem", "message"]),
-
-    defaultUserId: await getMaybeSecretValue(wo, getStr(toolCfg.defaultUserId, "")),
-    defaultSiteId: await getMaybeSecretValue(wo, getStr(toolCfg.defaultSiteId, getStr(toolCfg.siteId, ""))),
-    defaultDriveId: await getMaybeSecretValue(wo, getStr(toolCfg.defaultDriveId, getStr(toolCfg.driveId, ""))),
-    defaultMailFolderId: await getMaybeSecretValue(wo, getStr(toolCfg.defaultMailFolderId, getStr(toolCfg.mailFolderId, ""))),
-    defaultDestinationFolderId: await getMaybeSecretValue(wo, getStr(toolCfg.defaultDestinationFolderId, getStr(toolCfg.destinationFolderId, ""))),
-    defaultSharePointHostname: await getMaybeSecretValue(wo, getStr(toolCfg.defaultSharePointHostname, "")),
-
-    forcedUserId: await getMaybeSecretValue(wo, getStr(toolCfg.forcedUserId, "")),
-    forcedSiteId: await getMaybeSecretValue(wo, getStr(toolCfg.forcedSiteId, "")),
-    forcedDriveId: await getMaybeSecretValue(wo, getStr(toolCfg.forcedDriveId, "")),
-    forcedMailFolderId: await getMaybeSecretValue(wo, getStr(toolCfg.forcedMailFolderId, "")),
-    forcedDestinationFolderId: await getMaybeSecretValue(wo, getStr(toolCfg.forcedDestinationFolderId, "")),
-
-    auth: {
-      tenantId: await getMaybeSecretValue(wo, getStr(auth.tenantId, getStr(toolCfg.tenantId, ""))),
-      clientId: await getMaybeSecretValue(wo, getStr(auth.clientId, getStr(toolCfg.clientId, ""))),
-      clientSecret: await getMaybeSecretValue(wo, getStr(auth.clientSecret, getStr(toolCfg.clientSecret, ""))),
-      scope: getStr(auth.scope, getStr(toolCfg.scope, GRAPH_SCOPE)),
-      tokenUrl: getStr(auth.tokenUrl, "")
-    }
+    defaultUserId: getStr(toolCfg.defaultUserId, ""),
+    defaultSiteId: getStr(toolCfg.defaultSiteId, getStr(toolCfg.siteId, "")),
+    defaultDriveId: getStr(toolCfg.defaultDriveId, getStr(toolCfg.driveId, "")),
+    defaultMailFolderId: getStr(toolCfg.defaultMailFolderId, getStr(toolCfg.mailFolderId, "")),
+    defaultDestinationFolderId: getStr(toolCfg.defaultDestinationFolderId, getStr(toolCfg.destinationFolderId, "")),
+    defaultSharePointHostname: getStr(toolCfg.defaultSharePointHostname, ""),
+    forcedUserId: getStr(toolCfg.forcedUserId, ""),
+    forcedSiteId: getStr(toolCfg.forcedSiteId, ""),
+    forcedDriveId: getStr(toolCfg.forcedDriveId, ""),
+    forcedMailFolderId: getStr(toolCfg.forcedMailFolderId, ""),
+    forcedDestinationFolderId: getStr(toolCfg.forcedDestinationFolderId, "")
   };
+}
+
+
+/**********************************************************************************/
+/* getDelegatedToken                                                              */
+/**********************************************************************************/
+async function getDelegatedToken(wo) {
+  const db = wo?.db;
+  if (!db) throw new Error("Database not available in working object");
+  const userId = String(wo?.userId || "").trim();
+  if (!userId) throw new Error("No userId in working object — cannot resolve Graph token");
+  const [rows] = await db.query(
+    "SELECT access_token, expires_at FROM graph_tokens WHERE user_id = ?",
+    [userId]
+  );
+  const row = rows?.[0];
+  if (!row) throw new Error(`No Microsoft account connected for this user. Please authenticate at /graph-auth`);
+  if (Date.now() > Number(row.expires_at)) throw new Error(`Microsoft token expired. Please re-authenticate at /graph-auth`);
+  return String(row.access_token);
 }
 
 
@@ -295,6 +288,12 @@ function getSearchEntityTypes(args, toolCfg) {
   return raw.length ? raw : fallback;
 }
 
+function getResolveUserBase(args, toolCfg) {
+  const userId = getResolveUserId(args, toolCfg);
+  return userId ? `/users/${encodeURIComponent(userId)}` : "/me";
+}
+
+
 function getResolveStorageScope(args, toolCfg) {
   const raw = getStr(args?.storageScope, "").toLowerCase();
   if (raw === "sharepoint") return "sharepoint";
@@ -338,11 +337,10 @@ function getResolveDriveItemPath(args, toolCfg) {
     return `${siteBase}/drive/root`;
   }
 
-  if (userId && itemId) return `/users/${encodeURIComponent(userId)}/drive/items/${encodeURIComponent(itemId)}`;
-  if (userId && filePath) return `/users/${encodeURIComponent(userId)}/drive/root:/${filePath.replace(/^\/+/, "")}`;
-  if (userId) return `/users/${encodeURIComponent(userId)}/drive/root`;
-
-  return null;
+  const userBase = getResolveUserBase(args, toolCfg);
+  if (itemId) return `${userBase}/drive/items/${encodeURIComponent(itemId)}`;
+  if (filePath) return `${userBase}/drive/root:/${filePath.replace(/^\/+/, "")}`;
+  return `${userBase}/drive/root`;
 }
 
 
@@ -357,9 +355,7 @@ function getResolveUploadRootPath(args, toolCfg) {
 
   if (driveId) return `/drives/${encodeURIComponent(driveId)}`;
   if (scope === "sharepoint") return `${getResolveSharePointSiteBase(args, toolCfg)}/drive`;
-  if (userId) return `/users/${encodeURIComponent(userId)}/drive`;
-
-  return null;
+  return `${getResolveUserBase(args, toolCfg)}/drive`;
 }
 
 
@@ -415,50 +411,12 @@ function getExtractBatchResponses(batchRes) {
 
 
 /**********************************************************************************/
-/* getAccessToken                                                                 */
-/**********************************************************************************/
-async function getAccessToken(toolCfg) {
-  const auth = getObj(toolCfg.auth, {});
-  const tenantId = getStr(auth.tenantId, "");
-  const clientId = getStr(auth.clientId, "");
-  const clientSecret = getStr(auth.clientSecret, "");
-  const scope = getStr(auth.scope, GRAPH_SCOPE);
-  const tokenUrl = getStr(auth.tokenUrl, tenantId ? `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token` : "");
-
-  if (!tenantId) throw new Error("Missing toolsconfig.getGraph.auth.tenantId");
-  if (!clientId) throw new Error("Missing toolsconfig.getGraph.auth.clientId");
-  if (!clientSecret) throw new Error("Missing toolsconfig.getGraph.auth.clientSecret");
-  if (!tokenUrl) throw new Error("Cannot derive Graph token URL — tenantId missing");
-
-  const form = new URLSearchParams();
-  form.set("grant_type", "client_credentials");
-  form.set("client_id", clientId);
-  form.set("client_secret", clientSecret);
-  form.set("scope", scope);
-
-  const tokenRes = await getFetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form.toString()
-  }, getNum(toolCfg.timeoutMs, DEFAULT_TIMEOUT_MS));
-
-  if (!tokenRes.ok) {
-    const detail = typeof tokenRes.data === "string" ? tokenRes.data : JSON.stringify(tokenRes.data || null);
-    throw new Error(`Graph token request failed: HTTP ${tokenRes.status} ${tokenRes.statusText} — ${detail}`);
-  }
-
-  const token = getStr(tokenRes?.data?.access_token, "");
-  if (!token) throw new Error("Graph token response did not include access_token");
-  return token;
-}
-
-
-/**********************************************************************************/
 /* getGraphRequest                                                                */
 /**********************************************************************************/
 async function getGraphRequest(toolCfg, req = {}) {
   const timeoutMs = getNum(req.timeoutMs, getNum(toolCfg.timeoutMs, DEFAULT_TIMEOUT_MS));
-  const token = getStr(req.accessToken, "") || await getAccessToken(toolCfg);
+  const token = getStr(req.accessToken, "") || getStr(toolCfg._token, "");
+  if (!token) throw new Error("No access token — user must authenticate at /graph-auth");
   const method = getStr(req.method, "GET").toUpperCase();
   const headers = getHeaders({ Authorization: `Bearer ${token}`, Accept: "application/json" }, req.headers);
   const body = req.body;
@@ -480,7 +438,8 @@ async function getGraphRequest(toolCfg, req = {}) {
 /**********************************************************************************/
 async function getGraphBinaryRequest(toolCfg, req = {}) {
   const timeoutMs = getNum(req.timeoutMs, getNum(toolCfg.timeoutMs, DEFAULT_TIMEOUT_MS));
-  const token = getStr(req.accessToken, "") || await getAccessToken(toolCfg);
+  const token = getStr(req.accessToken, "") || getStr(toolCfg._token, "");
+  if (!token) throw new Error("No access token — user must authenticate at /graph-auth");
   const method = getStr(req.method, "GET").toUpperCase();
   const headers = getHeaders({ Authorization: `Bearer ${token}`, Accept: "*/*" }, req.headers);
   const url = getBuildUrl(req.baseUrl || toolCfg.baseUrl || GRAPH_BASE, req.path, req.query);
@@ -495,8 +454,7 @@ async function getGraphBinaryRequest(toolCfg, req = {}) {
 /**********************************************************************************/
 async function getRunBatch(toolCfg, version, requests) {
   const baseUrl = getResolveBaseUrl(toolCfg, version);
-  const token = await getAccessToken(toolCfg);
-  const res = await getGraphRequest(toolCfg, { accessToken: token, baseUrl, path: "/$batch", method: "POST", body: { requests } });
+  const res = await getGraphRequest(toolCfg, { baseUrl, path: "/$batch", method: "POST", body: { requests } });
   return { ok: res.ok, status: res.status, statusText: res.statusText, data: res.data, responses: getExtractBatchResponses(res) };
 }
 
@@ -524,28 +482,24 @@ function setCachedDiscovery(key, value) {
 /**********************************************************************************/
 async function getAutoDiscoverIds(toolCfg) {
   const hostname = getStr(toolCfg.defaultSharePointHostname, "");
-  const tenantId = getStr(toolCfg.auth?.tenantId, "");
+  const token = getStr(toolCfg._token, "");
   const hasSiteId = !!getStr(toolCfg.defaultSiteId, "") || !!getStr(toolCfg.forcedSiteId, "");
   const hasDriveId = !!getStr(toolCfg.defaultDriveId, "") || !!getStr(toolCfg.forcedDriveId, "");
-  const userId = getStr(toolCfg.forcedUserId, "") || getStr(toolCfg.defaultUserId, "");
 
-  const needsSite = !hasSiteId && !!hostname && !!tenantId;
-  const needsDrive = !hasDriveId && (!!hostname || !!userId) && !!tenantId;
+  const needsSite = !hasSiteId && !!hostname && !!token;
+  const needsDrive = !hasDriveId && !!token;
 
   if (!needsSite && !needsDrive) return toolCfg;
-
-  let token = null;
-  try { token = await getAccessToken(toolCfg); } catch { return toolCfg; }
 
   const result = { ...toolCfg };
   const baseUrl = getResolveBaseUrl(toolCfg, "v1.0");
 
   if (needsSite) {
-    const cacheKey = `site:${tenantId}:${hostname}`;
+    const cacheKey = `site:${hostname}`;
     let siteId = getCachedDiscovery(cacheKey);
     if (!siteId) {
       try {
-        const res = await getGraphRequest(result, { accessToken: token, baseUrl, path: `/sites/${encodeURIComponent(hostname)}:/`, method: "GET", query: { $select: "id" } });
+        const res = await getGraphRequest(result, { baseUrl, path: `/sites/${encodeURIComponent(hostname)}:/`, method: "GET", query: { $select: "id" } });
         siteId = getStr(res.data?.id, "");
         if (siteId) setCachedDiscovery(cacheKey, siteId);
       } catch {}
@@ -553,26 +507,28 @@ async function getAutoDiscoverIds(toolCfg) {
     if (siteId) result.defaultSiteId = siteId;
   }
 
-  if (needsDrive) {
+  if (needsDrive && !hasDriveId) {
     const resolvedSiteId = getStr(result.defaultSiteId, "");
+    const userId = getStr(toolCfg.forcedUserId, "") || getStr(toolCfg.defaultUserId, "");
     let driveId = null;
 
     if (resolvedSiteId) {
-      const cacheKey = `driveId:site:${tenantId}:${resolvedSiteId}`;
+      const cacheKey = `driveId:site:${resolvedSiteId}`;
       driveId = getCachedDiscovery(cacheKey);
       if (!driveId) {
         try {
-          const res = await getGraphRequest(result, { accessToken: token, baseUrl, path: `/sites/${encodeURIComponent(resolvedSiteId)}/drive`, method: "GET", query: { $select: "id" } });
+          const res = await getGraphRequest(result, { baseUrl, path: `/sites/${encodeURIComponent(resolvedSiteId)}/drive`, method: "GET", query: { $select: "id" } });
           driveId = getStr(res.data?.id, "");
           if (driveId) setCachedDiscovery(cacheKey, driveId);
         } catch {}
       }
-    } else if (userId) {
-      const cacheKey = `driveId:user:${tenantId}:${userId}`;
+    } else {
+      const cacheKey = userId ? `driveId:user:${userId}` : `driveId:me`;
       driveId = getCachedDiscovery(cacheKey);
       if (!driveId) {
         try {
-          const res = await getGraphRequest(result, { accessToken: token, baseUrl, path: `/users/${encodeURIComponent(userId)}/drive`, method: "GET", query: { $select: "id" } });
+          const drivePath = userId ? `/users/${encodeURIComponent(userId)}/drive` : `/me/drive`;
+          const res = await getGraphRequest(result, { baseUrl, path: drivePath, method: "GET", query: { $select: "id" } });
           driveId = getStr(res.data?.id, "");
           if (driveId) setCachedDiscovery(cacheKey, driveId);
         } catch {}
@@ -652,31 +608,32 @@ async function getOperationSearchFiles(toolCfg, args) {
   const userId = getResolveUserId(args, toolCfg);
   const scope = getResolveStorageScope(args, toolCfg);
 
-  let searchPath;
+  let searchBasePath;
   if (driveId) {
-    searchPath = `/drives/${encodeURIComponent(driveId)}/search(q='${encodeURIComponent(query)}')`;
+    searchBasePath = `/drives/${encodeURIComponent(driveId)}`;
   } else if (scope === "sharepoint") {
-    const siteBase = getResolveSharePointSiteBase(args, toolCfg);
-    searchPath = `${siteBase}/drive/search(q='${encodeURIComponent(query)}')`;
-  } else if (userId) {
-    searchPath = `/users/${encodeURIComponent(userId)}/drive/search(q='${encodeURIComponent(query)}')`;
+    searchBasePath = `${getResolveSharePointSiteBase(args, toolCfg)}/drive`;
   } else {
-    return { operation: "searchFiles", ok: false, error: "Could not resolve drive target. Configure defaultUserId, defaultDriveId, defaultSiteId, or defaultSharePointHostname." };
+    searchBasePath = `${getResolveUserBase(args, toolCfg)}/drive`;
   }
 
   const version = getResolveApiVersion(args, toolCfg);
   const baseUrl = getResolveBaseUrl(toolCfg, version);
   const top = getClamp(getNum(args.top, getNum(toolCfg.defaultPageSize, 25)), 1, 999);
+  const oDataQuery = query.replace(/'/g, "''");
+  const searchPath = `${searchBasePath}/search(q='${oDataQuery}')`;
 
   const res = await getGraphRequest(toolCfg, {
     baseUrl, path: searchPath, method: "GET",
-    query: {
-      $top: top,
-      $select: getStr(args.select, "id,name,size,file,folder,webUrl,lastModifiedDateTime,parentReference")
-    }
+    query: { $top: top, $select: getStr(args.select, "id,name,size,file,folder,webUrl,lastModifiedDateTime,parentReference") }
   });
 
-  return { operation: "searchFiles", ok: res.ok, status: res.status, statusText: res.statusText, query, result: res.data };
+  if (!res.ok) {
+    const errMsg = getStr(res.data?.error?.message, getStr(res.data?.error?.code, res.statusText));
+    return { operation: "searchFiles", ok: false, status: res.status, statusText: res.statusText, error: errMsg, detail: res.data };
+  }
+
+  return { operation: "searchFiles", ok: true, status: res.status, statusText: res.statusText, query, result: res.data };
 }
 
 
@@ -809,19 +766,17 @@ async function getOperationCreateUploadSession(toolCfg, args) {
 /* getOperationSearchEmails                                                       */
 /**********************************************************************************/
 async function getOperationSearchEmails(toolCfg, args) {
-  const userId = getResolveUserId(args, toolCfg);
-  if (!userId) return { operation: "searchEmails", ok: false, error: "No userId resolved. Configure defaultUserId or forcedUserId." };
-
   const query = getStr(args.query, "").trim();
   if (!query) return { operation: "searchEmails", ok: false, error: "Missing email search query" };
 
   const version = getResolveApiVersion(args, toolCfg);
   const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const userBase = getResolveUserBase(args, toolCfg);
   const mailFolderId = getResolveMailFolderId(args, toolCfg);
   const top = getClamp(getNum(args.top, getNum(toolCfg.defaultPageSize, 10)), 1, 999);
   const path = mailFolderId
-    ? `/users/${encodeURIComponent(userId)}/mailFolders/${encodeURIComponent(mailFolderId)}/messages`
-    : `/users/${encodeURIComponent(userId)}/messages`;
+    ? `${userBase}/mailFolders/${encodeURIComponent(mailFolderId)}/messages`
+    : `${userBase}/messages`;
 
   const res = await getGraphRequest(toolCfg, {
     baseUrl, path, method: "GET",
@@ -833,7 +788,7 @@ async function getOperationSearchEmails(toolCfg, args) {
     }
   });
 
-  return { operation: "searchEmails", ok: res.ok, status: res.status, statusText: res.statusText, userId, mailFolderId, query, result: res.data };
+  return { operation: "searchEmails", ok: res.ok, status: res.status, statusText: res.statusText, userBase, mailFolderId, query, result: res.data };
 }
 
 
@@ -841,26 +796,24 @@ async function getOperationSearchEmails(toolCfg, args) {
 /* getOperationShowEmails                                                         */
 /**********************************************************************************/
 async function getOperationShowEmails(toolCfg, args) {
-  const userId = getResolveUserId(args, toolCfg);
-  if (!userId) return { operation: "showEmails", ok: false, error: "No userId resolved. Configure defaultUserId or forcedUserId." };
-
   const messageIds = getArr(args.messageIds, []).map(v => getStr(v, "")).filter(Boolean);
   if (!messageIds.length) return { operation: "showEmails", ok: false, error: "Missing messageIds" };
 
   const version = getResolveApiVersion(args, toolCfg);
+  const userBase = getResolveUserBase(args, toolCfg);
   const bodyType = getNormalizeMessageBodyPreference(args);
 
   const requests = messageIds.map((id, idx) => ({
     id: String(idx + 1),
     method: "GET",
-    url: getGraphRelativeUrl(`/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(id)}`, {
+    url: getGraphRelativeUrl(`${userBase}/messages/${encodeURIComponent(id)}`, {
       $select: getStr(args.select, "id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,isRead,body,bodyPreview,conversationId,parentFolderId,hasAttachments,internetMessageId")
     }),
     headers: { Prefer: `outlook.body-content-type="${bodyType}"` }
   }));
 
   const batchRes = await getRunBatch(toolCfg, version, requests);
-  return { operation: "showEmails", ok: batchRes.ok, status: batchRes.status, statusText: batchRes.statusText, userId, messages: batchRes.responses };
+  return { operation: "showEmails", ok: batchRes.ok, status: batchRes.status, statusText: batchRes.statusText, messages: batchRes.responses };
 }
 
 
@@ -868,19 +821,17 @@ async function getOperationShowEmails(toolCfg, args) {
 /* getOperationListMailFolders                                                    */
 /**********************************************************************************/
 async function getOperationListMailFolders(toolCfg, args) {
-  const userId = getResolveUserId(args, toolCfg);
-  if (!userId) return { operation: "listMailFolders", ok: false, error: "No userId resolved. Configure defaultUserId or forcedUserId." };
-
   const version = getResolveApiVersion(args, toolCfg);
   const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const userBase = getResolveUserBase(args, toolCfg);
   const top = getClamp(getNum(args.top, getNum(toolCfg.defaultPageSize, 50)), 1, 999);
 
   const res = await getGraphRequest(toolCfg, {
-    baseUrl, path: `/users/${encodeURIComponent(userId)}/mailFolders`, method: "GET",
+    baseUrl, path: `${userBase}/mailFolders`, method: "GET",
     query: { $top: top, $select: getStr(args.select, "id,displayName,parentFolderId,childFolderCount,totalItemCount,unreadItemCount") }
   });
 
-  return { operation: "listMailFolders", ok: res.ok, status: res.status, statusText: res.statusText, userId, result: res.data };
+  return { operation: "listMailFolders", ok: res.ok, status: res.status, statusText: res.statusText, result: res.data };
 }
 
 
@@ -888,15 +839,14 @@ async function getOperationListMailFolders(toolCfg, args) {
 /* getOperationSearchMailFolders                                                  */
 /**********************************************************************************/
 async function getOperationSearchMailFolders(toolCfg, args) {
-  const userId = getResolveUserId(args, toolCfg);
   const query = getStr(args.query, "").trim().toLowerCase();
   if (!query) return { operation: "searchMailFolders", ok: false, error: "Missing mail folder search query" };
 
-  const list = await getOperationListMailFolders(toolCfg, { ...args, userId, top: getClamp(getNum(args.top, 200), 1, 999) });
+  const list = await getOperationListMailFolders(toolCfg, { ...args, top: getClamp(getNum(args.top, 200), 1, 999) });
   if (!list.ok) return { ...list, operation: "searchMailFolders" };
 
   const folders = getArr(list?.result?.value, []).filter(item => getStr(item.displayName, "").toLowerCase().includes(query));
-  return { operation: "searchMailFolders", ok: true, status: 200, statusText: "OK", userId, query, result: folders };
+  return { operation: "searchMailFolders", ok: true, status: 200, statusText: "OK", query, result: folders };
 }
 
 
@@ -939,29 +889,27 @@ async function getOperationDeleteFiles(toolCfg, args) {
 /* getOperationDeleteMails                                                        */
 /**********************************************************************************/
 async function getOperationDeleteMails(toolCfg, args) {
-  const userId = getResolveUserId(args, toolCfg);
-  if (!userId) return { operation: "deleteMails", ok: false, error: "No userId resolved. Configure defaultUserId or forcedUserId." };
-
   const messageIds = getArr(args.messageIds, []).map(v => getStr(v, "")).filter(Boolean);
   if (!messageIds.length) return { operation: "deleteMails", ok: false, error: "Missing messageIds" };
 
   const version = getResolveApiVersion(args, toolCfg);
+  const userBase = getResolveUserBase(args, toolCfg);
   const useBatch = getBool(args.batch, true);
 
   if (!useBatch) {
     const results = [];
     for (const id of messageIds) {
       const baseUrl = getResolveBaseUrl(toolCfg, version);
-      const res = await getGraphRequest(toolCfg, { baseUrl, path: `/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(id)}`, method: "DELETE" });
+      const res = await getGraphRequest(toolCfg, { baseUrl, path: `${userBase}/messages/${encodeURIComponent(id)}`, method: "DELETE" });
       results.push({ id, ok: res.ok, status: res.status, statusText: res.statusText });
     }
     const allOk = results.every(v => v.ok);
-    return { operation: "deleteMails", ok: allOk, status: allOk ? 200 : 207, statusText: allOk ? "OK" : "MULTI_STATUS", userId, results };
+    return { operation: "deleteMails", ok: allOk, status: allOk ? 200 : 207, statusText: allOk ? "OK" : "MULTI_STATUS", results };
   }
 
-  const requests = messageIds.map((id, idx) => ({ id: String(idx + 1), method: "DELETE", url: getGraphRelativeUrl(`/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(id)}`) }));
+  const requests = messageIds.map((id, idx) => ({ id: String(idx + 1), method: "DELETE", url: getGraphRelativeUrl(`${userBase}/messages/${encodeURIComponent(id)}`) }));
   const batchRes = await getRunBatch(toolCfg, version, requests);
-  return { operation: "deleteMails", ok: batchRes.ok, status: batchRes.status, statusText: batchRes.statusText, userId, results: batchRes.responses.map((r, idx) => ({ ...r, messageId: messageIds[idx] })) };
+  return { operation: "deleteMails", ok: batchRes.ok, status: batchRes.status, statusText: batchRes.statusText, results: batchRes.responses.map((r, idx) => ({ ...r, messageId: messageIds[idx] })) };
 }
 
 
@@ -993,9 +941,6 @@ async function getOperationRenameFiles(toolCfg, args) {
 /* getOperationMoveEmails                                                         */
 /**********************************************************************************/
 async function getOperationMoveEmails(toolCfg, args) {
-  const userId = getResolveUserId(args, toolCfg);
-  if (!userId) return { operation: "moveEmails", ok: false, error: "No userId resolved. Configure defaultUserId or forcedUserId." };
-
   const messageIds = getArr(args.messageIds, []).map(v => getStr(v, "")).filter(Boolean);
   if (!messageIds.length) return { operation: "moveEmails", ok: false, error: "Missing messageIds" };
 
@@ -1003,28 +948,29 @@ async function getOperationMoveEmails(toolCfg, args) {
   if (!destinationFolderId) return { operation: "moveEmails", ok: false, error: "Missing destinationFolderId. Provide it in args or configure defaultDestinationFolderId." };
 
   const version = getResolveApiVersion(args, toolCfg);
+  const userBase = getResolveUserBase(args, toolCfg);
   const useBatch = getBool(args.batch, true);
 
   if (!useBatch) {
     const results = [];
     for (const id of messageIds) {
       const baseUrl = getResolveBaseUrl(toolCfg, version);
-      const res = await getGraphRequest(toolCfg, { baseUrl, path: `/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(id)}/move`, method: "POST", body: { destinationId: destinationFolderId } });
+      const res = await getGraphRequest(toolCfg, { baseUrl, path: `${userBase}/messages/${encodeURIComponent(id)}/move`, method: "POST", body: { destinationId: destinationFolderId } });
       results.push({ messageId: id, ok: res.ok, status: res.status, statusText: res.statusText, result: res.data });
     }
     const allOk = results.every(v => v.ok);
-    return { operation: "moveEmails", ok: allOk, status: allOk ? 200 : 207, statusText: allOk ? "OK" : "MULTI_STATUS", userId, destinationFolderId, results };
+    return { operation: "moveEmails", ok: allOk, status: allOk ? 200 : 207, statusText: allOk ? "OK" : "MULTI_STATUS", destinationFolderId, results };
   }
 
   const requests = messageIds.map((id, idx) => ({
     id: String(idx + 1), method: "POST",
-    url: getGraphRelativeUrl(`/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(id)}/move`),
+    url: getGraphRelativeUrl(`${userBase}/messages/${encodeURIComponent(id)}/move`),
     headers: { "Content-Type": "application/json" },
     body: { destinationId: destinationFolderId }
   }));
 
   const batchRes = await getRunBatch(toolCfg, version, requests);
-  return { operation: "moveEmails", ok: batchRes.ok, status: batchRes.status, statusText: batchRes.statusText, userId, destinationFolderId, results: batchRes.responses.map((r, idx) => ({ ...r, messageId: messageIds[idx] })) };
+  return { operation: "moveEmails", ok: batchRes.ok, status: batchRes.status, statusText: batchRes.statusText, destinationFolderId, results: batchRes.responses.map((r, idx) => ({ ...r, messageId: messageIds[idx] })) };
 }
 
 
@@ -1123,9 +1069,6 @@ async function getOperationDeleteUser(toolCfg, args) {
 /* getOperationSendMail                                                           */
 /**********************************************************************************/
 async function getOperationSendMail(toolCfg, args) {
-  const userId = getResolveUserId(args, toolCfg);
-  if (!userId) return { operation: "sendMail", ok: false, error: "No userId resolved. Configure defaultUserId or forcedUserId." };
-
   const subject = getStr(args.subject, "").trim();
   if (!subject) return { operation: "sendMail", ok: false, error: "Missing subject" };
 
@@ -1161,15 +1104,16 @@ async function getOperationSendMail(toolCfg, args) {
 
   const version = getResolveApiVersion(args, toolCfg);
   const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const userBase = getResolveUserBase(args, toolCfg);
 
   const res = await getGraphRequest(toolCfg, {
     baseUrl,
-    path: `/users/${encodeURIComponent(userId)}/sendMail`,
+    path: `${userBase}/sendMail`,
     method: "POST",
     body: { message, saveToSentItems }
   });
 
-  return { operation: "sendMail", ok: res.ok, status: res.status, statusText: res.statusText, userId, subject, to: toRecipients.map(r => r.emailAddress.address) };
+  return { operation: "sendMail", ok: res.ok, status: res.status, statusText: res.statusText, subject, to: toRecipients.map(r => r.emailAddress.address) };
 }
 
 
@@ -1203,8 +1147,10 @@ async function getInvoke(args, coreData) {
   try {
     const wo = getObj(coreData?.workingObject, {});
     const rawToolCfg = getObj(getObj(wo.toolsconfig, {})[MODULE_NAME], {});
-    const toolCfg = await getNormalizeToolConfig(wo, rawToolCfg);
-    const enrichedToolCfg = await getAutoDiscoverIds(toolCfg);
+    const toolCfg = getNormalizeToolConfig(rawToolCfg);
+    const delegatedToken = await getDelegatedToken(wo);
+    const toolCfgWithToken = { ...toolCfg, _token: delegatedToken };
+    const enrichedToolCfg = await getAutoDiscoverIds(toolCfgWithToken);
     const safeArgs = getApplyConfiguredIds(args, enrichedToolCfg);
     const operation = getStr(safeArgs?.operation, "").trim();
 
@@ -1270,7 +1216,10 @@ const definition = {
       "  Utility    : fulltextSearch · resolveDefaultTargets · graphRequest",
       "",
       "When no driveId or siteId is provided they are auto-discovered from the configured hostname or defaultUserId.",
-      "Mail folder names can be well-known strings such as inbox, sentitems, deleteditems, drafts, or junkemail."
+      "Mail folder names can be well-known strings such as inbox, sentitems, deleteditems, drafts, or junkemail.",
+      "",
+      "IMPORTANT: This tool uses delegated OAuth2. The user must have connected their Microsoft account at /graph-auth.",
+      "If the tool returns an error about missing token or authentication, tell the user to visit /graph-auth to connect their Microsoft account."
     ].join("\n"),
     parameters: {
       type: "object",

@@ -1,0 +1,148 @@
+/**********************************************************************************/
+/* filename: 00058-cron-graph-token-refresh.js                                    *
+/* Version 1.0                                                                    *
+/* Purpose: Cron module — refreshes Microsoft Graph OAuth tokens that are about   *
+/*          to expire. Queries graph_tokens for rows with expires_at within the   *
+/*          configured buffer window and calls the MS token refresh endpoint.     *
+/* Flow: cron                                                                     *
+/**********************************************************************************/
+
+"use strict";
+
+import { getSecret } from "../core/secrets.js";
+import { getLog }    from "../core/logging.js";
+import { getDb }     from "../shared/webpage/interface.js";
+
+const MODULE_NAME = "cron-graph-token-refresh";
+
+
+async function getHttpPostForm(urlStr, formObj) {
+  const { default: https } = await import("node:https");
+  const { default: http  } = await import("node:http");
+  const u    = new URL(urlStr);
+  const body = new URLSearchParams(formObj).toString();
+  const mod  = u.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const req = mod.request(
+      {
+        hostname: u.hostname,
+        port:     u.port || (u.protocol === "https:" ? 443 : 80),
+        path:     u.pathname + u.search,
+        method:   "POST",
+        headers:  {
+          "Content-Type":   "application/x-www-form-urlencoded",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let buf = "";
+        res.on("data", (d) => { buf += d; });
+        res.on("end",  () => {
+          let json = null;
+          try { json = JSON.parse(buf); } catch {}
+          resolve({ status: res.statusCode || 0, body: buf, json });
+        });
+      }
+    );
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+
+export default async function cronGraphTokenRefresh(coreData) {
+  const wo  = coreData?.workingObject || {};
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
+
+  if (wo?.flow !== "cron") return coreData;
+
+  const bufferMs = (Number(cfg.refreshBufferMinutes) || 10) * 60 * 1000;
+  const cutoff   = Date.now() + bufferMs;
+
+  let db;
+  try {
+    db = await getDb(coreData);
+  } catch (e) {
+    getLog().error(`[${MODULE_NAME}] DB connect error: ${e?.message || e}`);
+    return coreData;
+  }
+
+  let rows;
+  try {
+    const [result] = await db.query(
+      "SELECT * FROM graph_tokens WHERE expires_at < ? AND refresh_token IS NOT NULL",
+      [cutoff]
+    );
+    rows = result;
+  } catch (e) {
+    getLog().error(`[${MODULE_NAME}] Query error: ${e?.message || e}`);
+    return coreData;
+  }
+
+  if (!rows || rows.length === 0) return coreData;
+
+  const tenantId     = await getSecret(wo, cfg.auth?.tenantId     || "");
+  const clientId     = await getSecret(wo, cfg.auth?.clientId     || "");
+  const clientSecret = await getSecret(wo, cfg.auth?.clientSecret || "");
+
+  if (!tenantId || !clientId || !clientSecret) {
+    getLog().error(`[${MODULE_NAME}] Missing auth config (tenantId/clientId/clientSecret)`);
+    return coreData;
+  }
+
+  for (const row of rows) {
+    const userId = String(row.user_id || "");
+    if (!userId) continue;
+
+    let resp;
+    try {
+      resp = await getHttpPostForm(
+        `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`,
+        {
+          grant_type:     "refresh_token",
+          client_id:      clientId,
+          client_secret:  clientSecret,
+          refresh_token:  String(row.refresh_token || ""),
+          scope:          String(row.scope || "offline_access User.Read"),
+        }
+      );
+    } catch (e) {
+      getLog().error(`[${MODULE_NAME}] Token refresh request failed for user ${userId}: ${e?.message || e}`);
+      continue;
+    }
+
+    const tok = resp.json;
+    if (!tok?.access_token) {
+      getLog().error(`[${MODULE_NAME}] No access_token in refresh response for user ${userId}: ${tok?.error_description || tok?.error || resp.body}`);
+      continue;
+    }
+
+    const expiresAt = Date.now() + (Number(tok.expires_in || 3600) * 1000);
+    const now       = Date.now();
+
+    try {
+      await db.query(
+        `UPDATE graph_tokens
+         SET access_token  = ?,
+             refresh_token = COALESCE(?, refresh_token),
+             expires_at    = ?,
+             updated_at    = ?
+         WHERE user_id = ?`,
+        [
+          tok.access_token,
+          tok.refresh_token || null,
+          expiresAt,
+          now,
+          userId,
+        ]
+      );
+      getLog().info(`[${MODULE_NAME}] Refreshed token for user ${userId}`);
+    } catch (e) {
+      getLog().error(`[${MODULE_NAME}] DB update failed for user ${userId}: ${e?.message || e}`);
+    }
+  }
+
+  return coreData;
+}

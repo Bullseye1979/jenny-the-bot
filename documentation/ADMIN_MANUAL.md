@@ -88,6 +88,8 @@
    - 16.12 [Permission Concept](#1612-permission-concept)
    - 16.13 [Creating a New Web Module](#1613-creating-a-new-web-module)
    - 16.14 [Key Manager (`/key-manager`)](#1614-key-manager-key-manager)
+   - 16.15 [Microsoft Graph Auth (`/graph-auth`)](#1615-microsoft-graph-auth-graph-auth)
+   - 16.16 [Token Refresh Cron (`cron-graph-token-refresh`)](#1616-token-refresh-cron-cron-graph-token-refresh)
 17. [Bard Music System](#17-bard-music-system)
 18. [Dependencies](#18-dependencies)
 
@@ -1164,42 +1166,20 @@ Animated GIF generator from images or video.
 
 #### toolsconfig.getGraph
 
-Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user management.
+Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user management. Uses **delegated OAuth2** tokens stored per Discord user in the `graph_tokens` database table. No app-level credentials are needed here; credentials are managed by `webpage-graph-auth` (module 00057) and `cron-graph-token-refresh` (module 00058).
 
 ```json
 "getGraph": {
-  "auth": {
-    "tenantId":     "SECRET:graph_tenant_id",
-    "clientId":     "SECRET:graph_client_id",
-    "clientSecret": "SECRET:graph_client_secret"
-  },
   "defaultSharePointHostname": "mycompany.sharepoint.com",
-  "defaultUserId":             "user@mycompany.com",
-  "defaultSiteId":             "",
-  "defaultDriveId":            "",
   "defaultMailFolderId":       "inbox",
-  "defaultDestinationFolderId": "",
-  "forcedUserId":              "",
-  "forcedSiteId":              "",
-  "forcedDriveId":             "",
-  "forcedMailFolderId":        "",
-  "forcedDestinationFolderId": "",
-  "version":                   "v1.0",
-  "defaultPageSize":           25,
-  "defaultEntityTypes":        ["driveItem", "message"],
-  "timeoutMs":                 30000
+  "defaultPageSize":           25
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `auth.tenantId` | string | **Required.** Azure AD tenant ID or secret reference |
-| `auth.clientId` | string | **Required.** App registration client ID or secret reference |
-| `auth.clientSecret` | string | **Required.** App registration client secret or secret reference |
-| `auth.scope` | string | OAuth scope (default: `https://graph.microsoft.com/.default`) |
-| `auth.tokenUrl` | string | Override token URL (auto-derived from tenantId if omitted) |
 | `defaultSharePointHostname` | string | SharePoint host (e.g. `mycompany.sharepoint.com`). Used for siteId auto-discovery. |
-| `defaultUserId` | string | Fallback user ID / UPN when the AI does not specify one. Prevents AI drift to wrong users. |
+| `defaultUserId` | string | Fallback user ID / UPN when the AI does not specify one. With delegated auth this is rarely needed — the token already scopes requests to the authenticated user. |
 | `defaultSiteId` | string | Fallback SharePoint site ID. Auto-discovered from `defaultSharePointHostname` when omitted. |
 | `defaultDriveId` | string | Fallback drive ID. Auto-discovered from site or user when omitted. |
 | `defaultMailFolderId` | string | Fallback mail folder ID or well-known name (`inbox`, `sentitems`, `deleteditems`, `drafts`, `junkemail`) |
@@ -1216,12 +1196,10 @@ Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user
 
 **Auto-discovery (no secret DB entries needed for IDs):**
 - `siteId` is auto-discovered via `GET /sites/{hostname}:/` when `defaultSharePointHostname` is set and `defaultSiteId` is not
-- `driveId` is auto-discovered via `GET /sites/{siteId}/drive` (or `/users/{userId}/drive`) when not set
+- `driveId` is auto-discovered via `GET /sites/{siteId}/drive` (or `/me/drive` when no site) when not set
 - Discovery results are cached for 5 minutes per process
 
-**All config values can be secret references** (e.g. `"SECRET:graph_tenant_id"`). The tool resolves them through `core/secrets.js` before use.
-
-**Minimum required config:** `auth.tenantId` + `auth.clientId` + `auth.clientSecret`. Everything else is optional depending on the operations used.
+**Minimum required config:** none — the tool works with an empty config object as long as the user has authenticated at `/graph-auth`. Add `defaultSharePointHostname` to enable SharePoint auto-discovery.
 
 ---
 
@@ -2391,8 +2369,8 @@ export default async function myModule(coreData) {
 | 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) — collapsible file-navigation sidebar (state persisted in `localStorage`) |
 | 00055 | `core-admin-commands` | DB-level admin commands for all relevant flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` in payload. `api`: `/purgedb`, `/freeze` slash-text in payload. No Discord-API access — pure DB operations only. |
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
-| 00057 | `webpage-gdpr` | GDPR data-export SPA (port 3121, `/gdpr`) — allows logged-in users to download an Excel file containing their context history, consent records, and stored files. Requires `exceljs` npm package. |
-| 00058 | `webpage-keymanager` | Secret manager SPA (port 3122, `/key-manager`) — CRUD for `bot_secrets` table. Value column uses full available width (`flex:1`), responsive. Eye/copy buttons fixed outside the value box. |
+| 00057 | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth page (port 3124, `/graph-auth`). Logged-in users connect or disconnect their Microsoft account. Stores access + refresh tokens in `graph_tokens` DB table. Required before the `getGraph` tool can be used. |
+| 00058 | `cron-graph-token-refresh` | Cron module — refreshes expiring Microsoft Graph tokens. Queries `graph_tokens` for rows with `expires_at` within the configured buffer window and calls the MS token refresh endpoint. Skips on failure (does not delete). Only runs in the `cron` flow. |
 | 00059 | `webpage-live` | Live context monitor SPA (port 3123, `/live`) — selectable channel checkboxes, field toggles (timestamp, channel, role), configurable poll interval, autoscroll toggle. Collapsible settings sidebar (◀/▶). All UI state persists in `localStorage`. Parses `json.authorName` and `json.content` from Discord context entries to display chat transcripts in real time. New messages are inserted into the DOM sorted by `ts` (tiebreaker: `ctx_id`) regardless of arrival order — each message element carries `data-ts` and `data-ctx-id` attributes so out-of-order poll responses (race condition) are placed at the correct position rather than appended at the bottom. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
@@ -2955,9 +2933,89 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 **File:** `tools/getGraph.js`
 **Purpose:** Microsoft 365 integration via the Microsoft Graph API — SharePoint files, OneDrive, Exchange mail, Azure AD/Entra users, and arbitrary Graph API calls.
 
-**Authentication:** OAuth 2.0 `client_credentials` flow (app permissions, no user login required). Configure `auth.tenantId`, `auth.clientId`, `auth.clientSecret` in `toolsconfig.getGraph`.
+**Authentication:** OAuth 2.0 **delegated** flow. Each Discord user must connect their Microsoft account once at `/graph-auth`. The access token is stored in the `graph_tokens` DB table and refreshed automatically by the `cron-graph-token-refresh` module. No app-level token is required in `toolsconfig.getGraph`. If a user has not authenticated, the tool returns `{ ok: false, error: "No Microsoft account connected ... Please authenticate at /graph-auth" }`.
 
-**Auto-discovery:** When `defaultSiteId` or `defaultDriveId` are not configured, the tool discovers them automatically from `defaultSharePointHostname` (siteId) and from the resolved site or `defaultUserId` (driveId). Results are cached for 5 minutes.
+**Auto-discovery:** When `defaultSiteId` or `defaultDriveId` are not configured, the tool discovers them automatically from `defaultSharePointHostname` (siteId) and from the resolved site or `/me/drive` (driveId). Results are cached for 5 minutes.
+
+#### Entra App Registration (required once per tenant)
+
+To enable delegated auth you must register an **app** in [Azure Portal → Entra ID → App registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade).
+
+**Step 1 — Create the registration**
+1. Click **New registration**
+2. Name: e.g. `Jenny Bot`
+3. Supported account types: **Accounts in this organizational directory only** (single tenant) — or *multitenant* if needed
+4. Redirect URI: **Web** → `https://yourdomain.com/graph-auth/callback`
+5. Click **Register**; note the **Application (client) ID** and **Directory (tenant) ID**
+
+**Step 2 — Add a client secret**
+1. Go to **Certificates & secrets → New client secret**
+2. Set a description and expiry
+3. Copy the **Value** immediately — it is shown only once
+4. Store as secrets: `graph_client_id`, `graph_client_secret`, `graph_tenant_id`
+
+**Step 3 — Add delegated API permissions**
+
+Navigate to **API permissions → Add a permission → Microsoft Graph → Delegated permissions** and add:
+
+| Permission | Purpose |
+|---|---|
+| `User.Read` | Read the signed-in user's profile (`/me`) |
+| `offline_access` | Issue refresh tokens |
+| `Mail.ReadWrite` | Read and modify mailbox |
+| `Mail.Send` | Send email as the user |
+| `Files.ReadWrite.All` | Access all OneDrive files and SharePoint document libraries |
+| `Sites.ReadWrite.All` | Read and write SharePoint site content |
+
+> No **admin consent** is required for delegated permissions — each user grants consent individually when they log in at `/graph-auth`. However, if your tenant's admin consent policy requires pre-approval, an admin must grant consent via **Grant admin consent for \<tenant\>**.
+
+**Step 4 — Store credentials as bot secrets**
+
+```sql
+INSERT INTO bot_secrets (name, value, description) VALUES
+  ('graph_tenant_id',     '<Directory (tenant) ID>',      'Entra tenant ID'),
+  ('graph_client_id',     '<Application (client) ID>',    'Entra app client ID'),
+  ('graph_client_secret', '<Client secret value>',        'Entra app client secret');
+```
+
+**Step 5 — Configure modules in core.json**
+
+```json
+"webpage-graph-auth": {
+  "port": 3124,
+  "auth": {
+    "tenantId":     "SECRET:graph_tenant_id",
+    "clientId":     "SECRET:graph_client_id",
+    "clientSecret": "SECRET:graph_client_secret",
+    "redirectUri":  "https://yourdomain.com/graph-auth/callback",
+    "scope":        "offline_access User.Read Mail.ReadWrite Mail.Send Files.ReadWrite.All Sites.ReadWrite.All"
+  }
+},
+"cron-graph-token-refresh": {
+  "auth": {
+    "tenantId":     "SECRET:graph_tenant_id",
+    "clientId":     "SECRET:graph_client_id",
+    "clientSecret": "SECRET:graph_client_secret"
+  },
+  "refreshBufferMinutes": 10
+},
+"getGraph": {
+  "defaultSharePointHostname": "mycompany.sharepoint.com",
+  "defaultMailFolderId":       "inbox"
+}
+```
+
+Also add `3124` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`, and add the cron job:
+
+```json
+"cron": {
+  "jobs": [
+    { "name": "graph-token-refresh", "schedule": "*/5 * * * *", "flow": "cron" }
+  ]
+}
+```
+
+Add to `config["cron-graph-token-refresh"].flow = ["cron"]` in the module subscription list.
 
 **LLM parameter: `operation`** — selects the operation to execute. All others are optional depending on the operation.
 
@@ -2976,7 +3034,7 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 | `deleteFiles` | Delete one or more files/folders | `items[]` (each with `itemId` or `path`) |
 | `renameFiles` | Rename one or more files | `items[]` (each with `itemId`/`path` + `newName`) |
 
-**Mail operations** (require `userId` / `defaultUserId`)
+**Mail operations** (scoped to the authenticated user via `/me`; optionally override with `userId`)
 
 | Operation | Purpose | Key args |
 |---|---|---|
@@ -3452,6 +3510,39 @@ export default async function getMyWebModule(coreData) {
 | `disclaimer` | TINYINT(1) | 1 = notice seen |
 | `updated_at` | TIMESTAMP | Last change timestamp |
 
+### Table: graph_tokens
+
+Created automatically on first access to `/graph-auth` by module `00057-webpage-graph-auth.js`.
+
+| Column | Type | Description |
+|---|---|---|
+| `user_id` | VARCHAR(64) PRIMARY KEY | Discord user ID (from `wo.webAuth.userId`) |
+| `ms_user_id` | VARCHAR(128) | Microsoft user object ID from `/me` |
+| `ms_email` | VARCHAR(256) | Microsoft account email (`mail` field from `/me`) |
+| `ms_display_name` | VARCHAR(256) | Microsoft display name from `/me` |
+| `access_token` | MEDIUMTEXT NOT NULL | Current OAuth2 access token |
+| `refresh_token` | MEDIUMTEXT | OAuth2 refresh token (present when `offline_access` scope was granted) |
+| `expires_at` | BIGINT NOT NULL | Token expiry as Unix epoch milliseconds |
+| `scope` | TEXT | Scopes granted during this token |
+| `created_at` | BIGINT NOT NULL | Row creation time (Unix epoch ms) |
+| `updated_at` | BIGINT NOT NULL | Last update time (Unix epoch ms) |
+
+```sql
+CREATE TABLE IF NOT EXISTS graph_tokens (
+  user_id          VARCHAR(64)   NOT NULL,
+  ms_user_id       VARCHAR(128),
+  ms_email         VARCHAR(256),
+  ms_display_name  VARCHAR(256),
+  access_token     MEDIUMTEXT    NOT NULL,
+  refresh_token    MEDIUMTEXT,
+  expires_at       BIGINT        NOT NULL,
+  scope            TEXT,
+  created_at       BIGINT        NOT NULL,
+  updated_at       BIGINT        NOT NULL,
+  PRIMARY KEY (user_id)
+) CHARACTER SET utf8mb4;
+```
+
 ---
 
 ## 14. Reverse Proxy (Caddy)
@@ -3482,6 +3573,7 @@ Both domains share a single Caddyfile block. Caddy obtains a TLS certificate for
 | `/gdpr`, `/gdpr/*` | 3121 | `webpage-gdpr` |
 | `/key-manager`, `/key-manager/*` | 3122 | `webpage-keymanager` |
 | `/live`, `/live/*` | 3123 | `webpage-live` |
+| `/graph-auth`, `/graph-auth/*` | 3124 | `webpage-graph-auth` |
 | `/` (root) | — | redirects to `/chat` (302) |
 
 **Access control for unknown paths:**
@@ -3497,16 +3589,17 @@ jenny.ralfreschke.de, jenny.xbullseyegaming.de {
 
     @allowed remote_ip 10.99.0.0/24 10.99.1.0/24 192.168.178.0/24 127.0.0.1/8
 
-    @auth      { path /auth /auth/* }
-    @config    { path /config /config/* }
-    @chat      { path /chat /chat/* }
-    @inpainting{ path /inpainting /inpainting/* }
-    @bard      { path /bard /bard/* }
-    @dashboard { path /dashboard /dashboard/* }
-    @docs      { path /docs /docs/* }
-    @wiki      { path /wiki /wiki/* }
-    @context   { path /context /context/* }
-    @voice     { path /voice /voice/* }
+    @auth       { path /auth /auth/* }
+    @config     { path /config /config/* }
+    @chat       { path /chat /chat/* }
+    @inpainting { path /inpainting /inpainting/* }
+    @bard       { path /bard /bard/* }
+    @dashboard  { path /dashboard /dashboard/* }
+    @docs       { path /docs /docs/* }
+    @wiki       { path /wiki /wiki/* }
+    @context    { path /context /context/* }
+    @voice      { path /voice /voice/* }
+    @graphauth  { path /graph-auth /graph-auth/* }
 
     handle @auth       { reverse_proxy 127.0.0.1:3111 }
     handle @config     { reverse_proxy 127.0.0.1:3111 }
@@ -3518,6 +3611,7 @@ jenny.ralfreschke.de, jenny.xbullseyegaming.de {
     handle @wiki       { reverse_proxy 127.0.0.1:3117 }
     handle @context    { reverse_proxy 127.0.0.1:3118 }
     handle @voice      { reverse_proxy 127.0.0.1:3119 }
+    handle @graphauth  { reverse_proxy 127.0.0.1:3124 }
 
     redir / /chat 302
 
@@ -3562,6 +3656,11 @@ If `redirectUri` is set to a specific URL, only that domain is used for all OAut
 | 3117 | AI Wiki (`/wiki`) |
 | 3118 | Context Editor (`/context`) |
 | 3119 | Webpage Voice Interface (`/voice`) |
+| 3120 | Gallery (`/gallery`) |
+| 3121 | GDPR Data Export (`/gdpr`) |
+| 3122 | Key Manager (`/key-manager`) |
+| 3123 | Live Context Monitor (`/live`) |
+| 3124 | Microsoft Graph Auth (`/graph-auth`) |
 
 ---
 
@@ -3597,8 +3696,8 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00047-webpage-voice.js` | 3119 | `/voice` | `webpage-voice` | Browser push-to-talk voice interface |
 | `00053-webpage-context.js` | 3118 | `/context` | `webpage-context` | Context DB editor — browse, search, search & replace, bulk-delete conversation rows |
 | `00056-webpage-gallery.js` | 3120 | `/gallery` | `webpage-gallery` | Image gallery — browse, upload and delete the logged-in user's generated images |
-| `00057-webpage-gdpr.js` | 3121 | `/gdpr` | `webpage-gdpr` | GDPR data export — download personal data as Excel (context, consent, files) |
-| `00058-webpage-keymanager.js` | 3122 | `/key-manager` | `webpage-keymanager` | Secret manager — CRUD for `bot_secrets` table; value column full-width responsive |
+| `00057-webpage-graph-auth.js` | 3124 | `/graph-auth` | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth — connect/disconnect Microsoft account, stores token in `graph_tokens` |
+| `00058-cron-graph-token-refresh.js` | — | — | `cron-graph-token-refresh` | Cron — refreshes expiring Microsoft Graph tokens in `graph_tokens` |
 | `00059-webpage-live.js` | 3123 | `/live` | `webpage-live` | Live context monitor — real-time transcript stream, channel/field selection, autoscroll, collapsible settings sidebar |
 
 ### How Web Modules Work
@@ -4689,6 +4788,118 @@ The port must also be listed in `config.webpage.ports` so the webpage flow accep
 | `GET` | `/key-manager/api/list` | Return all secrets as `{ok, secrets:[{name,value,description}]}` |
 | `POST` | `/key-manager/api/set` | Upsert a secret. Body: `{name, value, description?}` |
 | `POST` | `/key-manager/api/delete` | Delete a secret. Body: `{name}` |
+
+---
+
+### 16.15 Microsoft Graph Auth (`/graph-auth`)
+
+**Module:** `modules/00057-webpage-graph-auth.js`
+**Port:** 3124 (default; override with `cfg.port`)
+**Flow:** `webpage`
+
+Allows logged-in users to connect or disconnect their personal Microsoft account to the bot. Once connected, the `getGraph` tool can access that user's OneDrive, Exchange mailbox, and SharePoint on their behalf.
+
+#### Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/graph-auth` | Status page — shows connected account or a "Connect" button |
+| `GET` | `/graph-auth/start` | Starts OAuth2 Authorization Code flow → redirects to Microsoft login |
+| `GET` | `/graph-auth/callback` | OAuth2 callback — exchanges code for tokens, fetches `/me`, stores in DB |
+| `GET` | `/graph-auth/disconnect` | Deletes the `graph_tokens` row for the current user |
+
+#### Flow
+
+1. User visits `/graph-auth/start` → redirected to `login.microsoftonline.com`
+2. Microsoft redirects back to `/graph-auth/callback?code=...&state=...`
+3. Module exchanges the code for `access_token` + `refresh_token`
+4. Calls `GET /me?$select=id,mail,displayName` to enrich the row
+5. Upserts into `graph_tokens` keyed by Discord `user_id`
+6. Redirects to `/graph-auth` (status page)
+
+CSRF protection: a random `state` token is stored in a module-level `Map` with a 10-minute TTL and validated on callback.
+
+The table `graph_tokens` is created automatically on first page load (idempotent `CREATE TABLE IF NOT EXISTS`).
+
+#### core.json config
+
+```json
+"webpage-graph-auth": {
+  "port": 3124,
+  "auth": {
+    "tenantId":     "SECRET:graph_tenant_id",
+    "clientId":     "SECRET:graph_client_id",
+    "clientSecret": "SECRET:graph_client_secret",
+    "redirectUri":  "https://yourdomain.com/graph-auth/callback",
+    "scope":        "offline_access User.Read Mail.ReadWrite Mail.Send Files.ReadWrite.All Sites.ReadWrite.All"
+  }
+}
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `port` | number | `3124` | HTTP port — must also be in `config.webpage.ports[]` and `config.webpage-auth.ports[]` |
+| `auth.tenantId` | string | **Required.** Azure AD / Entra tenant ID or secret reference |
+| `auth.clientId` | string | **Required.** App registration client ID or secret reference |
+| `auth.clientSecret` | string | **Required.** App registration client secret or secret reference |
+| `auth.redirectUri` | string | **Required.** Must exactly match the redirect URI registered in Entra |
+| `auth.scope` | string | OAuth2 scopes to request (default: `offline_access User.Read`) |
+
+**Setup:**
+- Add `3124` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `handle @graph-auth { reverse_proxy 127.0.0.1:3124 }` to Caddyfile
+- Register the Entra app — see [Entra App Registration](#entra-app-registration-required-once-per-tenant) in the getGraph tool section
+
+### 16.16 Token Refresh Cron (`cron-graph-token-refresh`)
+
+**Module:** `modules/00058-cron-graph-token-refresh.js`
+**Flow:** `cron`
+
+Automatically refreshes Microsoft Graph tokens before they expire. Runs every 5 minutes (or whichever interval the cron job specifies).
+
+**Behavior:**
+- Queries `graph_tokens WHERE expires_at < (NOW + bufferMs) AND refresh_token IS NOT NULL`
+- For each row: calls `POST .../oauth2/v2.0/token` with `grant_type=refresh_token`
+- On success: updates `access_token`, `refresh_token` (if a new one is returned), `expires_at`, `updated_at`
+- On failure: logs the error and skips — does **not** delete the row
+
+#### core.json config
+
+```json
+"cron-graph-token-refresh": {
+  "auth": {
+    "tenantId":     "SECRET:graph_tenant_id",
+    "clientId":     "SECRET:graph_client_id",
+    "clientSecret": "SECRET:graph_client_secret"
+  },
+  "refreshBufferMinutes": 10
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `auth.tenantId` | string | — | **Required.** Entra tenant ID or secret reference |
+| `auth.clientId` | string | — | **Required.** App client ID or secret reference |
+| `auth.clientSecret` | string | — | **Required.** App client secret or secret reference |
+| `refreshBufferMinutes` | number | `10` | Refresh tokens that expire within this many minutes |
+
+Add the cron job to `core.json`:
+
+```json
+"cron": {
+  "jobs": [
+    { "name": "graph-token-refresh", "schedule": "*/5 * * * *", "flow": "cron" }
+  ]
+}
+```
+
+And add the module subscription:
+
+```json
+"cron-graph-token-refresh": {
+  "flow": ["cron"]
+}
+```
 
 ---
 
