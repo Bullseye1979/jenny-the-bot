@@ -399,7 +399,7 @@ async function getOperationRemoveFromPlaylist(token, args) {
 /* getInvoke                                                                       */
 /* Main entry point called by core-ai-completions when the AI uses this tool.    */
 /**********************************************************************************/
-async function getInvoke(args, coreData) {
+async function getInvokeInternal(args, coreData) {
   try {
     const token     = await getDelegatedToken(coreData);
     const operation = getStr(args?.operation, "").trim();
@@ -422,6 +422,13 @@ async function getInvoke(args, coreData) {
   } catch (e) {
     return { ok: false, error: e?.message || String(e) };
   }
+}
+
+async function getInvoke(args, coreData) {
+  const timeout = new Promise((resolve) =>
+    setTimeout(() => resolve({ ok: false, error: "getSpotify timed out after 20s" }), 20000)
+  );
+  return Promise.race([getInvokeInternal(args, coreData), timeout]);
 }
 
 
@@ -458,10 +465,9 @@ const definition = {
       "  1. Call search with the EXACT track name and artist to get the specific track URI.",
       "     Always search fresh — never reuse a URI from a previous tool call.",
       "     When the user requests a specific song, search types must be [\"track\"].",
-      "     Use Spotify field filter syntax in the query for precise matching: track:\"TRACKNAME\" artist:\"ARTISTNAME\"",
-      "     Example: user asks for 'In the End' by Linkin Park → query = 'track:\"In the End\" artist:\"Linkin Park\"'",
       "     After receiving search results, find the result whose 'name' field most closely matches the requested track name.",
       "     Do NOT blindly take the first result — verify name AND artist match before using the URI.",
+      "     If no result matches, try a second search with a simpler query (just the track name without artist).",
       "  2. Call listDevices to get the available device IDs.",
       "  3. Call play with uris set to [trackUri] AND deviceId set to the target device.",
       "     ALWAYS use uris with the specific track URI when playing a named song.",
