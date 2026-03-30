@@ -9,9 +9,9 @@
 
 "use strict";
 
-import { getSecret } from "../core/secrets.js";
-import { getLog }    from "../core/logging.js";
-import { getDb }     from "../shared/webpage/interface.js";
+import { getSecret }         from "../core/secrets.js";
+import { getPrefixedLogger } from "../core/logging.js";
+import { getDb }             from "../shared/webpage/interface.js";
 
 const MODULE_NAME = "cron-graph-token-refresh";
 
@@ -58,6 +58,7 @@ export default async function cronGraphTokenRefresh(coreData) {
 
   if (wo?.flow !== "cron") return coreData;
 
+  const log      = getPrefixedLogger(wo, import.meta.url);
   const bufferMs = (Number(cfg.refreshBufferMinutes) || 10) * 60 * 1000;
   const cutoff   = Date.now() + bufferMs;
 
@@ -65,7 +66,7 @@ export default async function cronGraphTokenRefresh(coreData) {
   try {
     db = await getDb(coreData);
   } catch (e) {
-    getLog().error(`[${MODULE_NAME}] DB connect error: ${e?.message || e}`);
+    log(`[${MODULE_NAME}] DB connect error: ${e?.message || e}`, "error");
     return coreData;
   }
 
@@ -77,7 +78,7 @@ export default async function cronGraphTokenRefresh(coreData) {
     );
     rows = result;
   } catch (e) {
-    getLog().error(`[${MODULE_NAME}] Query error: ${e?.message || e}`);
+    log(`[${MODULE_NAME}] Query error: ${e?.message || e}`, "error");
     return coreData;
   }
 
@@ -88,7 +89,7 @@ export default async function cronGraphTokenRefresh(coreData) {
   const clientSecret = await getSecret(wo, cfg.auth?.clientSecret || "");
 
   if (!tenantId || !clientId || !clientSecret) {
-    getLog().error(`[${MODULE_NAME}] Missing auth config (tenantId/clientId/clientSecret)`);
+    log(`[${MODULE_NAME}] Missing auth config (tenantId/clientId/clientSecret)`, "error");
     return coreData;
   }
 
@@ -109,13 +110,13 @@ export default async function cronGraphTokenRefresh(coreData) {
         }
       );
     } catch (e) {
-      getLog().error(`[${MODULE_NAME}] Token refresh request failed for user ${userId}: ${e?.message || e}`);
+      log(`[${MODULE_NAME}] Token refresh request failed for user ${userId}: ${e?.message || e}`, "error");
       continue;
     }
 
     const tok = resp.json;
     if (!tok?.access_token) {
-      getLog().error(`[${MODULE_NAME}] No access_token in refresh response for user ${userId}: ${tok?.error_description || tok?.error || resp.body}`);
+      log(`[${MODULE_NAME}] No access_token in refresh response for user ${userId}: ${tok?.error_description || tok?.error || resp.body}`, "error");
       continue;
     }
 
@@ -138,9 +139,9 @@ export default async function cronGraphTokenRefresh(coreData) {
           userId,
         ]
       );
-      getLog().info(`[${MODULE_NAME}] Refreshed token for user ${userId}`);
+      log(`[${MODULE_NAME}] Refreshed token for user ${userId}`, "info");
     } catch (e) {
-      getLog().error(`[${MODULE_NAME}] DB update failed for user ${userId}: ${e?.message || e}`);
+      log(`[${MODULE_NAME}] DB update failed for user ${userId}: ${e?.message || e}`, "error");
     }
   }
 

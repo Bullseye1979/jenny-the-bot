@@ -12,9 +12,9 @@
 "use strict";
 
 import crypto from "node:crypto";
-import { getSecret } from "../core/secrets.js";
-import { getLog }    from "../core/logging.js";
-import { getDb }     from "../shared/webpage/interface.js";
+import { getSecret }          from "../core/secrets.js";
+import { getPrefixedLogger }  from "../core/logging.js";
+import { getDb }              from "../shared/webpage/interface.js";
 
 const MODULE_NAME  = "webpage-graph-auth";
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -241,6 +241,7 @@ async function handleStart(wo, cfg) {
 
 
 async function handleCallback(wo, cfg, db, userId, query) {
+  const log   = getPrefixedLogger(wo, import.meta.url);
   const code  = String(query.code  || "").trim();
   const state = String(query.state || "").trim();
   const error = String(query.error || "").trim();
@@ -282,7 +283,7 @@ async function handleCallback(wo, cfg, db, userId, query) {
       }
     );
   } catch (e) {
-    getLog().error(`[${MODULE_NAME}] Token exchange error: ${e?.message || e}`);
+    log(`[${MODULE_NAME}] Token exchange error: ${e?.message || e}`, "error");
     wo.html = getPageHtml("Auth Error", `<h2>Token exchange failed</h2><p>Server error. Please try again.</p><a class="btn btn-primary" href="/graph-auth">Back</a>`);
     return;
   }
@@ -301,7 +302,7 @@ async function handleCallback(wo, cfg, db, userId, query) {
       { Authorization: `Bearer ${tok.access_token}` }
     );
   } catch (e) {
-    getLog().error(`[${MODULE_NAME}] /me error: ${e?.message || e}`);
+    log(`[${MODULE_NAME}] /me error: ${e?.message || e}`, "error");
   }
 
   const expiresAt = Date.now() + (Number(tok.expires_in || 3600) * 1000);
@@ -352,6 +353,7 @@ export default async function webpageGraphAuth(coreData) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
 
+  const log      = getPrefixedLogger(wo, import.meta.url);
   const port     = cfg.port || 3124;
   const woPort   = Number(wo?.http?.port);
   const cleanPath = getCleanPath(wo);
@@ -373,7 +375,7 @@ export default async function webpageGraphAuth(coreData) {
     db = await getDb(coreData);
     await ensureTable(db);
   } catch (e) {
-    getLog().error(`[${MODULE_NAME}] DB error: ${e?.message || e}`);
+    log(`[${MODULE_NAME}] DB error: ${e?.message || e}`, "error");
     wo.html = getPageHtml("Error", `<h2>Database error</h2><p>Could not connect to database.</p>`);
     return coreData;
   }
@@ -390,7 +392,7 @@ export default async function webpageGraphAuth(coreData) {
       await handleDisconnect(wo, db, userId);
     }
   } catch (e) {
-    getLog().error(`[${MODULE_NAME}] Handler error on ${cleanPath}: ${e?.message || e}`);
+    log(`[${MODULE_NAME}] Handler error on ${cleanPath}: ${e?.message || e}`, "error");
     wo.html = getPageHtml("Error", `<h2>Unexpected error</h2><p>${escHtml(String(e?.message || e))}</p>`);
   }
 
