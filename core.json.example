@@ -278,6 +278,9 @@
         "defaultMailFolderId":       "inbox",
         "defaultPageSize":           25
       },
+      "getSpotify": {
+        "__description": "Spotify API — delegated OAuth2. Users must connect their account at /spotify-auth. No credentials here. Requires Spotify Premium for playback control."
+      },
       "getGoogle": {
         "__description": "Google Custom Search — requires apiKey and cseId",
         "apiKey": "GOOGLE",

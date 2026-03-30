@@ -1207,7 +1207,7 @@ Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user
 
 #### toolsconfig.getSpotify
 
-Spotify API — playback control, device management, playlist operations, and search. Uses **delegated OAuth2** tokens stored per Discord user in the `spotify_tokens` database table. No app-level credentials are needed here; credentials are managed by `webpage-spotify-auth` (module 00061) and `cron-spotify-token-refresh` (module 00062). **Spotify Premium is required for playback control operations** (play, pause, transfer).
+Spotify API — playback control, device management, playlist operations, and search. This is the only music playback tool; the AI uses it for all music requests regardless of whether the user mentions Spotify. Uses **delegated OAuth2** tokens stored per Discord user in the `spotify_tokens` database table. No app-level credentials are needed here; credentials are managed by `webpage-spotify-auth` (module 00061) and `cron-spotify-token-refresh` (module 00062). **Spotify Premium is required for playback control operations** (play, pause, transfer).
 
 ```json
 "getSpotify": {}
@@ -1215,11 +1215,7 @@ Spotify API — playback control, device management, playlist operations, and se
 
 No additional config keys are required. The tool reads the authenticated user's token directly from the DB.
 
-| Parameter | Type | Description |
-|---|---|---|
-| *(none required)* | | The tool resolves all credentials from `spotify_tokens` keyed by Discord `user_id` |
-
-**Minimum required config:** none — the tool works with an empty config object as long as the user has authenticated at `/spotify-auth`.
+**Minimum required config:** none — the tool works with an empty config object as long as the user has authenticated at `/spotify-auth`. See the full [getSpotify reference](#getspotify) for the complete play workflow and all parameters.
 
 ---
 
@@ -3148,11 +3144,13 @@ The tool never throws — if authentication fails or an ID cannot be resolved th
 ### getSpotify
 
 **File:** `tools/getSpotify.js`
-**Purpose:** Spotify integration — playback control, device management, playlist operations, and search.
+**Purpose:** Spotify integration — playback control, device management, playlist operations, and search. This is the only music playback tool. The AI uses it for any music-related request regardless of whether the user mentions "Spotify" explicitly.
 
 **Authentication:** OAuth 2.0 **delegated** flow. Each Discord user must connect their Spotify account once at `/spotify-auth`. The access token is stored in the `spotify_tokens` DB table and refreshed automatically by the `cron-spotify-token-refresh` module. No app-level token is required in `toolsconfig.getSpotify`. If a user has not authenticated, the tool returns `{ ok: false, error: "No Spotify account connected ... Please authenticate at /spotify-auth" }`.
 
-**Spotify Premium:** Playback control operations (`play`, `pause`, `transferPlayback`) require the user to have an active Spotify Premium subscription. Free-tier users can still use `search`, `getPlayback`, `listDevices`, and playlist operations.
+**Spotify Premium:** Playback control operations (`play`, `pause`, `transferPlayback`) require an active Spotify Premium subscription. Free-tier users can still use `search`, `getPlayback`, `listDevices`, and playlist operations.
+
+**Timeout:** The entire tool invocation is wrapped in a 20-second global timeout. If any internal operation hangs (DB query, HTTPS request), the tool returns `{ ok: false, error: "getSpotify timed out after 20s" }` and releases control back to the pipeline.
 
 #### Supported Operations
 
@@ -3163,11 +3161,20 @@ The tool never throws — if authentication fails or an ID cannot be resolved th
 | `play` | Start or resume playback; optionally play a specific URI on a specific device |
 | `pause` | Pause playback on the active or specified device |
 | `listDevices` | List available Spotify Connect devices for the user |
-| `transferPlayback` | Transfer playback to a different device |
+| `transferPlayback` | Transfer playback to a specific device |
 | `getPlaylists` | List the user's playlists |
 | `createPlaylist` | Create a new playlist |
 | `addToPlaylist` | Add one or more tracks to a playlist |
 | `removeFromPlaylist` | Remove one or more tracks from a playlist |
+
+#### Required Play Workflow
+
+The AI must always follow this sequence when playing a named track:
+
+1. **`search`** — search with exact track name and artist (`types: ["track"]`). After receiving results, find the result whose `name` field matches the requested track name. Do not blindly use the first result — verify name and artist match. If no result matches, retry with a simpler query (track name only).
+2. **`listDevices`** — get available device IDs. Pick the active device, or the first available if none is active.
+3. **`play`** — set `uris: [trackUri]` and `deviceId`. Never call `play` without a `deviceId` (fails if no device is currently active). Never use `contextUri` for a named track request — this lets Spotify decide what plays and ignores the requested song.
+4. **Report success** immediately if `ok: true`. Do not call `getPlayback` to verify — mobile devices take 1–3 seconds to update state and `isPlaying: false` directly after `play` is normal, not an error.
 
 #### LLM Parameters
 
@@ -3175,25 +3182,40 @@ The tool never throws — if authentication fails or an ID cannot be resolved th
 |---|---|---|---|
 | `operation` | string | Yes | One of the operations listed above |
 | `query` | string | For `search` | Search query string |
-| `type` | string | For `search` | Resource type: `track`, `album`, `artist`, `playlist` (default: `track`) |
-| `limit` | number | — | Number of results (default: 20) |
-| `contextUri` | string | For `play` | Spotify context URI to play (`spotify:album:...`, `spotify:playlist:...`, `spotify:artist:...`) |
-| `trackUris` | array | For `play` | List of track URIs to play |
-| `deviceId` | string | — | Target Spotify Connect device ID |
+| `types` | array | For `search` | Resource types: `track`, `album`, `artist`, `playlist` (default: `["track"]`) |
+| `limit` | number | — | Number of results (default: 20, max: 50) |
+| `offset` | number | — | Pagination offset (default: 0) |
+| `market` | string | — | ISO 3166-1 alpha-2 market code (e.g. `DE`) — optional for search |
+| `uris` | array | For `play`, `addToPlaylist`, `removeFromPlaylist` | Array of Spotify track URIs (`spotify:track:ID`) |
+| `contextUri` | string | For `play` | Spotify context URI for album/playlist/artist playback — do not use for named track requests |
+| `deviceId` | string | For `play`, `pause`, `transferPlayback` | Spotify Connect device ID (from `listDevices`) |
+| `offsetIndex` | number | For `play` | Track index within context to start at |
 | `positionMs` | number | For `play` | Seek position in milliseconds |
-| `playlistId` | string | For playlist ops | Spotify playlist ID |
+| `play` | boolean | For `transferPlayback` | Start playing immediately after transfer (default: false) |
+| `playlistId` | string | For playlist ops | Spotify playlist ID (not URI) |
+| `position` | number | For `addToPlaylist` | Insert position (0 = top, default: append) |
+| `snapshotId` | string | For `removeFromPlaylist` | Playlist snapshot ID for conflict detection |
 | `name` | string | For `createPlaylist` | New playlist name |
 | `description` | string | For `createPlaylist` | New playlist description |
 | `public` | boolean | For `createPlaylist` | Whether the playlist is public (default: false) |
-| `uris` | array | For `addToPlaylist`, `removeFromPlaylist` | Track URIs to add or remove |
 
 #### Response Shape
 
 All responses follow `{ ok: boolean, error?: string, ...operationData }`:
 - `ok: true` — operation succeeded; operation-specific fields are present
-- `ok: false` — failure; `error` contains the reason
+- `ok: false` — failure; `error` contains the reason (Spotify API message, auth error, or timeout)
 
 The tool never throws — failures always return a structured `{ ok: false, error: "..." }` response.
+
+#### Spotify URI Format
+
+All Spotify resource identifiers use the URI format:
+- Track: `spotify:track:4cOdK2wGLETKBW3PvgPWqT`
+- Album: `spotify:album:2up3OPMp9Tb4dAKM2erWXQ`
+- Playlist: `spotify:playlist:37i9dQZF1DXcBWIGoYBM5M`
+- Artist: `spotify:artist:6XyY86QOPPrYVGvF9ch6wz`
+
+Use the `id` field from search results for playlist operations; use the `uri` field for `play`.
 
 ---
 

@@ -440,9 +440,10 @@ const definition = {
   function: {
     name: MODULE_NAME,
     description: [
-      "ALWAYS use this tool when the user wants to search Spotify, control music playback, or manage playlists.",
-      "Trigger keywords (English): spotify, play music, pause music, play song, play album, play playlist, search spotify, my devices, switch device, create playlist, add to playlist, remove from playlist.",
-      "Trigger keywords (German): musik abspielen, song abspielen, pause, pausieren, spotify suche, playlist erstellen, zur playlist hinzufügen, von playlist entfernen, gerät wechseln.",
+      "ALWAYS use this tool whenever the user wants to play, pause, or control music — regardless of whether they mention Spotify explicitly.",
+      "This is the ONLY music playback tool available. Any request involving music playback, songs, albums, or playlists must use this tool.",
+      "Trigger keywords (English): play, pause, resume, stop music, play song, play album, play playlist, what is playing, next song, search music, search song, my devices, switch device, create playlist, add to playlist, remove from playlist, skip, spotify.",
+      "Trigger keywords (German): spielen, abspielen, pause, pausieren, musik, song, lied, album, playlist, was läuft, gerät wechseln, playlist erstellen, zur playlist hinzufügen, von playlist entfernen, überspringen, spotify.",
       "Do NOT ask the user for confirmation before using this tool — just use it.",
       "",
       "Operations:",
