@@ -3160,6 +3160,7 @@ The tool never throws — if authentication fails or an ID cannot be resolved th
 | `getPlayback` | Get current playback state (track, device, progress, shuffle, repeat) |
 | `play` | Start or resume playback; optionally play a specific URI on a specific device |
 | `pause` | Pause playback on the active or specified device |
+| `setVolume` | Set playback volume (0–100) on the active or specified device. Requires Spotify Premium. |
 | `listDevices` | List available Spotify Connect devices for the user |
 | `transferPlayback` | Transfer playback to a specific device |
 | `getPlaylists` | List the user's playlists |
@@ -3176,6 +3177,12 @@ The AI must always follow this sequence when playing a named track:
 3. **`play`** — set `uris: [trackUri]` and `deviceId`. Never call `play` without a `deviceId` (fails if no device is currently active). Never use `contextUri` for a named track request — this lets Spotify decide what plays and ignores the requested song.
 4. **Report success** immediately if `ok: true`. Do not call `getPlayback` to verify — mobile devices take 1–3 seconds to update state and `isPlaying: false` directly after `play` is normal, not an error.
 
+`setVolume`, `pause`, `transferPlayback`: these operations take effect immediately on the active device and do not require a preceding `search` or `listDevices` call unless a specific device must be targeted.
+
+#### Race Condition Notes
+
+`makeRequest` uses a `settle` guard to ensure the HTTP response callback and the timeout handler cannot both resolve the same promise. When the timeout fires, the underlying HTTPS request is destroyed via `req.destroy()` — preventing Spotify from processing a timed-out request after the tool has already returned an error. The global 20-second `getInvoke` timeout clears itself with `clearTimeout` once `getInvokeInternal` resolves, preventing dangling timers.
+
 #### LLM Parameters
 
 | Parameter | Type | Required | Description |
@@ -3191,6 +3198,7 @@ The AI must always follow this sequence when playing a named track:
 | `deviceId` | string | For `play`, `pause`, `transferPlayback` | Spotify Connect device ID (from `listDevices`) |
 | `offsetIndex` | number | For `play` | Track index within context to start at |
 | `positionMs` | number | For `play` | Seek position in milliseconds |
+| `volumePercent` | number | For `setVolume` | Volume level 0–100 (required) |
 | `play` | boolean | For `transferPlayback` | Start playing immediately after transfer (default: false) |
 | `playlistId` | string | For playlist ops | Spotify playlist ID (not URI) |
 | `position` | number | For `addToPlaylist` | Insert position (0 = top, default: append) |

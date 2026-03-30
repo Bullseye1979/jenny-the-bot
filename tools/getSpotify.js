@@ -108,7 +108,18 @@ async function makeRequest(token, { method = "GET", path, query = {}, body } = {
   }
 
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve({ ok: false, status: 0, data: null, error: "Request timeout" }), DEFAULT_TIMEOUT_MS);
+    let settled = false;
+    function settle(val) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(val);
+    }
+
+    const timer = setTimeout(() => {
+      req.destroy();
+      settle({ ok: false, status: 0, data: null, error: "Request timeout" });
+    }, DEFAULT_TIMEOUT_MS);
 
     const req = https.request(
       {
@@ -122,30 +133,29 @@ async function makeRequest(token, { method = "GET", path, query = {}, body } = {
         let buf = "";
         res.on("data", (d) => { buf += d; });
         res.on("end", () => {
-          clearTimeout(timer);
           const status = res.statusCode || 0;
           if (status === 204) {
-            resolve({ ok: true, status, data: null, error: null });
+            settle({ ok: true, status, data: null, error: null });
             return;
           }
           let data = null;
           try { data = JSON.parse(buf); } catch {}
           if (status === 429) {
             const retryAfter = res.headers["retry-after"] || "unknown";
-            resolve({ ok: false, status, data, error: `Rate limited by Spotify. Retry after ${retryAfter}s` });
+            settle({ ok: false, status, data, error: `Rate limited by Spotify. Retry after ${retryAfter}s` });
             return;
           }
           if (status >= 400) {
             const msg = data?.error?.message || `HTTP ${status}`;
-            resolve({ ok: false, status, data, error: msg });
+            settle({ ok: false, status, data, error: msg });
             return;
           }
-          resolve({ ok: true, status, data, error: null });
+          settle({ ok: true, status, data, error: null });
         });
       }
     );
 
-    req.on("error", (e) => { clearTimeout(timer); resolve({ ok: false, status: 0, data: null, error: e?.message || String(e) }); });
+    req.on("error", (e) => { settle({ ok: false, status: 0, data: null, error: e?.message || String(e) }); });
     if (reqBody) req.write(reqBody);
     req.end();
   });
@@ -396,6 +406,24 @@ async function getOperationRemoveFromPlaylist(token, args) {
 
 
 /**********************************************************************************/
+/* getOperationSetVolume                                                           */
+/* Sets the playback volume.                                                      */
+/* args.volumePercent — integer 0–100 (required)                                 */
+/* args.deviceId      — device ID to target (optional, defaults to active device)*/
+/**********************************************************************************/
+async function getOperationSetVolume(token, args) {
+  const volumePercent = Math.round(Math.min(100, Math.max(0, getNum(args.volumePercent, -1))));
+  if (volumePercent < 0) return { ok: false, error: "Missing required argument: volumePercent (0–100)" };
+  const deviceId = getStr(args.deviceId, "");
+  const query = { volume_percent: volumePercent };
+  if (deviceId) query.device_id = deviceId;
+  const res = await makeRequest(token, { method: "PUT", path: "/me/player/volume", query });
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, operation: "setVolume", volumePercent };
+}
+
+
+/**********************************************************************************/
 /* getInvoke                                                                       */
 /* Main entry point called by core-ai-completions when the AI uses this tool.    */
 /**********************************************************************************/
@@ -411,6 +439,7 @@ async function getInvokeInternal(args, coreData) {
       case "getPlayback":        return await getOperationGetPlayback(token);
       case "play":               return await getOperationPlay(token, args);
       case "pause":              return await getOperationPause(token, args);
+      case "setVolume":          return await getOperationSetVolume(token, args);
       case "listDevices":        return await getOperationListDevices(token);
       case "transferPlayback":   return await getOperationTransferPlayback(token, args);
       case "getPlaylists":       return await getOperationGetPlaylists(token, args);
@@ -425,10 +454,13 @@ async function getInvokeInternal(args, coreData) {
 }
 
 async function getInvoke(args, coreData) {
-  const timeout = new Promise((resolve) =>
-    setTimeout(() => resolve({ ok: false, error: "getSpotify timed out after 20s" }), 20000)
-  );
-  return Promise.race([getInvokeInternal(args, coreData), timeout]);
+  let timeoutId;
+  const timeout = new Promise((resolve) => {
+    timeoutId = setTimeout(() => resolve({ ok: false, error: "getSpotify timed out after 20s" }), 20000);
+  });
+  const result = await Promise.race([getInvokeInternal(args, coreData), timeout]);
+  clearTimeout(timeoutId);
+  return result;
 }
 
 
@@ -451,6 +483,7 @@ const definition = {
       "  getPlayback        — get current playback state (what is playing, on which device)",
       "  play               — start or resume playback (specific tracks, context, or resume current)",
       "  pause              — pause playback",
+      "  setVolume          — set playback volume (0–100); use this for ANY volume or loudness request",
       "  listDevices        — list all available Spotify devices",
       "  transferPlayback   — transfer playback to a specific device",
       "  getPlaylists       — list the user's playlists",
@@ -489,7 +522,7 @@ const definition = {
         operation: {
           type: "string",
           description: "Operation to perform.",
-          enum: ["search", "getPlayback", "play", "pause", "listDevices", "transferPlayback", "getPlaylists", "createPlaylist", "addToPlaylist", "removeFromPlaylist"],
+          enum: ["search", "getPlayback", "play", "pause", "setVolume", "listDevices", "transferPlayback", "getPlaylists", "createPlaylist", "addToPlaylist", "removeFromPlaylist"],
         },
         query: {
           type: "string",
@@ -528,6 +561,10 @@ const definition = {
         public: {
           type: "boolean",
           description: "Whether the playlist is public. Default: false. Used with createPlaylist.",
+        },
+        volumePercent: {
+          type: "number",
+          description: "Volume level 0–100. Required for setVolume.",
         },
         play: {
           type: "boolean",
