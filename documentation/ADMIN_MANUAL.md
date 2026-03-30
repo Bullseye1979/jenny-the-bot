@@ -1724,6 +1724,10 @@ Sends TTS audio back to the webpage voice caller. Triggered unconditionally when
 |---|---|---|
 | `flow` | array | Must include `"webpage"` |
 
+> **Always-on mic — recording restart after TTS:** The SPA does not restart the microphone immediately after sending a voice turn. It waits until the TTS audio response has finished playing before calling `getUserMedia` again. This prevents `getUserMedia` from interrupting the browser's audio session mid-playback. The restart is triggered by the `playNextAudio` done callback once the audio queue is empty. For text-only responses (no TTS audio), the mic restarts immediately after the response arrives.
+
+> **Mobile scrollability:** The voice SPA and keymanager pages apply `body { overflow-y: auto }` in their own `<style>` block to override the shared CSS `body { overflow: hidden }`. The voice page additionally applies `justify-content: flex-start` on screens narrower than 640 px so that buttons are not pushed behind the browser chrome or navigation bar.
+
 ---
 
 #### config.webpage-router

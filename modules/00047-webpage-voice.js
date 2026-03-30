@@ -398,15 +398,22 @@ async function handleRequest(blob, postUrl) {
     var resp = await fetch(postUrl, { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
     var transcript = resp.headers.get('X-Transcript') || '';
     var replyText  = resp.headers.get('X-Response')   || '';
-    if (!resp.ok) { if (transcript) showTranscript(transcript, ''); return; }
+    if (!resp.ok) {
+      if (transcript) showTranscript(transcript, '');
+      if (alwaysOn && !recording && !audioPlaying) startRecording();
+      return;
+    }
     var ct = resp.headers.get('Content-Type') || '';
     if (ct.indexOf('audio/') === 0) {
       var audioBlob = await resp.blob();
       showTranscript(transcript, replyText);
       audioQueue.push({ url: URL.createObjectURL(audioBlob) });
       playNextAudio();
-    } else { showTranscript(transcript, replyText); }
-  } catch(e) { /* silent — network errors don't break the recording loop */ }
+    } else {
+      showTranscript(transcript, replyText);
+      if (alwaysOn && !recording && !audioPlaying) startRecording();
+    }
+  } catch(e) {}
 }
 
 function setStatus(msg)    { statusEl.textContent    = msg || ''; }
@@ -515,9 +522,7 @@ async function stopAndSend() {
   if (alwaysOn) postUrl += '&alwaysOn=1';
   handleRequest(blob, postUrl);
   processing = false;
-  if (alwaysOn) {
-    if (!audioPlaying) startRecording();
-  } else {
+  if (!alwaysOn) {
     btn.className = 'idle';
     setStatus('Ready');
   }

@@ -858,6 +858,18 @@
         "webpage"
       ]
     },
+    "webpage-voice-record": {
+      "__description": "Handles POST /voice/record — full meeting recording: transcribes with Whisper, optionally diarizes with GPT, stores transcript in context DB. clearContextChannels lists channel IDs whose non-frozen context is purged before each transcript is stored (start-of-session mode). Port must match webpage-voice (default 3119).",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3119,
+      "allowedRoles": [
+        "member",
+        "admin"
+      ],
+      "clearContextChannels": []
+    },
     "core-voice-transcribe": {
       "__description": "Source-agnostic transcription module. Active in discord-voice and webpage flows. transcribeModelDiarize is used automatically when wo.transcribeOnly=true (meeting recorder). overlapDurationS controls the overlap between chunks used for cross-chunk speaker stitching.",
       "flow": [
