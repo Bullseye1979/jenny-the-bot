@@ -339,7 +339,7 @@
       "getHistory": {
         "__description": "Conversation history tool — requires apiKey",
         "pagesize": 500,
-        "max_rows": 2000,
+        "maxRows": 2000,
         "threshold": 800,
         "model": "gpt-4o-mini",
         "temperature": 0,
@@ -347,8 +347,8 @@
         "aiTimeoutMs": 45000,
         "endpoint": "https://api.openai.com/v1/chat/completions",
         "apiKey": "OPENAI",
-        "include_tool_rows": false,
-        "chunk_max_tokens": 600
+        "includeToolRows": false,
+        "chunkMaxTokens": 600
       },
       "getInformation": {
         "__description": "Information clustering — no API configuration required",
@@ -370,7 +370,7 @@
         "endpoint": "https://api.openai.com/v1/chat/completions",
         "temperature": 0.2,
         "max_tokens": 1000,
-        "timeout_ms": 60000
+        "timeoutMs": 60000
       }
     }
   },
