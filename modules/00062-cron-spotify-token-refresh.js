@@ -77,7 +77,7 @@ export default async function cronSpotifyTokenRefresh(coreData) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
 
-  if (wo?.flow !== "cron") return coreData;
+  if (wo?.flow !== "cron-spotify-token-refresh") return coreData;
 
   const log      = getPrefixedLogger(wo, import.meta.url);
   const bufferMs = (Number(cfg.refreshBufferMinutes) || 10) * 60 * 1000;
