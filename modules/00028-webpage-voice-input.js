@@ -19,6 +19,7 @@
 /*   wo.ttsFormat          — "mp3"                                                 *
 /*   wo.channelID          — from ?channelId query param                           *
 /*   wo.isWebpageVoice     — true                                                  *
+/*   wo.userId             — Discord user ID from OAuth session (wo.webAuth.userId)*
 /************************************************************************************/
 
 import fs   from "node:fs";
@@ -119,6 +120,7 @@ export default async function getWebpageVoiceInput(coreData) {
     wo.isWebpageVoice   = true;
     wo.isAlwaysOn       = isAlwaysOn;
     wo.transcribeOnly   = transcribeOnly;
+    wo.userId           = String(wo.webAuth?.userId || "");
 
     log("Audio received and queued for transcription", "info", {
       moduleName: MODULE_NAME, channelId, ext, bytes: rawBody.length, alwaysOn: isAlwaysOn
