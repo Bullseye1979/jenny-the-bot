@@ -11,13 +11,18 @@
 
 "use strict";
 
-import crypto from "node:crypto";
+import crypto                                     from "node:crypto";
+import { readFileSync }                           from "node:fs";
+import { fileURLToPath }                          from "node:url";
+import { dirname, join }                          from "node:path";
 import { getSecret }                             from "../core/secrets.js";
 import { getPrefixedLogger }                     from "../core/logging.js";
 import { getDb, getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 
 const MODULE_NAME  = "webpage-graph-auth";
 const STATE_TTL_MS = 10 * 60 * 1000;
+const __dirname    = dirname(fileURLToPath(import.meta.url));
+const SHARED_CSS   = join(__dirname, "..", "shared", "webpage", "style.css");
 
 let dbReady = false;
 
@@ -177,6 +182,7 @@ function getPageHtml(title, bodyHtml, menuHtml = "") {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escHtml(title)}</title>
 ${getThemeHeadScript()}
+<link rel="stylesheet" href="/graph-auth/style.css">
 <style>
   .wrap{max-width:480px;margin:40px auto;padding:24px;background:var(--card-bg,#fff);border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
   h2{margin:0 0 20px;font-size:1.3rem}
@@ -359,6 +365,13 @@ export default async function webpageGraphAuth(coreData) {
 
   if (woPort !== port) return coreData;
   if (!cleanPath.startsWith("/graph-auth")) return coreData;
+
+  if (cleanPath === "/graph-auth/style.css") {
+    let css = "";
+    try { css = readFileSync(SHARED_CSS, "utf-8"); } catch {}
+    wo.http.response = { status: 200, headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=3600" }, body: css };
+    return coreData;
+  }
 
   const menuHtml = getMenuHtml(wo.web?.menu || [], cleanPath, wo.webAuth?.role || "", null, null, wo.webAuth);
 
