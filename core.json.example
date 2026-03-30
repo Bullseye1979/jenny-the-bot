@@ -892,7 +892,8 @@
         "discord-admin",
         "discord-status",
         "api",
-        "bard-label-gen"
+        "bard-label-gen",
+        "webpage"
       ],
       "channels": [
         {
