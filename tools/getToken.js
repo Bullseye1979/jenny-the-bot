@@ -1,6 +1,6 @@
 /**************************************************************/
 /* filename: "getToken.js"                                    */
-/* Version: 1.0                                               */
+/* Version 1.0                                               */
 /* Purpose: Accept an image or video URL, convert videos to    */
 /*  GIF, apply a circular mask plus a single-color ring, and   */
 /*  return public URLs for all artifacts. Supports ping-pong   */

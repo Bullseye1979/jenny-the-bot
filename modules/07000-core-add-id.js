@@ -1,6 +1,6 @@
 /****************************************************************************************************************
  * filename: 07000-core-add-id.js
- * version: 1.0
+ * Version 1.0
  * purpose: Runs before output and appends `id=<wo.channelID>` to all image links that point to servers defined in
  *          config["core-add-id"].servers.
  ****************************************************************************************************************/

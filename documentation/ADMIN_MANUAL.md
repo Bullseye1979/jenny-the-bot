@@ -2968,16 +2968,27 @@ To enable delegated auth you must register an **app** in [Azure Portal → Entra
 
 Navigate to **API permissions → Add a permission → Microsoft Graph → Delegated permissions** and add:
 
-| Permission | Purpose |
-|---|---|
-| `User.Read` | Read the signed-in user's profile (`/me`) |
-| `offline_access` | Issue refresh tokens |
-| `Mail.ReadWrite` | Read and modify mailbox |
-| `Mail.Send` | Send email as the user |
-| `Files.ReadWrite.All` | Access all OneDrive files and SharePoint document libraries |
-| `Sites.ReadWrite.All` | Read and write SharePoint site content |
+| Permission | Admin Consent Required | Purpose |
+|---|---|---|
+| `User.Read` | No | Read the signed-in user's profile (`/me`) |
+| `offline_access` | No | Issue refresh tokens for long-lived sessions |
+| `Mail.Read` | No | Read mailbox messages |
+| `Mail.ReadWrite` | No | Read, modify, move and delete mailbox messages |
+| `Mail.Send` | No | Send email as the user |
+| `Files.ReadWrite.All` | **Yes** | Access all OneDrive files and SharePoint document libraries the user can reach |
+| `Sites.ReadWrite.All` | **Yes** | Read and write all SharePoint site content |
 
-> No **admin consent** is required for delegated permissions — each user grants consent individually when they log in at `/graph-auth`. However, if your tenant's admin consent policy requires pre-approval, an admin must grant consent via **Grant admin consent for \<tenant\>**.
+> `openid` and `profile` are automatically included by Azure — no need to add them manually.
+
+**Step 3a — Grant admin consent for permissions that require it**
+
+`Files.ReadWrite.All` and `Sites.ReadWrite.All` require tenant-wide admin consent. Without it, non-admin users will receive an "Admin approval required" error when connecting their account.
+
+1. On the **API permissions** page, click **Grant admin consent for \<your tenant\>**
+2. Confirm the dialog
+3. All permissions should show a green checkmark under **Status**
+
+This is a one-time action. After granting, all users (including non-admins) can connect their accounts at `/graph-auth` without further approval.
 
 **Step 4 — Store credentials as bot secrets**
 
@@ -3576,13 +3587,259 @@ CREATE TABLE IF NOT EXISTS graph_auth_states (
 
 Rows are deleted on use (callback validates + deletes) and expired rows are cleaned up on each `/start` and callback request.
 
+### Table: wiki_articles
+
+Created automatically by `modules/00052-webpage-wiki.js` on first wiki page load. Stores AI-generated wiki articles per channel, with full-text search support.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY | Internal row ID |
+| `channel_id` | VARCHAR(128) NOT NULL | Discord channel ID — each channel has its own wiki |
+| `slug` | VARCHAR(128) NOT NULL | URL-safe article identifier (unique per channel) |
+| `title` | VARCHAR(512) NOT NULL | Article title |
+| `intro` | TEXT | Introductory paragraph |
+| `sections` | LONGTEXT | JSON array of article sections |
+| `infobox` | TEXT | JSON infobox data |
+| `categories` | TEXT | Comma-separated category list |
+| `related` | TEXT | Related article references |
+| `image_url` | VARCHAR(512) | URL of the article image |
+| `image_prompt` | TEXT | Prompt used to generate the image |
+| `created_at` | TIMESTAMP | Row creation timestamp |
+| `updated_at` | TIMESTAMP NULL | Last manual edit timestamp; NULL = never manually edited (subject to TTL) |
+
+```sql
+CREATE TABLE IF NOT EXISTS wiki_articles (
+  id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  channel_id   VARCHAR(128)  NOT NULL,
+  slug         VARCHAR(128)  NOT NULL,
+  title        VARCHAR(512)  NOT NULL,
+  intro        TEXT,
+  sections     LONGTEXT,
+  infobox      TEXT,
+  categories   TEXT,
+  related      TEXT,
+  image_url    VARCHAR(512),
+  image_prompt TEXT,
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP NULL DEFAULT NULL,
+  UNIQUE KEY ux_chan_slug (channel_id, slug),
+  FULLTEXT KEY ft_search (title, intro, categories, related)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: gdpr_consent
+
+Created automatically by `modules/00025-discord-admin-gdpr.js`. Stores per-user GDPR consent flags for chat, voice recording, and disclaimer acknowledgment.
+
+| Column | Type | Description |
+|---|---|---|
+| `user_id` | VARCHAR(64) NOT NULL | Discord user ID |
+| `channel_id` | VARCHAR(64) NOT NULL | Discord channel ID |
+| `chat` | TINYINT(1) NOT NULL DEFAULT 0 | User consents to chat data storage |
+| `voice` | TINYINT(1) NOT NULL DEFAULT 0 | User consents to voice recording |
+| `disclaimer` | TINYINT(1) NOT NULL DEFAULT 0 | User acknowledged the disclaimer |
+| `updated_at` | TIMESTAMP | Last update time (auto-updated) |
+
+Primary key is `(user_id, channel_id)`.
+
+```sql
+CREATE TABLE IF NOT EXISTS gdpr_consent (
+  user_id    VARCHAR(64) NOT NULL,
+  channel_id VARCHAR(64) NOT NULL,
+  chat       TINYINT(1)  NOT NULL DEFAULT 0,
+  voice      TINYINT(1)  NOT NULL DEFAULT 0,
+  disclaimer TINYINT(1)  NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, channel_id),
+  KEY idx_channel (channel_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: chat_subchannels
+
+Created automatically by `modules/00048-webpage-chat.js`. Stores named subchannels within a Discord channel for the web chat UI.
+
+| Column | Type | Description |
+|---|---|---|
+| `subchannel_id` | CHAR(36) NOT NULL PRIMARY KEY | UUID v4 identifier |
+| `channel_id` | VARCHAR(128) NOT NULL | Parent Discord channel ID |
+| `name` | VARCHAR(255) NOT NULL DEFAULT '' | Display name of the subchannel |
+| `created_at` | DATETIME NOT NULL | Creation timestamp |
+
+```sql
+CREATE TABLE IF NOT EXISTS chat_subchannels (
+  subchannel_id CHAR(36)     NOT NULL,
+  channel_id    VARCHAR(128) NOT NULL,
+  name          VARCHAR(255) NOT NULL DEFAULT '',
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (subchannel_id),
+  KEY idx_csc_channel (channel_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: discord_macros
+
+Created automatically by `modules/00065-discord-admin-macro.js`. Stores user-defined text shortcuts (macros) usable in Discord.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY | Internal row ID |
+| `user_id` | VARCHAR(64) NOT NULL | Discord user ID that owns the macro |
+| `guild_id` | VARCHAR(64) NULL | Guild scope (NULL = all guilds) |
+| `channel_id` | VARCHAR(64) NULL | Channel scope (NULL = all channels) |
+| `name` | VARCHAR(100) NOT NULL | Macro name (unique per user) |
+| `text` | TEXT NOT NULL | Macro body text |
+| `created_at` | TIMESTAMP NOT NULL | Creation timestamp |
+| `updated_at` | TIMESTAMP NOT NULL | Last update timestamp (auto-updated) |
+
+```sql
+CREATE TABLE IF NOT EXISTS discord_macros (
+  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id    VARCHAR(64)     NOT NULL,
+  guild_id   VARCHAR(64)     NULL,
+  channel_id VARCHAR(64)     NULL,
+  name       VARCHAR(100)    NOT NULL,
+  text       TEXT            NOT NULL,
+  created_at TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_user_name (user_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: voice_speakers
+
+Created automatically by `core/voice-diarize.js`. Stores speaker profiles used for voice diarization (speaker identification).
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INT AUTO_INCREMENT PRIMARY KEY | Internal speaker ID |
+| `channel_id` | VARCHAR(64) NOT NULL | Discord channel this speaker belongs to |
+| `name` | VARCHAR(128) NOT NULL | Speaker display name |
+| `sample_audio_path` | VARCHAR(512) | Path to reference audio sample |
+| `sample_text` | TEXT | Reference transcript for this speaker |
+| `created_at` | DATETIME | Creation timestamp |
+
+```sql
+CREATE TABLE IF NOT EXISTS voice_speakers (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  channel_id        VARCHAR(64)  NOT NULL,
+  name              VARCHAR(128) NOT NULL,
+  sample_audio_path VARCHAR(512),
+  sample_text       TEXT,
+  created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_vs_channel (channel_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: voice_sessions
+
+Created automatically by `core/voice-diarize.js`. Each voice recording session in a channel gets one row.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INT AUTO_INCREMENT PRIMARY KEY | Session ID |
+| `channel_id` | VARCHAR(64) NOT NULL | Discord channel ID |
+| `started_at` | DATETIME | Session start timestamp |
+
+```sql
+CREATE TABLE IF NOT EXISTS voice_sessions (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  channel_id VARCHAR(64) NOT NULL,
+  started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_vss_channel (channel_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: voice_chunks
+
+Created automatically by `core/voice-diarize.js`. Stores audio segments within a voice session with their transcripts.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INT AUTO_INCREMENT PRIMARY KEY | Chunk ID |
+| `session_id` | INT NOT NULL | References `voice_sessions.id` |
+| `chunk_index` | INT NOT NULL DEFAULT 0 | Ordering index within the session |
+| `transcript` | TEXT | Transcribed text for this chunk |
+| `created_at` | DATETIME | Chunk creation timestamp |
+
+```sql
+CREATE TABLE IF NOT EXISTS voice_chunks (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  session_id  INT NOT NULL,
+  chunk_index INT NOT NULL DEFAULT 0,
+  transcript  TEXT,
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_vc_session (session_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: voice_chunk_speakers
+
+Created automatically by `core/voice-diarize.js`. Maps diarization labels within a chunk to identified speakers.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INT AUTO_INCREMENT PRIMARY KEY | Row ID |
+| `chunk_id` | INT NOT NULL | References `voice_chunks.id` |
+| `chunk_label` | VARCHAR(32) NOT NULL | Diarization speaker label (e.g. `SPEAKER_00`) |
+| `speaker_id` | INT | References `voice_speakers.id`; NULL if unidentified |
+
+```sql
+CREATE TABLE IF NOT EXISTS voice_chunk_speakers (
+  id          INT         AUTO_INCREMENT PRIMARY KEY,
+  chunk_id    INT         NOT NULL,
+  chunk_label VARCHAR(32) NOT NULL,
+  speaker_id  INT,
+  UNIQUE KEY uniq_vcs_chunk_label (chunk_id, chunk_label),
+  INDEX idx_vcs_chunk (chunk_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
 ---
 
 ## 14. Reverse Proxy (Caddy)
 
 Jenny runs multiple HTTP servers on different ports. A reverse proxy (Caddy) consolidates them under a single domain with automatic HTTPS.
 
-The Caddyfile lives at `/etc/caddy/Caddyfile` (Linux) or `W:\etc\caddy\Caddyfile` (Windows dev). Reload with `systemctl reload caddy` after changes.
+**File locations:**
+- Linux production: `/etc/caddy/Caddyfile`
+- Windows dev: `W:\etc\caddy\Caddyfile`
+
+**Reload after changes:**
+```bash
+systemctl reload caddy          # Linux (graceful reload, no downtime)
+caddy reload --config /etc/caddy/Caddyfile   # explicit path variant
+```
+
+Validate before reloading:
+```bash
+caddy validate --config /etc/caddy/Caddyfile
+```
+
+### IP Allowlist Snippet (`strictonly`)
+
+For admin-only services that should only be reachable from internal IPs:
+
+```caddy
+(strictonly) {
+    @allowed remote_ip 10.99.0.0/24 10.99.1.0/24 192.168.178.0/24 127.0.0.1/8
+    handle @allowed {
+        # set reverse_proxy here per host
+    }
+    handle {
+        respond "Forbidden" 403
+    }
+}
+```
+
+Usage in a host block:
+```caddy
+admin.example.com {
+    import strictonly
+    reverse_proxy 127.0.0.1:10000
+}
+```
 
 ### Virtual host: jenny.ralfreschke.de / jenny.xbullseyegaming.de
 
@@ -3699,17 +3956,64 @@ If `redirectUri` is set to a specific URL, only that domain is used for all OAut
 
 ## 15. Discord Bot Permissions
 
-### Jenny the Bot (main bot)
+### Gateway Intents
 
-- In the Discord Developer Portal, enable **Message Content Intent** under Privileged Gateway Intents.
-- Intents used: `Guilds`, `GuildMessages`, `MessageContent`, `GuildVoiceStates`, `DirectMessages`
-- Required bot permissions: Send Messages, Read Message History, Embed Links, Attach Files, Use Slash Commands, Connect, Speak, Use Voice Activity
-- Recommended invite: use Administrator permission for the simplest setup.
+Configure intents in `core.json` under `workingObject.discord.intents[]`. The following intents are required:
 
-Invite URL template:
+| Intent | Privileged | Purpose |
+|---|---|---|
+| `Guilds` | No | Read guild/channel metadata |
+| `GuildMessages` | No | Receive messages in guild channels |
+| `MessageContent` | **Yes** | Read the text content of messages |
+| `GuildVoiceStates` | No | Track user voice channel join/leave |
+| `GuildMembers` | **Yes** | Resolve member roles for auth checks |
+| `DirectMessages` | No | Receive DMs sent to the bot |
+
+Privileged intents (`MessageContent`, `GuildMembers`) must be **manually enabled** in the Discord Developer Portal:
+
+1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)
+2. Select your application → **Bot**
+3. Under **Privileged Gateway Intents**, enable:
+   - **Server Members Intent**
+   - **Message Content Intent**
+4. Save changes
+
+### Bot Permissions
+
+The following permissions are required in each guild the bot operates in:
+
+| Permission | Bit | Purpose |
+|---|---|---|
+| View Channels | `1024` | Read channel messages |
+| Send Messages | `2048` | Post replies |
+| Send Messages in Threads | `274877906944` | Respond in threads |
+| Read Message History | `65536` | Access past messages for context |
+| Embed Links | `16384` | Send rich embeds |
+| Attach Files | `32768` | Send generated images |
+| Use Application Commands | `2147483648` | Enable slash commands |
+| Connect | `1048576` | Join voice channels |
+| Speak | `2097152` | Transmit audio in voice |
+| Use Voice Activity | `33554432` | Voice activity detection |
+| Manage Messages | `8192` | Delete or pin messages (moderation) |
+| Kick Members | `2` | Kick members (moderation, optional) |
+| Ban Members | `4` | Ban members (moderation, optional) |
+
+### Invite URL
+
+Replace `CLIENT_ID` with your bot's Application ID:
+
 ```
 https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot+applications.commands
 ```
+
+`permissions=8` grants Administrator — the simplest setup for a private server. For a minimal invite, calculate the permission integer from the table above using the [Discord Permissions Calculator](https://discordapi.com/permissions.html).
+
+### OAuth2 Scopes
+
+| Scope | Required for |
+|---|---|
+| `bot` | Bot user presence in guild |
+| `applications.commands` | Slash command registration |
 
 ---
 

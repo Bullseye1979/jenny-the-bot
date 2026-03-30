@@ -6,6 +6,9 @@
     "systemPrompt": "You are a helpful assistant.",
     "persona": "Helpful AI Assistant",
     "instructions": "Answer concisely and helpfully.",
+    "tracePipeline": false,
+    "tracePipelineExcludeFlows": ["webpage*", "bard-*"],
+    "moderationEnabled": false,
     "trigger": "jenny",
     "triggerWordWindow": 3,
     "model": "gpt-4o-mini",
@@ -269,6 +272,12 @@
     },
     "toolsconfig": {
       "__description": "Per-tool configuration — only fill in the tools you enable in 'tools' above",
+      "getGraph": {
+        "__description": "Microsoft Graph API — delegated OAuth2. Users must connect their account at /graph-auth. No credentials here.",
+        "defaultSharePointHostname": "mycompany.sharepoint.com",
+        "defaultMailFolderId":       "inbox",
+        "defaultPageSize":           25
+      },
       "getGoogle": {
         "__description": "Google Custom Search — requires apiKey and cseId",
         "apiKey": "GOOGLE",
@@ -928,6 +937,28 @@
           }
         }
       ]
+    },
+
+    "webpage-graph-auth": {
+      "flow": ["webpage"],
+      "port": 3124,
+      "auth": {
+        "tenantId":     "SECRET:graph_tenant_id",
+        "clientId":     "SECRET:graph_client_id",
+        "clientSecret": "SECRET:graph_client_secret",
+        "redirectUri":  "https://YOUR_DOMAIN/graph-auth/callback",
+        "scope":        "offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send Files.ReadWrite.All Sites.ReadWrite.All"
+      }
+    },
+
+    "cron-graph-token-refresh": {
+      "flow": ["cron"],
+      "auth": {
+        "tenantId":     "SECRET:graph_tenant_id",
+        "clientId":     "SECRET:graph_client_id",
+        "clientSecret": "SECRET:graph_client_secret"
+      },
+      "refreshBufferMinutes": 10
     }
   }
 }

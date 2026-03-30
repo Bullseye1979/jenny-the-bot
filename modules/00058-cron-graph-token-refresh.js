@@ -11,9 +11,28 @@
 
 import { getSecret }         from "../core/secrets.js";
 import { getPrefixedLogger } from "../core/logging.js";
-import { getDb }             from "../shared/webpage/interface.js";
 
 const MODULE_NAME = "cron-graph-token-refresh";
+
+let _dbPool = null;
+
+
+async function getDbPool(coreData) {
+  if (_dbPool) return _dbPool;
+  const mysql2 = await import("mysql2/promise");
+  const db = coreData?.workingObject?.db || {};
+  _dbPool = mysql2.default.createPool({
+    host:               String(db.host     || "localhost"),
+    port:               Number(db.port     || 3306),
+    user:               String(db.user     || ""),
+    password:           String(db.password || ""),
+    database:           String(db.database || ""),
+    charset:            String(db.charset  || "utf8mb4"),
+    connectionLimit:    3,
+    waitForConnections: true,
+  });
+  return _dbPool;
+}
 
 
 async function getHttpPostForm(urlStr, formObj) {
@@ -64,7 +83,7 @@ export default async function cronGraphTokenRefresh(coreData) {
 
   let db;
   try {
-    db = await getDb(coreData);
+    db = await getDbPool(coreData);
   } catch (e) {
     log(`[${MODULE_NAME}] DB connect error: ${e?.message || e}`, "error");
     return coreData;
