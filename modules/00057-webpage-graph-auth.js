@@ -19,8 +19,6 @@ import { getDb }              from "../shared/webpage/interface.js";
 const MODULE_NAME  = "webpage-graph-auth";
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-const pendingStates = new Map();
-
 let dbReady = false;
 
 
@@ -116,6 +114,15 @@ async function ensureTable(db) {
       created_at       BIGINT        NOT NULL,
       updated_at       BIGINT        NOT NULL,
       PRIMARY KEY (user_id)
+    ) CHARACTER SET utf8mb4
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS graph_auth_states (
+      state_token  VARCHAR(64)  NOT NULL,
+      user_id      VARCHAR(64)  NOT NULL,
+      created_at   BIGINT       NOT NULL,
+      expires_at   BIGINT       NOT NULL,
+      PRIMARY KEY (state_token)
     ) CHARACTER SET utf8mb4
   `);
   dbReady = true;
@@ -219,14 +226,19 @@ async function handleStatus(wo, db, userId) {
 }
 
 
-async function handleStart(wo, cfg) {
+async function handleStart(wo, cfg, db, userId) {
   const tenantId     = await getSecret(wo, cfg.auth?.tenantId     || "");
   const clientId     = await getSecret(wo, cfg.auth?.clientId     || "");
   const redirectUri  = await getSecret(wo, cfg.auth?.redirectUri  || "");
   const scope        = await getSecret(wo, cfg.auth?.scope        || "offline_access User.Read");
 
-  const state = crypto.randomBytes(24).toString("hex");
-  pendingStates.set(state, Date.now());
+  const state  = crypto.randomBytes(24).toString("hex");
+  const now    = Date.now();
+  await db.query(
+    "INSERT INTO graph_auth_states (state_token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+    [state, userId, now, now + STATE_TTL_MS]
+  );
+  await db.query("DELETE FROM graph_auth_states WHERE expires_at < ?", [now]);
 
   const authUrl = new URL(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/authorize`);
   authUrl.searchParams.set("client_id",     clientId);
@@ -252,16 +264,16 @@ async function handleCallback(wo, cfg, db, userId, query) {
     return;
   }
 
-  const stateTs = pendingStates.get(state);
-  if (!stateTs || Date.now() - stateTs > STATE_TTL_MS) {
+  const [stateRows] = await db.query(
+    "SELECT state_token FROM graph_auth_states WHERE state_token = ? AND expires_at > ? LIMIT 1",
+    [state, Date.now()]
+  );
+  if (!stateRows || stateRows.length === 0) {
     wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Auth Error", `<h2>Invalid or expired state</h2><p>Please try again.</p><a class="btn btn-primary" href="/graph-auth/start">Retry</a>`) };
     return;
   }
-  pendingStates.delete(state);
-
-  for (const [s, ts] of pendingStates) {
-    if (Date.now() - ts > STATE_TTL_MS) pendingStates.delete(s);
-  }
+  await db.query("DELETE FROM graph_auth_states WHERE state_token = ?", [state]);
+  await db.query("DELETE FROM graph_auth_states WHERE expires_at < ?", [Date.now()]);
 
   const tenantId      = await getSecret(wo, cfg.auth?.tenantId     || "");
   const clientId      = await getSecret(wo, cfg.auth?.clientId     || "");
@@ -327,20 +339,6 @@ async function handleDisconnect(wo, db, userId) {
 }
 
 
-function getQueryParams(wo) {
-  const rawPath = String(wo?.http?.path || "");
-  const qIdx    = rawPath.indexOf("?");
-  if (qIdx < 0) return {};
-  const out = {};
-  const qs  = rawPath.slice(qIdx + 1);
-  for (const part of qs.split("&")) {
-    const eq = part.indexOf("=");
-    if (eq <= 0) continue;
-    out[decodeURIComponent(part.slice(0, eq))] = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, " "));
-  }
-  return out;
-}
-
 
 function getCleanPath(wo) {
   const raw = String(wo?.http?.path || "");
@@ -381,10 +379,9 @@ export default async function webpageGraphAuth(coreData) {
     if (cleanPath === "/graph-auth" || cleanPath === "/graph-auth/") {
       await handleStatus(wo, db, userId);
     } else if (cleanPath === "/graph-auth/start") {
-      await handleStart(wo, cfg);
+      await handleStart(wo, cfg, db, userId);
     } else if (cleanPath === "/graph-auth/callback") {
-      const query = getQueryParams(wo);
-      await handleCallback(wo, cfg, db, userId, query);
+      await handleCallback(wo, cfg, db, userId, wo.http.query || {});
     } else if (cleanPath === "/graph-auth/disconnect") {
       await handleDisconnect(wo, db, userId);
     }
