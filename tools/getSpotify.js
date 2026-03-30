@@ -235,16 +235,7 @@ async function getOperationPlay(token, args) {
   if (positionMs !== undefined) body.position_ms = positionMs;
 
   const query = deviceId ? { device_id: deviceId } : {};
-  const playBody = Object.keys(body).length ? body : undefined;
-
-  let res = await makeRequest(token, { method: "PUT", path: "/me/player/play", query, body: playBody });
-
-  if (!res.ok && res.status === 404 && deviceId) {
-    await makeRequest(token, { method: "PUT", path: "/me/player", body: { device_ids: [deviceId], play: false } });
-    await new Promise((r) => setTimeout(r, 800));
-    res = await makeRequest(token, { method: "PUT", path: "/me/player/play", query, body: playBody });
-  }
-
+  const res = await makeRequest(token, { method: "PUT", path: "/me/player/play", query, body: Object.keys(body).length ? body : undefined });
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, operation: "play" };
 }
