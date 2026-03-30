@@ -184,17 +184,18 @@ function getPageHtml(title, bodyHtml, menuHtml = "") {
 ${getThemeHeadScript()}
 <link rel="stylesheet" href="/graph-auth/style.css">
 <style>
-  .wrap{max-width:480px;margin:40px auto;padding:24px;background:var(--card-bg,#fff);border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+  body{overflow:auto}
+  .wrap{max-width:480px;margin:80px auto 40px;padding:24px;background:var(--card,#fff);color:var(--txt,#1e293b);border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.15);border:1px solid var(--bdr,#e2e8f0)}
   h2{margin:0 0 20px;font-size:1.3rem}
-  .info{background:#eef2ff;border-radius:6px;padding:14px;margin-bottom:18px}
+  .info{background:var(--acc-tint,#eef2ff);border:1px solid var(--acc-tint-bdr,#dbeafe);border-radius:6px;padding:14px;margin-bottom:18px}
   .info p{margin:4px 0;font-size:.92rem}
-  .info strong{color:#3730a3}
+  .info strong{color:var(--accent,#5865f2)}
   a.btn{display:inline-block;padding:9px 20px;border-radius:6px;text-decoration:none;font-weight:600;font-size:.92rem;margin-top:4px}
-  a.btn-primary{background:#5865f2;color:#fff}
-  a.btn-primary:hover{background:#4752c4}
-  a.btn-danger{background:#ef4444;color:#fff}
-  a.btn-danger:hover{background:#dc2626}
-  .muted{color:#6b7280;font-size:.88rem}
+  a.btn-primary{background:var(--accent,#5865f2);color:#fff}
+  a.btn-primary:hover{opacity:.88}
+  a.btn-danger{background:var(--dan,#ef4444);color:#fff}
+  a.btn-danger:hover{opacity:.88}
+  .muted{color:var(--muted,#64748b);font-size:.88rem}
 </style>
 </head>
 <body>
