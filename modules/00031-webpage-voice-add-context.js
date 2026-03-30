@@ -18,9 +18,9 @@
 /*          AND  wo.payload non-empty  AND  wo.channelID set  AND  wo.db available *
 /*                                                                                 *
 /* Config (config["webpage-voice-add-context"]):                                   *
-/*   clearContextBeforeTranscription — when true, purges non-frozen context rows   *
-/*                                     for the channel before writing the          *
-/*                                     transcript (default: false)                 *
+/*   clearContextChannels — array of channel IDs for which the context DB is       *
+/*                          purged (non-frozen rows only, via setPurgeContext)     *
+/*                          before storing the transcription. Default: []          *
 /*                                                                                 *
 /* Flow:    webpage                                                                 *
 /************************************************************************************/
@@ -73,8 +73,9 @@ export default async function getWebpageVoiceAddContext(coreData) {
     return coreData;
   }
 
-  const cfg = coreData?.config?.[MODULE_NAME] || {};
-  if (cfg.clearContextBeforeTranscription === true) {
+  const cfg             = coreData?.config?.[MODULE_NAME] || {};
+  const clearChannels   = Array.isArray(cfg.clearContextChannels) ? cfg.clearContextChannels : [];
+  if (clearChannels.includes(wo.channelID)) {
     try {
       const purged = await setPurgeContext(wo);
       log("Context purged before transcription store", "info", { moduleName: MODULE_NAME, purged });

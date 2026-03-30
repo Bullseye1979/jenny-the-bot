@@ -155,7 +155,7 @@ function buildCoreJson(fields) {
         silenceTimeoutMs: 2500,
         maxDurationMs: 30000,
         diarize: true,
-        clearContextBeforeTranscription: false,
+        clearContextChannels: [],
         channels: []
       },
       "core-trigger-gate": {

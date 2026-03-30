@@ -13,8 +13,9 @@
 /* Config (config["webpage-voice-record"]):                                              */
 /*   recordModel                  — transcription model (default: gpt-4o-transcribe) */
 /*   diarize                      — run speaker-attribution pass (default: true)  */
-/*   clearContextBeforeTranscription — purge non-frozen context before storing   */
-/*                                    the transcript (default: false)             */
+/*   clearContextChannels            — array of channel IDs for which the context */
+/*                                    DB is purged (non-frozen rows only) before  */
+/*                                    storing the transcript. Default: []         */
 /*   allowedRoles                 — role whitelist (empty = open)                */
 /*   port                         — HTTP port (default 3119)                     */
 /**********************************************************************************/
@@ -192,7 +193,7 @@ export default async function getWebpageVoiceRecord(coreData) {
     const prevChannelId = wo.channelID;
     wo.channelID = channelId;
 
-    if (cfg.clearContextBeforeTranscription) {
+    if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(channelId)) {
       await setPurgeContext(wo);
       log("Context purged before transcription storage", "info", { moduleName: MODULE_NAME, channelId });
     }

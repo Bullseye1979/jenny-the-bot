@@ -1563,15 +1563,15 @@ Browser-based voice interface with two modes: **always-on continuous listening**
 
 ```jsonc
 "webpage-voice": {
-  "flow":                            ["webpage"],
-  "port":                            3119,
-  "basePath":                        "/voice",
-  "silenceTimeoutMs":                2500,
-  "maxDurationMs":                   30000,
-  "recordModel":                     "gpt-4o-transcribe",
-  "diarize":                         true,
-  "clearContextBeforeTranscription": false,
-  "allowedRoles":                    [],
+  "flow":                   ["webpage"],
+  "port":                   3119,
+  "basePath":               "/voice",
+  "silenceTimeoutMs":       2500,
+  "maxDurationMs":          30000,
+  "recordModel":            "gpt-4o-transcribe",
+  "diarize":                true,
+  "clearContextChannels":   [],
+  "allowedRoles":           [],
   "channels": [
     { "id": "YOUR_CHANNEL_ID", "label": "General" }
   ]
@@ -1587,7 +1587,7 @@ Browser-based voice interface with two modes: **always-on continuous listening**
 | `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
 | `recordModel` | string | `"gpt-4o-transcribe"` | Transcription model for meeting recordings |
 | `diarize` | boolean | `true` | Request speaker diarization for meeting recordings |
-| `clearContextBeforeTranscription` | boolean | `false` | Purge non-frozen context rows before storing the meeting transcript |
+| `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before storing a transcript. Frozen rows are never deleted. |
 | `allowedRoles` | array | `[]` | Roles that may access `/voice`. Empty = public |
 | `channels` | array | `[]` | Channel list for the SPA dropdown: `[{ "id": "...", "label": "..." }]`. If empty, a free-text input is shown. |
 
@@ -2029,16 +2029,16 @@ Below is a minimal but functional `core.json` template with every section includ
       ]
     },
     "webpage-voice": {
-      "flow":                            ["webpage"],
-      "port":                            3119,
-      "basePath":                        "/voice",
-      "silenceTimeoutMs":                2500,
-      "maxDurationMs":                   30000,
-      "recordModel":                     "gpt-4o-transcribe",
-      "diarize":                         true,
-      "clearContextBeforeTranscription": false,
-      "allowedRoles":                    [],
-      "channels":                        []
+      "flow":                   ["webpage"],
+      "port":                   3119,
+      "basePath":               "/voice",
+      "silenceTimeoutMs":       2500,
+      "maxDurationMs":          30000,
+      "recordModel":            "gpt-4o-transcribe",
+      "diarize":                true,
+      "clearContextChannels":   [],
+      "allowedRoles":           [],
+      "channels":               []
     },
     "webpage-voice-output":    { "flow": ["webpage"] },
     "webpage-auth": {

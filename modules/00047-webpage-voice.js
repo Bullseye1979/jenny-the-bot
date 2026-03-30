@@ -24,6 +24,9 @@
 /*   maxDurationMs    — hard recording cap (default 30000)                       */
 /*   allowedRoles     — role whitelist (empty = open)                            */
 /*   channels         — [{id, label}] shown in channel dropdown                  */
+/*   clearContextChannels — array of channel IDs whose context DB is purged      */
+/*                          (non-frozen rows only) before storing a transcript.  */
+/*                          Default: []                                           */
 /*   sampleModel      — model for sample transcription (default gpt-4o-mini-transcribe) */
 /*   transcribeApiKey — API key placeholder for sample transcription              */
 /*   transcribeEndpoint — optional custom API base URL                           */
@@ -1178,7 +1181,7 @@ export default async function getWebpageVoice(coreData) {
         const prevChannelId = wo.channelID;
         wo.channelID = sess.channel_id;
 
-        if (cfg.clearContextBeforeTranscription === true) await setPurgeContext(wo);
+        if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(sess.channel_id)) await setPurgeContext(wo);
 
         let words = 0;
         for (const chunk of chunks) {

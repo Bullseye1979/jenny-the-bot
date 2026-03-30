@@ -161,7 +161,7 @@ Each completed meeting recording appears as a session in the Review tab.
    - Saves all current assignments first (same as Save All).
    - Rebuilds the transcript with the correct speaker names.
    - Writes one context entry per speaker line, with the speaker name as author.
-   - Optionally purges existing context for the channel first (controlled by `clearContextBeforeTranscription` in the admin config).
+   - Optionally purges existing non-frozen context rows for the channel first (controlled by `clearContextChannels` in the admin config — frozen rows are never deleted).
    - Deletes the session from the Review list.
 6. Use the 🗑️ button next to a session to discard it without writing to context.
 

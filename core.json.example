@@ -843,14 +843,15 @@
           "id": "YOUR_CHANNEL_ID",
           "label": "General"
         }
-      ]
+      ],
+      "clearContextChannels": []
     },
     "webpage-voice-add-context": {
-      "__description": "Writes each voice transcription turn to the context DB. One DB entry per speaker paragraph. clearContextBeforeTranscription purges non-frozen rows for the channel before storing (useful for start-of-session mode).",
+      "__description": "Writes each voice transcription turn to the context DB. One DB entry per speaker paragraph. clearContextChannels: array of channel IDs whose context DB is purged (non-frozen rows only, via setPurgeContext) before storing the transcription. Use this for start-of-session mode on specific channels.",
       "flow": [
         "webpage"
       ],
-      "clearContextBeforeTranscription": false
+      "clearContextChannels": []
     },
     "webpage-voice-output": {
       "__description": "Sends TTS MP3 audio back to the browser voice caller. Must be active in webpage flow.",

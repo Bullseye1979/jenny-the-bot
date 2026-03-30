@@ -1616,7 +1616,7 @@ Browser-based always-on voice interface with meeting recorder, speaker managemen
   "silenceTimeoutMs":              2500,
   "maxDurationMs":                 30000,
   "allowedRoles":                  [],
-  "clearContextBeforeTranscription": false,
+  "clearContextChannels":          [],
   "sampleModel":                   "gpt-4o-mini-transcribe",
   "transcribeApiKey":              "",
   "transcribeEndpoint":            "",
@@ -1634,7 +1634,7 @@ Browser-based always-on voice interface with meeting recorder, speaker managemen
 | `silenceTimeoutMs` | number | `2500` | Silence duration (ms) before the always-on mic auto-sends audio |
 | `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
 | `allowedRoles` | array | `[]` | Roles that may access the voice interface. Empty array = public |
-| `clearContextBeforeTranscription` | boolean | `false` | When `true`, purges all non-frozen context rows for the channel before writing the transcript on Apply |
+| `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before writing a transcript. Frozen rows are never deleted. Add a channel ID here for "start-of-session" mode on that channel. |
 | `sampleModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model used to transcribe speaker sample recordings in the Speakers tab |
 | `transcribeApiKey` | string | `OPENAI_API_KEY` env fallback | API key used for speaker sample transcription |
 | `transcribeEndpoint` | string | `""` | Optional custom OpenAI-compatible base URL for sample transcription |
@@ -1666,15 +1666,15 @@ Handles `POST /voice/record` — full meeting recording: transcribes with Whispe
 
 ```json
 "webpage-voice-record": {
-  "flow":         ["webpage"],
-  "port":         3119,
-  "allowedRoles": ["member", "admin"],
-  "recordModel":  "gpt-4o-transcribe",
-  "whisperApiKey": "",
-  "diarize":      true,
-  "model":        "gpt-4o-mini",
-  "apiKey":       "",
-  "clearContextBeforeTranscription": false
+  "flow":                 ["webpage"],
+  "port":                 3119,
+  "allowedRoles":         ["member", "admin"],
+  "recordModel":          "gpt-4o-transcribe",
+  "whisperApiKey":        "",
+  "diarize":              true,
+  "model":                "gpt-4o-mini",
+  "apiKey":               "",
+  "clearContextChannels": []
 }
 ```
 
@@ -1688,7 +1688,7 @@ Handles `POST /voice/record` — full meeting recording: transcribes with Whispe
 | `diarize` | boolean | `true` | Run a GPT speaker-attribution pass after transcription |
 | `model` | string | `wo.model` fallback | Chat model used for diarization |
 | `apiKey` | string | `wo.apiKey` fallback | API key for the diarization chat endpoint |
-| `clearContextBeforeTranscription` | boolean | `false` | Purge non-frozen context for the channel before storing the transcript |
+| `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before storing the transcript. Frozen rows are never deleted. |
 
 ---
 
@@ -1698,15 +1698,15 @@ Writes the voice transcription to the context DB immediately after transcription
 
 ```json
 "webpage-voice-add-context": {
-  "flow": ["webpage"],
-  "clearContextBeforeTranscription": false
+  "flow":                 ["webpage"],
+  "clearContextChannels": []
 }
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `flow` | array | — | Must include `"webpage"` |
-| `clearContextBeforeTranscription` | boolean | `false` | When `true`, purges all non-frozen context rows for the channel before storing the transcript. Useful for start-of-session recording. |
+| `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before storing the transcript. Frozen rows are never deleted. Useful for start-of-session mode on specific channels. |
 
 ---
 
@@ -2364,7 +2364,7 @@ export default async function myModule(coreData) {
 | 00028 | `webpage-voice-input` | Handles `POST /voice/audio` (webpage flow) — validates auth + `channelId`, converts the incoming audio body to a 16 kHz mono WAV temp file, and sets `wo` fields so the shared transcription → AI → TTS pipeline runs identically to the Discord voice flow. Sets `wo.audioFile`, `wo.transcribeAudio`, `wo.isWebpageVoice`, `wo.ttsFormat = "mp3"`. Must run before `00030-core-voice-transcribe`. |
 | 00029 | `discord-voice-capture` | Captures PCM from the Discord voice receiver (Opus → PCM via prism-media), applies RMS/ZCR-based VAD, extracts voiced frames, and combines them into a single 16kHz mono WAV. Outputs `wo.audioFile`, `wo.audioStats = {snrDb, usefulMs}`, and `wo.transcribeAudio = true`. Does not make quality decisions — deferred to the transcription module. Only runs when `wo.voiceIntent.action === "describe_and_transcribe"` |
 | 00030 | `core-voice-transcribe` | Source-agnostic transcription module. Runs when `wo.transcribeAudio === true`. When `wo.audioStats` is set, applies a quality gate. Large files (>20 MB) are split into overlapping chunks; speaker labels are stitched across chunk boundaries. When `wo.transcribeOnly === true` and the model name contains `"diarize"`, calls `getDiarizeWithSamples`: loads registered speaker profiles from `voice_speakers`, builds a preamble WAV (speaker samples + pure-Node.js silence), concatenates it before the meeting audio, transcribes with the diarize model, resolves label→speaker mappings via `resolveSpeakerMapping`, and stores a session + chunks + assignments in `voice_sessions`/`voice_chunks`/`voice_chunk_speakers`. Sets `wo.voiceDiarizeSessionId`. Active in `discord-voice` and `webpage` flows. |
-| 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB for the **always-on voice path only**. Skips when `wo.transcribeOnly === true` (meeting recorder path) — those transcripts only reach context via the Review tab Apply button. Active when `wo.isWebpageVoice === true`, `wo.transcribeOnly !== true`, and `wo.payload` is set. Diarized transcripts are parsed into one DB entry per speaker turn (`source: "voice-transcribe"`). When `clearContextBeforeTranscription === true`, purges non-frozen context for the channel first. |
+| 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB for the **always-on voice path only**. Skips when `wo.transcribeOnly === true` (meeting recorder path) — those transcripts only reach context via the Review tab Apply button. Active when `wo.isWebpageVoice === true`, `wo.transcribeOnly !== true`, and `wo.payload` is set. Diarized transcripts are parsed into one DB entry per speaker turn (`source: "voice-transcribe"`). When the channel ID is listed in `clearContextChannels`, purges non-frozen context rows (via `setPurgeContext`) for the channel first. |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
 | 00033 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends HTTP 200 JSON `{ transcript, sessionId }` and sets `wo.stop = true` so AI/TTS never run. The transcript is NOT written to context here — that happens when the user clicks **Apply to Channel** in the Review tab (`POST /voice/api/session/:id/apply`). Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
 | 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
@@ -4665,7 +4665,7 @@ A browser-based voice interface with three tabs: **Voice** (always-on + meeting 
 - Select a session from the left list to view its chunks. Both lists scroll independently.
 - Each chunk shows one block per unique speaker label. Use the dropdown to assign a known speaker or create one inline.
 - **💾 Save All:** Persists all speaker assignments currently shown in the chunk panel to the database in one pass. Does not write to channel context.
-- **✓ Apply to Channel:** First saves all assignments (same as Save All), then rebuilds the transcript using DB-resolved speaker names, writes one context row per speaker line with `authorName` set to the speaker name, optionally purges existing context (`clearContextBeforeTranscription`), and deletes the session from the review list.
+- **✓ Apply to Channel:** First saves all assignments (same as Save All), then rebuilds the transcript using DB-resolved speaker names, writes one context row per speaker line with `authorName` set to the speaker name, optionally purges existing non-frozen context rows if the channel is listed in `clearContextChannels`, and deletes the session from the review list.
 - 🗑️ deletes a session without writing to context.
 
 #### Diarization with speaker samples (preamble approach)
@@ -4737,16 +4737,16 @@ POST /voice/api/session/:id/apply
 
 ```json
 "webpage-voice": {
-  "flow":                            ["webpage"],
-  "port":                            3119,
-  "basePath":                        "/voice",
-  "silenceTimeoutMs":                2500,
-  "maxDurationMs":                   30000,
-  "clearContextBeforeTranscription": false,
-  "sampleModel":                     "gpt-4o-mini-transcribe",
-  "transcribeApiKey":                "",
-  "transcribeEndpoint":              "",
-  "allowedRoles":                    [],
+  "flow":                   ["webpage"],
+  "port":                   3119,
+  "basePath":               "/voice",
+  "silenceTimeoutMs":       2500,
+  "maxDurationMs":          30000,
+  "clearContextChannels":   [],
+  "sampleModel":            "gpt-4o-mini-transcribe",
+  "transcribeApiKey":       "",
+  "transcribeEndpoint":     "",
+  "allowedRoles":           [],
   "channels": [
     { "id": "YOUR_CHANNEL_ID", "label": "General" }
   ]
@@ -4768,7 +4768,7 @@ POST /voice/api/session/:id/apply
 - Add `3119` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /voice* localhost:3119` to your Caddyfile
 - See `config.webpage-router` to assign flow-specific `core-channel-config` overrides to `/voice` requests
-- `clearContextBeforeTranscription: true` purges all non-frozen context rows for the channel when **Apply** is clicked — useful for "start-of-session" mode
+- `clearContextChannels: ["your-channel-id"]` purges all non-frozen context rows for the listed channels before each transcript is stored — useful for "start-of-session" mode. Frozen rows are never deleted. Configure this in `webpage-voice`, `webpage-voice-record`, and `webpage-voice-add-context` independently.
 - The diarize model (`gpt-4o-transcribe-diarize`) is used automatically for `?transcribeOnly=1`; the regular model is used for always-on turns
 - Speaker samples are stored in `pub/documents/voice-samples/`. Ensure this path is writable.
 
