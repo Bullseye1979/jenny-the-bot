@@ -101,11 +101,14 @@ async function getDiarizedText(transcript, cfg, wo) {
   const apiKey   = String(cfg.apiKey   || wo.apiKey || "");
   const model    = String(cfg.model    || wo.model  || "gpt-4o-mini");
 
-  const systemPrompt =
+  const defaultDiarizationPrompt =
     "You receive numbered transcript segments. Assign each segment to a speaker " +
     "(Speaker 1, Speaker 2, etc.) based on context and turn-taking patterns. " +
     "Return ONLY the formatted transcript, one line per segment: " +
     "\"Speaker X: <text>\". No extra commentary.";
+  const systemPrompt = (typeof cfg.diarizationSystemPrompt === "string" && cfg.diarizationSystemPrompt.trim())
+    ? cfg.diarizationSystemPrompt.trim()
+    : defaultDiarizationPrompt;
 
   const resp = await fetch(endpoint, {
     method:  "POST",

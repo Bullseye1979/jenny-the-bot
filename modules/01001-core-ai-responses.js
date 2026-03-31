@@ -958,13 +958,15 @@ export default async function getCoreAi(coreData) {
       "- If you generate calendar-like text, prefer explicit dates (YYYY-MM-DD) when helpful."
     ].join("\n");
 
-    const policy = [
+    const defaultPolicy = [
       "Policy:",
       "- NEVER ANSWER TO OLDER USER REQUESTS",
       "- Use tools only when necessary.",
       "- When you emit a tool call, do not include extra prose in the same turn.",
       "- ALWAYS answer in human readable plain text, unless explicitly told to use a different format."
     ].join("\n");
+    const moduleCfg = coreData.config?.[MODULE_NAME] || {};
+    const policy = getStr(wo2?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "") || defaultPolicy;
 
     const multiChannelNote = (() => {
       const raw = Array.isArray(wo2?.contextIDs) ? wo2.contextIDs : [];

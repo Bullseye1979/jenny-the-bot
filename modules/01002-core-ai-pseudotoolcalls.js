@@ -546,7 +546,9 @@ function getSystemContentBase(wo) {
     "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
   ].join("\n");
 
-  const policy = [
+  const moduleCfg = coreData?.config?.[MODULE_NAME] || {};
+
+  const defaultPolicy = [
     "Policy:",
     "- Always answer the latest user turn.",
     "- Use recent conversation history for continuity and accuracy.",
@@ -554,8 +556,9 @@ function getSystemContentBase(wo) {
     "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
     "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"
   ].join("\n");
+  const policy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "") || defaultPolicy;
 
-  const toolContract = [
+  const defaultToolContract = [
     "Tool call contract:",
     "- If you decide to use a tool, emit it using either:",
     "  (A) [tool:NAME]{JSON}",
@@ -564,6 +567,7 @@ function getSystemContentBase(wo) {
     "- JSON must be valid. Set ALL required fields.",
     "- After receiving [tool_result:NAME], continue your previous answer and append any provided URL(s) at the very end."
   ].join("\n");
+  const toolContract = getStr(wo?.toolContractPrompt, "") || getStr(moduleCfg?.toolContractPrompt, "") || defaultToolContract;
 
   const multiChannelNote = (() => {
     const raw = Array.isArray(wo?.contextIDs) ? wo.contextIDs : [];
@@ -628,6 +632,7 @@ export default async function getCoreAi(coreData) {
     }
   }
 
+  const moduleCfg = coreData.config?.[MODULE_NAME] || {};
   const toolModules = await getToolsByName(kiCfg.toolsList, wo);
   const specsArr = await getPseudoToolSpecs(kiCfg.toolsList || [], wo);
   const toolSpecsByName = {};
@@ -754,7 +759,9 @@ export default async function getCoreAi(coreData) {
       const cutOff = finish === "length" || getLooksCutOff(cleanAssistantText);
       if (cutOff) {
         /* Instruct model not to embed new tool calls in the continuation pass */
-        const cont = { role: "user", content: "Continue exactly where you stopped. Do not call any more tools. Output only the missing text continuation." };
+        const defaultContinuationPrompt = "Continue exactly where you stopped. Do not call any more tools. Output only the missing text continuation.";
+        const continuationPromptText = getStr(wo?.continuationPrompt, "") || getStr(moduleCfg?.continuationPrompt, "") || defaultContinuationPrompt;
+        const cont = { role: "user", content: continuationPromptText };
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         log(`Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(cleanAssistantText)}`, "info");

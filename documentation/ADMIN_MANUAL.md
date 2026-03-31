@@ -2635,7 +2635,9 @@ The description is the primary way to control AI behaviour. Follow these convent
 
 ### Prompt Externalization
 
-Hardcoded system prompts inside tools have been moved to `core.json` under `toolsconfig.<toolName>`. The tool reads the config key with a built-in fallback:
+All hardcoded AI prompts — in both tools and modules — have been moved to `core.json`. Every key is optional; if absent or empty the built-in default is used.
+
+#### Tool prompts (`toolsconfig.<toolName>`)
 
 | Tool | Config key | Purpose |
 |---|---|---|
@@ -2644,10 +2646,22 @@ Hardcoded system prompts inside tools have been moved to `core.json` under `tool
 | `getWebpage` | `toolsconfig.getWebpage.systemPrompt` | Web analyst system prompt |
 | `getYoutube` | `toolsconfig.getYoutube.systemPrompt` | Transcript analyst system prompt |
 | `getHistory` | `toolsconfig.getHistory.systemPrompt` | History summarizer system prompt |
-| `getInformation` | `toolsconfig.getInformation.aliasSystemPrompt` | Alias extractor system prompt |
-| `core-ai-roleplay` | `config["core-ai-roleplay"].imagePromptRules` | SD image prompt generation rules |
+| `getInformation` | `toolsconfig.getInformation.aliasSystemPrompt` | Alias extractor prompt (use `${maxAliases}` as placeholder) |
 
-All keys are optional — if absent or empty, the built-in default is used.
+#### Module prompts (`config["<module-name>"]`)
+
+| Module | Config key | Purpose |
+|---|---|---|
+| `core-ai-completions` | `policyPrompt` | Policy block appended to every system prompt |
+| `core-ai-responses` | `policyPrompt` | Policy block appended to every system prompt |
+| `core-ai-pseudotoolcalls` | `policyPrompt` | Policy block appended to every system prompt |
+| `core-ai-pseudotoolcalls` | `toolContractPrompt` | Tool-call syntax contract shown to the model |
+| `core-ai-pseudotoolcalls` | `continuationPrompt` | User message injected when output was cut off |
+| `core-ai-roleplay` | `imagePromptRules` | Stable Diffusion image prompt generation rules |
+| `bard-cron` | `prompt` | Full music-classifier prompt (supports `{{LOCATION_TAGS}}`, `{{SITUATION_TAGS}}`, `{{MOOD_TAGS}}`, `{{CURRENT_LABELS}}`, `{{EXAMPLE_LINES}}` placeholders) |
+| `webpage-voice-record` | `diarizationSystemPrompt` | Speaker diarization system prompt |
+
+Per-channel overrides for `policyPrompt`, `toolContractPrompt`, and `continuationPrompt` can also be set directly on `workingObject` (channel config `overrides` block) and take precedence over the module-level defaults.
 
 ---
 

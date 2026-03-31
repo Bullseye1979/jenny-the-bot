@@ -247,7 +247,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
 }
 
 
-async function getSystemContent(wo, kiCfg) {
+async function getSystemContent(wo, kiCfg, moduleCfg) {
   const now = new Date();
   const tz = getStr(wo?.timezone, "Europe/Berlin");
   const nowIso = now.toISOString();
@@ -264,7 +264,8 @@ async function getSystemContent(wo, kiCfg) {
     "- When the user says \u201ctoday\u201d, \u201ctomorrow\u201d, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
     "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
   ].join("\n");
-  const commonPolicy = [
+
+  const defaultPolicy = [
     "Policy:",
     "- Do not answer unrelated older user requests.",
     "- If the latest user message asks you to continue your previous response, continue exactly where you stopped \u2014 do not repeat, summarize, or restart.",
@@ -272,6 +273,8 @@ async function getSystemContent(wo, kiCfg) {
     "- When you emit a tool call, do not include extra prose in the same turn.",
     "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format"
   ].join("\n");
+  const commonPolicy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "") || defaultPolicy;
+
   const multiChannelNote = (() => {
     const raw = Array.isArray(wo?.contextIDs) ? wo.contextIDs : [];
     const extraIds = raw
@@ -320,7 +323,8 @@ export default async function getCoreAi(coreData) {
       log(`getContext failed; continuing: ${e?.message || String(e)}`, "warn");
     }
   }
-  const systemContent = await getSystemContent(wo, kiCfg);
+  const moduleCfg = coreData.config?.[MODULE_NAME] || {};
+  const systemContent = await getSystemContent(wo, kiCfg, moduleCfg);
   const allowToolHistory = !!kiCfg.includeHistoryTools;
   const messagesFromHistory = getPromptFromSnapshot(snapshot, kiCfg, allowToolHistory);
   const lastRecord = Array.isArray(snapshot) && snapshot.length ? snapshot[snapshot.length - 1] : null;
