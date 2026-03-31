@@ -1,15 +1,24 @@
 /************************************************************************************/
-/* filename: 00035-bard-join.js                                                            *
-/* Version 1.0                                                                       *
-/* Purpose: Handles /bardstart and /bardstop in the discord-admin flow.             *
-/*          Creates or removes headless bard sessions (no voice channel required).  *
+/* filename: 00035-bard-join.js                                                     */
+/* Version 2.0                                                                      */
+/* Purpose: Handles bardstart / bardstop across all configured flows.               */
+/*          Creates or removes headless bard sessions (no voice channel required).  */
+/*          Supports discord-admin (slash command), discord and webpage (text).     */
+/*                                                                                  */
+/* Config (config["bard-join"]):                                                    */
+/*   flow          — array of flow names to subscribe to (default: all three)      */
+/*   commandPrefix — prefix char(s) for text flows (default: ["!", "/"])            */
+/*   allowedRoles  — role/permission whitelist for non-admin flows (default: [])   */
 /************************************************************************************/
 
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
-const MODULE_NAME = "bard-join";
+const MODULE_NAME    = "bard-join";
+const DEFAULT_PREFIX = ["!", "/"];
 
+
+/* ── registry helpers ─────────────────────────────────────────────────────── */
 
 async function getBardRegistry() {
   const key = "bard:registry";
@@ -22,7 +31,6 @@ async function getBardRegistry() {
   return reg;
 }
 
-
 async function setAddBardSessionKey(sessionKey) {
   const key = "bard:registry";
   const reg = await getBardRegistry();
@@ -32,7 +40,6 @@ async function setAddBardSessionKey(sessionKey) {
   }
 }
 
-
 async function setRemoveBardSessionKey(sessionKey) {
   const key = "bard:registry";
   const reg = await getBardRegistry();
@@ -41,22 +48,65 @@ async function setRemoveBardSessionKey(sessionKey) {
 }
 
 
-export default async function getBardAdminJoin(coreData) {
-  const wo = coreData?.workingObject || {};
+/* ── command detection ────────────────────────────────────────────────────── */
+
+function getDetectCommand(wo, cfg) {
+  // discord-admin: slash command
+  if (wo.flow === "discord-admin" && wo.admin?.command) {
+    const cmd = String(wo.admin.command).toLowerCase();
+    if (cmd === "bardstart" || cmd === "bardstop") return cmd;
+    return null;
+  }
+
+  // Text-based flows: check wo.message
+  const raw = String(wo.message || "").trim();
+  if (!raw) return null;
+
+  const prefixes = Array.isArray(cfg.commandPrefix) && cfg.commandPrefix.length
+    ? cfg.commandPrefix
+    : DEFAULT_PREFIX;
+
+  const lower = raw.toLowerCase();
+  for (const p of prefixes) {
+    const pp = String(p).toLowerCase();
+    if (lower.startsWith(pp + "bardstart")) return "bardstart";
+    if (lower.startsWith(pp + "bardstop"))  return "bardstop";
+  }
+  // Also accept bare word (exact match)
+  if (lower === "bardstart") return "bardstart";
+  if (lower === "bardstop")  return "bardstop";
+
+  return null;
+}
+
+function getGuildId(wo) {
+  return String(wo?.admin?.guildId || wo?.guildId || wo?.webAuth?.guildId || "");
+}
+
+function getTextChannelId(wo) {
+  return String(wo?.admin?.channelId || wo?.channelID || "");
+}
+
+
+/* ── main export ──────────────────────────────────────────────────────────── */
+
+export default async function getBardJoin(coreData) {
+  const wo  = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
 
   try {
-    if (wo?.flow !== "discord-admin") return coreData;
+    const cmd = getDetectCommand(wo, cfg);
+    if (!cmd) return coreData;
 
-    const cmd = String(wo?.admin?.command || "").toLowerCase();
-    if (cmd !== "bardstart" && cmd !== "bardstop") return coreData;
-
-    const guildId       = String(wo?.admin?.guildId   || "");
-    const textChannelId = String(wo?.admin?.channelId || wo?.channelID || "");
+    const guildId       = getGuildId(wo);
+    const textChannelId = getTextChannelId(wo);
+    const isAdminFlow   = wo.flow === "discord-admin";
 
     if (!guildId) {
-      log("bardstart/bardstop failed: missing guildId", "error", { moduleName: MODULE_NAME });
+      log("bardstart/bardstop failed: missing guildId", "error", { moduleName: MODULE_NAME, flow: wo.flow });
       wo.response = "";
+      if (!isAdminFlow) wo.stop = true;
       return coreData;
     }
 
@@ -72,11 +122,13 @@ export default async function getBardAdminJoin(coreData) {
       try { await deleteItem(`bard:nowplaying:${guildId}`); } catch {}
       try { await deleteItem(`bard:stream:${guildId}`); } catch {}
       await setRemoveBardSessionKey(sessionKey);
-      log("bardstop: bard session terminated", "info", { moduleName: MODULE_NAME, guildId });
-      wo.response = "";
+      log("bardstop: bard session terminated", "info", { moduleName: MODULE_NAME, guildId, flow: wo.flow });
+      wo.response = isAdminFlow ? "" : "🎵 Bard stopped.";
+      if (!isAdminFlow) wo.stop = true;
       return coreData;
     }
 
+    // bardstart
     if (live) {
       try { if (live._trackTimer) clearTimeout(live._trackTimer); } catch {}
       try { await deleteItem(sessionKey); } catch {}
@@ -95,13 +147,11 @@ export default async function getBardAdminJoin(coreData) {
     await setAddBardSessionKey(sessionKey);
 
     log("bardstart: bard session created", "info", {
-      moduleName: MODULE_NAME,
-      sessionKey,
-      guildId,
-      textChannelId
+      moduleName: MODULE_NAME, sessionKey, guildId, textChannelId, flow: wo.flow
     });
 
-    wo.response = "";
+    wo.response = isAdminFlow ? "" : "🎵 Bard started.";
+    if (!isAdminFlow) wo.stop = true;
     return coreData;
 
   } catch (e) {

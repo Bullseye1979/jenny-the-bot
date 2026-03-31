@@ -1474,6 +1474,24 @@ Configuration for the headless bard music scheduler.
 | `musicDir` | string | Directory containing MP3 files and `library.xml` (default: `assets/bard`) |
 | `pollIntervalMs` | number | Poll interval in milliseconds (min 5000, default: 5000) |
 
+#### config.bard-join
+
+Configuration for the bard start/stop command handler.
+
+```json
+"bard-join": {
+  "flow": ["discord-admin", "discord", "webpage"],
+  "commandPrefix": ["/"]
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `flow` | array | — | Must include `"discord-admin"` for slash commands. Add `"discord"` and/or `"webpage"` to also accept text-based `/bardstart` and `/bardstop` commands in those flows. |
+| `commandPrefix` | array | `["/"]` | Prefix characters that trigger the command in `discord` and `webpage` flows. Only used when the flow is not `discord-admin`. |
+
+---
+
 #### config.bard-cron
 
 Configuration for the label-generation module. AI params (`endpoint`, `apiKey`, `model`) fall back to the global `workingObject` defaults if not set here.
@@ -1614,7 +1632,7 @@ Browser-based always-on voice interface with meeting recorder, speaker managemen
   "port":                          3119,
   "basePath":                      "/voice",
   "silenceTimeoutMs":              2500,
-  "silenceRmsThreshold":           0.015,
+  "silenceRmsThreshold":           0.04,
   "maxDurationMs":                 30000,
   "allowedRoles":                  [],
   "clearContextChannels":          [],
@@ -1633,7 +1651,7 @@ Browser-based always-on voice interface with meeting recorder, speaker managemen
 | `port` | number | `3119` | HTTP port — must also be in `config.webpage.ports` |
 | `basePath` | string | `"/voice"` | URL prefix for this module |
 | `silenceTimeoutMs` | number | `2500` | Silence duration (ms) before the always-on mic auto-sends audio |
-| `silenceRmsThreshold` | number | `0.015` | RMS amplitude threshold below which audio is considered silence. Raise this value (e.g. `0.04`) in noisy environments to prevent background noise from resetting the silence counter and blocking auto-send. |
+| `silenceRmsThreshold` | number | `0.04` | RMS amplitude threshold below which audio is considered silence. Raise this value if background noise is detected as speech. Recommended: `0.04` for slight sensitivity reduction, `0.07` for noisy environments. Production default: `0.07`. |
 | `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
 | `allowedRoles` | array | `[]` | Roles that may access the voice interface. Empty array = public |
 | `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before writing a transcript. Frozen rows are never deleted. Add a channel ID here for "start-of-session" mode on that channel. |
@@ -1883,7 +1901,7 @@ Every module can be restricted to specific flows via its config block:
 | `core-ai-pseudotoolcalls` | discord-status, discord, discord-voice, api, webpage |
 | `core-ai-roleplay` | discord-status, discord, discord-voice, api, webpage |
 | `core-output` | all |
-| `bard-join` | discord-admin |
+| `bard-join` | discord-admin, discord, webpage |
 | `bard-cron` | bard-label-gen |
 | `bard-label-output` | bard-label-gen |
 | `webpage-bard` | webpage |
@@ -2373,7 +2391,7 @@ export default async function myModule(coreData) {
 | 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB for the **always-on voice path only**. Skips when `wo.transcribeOnly === true` (meeting recorder path) — those transcripts only reach context via the Review tab Apply button. Active when `wo.isWebpageVoice === true`, `wo.transcribeOnly !== true`, and `wo.payload` is set. Diarized transcripts are parsed into one DB entry per speaker turn (`source: "voice-transcribe"`). When the channel ID is listed in `clearContextChannels`, purges non-frozen context rows (via `setPurgeContext`) for the channel first. |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
 | 00033 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends HTTP 200 JSON `{ transcript, sessionId }` and sets `wo.stop = true` so AI/TTS never run. The transcript is NOT written to context here — that happens when the user clicks **Apply to Channel** in the Review tab (`POST /voice/api/session/:id/apply`). Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
-| 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands — creates or removes a headless bard session in the registry |
+| 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands across **all subscribed flows** — creates or removes a headless bard session in the registry. In `discord-admin` flow: reads slash command via `wo.admin.command`. In `discord` and `webpage` flows: reads `wo.message` and matches the configured `commandPrefix` (default: `["/"]`). Responds with `""` (silent) in discord-admin; responds with `"🎵 Bard started/stopped."` and sets `wo.stop = true` in other flows. |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00037 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00040 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
@@ -2392,9 +2410,9 @@ export default async function myModule(coreData) {
 | 00055 | `core-admin-commands` | DB-level admin commands for all relevant flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` in payload. `api`: `/purgedb`, `/freeze` slash-text in payload. No Discord-API access — pure DB operations only. |
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
 | 00057 | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth page (port 3124, `/graph-auth`). Logged-in users connect or disconnect their Microsoft account. Stores access + refresh tokens in `graph_tokens` DB table. Required before the `getGraph` tool can be used. |
-| 00058 | `cron-graph-token-refresh` | Cron module — refreshes expiring Microsoft Graph tokens. Queries `graph_tokens` for rows with `expires_at` within the configured buffer window and calls the MS token refresh endpoint. Skips on failure (does not delete). Only runs in the `cron` flow. |
+| 00058 | `cron-graph-token-refresh` | Cron module — refreshes expiring Microsoft Graph tokens. Queries `graph_tokens` for rows with `expires_at` within the configured buffer window and calls the MS token refresh endpoint. Skips on failure (does not delete). Only runs in the `cron-graph-token-refresh` flow (the cron job `id` must match exactly). |
 | 00061 | `webpage-spotify-auth` | Spotify OAuth2 delegated auth page (port 3125, `/spotify-auth`). Logged-in users connect or disconnect their Spotify account. Stores access + refresh tokens in `spotify_tokens` DB table. Required before the `getSpotify` tool can be used. Uses `Authorization: Basic` header for token exchange (Spotify-specific). |
-| 00062 | `cron-spotify-token-refresh` | Cron module — refreshes expiring Spotify tokens. Queries `spotify_tokens` for rows with `expires_at` within the configured buffer window. Uses `Authorization: Basic` header. Stores new refresh token if Spotify issues one. Skips on failure (does not delete). Only runs in the `cron` flow. |
+| 00062 | `cron-spotify-token-refresh` | Cron module — refreshes expiring Spotify tokens. Queries `spotify_tokens` for rows with `expires_at` within the configured buffer window. Uses `Authorization: Basic` header. Stores new refresh token if Spotify issues one. Skips on failure (does not delete). Only runs in the `cron-spotify-token-refresh` flow (the cron job `id` must match exactly). |
 | 00059 | `webpage-live` | Live context monitor SPA (port 3123, `/live`) — selectable channel checkboxes, field toggles (timestamp, channel, role), configurable poll interval, autoscroll toggle. Collapsible settings sidebar (◀/▶). All UI state persists in `localStorage`. Parses `json.authorName` and `json.content` from Discord context entries to display chat transcripts in real time. New messages are inserted into the DOM sorted by `ts` (tiebreaker: `ctx_id`) regardless of arrival order — each message element carries `data-ts` and `data-ctx-id` attributes so out-of-order poll responses (race condition) are placed at the correct position rather than appended at the bottom. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
@@ -3150,12 +3168,12 @@ Also add `3124` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`, a
 ```json
 "cron": {
   "jobs": [
-    { "name": "graph-token-refresh", "schedule": "*/5 * * * *", "flow": "cron" }
+    { "id": "cron-graph-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelID": "cron-graph-token-refresh" }
   ]
 }
 ```
 
-Add to `config["cron-graph-token-refresh"].flow = ["cron"]` in the module subscription list.
+Add to `config["cron-graph-token-refresh"].flow = ["cron-graph-token-refresh"]` in the module subscription list.
 
 **LLM parameter: `operation`** — selects the operation to execute. All others are optional depending on the operation.
 
@@ -3257,6 +3275,7 @@ The tool never throws — if authentication fails or an ID cannot be resolved th
 
 | Operation | Description |
 |---|---|
+| `playByName` | Search for a track, album, or artist by name and play it in one step — combines `search` + `listDevices` + `play` internally. Use this for any "play X" request instead of chaining the individual operations. |
 | `search` | Search Spotify for tracks, albums, artists, or playlists |
 | `getPlayback` | Get current playback state (track, device, progress, shuffle, repeat) |
 | `play` | Start or resume playback; optionally play a specific URI on a specific device |
@@ -3289,6 +3308,9 @@ The AI must always follow this sequence when playing a named track:
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `operation` | string | Yes | One of the operations listed above |
+| `track` | string | For `playByName` | Track name to search for and play |
+| `album` | string | For `playByName` | Album name (optional, narrows the search) |
+| `artist` | string | For `playByName` | Artist name (optional, narrows the search) |
 | `query` | string | For `search` | Search query string |
 | `types` | array | For `search` | Resource types: `track`, `album`, `artist`, `playlist` (default: `["track"]`) |
 | `limit` | number | — | Number of results (default: 20, max: 50) |
@@ -5405,7 +5427,7 @@ Both tables (`graph_tokens` and `graph_auth_states`) are created automatically o
 ### 16.16 Token Refresh Cron (`cron-graph-token-refresh`)
 
 **Module:** `modules/00058-cron-graph-token-refresh.js`
-**Flow:** `cron`
+**Flow:** `cron-graph-token-refresh`
 
 Automatically refreshes Microsoft Graph tokens before they expire. Runs every 5 minutes (or whichever interval the cron job specifies).
 
@@ -5440,7 +5462,7 @@ Add the cron job to `core.json`:
 ```json
 "cron": {
   "jobs": [
-    { "name": "graph-token-refresh", "schedule": "*/5 * * * *", "flow": "cron" }
+    { "id": "cron-graph-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelID": "cron-graph-token-refresh" }
   ]
 }
 ```
@@ -5449,7 +5471,7 @@ And add the module subscription:
 
 ```json
 "cron-graph-token-refresh": {
-  "flow": ["cron"]
+  "flow": ["cron-graph-token-refresh"]
 }
 ```
 
@@ -5565,7 +5587,7 @@ CREATE TABLE IF NOT EXISTS spotify_auth_states (
 ### 16.18 Spotify Token Refresh Cron (`cron-spotify-token-refresh`)
 
 **Module:** `modules/00062-cron-spotify-token-refresh.js`
-**Flow:** `cron`
+**Flow:** `cron-spotify-token-refresh`
 
 Automatically refreshes Spotify tokens before they expire. Runs every 5 minutes (or whichever interval the cron job specifies).
 
@@ -5607,7 +5629,7 @@ And add the module subscription:
 
 ```json
 "cron-spotify-token-refresh": {
-  "flow": ["cron"]
+  "flow": ["cron-spotify-token-refresh"]
 }
 ```
 
@@ -5622,7 +5644,7 @@ The bard music system automatically plays mood-appropriate background music for 
 ### Architecture
 
 ```
-/bardstart command
+/bardstart command [discord-admin: slash command | discord/webpage: /bardstart text message]
   -> 00035-bard-join.js
   -> creates a headless session in the registry (no voice channel connection needed)
   -> stores bard:session:{guildId} = { guildId, textChannelId, status: "ready", ... }
@@ -5824,12 +5846,14 @@ When no AI labels are active (labels array is empty — e.g. immediately after `
 2. **Track playing** — every poll compares new AI labels vs `nowPlaying.labels`. If any switch rule fires, `getSelectSong` finds the best track in its tier and starts it immediately. Otherwise, `nowPlaying.labels` and `bard:stream.labels` are refreshed for the UI only.
 3. **Song ends naturally** — `setTimeout` fires (ffprobe duration + 200 ms), calls `triggerPoll()` immediately. The next poll runs `getSelectSong` with the current labels and starts the best-matching track.
 
-### Slash Commands
+### Commands
 
-| Command | Description |
-|---|---|
-| `/bardstart` | Start the bard music scheduler for this server |
-| `/bardstop` | Stop the bard music scheduler for this server |
+| Command | Flow | Description |
+|---|---|---|
+| `/bardstart` | discord-admin (slash command) | Start the bard music scheduler for this server |
+| `/bardstop` | discord-admin (slash command) | Stop the bard music scheduler for this server |
+| `/bardstart` | discord, webpage (text message) | Start the bard music scheduler — send as a text message with the configured `commandPrefix` (default: `/`) |
+| `/bardstop` | discord, webpage (text message) | Stop the bard music scheduler — send as a text message with the configured `commandPrefix` |
 
 ### Bard UI
 
