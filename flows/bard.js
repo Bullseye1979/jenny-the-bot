@@ -135,7 +135,7 @@ async function setPlayTrack(session, track, musicDir, log, triggerPoll) {
     const nowTs = new Date().toISOString();
     await putItem(
       {
-        guildId: session.guildId,
+        channelId: session.textChannelId,
         file: track.file,
         title: track.title,
         labels: session._lastLabels || [],
@@ -145,11 +145,11 @@ async function setPlayTrack(session, track, musicDir, log, triggerPoll) {
         startedAt: nowTs,
         musicDir
       },
-      `bard:stream:${session.guildId}`
+      `bard:stream:${session.textChannelId}`
     );
     await putItem(
       { file: track.file, title: track.title, labels: session._lastLabels || [], startedAt: nowTs },
-      `bard:nowplaying:${session.guildId}`
+      `bard:nowplaying:${session.textChannelId}`
     );
 
     const durationMs = await getTrackDurationMs(filePath);
@@ -164,7 +164,7 @@ async function setPlayTrack(session, track, musicDir, log, triggerPoll) {
 
     log(`now playing: "${track.title}" (${track.file}), duration: ${Math.round(durationMs / 1000)}s`, "info", {
       moduleName: MODULE_NAME,
-      guildId: session.guildId,
+      channelId: session.textChannelId,
       labels: session._lastLabels || []
     });
     return true;
@@ -197,10 +197,10 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
       for (const sessionKey of keys) {
         try {
           const session = await getItem(sessionKey);
-          if (!session?.guildId) continue;
+          if (!session?.textChannelId) continue;
 
-          const labelsData = await getItem(`bard:labels:${session.guildId}`);
-          const nowPlaying = await getItem(`bard:nowplaying:${session.guildId}`);
+          const labelsData = await getItem(`bard:labels:${session.textChannelId}`);
+          const nowPlaying = await getItem(`bard:nowplaying:${session.textChannelId}`);
           const currentFile = nowPlaying?.file || null;
 
           let labels = Array.isArray(labelsData?.labels) ? labelsData.labels : [];
@@ -211,7 +211,7 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
 
           const isPlaying = !!(session._trackEndAt && Date.now() < session._trackEndAt);
 
-          log(`[label-debug] guild=${session.guildId} isPlaying=${isPlaying} labels=[${labels.join(",")}] labelsUpdatedAt=${labelsData?.updatedAt || "none"} currentFile=${currentFile || "none"}`, "info", { moduleName: MODULE_NAME });
+          log(`[label-debug] channel=${session.textChannelId} isPlaying=${isPlaying} labels=[${labels.join(",")}] labelsUpdatedAt=${labelsData?.updatedAt || "none"} currentFile=${currentFile || "none"}`, "info", { moduleName: MODULE_NAME });
 
           if (isPlaying) {
             const prevLabels  = Array.isArray(nowPlaying?.labels) ? nowPlaying.labels : [];
@@ -250,7 +250,7 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
             }
 
             if (switchReason) {
-              log(`mid-song switch (${switchReason}) for guild ${session.guildId}`, "info", { moduleName: MODULE_NAME });
+              log(`mid-song switch (${switchReason}) for channel ${session.textChannelId}`, "info", { moduleName: MODULE_NAME });
               const next = getSelectSong(labels, library, currentFile);
               if (next !== null) {
                 session._lastLabels = labels;
@@ -260,16 +260,16 @@ function getScanAndPlay(musicDir, pollMs, log, cfg) {
               }
             }
 
-            if (nowPlaying) await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.guildId}`);
+            if (nowPlaying) await putItem({ ...nowPlaying, labels }, `bard:nowplaying:${session.textChannelId}`);
             try {
-              const currentStream = await getItem(`bard:stream:${session.guildId}`);
-              if (currentStream) await putItem({ ...currentStream, labels }, `bard:stream:${session.guildId}`);
+              const currentStream = await getItem(`bard:stream:${session.textChannelId}`);
+              if (currentStream) await putItem({ ...currentStream, labels }, `bard:stream:${session.textChannelId}`);
             } catch {}
             continue;
           } else {
             const next = getSelectSong(labels, library, null, session._lastPlayedFile || currentFile);
             if (!next) {
-              try { await deleteItem(`bard:stream:${session.guildId}`); } catch {}
+              try { await deleteItem(`bard:stream:${session.textChannelId}`); } catch {}
               continue;
             }
             session._lastLabels = labels;

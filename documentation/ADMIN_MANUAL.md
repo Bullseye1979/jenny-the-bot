@@ -1480,14 +1480,14 @@ Configuration for the bard start/stop command handler.
 
 ```json
 "bard-join": {
-  "flow": ["discord-admin", "discord", "webpage"],
+  "flow": ["discord-admin", "discord", "webpage", "api"],
   "commandPrefix": ["/"]
 }
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `flow` | array | — | Must include `"discord-admin"` for slash commands. Add `"discord"` and/or `"webpage"` to also accept text-based `/bardstart` and `/bardstop` commands in those flows. |
+| `flow` | array | — | Must include `"discord-admin"` for slash commands. Add `"discord"`, `"webpage"`, and/or `"api"` to also accept text-based `/bardstart` and `/bardstop` commands in those flows. The `"api"` flow is used internally by the webpage-chat SPA proxy. |
 | `commandPrefix` | array | `["/"]` | Prefix characters that trigger the command in `discord` and `webpage` flows. Only used when the flow is not `discord-admin`. |
 
 ---
@@ -1901,7 +1901,9 @@ Every module can be restricted to specific flows via its config block:
 | `core-ai-pseudotoolcalls` | discord-status, discord, discord-voice, api, webpage |
 | `core-ai-roleplay` | discord-status, discord, discord-voice, api, webpage |
 | `core-output` | all |
-| `bard-join` | discord-admin, discord, webpage |
+| `bard-join` | discord-admin, discord, webpage, api |
+| `discord-purge` | discord-admin, discord |
+| `core-admin-commands` | api, discord-admin, discord, webpage |
 | `bard-cron` | bard-label-gen |
 | `bard-label-output` | bard-label-gen |
 | `webpage-bard` | webpage |
@@ -2345,7 +2347,7 @@ Modules execute in **strict numeric order**. Naming convention: `NNNNN-PREFIX-NA
 npm run lint
 ```
 
-The custom rule `local/no-foreign-config` in `eslint-rules/no-foreign-config.js` checks every file in `modules/`. It derives the expected config key from the filename (e.g. `00050-discord-admin-commands.js` → `"discord-admin-commands"`) and flags any string-literal bracket access to `.config` that uses a different key:
+The custom rule `local/no-foreign-config` in `eslint-rules/no-foreign-config.js` checks every file in `modules/`. It derives the expected config key from the filename (e.g. `00050-discord-purge.js` → `"discord-purge"`) and flags any string-literal bracket access to `.config` that uses a different key:
 
 ```
 modules/00048-webpage-chat.js:52
@@ -2391,7 +2393,7 @@ export default async function myModule(coreData) {
 | 00031 | `webpage-voice-add-context` | Writes the voice transcription to the context DB for the **always-on voice path only**. Skips when `wo.transcribeOnly === true` (meeting recorder path) — those transcripts only reach context via the Review tab Apply button. Active when `wo.isWebpageVoice === true`, `wo.transcribeOnly !== true`, and `wo.payload` is set. Diarized transcripts are parsed into one DB entry per speaker turn (`source: "voice-transcribe"`). When the channel ID is listed in `clearContextChannels`, purges non-frozen context rows (via `setPurgeContext`) for the channel first. |
 | 00032 | `discord-add-files` | Extracts file attachments and URLs from Discord messages |
 | 00033 | `webpage-voice-transcribe-gate` | For `POST /voice/audio?transcribeOnly=1` (meeting recorder): sends HTTP 200 JSON `{ transcript, sessionId }` and sets `wo.stop = true` so AI/TTS never run. The transcript is NOT written to context here — that happens when the user clicks **Apply to Channel** in the Review tab (`POST /voice/api/session/:id/apply`). Active only in `webpage` flow when `wo.isWebpageVoice && wo.transcribeOnly`. |
-| 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands across **all subscribed flows** — creates or removes a headless bard session in the registry. In `discord-admin` flow: reads slash command via `wo.admin.command`. In `discord` and `webpage` flows: reads `wo.message` and matches the configured `commandPrefix` (default: `["/"]`). Responds with `""` (silent) in discord-admin; responds with `"🎵 Bard started/stopped."` and sets `wo.stop = true` in other flows. |
+| 00035 | `bard-join` | Processes `/bardstart` and `/bardstop` commands across **all subscribed flows** — creates or removes a headless channel-based bard session in the registry. Sessions are keyed by `channelId`; multiple sessions can run simultaneously on the same Discord server. In `discord-admin` flow: reads slash command via `wo.admin.command`. In `discord`, `webpage`, and `api` flows: reads `wo.payload` or `wo.message` and matches the configured `commandPrefix` (default: `["/"]`). Responds with `""` (silent) in discord-admin; responds with `"🎵 Bard started/stopped."` and sets `wo.stop = true` in other flows. |
 | 00036 | `bard-cron` | Prepares `wo.payload` and AI params for the bard-label-gen flow; hands off to `core-ai-completions` |
 | 00037 | `discord-admin-join` | Processes `/join` and `/leave` commands for voice channels |
 | 00040 | `webpage-auth` | Discord OAuth2 SSO for webpage ports. Runs passively on every request — reads session cookies and sets `wo.webAuth` (username, userId, guildId, role, roles) and `wo.userId`. Login/logout routes handled on the configured `loginPort`. Role is normalized at login time via the matched guild's `roleMap` and stored in the session cookie as-is; on subsequent requests it is read directly from the session without re-normalization (so custom labels like `"dnd"` are preserved). Guild iteration: if a user is found in a guild but has no matching `allowRoleIds`, iteration continues to the next guild in `guilds[]`. `guildId` is preserved through SSO token handoff so cross-domain sessions also carry the originating guild. Non-`/auth/*` requests pass through unchanged. Scope controlled via `cfg.ports`. |
@@ -2400,14 +2402,14 @@ export default async function myModule(coreData) {
 | 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — tiered access (allowedRoles = basic listener access, adminRoles = full upload/manage rights, no matching role = 403 deny); bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card. Reads `bard:registry`, `bard:stream`, `bard:labels` from registry via `getItem` for the `/api/nowplaying` endpoint. |
 | 00044 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. |
 | 00047 | `webpage-voice` | Webpage voice interface — three-tab SPA (Voice / Speakers / Review). Voice tab: always-on mic + meeting recorder. Speakers tab: register known voices with sample audio for automatic speaker identification. Review tab: inspect diarized sessions, correct speaker assignments, and apply the final transcript to the channel context via `POST /voice/api/session/:id/apply`. On Apply: rebuilds transcript with DB speaker names, sets `authorName` to participant list, optionally purges context, writes via `setContext`, deletes session. |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. Admin commands (`/purgedb`, `/freeze`) are **not** handled inline here — they pass through the api proxy to `localhost:3400/api` where `00055-core-admin-commands` handles them. The proxy request body includes `guildId` so downstream modules can identify the originating guild. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
-| 00050 | `discord-admin-commands` | Discord-level admin commands only. `discord-admin` flow: `/purge` (bulk-delete Discord messages with rate-limit backoff), `/error` (simulated error). `discord` flow (DM only): `!purge [N]` (delete up to N bot messages from the DM channel). DB-level commands (`purgedb`, `freeze`) are handled by `00055-core-admin-commands`. |
+| 00050 | `discord-purge` | Discord message deletion commands. `/purge` (slash command, discord-admin flow) deletes Discord channel messages with rate-limit backoff. `!purge [N]` (discord DM flow only) deletes up to N bot messages from the DM channel. These are Discord-specific operations — they delete actual Discord messages, not DB rows. DB-level commands (`purgedb`, `freeze`) are handled by `00055-core-admin-commands`. |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
 | 00052 | `webpage-wiki` | AI-driven Fandom-style wiki (port 3117, `/wiki`) |
 | 00053 | `webpage-context` | Context DB editor SPA (port 3118, `/context`) — channel browser with collapsible sidebar (state persisted in `localStorage`), field selector, search, search & replace, bulk delete |
 | 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) — collapsible file-navigation sidebar (state persisted in `localStorage`) |
-| 00055 | `core-admin-commands` | DB-level admin commands for all relevant flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` in payload. `api`: `/purgedb`, `/freeze` slash-text in payload. No Discord-API access — pure DB operations only. |
+| 00055 | `core-admin-commands` | DB-level admin commands for all flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` in payload. `api`: `/purgedb`, `/freeze` slash-text in payload. `webpage`: `/purgedb`, `/freeze` in the chat SPA — these are routed via the api proxy in `00048-webpage-chat`, so they arrive as `api` flow requests and are handled here (inline handling in 00048 has been removed). No Discord-API access — pure DB operations only. **Command routing in webpage-chat:** `/purgedb` and `/freeze` commands typed in the chat SPA pass through the api proxy to `localhost:3400/api`, where this module handles them in the api flow. This keeps 00048 free of plugin-specific logic. |
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
 | 00057 | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth page (port 3124, `/graph-auth`). Logged-in users connect or disconnect their Microsoft account. Stores access + refresh tokens in `graph_tokens` DB table. Required before the `getGraph` tool can be used. |
 | 00058 | `cron-graph-token-refresh` | Cron module — refreshes expiring Microsoft Graph tokens. Queries `graph_tokens` for rows with `expires_at` within the configured buffer window and calls the MS token refresh endpoint. Skips on failure (does not delete). Only runs in the `cron-graph-token-refresh` flow (the cron job `id` must match exactly). |
@@ -2520,7 +2522,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | 03000 | `discord-status-apply` | Applies the generated Discord presence status. Uses `wo.response` from the AI module; falls back to the `status:ai` registry cache, then to `placeholderText`. If the AI returns `[Empty AI response]` or `[Empty response]`, the presence is set to `"..."` instead of showing the literal marker string. Tool-call status (e.g. `"⏳ Generating an image …"`) takes priority over AI-generated text — but only if the originating flow matches `cfg.allowedFlows` (e.g. `["discord","discord-voice"]`). If `allowedFlows` is empty or absent, all flows are shown. |
 | 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
-| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow into a **6-position structured label array** `[location, situation, mood1, mood2, mood3, mood4]`. Applies **category-based position rescue**: scans all 6 AI values and assigns each to the correct slot by checking `wo._bardLocations` / `wo._bardSituations` regardless of where the AI placed them (e.g. `'',dungeon,joy,fun,tense,battle` → `dungeon,battle,joy,fun,tense,''`). Unknown words at positions 0/1 are accepted as fallback. Mood slots are validated against `wo._bardValidTags`; invalid entries are replaced with empty string. Writes `bard:labels:{guildId}` and `bard:lastrun:{guildId}` only on success (prevents context window from advancing on AI failure). |
+| 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow into a **6-position structured label array** `[location, situation, mood1, mood2, mood3, mood4]`. Applies **category-based position rescue**: scans all 6 AI values and assigns each to the correct slot by checking `wo._bardLocations` / `wo._bardSituations` regardless of where the AI placed them (e.g. `'',dungeon,joy,fun,tense,battle` → `dungeon,battle,joy,fun,tense,''`). Unknown words at positions 0/1 are accepted as fallback. Mood slots are validated against `wo._bardValidTags`; invalid entries are replaced with empty string. Writes `bard:labels:{channelId}` and `bard:lastrun:{channelId}` only on success (prevents context window from advancing on AI failure). |
 | 08100 | `core-voice-tts` | Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to split into voice segments, sanitizes text, calls the OpenAI TTS API for each segment (parallel, concurrency 2). Output format is controlled by `wo.ttsFormat` / `cfg.ttsFormat` (default `"opus"` for Discord, `"mp3"` for webpage). Outputs `wo.ttsSegments = [{voice, text, buffer}]` and `wo.ttsDefaultVoice` |
 | 08110 | `discord-voice-tts-play` | Discord-specific TTS playback. Runs when `wo.ttsSegments` exists and a voice session is usable. Manages guild-level lock to prevent overlapping speech; plays each segment buffer sequentially via the @discordjs/voice AudioPlayer. Active only in `discord-voice` flow |
 | 08200 | `discord-reaction-finish` | Removes the progress reaction; adds a completion reaction |
@@ -3420,7 +3422,7 @@ This means `add-context` modules (00070, 00072) do not include `userId` in the r
 
 ```javascript
 // Example: read context since a registry-stored timestamp
-const lastRun = await getItem("bard:lastrun:guildId"); // { ts: "2026-03-07T..." }
+const lastRun = await getItem("bard:lastrun:channelId"); // { ts: "2026-03-07T..." }
 const rows = lastRun?.ts
   ? await getContextSince(wo, lastRun.ts)          // since last run
   : await getContextLastSeconds(wo, 300);           // fallback: last 5 minutes
@@ -5644,10 +5646,11 @@ The bard music system automatically plays mood-appropriate background music for 
 ### Architecture
 
 ```
-/bardstart command [discord-admin: slash command | discord/webpage: /bardstart text message]
+/bardstart command [discord-admin: slash command | discord/webpage/api: /bardstart text message]
   -> 00035-bard-join.js
-  -> creates a headless session in the registry (no voice channel connection needed)
-  -> stores bard:session:{guildId} = { guildId, textChannelId, status: "ready", ... }
+  -> creates a headless channel-based session in the registry (no voice channel connection needed)
+  -> stores bard:session:{channelId} = { textChannelId, status: "ready", ... }
+  -> multiple sessions can run simultaneously on the same Discord server (one per channel)
   -> does NOT write bard:labels — empty labels cause getSelectSong to pick a random
      track on the first poll, which is the correct startup behaviour. The cron job
      writes real structured labels (location/situation/moods) on its first run.
@@ -5655,15 +5658,21 @@ The bard music system automatically plays mood-appropriate background music for 
 /bardstop command
   -> 00035-bard-join.js
   -> cancels the track advancement timer (session._trackTimer)
-  -> removes bard:session:{guildId}, bard:labels:{guildId}, bard:lastrun:{guildId},
-     bard:nowplaying:{guildId}, bard:stream:{guildId} from registry
+  -> removes bard:session:{channelId}, bard:labels:{channelId}, bard:lastrun:{channelId},
+     bard:nowplaying:{channelId}, bard:stream:{channelId} from registry
   -> bard:lastrun is deleted so the next /bardstart fetches fresh context from scratch
      (without it the cron would only look at context since the old timestamp, finding
       nothing and generating no labels until new conversation happens)
 
+Note on the api flow:
+  The webpage-chat SPA proxies messages to localhost:3400/api. The api flow reads guildId
+  from the request body (set by 00048-webpage-chat) and writes it to wo.guildId, enabling
+  bard-join and other modules to identify the originating guild. Commands in 00035 use
+  wo.payload (in addition to wo.message) to detect /bardstart and /bardstop in the api flow.
+
 Cron job (every N minutes, flow: bard-label-gen)
   -> 00036-bard-cron.js (preparer)
-     - reads bard:lastrun:{guildId} from registry
+     - reads bard:lastrun:{channelId} from registry
      - reads chat context since that timestamp via getContextSince()
        (fallback: last 5 minutes on first run)
      - does NOT write lastrun yet — stores key+ts in wo._bardLastRunKey / wo._bardLastRunTs
@@ -5690,15 +5699,15 @@ Cron job (every N minutes, flow: bard-label-gen)
            Rationale: situations change rapidly (combat starts/ends); carrying forward a situation
            causes a self-reinforcing loop (battle track → songTags="battle" → bard:labels="battle"
            → new battle track → …). Empty situation = wildcard in the selector → any track matches.
-     - writes bard:labels:{guildId} to registry
-     - writes bard:lastrun:{guildId} only on success (prevents context window from advancing on AI failure)
+     - writes bard:labels:{channelId} to registry
+     - writes bard:lastrun:{channelId} only on success (prevents context window from advancing on AI failure)
 
 flows/bard.js (polls every N seconds, min 5 s) — headless scheduler
   -> reloads library.xml from disk on every cycle (picks up newly added tracks without restart)
   -> no active sessions → stop
   -> for each active session:
-     - reads bard:labels:{guildId} for current mood
-     - reads bard:nowplaying:{guildId} for current track
+     - reads bard:labels:{channelId} for current mood
+     - reads bard:nowplaying:{channelId} for current track
      - checks session._trackEndAt: if Date.now() < _trackEndAt → track is still playing
      - compares new AI labels vs previous active labels (nowPlaying.labels):
        · location changed (both non-empty, different) → switch
@@ -5709,14 +5718,14 @@ flows/bard.js (polls every N seconds, min 5 s) — headless scheduler
        if switch triggered → getSelectSong selects best-fit track by tier+mood; if current is already
          tied-best → stay (null returned), update UI only
      - if track ended (timer expired): select next track
-     - song found: writes bard:stream:{guildId} and bard:nowplaying:{guildId},
+     - song found: writes bard:stream:{channelId} and bard:nowplaying:{channelId},
        calls ffprobe to get duration, schedules setTimeout(triggerPoll, durationMs + 200)
-     - no song found: clears bard:stream:{guildId}
+     - no song found: clears bard:stream:{channelId}
 
 Track end timer — song ended naturally
   -> setTimeout fires after ffprobe duration + 200 ms
   -> clears session._trackEndAt, calls triggerPoll()
-  -> poll selects next track and overwrites bard:stream:{guildId} and bard:nowplaying:{guildId}
+  -> poll selects next track and overwrites bard:stream:{channelId} and bard:nowplaying:{channelId}
      atomically. bard:stream is never cleared on song-end — the poll overwrites it when the
      next track starts. This prevents the browser Now Playing card from briefly seeing null.
 ```
@@ -5725,12 +5734,12 @@ Track end timer — song ended naturally
 
 | Key | Contents |
 |-----|---------|
-| `bard:registry` | `{ list: ["bard:session:{guildId}"] }` |
-| `bard:session:{guildId}` | `{ guildId, textChannelId, status, _trackEndAt, _trackTimer, _lastPlayedFile, _lastLabels }` |
-| `bard:labels:{guildId}` | `{ labels: ["tavern","combat","dark","tense","intense","battle"], rejected: ["unknowntag"], updatedAt, guildId }` — written by the cron job after each LLM classification. `labels[0]` = location, `labels[1]` = situation, `labels[2–5]` = 4 mood tags; empty string = wildcard. `rejected` = mood tokens returned by the LLM that are not in the library (up to 5). **Not written on `/bardstart`** — absence of labels causes the first poll to prefer a `default`-tagged track (see below), or a random track if none is tagged `default`. Deleted on `/bardstop`. |
-| `bard:nowplaying:{guildId}` | `{ file, title, labels, startedAt }` |
-| `bard:stream:{guildId}` | `{ guildId, file, title, labels, trackTags, rejectedLabels, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`; `rejectedLabels` = LLM tokens not in the library (shown red in Now Playing). Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardstop` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
-| `bard:lastrun:{guildId}` | `{ ts: "2026-03-07T...", guildId }` — timestamp written by `bard-label-output` **only after a successful label write**. On AI failure the timestamp is not updated, so the next run retries from the same context window. **Deleted on `/bardstop`** — this forces the next `/bardstart` + cron run to fetch fresh context (last 300 s) instead of looking only at conversation after the old timestamp. |
+| `bard:registry` | `{ list: ["bard:session:{channelId}"] }` |
+| `bard:session:{channelId}` | `{ textChannelId, status, _trackEndAt, _trackTimer, _lastPlayedFile, _lastLabels }` |
+| `bard:labels:{channelId}` | `{ labels: ["tavern","combat","dark","tense","intense","battle"], rejected: ["unknowntag"], updatedAt, channelId }` — written by the cron job after each LLM classification. `labels[0]` = location, `labels[1]` = situation, `labels[2–5]` = 4 mood tags; empty string = wildcard. `rejected` = mood tokens returned by the LLM that are not in the library (up to 5). **Not written on `/bardstart`** — absence of labels causes the first poll to prefer a `default`-tagged track (see below), or a random track if none is tagged `default`. Deleted on `/bardstop`. |
+| `bard:nowplaying:{channelId}` | `{ file, title, labels, startedAt }` |
+| `bard:stream:{channelId}` | `{ channelId, file, title, labels, trackTags, rejectedLabels, startedAt, musicDir }` — `labels` = current AI mood tags; `trackTags` = the track's own tags from `library.xml`; `rejectedLabels` = LLM tokens not in the library (shown red in Now Playing). Overwritten atomically when a new track starts. **Never cleared on song-end** — the poll overwrites it when the next track begins. Only removed on `/bardstop` or when the library is empty and nothing can be played. Read by the Now Playing card in `webpage-bard`. |
+| `bard:lastrun:{channelId}` | `{ ts: "2026-03-07T...", channelId }` — timestamp written by `bard-label-output` **only after a successful label write**. On AI failure the timestamp is not updated, so the next run retries from the same context window. **Deleted on `/bardstop`** — this forces the next `/bardstart` + cron run to fetch fresh context (last 300 s) instead of looking only at conversation after the old timestamp. |
 
 ### Music Library (library.xml)
 
@@ -5862,7 +5871,7 @@ Accessible at `/bard`. Features:
 - Delete tracks (removes both library entry and MP3 file)
 - **Preview** any track with the ▶ button — plays directly in the browser without going through Discord
 - **Bulk Auto-Tag Upload** — drop multiple MP3 files at once and have tags generated automatically (see below)
-- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{guildId}`). Labels are colour-coded: **green** = tag appears on both the track and the active mood; **blue** = track tag not in the current mood; **gray** = mood label not present on the current track; **red** = LLM token not found in library.xml (rejected). Sync behaviour:
+- **Now Playing** card shows the currently active bard track (live, from `bard:stream:{channelId}`). Labels are colour-coded: **green** = tag appears on both the track and the active mood; **blue** = track tag not in the current mood; **gray** = mood label not present on the current track; **red** = LLM token not found in library.xml (rejected). Sync behaviour:
   - **Regular polling:** every 2 seconds.
   - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 2-second cycle. This minimises the gap between tracks in the browser player.
   - **On label change mid-song:** When `getShouldSwitch` fires (location, situation or mood drift), `bard:stream` is updated immediately with the new track. The browser picks up the change on its next poll cycle. If no switch rule fires, playback continues and only `nowPlaying.labels` is refreshed (UI update only).
@@ -5986,7 +5995,7 @@ The `bard-label-gen` flow uses the **standard AI pipeline** instead of its own i
 Cron trigger (bard-label-gen)
   └─> 00036-bard-cron       — prepares payload, systemPrompt, AI params
   └─> 01000-core-ai-completions — calls the LLM, writes wo.response
-  └─> 08050-bard-label-output  — parses response, writes bard:labels:{guildId}
+  └─> 08050-bard-label-output  — parses response, writes bard:labels:{channelId}
 ```
 
 This means the label-gen AI call:
@@ -6011,7 +6020,7 @@ This means the label-gen AI call:
 |---------|-------|-----|
 | No audio in browser player | Scheduler not started | Use `/bardstart` in Discord |
 | "Nothing playing right now" despite `/bardstart` | `getItem` import missing in `00043-webpage-bard.js` — `GET /bard/api/nowplaying` would silently return `null` because `ReferenceError: getItem is not defined` was caught by `try/catch` | Ensure `import { getItem } from "../core/registry.js"` is present in `00043-webpage-bard.js` |
-| After `/bardstop` + `/bardstart`, labels still feel like the old session | `bard:lastrun` was not deleted on `/bardstop`, so the next label-gen run found no new context and skipped — old labels were effectively carried over | Fixed: `/bardstop` now deletes `bard:lastrun:{guildId}`. After a fresh `/bardstart`, the cron fetches the last 300 s of context and generates new labels on the first run. |
+| After `/bardstop` + `/bardstart`, labels still feel like the old session | `bard:lastrun` was not deleted on `/bardstop`, so the next label-gen run found no new context and skipped — old labels were effectively carried over | Fixed: `/bardstop` now deletes `bard:lastrun:{channelId}`. After a fresh `/bardstart`, the cron fetches the last 300 s of context and generates new labels on the first run. |
 | Stuck in one situation (e.g. only battle tracks after a combat scene) | Situation carry-forward loop: battle track's `trackTags[1]="battle"` was carried into `bard:labels[1]`, which caused the selector to keep picking battle/wildcard-situation tracks, whose tags fed back into the next cycle | Fixed: `bard-label-output` no longer carries forward the situation slot. If the AI outputs empty for situation, it stays empty (wildcard), allowing all tracks to be candidates until the AI identifies the new situation. |
 | Wrong track keeps playing despite completely mismatched AI labels (e.g. `rural/relaxing` track while AI labels say `battlefield/battle`) | The switch logic only compared label *changes*; it never checked whether the currently-playing track actually fits the current labels. If a Tier 3 fallback track was selected when labels were already specific, `nowPlaying.labels` stored those specific labels — so every subsequent poll saw no label change and no switch. | Fixed: a 4th "track-mismatch" switch rule was added in `flows/bard.js`. When AI has active labels and the current track matches neither the active location nor the active situation (both tags differ from the AI labels, ignoring wildcards), an immediate mid-song switch is forced. |
 | Labels not updating | Cron job disabled or AI failure | Enable `bard-label-gen` job in `core.json`. Check logs for AI errors — if the AI call fails, `bard:lastrun` is not advanced and the next run retries automatically. |

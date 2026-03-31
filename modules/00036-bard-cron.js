@@ -161,7 +161,7 @@ export default async function getBardCron(coreData) {
       const isSnowflake = /^\d{10,}$/.test(woCh);
       if (isSnowflake && woCh !== textChannelId) continue;
 
-      const lastRunKey = `bard:lastrun:${session.guildId}`;
+      const lastRunKey = `bard:lastrun:${session.textChannelId}`;
       let lastRunData = null;
       try { lastRunData = await getItem(lastRunKey); } catch {}
       const lastRunAt = getStr(lastRunData?.ts || "");
@@ -171,7 +171,7 @@ export default async function getBardCron(coreData) {
         ? await getContextSince(woForCtx, lastRunAt)
         : await getContextLastSeconds(woForCtx, 300);
 
-      log(`[label-debug] guild=${session.guildId} textChannelId=${textChannelId} lastRunAt="${lastRunAt||"none"}" contextRows=${rows.length}`, "info", { moduleName: MODULE_NAME });
+      log(`[label-debug] channel=${session.textChannelId} textChannelId=${textChannelId} lastRunAt="${lastRunAt||"none"}" contextRows=${rows.length}`, "info", { moduleName: MODULE_NAME });
 
       if (!rows.length) {
         log(`no new context since ${lastRunAt || "last 300s"} for channel ${textChannelId}`, "info", { moduleName: MODULE_NAME });
@@ -188,7 +188,7 @@ export default async function getBardCron(coreData) {
 
       let currentLabels = [];
       try {
-        const labelsData = await getItem(`bard:labels:${session.guildId}`);
+        const labelsData = await getItem(`bard:labels:${session.textChannelId}`);
         if (Array.isArray(labelsData?.labels)) currentLabels = labelsData.labels;
       } catch {}
 
@@ -198,7 +198,7 @@ export default async function getBardCron(coreData) {
       wo.systemPrompt = systemPrompt;
       wo.payload      = userText;
 
-      wo._bardGuildId     = getStr(session.guildId);
+      wo._bardChannelId   = getStr(session.textChannelId);
       wo._bardValidTags   = [...tagCategories.all];
       wo._bardLocations   = [...tagCategories.locations];
       wo._bardSituations  = [...tagCategories.situations];
@@ -215,9 +215,9 @@ export default async function getBardCron(coreData) {
       wo.doNotWriteToContext = true;
       wo.tools             = [];
 
-      log(`prepared label-gen payload for guild ${session.guildId}`, "info", {
+      log(`prepared label-gen payload for channel ${session.textChannelId}`, "info", {
         moduleName: MODULE_NAME,
-        guildId: session.guildId,
+        channelId: session.textChannelId,
         textChannelId,
         locations: tagCategories.locations.size,
         situations: tagCategories.situations.size,

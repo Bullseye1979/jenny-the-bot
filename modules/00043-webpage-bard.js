@@ -364,15 +364,15 @@ export default async function getWebpageBard(coreData) {
       try {
         const s = await getItem(sk);
         if (!s) continue;
-        const gId = getStr(s.guildId);
+        const gId = getStr(s.textChannelId);
         if (gId) { streamEntry = await getItem(`bard:stream:${gId}`) || null; }
         if (streamEntry) break;
       } catch {}
     }
 
-    if (streamEntry?.guildId) {
+    if (streamEntry?.channelId || streamEntry?.textChannelId) {
       try {
-        const latestLabels = await getItem(`bard:labels:${streamEntry.guildId}`);
+        const latestLabels = await getItem(`bard:labels:${streamEntry.channelId || streamEntry.textChannelId}`);
         if (Array.isArray(latestLabels?.labels) && latestLabels.labels.length > 0) {
           streamEntry = Object.assign({}, streamEntry, {
             labels:         latestLabels.labels,

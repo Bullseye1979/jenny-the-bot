@@ -373,7 +373,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     workingObject.payload = String(parsedBody.payload);
     workingObject.channelType = "API";
     workingObject.isDM = false;
-    workingObject.guildId = "";
+    workingObject.guildId = parsedBody.guildId ? String(parsedBody.guildId) : "";
     workingObject.timestamp = new Date().toISOString();
     workingObject.httpAuthorization = String(req.headers?.authorization || "");
 

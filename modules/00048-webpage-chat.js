@@ -288,40 +288,6 @@ export default async function getWebpageChat(coreData) {
       wo.channelID = channelID;
       wo.subchannel = subchannelId || null;
 
-      if (payload.startsWith("/")) {
-        const cmdToken = payload.split(/\s+/)[0].slice(1).toLowerCase();
-
-        if (cmdToken === "purgedb") {
-          const pool    = await getDb(coreData);
-          const subSql  = subchannelId ? "AND COALESCE(subchannel, '') = ?" : "AND subchannel IS NULL";
-          const subArgs = subchannelId ? [subchannelId] : [];
-          const [r1] = await pool.execute(`DELETE FROM context WHERE id = ? ${subSql} AND COALESCE(frozen, 0) = 0`, [channelID, ...subArgs]);
-          let deleted = Number(r1?.affectedRows || 0);
-          if (!subchannelId) {
-            const [r2] = await pool.execute("DELETE FROM timeline_periods WHERE channel_id = ? AND COALESCE(frozen, 0) = 0", [channelID]);
-            deleted += Number(r2?.affectedRows || 0);
-          }
-          setJsonResp(wo, 200, { response: `${deleted} items removed` });
-          wo.jump = true;
-          await setSendNow(wo);
-          return coreData;
-        }
-
-        if (cmdToken === "freeze") {
-          const pool    = await getDb(coreData);
-          const subSql  = subchannelId ? "AND COALESCE(subchannel, '') = ?" : "AND subchannel IS NULL";
-          const subArgs = subchannelId ? [subchannelId] : [];
-          await pool.execute(`UPDATE context SET frozen = 1 WHERE id = ? ${subSql}`, [channelID, ...subArgs]);
-          if (!subchannelId) {
-            await pool.execute("UPDATE timeline_periods SET frozen = 1 WHERE channel_id = ?", [channelID]);
-          }
-          setJsonResp(wo, 200, { response: "freeze ok" });
-          wo.jump = true;
-          await setSendNow(wo);
-          return coreData;
-        }
-      }
-
       let subConfig = null;
       if (subchannelId) {
         try {
@@ -340,7 +306,8 @@ export default async function getWebpageChat(coreData) {
       const reqBody = {
         channelID,
         payload,
-        userId: String(wo.userId || wo.webAuth?.userId || "webpage-chat"),
+        userId:   String(wo.userId || wo.webAuth?.userId || "webpage-chat"),
+        guildId:  String(wo.webAuth?.guildId || ""),
         ...(subchannelId ? { subchannel: subchannelId } : {})
       };
 

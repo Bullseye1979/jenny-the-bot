@@ -1,9 +1,9 @@
 /************************************************************************************/
 /* filename: 00035-bard-join.js                                                     */
-/* Version 2.0                                                                      */
+/* Version 1.0                                                                      */
 /* Purpose: Handles bardstart / bardstop across all configured flows.               */
-/*          Creates or removes headless bard sessions (no voice channel required).  */
-/*          Supports discord-admin (slash command), discord and webpage (text).     */
+/*          Creates or removes channel-based bard sessions (no voice channel        */
+/*          required). Supports discord-admin (slash command), discord and webpage. */
 /*                                                                                  */
 /* Config (config["bard-join"]):                                                    */
 /*   flow          — array of flow names to subscribe to (default: all three)      */
@@ -58,8 +58,8 @@ function getDetectCommand(wo, cfg) {
     return null;
   }
 
-  // Text-based flows: check wo.message
-  const raw = String(wo.message || "").trim();
+  // Text-based flows: check wo.message or wo.payload (api flow via webpage-chat proxy)
+  const raw = String(wo.message || wo.payload || "").trim();
   if (!raw) return null;
 
   const prefixes = Array.isArray(cfg.commandPrefix) && cfg.commandPrefix.length
@@ -79,11 +79,7 @@ function getDetectCommand(wo, cfg) {
   return null;
 }
 
-function getGuildId(wo) {
-  return String(wo?.admin?.guildId || wo?.guildId || wo?.webAuth?.guildId || "");
-}
-
-function getTextChannelId(wo) {
+function getChannelId(wo) {
   return String(wo?.admin?.channelId || wo?.channelID || "");
 }
 
@@ -99,30 +95,29 @@ export default async function getBardJoin(coreData) {
     const cmd = getDetectCommand(wo, cfg);
     if (!cmd) return coreData;
 
-    const guildId       = getGuildId(wo);
-    const textChannelId = getTextChannelId(wo);
-    const isAdminFlow   = wo.flow === "discord-admin";
+    const channelId    = getChannelId(wo);
+    const isAdminFlow  = wo.flow === "discord-admin";
 
-    if (!guildId) {
-      log("bardstart/bardstop failed: missing guildId", "error", { moduleName: MODULE_NAME, flow: wo.flow });
+    if (!channelId) {
+      log("bardstart/bardstop failed: missing channelId", "error", { moduleName: MODULE_NAME, flow: wo.flow });
       wo.response = "";
       if (!isAdminFlow) wo.stop = true;
       return coreData;
     }
 
-    const sessionKey = `bard:session:${guildId}`;
+    const sessionKey = `bard:session:${channelId}`;
     let live = null;
     try { live = await getItem(sessionKey); } catch { live = null; }
 
     if (cmd === "bardstop") {
       try { if (live?._trackTimer) clearTimeout(live._trackTimer); } catch {}
       try { await deleteItem(sessionKey); } catch {}
-      try { await deleteItem(`bard:labels:${guildId}`); } catch {}
-      try { await deleteItem(`bard:lastrun:${guildId}`); } catch {}
-      try { await deleteItem(`bard:nowplaying:${guildId}`); } catch {}
-      try { await deleteItem(`bard:stream:${guildId}`); } catch {}
+      try { await deleteItem(`bard:labels:${channelId}`); } catch {}
+      try { await deleteItem(`bard:lastrun:${channelId}`); } catch {}
+      try { await deleteItem(`bard:nowplaying:${channelId}`); } catch {}
+      try { await deleteItem(`bard:stream:${channelId}`); } catch {}
       await setRemoveBardSessionKey(sessionKey);
-      log("bardstop: bard session terminated", "info", { moduleName: MODULE_NAME, guildId, flow: wo.flow });
+      log("bardstop: bard session terminated", "info", { moduleName: MODULE_NAME, channelId, flow: wo.flow });
       wo.response = isAdminFlow ? "" : "🎵 Bard stopped.";
       if (!isAdminFlow) wo.stop = true;
       return coreData;
@@ -136,8 +131,7 @@ export default async function getBardJoin(coreData) {
     }
 
     const liveSession = {
-      guildId,
-      textChannelId,
+      textChannelId: channelId,
       status: "ready",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -147,7 +141,7 @@ export default async function getBardJoin(coreData) {
     await setAddBardSessionKey(sessionKey);
 
     log("bardstart: bard session created", "info", {
-      moduleName: MODULE_NAME, sessionKey, guildId, textChannelId, flow: wo.flow
+      moduleName: MODULE_NAME, sessionKey, channelId, flow: wo.flow
     });
 
     wo.response = isAdminFlow ? "" : "🎵 Bard started.";

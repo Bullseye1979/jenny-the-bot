@@ -3,10 +3,10 @@
 /* Version 1.0                                                                     */
 /* Purpose: Output module for the bard-label-gen flow. Reads wo.response from     */
 /*          core-ai-completions, parses the comma-separated tag list, validates    */
-/*          against wo._bardValidTags, and writes bard:labels:{guildId} to the    */
-/*          registry. Also writes bard:lastrun:{guildId} only on success, so that  */
-/*          a failed AI call does not advance the context window and cause the     */
-/*          system to get permanently stuck with no new context to process.        */
+/*          against wo._bardValidTags, and writes bard:labels:{channelId} to the  */
+/*          registry. Also writes bard:lastrun:{channelId} only on success, so    */
+/*          that a failed AI call does not advance the context window and cause    */
+/*          the system to get permanently stuck with no new context to process.   */
 /************************************************************************************/
 
 import { getItem, putItem } from "../core/registry.js";
@@ -26,20 +26,20 @@ export default async function getBardLabelOutput(coreData) {
 
   if (getStr(wo?.flow) !== "bard-label-gen") return coreData;
 
-  const guildId      = getStr(wo._bardGuildId);
+  const channelId    = getStr(wo._bardChannelId);
   const validList    = Array.isArray(wo._bardValidTags)   ? wo._bardValidTags   : [];
   const validTags    = new Set(validList);
   const locationSet  = new Set(Array.isArray(wo._bardLocations)  ? wo._bardLocations  : []);
   const situationSet = new Set(Array.isArray(wo._bardSituations) ? wo._bardSituations : []);
   const response     = getStr(wo.response).trim();
 
-  if (!guildId) {
-    log("no _bardGuildId on workingObject — skipping label write", "warn", { moduleName: MODULE_NAME });
+  if (!channelId) {
+    log("no _bardChannelId on workingObject — skipping label write", "warn", { moduleName: MODULE_NAME });
     return coreData;
   }
 
   if (!response) {
-    log(`no AI response for guild ${guildId} — skipping label write`, "warn", { moduleName: MODULE_NAME });
+    log(`no AI response for channel ${channelId} — skipping label write`, "warn", { moduleName: MODULE_NAME });
     return coreData;
   }
 
@@ -50,7 +50,7 @@ export default async function getBardLabelOutput(coreData) {
 
   let prevLabels = [];
   try {
-    const prev = await getItem(`bard:labels:${guildId}`);
+    const prev = await getItem(`bard:labels:${channelId}`);
     prevLabels = Array.isArray(prev?.labels) ? prev.labels : [];
   } catch {}
   const prevLoc = (prevLabels[0] || "").toLowerCase();
@@ -66,10 +66,10 @@ export default async function getBardLabelOutput(coreData) {
     if (!v || v.length > 25) continue;
     if (!loc && locationSet.size > 0 && locationSet.has(v)) {
       loc = v; usedIndices.add(i);
-      if (i !== 0) log(`rescued location "${loc}" from position ${i} for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+      if (i !== 0) log(`rescued location "${loc}" from position ${i} for channel ${channelId}`, "info", { moduleName: MODULE_NAME });
     } else if (!sit && situationSet.size > 0 && situationSet.has(v)) {
       sit = v; usedIndices.add(i);
-      if (i !== 1) log(`rescued situation "${sit}" from position ${i} for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+      if (i !== 1) log(`rescued situation "${sit}" from position ${i} for channel ${channelId}`, "info", { moduleName: MODULE_NAME });
     }
   }
 
@@ -79,7 +79,7 @@ export default async function getBardLabelOutput(coreData) {
       const v = sanitized[i];
       if (!v || v.length > 25) continue;
       if (locationSet.has(v) && v !== loc) {
-        log(`location scene-change: "${loc}" → "${v}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+        log(`location scene-change: "${loc}" → "${v}" for channel ${channelId}`, "info", { moduleName: MODULE_NAME });
         usedIndices.delete(sanitized.indexOf(loc));
         loc = v; usedIndices.add(i);
         break;
@@ -92,7 +92,7 @@ export default async function getBardLabelOutput(coreData) {
       const v = sanitized[i];
       if (!v || v.length > 25) continue;
       if (situationSet.has(v) && v !== sit) {
-        log(`situation scene-change: "${sit}" → "${v}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+        log(`situation scene-change: "${sit}" → "${v}" for channel ${channelId}`, "info", { moduleName: MODULE_NAME });
         usedIndices.delete(sanitized.indexOf(sit));
         sit = v; usedIndices.add(i);
         break;
@@ -116,16 +116,16 @@ export default async function getBardLabelOutput(coreData) {
   if (!loc && prevLabels[0]) loc = String(prevLabels[0]);
   if (!loc) {
     try {
-      const stream = await getItem(`bard:stream:${guildId}`);
+      const stream = await getItem(`bard:stream:${channelId}`);
       const songTags = Array.isArray(stream?.trackTags) ? stream.trackTags : [];
       const isSelectedAsDefault = !!stream?.selectedAsDefault;
-      if (!isSelectedAsDefault && songTags[0]) { loc = String(songTags[0]); log(`location fallback from current song: "${loc}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME }); }
+      if (!isSelectedAsDefault && songTags[0]) { loc = String(songTags[0]); log(`location fallback from current song: "${loc}" for channel ${channelId}`, "info", { moduleName: MODULE_NAME }); }
     } catch {}
   }
   if (!loc && locationSet.size > 0) {
     const locs = [...locationSet];
     loc = locs[Math.floor(Math.random() * locs.length)];
-    log(`location initialized to random value "${loc}" for guild ${guildId}`, "info", { moduleName: MODULE_NAME });
+    log(`location initialized to random value "${loc}" for channel ${channelId}`, "info", { moduleName: MODULE_NAME });
   }
 
   while (moodValues.length < 4) moodValues.push("");
@@ -136,36 +136,36 @@ export default async function getBardLabelOutput(coreData) {
     .slice(0, 5);
 
   if (rejected.length) {
-    log(`rejected invalid mood tags for guild ${guildId}: ${rejected.join(",")}`, "warn", { moduleName: MODULE_NAME });
+    log(`rejected invalid mood tags for channel ${channelId}: ${rejected.join(",")}`, "warn", { moduleName: MODULE_NAME });
   }
 
   if (!labels.some(Boolean)) {
-    log(`AI returned no valid labels for guild ${guildId} (raw: "${response}")`, "warn", { moduleName: MODULE_NAME });
+    log(`AI returned no valid labels for channel ${channelId} (raw: "${response}")`, "warn", { moduleName: MODULE_NAME });
     return coreData;
   }
 
   const labelsEntry = {
     labels,
     rejected,
-    guildId,
+    channelId,
     updatedAt: new Date().toISOString()
   };
 
-  await putItem(labelsEntry, `bard:labels:${guildId}`);
+  await putItem(labelsEntry, `bard:labels:${channelId}`);
 
-  log(`labels written for guild ${guildId}: ${labels.join(",")}`, "info", {
+  log(`labels written for channel ${channelId}: ${labels.join(",")}`, "info", {
     moduleName: MODULE_NAME,
     labels,
-    guildId
+    channelId
   });
 
   const lastRunKey = getStr(wo._bardLastRunKey);
   const lastRunTs  = getStr(wo._bardLastRunTs);
   if (lastRunKey && lastRunTs) {
     try {
-      await putItem({ ts: lastRunTs, guildId }, lastRunKey);
+      await putItem({ ts: lastRunTs, channelId }, lastRunKey);
     } catch (e) {
-      log(`failed to write lastrun for guild ${guildId}: ${e?.message}`, "warn", { moduleName: MODULE_NAME });
+      log(`failed to write lastrun for channel ${channelId}: ${e?.message}`, "warn", { moduleName: MODULE_NAME });
     }
   }
 
