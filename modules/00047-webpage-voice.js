@@ -147,7 +147,9 @@ function getSpaHtml(cfg, menuHtml) {
   channels.forEach(c => {
     const id = String(c.id || "").trim();
     if (!id) return;
-    chanCfgMap[id] = {};
+    const entry = {};
+    if (typeof c.silenceTimeoutMs === "number") entry.silenceTimeoutMs = c.silenceTimeoutMs;
+    chanCfgMap[id] = entry;
   });
   const chanCfgJson = JSON.stringify(chanCfgMap).replace(/<\/script>/gi, "<\\/script>");
 
@@ -485,7 +487,7 @@ async function startRecording() {
     alwaysOn = false; btn.className = 'idle'; return;
   }
   var deviceId = micSelect.value;
-  var audioCfg = { echoCancellation: true, noiseSuppression: true };
+  var audioCfg = { echoCancellation: true, noiseSuppression: true, autoGainControl: false };
   if (deviceId) audioCfg.deviceId = { exact: deviceId };
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: audioCfg, video: false });
@@ -587,7 +589,7 @@ btnRec.addEventListener('click', async function() {
     /* Always open a dedicated stream for rec — never reuse the voice stream,
        so stopping voice mid-recording does not kill the rec media source. */
     var deviceId = micSelect.value;
-    var audioCfg = { echoCancellation: true, noiseSuppression: true };
+    var audioCfg = { echoCancellation: true, noiseSuppression: true, autoGainControl: false };
     if (deviceId) audioCfg.deviceId = { exact: deviceId };
     try {
       recOwnStream = await navigator.mediaDevices.getUserMedia({ audio: audioCfg, video: false });
@@ -725,7 +727,7 @@ async function toggleSampleRecord(id) {
   }
   if (spRecActive) { alert('Already recording for another speaker. Stop that first.'); return; }
   var deviceId = (typeof micSelect !== 'undefined' && micSelect) ? micSelect.value : '';
-  var audioCfg = { echoCancellation: true, noiseSuppression: true };
+  var audioCfg = { echoCancellation: true, noiseSuppression: true, autoGainControl: false };
   if (deviceId) audioCfg.deviceId = { exact: deviceId };
   try {
     spRecStream = await navigator.mediaDevices.getUserMedia({ audio: audioCfg, video: false });
