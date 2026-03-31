@@ -109,27 +109,5 @@ async function getInvoke(args, coreData){
 /**********************************************************************************/
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Save arbitrary plaintext (js, html, css, json, xml, txt, vbs, py, …) to ../pub/documents with a guessed extension. Returns public/relative file path.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          text: {
-            type: "string",
-            description: "Plaintext content to write. Can be code, HTML, JSON, etc."
-          },
-          filename: {
-            type: "string",
-            description: "Optional desired base filename. May include extension. If omitted, name is auto-generated."
-          }
-        },
-        required: ["text"]
-      }
-    }
-  },
   invoke: getInvoke
 };

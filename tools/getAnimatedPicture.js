@@ -168,28 +168,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description:
-        "Animate/transform an existing image from the provided imageURL into a short video using Replicate (Google Veo 3). Use this when asked to animate something.",
-      parameters: {
-        type: "object",
-        properties: {
-          prompt: { type: "string", description: "Describe how the given image should be animated/transformed." },
-          imageURL: { type: "string", format: "uri", description: "Public image URL (http/https) to animate/transform." },
-          videoApiToken: { type: "string", description: "Override Replicate API token (defaults to toolsconfig.getAnimatedPicture.videoApiToken)" },
-          videoBaseUrl: { type: "string", description: "Override Replicate base URL (defaults to toolsconfig.getAnimatedPicture.videoBaseUrl)" },
-          videoModel: { type: "string", description: "Override model (defaults to toolsconfig.getAnimatedPicture.videoModel, e.g., 'google/veo-3')" },
-          videoPollIntervalMs: { type: "number", description: "Override poll interval in ms (defaults to toolsconfig…)" },
-          videoTimeoutMs: { type: "number", description: "Override timeout in ms (defaults to toolsconfig…)" },
-          videoPublicBaseUrl: { type: "string", description: "Override public base URL for saved files (defaults to toolsconfig…)" }
-        },
-        required: ["prompt", "imageURL"],
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

@@ -547,24 +547,6 @@ const MODULE_NAME = "getToken";
 function getExport() {
   return {
     name: MODULE_NAME,
-    definition: {
-      type: "function",
-      function: {
-        name: MODULE_NAME,
-        description:
-          "Accept an image or video URL (http/https). Videos are converted to an animated GIF under toolsconfig.maxMb, then tokenized with a round mask plus a single-color ring (color1). If pingpong=true, frames are duplicated forward+reverse before looping, and the internal byte budget is scaled (x2). The final GIF output is kept under the effective byte budget using optimization where possible. Returns hosted URLs under /documents.",
-        parameters: {
-          type: "object",
-          properties: {
-            url: { type: "string", description: "Public image or video URL (http/https)." },
-            color1: { type: "string", description: "Ring color (CSS/hex). Optional. Default #00b3ff." },
-            pingpong: { type: "boolean", description: "If true: a loopable animation is generated. It generates a gif that plays forward and then backward, so that it can be looped." }
-          },
-          required: ["url"],
-          additionalProperties: false
-        }
-      }
-    },
     invoke: getInvoke
   };
 }

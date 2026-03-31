@@ -1,0 +1,35 @@
+{
+  "name": "getConfluence",
+  "description": "ALWAYS USE THIS TOOL for all Confluence operations. Never infer Confluence page content from conversation history — always fetch it fresh with op='read'. Supports create, append, read, list, delete, move, and raw API operations. Images and files must be referenced via public http/https URLs — local file paths are not supported. Markdown input is automatically converted to Confluence storage format.",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "op": { "type": "string", "enum": ["create", "append", "delete", "read", "list", "attach", "move", "api"] },
+      "title": { "type": "string" },
+      "pageId": { "type": "string" },
+      "pageUrl": { "type": "string" },
+      "markdown": { "type": "string" },
+      "prependNote": { "type": "string" },
+      "imageUrl": { "type": "string", "description": "Must start with http/https. Will be uploaded as an attachment." },
+      "imageUrls": { "type": "array", "items": { "type": "string" }, "description": "All must start with http/https. Will be uploaded as attachments." },
+      "imageAlt": { "type": "string" },
+      "imageCaption": { "type": "string" },
+      "fileUrl": { "type": "string", "description": "Any http/https URL — uploaded as an attachment." },
+      "filename": { "type": "string" },
+      "contentType": { "type": "string" },
+      "caption": { "type": "string" },
+      "alt": { "type": "string" },
+      "embed": { "type": "boolean", "description": "create/append: images embed inline by default; attach: default false (upload only)." },
+      "attachOrLink": { "type": "boolean" },
+      "limit": { "type": "number" },
+      "status": { "type": "string" },
+      "method": { "type": "string" },
+      "path": { "type": "string" },
+      "body": { "oneOf": [{ "type": "object" }, { "type": "string" }] },
+      "newParentId": { "type": "string" },
+      "downloadHeaders": { "type": "object" }
+    },
+    "required": ["op"]
+  }
+}

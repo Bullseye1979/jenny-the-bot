@@ -1089,45 +1089,6 @@ async function getInvoke(args, coreData){
 function getDefaultExport(){
   return {
     name: MODULE_NAME,
-    definition: {
-      type: "function",
-      function: {
-        name: MODULE_NAME,
-        description:
-          "ALWAYS USE THIS FOR REQUESTS TO CONFLUENCE. Confluence pages via v2 (create/append/read/list/delete/move/api) with enforced space + Markdown→storage + safe image/file handling (upload via v1 attachment API, optional embed).",
-        parameters: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            op: { type: "string", enum: ["create","append","delete","read","list","attach","move","api"] },
-            title: { type: "string" },
-            pageId: { type: "string" },
-            pageUrl: { type: "string" },
-            markdown: { type: "string" },
-            prependNote: { type: "string" },
-            imageUrl: { type: "string", description: "Must start with http/https; {{...}} is ignored. Will be uploaded as attachment." },
-            imageUrls: { type: "array", items: { type: "string" }, description: "All must start with http/https; {{...}} is ignored. Will be uploaded as attachments." },
-            imageAlt: { type: "string" },
-            imageCaption: { type: "string" },
-            fileUrl: { type: "string", description: "Any http/https URL – uploaded as attachment." },
-            filename: { type: "string" },
-            contentType: { type: "string" },
-            caption: { type: "string" },
-            alt: { type: "string" },
-            embed: { type: "boolean", description: "create/append: images embed by default; attach: default false (upload only)." },
-            attachOrLink: { type: "boolean" },
-            limit: { type: "number" },
-            status: { type: "string" },
-            method: { type: "string" },
-            path: { type: "string" },
-            body: { oneOf: [ { type: "object" }, { type: "string" } ] },
-            newParentId: { type: "string" },
-            downloadHeaders: { type: "object" }
-          },
-          required: ["op"]
-        }
-      }
-    },
     invoke: getInvoke
   };
 }

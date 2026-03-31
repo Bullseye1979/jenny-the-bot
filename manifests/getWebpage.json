@@ -1,0 +1,14 @@
+{
+  "name": "getWebpage",
+  "description": "Fetch a webpage and extract its readable text. Returns raw text for short pages or an AI summary for long pages. Always fetch fresh — never use page content from previous calls. If a previous fetch failed, retry with the same URL. Use after getTavily or getGoogle to read the full content of a specific search result. The optional 'prompt' parameter biases the summary without overriding facts.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": { "type": "string", "description": "Absolute URL to fetch (http/https)." },
+      "user_prompt": { "type": "string", "description": "User question or instruction to execute against the page text (required — this is the main task)." },
+      "prompt": { "type": "string", "description": "OPTIONAL: extra system instructions to bias the summary (e.g., 'focus on statements by user X'). Used only in summary mode; ignored in dump mode." }
+    },
+    "required": ["url", "user_prompt"],
+    "additionalProperties": false
+  }
+}

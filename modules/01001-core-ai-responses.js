@@ -18,6 +18,9 @@ import { getSecret } from "../core/secrets.js";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+
+const _manifestDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../manifests");
 
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
@@ -283,6 +286,19 @@ function getAppendRuntimeContextToUserContent(baseText, ctx) {
 }
 
 
+function getManifestDef(name, logFn) {
+  try {
+    const raw = fs.readFileSync(path.join(_manifestDir, `${name}.json`), "utf8");
+    const fn = JSON.parse(raw);
+    if (fn && typeof fn === "object" && fn.name && fn.description && fn.parameters) {
+      return { type: "function", function: fn };
+    }
+  } catch {}
+  if (logFn) logFn(`Tool "${name}" has no manifest in manifests/ — it will not be advertised to the AI.`, "warn");
+  return null;
+}
+
+
 async function getToolsByName(names, wo) {
   const log = getPrefixedLogger(wo, import.meta.url);
   const loaded = [];
@@ -290,8 +306,12 @@ async function getToolsByName(names, wo) {
     try {
       const mod = await import(`../tools/${name}.js`);
       const tool = mod?.default ?? mod;
-      if (tool && typeof tool.invoke === "function") loaded.push(tool);
-      else log(`Tool "${name}" invalid (missing invoke); skipped.`, "warn");
+      if (tool && typeof tool.invoke === "function") {
+        const manifestDef = getManifestDef(name, log);
+        loaded.push({ ...tool, definition: manifestDef || undefined });
+      } else {
+        log(`Tool "${name}" invalid (missing invoke); skipped.`, "warn");
+      }
     } catch (e) {
       log(`Tool "${name}" load failed: ${e?.message || String(e)}`, "warn");
     }

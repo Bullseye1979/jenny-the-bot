@@ -1,0 +1,16 @@
+{
+  "name": "getPDF",
+  "description": "Generate a print-ready A4 PDF and matching HTML file from HTML input. CSS is REQUIRED. Accepts structured fields or a free-form raw string. Saves both to disk and returns public URLs for the PDF and HTML. Always show both the pdf URL and the html URL in the response. IMPORTANT: Any images to be included in the PDF must be generated first (e.g. via getImage) before calling this tool.",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "html": { "type": "string", "description": "HTML content (full document or body fragment). May include <style> blocks; they will be extracted into css." },
+      "css": { "type": "string", "description": "REQUIRED CSS to apply. Provide here or embedded in HTML via <style> blocks." },
+      "title": { "type": "string", "description": "Optional document title used in the HTML <title> element." },
+      "filename": { "type": "string", "description": "Optional base filename without extension. Normalized automatically." },
+      "raw": { "type": "string", "description": "Alternative free-form input: fenced code blocks (```json, ```html, ```css), full HTML documents, or unterminated JSON strings." }
+    },
+    "required": ["css"]
+  }
+}

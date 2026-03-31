@@ -406,6 +406,70 @@ async function getOperationRemoveFromPlaylist(token, args) {
 
 
 /**********************************************************************************/
+/* getOperationPlayByName                                                          */
+/* One-call play: search → pick best match → get active device → play.           */
+/* Eliminates the need for separate search + listDevices + play calls.            */
+/* args.track   — track name (provide when user wants a specific song)           */
+/* args.album   — album name (provide when user wants a whole album)             */
+/* args.artist  — artist name (optional but improves accuracy)                   */
+/* Exactly one of track or album is required.                                    */
+/**********************************************************************************/
+async function getOperationPlayByName(token, args) {
+  const artist = getStr(args.artist, "").trim();
+  const track  = getStr(args.track,  "").trim();
+  const album  = getStr(args.album,  "").trim();
+
+  if (!track && !album) return { ok: false, error: "Provide at least track or album name" };
+  if (track && album)   return { ok: false, error: "Provide either track or album, not both" };
+
+  const isAlbum = !!album;
+  const term    = isAlbum ? album : track;
+  const query   = artist ? `${term} ${artist}` : term;
+  const types   = isAlbum ? ["album"] : ["track"];
+
+  const searchRes = await getOperationSearch(token, { query, types, limit: 5 });
+  if (!searchRes.ok) return { ok: false, error: `Search failed: ${searchRes.error}` };
+
+  const items = isAlbum
+    ? getArr(searchRes.results?.albums, [])
+    : getArr(searchRes.results?.tracks, []);
+
+  if (!items.length) return { ok: false, error: `Nothing found for: ${query}` };
+
+  const best = items[0];
+  const uri  = getStr(best.uri, "");
+  if (!uri) return { ok: false, error: "Search returned a result without a URI" };
+
+  const devRes = await getOperationListDevices(token);
+  if (!devRes.ok) return { ok: false, error: `Could not list devices: ${devRes.error}` };
+
+  const devices = getArr(devRes.devices, []);
+  if (!devices.length) return { ok: false, error: "No Spotify devices available — open Spotify on a device first" };
+
+  const activeDevice = devices.find(d => d.isActive) || devices[0];
+  const deviceId     = getStr(activeDevice.id, "");
+
+  const playArgs = isAlbum
+    ? { contextUri: uri, deviceId }
+    : { uris: [uri],    deviceId };
+
+  const playRes = await getOperationPlay(token, playArgs);
+  if (!playRes.ok) return { ok: false, error: `Playback failed: ${playRes.error}` };
+
+  return {
+    ok:         true,
+    operation:  "playByName",
+    played:     isAlbum ? "album" : "track",
+    name:       best.name,
+    artists:    best.artists,
+    uri,
+    deviceId,
+    deviceName: activeDevice.name
+  };
+}
+
+
+/**********************************************************************************/
 /* getOperationSetVolume                                                           */
 /* Sets the playback volume.                                                      */
 /* args.volumePercent — integer 0–100 (required)                                 */
@@ -435,6 +499,7 @@ async function getInvokeInternal(args, coreData) {
     if (!operation) return { ok: false, error: "Missing operation" };
 
     switch (operation) {
+      case "playByName":         return await getOperationPlayByName(token, args);
       case "search":             return await getOperationSearch(token, args);
       case "getPlayback":        return await getOperationGetPlayback(token);
       case "play":               return await getOperationPlay(token, args);
@@ -464,145 +529,4 @@ async function getInvoke(args, coreData) {
 }
 
 
-/**********************************************************************************/
-/* definition                                                                     */
-/**********************************************************************************/
-const definition = {
-  type: "function",
-  function: {
-    name: MODULE_NAME,
-    description: [
-      "ALWAYS use this tool whenever the user wants to play, pause, or control music — regardless of whether they mention Spotify explicitly.",
-      "This is the ONLY music playback tool available. Any request involving music playback, songs, albums, or playlists must use this tool.",
-      "Trigger keywords: play, pause, resume, stop music, play song, play album, play playlist, what is playing, next song, search music, search song, my devices, switch device, create playlist, add to playlist, remove from playlist, skip, spotify.",
-      "Also responds to equivalent terms in other languages (e.g. the user's native language equivalents for play, pause, music, song, album, playlist, what is playing, skip).",
-      "Do NOT ask the user for confirmation before using this tool — just use it.",
-      "",
-      "Operations:",
-      "  search             — search tracks/albums/artists/playlists in the Spotify catalog",
-      "  getPlayback        — get current playback state (what is playing, on which device)",
-      "  play               — start or resume playback (specific tracks, context, or resume current)",
-      "  pause              — pause playback",
-      "  setVolume          — set playback volume (0–100); use this for ANY volume or loudness request",
-      "  listDevices        — list all available Spotify devices",
-      "  transferPlayback   — transfer playback to a specific device",
-      "  getPlaylists       — list the user's playlists",
-      "  createPlaylist     — create a new playlist",
-      "  addToPlaylist      — add tracks to a playlist",
-      "  removeFromPlaylist — remove tracks from a playlist",
-      "",
-      "Spotify URIs use the format: spotify:track:ID, spotify:album:ID, spotify:playlist:ID, spotify:artist:ID.",
-      "Use search results to obtain URIs before calling play, addToPlaylist, etc.",
-      "Playback control (play, pause, transferPlayback) requires a Spotify Premium account.",
-      "",
-      "REQUIRED play workflow — always follow these steps in order:",
-      "  1. Call search with the EXACT track name and artist to get the specific track URI.",
-      "     Always search fresh — never reuse a URI from a previous tool call.",
-      "     When the user requests a specific song, search types must be [\"track\"].",
-      "     After receiving search results, find the result whose 'name' field most closely matches the requested track name.",
-      "     Do NOT blindly take the first result — verify name AND artist match before using the URI.",
-      "     If no result matches, try a second search with a simpler query (just the track name without artist).",
-      "  2. Call listDevices to get the available device IDs.",
-      "  3. Call play with uris set to [trackUri] AND deviceId set to the target device.",
-      "     ALWAYS use uris with the specific track URI when playing a named song.",
-      "     NEVER use contextUri (artist/album/playlist URI) when the user requests a specific track — contextUri lets Spotify decide what plays and will ignore the requested song.",
-      "     Never call play without a deviceId — it will fail if no device is currently active.",
-      "     Pick the most appropriate device automatically (prefer the active one, otherwise the first available).",
-      "  4. If play returns ok: true, report SUCCESS to the user immediately.",
-      "     Do NOT call getPlayback before or after play — not to check what is currently playing, not to verify success.",
-      "     getPlayback is only for when the user explicitly asks 'what is playing right now'.",
-      "     A track appearing in getPlayback does NOT mean the user's request is fulfilled — always call play.",
-      "",
-      "IMPORTANT: This tool uses delegated OAuth2. The user must have connected their Spotify account at /spotify-auth.",
-      "If the tool returns an error about missing token or authentication, tell the user to visit /spotify-auth to connect their Spotify account."
-    ].join("\n"),
-    parameters: {
-      type: "object",
-      properties: {
-        operation: {
-          type: "string",
-          description: "Operation to perform.",
-          enum: ["search", "getPlayback", "play", "pause", "setVolume", "listDevices", "transferPlayback", "getPlaylists", "createPlaylist", "addToPlaylist", "removeFromPlaylist"],
-        },
-        query: {
-          type: "string",
-          description: "Search query string. Required for search.",
-        },
-        types: {
-          type: "array",
-          items: { type: "string", enum: ["track", "album", "artist", "playlist"] },
-          description: "Entity types to search for. Default: [\"track\"].",
-        },
-        uris: {
-          type: "array",
-          items: { type: "string" },
-          description: "Array of Spotify URIs (spotify:track:ID). Required for addToPlaylist and removeFromPlaylist. Optional for play.",
-        },
-        contextUri: {
-          type: "string",
-          description: "Spotify URI of an album, playlist, or artist to play as context. Used with play operation.",
-        },
-        deviceId: {
-          type: "string",
-          description: "Spotify device ID. Optional for play and pause. Required for transferPlayback.",
-        },
-        playlistId: {
-          type: "string",
-          description: "Spotify playlist ID (not URI). Required for addToPlaylist and removeFromPlaylist.",
-        },
-        name: {
-          type: "string",
-          description: "Playlist name. Required for createPlaylist.",
-        },
-        description: {
-          type: "string",
-          description: "Playlist description. Optional for createPlaylist.",
-        },
-        public: {
-          type: "boolean",
-          description: "Whether the playlist is public. Default: false. Used with createPlaylist.",
-        },
-        volumePercent: {
-          type: "number",
-          description: "Volume level 0–100. Required for setVolume.",
-        },
-        play: {
-          type: "boolean",
-          description: "Whether to start playing after transferring playback. Default: false. Used with transferPlayback.",
-        },
-        position: {
-          type: "number",
-          description: "Insert position (0 = top). Used with addToPlaylist. Default: append.",
-        },
-        offsetIndex: {
-          type: "number",
-          description: "Track index within context to start at. Used with play when contextUri is set.",
-        },
-        positionMs: {
-          type: "number",
-          description: "Seek position in milliseconds. Used with play.",
-        },
-        limit: {
-          type: "number",
-          description: "Maximum number of results to return. Default: 20, max: 50.",
-        },
-        offset: {
-          type: "number",
-          description: "Pagination offset. Default: 0.",
-        },
-        market: {
-          type: "string",
-          description: "ISO 3166-1 alpha-2 market code to filter results (e.g. DE, US). Optional for search.",
-        },
-        snapshotId: {
-          type: "string",
-          description: "Playlist snapshot ID for conflict detection. Optional for removeFromPlaylist.",
-        },
-      },
-      required: ["operation"],
-    },
-  },
-};
-
-
-export default { name: MODULE_NAME, definition, invoke: getInvoke };
+export default { name: MODULE_NAME, invoke: getInvoke };

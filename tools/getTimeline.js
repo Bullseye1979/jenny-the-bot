@@ -122,31 +122,6 @@ async function getTimelineInvoke(args, coreData) {
 function getDefaultExport() {
   return {
     name: MODULE_NAME,
-    definition: {
-      type: "function",
-      function: {
-        name: MODULE_NAME,
-        description:
-          "Return the stored timeline periods for the current channel (workingObject.channelID). " +
-          "Each period contains: channel_id, start_idx, end_idx, start_ts, end_ts, and a short summary. " +
-          "Timestamps are included so subsequent tools can resolve the detailed rows for that range.",
-        parameters: {
-          type: "object",
-          properties: {
-            limit: {
-              type: "number",
-              description: "Optional maximum number of periods to return (most recent first, then re-ordered ascending)."
-            },
-            order: {
-              type: "string",
-              enum: ["asc", "desc"],
-              description: "Order by start_idx ascending (default) or descending."
-            }
-          },
-          additionalProperties: false
-        }
-      }
-    },
     invoke: getTimelineInvoke
   };
 }

@@ -1,0 +1,30 @@
+{
+  "name": "getInformation",
+  "description": "Search the conversation log database for historical information using keywords. Always execute a fresh database search — never reuse results from previous getInformation calls. If a previous search returned no results, try different keyword_groups with more variants or alternative phrasings. Use keyword_groups (with variants and optional parts) for best results; keywords is a simpler fallback. Results include channel_id, timestamp, sender, and content. Does NOT return timeline data — for chronological event history call getTimeline, for date-range queries call getHistory. Set includeAliasSearch in toolsconfig to enable automatic alias resolution (e.g. nicknames, creature types). Only report what the tool returns — do not invent or extrapolate facts.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "keyword_groups": {
+        "type": "array",
+        "description": "Preferred: list of concept groups. Each group covers one entity with multiple name variants and optional sub-parts for partial matching.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": ["string", "number"] },
+            "base": { "type": "string" },
+            "variants": { "type": "array", "items": { "type": "string" } },
+            "parts": { "type": "array", "items": { "type": "string" } }
+          },
+          "required": ["base"],
+          "additionalProperties": true
+        }
+      },
+      "keywords": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Fallback: free-form search phrases using full forms only (no internal splitting)."
+      }
+    },
+    "additionalProperties": false
+  }
+}

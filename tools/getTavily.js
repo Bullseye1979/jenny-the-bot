@@ -127,48 +127,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Search the web using Tavily. Use for current news, events, or factual information. Supports filtering by topic (news, finance) and time range.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: "Search query text."
-          },
-          searchDepth: {
-            type: "string",
-            enum: ["basic", "advanced"],
-            description: "Search depth: 'basic' (faster, 1 credit) or 'advanced' (more thorough, 2 credits). Default from toolsconfig."
-          },
-          maxResults: {
-            type: "integer",
-            minimum: 1,
-            maximum: 20,
-            description: "Number of results to return (default from toolsconfig, max 20)."
-          },
-          topic: {
-            type: "string",
-            enum: ["general", "news", "finance"],
-            description: "Search category. Use 'news' ONLY for recent breaking events (elections, sports scores, live incidents). Use 'general' for factual questions about people, bands, companies, or anything where accuracy matters more than recency. Default: 'general'."
-          },
-          timeRange: {
-            type: "string",
-            enum: ["day", "week", "month", "year"],
-            description: "Restrict results to this time window (optional)."
-          },
-          includeAnswer: {
-            type: "boolean",
-            description: "Request a Tavily-generated answer in addition to results (optional)."
-          }
-        },
-        required: ["query"],
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

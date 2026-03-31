@@ -14,17 +14,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Return the current time in UTC (ISO 8601).",
-      parameters: {
-        type: "object",
-        properties: {},
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

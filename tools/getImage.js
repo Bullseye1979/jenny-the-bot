@@ -137,7 +137,8 @@ function getResolveEnhancerConfig(args, wo, toolCfg, imageModelName) {
   const max_tokens = Number.isFinite(mtArg) ? mtArg : Number.isFinite(mtCfg) ? mtCfg : Number.isFinite(mtWO) ? mtWO : 350;
   const timeout = Number.isFinite(toolCfg?.enhancerTimeoutMs) ? toolCfg.enhancerTimeoutMs : Number.isFinite(wo?.requestTimeoutMs) ? wo.requestTimeoutMs : 60000;
   const preferDigitalPainting = args?.preferDigitalPainting !== false;
-  return { endpoint, apiKey, model, temperature, max_tokens, timeout, preferDigitalPainting, imageModelName };
+  const enhancerSystemPrompt = String(toolCfg?.enhancerSystemPrompt || "").trim();
+  return { endpoint, apiKey, model, temperature, max_tokens, timeout, preferDigitalPainting, imageModelName, enhancerSystemPrompt };
 }
 
 
@@ -152,18 +153,21 @@ async function getAiEnhancedPrompt({
   preferDigitalPainting = true,
   extraQuality = [],
   extraNegatives = [],
-  timeoutMs = 60000
+  timeoutMs = 60000,
+  systemPrompt = ""
 }) {
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  const system = [
-    "You are an expert prompt engineer for image generation.",
-    "Rewrite and enhance the user's prompt for an image generation model.",
-    "Prefer a digital painting aesthetic when appropriate, but exercise creative freedom to make the image compelling.",
-    "Include suitable camera angle and lens suggestions when beneficial.",
-    "Ensure the result is a single line of plain text with no explanations.",
-    ...getModelPolicyHints(imageModelName)
-  ].join(" ");
+  const system = (systemPrompt && systemPrompt.trim())
+    ? [systemPrompt.trim(), ...getModelPolicyHints(imageModelName)].join(" ")
+    : [
+        "You are an expert prompt engineer for image generation.",
+        "Rewrite and enhance the user's prompt for an image generation model.",
+        "Prefer a digital painting aesthetic when appropriate, but exercise creative freedom to make the image compelling.",
+        "Include suitable camera angle and lens suggestions when beneficial.",
+        "Ensure the result is a single line of plain text with no explanations.",
+        ...getModelPolicyHints(imageModelName)
+      ].join(" ");
   const content = [
     `USER_PROMPT: ${getSanitized(basePrompt)}`,
     `MANDATORY_QUALITY_TAGS: ${[...(preferDigitalPainting ? ["digital painting","painterly brushwork","studio quality"] : []), "cinematic", "creative angles", "symbolism", "no text", "vibrant colors", "vibrant lighting", "realistic faces", "faces with character", "high quality", "highly detailed faces", "anatomically correct hands: 5 fingers per hand", "no additional limbs", "sharp focus", "clean edges", "cohesive lighting", "consistent perspective", ...extraQuality].join(", ")}`,
@@ -218,7 +222,8 @@ async function getBuildEnhancedPrompt({
     preferDigitalPainting: cfg.preferDigitalPainting,
     extraQuality: Array.isArray(extraTags) ? extraTags : [],
     extraNegatives: extraNeg,
-    timeoutMs: cfg.timeout
+    timeoutMs: cfg.timeout,
+    systemPrompt: cfg.enhancerSystemPrompt
   });
 }
 
@@ -315,33 +320,6 @@ async function getInvoke(args, coreData) {
 function getDefaultExport() {
   return {
     name: MODULE_NAME,
-    definition: {
-      type: "function",
-      function: {
-        name: MODULE_NAME,
-        description: "Generate one or more high-quality images from a prompt using the configured Images model; returns local paths/URLs. model-agnostic; automatically enhances prompts unless strictPrompt=true. Never change set model unless it is explicitly stated.",
-        parameters: {
-          type: "object",
-          properties: {
-            prompt: { type: "string", description: "Short, clean scene description (no on-image text)." },
-            size: { type: "string", description: "Explicit size 'WxH' (e.g., 1152x896). If omitted, derived from 'aspect' and 'targetLongEdge'." },
-            aspect: { type: "string", description: "Preferred aspect (e.g., '1:1', '16:9', '9:16', 'portrait', 'landscape')." },
-            targetLongEdge: { type: "number", description: "If 'size' is omitted, long edge target in px (default 1024)." },
-            n: { type: "integer", minimum: 1, maximum: 4, description: "Number of images to generate (subject to model limits)." },
-            strictPrompt: { type: "boolean", description: "If true, sends the prompt exactly as given (no enhancement)." },
-            negative: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: "Extra negatives to avoid." },
-            enhancerEndpoint: { type: "string", description: "Chat/completions endpoint for the prompt enhancer." },
-            enhancerApiKey: { type: "string", description: "API key for the prompt enhancer." },
-            enhancerModel: { type: "string", description: "GPT model for the prompt enhancer." },
-            enhancerTemperature: { type: "number", description: "temperature for the prompt enhancer." },
-            enhancerMaxTokens: { type: "number", description: "max_tokens for the prompt enhancer." },
-            preferDigitalPainting: { type: "boolean", description: "Prefer a digital painting style (default: true)." }
-          },
-          required: ["prompt"],
-          additionalProperties: false
-        }
-      }
-    },
     invoke: getInvoke
   };
 }

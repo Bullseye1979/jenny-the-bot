@@ -100,19 +100,5 @@ AI (preview): ${payload.aiPreview}`;
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Request a user ban by notifying the configured admin via DM. Reason is optional but recommended. Returns the user name and the resolved reason.",
-      parameters: {
-        type: "object",
-        properties: {
-          reason: { type: "string", description: "Short reason for the ban request. Defaults to 'Inappropriate behaviour' if omitted." }
-        },
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

@@ -270,25 +270,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Generate Street View image URL, interactive Street View, and Google Maps URL; optionally driving directions text. No nearest-panorama probing.",
-      parameters: {
-        type: "object",
-        properties: {
-          locations: { type: "array", items: { type: "string" }, description: "List of locations or 'lat,lng' pairs. Last entry is destination." },
-          route:     { type: "boolean", description: "If true, treat locations as route (origin, optional waypoints, destination)." },
-          street_size:    { type: "string",  description: "Static Street View size, e.g., 640x400 (optional)." },
-          street_fov:     { type: "integer", minimum: 1, maximum: 120, description: "Field of view in degrees (optional)." },
-          street_heading: { type: "number",  description: "Camera heading in degrees (optional)." },
-          street_pitch:   { type: "number",  description: "Camera pitch in degrees (optional)." }
-        },
-        required: ["locations"],
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

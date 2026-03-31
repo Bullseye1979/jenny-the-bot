@@ -190,20 +190,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Generate one or more images from a prompt using Stable Diffusion and return local paths/URLs.",
-      parameters: {
-        type: "object",
-        properties: {
-          prompt: { type: "string", description: "Production-ready image description (avoid on-image text)." }
-        },
-        required: ["prompt"],
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

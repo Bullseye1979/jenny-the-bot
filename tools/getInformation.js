@@ -506,7 +506,7 @@ async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
 
   const searchTerms = originalGroups.map(g => g.base);
 
-  const systemPrompt =
+  const defaultAliasPrompt =
     `You are an alias extractor for tabletop RPG session transcripts. ` +
     `Given conversation excerpts and a list of search terms (entity names), find ALL other ways the SAME entities are referred to. ` +
     `Include: alternative names, nicknames, titles, shortened forms, descriptive labels, creature types, and role descriptions. ` +
@@ -515,6 +515,9 @@ async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
     `Return ONLY a JSON array of short strings (single words or short phrases, NOT full sentences). ` +
     `Max ${maxAliases} items. Exclude the original search terms themselves. If none found, return []. ` +
     `Example: ["Hippo","Hippomann","Slaad","die Kreatur","der Unbekannte"]`;
+  const systemPrompt = (giCfg.aliasSystemPrompt && String(giCfg.aliasSystemPrompt).trim())
+    ? String(giCfg.aliasSystemPrompt).trim().replace(/\$\{maxAliases\}/g, String(maxAliases))
+    : defaultAliasPrompt;
 
   const userPrompt =
     `Search terms (find aliases FOR these): ${JSON.stringify(searchTerms)}\n\nConversation excerpts:\n${excerpts}`;
@@ -796,56 +799,6 @@ async function getInformationInvoke(args, coreData) {
 function getDefaultExport() {
   return {
     name: MODULE_NAME,
-    definition: {
-      type: "function",
-      function: {
-        name: MODULE_NAME,
-        description:
-          "Search the conversation log for historical data using keywords. " +
-          "Searches one or multiple channels (workingObject.channelID + optional workingObject.channelIds) " +
-          "using fixed-size clusters (400 rows). " +
-          "By default excludes assistant messages and 'answered' turns (role/turn_id). " +
-          "Set toolsconfig.getInformation.includeAssistantTurns=true to include all rows. " +
-          "Set toolsconfig.getInformation.includeAliasSearch=true to enable 2-pass alias resolution: " +
-          "Pass 1 finds rows for the original keywords; a small AI call extracts aliases (e.g. nicknames, " +
-          "later-used names); Pass 2 searches for those aliases; results are merged and deduplicated. " +
-          "Prefers 'keyword_groups' (with 'variants' and optional 'parts'); " +
-          "falls back to 'keywords' as full-form LIKE tokens (no internal splitting). " +
-          "Ranking: coverage (distinct keyword groups) → totalHits → chronological order. " +
-          "Each returned item includes: channel_id, rn, ts, sender, content. " +
-          "Does NOT return timeline data. " +
-          "Call getTimeline separately to get the full chronological event history. " +
-          "Only tell the provided facts. Do not invent stories.",
-        parameters: {
-          type: "object",
-          properties: {
-            keyword_groups: {
-              type: "array",
-              description:
-                "AI-provided groups. Each group represents a concept (full-form variants + optional parts).",
-              items: {
-                type: "object",
-                properties: {
-                  id:       { type: ["string", "number"] },
-                  base:     { type: "string" },
-                  variants: { type: "array", items: { type: "string" } },
-                  parts:    { type: "array", items: { type: "string" } }
-                },
-                required: ["base"],
-                additionalProperties: true
-              }
-            },
-            keywords: {
-              type: "array",
-              items: { type: "string" },
-              description:
-                "Fallback: free-form search phrases; uses FULL FORMS only (no internal splitting)."
-            }
-          },
-          additionalProperties: false
-        }
-      }
-    },
     invoke: getInformationInvoke
   };
 }

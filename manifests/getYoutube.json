@@ -1,0 +1,17 @@
+{
+  "name": "getYoutube",
+  "description": "Fetch and process YouTube video transcripts, or search YouTube. For mode='transcript': fetches the transcript and either dumps it (short) or summarizes/answers questions (long). For mode='search': searches YouTube via the Data API. Always fetch fresh — never reuse transcript content from previous calls. If a previous call returned an error, retry. Returns structured JSON only; to save the transcript as a file, chain getText or getPDF after this call.",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "mode": { "type": "string", "enum": ["transcript", "search"], "description": "transcript = fetch and dump or summarize; search = YouTube search via Data API." },
+      "video_url": { "type": "string", "description": "Full YouTube URL or 11-character video ID. Required when mode='transcript'." },
+      "user_prompt": { "type": "string", "description": "Optional: if provided, runs a focused QA over the transcript instead of a generic summary." },
+      "metaOnly": { "type": "boolean", "description": "If true, return only video metadata without fetching the transcript (requires valid googleApiKey)." },
+      "query": { "type": "string", "description": "Search query when mode='search'." },
+      "max_results": { "type": "number", "description": "Maximum search results when mode='search' (1–10)." },
+      "safe_search": { "type": "string", "description": "YouTube safeSearch setting: 'none', 'moderate', or 'strict'." }
+    }
+  }
+}

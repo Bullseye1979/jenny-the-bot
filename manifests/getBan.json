@@ -1,0 +1,11 @@
+{
+  "name": "getBan",
+  "description": "Request a user ban by notifying the configured admin via DM. Always execute a fresh ban request — never assume a previous request was processed. Reason is optional but recommended. Returns the user name and the resolved reason.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "reason": { "type": "string", "description": "Short reason for the ban request. Defaults to 'Inappropriate behaviour' if omitted." }
+    },
+    "additionalProperties": false
+  }
+}

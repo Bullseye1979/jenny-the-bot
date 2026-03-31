@@ -1,0 +1,9 @@
+{
+  "name": "getTime",
+  "description": "Return the current date and time in UTC (ISO 8601). Always call this tool when the current time or date is needed — never use timestamps or dates from conversation history.",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  }
+}

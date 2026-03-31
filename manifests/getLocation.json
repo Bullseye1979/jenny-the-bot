@@ -1,0 +1,17 @@
+{
+  "name": "getLocation",
+  "description": "Generate Google Street View image URLs, interactive Street View links, and Google Maps URLs for one or more locations. Optionally returns driving directions text. Always generates fresh URLs — never reuse from previous calls.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "locations": { "type": "array", "items": { "type": "string" }, "description": "List of location names or 'lat,lng' coordinate pairs. The last entry is the destination." },
+      "route": { "type": "boolean", "description": "If true, treat all entries as a route: origin → optional waypoints → destination." },
+      "street_size": { "type": "string", "description": "Static Street View image size, e.g. '640x400' (optional)." },
+      "street_fov": { "type": "integer", "minimum": 1, "maximum": 120, "description": "Field of view in degrees for the Street View camera (optional)." },
+      "street_heading": { "type": "number", "description": "Camera heading in degrees (optional)." },
+      "street_pitch": { "type": "number", "description": "Camera pitch in degrees (optional)." }
+    },
+    "required": ["locations"],
+    "additionalProperties": false
+  }
+}

@@ -80,12 +80,13 @@ function getWordCount(text) {
 }
 
 
-function getBuildMessages(userPrompt, title, url, text, extraPrompt) {
+function getBuildMessages(userPrompt, title, url, text, extraPrompt, systemPrompt) {
   const baseSystem = {
     role: "system",
-    content:
-      "You are a precise web analyst. Answer strictly from the provided page text. " +
-      "If the answer isn't present, say so clearly. Keep chronology and avoid speculation."
+    content: (systemPrompt && systemPrompt.trim())
+      ? systemPrompt.trim()
+      : "You are a precise web analyst. Answer strictly from the provided page text. " +
+        "If the answer isn't present, say so clearly. Keep chronology and avoid speculation."
   };
   const extraSystem =
     extraPrompt && extraPrompt.trim()
@@ -170,7 +171,7 @@ async function getInvoke(args, coreData) {
   const maxTokens = getClamp(getNum(toolCfg.maxTokens, 1400), 100, 4096);
   const aiTimeoutMs = getNum(toolCfg.aiTimeoutMs, 45000);
 
-  const messages = getBuildMessages(user_prompt, title, url, pageText, prompt);
+  const messages = getBuildMessages(user_prompt, title, url, pageText, prompt, getStr(toolCfg.systemPrompt, ""));
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), aiTimeoutMs);
@@ -216,27 +217,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description:
-        "Fetch a webpage, extract readable text, and either dump the cleaned text or summarize it based on a word threshold. An optional 'prompt' biases the summary (like getHistory). AI settings must be provided in toolsconfig.getWebpage.",
-      parameters: {
-        type: "object",
-        properties: {
-          url: { type: "string", description: "Absolute URL to fetch (http/https)." },
-          user_prompt: { type: "string", description: "User question/instruction to execute against the page text (main task)." },
-          prompt: {
-            type: "string",
-            description:
-              "OPTIONAL: extra system instructions to bias the summary (e.g., 'focus on statements by user X', 'include quotes from Y'). Used only in summary mode; ignored in dump mode."
-          }
-        },
-        required: ["url", "user_prompt"],
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

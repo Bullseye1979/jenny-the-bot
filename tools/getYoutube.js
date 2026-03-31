@@ -203,7 +203,8 @@ async function getInvoke(args, coreData) {
   if (!apiKey) {
     return { ok: true, mode: "dump", warning: "NO_API_KEY_FOR_SUMMARY — returning raw transcript", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, text: linear.slice(0, dumpThresholdChars), truncated: linear.length > dumpThresholdChars, took_ms: Date.now() - started };
   }
-  const systemMsg = ["You are a YouTube transcript analyst.", "You get a transcript with timestamps.", "If the user asked a specific question, answer it using ONLY the transcript.", "If the user did not ask a question, write a structured summary with sections and keep timestamps where they help.", "Do NOT invent content that is not in the transcript.", "Language: keep the language of the user prompt, otherwise use English."].join(" ");
+  const defaultSystemMsg = ["You are a YouTube transcript analyst.", "You get a transcript with timestamps.", "If the user asked a specific question, answer it using ONLY the transcript.", "If the user did not ask a question, write a structured summary with sections and keep timestamps where they help.", "Do NOT invent content that is not in the transcript.", "Language: keep the language of the user prompt, otherwise use English."].join(" ");
+  const systemMsg = getStr(cfg.systemPrompt, defaultSystemMsg);
   const messages = [{ role: "system", content: systemMsg }, ...(hasUserPrompt ? [{ role: "user", content: `User request:\n${userPrompt}` }] : []), { role: "user", content: `Transcript (truncated to ${dumpThresholdChars} chars if long):\n\n${linear.slice(0, 180000)}` }];
   const aiRes = await getCallOpenAI({ endpoint, apiKey, model, messages, temperature, max_tokens: maxTokens, timeoutMs: aiTimeoutMs });
   if (!aiRes.ok) {
@@ -214,25 +215,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Fetch and process YouTube videos. If mode='transcript': fetch transcript, dump if short, summarize/QA if long. If mode='search': run YouTube Data API search. All config (API keys, thresholds, languages) is taken from toolsconfig.getYoutube. To attach files, call a different tool – this one only returns structured JSON.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          mode: { type: "string", enum: ["transcript", "search"], description: "transcript = fetch + dump/summary; search = YouTube search via Data API" },
-          video_url: { type: "string", description: "Full YouTube URL or 11-char videoId. Needed when mode='transcript'." },
-          user_prompt: { type: "string", description: "Optional: if provided, the tool will run a QA over the transcript instead of a generic summary." },
-          metaOnly: { type: "boolean", description: "If true, only metadata for the video is returned (requires valid googleApiKey)." },
-          query: { type: "string", description: "Search query when mode='search'." },
-          max_results: { type: "number", description: "Max search results when mode='search' (1-10)." },
-          safe_search: { type: "string", description: "YouTube search safeSearch setting, e.g. 'none' | 'moderate' | 'strict'." }
-        }
-      }
-    }
-  },
   invoke: getInvoke
 };

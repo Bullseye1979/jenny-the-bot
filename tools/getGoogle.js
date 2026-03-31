@@ -121,26 +121,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Search the web using Google. Always use this toolcall when asked for current news, situations, events or information. A query has to be provided.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "Search query text." },
-          num:   { type: "integer", minimum: 1, maximum: 10, description: "Number of results to return (default from toolsconfig, max 10)." },
-          safe:  { type: "string", description: "Safe search level: off, active, or high (optional)." },
-          hl:    { type: "string", description: "UI language hint, e.g., de, en (optional)." },
-          lr:    { type: "string", description: "Language restrict, e.g., lang_de (optional)." },
-          cr:    { type: "string", description: "Country restrict, e.g., countryDE (optional)." },
-          gl:    { type: "string", description: "Geolocation, e.g., de (optional)." }
-        },
-        required: ["query"],
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

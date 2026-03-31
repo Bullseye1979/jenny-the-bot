@@ -2560,15 +2560,96 @@ Each entry is matched against `wo.flow` using glob-style wildcards — `*` match
 
 ## 8. Tools — LLM-callable Functions
 
-All tools live in `tools/`. They follow this format:
+### Architecture
+
+Tools live in `tools/`. A tool exports only `name` and `invoke`:
 
 ```javascript
+// tools/myTool.js
 export default {
-  name:       "toolName",
-  definition: { type: "function", function: { name, description, parameters } },
-  invoke:     async (args, coreData) => { /* ... */ return result; }
+  name:   "myTool",
+  invoke: async (args, coreData) => {
+    const wo     = coreData.workingObject;
+    const cfg    = wo.toolsconfig?.myTool || {};
+    // ... do work ...
+    return { ok: true, result: "..." };
+  }
 };
 ```
+
+**The `definition` export has been removed from all tools.** Tool definitions are maintained exclusively as manifests in `manifests/`.
+
+---
+
+### Manifests — Single Source of Truth
+
+Every tool must have a corresponding manifest file at `manifests/<toolName>.json`. The manifest contains the JSON Schema that the AI receives:
+
+```json
+{
+  "name": "myTool",
+  "description": "What this tool does and when the AI should call it.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "The search query."
+      }
+    },
+    "required": ["query"]
+  }
+}
+```
+
+- If no manifest exists for a tool listed in `tools[]`, the tool is **loaded but not advertised to the AI** (a warning is logged).
+- The outer `{ type: "function", function: <manifest> }` wrapper is added automatically by the core-ai modules.
+- Editing a manifest changes what the AI sees without touching source code.
+
+---
+
+### Creating a New Tool — Checklist
+
+1. **Create `tools/<toolName>.js`** — export `{ name, invoke }` only. No `definition`.
+2. **Create `manifests/<toolName>.json`** — with `name`, `description`, `parameters`.
+3. **Add toolsconfig** in `core.json` under `toolsconfig.<toolName>` for any admin-configurable values.
+4. **Enable** by adding `"<toolName>"` to the `tools` array in the relevant flow's `workingObject` config.
+
+---
+
+### Writing Good Manifest Descriptions
+
+The description is the primary way to control AI behaviour. Follow these conventions:
+
+**Context-bias prevention** — Always include one of these phrases if the tool fetches live data:
+- *"Always execute a fresh [operation] — never reuse results from conversation history."*
+- *"Always call this tool for the current request — never repeat a previous answer from context."*
+
+**Tool-chaining hints** — If a tool's output is commonly followed by another tool call, say so:
+- `getImage` → *"Pass the returned URL to `getAnimatedPicture` if the user wants an animation."*
+- `getTavily` → *"Use `getWebpage` on individual results for full article content."*
+
+**Trigger clarity** — Be explicit about when NOT to call the tool, to prevent over-calling.
+
+---
+
+### Prompt Externalization
+
+Hardcoded system prompts inside tools have been moved to `core.json` under `toolsconfig.<toolName>`. The tool reads the config key with a built-in fallback:
+
+| Tool | Config key | Purpose |
+|---|---|---|
+| `getImage` | `toolsconfig.getImage.enhancerSystemPrompt` | Prompt enhancer system prompt |
+| `getImageDescription` | `toolsconfig.getImageDescription.systemPrompt` | Vision analyst system prompt |
+| `getWebpage` | `toolsconfig.getWebpage.systemPrompt` | Web analyst system prompt |
+| `getYoutube` | `toolsconfig.getYoutube.systemPrompt` | Transcript analyst system prompt |
+| `getHistory` | `toolsconfig.getHistory.systemPrompt` | History summarizer system prompt |
+| `getInformation` | `toolsconfig.getInformation.aliasSystemPrompt` | Alias extractor system prompt |
+| `core-ai-roleplay` | `config["core-ai-roleplay"].imagePromptRules` | SD image prompt generation rules |
+
+All keys are optional — if absent or empty, the built-in default is used.
+
+---
 
 To enable a tool, add its name to `workingObject.tools`.
 Configuration goes in `workingObject.toolsconfig.<toolName>`.

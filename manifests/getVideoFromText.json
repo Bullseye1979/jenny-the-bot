@@ -1,0 +1,18 @@
+{
+  "name": "getVideoFromText",
+  "description": "Generate a brand-new short video from a text description using Replicate (Google Veo 3). Always generate fresh — never reuse video URLs from previous calls. Use this ONLY for generating video from text with no source image. To animate an existing image, use getAnimatedPicture instead.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "prompt": { "type": "string", "description": "Describe the video scene to generate from scratch." },
+      "videoApiToken": { "type": "string", "description": "Override Replicate API token (defaults to toolsconfig.getVideoFromText.videoApiToken)." },
+      "videoBaseUrl": { "type": "string", "description": "Override Replicate base URL (defaults to toolsconfig.getVideoFromText.videoBaseUrl)." },
+      "videoModel": { "type": "string", "description": "Override model version (defaults to toolsconfig.getVideoFromText.videoModel, e.g. 'google/veo-3')." },
+      "videoPollIntervalMs": { "type": "number", "description": "Override poll interval in ms (defaults to toolsconfig.getVideoFromText.videoPollIntervalMs)." },
+      "videoTimeoutMs": { "type": "number", "description": "Override timeout in ms (defaults to toolsconfig.getVideoFromText.videoTimeoutMs)." },
+      "videoPublicBaseUrl": { "type": "string", "description": "Override public base URL for saved files (defaults to toolsconfig.getVideoFromText.videoPublicBaseUrl)." }
+    },
+    "required": ["prompt"],
+    "additionalProperties": false
+  }
+}

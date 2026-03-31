@@ -13,6 +13,11 @@ import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+const _manifestDir = join(dirname(fileURLToPath(import.meta.url)), "../manifests");
 
 const MODULE_NAME = "core-ai-pseudotoolcalls";
 const ARG_PREVIEW_MAX = 400;
@@ -116,6 +121,19 @@ function getPromptFromSnapshot(rows, kiCfg) {
 }
 
 
+function getManifestDef(name, logFn) {
+  try {
+    const raw = readFileSync(join(_manifestDir, `${name}.json`), "utf8");
+    const fn = JSON.parse(raw);
+    if (fn && typeof fn === "object" && fn.name && fn.description && fn.parameters) {
+      return { type: "function", function: fn };
+    }
+  } catch {}
+  if (logFn) logFn(`Tool "${name}" has no manifest in manifests/ — it will not be advertised to the AI.`, "warn");
+  return null;
+}
+
+
 async function getToolsByName(names, wo) {
   const log = getPrefixedLogger(wo, import.meta.url);
   const loaded = [];
@@ -124,7 +142,8 @@ async function getToolsByName(names, wo) {
       const mod = await import(`../tools/${name}.js`);
       const tool = mod?.default ?? mod;
       if (tool && typeof tool.invoke === "function") {
-        loaded.push(tool);
+        const manifestDef = getManifestDef(name, log);
+        loaded.push({ ...tool, definition: manifestDef || undefined });
       } else {
         log(`Tool "${name}" invalid (missing invoke); skipped.`, "warn");
       }

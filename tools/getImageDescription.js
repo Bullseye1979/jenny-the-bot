@@ -33,9 +33,12 @@ function getStrictConfig(workingObject) {
 /**********************************************************************************/
 /* getMessages (imageUrl, analysisPrompt)                                          *
 /**********************************************************************************/
-function getMessages(imageUrl, analysisPrompt) {
+function getMessages(imageUrl, analysisPrompt, systemPrompt) {
+  const sysContent = (systemPrompt && systemPrompt.trim())
+    ? systemPrompt.trim()
+    : "You are an expert vision analyst. Provide faithful, useful descriptions and extract visible text.";
   return [
-    { role: "system", content: "You are an expert vision analyst. Provide faithful, useful descriptions and extract visible text." },
+    { role: "system", content: sysContent },
     { role: "user", content: [{ type: "text", text: analysisPrompt }, { type: "image_url", image_url: { url: imageUrl } }] }
   ];
 }
@@ -89,12 +92,13 @@ async function getInvoke(args, coreData) {
     return { ok: false, error: `[${MODULE_NAME}] Missing or invalid 'imageURL' (must be http/https).` };
   }
 
+  const systemPrompt = String(workingObject?.toolsconfig?.[MODULE_NAME]?.systemPrompt || "").trim();
   const userPrompt = String(args?.prompt ?? "").trim();
   const analysisPrompt =
     userPrompt ||
     "Analyze the image thoroughly. Describe key objects, people, setting, colors, composition, and notable details. Extract any visible text (OCR). Be accurate and concise; avoid speculation.";
 
-  const messages = getMessages(imageUrl, analysisPrompt);
+  const messages = getMessages(imageUrl, analysisPrompt, systemPrompt);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -128,21 +132,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description: "Describe a single image using a vision chat completion. Requires args.imageURL (http/https).",
-      parameters: {
-        type: "object",
-        properties: {
-          imageURL: { type: "string", format: "uri", description: "Public image URL (http/https) to analyze." },
-          prompt: { type: "string", description: "Optional instruction for what to focus on (style, objects, text, layout, etc.)." }
-        },
-        required: ["imageURL"],
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

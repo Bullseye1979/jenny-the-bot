@@ -15,6 +15,11 @@
 import { getContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+const _manifestDir = join(dirname(fileURLToPath(import.meta.url)), "../manifests");
 
 const MODULE_NAME = "core-ai-roleplay";
 
@@ -69,7 +74,8 @@ function getKiCfg(wo) {
     imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.35),
     imagePersonaHint: getStr(wo?.ImagePersonaHint, ""),
     imageContextTurns: Math.max(0, getNum(wo?.ImageContextTurns, 8)),
-    maxLoops: Math.max(1, getNum(wo?.maxLoops, 5))
+    maxLoops: Math.max(1, getNum(wo?.maxLoops, 5)),
+    imagePromptRules: getStr(wo?.imagePromptRules, "")
   };
 }
 
@@ -110,13 +116,28 @@ function getRecentContextForImage(rows, maxTurns) {
 }
 
 
+function getManifestDef(name, logFn) {
+  try {
+    const raw = readFileSync(join(_manifestDir, `${name}.json`), "utf8");
+    const fn = JSON.parse(raw);
+    if (fn && typeof fn === "object" && fn.name && fn.description && fn.parameters) {
+      return { type: "function", function: fn };
+    }
+  } catch {}
+  if (logFn) logFn(`Tool "${name}" has no manifest in manifests/ — it will not be advertised to the AI.`, "warn");
+  return null;
+}
+
+
 async function getToolByName(name, wo) {
   const log = getPrefixedLogger(wo, import.meta.url);
   try {
     const mod = await import(`../tools/${name}.js`);
     const tool = mod?.default ?? mod;
-    if (tool && typeof tool.invoke === "function") return tool;
-
+    if (tool && typeof tool.invoke === "function") {
+      const manifestDef = getManifestDef(name, log);
+      return { ...tool, definition: manifestDef || undefined };
+    }
     log(`Tool "${name}" invalid (missing invoke).`, "warn");
     return null;
   } catch (e) {
@@ -203,7 +224,7 @@ function getSystemContentTextRun(wo) {
 }
 
 
-function getSystemContentImagePromptRun(personaText, imagePersonaHint) {
+function getSystemContentImagePromptRun(personaText, imagePersonaHint, imagePromptRules) {
   const persona = String(personaText ?? "").trim();
   const hint = String(imagePersonaHint ?? "").trim();
 
@@ -213,7 +234,8 @@ function getSystemContentImagePromptRun(personaText, imagePersonaHint) {
     hint ? `- Fixed look hint: ${hint}` : ""
   ].filter(Boolean).join("\n");
 
-  const rules = [
+  const customRules = String(imagePromptRules ?? "").trim();
+  const rules = customRules || [
     "You create a Stable Diffusion image prompt from the ROLEPLAY CONTEXT.",
     "Rules:",
     "- Output ONLY a comma-separated list of descriptive tags. NO sentences. NO prose. NO quotes. NO markdown. NO extra lines.",
@@ -343,7 +365,7 @@ export default async function getCoreAi(coreData) {
 
   /***** PASS 2: IMAGE PROMPT (NOT persisted) *****/
   const personaForImages = getStr(wo?.persona, "");
-  const system2 = getSystemContentImagePromptRun(personaForImages, kiCfg.imagePersonaHint);
+  const system2 = getSystemContentImagePromptRun(personaForImages, kiCfg.imagePersonaHint, kiCfg.imagePromptRules);
 
   const ctxText = getRecentContextForImage(snapshot, kiCfg.imageContextTurns);
   const userBlock = [

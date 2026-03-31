@@ -159,7 +159,7 @@ async function getPreloadUpToCap(
 }
 
 
-function getBuildSummaryMessages(meta, lines, extraPrompt) {
+function getBuildSummaryMessages(meta, lines, extraPrompt, systemPrompt) {
   const channelLine = Array.isArray(meta.channels) && meta.channels.length > 1
     ? `Channels: ${meta.channels.join(", ")}`
     : `Channel: ${meta.channel}`;
@@ -172,11 +172,12 @@ function getBuildSummaryMessages(meta, lines, extraPrompt) {
   const body = lines.join("\n");
   const baseSystem = {
     role: "system",
-    content:
-      "You are a precise analyst. Summarize strictly from the provided raw rows. " +
-      "Cover the whole data; do not omit important events. If something is unclear, say so. " +
-      "Do not invent facts. Summarize in strict chronological order. Do not mix up events. " +
-      "If multiple channels are present, keep them disambiguated by their channel ids or names where helpful."
+    content: (systemPrompt && String(systemPrompt).trim())
+      ? String(systemPrompt).trim()
+      : "You are a precise analyst. Summarize strictly from the provided raw rows. " +
+        "Cover the whole data; do not omit important events. If something is unclear, say so. " +
+        "Do not invent facts. Summarize in strict chronological order. Do not mix up events. " +
+        "If multiple channels are present, keep them disambiguated by their channel ids or names where helpful."
   };
   const extraSystem =
     extraPrompt && String(extraPrompt).trim()
@@ -214,7 +215,7 @@ async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
     const tag = ch ? `[${r.ctx_id}|${ch}]` : `[${r.ctx_id}]`;
     return `${tag} ${r.ts} ${payload}`;
   });
-  const messages = getBuildSummaryMessages(meta, lines, extraPrompt);
+  const messages = getBuildSummaryMessages(meta, lines, extraPrompt, cfg?.systemPrompt);
   const controller = new AbortController();
   const timeoutMs = Number.isFinite(cfg?.aiTimeoutMs) ? Number(cfg.aiTimeoutMs) : 45000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -519,43 +520,6 @@ async function getHistoryInvoke(args, coreData) {
 function getDefaultExport() {
   return {
     name: MODULE_NAME,
-    definition: {
-      type: "function",
-      function: {
-        name: MODULE_NAME,
-        description:
-          "ALWAYS USE THIS TO RETRIEVE HISTORICAL DATA AND PAST EVENTS, WHEN A TIMEFRAME IS KNOWN. " +
-          "Get the historical records of the channel based on provided timeframes. " +
-          "If rows ≤ threshold → dump, if threshold < rows ≤ max_rows → single summary, " +
-          "if rows > max_rows → multi-chunk summary with short, prompt-focused chunks. " +
-          "History is pulled from workingObject.channelID plus optional workingObject.channelIds.",
-        parameters: {
-          type: "object",
-          properties: {
-            start: {
-              type: "string",
-              description: "REQUIRED: start timestamp (YYYY-MM-DD, DD.MM.YYYY, or ISO). If date-only → 00:00:00."
-            },
-            end: {
-              type: "string",
-              description:
-                "OPTIONAL: end timestamp. If omitted → 23:59:59 of same day. " +
-                "If date-only, end is exclusive at next day 00:00:00."
-            },
-            start_ctx_id: {
-              type: "number",
-              description: "OPTIONAL: continue after this ctx_id (manual pagination only; applies across all channels)."
-            },
-            prompt: {
-              type: "string",
-              description: "OPTIONAL: additional instructions to steer the summary."
-            }
-          },
-          required: ["start"],
-          additionalProperties: false
-        }
-      }
-    },
     invoke: getHistoryInvoke
   };
 }

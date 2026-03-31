@@ -1,0 +1,39 @@
+{
+  "name": "getJira",
+  "description": "ALWAYS USE THIS TOOL to access Jira. Always execute a fresh Jira operation — never reuse issue data from previous calls. If a previous call failed, retry with corrected parameters. Supports high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE) and raw API requests. Enforces configured project key and credentials. JQL is normalized automatically. LIST returns {key, summary, status}.",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "op": { "type": "string", "enum": ["LIST", "TASK", "STATUS", "CREATE", "DELETE", "UPDATE"], "description": "High-level operation. If omitted, raw request mode is used via the 'json' field." },
+      "jql": { "type": "string", "description": "For LIST: optional JQL filter. Project scoping is auto-enforced unless meta.allowCrossProject=true." },
+      "key": { "type": "string", "description": "Issue key for TASK/STATUS/UPDATE/DELETE." },
+      "status": { "type": "string", "description": "Target status for STATUS/UPDATE (auto-transition)." },
+      "resolutionName": { "type": "string", "description": "Optional resolution to set during STATUS (e.g. 'Done', 'Won't Fix')." },
+      "forceDelete": { "type": "boolean", "description": "For DELETE: true to perform hard delete; otherwise a transition to 'Done' is attempted." },
+      "maxResults": { "type": "number", "description": "For LIST: maximum results (default 50)." },
+      "fields": { "type": "object", "description": "For CREATE/UPDATE: Jira REST fields payload (summary, issuetype, etc.)." },
+      "json": {
+        "type": "object",
+        "description": "Raw low-level Jira request (alternative to op-mode). Proxy enforces base URL and project key.",
+        "additionalProperties": false,
+        "properties": {
+          "method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"] },
+          "path": { "type": "string" },
+          "url": { "type": "string" },
+          "query": { "type": "object" },
+          "headers": { "type": "object" },
+          "body": { "oneOf": [{ "type": "object" }, { "type": "string" }] },
+          "multipart": { "type": "boolean" },
+          "form": { "type": "object" },
+          "files": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "url": { "type": "string" }, "name": { "type": "string" }, "filename": { "type": "string" } }, "required": ["url"] } },
+          "timeoutMs": { "type": "number" },
+          "responseType": { "type": "string", "enum": ["json", "arraybuffer"] },
+          "status": { "type": "string" },
+          "meta": { "type": "object", "additionalProperties": false, "properties": { "allowCrossProject": { "type": "boolean" }, "status": { "type": "string" }, "transition": { "type": "object", "additionalProperties": false, "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "toStatus": { "type": "string" }, "toStatusId": { "type": "string" }, "toStatusCategory": { "type": "string" } } }, "transitionFields": { "type": "object" }, "resolutionName": { "type": "string" }, "onlyKeySummary": { "type": "boolean" }, "noEnrichFields": { "type": "boolean" } } }
+        },
+        "required": ["method"]
+      }
+    }
+  }
+}

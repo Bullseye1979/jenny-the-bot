@@ -157,27 +157,5 @@ async function getInvoke(args, coreData) {
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description:
-        "Create a brand-new short video from text only using Replicate (Google Veo 3). Do not use this when asked to animate or transform an existing picture.",
-      parameters: {
-        type: "object",
-        properties: {
-          prompt: { type: "string", description: "Describe the video you want to generate from scratch." },
-          videoApiToken: { type: "string", description: "Override Replicate API token (defaults to toolsconfig.getVideoFromText.videoApiToken)" },
-          videoBaseUrl: { type: "string", description: "Override Replicate base URL (defaults to toolsconfig.getVideoFromText.videoBaseUrl)" },
-          videoModel: { type: "string", description: "Override model (defaults to toolsconfig.getVideoFromText.videoModel, e.g., 'google/veo-3')" },
-          videoPollIntervalMs: { type: "number", description: "Override poll interval in ms (defaults to toolsconfig…)" },
-          videoTimeoutMs: { type: "number", description: "Override timeout in ms (defaults to toolsconfig…)" },
-          videoPublicBaseUrl: { type: "string", description: "Override public base URL for saved files (defaults to toolsconfig…)" }
-        },
-        required: ["prompt"],
-        additionalProperties: false
-      }
-    }
-  },
   invoke: getInvoke
 };

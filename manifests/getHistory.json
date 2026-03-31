@@ -1,0 +1,15 @@
+{
+  "name": "getHistory",
+  "description": "ALWAYS USE THIS TOOL to retrieve historical chat records and past events when a timeframe is known. Fetches directly from the database — never infer historical data from conversation context. If a previous call returned no data, try different start/end parameters or a broader range. For large result sets, AI summarization is applied automatically. To identify relevant time periods first, call getTimeline, then pass its timestamps to this tool.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "start": { "type": "string", "description": "REQUIRED: start timestamp (YYYY-MM-DD, DD.MM.YYYY, or ISO 8601). If date-only, time defaults to 00:00:00." },
+      "end": { "type": "string", "description": "OPTIONAL: end timestamp. If omitted, defaults to 23:59:59 of the start date. If date-only, end is exclusive at next day 00:00:00." },
+      "start_ctx_id": { "type": "number", "description": "OPTIONAL: continue pagination from after this ctx_id (applies across all channels)." },
+      "prompt": { "type": "string", "description": "OPTIONAL: additional instructions to steer the AI summary (e.g. 'focus on combat events')." }
+    },
+    "required": ["start"],
+    "additionalProperties": false
+  }
+}

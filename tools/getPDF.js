@@ -393,25 +393,5 @@ async function getInvoke(args, coreData){
 
 export default {
   name: MODULE_NAME,
-  definition: {
-    type: "function",
-    function: {
-      name: MODULE_NAME,
-      description:
-        "Generate a print-hardened A4 PDF and a matching HTML file from tolerant HTML input. CSS is REQUIRED. Accepts object fields or a raw string (fenced ```json / ```html / ```css, full <html>…</html>, body-only HTML). Saves both to ../pub/documents. Returns { ok, pdf, html, css, text, filename }. Always show the html-URL (html) and the PDF-URL (pdf).  IMPORTANT: Elements that are included in the PDF (e.g. images) need to be generated before this tool is called.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          html: { type: "string", description: "HTML content (full document or body-only). May include <style> blocks; they will be extracted into `css`." },
-          css: { type: "string", description: "REQUIRED additional CSS to apply (or provide <style> inside HTML)." },
-          title: { type: "string", description: "Optional document title (used in HTML <title>)." },
-          filename: { type: "string", description: "Optional base filename without extension (normalized)." },
-          raw: { type: "string", description: "Alternative free-form input (fenced JSON/HTML, unterminated JSON strings, etc.)." }
-        },
-        required: ["css"]
-      }
-    }
-  },
   invoke: getInvoke
 };

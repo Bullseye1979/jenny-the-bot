@@ -1,0 +1,24 @@
+{
+  "name": "getImage",
+  "description": "Generate one or more images from a text prompt using the configured image model. Always generate a new image for each request — never reuse URLs from previous calls. Prompts are automatically enhanced for quality unless strictPrompt=true. To animate the generated image, chain getAnimatedPicture with the returned URL. To include the image in a PDF, call getPDF after. Never change the configured model unless explicitly instructed.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "prompt": { "type": "string", "description": "Short, clean scene description (no on-image text)." },
+      "size": { "type": "string", "description": "Explicit size 'WxH' (e.g., 1152x896). If omitted, derived from 'aspect' and 'targetLongEdge'." },
+      "aspect": { "type": "string", "description": "Preferred aspect ratio (e.g., '1:1', '16:9', '9:16', 'portrait', 'landscape')." },
+      "targetLongEdge": { "type": "number", "description": "If 'size' is omitted, long edge target in pixels (default 1024)." },
+      "n": { "type": "integer", "minimum": 1, "maximum": 4, "description": "Number of images to generate (subject to model limits)." },
+      "strictPrompt": { "type": "boolean", "description": "If true, sends the prompt exactly as given with no enhancement." },
+      "negative": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Extra negative terms to avoid in the image." },
+      "enhancerEndpoint": { "type": "string", "description": "Chat/completions endpoint for the prompt enhancer (overrides toolsconfig)." },
+      "enhancerApiKey": { "type": "string", "description": "API key for the prompt enhancer (overrides toolsconfig)." },
+      "enhancerModel": { "type": "string", "description": "Model for the prompt enhancer (overrides toolsconfig)." },
+      "enhancerTemperature": { "type": "number", "description": "Temperature for the prompt enhancer (overrides toolsconfig)." },
+      "enhancerMaxTokens": { "type": "number", "description": "Max tokens for the prompt enhancer (overrides toolsconfig)." },
+      "preferDigitalPainting": { "type": "boolean", "description": "Prefer a digital painting style (default: true)." }
+    },
+    "required": ["prompt"],
+    "additionalProperties": false
+  }
+}

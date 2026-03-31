@@ -1,0 +1,13 @@
+{
+  "name": "getText",
+  "description": "Save arbitrary plaintext content (code, HTML, CSS, JSON, XML, TXT, Python, etc.) to disk and return a public URL. Use this to persist any text output — transcripts, generated code, structured data. Always saves a new file each call.",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "text": { "type": "string", "description": "Plaintext content to write. Can be code, HTML, JSON, a transcript, etc." },
+      "filename": { "type": "string", "description": "Optional base filename (with or without extension). Auto-generated if omitted." }
+    },
+    "required": ["text"]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "getTimeline",
+  "description": "Return all stored timeline periods for the current channel. Always fetch fresh from the database. Use this as the first step when exploring conversation history — it provides period summaries with start/end timestamps. Pass those timestamps to getHistory for detailed rows, or use them to scope a getInformation keyword search.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "limit": { "type": "number", "description": "Optional maximum number of periods to return (most recent first, then re-ordered ascending)." },
+      "order": { "type": "string", "enum": ["asc", "desc"], "description": "Order periods by start_idx ascending (default) or descending." }
+    },
+    "additionalProperties": false
+  }
+}

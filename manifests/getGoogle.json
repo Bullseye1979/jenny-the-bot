@@ -1,0 +1,18 @@
+{
+  "name": "getGoogle",
+  "description": "Search the web using Google for current news, events, facts, or real-time information. Always execute a fresh search — never reuse results from conversation history. If a previous search returned no useful results, refine the query and search again. A query is required. To read a specific search result in full, follow up with getWebpage.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string", "description": "Search query text." },
+      "num": { "type": "integer", "minimum": 1, "maximum": 10, "description": "Number of results to return (default from toolsconfig, max 10)." },
+      "safe": { "type": "string", "description": "Safe search level: off, active, or high (optional)." },
+      "hl": { "type": "string", "description": "UI language hint, e.g., de, en (optional)." },
+      "lr": { "type": "string", "description": "Language restrict, e.g., lang_de (optional)." },
+      "cr": { "type": "string", "description": "Country restrict, e.g., countryDE (optional)." },
+      "gl": { "type": "string", "description": "Geolocation, e.g., de (optional)." }
+    },
+    "required": ["query"],
+    "additionalProperties": false
+  }
+}

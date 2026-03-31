@@ -1,0 +1,32 @@
+{
+  "name": "getSpotify",
+  "description": "ALWAYS use this tool whenever the user wants to play, pause, or control music — regardless of whether they mention Spotify explicitly.\nThis is the ONLY music playback tool available. Any request involving music playback, songs, albums, or playlists must use this tool.\nTrigger keywords: play, pause, resume, stop music, play song, play album, play playlist, what is playing, next song, search music, search song, my devices, switch device, create playlist, add to playlist, remove from playlist, skip, spotify.\nAlso responds to equivalent terms in other languages.\nDo NOT ask the user for confirmation before using this tool — just use it.\n\nOperations:\n  playByName         — PREFERRED: play a track or album by name in one call (search + device lookup + play combined)\n  search             — search tracks/albums/artists/playlists in the Spotify catalog\n  getPlayback        — get current playback state (what is playing, on which device)\n  play               — start or resume playback using known Spotify URIs and device ID\n  pause              — pause playback\n  setVolume          — set playback volume (0–100); use this for ANY volume or loudness request\n  listDevices        — list all available Spotify devices\n  transferPlayback   — transfer playback to a specific device\n  getPlaylists       — list the user's playlists\n  createPlaylist     — create a new playlist\n  addToPlaylist      — add tracks to a playlist\n  removeFromPlaylist — remove tracks from a playlist\n\nPLAYING A SONG OR ALBUM BY NAME — always use playByName:\n  - User says 'play [Song] by [Artist]'  → playByName with track=[Song], artist=[Artist]\n  - User says 'play the album [Album]'   → playByName with album=[Album], artist=[Artist if known]\n  - User says 'play something by [Artist]' → playByName with artist=[Artist], track or album from context\n  playByName handles search, device selection, and playback internally — ONE tool call is enough.\n  Never use the 3-step search → listDevices → play sequence when you know the song or album name.\n\nUSE play (with URIs) only when you already have a Spotify URI from a previous search result in THIS turn.\nUSE search + listDevices + play only when playByName fails or for advanced scenarios.\n\ngetPlayback is ONLY for when the user explicitly asks 'what is playing right now'.\nDo NOT call getPlayback to verify that play or playByName succeeded — a successful response is authoritative.\n\nSpotify URIs use the format: spotify:track:ID, spotify:album:ID, spotify:playlist:ID, spotify:artist:ID.\nPlayback control (play, pause, transferPlayback) requires a Spotify Premium account.\n\nIMPORTANT: This tool uses delegated OAuth2. The user must have connected their Spotify account at /spotify-auth.\nIf the tool returns an error about missing token or authentication, tell the user to visit /spotify-auth to connect their Spotify account.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "operation": { "type": "string", "description": "Operation to perform.", "enum": ["playByName", "search", "getPlayback", "play", "pause", "setVolume", "listDevices", "transferPlayback", "getPlaylists", "createPlaylist", "addToPlaylist", "removeFromPlaylist"] },
+      "track":  { "type": "string", "description": "Track (song) name to search and play. Used with playByName. Provide this when the user wants a specific song." },
+      "album":  { "type": "string", "description": "Album name to search and play. Used with playByName. Provide this when the user wants a whole album." },
+      "artist": { "type": "string", "description": "Artist name. Used with playByName to improve search accuracy. Optional but recommended." },
+      "query": { "type": "string", "description": "Search query string. Required for search." },
+      "types": { "type": "array", "items": { "type": "string", "enum": ["track", "album", "artist", "playlist"] }, "description": "Entity types to search for. Default: [\"track\"]." },
+      "uris": { "type": "array", "items": { "type": "string" }, "description": "Array of Spotify URIs (spotify:track:ID). Required for addToPlaylist and removeFromPlaylist. Optional for play." },
+      "contextUri": { "type": "string", "description": "Spotify URI of an album, playlist, or artist to play as context. Used with play operation." },
+      "deviceId": { "type": "string", "description": "Spotify device ID. Optional for play and pause. Required for transferPlayback." },
+      "playlistId": { "type": "string", "description": "Spotify playlist ID (not URI). Required for addToPlaylist and removeFromPlaylist." },
+      "name": { "type": "string", "description": "Playlist name. Required for createPlaylist." },
+      "description": { "type": "string", "description": "Playlist description. Optional for createPlaylist." },
+      "public": { "type": "boolean", "description": "Whether the playlist is public. Default: false. Used with createPlaylist." },
+      "volumePercent": { "type": "number", "description": "Volume level 0–100. Required for setVolume." },
+      "play": { "type": "boolean", "description": "Whether to start playing after transferring playback. Default: false. Used with transferPlayback." },
+      "position": { "type": "number", "description": "Insert position (0 = top). Used with addToPlaylist. Default: append." },
+      "offsetIndex": { "type": "number", "description": "Track index within context to start at. Used with play when contextUri is set." },
+      "positionMs": { "type": "number", "description": "Seek position in milliseconds. Used with play." },
+      "limit": { "type": "number", "description": "Maximum number of results to return. Default: 20, max: 50." },
+      "offset": { "type": "number", "description": "Pagination offset. Default: 0." },
+      "market": { "type": "string", "description": "ISO 3166-1 alpha-2 market code to filter results (e.g. DE, US). Optional for search." },
+      "snapshotId": { "type": "string", "description": "Playlist snapshot ID for conflict detection. Optional for removeFromPlaylist." }
+    },
+    "required": ["operation"]
+  }
+}

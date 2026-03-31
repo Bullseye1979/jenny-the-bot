@@ -1,0 +1,14 @@
+{
+  "name": "getToken",
+  "description": "Convert an image or video URL into a round-masked animated GIF with a colored ring border. Videos are converted to GIF frames first. Use pingpong=true to create a seamlessly loopable animation (frames are played forward then reversed). Output is kept under the configured byte budget via optimization. Always processes fresh — never reuses previous output URLs.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": { "type": "string", "description": "Public image or video URL (http/https)." },
+      "color1": { "type": "string", "description": "Ring border color as CSS or hex value (optional, default #00b3ff)." },
+      "pingpong": { "type": "boolean", "description": "If true, generates a loopable animation by playing frames forward then in reverse." }
+    },
+    "required": ["url"],
+    "additionalProperties": false
+  }
+}
