@@ -149,6 +149,8 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
       wo.flow = flowName;
       wo.turn_id = getNewUlid();
       wo.source = "http";
+      wo.aborted = false;
+      req.socket?.on("close", () => { if (!res.writableEnded) wo.aborted = true; });
       wo.timestamp = nowIso;
 
       wo.http = wo.http || {};

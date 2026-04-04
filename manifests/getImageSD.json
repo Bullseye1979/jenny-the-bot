@@ -1,6 +1,6 @@
 {
   "name": "getImageSD",
-  "description": "Generate images from a text prompt using Stable Diffusion and return local paths/URLs. Always generate fresh — never reuse image URLs from previous calls. To animate the result, chain getAnimatedPicture with the returned image URL.",
+  "description": "Generate images from a text prompt using Stable Diffusion and return local paths/URLs. Always generate fresh — never reuse image URLs from previous calls.",
   "parameters": {
     "type": "object",
     "properties": {

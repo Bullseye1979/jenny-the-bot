@@ -1,12 +1,12 @@
 /**********************************************************************************/
 /* filename: getHistory.js                                                         *
 /* Version 1.0                                                                     *
-/* Purpose: Retrieve channel history with dump/summary/chunk modes, including      *
-/*          paging, filtering, and OpenAI summaries across one or many channels.   *
+/* Purpose: Retrieve channel history as raw row dumps with paging and filtering.  *
+/*          Returns rows up to maxRows cap; use start_ctx_id for pagination.       *
+/*          LLM processing is handled by the calling agent or subagent.            *
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
-import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getHistory";
 const POOLS = new Map();
@@ -159,105 +159,27 @@ async function getPreloadUpToCap(
 }
 
 
-function getBuildSummaryMessages(meta, lines, extraPrompt, systemPrompt) {
-  const channelLine = Array.isArray(meta.channels) && meta.channels.length > 1
-    ? `Channels: ${meta.channels.join(", ")}`
-    : `Channel: ${meta.channel}`;
-  const head = [
-    channelLine,
-    `Requested: ${meta.requested_start} → ${meta.requested_end}`,
-    `Actual: ${meta.actual_start || "null"} → ${meta.actual_end || "null"}`,
-    `Rows: ${lines.length}`
-  ].join("\n");
-  const body = lines.join("\n");
-  const baseSystem = {
-    role: "system",
-    content: (systemPrompt && String(systemPrompt).trim())
-      ? String(systemPrompt).trim()
-      : "You are a precise analyst. Summarize strictly from the provided raw rows. " +
-        "Cover the whole data; do not omit important events. If something is unclear, say so. " +
-        "Do not invent facts. Summarize in strict chronological order. Do not mix up events. " +
-        "If multiple channels are present, keep them disambiguated by their channel ids or names where helpful."
-  };
-  const extraSystem =
-    extraPrompt && String(extraPrompt).trim()
-      ? { role: "system", content: "ADDITIONAL INSTRUCTIONS FROM OPERATOR:\n" + String(extraPrompt).trim() }
-      : null;
-  const msgs = [baseSystem];
-  if (extraSystem) msgs.push(extraSystem);
-  msgs.push({ role: "user", content: head + "\n\n" + body });
-  return msgs;
-}
-
-
-async function getSummarize(wo, meta, rows, cfg, extraPrompt) {
-  const endpoint =
-    (typeof cfg?.endpoint === "string" && cfg.endpoint)
-      ? cfg.endpoint
-      : (typeof wo?.endpoint === "string" && wo.endpoint ? wo.endpoint : "https://api.openai.com/v1/chat/completions");
-  const apiKey = await getSecret(wo, (typeof cfg?.apiKey === "string" && cfg.apiKey)
-      ? cfg.apiKey
-      : (typeof wo?.apiKey === "string" ? wo.apiKey : ""));
-  if (!apiKey) {
-    return { ok: false, error: "Missing OpenAI API key" };
-  }
-  const model =
-    (typeof cfg?.model === "string" && cfg.model)
-      ? cfg.model
-      : (typeof wo?.model === "string" && wo.model ? wo.model : "gpt-4o-mini");
-  const temperature = Number.isFinite(cfg?.temperature) ? Number(cfg.temperature) : 0.2;
-  const maxTokens = Number.isFinite(cfg?.maxTokens) ? Math.max(50, Math.min(4096, Number(cfg.maxTokens))) : 900;
-  const lines = rows.map((r) => {
-    const t = (typeof r?.text === "string" && r.text) ? r.text : "";
-    const j = (typeof r?.json === "string" && r.json) ? r.json : "";
-    const payload = j ? j : t;
-    const ch = r.channel_id || r.id || "";
-    const tag = ch ? `[${r.ctx_id}|${ch}]` : `[${r.ctx_id}]`;
-    return `${tag} ${r.ts} ${payload}`;
-  });
-  const messages = getBuildSummaryMessages(meta, lines, extraPrompt, cfg?.systemPrompt);
-  const controller = new AbortController();
-  const timeoutMs = Number.isFinite(cfg?.aiTimeoutMs) ? Number(cfg.aiTimeoutMs) : 45000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let res, raw, data;
-  try {
-    res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
-      signal: controller.signal
-    });
-    raw = await res.text();
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      data = null;
-    }
-  } catch (e) {
-    clearTimeout(timer);
-    return { ok: false, error: e?.message || String(e) };
-  }
-  clearTimeout(timer);
-  if (!res.ok) {
-    return {
-      ok: false,
-      error: `OpenAI HTTP ${res.status} ${res.statusText}`,
-      details: (data && data.error && data.error.message) || null
-    };
-  }
-  const answer = (data?.choices?.[0]?.message?.content || "").trim();
-  if (!answer) return { ok: false, error: "Empty answer from model", model };
-  return { ok: true, summary: answer, model };
-}
 
 
 async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const cfgTool = wo?.toolsconfig?.getHistory || {};
-  const primaryChannelId = String(wo?.channelID || "").trim();
-  const extraChannelIds = Array.isArray(wo?.channelIds)
+  const overrideChannelId = args?.channel_id ? String(args.channel_id).trim() : "";
+  const primaryChannelId = overrideChannelId
+    || String(wo?.callerChannelId || "").trim()
+    || String(wo?.channelID || "").trim();
+  const argChannelIds = Array.isArray(args?.channel_ids)
+    ? args.channel_ids.map(c => String(c || "").trim()).filter(Boolean)
+    : [];
+  const woCallerChannelIds = Array.isArray(wo?.callerChannelIds)
+    ? wo.callerChannelIds.map(c => String(c || "").trim()).filter(Boolean)
+    : [];
+  const woChannelIds = Array.isArray(wo?.channelIds)
     ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
+  const extraChannelIds = argChannelIds.length ? argChannelIds
+    : woCallerChannelIds.length ? woCallerChannelIds
+    : woChannelIds;
   const channelIdSet = new Set();
   if (primaryChannelId) channelIdSet.add(primaryChannelId);
   for (const cid of extraChannelIds) channelIdSet.add(cid);
@@ -300,10 +222,9 @@ async function getHistoryInvoke(args, coreData) {
   const startCtxId = startCtxIdRaw != null ? Number(startCtxIdRaw) : null;
   const maxRows = Math.max(1, Number.isFinite(Number(cfgTool?.maxRows)) ? Number(cfgTool.maxRows) : 5000);
   const pageSize = Math.max(1, Number.isFinite(Number(cfgTool?.pagesize)) ? Number(cfgTool.pagesize) : 1000);
-  const threshold = Math.max(1, Number.isFinite(Number(cfgTool?.threshold)) ? Number(cfgTool.threshold) : 300);
-  const chunkMaxTokens = Math.max(50, Number.isFinite(Number(cfgTool?.chunkMaxTokens)) ? Number(cfgTool.chunkMaxTokens) : 150);
-  const chunkMaxChunks = Math.max(1, Number.isFinite(Number(cfgTool?.chunk_max_chunks)) ? Number(cfgTool.chunk_max_chunks) : 10);
   const includeToolRows = cfgTool.includeToolRows !== false;
+  const includeJson = cfgTool.includeJson === true;
+  const dumpMaxChars = Number.isFinite(Number(cfgTool?.dumpMaxChars)) ? Number(cfgTool.dumpMaxChars) : 60000;
   const pool = await getPool(wo);
   let rows = await getPreloadUpToCap(pool, channelIds, {
     startTs,
@@ -322,6 +243,7 @@ async function getHistoryInvoke(args, coreData) {
       mode: "dump",
       channel: mainChannelId,
       channels: channelIds,
+
       requested_start: startTs,
       requested_end: endTs,
       actual_start: null,
@@ -333,186 +255,65 @@ async function getHistoryInvoke(args, coreData) {
       capped_by_preload: false
     };
   }
-  const userPrompt = typeof args?.prompt === "string" ? args.prompt : "";
-  const doDump = rows.length <= threshold;
-  if (doDump) {
-    const actualStartIso = getISO(rows[0].ts);
-    const lastDump = rows[rows.length - 1];
-    const actualEndIso = getISO(lastDump.ts);
-    const outRows = rows.map((r) => ({
+  const actualStartIso = getISO(rows[0].ts);
+  const lastRow = rows[rows.length - 1];
+  const actualEndIso = getISO(lastRow.ts);
+  const outRows = rows.map((r) => {
+    const row = {
       ctx_id: r.ctx_id,
       ts: r.ts,
       id: r.id,
       channel_id: r.id,
-      json: r.json,
       text: r.text,
       role: r.role ?? null
-    }));
-    outRows.push({
-      ctx_id: lastDump.ctx_id,
-      ts: lastDump.ts,
-      id: mainChannelId,
-      channel_id: mainChannelId,
-      json: null,
-      text: `[effective_end_ts]\n${lastDump.ts}`,
-      role: null
-    });
-    rows = null;
-    return {
-      ok: true,
-      mode: "dump",
-      channel: mainChannelId,
-      channels: channelIds,
-      requested_start: startTs,
-      requested_end: endTs,
-      actual_start: actualStartIso,
-      actual_end: actualEndIso,
-      rows: outRows,
-      count: outRows.length,
-      max_rows: maxRows,
-      preloaded_count: preloadedCount,
-      capped_by_preload: cappedByCap,
-      has_more: cappedByCap,
-      next_start_ctx_id: cappedByCap ? outRows[outRows.length - 2].ctx_id : null
     };
-  }
-  if (!cappedByCap) {
-    const actualStartIso = getISO(rows[0].ts);
-    const lastSummary = rows[rows.length - 1];
-    const actualEndIso = getISO(lastSummary.ts);
-    const summaryInput = rows.map((r) => ({
-      ctx_id: r.ctx_id,
-      ts: r.ts,
-      id: r.id,
-      channel_id: r.id,
-      json: r.json,
-      text: r.text,
-      role: r.role ?? null
-    }));
-    rows = null;
-    const meta = {
-      channel: mainChannelId,
-      channels: channelIds,
-      requested_start: startTs,
-      requested_end: endTs,
-      actual_start: actualStartIso,
-      actual_end: actualEndIso
-    };
-    const sumRes = await getSummarize(wo, meta, summaryInput, cfgTool, userPrompt);
-    if (!sumRes.ok) {
-      return { ok: false, error: sumRes.error || "summary_failed", details: sumRes.details || null };
-    }
-    return {
-      ok: true,
-      mode: "summary",
-      channel: mainChannelId,
-      channels: channelIds,
-      requested_start: startTs,
-      requested_end: endTs,
-      actual_start: actualStartIso,
-      actual_end: actualEndIso,
-      used_rows: summaryInput.length,
-      max_rows: maxRows,
-      model: sumRes.model,
-      summary: sumRes.summary,
-      preloaded_count: preloadedCount,
-      capped_by_preload: cappedByCap
-    };
-  }
-  let chunkRows = rows;
+    if (includeJson) row.json = r.json;
+    return row;
+  });
+  outRows.push({
+    ctx_id: lastRow.ctx_id,
+    ts: lastRow.ts,
+    id: mainChannelId,
+    channel_id: mainChannelId,
+    text: `[effective_end_ts]\n${lastRow.ts}`,
+    role: null
+  });
   rows = null;
-  const chunkSummaries = [];
-  const modelsUsed = new Set();
-  let totalRowsUsed = 0;
-  let chunkIndex = 0;
-  let globalActualStartIso = getISO(chunkRows[0].ts);
-  let globalActualEndIso = null;
-  let lastCtxId = chunkRows[chunkRows.length - 1].ctx_id;
-  while (chunkRows && chunkRows.length > 0 && chunkIndex < chunkMaxChunks) {
-    const chunkFirst = chunkRows[0];
-    const chunkLast = chunkRows[chunkRows.length - 1];
-    const chunkMeta = {
-      channel: mainChannelId,
-      channels: channelIds,
-      requested_start: startTs,
-      requested_end: endTs,
-      actual_start: getISO(chunkFirst.ts),
-      actual_end: getISO(chunkLast.ts)
-    };
-    const chunkCfg = { ...cfgTool, maxTokens: chunkMaxTokens };
-    const chunkInput = chunkRows.map((r) => ({
-      ctx_id: r.ctx_id,
-      ts: r.ts,
-      id: r.id,
-      channel_id: r.id,
-      json: r.json,
-      text: r.text,
-      role: r.role ?? null
-    }));
-    const sumRes = await getSummarize(wo, chunkMeta, chunkInput, chunkCfg, userPrompt);
-    if (!sumRes.ok) {
-      return {
-        ok: false,
-        error: sumRes.error || "summary_failed_chunk",
-        details: sumRes.details || null,
-        chunk_index: chunkIndex
-      };
+
+  let cappedByChars = false;
+  let charsTrimmedRows = outRows;
+  if (dumpMaxChars > 0) {
+    let charCount = 0;
+    const kept = [];
+    for (const row of outRows) {
+      const rowLen = (row.text ? row.text.length : 0) + (row.json ? row.json.length : 0) + 80;
+      if (charCount + rowLen > dumpMaxChars && kept.length > 0) {
+        cappedByChars = true;
+        break;
+      }
+      kept.push(row);
+      charCount += rowLen;
     }
-    chunkSummaries.push({
-      index: chunkIndex,
-      number: chunkIndex + 1,
-      start_ts: chunkFirst.ts,
-      end_ts: chunkLast.ts,
-      model: sumRes.model,
-      title: `Chunk ${chunkIndex + 1}`,
-      summary: sumRes.summary
-    });
-    modelsUsed.add(sumRes.model);
-    totalRowsUsed += chunkInput.length;
-    globalActualEndIso = getISO(chunkLast.ts);
-    chunkIndex += 1;
-    if (chunkRows.length < maxRows) {
-      break;
-    }
-    const nextRows = await getRowsByTime(pool, channelIds, {
-      startTs,
-      endTs,
-      endExclusive,
-      startCtxId: lastCtxId,
-      limit: maxRows,
-      includeToolRows
-    });
-    if (!nextRows.length) break;
-    chunkRows = nextRows;
-    lastCtxId = chunkRows[chunkRows.length - 1].ctx_id;
+    charsTrimmedRows = kept;
   }
-  const totalChunks = chunkSummaries.length;
-  const joinedSummary = chunkSummaries
-    .map((c, idx) => {
-      const n = idx + 1;
-      const head = `Chunk ${n}/${totalChunks} (${c.start_ts} → ${c.end_ts}):`;
-      return `${head}\n${c.summary}`;
-    })
-    .join("\n\n---\n\n");
+
   return {
     ok: true,
-    mode: "summary_chunked",
+    mode: "dump",
     channel: mainChannelId,
     channels: channelIds,
     requested_start: startTs,
     requested_end: endTs,
-    actual_start: globalActualStartIso,
-    actual_end: globalActualEndIso,
-    used_rows: totalRowsUsed,
+    actual_start: actualStartIso,
+    actual_end: actualEndIso,
+    rows: charsTrimmedRows,
+    count: charsTrimmedRows.length,
     max_rows: maxRows,
-    model: modelsUsed.size === 1 ? Array.from(modelsUsed)[0] : null,
-    summary: joinedSummary,
-    chunk_count: totalChunks,
-    chunk_summaries: chunkSummaries,
     preloaded_count: preloadedCount,
-    capped_by_preload: true,
-    chunk_max_tokens: chunkMaxTokens,
-    chunk_max_chunks: chunkMaxChunks
+    capped_by_preload: cappedByCap,
+    capped_by_chars: cappedByChars,
+    has_more: cappedByCap || cappedByChars,
+    next_start_ctx_id: (cappedByCap || cappedByChars) ? charsTrimmedRows[charsTrimmedRows.length - 1]?.ctx_id ?? null : null
   };
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "getAnimatedPicture",
-  "description": "Animate or transform an existing image into a short video using Replicate (Google Veo 3). Always execute a fresh generation — never reuse video URLs from previous calls. Typically chained after getImage or getImageSD: pass the returned image URL as imageURL. Use this for animation requests on existing images. To generate a video from text only (no source image), use getVideoFromText instead.",
+  "description": "Animate an existing image into a short video. Returns a VIDEO file URL (not an image). Always execute a fresh generation — never reuse video URLs from previous calls. The returned video URL is the required input for creating animated tokens.\nrequirements:\n- source image: a publicly accessible static image URL (http/https)",
   "parameters": {
     "type": "object",
     "properties": {

@@ -1,0 +1,12 @@
+{
+  "name": "getFileContent",
+  "description": "Fetch the raw text content of a previously generated file by its URL. Use this to read source files before making targeted edits — read the file, apply the change, then write it back with getFile (overwrite: true). Binary files (images, PDFs, ZIPs) are rejected. Maximum file size: 512 KB.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": { "type": "string", "description": "Absolute http/https URL of the file to read. Must point to a text file (source code, markdown, JSON, etc.)." }
+    },
+    "required": ["url"],
+    "additionalProperties": false
+  }
+}

@@ -9,7 +9,6 @@
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
-import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getInformation";
 const POOLS = new Map();
@@ -488,16 +487,40 @@ async function getRunSearchPass(db, channelIds, groups, opts) {
 }
 
 
-/* Extract aliases from Pass 1 rows using a small AI call.
-   Returns an array of lowercase alias strings (may be empty). */
+async function callInternalLlm(payload, cfg, timeoutMs) {
+  const apiUrl    = String(cfg.llmApiUrl    || "http://localhost:3400") + "/api";
+  const channelId = String(cfg.aliasLlmChannelId || cfg.llmChannelId || "").trim();
+  const apiSecret = String(cfg.llmApiSecret || "").trim();
+
+  if (!channelId) return { ok: false, text: "" };
+
+  const headers = { "Content-Type": "application/json" };
+  if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
+
+  const body = JSON.stringify({ channelID: channelId, payload, doNotWriteToContext: true });
+
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), Math.max(5000, timeoutMs || DEFAULT_ALIAS_TIMEOUT_MS));
+
+  try {
+    const res  = await fetch(apiUrl, { method: "POST", headers, body, signal: ctrl.signal });
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok) return { ok: false, text: "" };
+    return { ok: true, text: String(data.response || "") };
+  } catch {
+    return { ok: false, text: "" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+
 async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
-  const endpoint   = giCfg.aliasEndpoint   || wo.endpoint   || "";
-  const apiKey     = await getSecret(wo, giCfg.aliasApiKey || wo.apiKey || "");
-  const model      = giCfg.aliasModel      || wo.model      || "gpt-4o-mini";
-  const maxAliases = Math.max(1, Math.floor(giCfg.aliasMaxCount   ?? DEFAULT_ALIAS_MAX));
+  const maxAliases = Math.max(1, Math.floor(giCfg.aliasMaxCount ?? DEFAULT_ALIAS_MAX));
   const timeoutMs  = Math.max(5000, Math.floor(giCfg.aliasTimeoutMs ?? DEFAULT_ALIAS_TIMEOUT_MS));
 
-  if (!endpoint || !apiKey) return [];
+  const channelId = String(giCfg.aliasLlmChannelId || giCfg.llmChannelId || "").trim();
+  if (!channelId) return [];
   if (!contentLines.length) return [];
 
   const excerpts = contentLines
@@ -522,25 +545,13 @@ async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
   const userPrompt =
     `Search terms (find aliases FOR these): ${JSON.stringify(searchTerms)}\n\nConversation excerpts:\n${excerpts}`;
 
+  const fullPayload = `${systemPrompt}\n\n${userPrompt}`;
+
+  const result = await callInternalLlm(fullPayload, giCfg, timeoutMs);
+  if (!result.ok || !result.text) return [];
+
   try {
-    const resp = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        max_tokens: 300,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user",   content: userPrompt   }
-        ]
-      }),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-    if (!resp.ok) return [];
-    const data = await resp.json();
-    const text = data?.choices?.[0]?.message?.content || "";
-    const match = text.match(/\[[\s\S]*?\]/);
+    const match = result.text.match(/\[[\s\S]*?\]/);
     if (!match) return [];
     const parsed = JSON.parse(match[0]);
     if (!Array.isArray(parsed)) return [];
@@ -603,14 +614,106 @@ function getMergeBlocks(blocks1, blocks2) {
 }
 
 
+async function getEnrichTimeline(db, snippetRows, channelIds) {
+  // Fetch timeline periods for all channels
+  const placeholders = channelIds.map(() => "?").join(", ");
+  let periods = [];
+  try {
+    const [rows] = await db.execute(
+      `SELECT channel_id, start_idx, end_idx, start_ts, end_ts, summary
+         FROM timeline_periods
+        WHERE channel_id IN (${placeholders})
+        ORDER BY start_ts ASC, start_idx ASC`,
+      channelIds
+    );
+    periods = rows || [];
+  } catch {
+    // timeline_periods table may not exist or be unreachable — return snippets as-is
+    return snippetRows.length
+      ? [{ type: "unplaced", snippets: snippetRows }]
+      : [];
+  }
+
+  if (!periods.length) {
+    // No timeline data — return all snippets as a single unplaced block
+    return snippetRows.length
+      ? [{ type: "unplaced", snippets: snippetRows }]
+      : [];
+  }
+
+  // Index snippets by channel so we can match them to per-channel periods
+  const snippetsByChannel = new Map();
+  for (const row of snippetRows) {
+    const cid = row.channel_id || "";
+    if (!snippetsByChannel.has(cid)) snippetsByChannel.set(cid, []);
+    snippetsByChannel.get(cid).push(row);
+  }
+
+  const placedKeys = new Set();
+  const entries = [];
+
+  for (const period of periods) {
+    const cid = period.channel_id;
+    const pStart = period.start_ts ? new Date(period.start_ts).getTime() : null;
+    const pEnd   = period.end_ts   ? new Date(period.end_ts).getTime()   : null;
+
+    const matching = (snippetsByChannel.get(cid) || []).filter(row => {
+      if (!row.ts) return false;
+      const t = new Date(row.ts).getTime();
+      if (Number.isNaN(t)) return false;
+      if (pStart !== null && t < pStart) return false;
+      if (pEnd   !== null && t > pEnd)   return false;
+      return true;
+    });
+
+    if (matching.length) {
+      for (const row of matching) placedKeys.add(`${row.channel_id}:${row.rn}`);
+      entries.push({
+        type:       "detail",
+        channel_id: cid,
+        start_ts:   period.start_ts,
+        end_ts:     period.end_ts,
+        snippets:   matching
+      });
+    } else {
+      entries.push({
+        type:       "period",
+        channel_id: cid,
+        start_ts:   period.start_ts,
+        end_ts:     period.end_ts,
+        summary:    period.summary || ""
+      });
+    }
+  }
+
+  // Snippets that didn't fall into any period
+  const unplaced = snippetRows.filter(row => !placedKeys.has(`${row.channel_id}:${row.rn}`));
+  if (unplaced.length) {
+    const unplacedTimes = unplaced.map(r => r.ts ? new Date(r.ts).getTime() : null).filter(t => t !== null && Number.isFinite(t));
+    const unplacedEntry = { type: "unplaced", snippets: unplaced };
+    if (unplacedTimes.length) {
+      unplacedEntry.start_ts = new Date(Math.min(...unplacedTimes)).toISOString();
+      unplacedEntry.end_ts   = new Date(Math.max(...unplacedTimes)).toISOString();
+    }
+    entries.push(unplacedEntry);
+  }
+
+  return entries;
+}
+
+
 async function getInformationInvoke(args, coreData) {
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
 
-  const primaryChannelId = String(wo?.channelID || "").trim();
-  const extraChannelIds = Array.isArray(wo?.channelIds)
+  const primaryChannelId = String(wo?.callerChannelId || wo?.channelID || "").trim();
+  const woCallerChannelIds = Array.isArray(wo?.callerChannelIds)
+    ? wo.callerChannelIds.map(c => String(c || "").trim()).filter(Boolean)
+    : [];
+  const woChannelIds = Array.isArray(wo?.channelIds)
     ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
+  const extraChannelIds = woCallerChannelIds.length ? woCallerChannelIds : woChannelIds;
 
   const channelIdSet = new Set();
   if (primaryChannelId) channelIdSet.add(primaryChannelId);
@@ -665,7 +768,7 @@ async function getInformationInvoke(args, coreData) {
           duration_ms: Date.now() - startedAt,
           include_assistant_turns: includeAssistantTurns,
           include_answered_turns: includeAnsweredTurns,
-          note: "No matching rows found. Call getTimeline separately if a chronological overview is needed."
+          note: "No matching rows found. Try broader keywords or call getHistory with a date range for a chronological overview."
         }
       };
     }
@@ -732,7 +835,7 @@ async function getInformationInvoke(args, coreData) {
           include_assistant_turns: includeAssistantTurns,
           include_answered_turns: includeAnsweredTurns,
           aliases_searched: totalAliases.length ? totalAliases : undefined,
-          note: "Hits found but no cluster met minCoverage. Call getTimeline separately if a chronological overview is needed."
+          note: "Hits found but no cluster met minCoverage. Try broader keywords or call getHistory with a date range for a chronological overview."
         }
       };
     }
@@ -770,6 +873,9 @@ async function getInformationInvoke(args, coreData) {
 
     const compact = allPrinted.map(({ channel_id, rn, ts, sender, content }) => ({ channel_id, rn, ts, sender, content }));
 
+    // --- Timeline enrichment ---
+    const timeline = await getEnrichTimeline(db, compact, channelIds);
+
     const meta = {
       channel_id: mainChannelId,
       channel_ids: channelIds,
@@ -783,12 +889,12 @@ async function getInformationInvoke(args, coreData) {
       include_answered_turns: includeAnsweredTurns,
       aliases_searched: totalAliases.length ? totalAliases : undefined,
       note:
-        "These are detail snippets ranked by keyword coverage. " +
-        (totalAliases.length ? `Alias search found ${totalAliases.length} alias(es): ${totalAliases.join(", ")}. ` : "") +
-        "Call getTimeline separately to get the full chronological event history."
+        "Timeline entries show the full chronological structure. " +
+        "Entries of type 'detail' contain exact matching snippets; entries of type 'period' are coarse summaries. " +
+        (totalAliases.length ? `Alias search found ${totalAliases.length} alias(es): ${totalAliases.join(", ")}. ` : "")
     };
 
-    return { items: compact, meta };
+    return { timeline, meta };
 
   } catch (e) {
     return { error: e?.message || String(e) };

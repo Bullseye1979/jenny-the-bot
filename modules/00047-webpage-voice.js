@@ -151,7 +151,8 @@ function getSpaHtml(cfg, menuHtml) {
     if (typeof c.silenceTimeoutMs === "number") entry.silenceTimeoutMs = c.silenceTimeoutMs;
     chanCfgMap[id] = entry;
   });
-  const chanCfgJson = JSON.stringify(chanCfgMap).replace(/<\/script>/gi, "<\\/script>");
+  const chanCfgJson  = JSON.stringify(chanCfgMap).replace(/<\/script>/gi, "<\\/script>");
+  const apiBaseUrl   = JSON.stringify(String(cfg.apiBaseUrl || "").trim());
 
   const chanOptHtml = channels.map(c => {
     const id  = String(c.id  || "").trim();
@@ -244,6 +245,12 @@ function getSpaHtml(cfg, menuHtml) {
   .t-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
   .t-text{font-size:.95rem;color:var(--txt);line-height:1.5;white-space:pre-wrap}
   #error-msg{color:var(--dan);font-size:.85rem;text-align:center;min-height:1em}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin-ring{display:inline-block;width:11px;height:11px;border:2px solid var(--bdr);border-top-color:var(--acc);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;flex-shrink:0}
+  #proc-indicator{display:none;align-items:center;gap:7px;font-size:.82rem;color:var(--acc)}
+  #proc-indicator.active{display:flex}
+  #tool-indicator{display:none;align-items:center;gap:6px;font-size:.78rem;color:var(--muted);background:var(--card);border:1px solid var(--bdr);border-radius:6px;padding:4px 10px}
+  #tool-indicator.active{display:flex}
   body{overflow-y:auto}
   @media(max-width:640px){
     .content{justify-content:flex-start;padding-top:28px}
@@ -281,6 +288,8 @@ ${channelRowHtml}
 <div id="status">Select a channel, then press the mic button</div>
 <div id="rec-status"></div>
 <div id="error-msg"></div>
+<div id="proc-indicator"><span class="spin-ring"></span><span>Processing\u2026</span></div>
+<div id="tool-indicator"><span>\uD83D\uDD27</span><span id="tool-name"></span></div>
 
 <div id="transcript-box">
   <div><div class="t-label">You</div><div class="t-text" id="txt-you"></div></div>
@@ -289,6 +298,7 @@ ${channelRowHtml}
 
 <script>
 /* server config */
+var API_BASE_URL        = ${apiBaseUrl};
 var SILENCE_TIMEOUT_MS  = ${silenceMs};
 var MAX_DURATION_MS     = ${maxMs};
 var SILENCE_RMS_THRESH  = ${silenceRmsThresh};
@@ -309,6 +319,9 @@ var recStatusEl   = document.getElementById('rec-status');
 var errorEl       = document.getElementById('error-msg');
 var box           = document.getElementById('transcript-box');
 var volFill       = document.getElementById('vol-fill');
+var procEl        = document.getElementById('proc-indicator');
+var toolEl        = document.getElementById('tool-indicator');
+var toolNameEl    = document.getElementById('tool-name');
 
 /* channel helpers */
 function getSelectedChannelId() {
@@ -375,6 +388,38 @@ var audioQueue   = [];
 var audioPlaying = false;
 var currentAudio = null;
 
+/* processing / toolcall state */
+var requestPending   = false;
+var toolcallPollTimer = null;
+
+function getApiBase() {
+  if (API_BASE_URL) return API_BASE_URL;
+  return 'http://' + window.location.hostname + ':3400';
+}
+function startToolcallPoll() {
+  stopToolcallPoll();
+  toolcallPollTimer = setInterval(function() {
+    if (!requestPending) { stopToolcallPoll(); toolEl.classList.remove('active'); return; }
+    var cid = getSelectedChannelId();
+    if (!cid) return;
+    fetch(getApiBase() + '/toolcall?channelID=' + encodeURIComponent(cid))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d) return;
+        if (d.hasTool) {
+          toolNameEl.textContent = d.identity || 'Tool call\u2026';
+          toolEl.classList.add('active');
+        } else {
+          toolEl.classList.remove('active');
+        }
+      })
+      .catch(function() {});
+  }, 1500);
+}
+function stopToolcallPoll() {
+  if (toolcallPollTimer) { clearInterval(toolcallPollTimer); toolcallPollTimer = null; }
+}
+
 function playNextAudio() {
   if (audioPlaying || !audioQueue.length) return;
   audioPlaying = true;
@@ -397,6 +442,9 @@ function playNextAudio() {
 
 /* fire-and-forget request — no mutex, responses queue for playback */
 async function handleRequest(blob, postUrl) {
+  requestPending = true;
+  procEl.classList.add('active');
+  startToolcallPoll();
   try {
     var resp = await fetch(postUrl, { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
     var transcript = resp.headers.get('X-Transcript') || '';
@@ -417,6 +465,12 @@ async function handleRequest(blob, postUrl) {
       if (alwaysOn && !recording && !audioPlaying) startRecording();
     }
   } catch(e) {}
+  finally {
+    requestPending = false;
+    procEl.classList.remove('active');
+    stopToolcallPoll();
+    toolEl.classList.remove('active');
+  }
 }
 
 function setStatus(msg)    { statusEl.textContent    = msg || ''; }
@@ -1223,7 +1277,7 @@ export default async function getWebpageVoice(coreData) {
               content:    speakerText,
               userId:     speakerName,
               authorName: speakerName,
-              source:     "voice-transcribe"
+              source:     "voice-transcription"
             });
           }
         }

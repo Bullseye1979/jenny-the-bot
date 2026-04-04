@@ -355,6 +355,9 @@ async function getInvoke(args, coreData) {
 
   if (!url) return { ok: false, error: "Missing 'url'." };
   if (!getIsHttpUrl(url)) return { ok: false, error: "URL must start with http:// or https://." };
+  if (/^https?:\/\/(www\.)?(example\.com|placeholder\.com|example\.org|example\.net|localhost)(\/|$)/i.test(url)) {
+    return { ok: false, error: `Placeholder URL detected ('${url}'). STOP — do not retry with another constructed URL. Look at the getSubAgent tool result from the previous turn in this conversation. The real animation or image URL is listed there in the ARTIFACTS block (e.g. 'animation: https://...' or 'token: https://...'). Copy that exact URL.` };
+  }
 
   const effectiveMaxBytes = getEffectiveMaxBytes(cfg, pingpong);
 

@@ -293,6 +293,21 @@ function getCleanSingleLinePrompt(s) {
 }
 
 
+function getParseArtifactsBlock(text) {
+  const s = String(text || "");
+  const marker = "\nARTIFACTS:\n";
+  const idx = s.indexOf(marker);
+  if (idx === -1) return { primaryImageUrl: null };
+  const lines = s.slice(idx + marker.length).split("\n");
+  for (const line of lines) {
+    if (!line.trim()) break;
+    const m = /^[a-z_]+:\s*(https?:\/\/\S+)/i.exec(line.trim());
+    if (m) return { primaryImageUrl: m[1] };
+  }
+  return { primaryImageUrl: null };
+}
+
+
 export default async function getCoreAi(coreData) {
   const wo = coreData.workingObject;
   const log = getPrefixedLogger(wo, import.meta.url);
@@ -328,6 +343,11 @@ export default async function getCoreAi(coreData) {
   let textOut = "";
 
   for (let i = 0; i < kiCfg.maxLoops; i++) {
+    if (wo.aborted) {
+      log("Pipeline aborted — client disconnected.", "warn");
+      wo.response = "[Empty AI response]";
+      return coreData;
+    }
     const pass1 = await getCallChat(
       wo,
       { model: wo.model, messages: pass1Messages, temperature: kiCfg.temperature, max_tokens: kiCfg.maxTokens },
@@ -427,7 +447,10 @@ export default async function getCoreAi(coreData) {
   assistantPass1.content = finalText;
   wo._contextPersistQueue.push(getWithTurnId(assistantPass1, wo));
 
+  wo.reasoningSummary = undefined;
   wo.response = finalText || "[Empty AI response]";
+  const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
+  if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");
   return coreData;
 }

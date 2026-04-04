@@ -1,0 +1,15 @@
+{
+  "name": "getZIP",
+  "description": "Download one or more files by URL and package them into a ZIP archive. Supply a base_url to preserve the original directory structure inside the archive — each file's path relative to base_url becomes its path inside the ZIP. Returns the filename and public URL of the generated ZIP.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "urls":      { "type": "array", "items": { "type": "string" }, "description": "Public URLs of the files to include in the ZIP." },
+      "base_url":  { "type": "string", "description": "Reference base URL used to derive relative paths inside the archive. For example if base_url is 'https://example.com/documents/shared/' and a file URL is 'https://example.com/documents/shared/src/main.js', the file is stored as 'src/main.js' in the ZIP." },
+      "filename":  { "type": "string", "description": "Desired base name for the ZIP file, e.g. 'tetris-game'. The .zip extension is added automatically. Defaults to 'archive'." },
+      "timeoutMs": { "type": "number", "description": "Per-file download timeout in milliseconds. Defaults to 30000." }
+    },
+    "required": ["urls"],
+    "additionalProperties": false
+  }
+}

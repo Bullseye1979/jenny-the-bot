@@ -50,11 +50,13 @@ async function resolveToolConfig(wo = {}, args = {}) {
 
 
 async function getCreatePrediction(cfg, input, model) {
-  const url = `${cfg.baseUrl}/predictions`;
-  const payload = {
-    version: model,
-    input
-  };
+  const isNamedModel = model.includes("/");
+  const url = isNamedModel
+    ? `${cfg.baseUrl}/models/${model}/predictions`
+    : `${cfg.baseUrl}/predictions`;
+  const payload = isNamedModel
+    ? { input }
+    : { version: model, input };
 
   const res = await fetch(url, {
     method: "POST",
@@ -108,6 +110,7 @@ function getExtractFirstOutputUrl(data) {
 function getValidateImageUrl(u) {
   const s = String(u || "").trim();
   if (!/^https?:\/\//.test(s)) return null;
+  if (/^https?:\/\/(www\.)?(example\.com|placeholder\.com|example\.org|example\.net)(\/|$)/i.test(s)) return null;
   return s;
 }
 

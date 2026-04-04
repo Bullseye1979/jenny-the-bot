@@ -1,6 +1,6 @@
 {
   "name": "getTavily",
-  "description": "Search the web using Tavily for current news, events, or factual information. Always execute a fresh search — never reuse results from conversation history. If a previous call returned an error or empty result, retry with a revised query or different topic. Supports topic filtering (news, finance) and time range. To read a specific result in full, follow up with getWebpage.",
+  "description": "Search the web using Tavily for current news, events, or factual information. Always execute a fresh search — never reuse results from conversation history. If a previous call returned an error or empty result, retry with a revised query or different topic. Supports topic filtering (news, finance) and time range.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -14,6 +14,7 @@
       "excludeDomains": { "type": "array", "items": { "type": "string" }, "description": "Exclude results from these domains (optional)." },
       "country": { "type": "string", "description": "ISO 3166-1 alpha-2 country code to geo-restrict results, e.g. US, DE (optional)." }
     },
-    "required": ["query"]
+    "required": ["query"],
+    "additionalProperties": false
   }
 }

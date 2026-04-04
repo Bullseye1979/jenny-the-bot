@@ -8,15 +8,26 @@ import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
-import { readFileSync } from "fs";
+import { readFileSync, appendFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const _manifestDir = join(dirname(fileURLToPath(import.meta.url)), "../manifests");
+const _logDir      = join(dirname(fileURLToPath(import.meta.url)), "../logs");
+const _toolcallLog = join(_logDir, "toolcalls.log");
+
+try { mkdirSync(_logDir, { recursive: true }); } catch {}
 
 const MODULE_NAME = "core-ai-completions";
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
+
+
+function writeToolcallLog(entry) {
+  try {
+    appendFileSync(_toolcallLog, JSON.stringify(entry) + "\n", "utf8");
+  } catch {}
+}
 
 
 function getAssistantAuthorName(wo) {
@@ -44,6 +55,23 @@ function getBool(value, def) { return typeof value === "boolean" ? value : def; 
 
 
 function getStr(value, def) { return (typeof value === "string" && value.length) ? value : def; }
+
+
+function getParseArtifactsBlock(text) {
+  const s = String(text || "");
+  const marker = "\nARTIFACTS:\n";
+  const idx = s.indexOf(marker);
+  if (idx === -1) return { primaryImageUrl: null };
+
+  const lines = s.slice(idx + marker.length).split("\n");
+  for (const line of lines) {
+    if (!line.trim()) break;
+    const m = /^[a-z_]+:\s*(https?:\/\/\S+)/i.exec(line.trim());
+    if (m) return { primaryImageUrl: m[1] };
+  }
+
+  return { primaryImageUrl: null };
+}
 
 
 function getLooksCutOff(text) {
@@ -79,6 +107,7 @@ function getKiCfg(wo) {
     temperature: getNum(wo?.temperature, 0.7),
     maxTokens: getNum(wo?.maxTokens, 2000),
     maxLoops: getNum(wo?.maxLoops, 20),
+    maxToolCalls: getNum(wo?.maxToolCalls, 8),
     requestTimeoutMs: getNum(wo?.requestTimeoutMs, 120000)
   };
 }
@@ -207,6 +236,19 @@ function getExpandedToolArgs(args, wo) {
 }
 
 
+function getToolTask(tc) {
+  try {
+    const args = JSON.parse(tc?.function?.arguments || "{}");
+    const keys = ["prompt", "task", "query", "title", "filename", "description", "url", "type"];
+    for (const k of keys) {
+      const v = args[k];
+      if (typeof v === "string" && v.trim()) return v.trim().slice(0, 80) + (v.length > 80 ? "…" : "");
+    }
+  } catch {}
+  return "";
+}
+
+
 async function getExecToolCall(toolModules, toolCall, coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
@@ -216,32 +258,45 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   const tool = toolModules.find(t => (t.definition?.function?.name || t.name) === name);
   const startTs = Date.now();
   args = getExpandedToolArgs(args, wo);
+  if (!name) {
+    writeToolcallLog({ ts: new Date().toISOString(), turn_id: String(wo.turn_id || wo.callerTurnId || ""), channel: String(wo.channelID || ""), caller_channel: String(wo.callerChannelId || ""), flow: String(wo.flow || ""), tool: "", status: "skipped_no_name", duration_ms: 0 });
+    return { role: "tool", tool_call_id: toolCall?.id, name: null, content: JSON.stringify({ error: "Tool call has no function name" }) };
+  }
   log("Tool call start", "info", { tool_call_id: toolCall?.id || null, tool: name || null, args_preview: getPreview(getJsonSafe(args), ARG_PREVIEW_MAX) });
   if (!tool) {
     const msg = { error: `Tool "${name}" not found` };
     log("Tool call failed (not found)", "error", { tool_call_id: toolCall?.id || null, tool: name || null });
+    writeToolcallLog({ ts: new Date().toISOString(), turn_id: String(wo.turn_id || wo.callerTurnId || ""), channel: String(wo.channelID || ""), caller_channel: String(wo.callerChannelId || ""), flow: String(wo.flow || ""), tool: String(name || ""), status: "not_found", duration_ms: 0 });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
+  const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
+  if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
+  const _myGen = ++wo._statusToolGen;
   try {
     try { await putItem({ name, flow: String(coreData?.workingObject?.flow || "") }, "status:tool"); } catch {}
     if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
+    if (_callerCh && _callerCh !== _tcCh) try { await putItem(name, "status:tool:" + _callerCh); } catch {}
     const result = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
     log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
+    writeToolcallLog({ ts: new Date().toISOString(), turn_id: String(wo.turn_id || wo.callerTurnId || ""), channel: String(wo.channelID || ""), caller_channel: String(wo.callerChannelId || ""), flow: String(wo.flow || ""), tool: name, status: "success", duration_ms: durationMs });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
     const durationMs = Date.now() - startTs;
     log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, error: String(e?.message || e) });
+    writeToolcallLog({ ts: new Date().toISOString(), turn_id: String(wo.turn_id || wo.callerTurnId || ""), channel: String(wo.channelID || ""), caller_channel: String(wo.callerChannelId || ""), flow: String(wo.flow || ""), tool: name, status: "error", duration_ms: durationMs, error: String(e?.message || e) });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
   } finally {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs)
       ? Number(coreData.workingObject.StatusToolClearDelayMs)
       : 800;
     setTimeout(() => {
+      if (wo._statusToolGen !== _myGen) return;
       try { putItem("", "status:tool"); } catch {}
       if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
+      if (_callerCh && _callerCh !== _tcCh) try { putItem("", "status:tool:" + _callerCh); } catch {}
     }, Math.max(0, delayMs));
   }
 }
@@ -340,12 +395,20 @@ export default async function getCoreAi(coreData) {
   const toolModules = sendRealTools ? await getToolsByName(kiCfg.toolsList, wo) : [];
   const toolDefs = sendRealTools ? getToolDefs(toolModules) : [];
   if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
+  const subagentLog = [];
+  const toolCallLog = [];
+  let totalToolCalls = 0;
   let accumulatedText = "";
   for (let i = 0; i < kiCfg.maxLoops; i++) {
+    if (wo.aborted) {
+      log("Pipeline aborted — client disconnected.", "warn");
+      wo.response = "[Empty AI response]";
+      return coreData;
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
     try {
-      const toolsDisabled = wo.__forceNoTools === true;
+      const toolsDisabled = wo.__forceNoTools === true || totalToolCalls >= kiCfg.maxToolCalls;
       const body = {
         model: wo.model,
         messages,
@@ -400,11 +463,35 @@ export default async function getCoreAi(coreData) {
         wo._contextPersistQueue.push(getWithTurnId(assistantMsg, wo));
       }
       if (toolCalls && toolCalls.length && toolModules.length) {
+        if (totalToolCalls >= kiCfg.maxToolCalls) {
+          log(`maxToolCalls limit reached (${totalToolCalls}/${kiCfg.maxToolCalls}) — stopping tool execution`, "warn");
+          break;
+        }
         wo._fullAssistantText = accumulatedText;
         for (const tc of toolCalls) {
+          if (totalToolCalls >= kiCfg.maxToolCalls) {
+            log(`maxToolCalls limit reached mid-batch (${totalToolCalls}/${kiCfg.maxToolCalls}) — skipping remaining tool calls`, "warn");
+            break;
+          }
+          const tcName = tc?.function?.name || "?";
+          const tcTask = getToolTask(tc);
+          const _tcTs = Date.now();
           const toolMsg = await getExecToolCall(toolModules, tc, coreData);
+          const _tcMs = Date.now() - _tcTs;
           messages.push(toolMsg);
           wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
+          let _tcStatus = "success";
+          try { if (JSON.parse(toolMsg.content || "{}").ok === false) _tcStatus = "failed"; } catch {}
+          toolCallLog.push({ tool: tcName, task: tcTask, status: _tcStatus, duration_ms: _tcMs });
+          totalToolCalls++;
+          if (tcName === "getSubAgent") {
+            try {
+              const r = JSON.parse(toolMsg.content || "{}");
+              subagentLog.push({ type: r.type || "generic", channel_id: r.channel_id || "?", ok: !!r.ok, error: r.error || null });
+            } catch (e) {
+              log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
+            }
+          }
         }
         wo._fullAssistantText = undefined;
         continue;
@@ -433,7 +520,36 @@ export default async function getCoreAi(coreData) {
       clearTimeout(timer);
     }
   }
+  const reasoningEnabled = wo?.reasoning != null && wo?.reasoning !== false && wo?.reasoning !== 0;
+  if (reasoningEnabled) {
+    const parts = [];
+    if (subagentLog.length) {
+      parts.push(subagentLog.map((s, i) =>
+        `--- Subagent ${i + 1} (${s.type} → ${s.channel_id}) ---\n` +
+        (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
+      ).join("\n\n"));
+    }
+    const directTools = toolCallLog.filter(e => e.tool !== "getSubAgent");
+    if (directTools.length) {
+      parts.push("Tools called:\n" + directTools.map(e => `- ${e.tool}${e.task ? ` (${e.task})` : ""}: ${e.status}`).join("\n"));
+    }
+    if (!parts.length) {
+      parts.push("Answered from context — no tool calls.");
+    }
+    wo.reasoningSummary = parts.join("\n\n");
+  } else {
+    wo.reasoningSummary = undefined;
+  }
+  wo.toolCallLog  = toolCallLog;
+  wo.subagentLog  = subagentLog;
   wo.response = (accumulatedText || "").trim() || "[Empty AI response]";
+  const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
+  if (_primaryImg) wo.primaryImageUrl = _primaryImg;
+  if (Array.isArray(wo._pendingSubtaskLogs) && wo._pendingSubtaskLogs.length) {
+    const _logBlock = wo._pendingSubtaskLogs.join("\n\n");
+    wo.reasoningSummary = wo.reasoningSummary ? wo.reasoningSummary + "\n\n" + _logBlock : _logBlock;
+    wo._pendingSubtaskLogs = [];
+  }
   log("AI response received.", "info");
   return coreData;
 }

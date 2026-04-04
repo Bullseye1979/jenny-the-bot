@@ -1,8 +1,18 @@
 /**********************************************************************************/
 /* filename: getPDF.js                                                             *
 /* Version 1.0                                                                     *
-/* Purpose: Toolcall-ready HTML to PDF/HTML generator that saves to                *
-/*          ../pub/documents, requires CSS, and uses toolsconfig.getPDF settings.  *
+/* Purpose: Generates a print-ready A4 PDF and matching HTML file from HTML/CSS   *
+/*          input. Saves both files to pub/documents/ and returns public URLs.    *
+/*          Accepts structured fields (html, css, title, filename) or a           *
+/*          free-form raw string containing fenced code blocks or inline HTML.    *
+/*                                                                                 *
+/* Config (toolsconfig.getPDF):                                                    *
+/*   headless    - puppeteer headless mode (default: "new")                       *
+/*   chromeArgs  - array of Chrome launch args (default: ["--no-sandbox"])        *
+/*   waitUntil   - puppeteer page load event (default: "networkidle0")            *
+/*   timeoutMs   - puppeteer page load timeout in ms (default: 120000)            *
+/*   format      - PDF paper format (default: "A4")                               *
+/*   printBackground - include backgrounds in PDF (default: true)                 *
 /**********************************************************************************/
 
 import path from "path";
@@ -10,11 +20,10 @@ import fs from "fs/promises";
 import puppeteer from "puppeteer";
 import { ensureUserDir, getUniqueFilename, getUserId, getPublicBaseUrl } from "../core/file.js";
 
+const MODULE_NAME = "getPDF";
 
-function logDebug(label, obj){}
 
-
-function normalizeFilename(s, fallback = ""){
+function normalizeFilename(s, fallback = "") {
   const base = String(s || "")
     .toLowerCase()
     .normalize("NFKD")
@@ -25,7 +34,7 @@ function normalizeFilename(s, fallback = ""){
 }
 
 
-function ensureAbsoluteUrl(publicBaseUrl, urlPath){
+function ensureAbsoluteUrl(publicBaseUrl, urlPath) {
   const u = String(urlPath || "");
   const base = String(publicBaseUrl || "").replace(/\/$/, "");
   if (/^https?:\/\//.test(u)) return u;
@@ -34,7 +43,7 @@ function ensureAbsoluteUrl(publicBaseUrl, urlPath){
 }
 
 
-function extractBody(html){
+function extractBody(html) {
   const s = String(html || "");
   const open = s.toLowerCase().indexOf("<body");
   if (open === -1) return s;
@@ -46,7 +55,7 @@ function extractBody(html){
 }
 
 
-function enforcedCss(){
+function enforcedCss() {
   return [
     "@page{size:A4;margin:20mm !important}",
     "html,body{margin:0 !important;padding:0 !important}",
@@ -58,7 +67,7 @@ function enforcedCss(){
 }
 
 
-function buildPrintableHtml(bodyHtml, userCss = "", title = "Document"){
+function buildPrintableHtml(bodyHtml, userCss = "", title = "Document") {
   const cssFinal = `${String(userCss || "")}\n${enforcedCss()}`;
   const safeTitle = String(title || "Document").slice(0, 140);
   const html = `<!DOCTYPE html>
@@ -78,17 +87,7 @@ ${bodyHtml || ""}
 }
 
 
-function getPlainFromHTML(html, maxLen = 200000){
-  let s = String(html || "");
-  s = s.replace(/<script[\s\S]*?<\/script>/gi, "")
-       .replace(/<style[\s\S]*?<\/style>/gi, "")
-       .replace(/<[^>]+>/g, "");
-  s = s.replace(/\s+/g, " ").trim();
-  return s.slice(0, maxLen);
-}
-
-
-function extractFence(str, lang){
+function extractFence(str, lang) {
   const src = String(str || "");
   const startToken = "```" + String(lang || "").toLowerCase();
   const start = src.toLowerCase().indexOf(startToken);
@@ -102,38 +101,38 @@ function extractFence(str, lang){
 }
 
 
-function tolerantExtractJsonStringValue(source, key){
+function tolerantExtractJsonStringValue(source, key) {
   const s = String(source || "");
   const needle = `"${key}"`;
   const kpos = s.toLowerCase().indexOf(needle.toLowerCase());
-  if (kpos === -1) return { value:"", ok:false };
+  if (kpos === -1) return { value: "", ok: false };
   let i = kpos + needle.length;
   while (i < s.length && /\s/.test(s[i])) i++;
-  if (s[i] !== ":") return { value:"", ok:false };
+  if (s[i] !== ":") return { value: "", ok: false };
   i++;
   while (i < s.length && /\s/.test(s[i])) i++;
-  if (s[i] !== '"') return { value:"", ok:false };
+  if (s[i] !== '"') return { value: "", ok: false };
   i++;
   let value = "";
   let ok = false;
-  while (i < s.length){
+  while (i < s.length) {
     const ch = s[i++];
-    if (ch === "\\"){
-      if (i >= s.length){ value += "\\"; break; }
+    if (ch === "\\") {
+      if (i >= s.length) { value += "\\"; break; }
       const esc = s[i++];
-      if (esc === "u"){
-        const hex = s.slice(i, i+4);
-        if (/^[0-9a-fA-F]{4}$/.test(hex)){
-          try{ value += String.fromCharCode(parseInt(hex,16)); }catch{ value += "\\u" + hex; }
+      if (esc === "u") {
+        const hex = s.slice(i, i + 4);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          try { value += String.fromCharCode(parseInt(hex, 16)); } catch { value += "\\u" + hex; }
           i += 4;
         } else {
           value += "\\u";
         }
       } else {
-        const map = { n:"\n", r:"\r", t:"\t", b:"\b", f:"\f", '"':'"', "'":"'", "\\":"\\" };
+        const map = { n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", '"': '"', "'": "'", "\\": "\\" };
         value += (map[esc] !== undefined) ? map[esc] : esc;
       }
-    } else if (ch === '"'){
+    } else if (ch === '"') {
       ok = true; break;
     } else {
       value += ch;
@@ -143,10 +142,10 @@ function tolerantExtractJsonStringValue(source, key){
 }
 
 
-function tolerantParseArgs(input){
-  if (input && typeof input === "object" && !Array.isArray(input)){
+function tolerantParseArgs(input) {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
     const { html, css, title, filename, raw } = input;
-    if (html || css || title || filename){
+    if (html || css || title || filename) {
       return {
         html: String(html || "").trim(),
         css: String(css || "").trim(),
@@ -154,32 +153,32 @@ function tolerantParseArgs(input){
         filename: filename ? String(filename) : ""
       };
     }
-    if (typeof raw === "string" && raw.trim()){
+    if (typeof raw === "string" && raw.trim()) {
       return tolerantParseArgs(raw);
     }
   }
   const raw = typeof input === "string" ? input : "";
   const str = String(raw || "").trim();
-  if (!str) return { html:"", css:"", title:"", filename:"" };
-  if (str[0] === "<"){
+  if (!str) return { html: "", css: "", title: "", filename: "" };
+  if (str[0] === "<") {
     let html = str;
     let css = "";
     const lower = str.toLowerCase();
     let pos = 0;
-    while (true){
+    while (true) {
       const sIdx = lower.indexOf("<style", pos);
       if (sIdx === -1) break;
       const gt = str.indexOf(">", sIdx);
       if (gt === -1) break;
       const eIdx = lower.indexOf("</style>", gt);
       if (eIdx === -1) break;
-      css += (css? "\n\n" : "") + str.slice(gt+1, eIdx).trim();
+      css += (css ? "\n\n" : "") + str.slice(gt + 1, eIdx).trim();
       html = html.slice(0, sIdx) + html.slice(eIdx + 9);
       pos = eIdx + 9;
     }
-    return { html: html.trim(), css: css.trim(), title:"", filename:"" };
+    return { html: html.trim(), css: css.trim(), title: "", filename: "" };
   }
-  try{
+  try {
     const obj = JSON.parse(str);
     return {
       html: String(obj.html || "").trim(),
@@ -187,12 +186,12 @@ function tolerantParseArgs(input){
       title: obj.title ? String(obj.title) : "",
       filename: obj.filename ? String(obj.filename) : ""
     };
-  }catch{}
-  try{
+  } catch {}
+  try {
     let s2 = str;
     if (s2.startsWith("```")) {
       const nl = s2.indexOf("\n");
-      if (nl !== -1) s2 = s2.slice(nl+1);
+      if (nl !== -1) s2 = s2.slice(nl + 1);
       if (s2.endsWith("```")) s2 = s2.slice(0, -3);
     }
     const obj = JSON.parse(s2);
@@ -202,27 +201,27 @@ function tolerantParseArgs(input){
       title: obj.title ? String(obj.title) : "",
       filename: obj.filename ? String(obj.filename) : ""
     };
-  }catch{}
-  if (str.toLowerCase().includes('"html"')){
+  } catch {}
+  if (str.toLowerCase().includes('"html"')) {
     const htmlRec = tolerantExtractJsonStringValue(str, "html");
     const cssRec  = tolerantExtractJsonStringValue(str, "css");
     const titleRec = tolerantExtractJsonStringValue(str, "title");
     const filenameRec = tolerantExtractJsonStringValue(str, "filename");
-    if (htmlRec.value){
+    if (htmlRec.value) {
       let html = htmlRec.value;
       let css = cssRec.value || "";
-      if (!css && html.toLowerCase().includes("<style")){
+      if (!css && html.toLowerCase().includes("<style")) {
         let lower = html.toLowerCase();
         let pos = 0;
         let collected = "";
-        while (true){
+        while (true) {
           const sIdx = lower.indexOf("<style", pos);
           if (sIdx === -1) break;
           const gt = html.indexOf(">", sIdx);
           if (gt === -1) break;
           const eIdx = lower.indexOf("</style>", gt);
           if (eIdx === -1) break;
-          collected += (collected? "\n\n" : "") + html.slice(gt+1, eIdx).trim();
+          collected += (collected ? "\n\n" : "") + html.slice(gt + 1, eIdx).trim();
           html = html.slice(0, sIdx) + html.slice(eIdx + 9);
           lower = html.toLowerCase();
           pos = sIdx;
@@ -239,88 +238,88 @@ function tolerantParseArgs(input){
   }
   const fencedHtml = extractFence(str, "html");
   const fencedCss  = extractFence(str, "css");
-  if (fencedHtml || fencedCss){
+  if (fencedHtml || fencedCss) {
     let html = fencedHtml || "";
     let css = fencedCss || "";
-    if (!html){
+    if (!html) {
       const L = str.toLowerCase();
       const start = L.indexOf("<html");
       const end = L.lastIndexOf("</html>");
-      if (start !== -1 && end !== -1 && end > start) html = str.slice(start, end+7);
+      if (start !== -1 && end !== -1 && end > start) html = str.slice(start, end + 7);
     }
-    if (!css && html){
+    if (!css && html) {
       let lower = html.toLowerCase();
       let pos = 0; let collected = "";
-      while (true){
+      while (true) {
         const sIdx = lower.indexOf("<style", pos);
         if (sIdx === -1) break;
         const gt = html.indexOf(">", sIdx);
         if (gt === -1) break;
         const eIdx = lower.indexOf("</style>", gt);
         if (eIdx === -1) break;
-        collected += (collected? "\n\n" : "") + html.slice(gt+1, eIdx).trim();
+        collected += (collected ? "\n\n" : "") + html.slice(gt + 1, eIdx).trim();
         html = html.slice(0, sIdx) + html.slice(eIdx + 9);
         lower = html.toLowerCase();
         pos = sIdx;
       }
       css = collected;
     }
-    return { html: (html||"").trim(), css: String(css||"").trim(), title:"", filename:"" };
+    return { html: (html || "").trim(), css: String(css || "").trim(), title: "", filename: "" };
   }
   {
     const L = str.toLowerCase();
     const start = L.indexOf("<html");
     const end = L.lastIndexOf("</html>");
-    if (start !== -1 && end !== -1 && end > start){
-      let html = str.slice(start, end+7);
+    if (start !== -1 && end !== -1 && end > start) {
+      let html = str.slice(start, end + 7);
       let lower = html.toLowerCase();
       let pos = 0; let collected = "";
-      while (true){
+      while (true) {
         const sIdx = lower.indexOf("<style", pos);
         if (sIdx === -1) break;
         const gt = html.indexOf(">", sIdx);
         if (gt === -1) break;
         const eIdx = lower.indexOf("</style>", gt);
         if (eIdx === -1) break;
-        collected += (collected? "\n\n" : "") + html.slice(gt+1, eIdx).trim();
+        collected += (collected ? "\n\n" : "") + html.slice(gt + 1, eIdx).trim();
         html = html.slice(0, sIdx) + html.slice(eIdx + 9);
         lower = html.toLowerCase();
         pos = sIdx;
       }
-      return { html: html.trim(), css: collected.trim(), title:"", filename:"" };
+      return { html: html.trim(), css: collected.trim(), title: "", filename: "" };
     }
   }
-  if (str.indexOf("<") !== -1 && str.indexOf(">") !== -1){
+  if (str.indexOf("<") !== -1 && str.indexOf(">") !== -1) {
     let html = str;
     let css = "";
     let lower = html.toLowerCase();
     let pos = 0;
-    while (true){
+    while (true) {
       const sIdx = lower.indexOf("<style", pos);
       if (sIdx === -1) break;
       const gt = html.indexOf(">", sIdx);
       if (gt === -1) break;
       const eIdx = lower.indexOf("</style>", gt);
       if (eIdx === -1) break;
-      css += (css? "\n\n" : "") + html.slice(gt+1, eIdx).trim();
+      css += (css ? "\n\n" : "") + html.slice(gt + 1, eIdx).trim();
       html = html.slice(0, sIdx) + html.slice(eIdx + 9);
       lower = html.toLowerCase();
       pos = sIdx;
     }
-    return { html: html.trim(), css: css.trim(), title:"", filename:"" };
+    return { html: html.trim(), css: css.trim(), title: "", filename: "" };
   }
-  return { html: str, css:"", title:"", filename:"" };
+  return { html: str, css: "", title: "", filename: "" };
 }
 
 
-async function generatePdfAndHtml(parsed, cfg, wo){
+async function generatePdfAndHtml(parsed, cfg, wo) {
   let browser = null;
-  try{
+  try {
     const htmlIn = String(parsed.html || "").trim();
     const cssIn = String(parsed.css || "");
     const title = String(parsed.title || "");
     const filenameArg = String(parsed.filename || "");
-    if (!htmlIn) return { ok:false, error:"PDF_INPUT — Missing 'html' content." };
+    if (!htmlIn) return { ok: false, error: "Missing 'html' content." };
     const bodyHtml = extractBody(htmlIn);
     const { html: fullHtml, cssFinal } = buildPrintableHtml(bodyHtml, cssIn, title || "Document");
     const dir = await ensureUserDir(wo);
@@ -346,28 +345,26 @@ async function generatePdfAndHtml(parsed, cfg, wo){
     });
     const userId = getUserId(wo);
     const baseUrl = getPublicBaseUrl(wo);
-    const publicPdf = baseUrl ? `${baseUrl}/documents/${userId}/${pdfFilename}` : `/documents/${userId}/${pdfFilename}`;
+    const publicPdf  = baseUrl ? `${baseUrl}/documents/${userId}/${pdfFilename}`  : `/documents/${userId}/${pdfFilename}`;
     const publicHtml = baseUrl ? `${baseUrl}/documents/${userId}/${htmlFilename}` : `/documents/${userId}/${htmlFilename}`;
     return {
-      ok: true,
-      pdf: publicPdf,
-      html: publicHtml,
-      css: cssFinal,
-      text: bodyHtml,
+      ok:       true,
+      pdf:      publicPdf,
+      html:     publicHtml,
+      css:      cssFinal,
+      text:     bodyHtml,
       filename: baseName
     };
-  }catch(err){
-    logDebug("UNEXPECTED", String(err?.stack || err));
-    return { ok:false, error:"PDF_UNEXPECTED — Could not generate PDF/HTML." };
-  }finally{
-    try{ await browser?.close(); }catch{}
+  } catch (err) {
+    return { ok: false, error: `Could not generate PDF/HTML: ${err?.message || String(err)}` };
+  } finally {
+    try { await browser?.close(); } catch {}
   }
 }
 
 
-const MODULE_NAME = "getPDF";
-async function getInvoke(args, coreData){
-  try{
+async function getInvoke(args, coreData) {
+  try {
     const wo = coreData?.workingObject || {};
     const cfg = wo?.toolsconfig?.getPDF || {};
     const payload = args?.json ?? args ?? {};
@@ -375,23 +372,22 @@ async function getInvoke(args, coreData){
       ? payload
       : (payload.raw ?? payload);
     const parsed = tolerantParseArgs(parsedInput);
-    if (!parsed.css || !String(parsed.css).trim()){
-      return { ok:false, error:"PDF_INPUT — Missing 'css' styles (provide via `css` param or <style>…</style> in HTML)." };
+    if (!parsed.css || !String(parsed.css).trim()) {
+      return { ok: false, error: "Missing 'css' styles (provide via 'css' param or <style>…</style> in HTML)." };
     }
-    const result = await generatePdfAndHtml({
-      html: parsed.html,
-      css: parsed.css,
-      title: payload.title ?? parsed.title,
+    return await generatePdfAndHtml({
+      html:     parsed.html,
+      css:      parsed.css,
+      title:    payload.title    ?? parsed.title,
       filename: payload.filename ?? parsed.filename
     }, cfg, wo);
-    return result;
-  }catch(e){
-    logDebug("TOOLCALL_INVOKE_ERROR", String(e?.stack || e));
-    return { ok:false, error:"PDF_TOOLCALL_INVOKE — Unexpected error." };
+  } catch (e) {
+    return { ok: false, error: `Unexpected error: ${e?.message || String(e)}` };
   }
 }
 
+
 export default {
-  name: MODULE_NAME,
+  name:   MODULE_NAME,
   invoke: getInvoke
 };

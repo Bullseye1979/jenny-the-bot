@@ -23,10 +23,16 @@
     "toolChoice": "auto",
     "requestTimeoutMs": 120000,
     "tools": [
-      "getGoogle",
-      "getWebpage",
       "getImage",
-      "getTime"
+      "getImageDescription",
+      "getImageSD",
+      "getAnimatedPicture",
+      "getVideoFromText",
+      "getTime",
+      "getToken",
+      "getLocation",
+      "getBan",
+      "spawnSubagent"
     ],
     "includeHistory": true,
     "includeHistoryTools": false,
@@ -337,21 +343,13 @@
         "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL"
       },
       "getHistory": {
-        "__description": "Conversation history tool — requires apiKey",
+        "__description": "Conversation history tool — returns raw row dump. LLM processing is done by the calling subagent.",
         "pagesize": 500,
         "maxRows": 2000,
-        "threshold": 800,
-        "model": "gpt-4o-mini",
-        "temperature": 0,
-        "max_tokens": 4000,
-        "aiTimeoutMs": 45000,
-        "endpoint": "https://api.openai.com/v1/chat/completions",
-        "apiKey": "OPENAI",
-        "includeToolRows": false,
-        "chunkMaxTokens": 600
+        "includeToolRows": false
       },
       "getInformation": {
-        "__description": "Information clustering — no API configuration required",
+        "__description": "Information clustering — no API configuration required. aliasLlmChannelId enables optional alias search via internal API flow.",
         "clusterRows": 200,
         "padRows": 20,
         "tokenWindow": 5,
@@ -361,7 +359,30 @@
         "eventGapMinutes": 45,
         "stripCode": false,
         "includeAnsweredTurns": false,
-        "includeAssistantTurns": false
+        "includeAssistantTurns": false,
+        "includeAliasSearch": false,
+        "aliasMaxDepth": 2,
+        "aliasLlmChannelId": ""
+      },
+      "getYoutube": {
+        "__description": "YouTube transcript fetcher — returns raw transcript dump. LLM processing is done by the calling subagent.",
+        "googleApiKey": "GOOGLE",
+        "dumpThresholdChars": 40000,
+        "transcriptLangs": ["de", "en"],
+        "searchMaxResults": 5,
+        "regionCode": "DE",
+        "relevanceLanguage": "de"
+      },
+      "spawnSubagent": {
+        "__description": "Routes a task to an isolated subagent channel via the internal API flow. Each type maps to a dedicated channelID configured in core-channel-config.",
+        "apiUrl": "http://localhost:3400",
+        "apiSecret": "API_SECRET",
+        "timeoutMs": 120000,
+        "types": {
+          "research": "subagent-research",
+          "media":    "subagent-media",
+          "generic":  "subagent-generic"
+        }
       },
       "getImageDescription": {
         "__description": "Vision model for image descriptions — requires apiKey",
@@ -434,7 +455,8 @@
         3119,
         3120,
         3121,
-        3122
+        3122,
+        3126
       ]
     },
     "webpage-router": {
@@ -466,7 +488,7 @@
       "redirectUri":      "",
       "scope":            "identify guilds.members.read",
       "loginPort":        3111,
-      "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120, 3121, 3122],
+      "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120, 3121, 3122, 3126],
       "sessionMaxAgeSec": 43200,
       "sameSite":         "Lax",
       "ssoPartners":      [],
@@ -533,7 +555,8 @@
         "getToken": "⏳ Generating a token …",
         "getLocation": "⏳ Looking up a location …",
         "getJira": "⏳ Working with Jira …",
-        "getConfluence": "⏳ Working with Confluence …"
+        "getConfluence": "⏳ Working with Confluence …",
+        "spawnSubagent": "⏳ Consulting subagent …"
       }
     },
     "discord-voice-transcribe": {
@@ -952,6 +975,86 @@
             "contextSize": 70,
             "channelIds": []
           }
+        },
+        {
+          "__description": "Subagent: research — handles getHistory, getInformation, getGoogle, getTavily, getWebpage. Spawned by spawnSubagent(type='research'). No spawnSubagent in tools to prevent recursion.",
+          "channelMatch": ["subagent-research"],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are a research subagent. Use the available tools to retrieve information and return a well-structured, concise answer. Do not ask clarifying questions — answer based on what you find.",
+            "tools": [
+              "getHistory",
+              "getInformation",
+              "getGoogle",
+              "getTavily",
+              "getWebpage",
+              "getTime"
+            ]
+          }
+        },
+        {
+          "__description": "Subagent: media — handles YouTube transcripts and web pages. Spawned by spawnSubagent(type='media'). No spawnSubagent in tools to prevent recursion.",
+          "channelMatch": ["subagent-media"],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 6,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are a media subagent. Fetch and analyse the requested media (YouTube videos, web pages) and return a structured summary or answer the given question based solely on the content retrieved.",
+            "tools": [
+              "getYoutube",
+              "getWebpage",
+              "getTime"
+            ]
+          }
+        },
+        {
+          "__description": "Subagent: generic — full standard tool palette. Spawned by spawnSubagent(type='generic'). No spawnSubagent in tools to prevent recursion.",
+          "channelMatch": ["subagent-generic"],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.3,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are a general-purpose subagent. Complete the assigned task using the available tools and return a concise result.",
+            "tools": [
+              "getGoogle",
+              "getTavily",
+              "getWebpage",
+              "getHistory",
+              "getInformation",
+              "getYoutube",
+              "getImage",
+              "getImageDescription",
+              "getTime",
+              "getToken",
+              "getLocation"
+            ]
+          }
         }
       ]
     },
@@ -996,6 +1099,43 @@
         "clientSecret": "SECRET:spotify_client_secret"
       },
       "refreshBufferMinutes": 10
+    },
+
+    "webpage-chatgpt-auth": {
+      "__description": "ChatGPT / OpenAI OAuth2 per-user token management. Users connect at /chatgpt-auth. Requires port 3126 in webpage.ports and webpage-auth.ports.",
+      "flow": ["webpage"],
+      "port": 3126,
+      "auth": {
+        "authUrl":      "https://auth.openai.com/authorize",
+        "tokenUrl":     "https://auth.openai.com/oauth/token",
+        "clientId":     "YOUR_OPENAI_OAUTH_CLIENT_ID",
+        "clientSecret": "YOUR_OPENAI_OAUTH_CLIENT_SECRET",
+        "redirectUri":  "https://YOUR_DOMAIN/chatgpt-auth/callback",
+        "scope":        "openid offline_access model.request"
+      }
+    },
+
+    "cron-chatgpt-token-refresh": {
+      "__description": "Refreshes expiring ChatGPT OAuth tokens from chatgpt_tokens table. Add a cron job entry with flow 'cron-chatgpt-token-refresh'.",
+      "flow": ["cron"],
+      "auth": {
+        "tokenUrl":     "https://auth.openai.com/oauth/token",
+        "clientId":     "YOUR_OPENAI_OAUTH_CLIENT_ID",
+        "clientSecret": "YOUR_OPENAI_OAUTH_CLIENT_SECRET"
+      },
+      "refreshBufferMinutes": 10
+    },
+
+    "core-ai-chatgpt": {
+      "__description": "AI completions using per-user ChatGPT OAuth tokens. Activated when useAiModule='chatGPT' on a channel. Falls back to authPageUrl if the user has no connected token.",
+      "flow": [
+        "discord",
+        "discord-voice",
+        "api"
+      ],
+      "endpoint":    "https://api.openai.com/v1/chat/completions",
+      "model":       "gpt-4o",
+      "authPageUrl": "/chatgpt-auth"
     }
   }
 }

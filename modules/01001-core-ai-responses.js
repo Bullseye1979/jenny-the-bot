@@ -52,6 +52,23 @@ function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && 
 function getPreview(s, n = 400) { const t = getToString(s); return t.length > n ? t.slice(0, n) + " …[truncated]" : t; }
 
 
+function getParseArtifactsBlock(text) {
+  const s = String(text || "");
+  const marker = "\nARTIFACTS:\n";
+  const idx = s.indexOf(marker);
+  if (idx === -1) return { primaryImageUrl: null };
+
+  const lines = s.slice(idx + marker.length).split("\n");
+  for (const line of lines) {
+    if (!line.trim()) break;
+    const m = /^[a-z_]+:\s*(https?:\/\/\S+)/i.exec(line.trim());
+    if (m) return { primaryImageUrl: m[1] };
+  }
+
+  return { primaryImageUrl: null };
+}
+
+
 function getLooksBase64(s) { return typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s); }
 
 
@@ -1016,6 +1033,8 @@ export default async function getCoreAi(coreData) {
   let allHostedLinks = [];
 
   const reasoningParts = [];
+  const subagentLog = [];
+  const toolCallLog = [];
 
   let totalToolCalls = 0;
   let attempts = 0;
@@ -1027,6 +1046,11 @@ export default async function getCoreAi(coreData) {
   let emptyOutputConsec = 0;
 
   for (let iter = 0; iter < maxLoops; iter++) {
+    if (wo.aborted) {
+      log("Pipeline aborted — client disconnected.", "warn");
+      wo.response = "[Empty AI response]";
+      return coreData;
+    }
     attempts++;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -1138,9 +1162,23 @@ export default async function getCoreAi(coreData) {
             const callArgsStr = (typeof tc?.arguments === "string") ? tc.arguments : JSON.stringify(tc?.arguments ?? {});
             messages.push({ type: "function_call", call_id, name: tc?.name, arguments: callArgsStr });
 
+            const _tcStartMs = Date.now();
             const result = await setExecGenericTool(genericTools, { ...tc, call_id, arguments: callArgsStr }, coreData);
+            const _tcDurationMs = Date.now() - _tcStartMs;
             totalToolCalls++;
             ranAnyTool = true;
+            let _tcStatus = "success";
+            try { const _tcR = JSON.parse(getToString(result?.content || "{}")); if (_tcR?.ok === false) _tcStatus = "failed"; } catch {}
+            toolCallLog.push({ tool: tc?.name || "?", status: _tcStatus, duration_ms: _tcDurationMs, task: "" });
+            if (tc?.name === "getSubAgent") {
+              try {
+                const r = JSON.parse(getToString(result?.content || "{}"));
+                const inner = r?.data ?? r;
+                subagentLog.push({ type: inner.type || "generic", channel_id: inner.channel_id || "?", ok: !!inner.ok, error: inner.error || null });
+              } catch (e) {
+                log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
+              }
+            }
 
             const outputStr = getToString(result?.content ?? "");
             messages.push({ type: "function_call_output", call_id, output: outputStr });
@@ -1202,15 +1240,42 @@ export default async function getCoreAi(coreData) {
   }
 
   if (reasoningEnabled) {
-    const joined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
-    wo.reasoningSummary = joined.length ? joined : null;
+    const reasoningJoined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
+    const subagentBlock = subagentLog.length
+      ? "=== Subagents ===\n" + subagentLog.map((s, i) =>
+          `--- Subagent ${i + 1} (${s.type} → ${s.channel_id}) ---\n` +
+          (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
+        ).join("\n\n")
+      : "";
+    const directTools = toolCallLog.filter(e => (typeof e === "object" ? e.tool : e) !== "getSubAgent");
+    const toolsBlock = directTools.length ? "Tools called:\n" + directTools.map(e => {
+      if (typeof e === "object") {
+        const icon = e.status === "success" ? "✅" : (e.status === "failed" ? "❌" : "⚠️");
+        const ms = e.duration_ms >= 1000 ? `${(e.duration_ms / 1000).toFixed(1)}s` : `${e.duration_ms}ms`;
+        const task = e.task ? ` — ${e.task}` : "";
+        return `${icon} **${e.tool}** (${ms})${task}`;
+      }
+      return `- ${e}`;
+    }).join("\n") : "";
+    const noActivity = !reasoningJoined && !subagentBlock && !toolsBlock;
+    const fallback = noActivity ? "Answered from context — no tool calls." : "";
+    const combined = [reasoningJoined, subagentBlock, toolsBlock, fallback].filter(Boolean).join("\n\n");
+    wo.reasoningSummary = combined.length ? combined : "Answered from context — no tool calls.";
   } else {
     wo.reasoningSummary = undefined;
+  }
+
+  if (Array.isArray(wo._pendingSubtaskLogs) && wo._pendingSubtaskLogs.length) {
+    const _logBlock = wo._pendingSubtaskLogs.join("\n\n");
+    wo.reasoningSummary = wo.reasoningSummary ? wo.reasoningSummary + "\n\n" + _logBlock : _logBlock;
+    wo._pendingSubtaskLogs = [];
   }
 
   setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: wo._contextPersistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
 
   wo.response = finalText || "[Empty AI response]";
+  const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
+  if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");
 
   return coreData;

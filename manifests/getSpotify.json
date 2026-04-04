@@ -27,6 +27,7 @@
       "market": { "type": "string", "description": "ISO 3166-1 alpha-2 market code to filter results (e.g. DE, US). Optional for search." },
       "snapshotId": { "type": "string", "description": "Playlist snapshot ID for conflict detection. Optional for removeFromPlaylist." }
     },
-    "required": ["operation"]
+    "required": ["operation"],
+    "additionalProperties": false
   }
 }

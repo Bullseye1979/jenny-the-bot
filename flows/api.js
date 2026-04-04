@@ -353,6 +353,8 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
     workingObject.flow = "api";
     workingObject.turn_id = getUlid();
+    workingObject.aborted = false;
+    req.socket?.on("close", () => { if (!res.writableEnded) workingObject.aborted = true; });
 
     let parsedBody;
     try {
@@ -382,6 +384,14 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
     if (parsedBody.doNotWriteToContext === true) workingObject.doNotWriteToContext = true;
 
+    if (parsedBody.callerChannelId) workingObject.callerChannelId = String(parsedBody.callerChannelId);
+    if (Array.isArray(parsedBody.callerChannelIds)) {
+      workingObject.callerChannelIds = parsedBody.callerChannelIds.map(c => String(c)).filter(Boolean);
+    }
+    if (parsedBody.callerTurnId) workingObject.callerTurnId = String(parsedBody.callerTurnId);
+    if (parsedBody.agentDepth !== undefined) workingObject.agentDepth = Math.max(0, Number(parsedBody.agentDepth) || 0);
+    if (parsedBody.agentType)  workingObject.agentType  = String(parsedBody.agentType);
+
     try {
       await runFlow("api", runCore);
     } catch {
@@ -410,6 +420,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       turn_id: workingObject.turn_id,
       channelallowed: workingObject.channelallowed,
       response: text && text !== silenceToken ? text : "",
+      toolCallLog:       Array.isArray(workingObject.toolCallLog)  ? workingObject.toolCallLog  : undefined,
+      subagentLog:       Array.isArray(workingObject.subagentLog)  ? workingObject.subagentLog  : undefined,
+      primaryImageUrl:   typeof workingObject.primaryImageUrl === "string" && workingObject.primaryImageUrl ? workingObject.primaryImageUrl : undefined,
       botname: getBotname(workingObject, baseCore),
     });
   });

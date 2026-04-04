@@ -1,0 +1,16 @@
+{
+  "name": "getFile",
+  "description": "Save text or binary content to a persistent file and return a public URL. Supports subdirectory paths in the filename to maintain project structure, e.g. 'src/components/Button.js' — directories are created automatically. Use this to persist any generated artifact: source code, reports, markdown, JSON, or binary. Returns the relative path and public URL for later reference or bundling.\nrequirements:\n- for binary content: set encoding to 'base64' and pass base64-encoded content\n- for overwriting: set overwrite: true and provide an explicit filename",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "content":     { "type": "string", "description": "File content to write. For source code files this MUST be raw, valid source code only — never include explanations, planning text, error messages, or prose. Plain text by default; base64-encoded binary when encoding is 'base64'." },
+      "filename":    { "type": "string", "description": "Desired filename including optional subdirectory path and extension, e.g. 'src/main.js' or 'docs/report.md'. Subdirectories are created automatically. A unique name is generated when omitted." },
+      "encoding":    { "type": "string", "enum": ["text", "base64"], "description": "Content encoding. 'text' (default) writes UTF-8 text; 'base64' decodes the content as binary before writing." },
+      "contentType": { "type": "string", "description": "MIME type hint used to determine file extension when filename is omitted, e.g. 'text/markdown', 'application/json'." },
+      "overwrite":   { "type": "boolean", "description": "If true and filename is provided, overwrite the file at that exact path if it already exists. Defaults to false (a unique name is generated to avoid collisions)." }
+    },
+    "required": ["content"],
+    "additionalProperties": false
+  }
+}

@@ -777,7 +777,7 @@ export default async function getDiscordTextOutput(coreData) {
     const baseChannel = baseMessage?.channel ?? (await client.channels.fetch(channelId));
     if (!baseChannel) throw new Error("Channel not found");
 
-    const firstImage = getFirstImageUrlFromText(response);
+    const firstImage = (typeof wo.primaryImageUrl === "string" && wo.primaryImageUrl) ? wo.primaryImageUrl : getFirstImageUrlFromText(response);
     const questionRaw = getLikelyQuestion(wo);
     const askerDisplay = getAskerDisplay(wo, baseMessage);
 
@@ -847,7 +847,7 @@ export default async function getDiscordTextOutput(coreData) {
 
     let sentReasoning = 0;
 
-    if (reasoningText && rootMessageId) {
+    if (reasoningText) {
       const inThreadAlready = !!threadId || getIsThreadChannel(baseChannel);
 
       if (inThreadAlready) {
@@ -868,7 +868,9 @@ export default async function getDiscordTextOutput(coreData) {
         log("Cannot create a message-thread inside an existing thread; posted reasoning in the current thread instead.", "warn");
       } else {
         const threadName = getReasoningThreadName(wo, askerDisplay);
-        const th = await setCreateReasoningMessageThread(client, baseChannel, rootMessageId, threadName, wo);
+        const th = rootMessageId
+          ? await setCreateReasoningMessageThread(client, baseChannel, rootMessageId, threadName, wo)
+          : null;
 
         if (th?.id) {
           const payloadBase = {
@@ -883,6 +885,15 @@ export default async function getDiscordTextOutput(coreData) {
             useAiModule,
             timeStr
           });
+        } else {
+          sentReasoning = await setSendDirectReasoningEmbeds(baseChannel, reasoningText, {
+            botName: identity.username,
+            model,
+            useAiModule,
+            timeStr
+          });
+
+          log("Thread creation failed or not permitted; posted reasoning as direct follow-up in channel.", "warn");
         }
       }
     }

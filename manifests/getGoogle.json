@@ -1,6 +1,6 @@
 {
   "name": "getGoogle",
-  "description": "Search the web using Google for current news, events, facts, or real-time information. Always execute a fresh search — never reuse results from conversation history. If a previous search returned no useful results, refine the query and search again. A query is required. To read a specific search result in full, follow up with getWebpage.",
+  "description": "Search the web using Google for current news, events, facts, or real-time information. Always execute a fresh search — never reuse results from conversation history. If a previous search returned no useful results, refine the query and search again. A query is required.",
   "parameters": {
     "type": "object",
     "properties": {

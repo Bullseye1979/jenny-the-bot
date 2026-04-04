@@ -1,6 +1,6 @@
 {
   "name": "getYoutube",
-  "description": "Fetch and process YouTube video transcripts, or search YouTube. For mode='transcript': fetches the transcript and either dumps it (short) or summarizes/answers questions (long). For mode='search': searches YouTube via the Data API. Always fetch fresh — never reuse transcript content from previous calls. If a previous call returned an error, retry. Returns structured JSON only; to save the transcript as a file, chain getText or getPDF after this call.",
+  "description": "Fetch and process YouTube video transcripts, or search YouTube. For mode='transcript': fetches the transcript and either dumps it (short) or summarizes/answers questions (long). For mode='search': searches YouTube via the Data API. Always fetch fresh — never reuse transcript content from previous calls. If a previous call returned an error, retry. Returns structured JSON only.",
   "parameters": {
     "type": "object",
     "additionalProperties": false,

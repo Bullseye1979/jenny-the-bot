@@ -1,7 +1,8 @@
 /**********************************************************************************/
 /* filename: getYoutube.js                                                         *
 /* Version 1.0                                                                     *
-/* Purpose: Fetch YouTube transcripts, then dump or summarize; optional search.    *
+/* Purpose: Fetch YouTube transcripts as raw text dumps; optional video search.   *
+/*          LLM processing is handled by the calling agent or subagent.            *
 /**********************************************************************************/
 
 import { getSecret } from "../core/secrets.js";
@@ -135,26 +136,6 @@ async function getSearchVideos({ googleApiKey, query, maxResults, relevanceLangu
 }
 
 
-async function getCallOpenAI({ endpoint, apiKey, model, messages, temperature, max_tokens, timeoutMs }) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), Math.max(1, timeoutMs || 45000));
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature, max_tokens })
-    });
-    const data = await res.json().catch(() => ({}));
-    const content = data?.choices?.[0]?.message?.content || "";
-    return { ok: true, text: content, raw: data };
-  } catch (err) {
-    return { ok: false, error: err?.message || String(err) };
-  } finally {
-    clearTimeout(t);
-  }
-}
-
 
 async function getInvoke(args, coreData) {
   const started = Date.now();
@@ -163,12 +144,6 @@ async function getInvoke(args, coreData) {
   const googleApiKey = await getSecret(wo, getStr(cfg.googleApiKey, ""));
   const transcriptLangs = Array.isArray(cfg.transcriptLangs) ? cfg.transcriptLangs : [];
   const dumpThresholdChars = getNum(cfg.dumpThresholdChars, 24000);
-  const endpoint = getStr(cfg.endpoint, wo?.endpoint || "https://api.openai.com/v1/chat/completions");
-  const apiKey = await getSecret(wo, getStr(cfg.apiKey, wo?.apiKey || process.env.OPENAI_API_KEY || ""));
-  const model = getStr(cfg.model, wo?.model || "gpt-4o-mini");
-  const temperature = getNum(cfg.temperature, 0.2);
-  const maxTokens = getNum(cfg.maxTokens, 1400);
-  const aiTimeoutMs = getNum(cfg.aiTimeoutMs, 45000);
   const regionCode = getStr(cfg.regionCode, "DE");
   const relevanceLanguage = getStr(cfg.relevanceLanguage, "de");
   const searchMaxResults = getNum(cfg.searchMaxResults, 5);
@@ -195,22 +170,9 @@ async function getInvoke(args, coreData) {
   if (wantMetaOnly) {
     return { ok: true, mode: "meta", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, took_ms: Date.now() - started };
   }
-  const isBelowThreshold = linear.length <= dumpThresholdChars;
-  const hasUserPrompt = !!userPrompt;
-  if (isBelowThreshold && !hasUserPrompt) {
-    return { ok: true, mode: "dump", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, lang: tRes.lang || null, text: linear, chars: linear.length, took_ms: Date.now() - started };
-  }
-  if (!apiKey) {
-    return { ok: true, mode: "dump", warning: "NO_API_KEY_FOR_SUMMARY — returning raw transcript", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, text: linear.slice(0, dumpThresholdChars), truncated: linear.length > dumpThresholdChars, took_ms: Date.now() - started };
-  }
-  const defaultSystemMsg = ["You are a YouTube transcript analyst.", "You get a transcript with timestamps.", "If the user asked a specific question, answer it using ONLY the transcript.", "If the user did not ask a question, write a structured summary with sections and keep timestamps where they help.", "Do NOT invent content that is not in the transcript.", "Language: keep the language of the user prompt, otherwise use English."].join(" ");
-  const systemMsg = getStr(cfg.systemPrompt, defaultSystemMsg);
-  const messages = [{ role: "system", content: systemMsg }, ...(hasUserPrompt ? [{ role: "user", content: `User request:\n${userPrompt}` }] : []), { role: "user", content: `Transcript (truncated to ${dumpThresholdChars} chars if long):\n\n${linear.slice(0, 180000)}` }];
-  const aiRes = await getCallOpenAI({ endpoint, apiKey, model, messages, temperature, max_tokens: maxTokens, timeoutMs: aiTimeoutMs });
-  if (!aiRes.ok) {
-    return { ok: false, error: aiRes.error || "YT_SUMMARY_FAILED", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, took_ms: Date.now() - started };
-  }
-  return { ok: true, mode: hasUserPrompt ? "qa" : "summary", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, lang: tRes.lang || null, summary: aiRes.text, raw_chars: linear.length, used_chars: linear.slice(0, 180000).length, took_ms: Date.now() - started };
+  const truncated = linear.length > dumpThresholdChars;
+  const text = truncated ? linear.slice(0, dumpThresholdChars) : linear;
+  return { ok: true, mode: "dump", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, lang: tRes.lang || null, text, chars: text.length, truncated, took_ms: Date.now() - started };
 }
 
 export default {

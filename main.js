@@ -10,8 +10,11 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
-import { putItem } from "./core/registry.js";
+import { EventEmitter } from "node:events";
+import { putItem, getItem } from "./core/registry.js";
 import { startSetupWizard } from "./core/setup.js";
+
+EventEmitter.defaultMaxListeners = 30;
 
 const MODULE_NAME = "main";
 const LOGS_DIR    = path.join(path.dirname(fileURLToPath(import.meta.url)), "logs");
@@ -206,6 +209,7 @@ const REGISTRY_WRITE_INTERVAL_MS = 2000;
 let __lastRenderAt = 0;
 let __lastRenderLineCount = 0;
 let __lastRegistryWriteAt = 0;
+let __activeTool = "";
 let __firstRender = true;
 
 const FLOW_STATES = new Map();
@@ -332,17 +336,29 @@ function getRenderFlowLine(state) {
 }
 
 
+setInterval(async () => {
+  try {
+    const v = await getItem("status:tool");
+    __activeTool = (typeof v === "string" ? v : (typeof v?.name === "string" ? v.name : "")).trim();
+  } catch {}
+}, 500);
+
+
 function getRenderAllDashboards() {
   const list = Array.from(FLOW_STATES.values());
   const nowISO = getNowISO();
   const mem = process.memoryUsage?.();
   const rss = mem?.rss ? getFmtMem(mem.rss) : "n/a";
   const heap = mem?.heapUsed ? getFmtMem(mem.heapUsed) : "n/a";
+  const toolLine = __activeTool
+    ? `${C.yellow}${SYM.play} active tool:${C.reset} ${C.bold}${__activeTool}${C.reset}`
+    : `${C.gray}${SYM.dot} active tool: —${C.reset}`;
 
   const headerLines = [
     getSep(),
     `${C.bold}${C.cyan}Core Dashboard${C.reset}  ${C.gray}${nowISO}${C.reset}`,
     `${C.gray}${SYM.dot} flows:${C.reset} ${list.length}  ${C.gray}rss=${rss}, heap=${heap}${C.reset}`,
+    toolLine,
     getSep()
   ];
 

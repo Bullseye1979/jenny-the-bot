@@ -435,8 +435,8 @@ The live dashboard displays:
 |---|---|---|---|
 | `tools` | array | `[...]` | List of enabled tool names, e.g. `["getGoogle","getImage"]` |
 | `toolChoice` | string | `"auto"` | Tool selection mode: `"auto"` \| `"none"` \| `"required"` |
-| `maxLoops` | number | `15` | Max tool-call iterations per turn |
-| `maxToolCalls` | number | `7` | Max individual tool calls per iteration |
+| `maxLoops` | number | `15` | Max AI loop iterations per turn (each tool-call round = one iteration) |
+| `maxToolCalls` | number | `7` | Max total tool calls across all iterations. Once reached, tools are disabled for the remainder of the turn so the AI produces a final answer. Enforced in `core-ai-completions` (01000) and `core-ai-responses` (01001). |
 
 #### Conversation History
 
@@ -2424,7 +2424,7 @@ export default async function myModule(coreData) {
 | 00074 | `core-trigger-gate` | Flow-agnostic trigger gate. Stops the pipeline when `wo.payload` does not start with the configured trigger word. |
 | 00075 | *(deleted)* | `discord-trigger-gate` has been removed. Flow-agnostic replacement: `00074-core-trigger-gate`. |
 | 00080 | `discord-reaction-start` | Adds a progress reaction emoji to the user's message |
-| 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelID` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. |
+| 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelID` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. Optionally applies per-channel context optimizations (transcription trimming, relevance filtering) when `contextOptimization.enabled` is set in the channel override. |
 
 ---
 
@@ -2443,7 +2443,7 @@ Only **one** of these modules runs per turn, selected by `workingObject.useAiMod
 
 #### config.core-ai-context-loader
 
-Pre-loads the conversation context snapshot from the DB into `wo._contextSnapshot` before any `core-ai-*` module runs. This allows intermediate pipeline modules (positioned between `00999` and `01000`) to inspect or modify the context before the AI sees it — enabling context injection, filtering, or augmentation at pipeline level.
+Pre-loads the conversation context snapshot from the DB into `wo._contextSnapshot` before any `core-ai-*` module runs. Optionally applies per-channel context optimizations to the snapshot. Optimizations are purely navigational — DB rows are never modified.
 
 All `core-ai-*` modules retain a direct `getContext()` fallback, so synthetic pipelines that invoke an AI module directly (without running the full module pipeline) continue to work unchanged.
 
@@ -2458,6 +2458,54 @@ All `core-ai-*` modules retain a direct `getContext()` fallback, so synthetic pi
 | `flow` | array | Flows in which the module runs. Must include all flows where `core-ai-*` modules are active. |
 
 **`wo._contextSnapshot`** — After this module runs, `wo._contextSnapshot` is an array of context rows (same format as `getContext()` returns). Set it to an empty array `[]` to suppress history. Replace or append rows to inject context.
+
+##### Context Optimization
+
+Activated per channel via the `contextOptimization` key in a channel override. The master toggle `enabled` must be `true`; each sub-feature can be toggled independently. The optimization runs in `00999` and applies to all core-ai modules (01000–01003), which all read `wo._contextSnapshot`.
+
+```json
+"contextOptimization": {
+  "enabled": true,
+  "transcriptions": {
+    "minWords": 5,
+    "keepRecentCount": 3
+  },
+  "relevance": {
+    "enabled": false,
+    "keepRecentCount": 5,
+    "minScore": 0.05
+  }
+}
+```
+
+**`source: "voice-transcription"` — special treatment**
+
+Context rows with `source: "voice-transcription"` receive special treatment during optimization. All voice write paths must set this source value:
+
+| Module | Path | Sets source |
+|---|---|---|
+| `00070-discord-add-context` | Discord voice (when `wo.voiceTranscribed === true`) | ✓ |
+| `00031-webpage-voice-add-context` | Webpage always-on voice | ✓ |
+| `00047-webpage-voice` | Diarize sessions | ✓ |
+| `00027-webpage-voice-record` | Meeting recorder | ✓ |
+
+**Transcription filtering** — voice rows with fewer words than `minWords` are excluded from the snapshot entirely when outside the protected recent window. Excluded rows do not count against the context budget seen by the AI.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `transcriptions.enabled` | boolean | `true` | Toggle transcription filtering. Omitting the `transcriptions` key enables it with defaults. |
+| `transcriptions.minWords` | number | `5` | Voice rows with fewer words than this are excluded when outside the recent window. |
+| `transcriptions.keepRecentCount` | number | `3` | Number of most-recent snapshot rows that are always kept regardless of word count. |
+
+**Relevance filtering** — scores non-voice rows in the older portion of the snapshot using Jaccard similarity against `wo.payload`. Rows below the threshold are dropped. Voice transcription rows are always retained regardless of score.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `relevance.enabled` | boolean | `false` | Toggle relevance filtering. Off by default. |
+| `relevance.keepRecentCount` | number | `5` | Always retain this many most-recent rows regardless of score. |
+| `relevance.minScore` | number | `0.05` | Minimum Jaccard score (0.0–1.0) to retain an older row. Set to `0` to keep all. |
+
+**Requirements:** Source detection requires non-simplified context (`simplifiedContext !== true`). In simplified mode, rows have no `source` field and voice transcriptions are treated as regular user rows.
 
 ---
 
@@ -2485,7 +2533,8 @@ Modules positioned between the last `core-ai-*` module and `01004` can inspect o
 
 1. Builds the message array: system prompt → history (if `includeHistory=true`) → current user turn
 2. Calls `POST /chat/completions`; loops up to `maxLoops` (default 20):
-   - **Tool calls present** → executes each tool, appends results, loops
+   - **Tool calls present and `maxToolCalls` not yet reached** → executes each tool, increments `totalToolCalls`, appends results, loops
+   - **`maxToolCalls` reached** → tools disabled for subsequent requests (`tool_choice` omitted); AI produces final answer without further tool calls
    - **`finish_reason === "length"`** → explicit token-limit hit; sends a continue turn and loops
    - **Output looks truncated** (`getLooksCutOff`) → heuristic continue, regardless of `finish_reason`; loops
    - **Otherwise** → done; exits loop
@@ -6051,6 +6100,301 @@ This means the label-gen AI call:
 | `cron-parser` | ^5.x | Cron expression parsing |
 | `puppeteer` | ^24.x | Headless browser (webpage scraping, PDF) |
 | `youtube-transcript-plus` | ^1.1.x | YouTube transcript extraction |
+
+---
+
+## Subagent System
+
+### Overview
+
+The subagent system allows the main AI to delegate tasks to isolated sub-processes, each running the full module pipeline with a dedicated tool palette. Subagents are invoked via the `getSubAgent` tool and communicate through the internal API endpoint (`/api` on port 3400).
+
+### How It Works
+
+1. The main AI calls `getSubAgent(type, task)`.
+2. `getSubAgent` sends a POST to `http://localhost:3400/api` with the virtual channel ID for the requested type.
+3. The API flow loads `core-channel-config` for that virtual channel, applies tool/model/instruction overrides, and runs the full pipeline.
+4. The subagent returns a single text result passed back to the main AI.
+
+The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically so that tools like `getHistory` and `getInformation` query the correct data source.
+
+### Available Subagent Types
+
+| Type | Virtual Channel | Tools | Use when |
+|------|----------------|-------|----------|
+| `history` | `subagent-history` | getInformation, getHistory, getTime, getSubAgent | Questions about persons, places, events, or time periods from session logs |
+| `research` | `subagent-research` | getInformation, getHistory, getYoutube, getWebpage, getLocation, getTavily, getTime, getZIP, getSubAgent | General knowledge, current events, web research, YouTube |
+| `generate` | `subagent-generate` | getPDF, getText, getFile, getZIP, getSubAgent | PDF or text document generation |
+| `media` | `subagent-media` | getImage, getAnimatedPicture, getVideoFromText, getImageDescription, getToken, getZIP | Image/video/token generation and image description (leaf node — no getSubAgent) |
+| `atlassian` | `subagent-atlassian` | getJira, getConfluence, getZIP, getSubAgent | Jira/Confluence tasks |
+| `microsoft` | `subagent-microsoft` | getGraph, getZIP, getSubAgent | Microsoft 365/Graph |
+| `develop` | `subagent-develop` | getFile, getZIP, getTavily, getWebpage, getTime, getSubAgent | Code generation — writes files to persistent storage via getFile, returns ZIP; uses getSubAgent(type: media) for image assets |
+| `orchestrate` | `subagent-orchestrate` | getSubAgent, getTavily, getWebpage, getTime | Requests with truly independent parts needing different tool sets; handles simple tasks directly without spawning |
+
+### Routing Logic for Main Channels
+
+Main channels have `getSubAgent`, `getTavily`, and `getImage` directly available. Routing logic:
+
+- **Simple web search** (facts, current events) → `getTavily` directly — no subagent needed
+- **Simple image generation** → `getImage` directly — no subagent needed
+- **Session history questions** (who is X, what happened at Y, when did Z) → `getSubAgent(type: history)`
+- **General knowledge / YouTube / location** → `getSubAgent(type: research)`
+- **Code / development requests** → `getSubAgent(type: develop)`
+- **Complex media** (animated token, video generation, multi-step image) → `getSubAgent(type: media)`
+- **If the answer is in the current conversation context** → answer directly without tool call
+
+**Convention:** Subagent descriptions must explicitly list each tool in the type's palette so the caller AI understands what capabilities are available. Keep these updated whenever tools are added or removed.
+
+### Subagent Architecture
+
+`media` is a leaf node — it has no `getSubAgent`. `develop` and `research` can spawn sub-subagents for specialized work. `orchestrate` has only `getSubAgent` + lightweight direct tools (getTavily, getWebpage, getTime).
+
+```
+Main AI (tools: getSubAgent, getTavily, getImage)
+  ├─ getTavily(...)                    ← direct for simple searches
+  ├─ getImage(...)                     ← direct for simple single image (no further steps)
+  └─ getSubAgent(type: generate)       ← for PDFs/documents WITH images
+       ├─ getSubAgent(type: media)     ← STEP 1: get image URL first
+       └─ getPDF(html+imageUrl)        ← STEP 2: only after image URL is in hand
+
+Main AI
+  └─ getSubAgent(type: orchestrate)    ← only for multi-tool requests
+       ├─ getSubAgent(type: media, orchestration: {...})     ← STEP 1: owns image
+       └─ getSubAgent(type: generate, orchestration: {...})  ← STEP 2: receives image URL
+```
+
+The caller's channel ID is forwarded at every level so `getHistory` and `getInformation` always query the correct source channel regardless of nesting depth. Tool call status is also mirrored to the caller's Discord channel ID so the status display works correctly.
+
+**Nested subagent timeout:** Main AI → any subagent: `toolsconfig.getSubAgent.timeoutMs = 600000` (10 min global default).
+
+### Orchestration Context (Multi-Subagent Coordination)
+
+When multiple subagents are involved in a single user request, each `getSubAgent` call should include an `orchestration` parameter to prevent duplicate side effects (e.g. two subagents each generating the same portrait image).
+
+**The problem it solves:** Without orchestration context, each subagent receives only its own task and may reconstruct the global goal — then conclude it also needs to generate the image, write the PDF, or do other steps already assigned to other agents.
+
+**Core rules:**
+- **One deliverable = one owner.** Only one subagent may produce a given artifact (image, PDF, etc.).
+- **Sequential dependencies must be resolved by the caller.** If B needs A's output, call A first, wait for the result, then pass it explicitly in B's task. Never let B discover the dependency itself.
+- **Pass `orchestration` to every subagent call** when more than one subagent is involved.
+
+**Orchestration object schema:**
+```json
+{
+  "global_goal": "User's original request",
+  "your_task": "Exact deliverable this subagent must produce",
+  "your_role": "e.g. 'portrait image generation'",
+  "do_only": ["generate portrait image of Melissa"],
+  "do_not": ["create character sheet", "generate PDF", "spawn additional media subagents"],
+  "existing_artifacts": {
+    "portrait_image": "https://example.com/portrait.png"
+  },
+  "assigned_to_others": ["PDF assembly → generate agent"],
+  "tool_locks": {
+    "getImage": "portrait already generated by media agent"
+  }
+}
+```
+
+**`callerTurnId` propagation:** `wo.turn_id` is forwarded as `callerTurnId` to every spawned subagent via `api.js`. Each subagent receives it in `wo.callerTurnId`. The orchestration block injected into the subagent's task also includes the `turn_id` for traceability.
+
+**`buildOrchestrationBlock` (in `getSubAgent.js`):** Serialises the orchestration object into a human-readable block that is prepended to the subagent's task payload:
+```
+[ORCHESTRATION CONTEXT]
+turn_id: 01JXYZ...
+global_goal: "Create character sheet with portrait for Melissa"
+your_task: "Generate portrait image"
+...
+[/ORCHESTRATION CONTEXT]
+
+[YOUR TASK]
+Generate a portrait of Melissa...
+[/YOUR TASK]
+```
+
+### File Tools (getFile, getZIP)
+
+These tools enable subagents to generate, read, and bundle files:
+
+| Tool | Purpose |
+|------|---------|
+| `getFile` | Saves text or binary content to `pub/documents/{userId}/path`. Supports subdirectory paths (e.g. `src/main.js`). Returns public URL. Also supports `overwrite: true` to replace an existing file. |
+| `getZIP` | Downloads one or more files by URL and packages them into a ZIP archive. A `base_url` parameter preserves the relative directory structure inside the archive. |
+
+**`getFile` parameters:**
+- `content` (required) — UTF-8 text or base64-encoded binary; for code files, raw source code only
+- `filename` — desired path including subdirectories, e.g. `src/components/Button.js`
+- `encoding` — `"text"` (default) or `"base64"`
+- `contentType` — MIME type hint for extension inference when filename is omitted
+- `overwrite` — if `true`, replaces an existing file at the exact path instead of generating a unique name
+
+**`getZIP` parameters:**
+- `urls` (required) — array of public URLs to include
+- `base_url` — reference URL prefix; each file's path relative to this prefix becomes its path inside the ZIP (e.g. base_url `https://x.de/documents/shared/` + file URL `https://x.de/documents/shared/src/main.js` → ZIP path `src/main.js`)
+- `filename` — base name for the ZIP (default `archive`)
+- `timeoutMs` — per-file download timeout (default 30 s)
+
+### File Recovery Workflow ("fix this file")
+
+When a user supplies a file URL to fix or improve, the `develop` subagent follows this workflow:
+
+1. **Read** — The AI reads the file content (passed in the task description, or downloaded via getFile if a URL is given).
+2. **Edit** — The AI analyses the content and produces the corrected version.
+3. **Overwrite** — `getFile(content, filename, overwrite: true)` writes the fixed content back to the same path. The `filename` is extracted from the URL (the path after the userId segment).
+4. **Bundle** *(optional)* — `getZIP([fixedUrl, ...otherUrls], base_url)` to redeliver the full project.
+
+Example prompt:
+> "Jenny, fix this file — the Tetris collision detection is broken: https://xbullseyegaming.de/documents/shared/src/game.js"
+
+The develop subagent will read `game.js`, identify the bug, write the corrected version back to the same path via `getFile(overwrite: true)`, and return the updated link.
+
+### getInformation Return Format
+
+`getInformation` returns `{ timeline, meta }`.
+
+**Timeline entries** — each entry has a `type` field:
+
+| Type | Has snippets? | start_ts / end_ts | Meaning |
+|------|-------------|-------------------|---------|
+| `detail` | Yes (`snippets[]`) | From timeline_periods table | Keyword matches found in this period |
+| `period` | No | From timeline_periods table | No matches — coarse summary only |
+| `unplaced` | Yes (`snippets[]`) | Derived from snippet timestamps | Matches not covered by any known period |
+
+Each snippet in `snippets[]` has: `channel_id`, `rn`, `ts`, `sender`, `content`.
+
+**Using start_ts / end_ts**: `detail` and `unplaced` entries expose a time range covering the matched content. Pass these to `getHistory` to retrieve the full surrounding conversation.
+
+### Deep-Context Pattern (getInformation → getHistory)
+
+When the AI needs full surrounding context around a matched entity, it uses a two-step chain:
+
+1. Call `getInformation` with the entity name. The result includes `detail` and `unplaced` entries with `start_ts` and `end_ts`.
+2. Take the `start_ts` / `end_ts` from the relevant entry and pass them to `getHistory` to retrieve the full raw conversation for that period.
+
+This gives the AI broad context (surrounding messages, related events) rather than just the matched snippets. This pattern is implemented in the `history` subagent instructions.
+
+### Tools Called Directly (No Subagent)
+
+These tools are available in the main AI's tool palette and are preferred for simple single-step tasks — no subagent needed:
+
+| Tool | Purpose |
+|------|---------|
+| `getSubAgent` | Spawns a subagent for complex or multi-step tasks |
+| `getTavily` | Web search — use directly for simple lookup questions |
+| `getImage` | Generates images — use directly for simple single-image requests |
+
+### Subagent Tool Status in Discord
+
+When a subagent executes a tool call, the tool status is written to:
+- `status:tool:{subagent-channel-id}` (e.g. `status:tool:subagent-develop`)
+- `status:tool:{caller-channel-id}` — the original Discord channel that triggered the request
+
+The second key ensures the Discord status module (which watches the real channel ID) shows the correct tool name even when the tool is running inside a subagent. This is handled in `01000-core-ai-completions.js` via `wo.callerChannelId`.
+
+### EventEmitter MaxListeners
+
+Node.js default `maxListeners` is 10. With concurrent subagent HTTP calls each registering a close listener, this limit is exceeded. The global limit is raised to 30 in `main.js`:
+
+```js
+EventEmitter.defaultMaxListeners = 30;
+```
+
+### Pipeline Abort Mechanism
+
+When a subagent's HTTP connection is closed by the client (e.g. because `getSubAgent` timed out), the server-side pipeline stops at the next AI loop iteration via `wo.aborted`.
+
+**How it works:**
+- `flows/api.js` and `flows/webpage.js` register `req.socket.on("close", ...)` at the start of each request. If the socket is destroyed before the response is sent (`!res.writableEnded`), `wo.aborted` is set to `true`.
+- All AI modules (`01000`–`01005`) check `wo.aborted` at the start of each loop iteration and return immediately if set.
+- `getSubAgent` also checks `wo.aborted` before making the outbound API call, preventing new subagents from being spawned after the parent is aborted.
+
+**Flows without abort mechanism** (not needed — no HTTP connection to close):
+- `discord` — Discord gateway events are fire-and-forget
+- `discord-voice` — registry polling, no external connection
+- `discord-admin` — Discord slash command callbacks
+- `bard` — internal timer-driven scheduler
+- `cron` — timer-triggered jobs
+
+### Adding a New Subagent Type
+
+**Step 1** — Register the type in `core.json` under `workingObject.toolsconfig.getSubAgent.types`:
+
+```json
+"types": {
+  "research": "subagent-research",
+  "mytype":   "subagent-mytype"
+}
+```
+
+**Step 2** — Add a channel config block in `config["core-channel-config"].channels`:
+
+```json
+{
+  "channelMatch": ["subagent-mytype"],
+  "overrides": {
+    "botName": "Jenny",
+    "persona": "Description of the subagent role.",
+    "systemPrompt": "What the subagent should do.",
+    "instructions": "Which tools to use and how.",
+    "contextSize": 5,
+    "useAiModule": "completions",
+    "model": "gpt-4o",
+    "apiKey": "OPENAI",
+    "doNotWriteToContext": true,
+    "includeHistory": false,
+    "maxLoops": 10,
+    "maxToolCalls": 8,
+    "tools": ["toolA", "toolB"],
+    "apiEnabled": 1,
+    "apiSecret": "API_SECRET"
+  },
+  "_title": "Subagent: MyType"
+}
+```
+
+**Step 3** — Add the new type to the `enum` array in `manifests/getSubAgent.json`.
+
+No Discord channel is required. The channel name is virtual and only needs to match between `types` and `channelMatch`.
+
+### Tool Definition Format
+
+All tool manifests in `manifests/` must follow this structure:
+
+```json
+{
+  "name": "toolName",
+  "description": "What the tool does and when to call it.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "paramName": {
+        "type": "string",
+        "description": "Parameter description."
+      }
+    },
+    "required": ["paramName"],
+    "additionalProperties": false
+  }
+}
+```
+
+Rules:
+- `name` must match the tool filename (`getSubAgent` → `tools/getSubAgent.js`)
+- `additionalProperties: false` is required on every `parameters` object
+- `required` must list all mandatory parameters
+- All text in English
+- Each tool describes only itself — no references to other tool names
+- If a tool requires a prerequisite result (e.g. an image URL), describe the requirement in a `requirements:` section inside the `description` string:
+
+```json
+{
+  "name": "getToken",
+  "description": "Convert an image URL into a round-masked token.\nrequirements:\n- for animated tokens: an animated video or GIF URL as input\n- for static tokens: a static image URL",
+  ...
+}
+```
+
+The AI infers tool chains from each tool's own description and requirements — never from explicit tool name references. This keeps the system modular: tools remain independent and composable without hard-coded dependencies.
 
 ---
 

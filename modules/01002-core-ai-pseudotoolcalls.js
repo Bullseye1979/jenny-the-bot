@@ -597,6 +597,21 @@ function getSystemContentBase(wo) {
 }
 
 
+function getParseArtifactsBlock(text) {
+  const s = String(text || "");
+  const marker = "\nARTIFACTS:\n";
+  const idx = s.indexOf(marker);
+  if (idx === -1) return { primaryImageUrl: null };
+  const lines = s.slice(idx + marker.length).split("\n");
+  for (const line of lines) {
+    if (!line.trim()) break;
+    const m = /^[a-z_]+:\s*(https?:\/\/\S+)/i.exec(line.trim());
+    if (m) return { primaryImageUrl: m[1] };
+  }
+  return { primaryImageUrl: null };
+}
+
+
 async function getSystemContent(wo, specs) {
   const parts = getSystemContentBase(wo);
   const catalog = getRenderPseudoCatalog(specs || []);
@@ -653,11 +668,18 @@ export default async function getCoreAi(coreData) {
   ];
 
   if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
+  const subagentLog = [];
+  const toolCallLog = [];
   let finalText = "";
   let accumulatedText = "";
   let toolCallsUsedTotal = 0;
 
   for (let i = 0; i < kiCfg.maxLoops; i++) {
+    if (wo.aborted) {
+      log("Pipeline aborted — client disconnected.", "warn");
+      wo.response = "[Empty AI response]";
+      return coreData;
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
 
@@ -727,14 +749,27 @@ export default async function getCoreAi(coreData) {
           continue;
         }
 
+        const _tc02StartMs = Date.now();
         const toolMsg = await getExecToolCall(
           toolModules,
           { id: "pseudo_" + extracted.name, function: { name: extracted.name, arguments: JSON.stringify(extracted.args ?? {}) } },
           coreData,
           toolSpecsByName
         );
+        const _tc02DurationMs = Date.now() - _tc02StartMs;
+        let _tc02Status = "success";
+        try { const _tc02R = JSON.parse(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}")); if (_tc02R?.ok === false) _tc02Status = "failed"; } catch {}
+        toolCallLog.push({ tool: extracted.name, status: _tc02Status, duration_ms: _tc02DurationMs, task: "" });
 
         wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
+        if (extracted.name === "getSubAgent") {
+          try {
+            const r = JSON.parse(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}"));
+            subagentLog.push({ type: r.type || "generic", channel_id: r.channel_id || "?", ok: !!r.ok, error: r.error || null });
+          } catch (e) {
+            log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
+          }
+        }
 
         const toolResultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? null);
         const urls = getExtractUrlsFromToolContent(toolResultText);
@@ -781,7 +816,44 @@ export default async function getCoreAi(coreData) {
     }
   }
 
+  const reasoningEnabled = wo?.reasoning != null && wo?.reasoning !== false && wo?.reasoning !== 0;
+  if (reasoningEnabled) {
+    const parts = [];
+    if (subagentLog.length) {
+      parts.push(subagentLog.map((s, i) =>
+        `--- Subagent ${i + 1} (${s.type} → ${s.channel_id}) ---\n` +
+        (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
+      ).join("\n\n"));
+    }
+    const directTools = toolCallLog.filter(e => (typeof e === "object" ? e.tool : e) !== "getSubAgent");
+    if (directTools.length) {
+      parts.push("Tools called:\n" + directTools.map(e => {
+        if (typeof e === "object") {
+          const icon = e.status === "success" ? "✅" : (e.status === "failed" ? "❌" : "⚠️");
+          const ms = e.duration_ms >= 1000 ? `${(e.duration_ms / 1000).toFixed(1)}s` : `${e.duration_ms}ms`;
+          const task = e.task ? ` — ${e.task}` : "";
+          return `${icon} **${e.tool}** (${ms})${task}`;
+        }
+        return `- ${e}`;
+      }).join("\n"));
+    }
+    if (!parts.length) {
+      parts.push("Answered from context — no tool calls.");
+    }
+    wo.reasoningSummary = parts.join("\n\n");
+  } else {
+    wo.reasoningSummary = undefined;
+  }
+
+  if (Array.isArray(wo._pendingSubtaskLogs) && wo._pendingSubtaskLogs.length) {
+    const _logBlock = wo._pendingSubtaskLogs.join("\n\n");
+    wo.reasoningSummary = wo.reasoningSummary ? wo.reasoningSummary + "\n\n" + _logBlock : _logBlock;
+    wo._pendingSubtaskLogs = [];
+  }
+
   wo.response = finalText || "[Empty AI response]";
+  const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
+  if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");
   return coreData;
 }

@@ -1,6 +1,6 @@
 {
   "name": "getToken",
-  "description": "Convert an image or video URL into a round-masked animated GIF with a colored ring border. Videos are converted to GIF frames first. Use pingpong=true to create a seamlessly loopable animation (frames are played forward then reversed). Output is kept under the configured byte budget via optimization. Always processes fresh — never reuses previous output URLs.",
+  "description": "Convert a URL into a round-masked GIF token with a colored ring border. Use this whenever the user asks for a token, VTT token, round portrait, or avatar token. Always processes fresh — never reuses previous output URLs.\nrequirements:\n- for an ANIMATED token: the url must be a VIDEO file — passing a static image produces a static (non-animated) token\n- for a static token: any static image URL works\noutput: always a GIF file; animation frames are taken from the input video if provided",
   "parameters": {
     "type": "object",
     "properties": {

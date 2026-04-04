@@ -1,6 +1,6 @@
 {
   "name": "getImage",
-  "description": "Generate one or more images from a text prompt using the configured image model. Always generate a new image for each request — never reuse URLs from previous calls. Prompts are automatically enhanced for quality unless strictPrompt=true. To animate the generated image, chain getAnimatedPicture with the returned URL. To include the image in a PDF, call getPDF after. Never change the configured model unless explicitly instructed.",
+  "description": "Generate exactly ONE image from a text prompt. Do NOT call this more than once for a single request — use n>1 if multiple variants are needed. Prompts are automatically enhanced for quality unless strictPrompt=true. Never change the configured model unless explicitly instructed.",
   "parameters": {
     "type": "object",
     "properties": {

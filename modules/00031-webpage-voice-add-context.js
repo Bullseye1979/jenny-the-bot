@@ -89,7 +89,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
           authorName: "",
           channelId:  String(wo.channelID),
           messageId:  String(wo.messageId || ""),
-          source:     "voice-transcribe"
+          source:     "voice-transcription"
         });
       }
       log("Diarized segments written to context", "info", { moduleName: MODULE_NAME, segments: segments.length });
@@ -103,7 +103,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
         authorName: "",
         channelId:  String(wo.channelID),
         messageId:  String(wo.messageId || ""),
-        source:     "voice-transcribe"
+        source:     "voice-transcription"
       });
       log("Voice payload written to context", "info", { moduleName: MODULE_NAME, chars: text.length });
     }
