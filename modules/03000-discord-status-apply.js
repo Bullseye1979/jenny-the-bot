@@ -33,16 +33,17 @@ function getBool(v, d) {
 
 async function getToolStatusFromRegistry() {
   if (typeof getItem !== "function") {
-    return { hasTool: false, toolName: "", toolFlow: "" };
+    return { hasTool: false, toolName: "", toolFlow: "", toolScope: "" };
   }
   try {
     const tool = await getItem(REGISTRY_TOOL_KEY);
     const name = typeof tool === "string" ? tool : (tool?.name || "");
     const toolName = String(name || "").trim();
     const toolFlow = typeof tool === "object" && tool ? String(tool.flow || "") : "";
-    return { hasTool: !!toolName, toolName, toolFlow };
+    const toolScope = typeof tool === "object" && tool ? String(tool.scope || "") : "";
+    return { hasTool: !!toolName, toolName, toolFlow, toolScope };
   } catch {
-    return { hasTool: false, toolName: "", toolFlow: "" };
+    return { hasTool: false, toolName: "", toolFlow: "", toolScope: "" };
   }
 }
 
@@ -124,9 +125,16 @@ export default async function getDiscordStatusApplyFlow(baseCore) {
     return;
   }
 
-  const { hasTool, toolName, toolFlow } = await getToolStatusFromRegistry();
+  const { hasTool, toolName, toolFlow, toolScope } = await getToolStatusFromRegistry();
+  const effectiveToolScope = String(toolScope || toolFlow || "");
+  const allowedScopes = Array.isArray(cfg.allowedScopes) ? cfg.allowedScopes : [];
   const allowedFlows = Array.isArray(cfg.allowedFlows) ? cfg.allowedFlows : [];
-  const toolAllowed = hasTool && (allowedFlows.length === 0 || allowedFlows.includes(toolFlow));
+  const hasExplicitScopeFilter = allowedScopes.length > 0;
+  const toolAllowed = hasTool && (
+    hasExplicitScopeFilter
+      ? allowedScopes.includes(effectiveToolScope)
+      : (allowedFlows.length === 0 || allowedFlows.includes(effectiveToolScope))
+  );
 
   if (toolAllowed) {
     const mappedText = getPresenceTextForTool(toolName, mapping);
