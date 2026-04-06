@@ -443,7 +443,7 @@ Once started, the scheduler:
 Open **`/bard`** in your browser to hear the music. The page shows a **Now Playing** card with:
 - The current track title and mood tags
 - Colour-coded label indicators (green = active mood match, blue = track tag only, grey = mood label not on track)
-- A stream player — click **▶ Zum Anhören klicken** to start playback
+- A stream player — click **▶ Click to listen** to start playback
 
 The player syncs automatically when the track changes. If a song ends, the next track starts within a few seconds.
 
@@ -713,7 +713,7 @@ Ask your server admin to run `/purgedb` to clear Jenny's conversation database f
 **Bard music doesn't play**
 
 - Make sure `/bardstart` has been used in the server.
-- Open `/bard` in your browser and click **▶ Zum Anhören klicken** to start the stream.
+- Open `/bard` in your browser and click **▶ Click to listen** to start the stream.
 - If the Now Playing card shows no track, the music library may be empty. Ask your admin to add MP3 files.
 - If labels are shown as grey, the AI hasn't classified the session yet — this happens on the first run. It will update within a few minutes.
 

@@ -237,15 +237,14 @@ function makeSilenceWav(outFile) {
   buf.write("WAVE", 8);
   buf.write("fmt ", 12);
   buf.writeUInt32LE(16, 16);
-  buf.writeUInt16LE(1, 20);                                             // PCM
+  buf.writeUInt16LE(1, 20);
   buf.writeUInt16LE(channels, 22);
   buf.writeUInt32LE(sampleRate, 24);
-  buf.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28);  // byte rate
-  buf.writeUInt16LE(channels * (bitsPerSample / 8), 32);               // block align
+  buf.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28);
+  buf.writeUInt16LE(channels * (bitsPerSample / 8), 32);
   buf.writeUInt16LE(bitsPerSample, 34);
   buf.write("data", 36);
   buf.writeUInt32LE(dataSize, 40);
-  // remaining bytes are already zero (silence)
 
   return fs.promises.writeFile(outFile, buf);
 }

@@ -413,7 +413,7 @@ ${dbBanner}
         </label>
         <button class="btn-secondary" id="btn-replace-open">Search &amp; Replace</button>
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--txt);cursor:pointer;user-select:none">
-          <input type="checkbox" id="chk-protect-frozen" checked style="cursor:pointer"> Frozen-Schutz
+          <input type="checkbox" id="chk-protect-frozen" checked style="cursor:pointer"> Frozen protection
         </label>
         <div style="flex:1"></div>
         <div class="field-toggle">
@@ -737,7 +737,7 @@ function renderTable(rows) {
     chk.dataset.id = rowId;
     if (isFrozen && protectFrozen) {
       chk.disabled = true;
-      chk.title = 'Frozen entry (geschützt)';
+      chk.title = 'Frozen entry (protected)';
     }
     if (selectedIds.has(Number(rowId))) { chk.checked = true; tr.classList.add('row-selected'); }
     chk.addEventListener('change', function () {
@@ -800,7 +800,7 @@ async function doDelete() {
   if (!selectedIds.size) return;
   var ids = Array.from(selectedIds);
   var prot = getProtectFrozen();
-  var suffix = prot ? ' (frozen bleibt geschützt)' : '';
+  var suffix = prot ? ' (frozen remains protected)' : '';
   if (!confirm('Delete ' + ids.length + ' entries' + suffix + '? This cannot be undone.')) return;
   try {
     var data = await api('/api/delete', 'DELETE', { ids: ids, protectFrozen: prot });
@@ -811,7 +811,7 @@ async function doDelete() {
 
 async function doDeleteChannels() {
   var channelIds = Array.from(selectedChannelIds);
-  if (!channelIds.length) { alert('Bitte mindestens einen channel auswählen.'); return; }
+  if (!channelIds.length) { alert('Please select at least one channel.'); return; }
   var prot = getProtectFrozen();
   var msg = prot
     ? ('Delete non-frozen entries in ' + channelIds.length + ' selected channel(s)? Frozen entries remain.')
@@ -829,7 +829,7 @@ async function doDeleteChannels() {
 async function doDeleteChannel() {
   var input = document.getElementById('delete-channel-id');
   var cid = (input && input.value ? input.value : '').trim() || (currentChannel || '');
-  if (!cid) { alert('Bitte channelID eingeben oder links einen Kanal wählen.'); return; }
+  if (!cid) { alert('Please enter a channelID or select a channel on the left.'); return; }
   var prot = getProtectFrozen();
   var msg = prot
     ? ('Delete non-frozen entries in channel "' + cid + '"? Frozen entries remain.')
@@ -1133,7 +1133,7 @@ function setupEvents() {
   document.getElementById('chk-protect-frozen').addEventListener('change', function () {
     protectFrozen = !!this.checked;
     if (!this.checked) {
-      var ok = confirm('Frozen-Schutz deaktivieren? Danach können frozen Einträge gelöscht werden.');
+      var ok = confirm('Disable frozen protection? Frozen entries can then be deleted.');
       if (!ok) {
         this.checked = true;
         protectFrozen = true;

@@ -5961,7 +5961,7 @@ Accessible at `/bard`. Features:
   - **Regular polling:** every 2 seconds.
   - **On song end:** an immediate poll fires after 300 ms; retries every 500 ms (up to 10×) until the server reports a new track, then returns to the 2-second cycle. This minimises the gap between tracks in the browser player.
   - **On label change mid-song:** When `getShouldSwitch` fires (location, situation or mood drift), `bard:stream` is updated immediately with the new track. The browser picks up the change on its next poll cycle. If no switch rule fires, playback continues and only `nowPlaying.labels` is refreshed (UI update only).
-  - **On "▶ Zum Anhören klicken" (start button):** the elapsed position is recalculated at the exact moment the user clicks, so the stream is in sync even if the user waited on the page before pressing play. The catch-up seek happens at button-press time, not at the next track change.
+  - **On "▶ Click to listen" (start button):** the elapsed position is recalculated at the exact moment the user clicks, so the stream is in sync even if the user waited on the page before pressing play. The catch-up seek happens at button-press time, not at the next track change.
 
 Filenames are preserved as-is, including spaces. Only characters outside `[a-zA-Z0-9 ._-]` are replaced with `_`.
 
