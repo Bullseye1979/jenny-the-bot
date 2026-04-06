@@ -273,10 +273,14 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   }
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
+  const _currentFlow = String(coreData?.workingObject?.flow || "");
+  const _callerFlowVal = String(coreData?.workingObject?.callerFlow || "");
+  const _isApiFlow = _currentFlow === "api";
+  const _globalStatusFlow = !_isApiFlow ? _currentFlow : (_callerFlowVal.startsWith("discord") ? _callerFlowVal : null);
   if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
   const _myGen = ++wo._statusToolGen;
   try {
-    try { await putItem({ name, flow: String(coreData?.workingObject?.flow || "") }, "status:tool"); } catch {}
+    if (_globalStatusFlow !== null) { try { await putItem({ name, flow: _globalStatusFlow }, "status:tool"); } catch {} }
     if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
     if (_callerCh && _callerCh !== _tcCh) try { await putItem(name, "status:tool:" + _callerCh); } catch {}
     const result = await tool.invoke(args, coreData);
@@ -296,7 +300,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       : 800;
     setTimeout(() => {
       if (wo._statusToolGen !== _myGen) return;
-      try { putItem("", "status:tool"); } catch {}
+      if (_globalStatusFlow !== null) { try { putItem("", "status:tool"); } catch {} }
       if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
       if (_callerCh && _callerCh !== _tcCh) try { putItem("", "status:tool:" + _callerCh); } catch {}
     }, Math.max(0, delayMs));

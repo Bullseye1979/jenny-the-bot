@@ -48,7 +48,6 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
   const _projectId = String(ctx.projectId || "");
   const _rawText = String(rawResult || "").trim();
   const _resultContent = _rawText || "(The subagent completed but produced no output.)";
-  const _projectSuffix = _projectId ? `\n\nProject ID: ${_projectId}` : "";
 
   logSubagent("info", "poll-delivery", "persona_pass_result_preview", {
     jobId,
@@ -56,7 +55,7 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     rawResultPreview: _rawText.slice(0, 120),
   });
 
-  const _payload = `[Background task completed]\n\n${_resultContent}${_projectSuffix}\n\nPresent this result to the user in your current character and persona. Include ALL URLs, links, ARTIFACTS blocks, and the Project ID verbatim — do not omit or paraphrase them.`;
+  const _payload = `[Background task completed]\n\n${_resultContent}\n\nPresent this result to the user in your current character and persona.`;
 
   logSubagent("info", "poll-delivery", "persona_pass_start", {
     jobId,
@@ -101,7 +100,12 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     }
   }
 
-  return _response;
+  /* Append project ID tag after context write so TTS can strip it */
+  const _deliveryResponse = (_response && _projectId)
+    ? `${_response}\n\n<PROJECTID>${_projectId}</PROJECTID>`
+    : _response;
+
+  return _deliveryResponse;
 }
 
 
@@ -221,6 +225,6 @@ export function buildResultPayload(job) {
     : `Background task failed: ${job.error || "unknown error"}`;
 
   return job.status === "done"
-    ? `[Async ${job.agentType} task completed]\n\n${_result}\n\nPresent this result to the user. Include all URLs and artifacts.`
+    ? `[Async ${job.agentType} task completed]\n\n${_result}\n\nPresent this result to the user.`
     : `[Async ${job.agentType} task failed]\nError: ${job.error || "unknown"}\n\nInform the user that the background task failed.`;
 }

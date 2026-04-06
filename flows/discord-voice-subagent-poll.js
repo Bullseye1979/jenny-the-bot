@@ -1,14 +1,9 @@
 /************************************************************************************/
-/* filename: discord-subagent-poll.js                                               */
-/* Version 1.5                                                                      */
+/* filename: discord-voice-subagent-poll.js                                         */
+/* Version 1.0                                                                      */
 /* Purpose: Polls the registry for completed async subagent jobs whose callerFlow   */
-/*          is "discord" or "discord-voice" and delivers results via the full       */
-/*          Discord/Discord-Voice module pipeline (all modules except AI).          */
-/*                                                                                  */
-/*  Delivery flow:                                                                  */
-/*    1. runPersonaPass → API flow with AI → generates persona-processed response  */
-/*    2. deliverViaFlow  → full discord/discord-voice flow, skipAiCompletions=true */
-/*       → core-channel-config sets botName/avatar, discord-text-output embeds it */
+/*          is "discord-voice" and delivers results via the discord-voice module    */
+/*          pipeline with voiceSessionRef set so TTS modules can play the response. */
 /************************************************************************************/
 
 import { getItem, putItem, deleteItem, listKeys } from "../core/registry.js";
@@ -16,30 +11,46 @@ import { getPrefixedLogger }   from "../core/logging.js";
 import { logSubagent }         from "../core/subagent-logger.js";
 import { runPersonaPass, runParentChain } from "../core/subagent-poll-helpers.js";
 
-const MODULE_NAME  = "discord-subagent-poll";
-const HANDLED_FLOWS = ["discord"];
+const MODULE_NAME   = "discord-voice-subagent-poll";
+const VOICE_REG_KEY = "discord-voice:registry";
 
 
 function getIsHandledFlow(callerFlow) {
-  return String(callerFlow || "") === "discord";
+  const f = String(callerFlow || "");
+  return f === "discord-voice" || f.startsWith("discord-voice-");
+}
+
+
+async function getVoiceSessionRef(guildId) {
+  if (!guildId) return null;
+  let reg = null;
+  try { reg = await getItem(VOICE_REG_KEY); } catch { return null; }
+  const keys = Array.isArray(reg?.list) ? reg.list : [];
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const k = keys[i];
+    if (typeof k !== "string" || !k.trim()) continue;
+    try {
+      const session = await getItem(k);
+      const sgid = String(session?.guildId || session?.workingObject?.guildId || "").trim();
+      if (sgid && sgid === guildId) {
+        return k;
+      }
+    } catch {}
+  }
+  return null;
 }
 
 
 async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
-  const _callerFlow = String(job.callerFlow || "discord");
-  const _targetFlow = _callerFlow === "discord-voice" ? "discord-voice" : "discord";
-
-  logSubagent("info", "discord-poll", "deliver_flow_start", {
-    jobId:          job.jobId,
-    callerFlow:     _callerFlow,
-    targetFlow:     _targetFlow,
+  logSubagent("info", "discord-voice-poll", "deliver_flow_start", {
+    jobId:           job.jobId,
     callerChannelId: job.callerChannelId,
-    responseLen:    response.length,
+    responseLen:     response.length,
   });
 
   const _rc = createRunCore();
   const _wo = (_rc.workingObject ||= {});
-  _wo.flow                = _targetFlow;
+  _wo.flow                = "discord-voice";
   _wo.channelID           = job.callerChannelId;
   _wo.guildId             = String(job.guildId || "");
   _wo.userId              = String(job.userId || "");
@@ -53,24 +64,31 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   _wo.clientRef           = "discord:client";
   _wo.timestamp           = new Date().toISOString();
 
+  /* Bypass channel gate — delivery is always allowed (same as discord-voice.js) */
+  _wo.channelallowed = true;
+
+  /* Look up active voice session so TTS modules can play the response */
+  if (_wo.guildId) {
+    try {
+      const _ref = await getVoiceSessionRef(_wo.guildId);
+      if (_ref) _wo.voiceSessionRef = _ref;
+    } catch {}
+  }
+
   try {
-    await runFlow(_targetFlow, _rc);
-    logSubagent("info", "discord-poll", "deliver_flow_done", {
-      jobId:      job.jobId,
-      targetFlow: _targetFlow,
-    });
+    await runFlow("discord-voice", _rc);
+    logSubagent("info", "discord-voice-poll", "deliver_flow_done", { jobId: job.jobId });
   } catch (e) {
-    log(`Delivery flow "${_targetFlow}" failed for ${job.callerChannelId}: ${e?.message || String(e)}`, "error");
-    logSubagent("error", "discord-poll", "deliver_flow_failed", {
-      jobId:      job.jobId,
-      targetFlow: _targetFlow,
-      error:      e?.message || String(e),
+    log(`Delivery flow "discord-voice" failed for ${job.callerChannelId}: ${e?.message || String(e)}`, "error");
+    logSubagent("error", "discord-voice-poll", "deliver_flow_failed", {
+      jobId: job.jobId,
+      error: e?.message || String(e),
     });
   }
 }
 
 
-export default async function getDiscordSubagentPollFlow(baseCore, runFlow, createRunCore) {
+export default async function getDiscordVoiceSubagentPollFlow(baseCore, runFlow, createRunCore) {
   const cfg = baseCore?.config?.[MODULE_NAME] || {};
 
   if (cfg.enabled !== true) return;
@@ -81,7 +99,7 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
   const _pollRc = createRunCore();
   const log = getPrefixedLogger(_pollRc.workingObject, import.meta.url);
   log(`Starting — polling every ${pollIntervalMs}ms`);
-  logSubagent("info", "discord-poll", "poll_started", { pollIntervalMs, maxJobAgeMs });
+  logSubagent("info", "discord-voice-poll", "poll_started", { pollIntervalMs, maxJobAgeMs });
 
   setInterval(async () => {
     let _keys;
@@ -95,7 +113,7 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
       if (_job.status === "running") {
         const _ageMs = Date.now() - Date.parse(_job.startedAt);
         if (_ageMs > maxJobAgeMs) {
-          logSubagent("warn", "discord-poll", "job_timeout_expired", { jobId: _job.jobId, ageMs: _ageMs });
+          logSubagent("warn", "discord-voice-poll", "job_timeout_expired", { jobId: _job.jobId, ageMs: _ageMs });
           try { await putItem({ ..._job, status: "error", error: "timeout", finishedAt: new Date().toISOString() }, _key); } catch { }
         }
         continue;
@@ -105,7 +123,7 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
       if (!_job.callerChannelId) continue;
       if (!getIsHandledFlow(_job.callerFlow)) continue;
 
-      logSubagent("info", "discord-poll", "job_found", {
+      logSubagent("info", "discord-voice-poll", "job_found", {
         jobId:           _job.jobId,
         projectId:       _job.projectId || null,
         status:          _job.status,
@@ -115,33 +133,28 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
       });
 
       try { deleteItem(_key); } catch { }
-      logSubagent("info", "discord-poll", "job_deleted", { jobId: _job.jobId });
+      logSubagent("info", "discord-voice-poll", "job_deleted", { jobId: _job.jobId });
 
       if (_job.callerContextChannelID) {
         const _parentProjectId = String(_job.callerContextChannelID).replace(/^project-/, "");
         const _result = _job.status === "done"
           ? String(_job.result || "").trim()
           : `Background task failed: ${_job.error || "unknown error"}`;
-        const _contextContent  = _job.status === "done"
+        const _contextContent = _job.status === "done"
           ? `[Async child job completed — type: ${_job.agentType}, jobId: ${_job.jobId}]\n\n${_result}`
           : `[Async child job failed — type: ${_job.agentType}, jobId: ${_job.jobId}]\nError: ${_job.error || "unknown"}`;
 
-        logSubagent("info", "discord-poll", "branch_parent_chain", { jobId: _job.jobId, parentProjectId: _parentProjectId });
+        logSubagent("info", "discord-voice-poll", "branch_parent_chain", { jobId: _job.jobId, parentProjectId: _parentProjectId });
 
         (async () => {
           try {
             const _deliverFn = async (cFlow, cChannelId, resp, projId) => {
-              const _syntheticJob = {
-                ..._job,
-                callerFlow:     cFlow,
-                callerChannelId: cChannelId,
-                jobId:          projId || _job.jobId,
-              };
+              const _syntheticJob = { ..._job, callerFlow: cFlow, callerChannelId: cChannelId, jobId: projId || _job.jobId };
               await deliverViaFlow(_syntheticJob, resp, createRunCore, runFlow, log);
             };
             await runParentChain(_parentProjectId, _contextContent, baseCore, createRunCore, runFlow, _deliverFn, log);
           } catch (e) {
-            logSubagent("error", "discord-poll", "parent_chain_exception", { jobId: _job.jobId, error: e?.message || String(e) });
+            logSubagent("error", "discord-voice-poll", "parent_chain_exception", { jobId: _job.jobId, error: e?.message || String(e) });
           }
         })();
         continue;
@@ -151,7 +164,7 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
         ? String(_job.result || "").trim()
         : `Background task failed: ${_job.error || "unknown error"}`;
 
-      logSubagent("info", "discord-poll", "branch_delivery", {
+      logSubagent("info", "discord-voice-poll", "branch_delivery", {
         jobId:           _job.jobId,
         callerFlow:      _job.callerFlow,
         callerChannelId: _job.callerChannelId,
@@ -179,7 +192,7 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
             await deliverViaFlow(_job, _response, createRunCore, runFlow, log);
           }
         } catch (e) {
-          logSubagent("error", "discord-poll", "delivery_failed", { jobId: _job.jobId, error: e?.message || String(e) });
+          logSubagent("error", "discord-voice-poll", "delivery_failed", { jobId: _job.jobId, error: e?.message || String(e) });
         }
       })();
     }
