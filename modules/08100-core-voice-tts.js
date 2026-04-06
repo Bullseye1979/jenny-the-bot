@@ -27,7 +27,6 @@ const MODULE_NAME = "core-voice-tts";
 function getSanitizedTTSText(text) {
   if (!text) return "";
   let s = String(text);
-  s = s.replace(/<PROJECTID>[^<]*<\/PROJECTID>/gi, "");
   s = s.replace(/!\[([^\]]*)\]\(\s*https?:\/\/[^\s)]+?\s*\)/gi, (_, alt) => (alt || "").trim());
   s = s.replace(/\[([^\]]+)\]\(\s*https?:\/\/[^\s)]+?\s*\)/gi, (_, alt) => (alt || "").trim());
   s = s.replace(/<\s*https?:\/\/[^>]+>/gi, "");
