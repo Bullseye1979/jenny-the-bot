@@ -146,8 +146,9 @@ function getFmtDelta(ms) {
 
 
 function getNormalizeGroupsFromArgs(args) {
-  if (Array.isArray(args?.keyword_groups) && args.keyword_groups.length) {
-    return args.keyword_groups.map((g, i) => ({
+  const keywordGroups = Array.isArray(args?.keywordGroups) ? args.keywordGroups : args?.keyword_groups;
+  if (Array.isArray(keywordGroups) && keywordGroups.length) {
+    return keywordGroups.map((g, i) => ({
       id: g.id ?? i,
       base: getNorm(g.base),
       variants: getUniqueArr([...(g.variants || []), g.base].map(getNorm)),

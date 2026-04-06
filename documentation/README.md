@@ -542,6 +542,37 @@ Background poller that detects completed async subagent jobs and delivers their 
 
 Activate by setting `config["discord-subagent-poll"].enabled = true` in `core.json`. See [getSubAgent](#getsubagent) for the full async job lifecycle.
 
+### Subagent Orchestration (getSubAgent / getAgentResume)
+
+Subagent execution is asynchronous by design and is routed through the internal API on port `3400`.
+
+**Operational model (v1.0):**
+
+1. Parent assistant calls `getSubAgent` with `{ type, task }`.
+2. The tool resolves the target virtual channel from `toolsconfig.getSubAgent.types`.
+3. The tool posts a spawn request to `/api/spawn` and returns immediately with `{ ok, jobId, projectId, status: "started" }`.
+4. The subagent runs in an isolated channel config (own tools, prompts, limits).
+5. `discord-subagent-poll` detects completion and delivers the final result into the original Discord channel.
+
+**Resume flow (v1.0):**
+
+- `getAgentResume` continues an existing async project by `projectId`.
+- It resolves target routing from `toolsconfig.getAgentResume.types` and starts a new async spawn on the mapped channel.
+- Resume does not require re-sending prior artifacts if they are already part of project context.
+
+**Configuration boundaries:**
+
+- `getSubAgent` reads only `toolsconfig.getSubAgent` + runtime `workingObject`.
+- `getAgentResume` reads only `toolsconfig.getAgentResume` + runtime `workingObject`.
+- Both tools authenticate via `apiSecret` placeholders resolved through `core/secrets.js`.
+
+**Canonical payload keys (camelCase):**
+
+- `channelId` (legacy alias: `channel_id`)
+- `orchestration.globalGoal`, `yourTask`, `yourRole`, `doOnly`, `doNot`, `existingArtifacts`, `assignedToOthers`, `toolLocks`
+
+Legacy snake_case aliases are still accepted for backward compatibility, but new callers should use camelCase.
+
 ---
 
 ### bard Flow
