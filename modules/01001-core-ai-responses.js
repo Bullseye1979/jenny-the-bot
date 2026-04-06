@@ -53,6 +53,16 @@ function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && 
 function getPreview(s, n = 400) { const t = getToString(s); return t.length > n ? t.slice(0, n) + " …[truncated]" : t; }
 
 
+function getToolStatusScope(wo) {
+  const explicit =
+    String(wo?.toolcallScope ?? wo?.toolStatusScope ?? wo?.statusScope ?? "").trim();
+  if (explicit) return explicit;
+  const callerFlow = String(wo?.callerFlow || "").trim();
+  if (callerFlow) return callerFlow;
+  return String(wo?.flow || "").trim();
+}
+
+
 function getParseArtifactsBlock(text) {
   const s = String(text || "");
   const marker = "\nARTIFACTS:\n";
@@ -390,9 +400,12 @@ async function setExecGenericTool(toolModules, call, coreData) {
   }
 
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
+  const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
+  const _statusScope = getToolStatusScope(coreData?.workingObject || {});
   try {
-    try { await putItem({ name, flow: String(coreData?.workingObject?.flow || "") }, "status:tool"); } catch {}
+    try { await putItem({ name, flow: String(coreData?.workingObject?.flow || ""), scope: _statusScope }, "status:tool"); } catch {}
     if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
+    if (_callerCh && _callerCh !== _tcCh) try { await putItem(name, "status:tool:" + _callerCh); } catch {}
     const res = await tool.invoke(args, coreData);
     const mapped = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
@@ -411,6 +424,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
     setTimeout(() => {
       try { putItem("", "status:tool"); } catch {}
       if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
+      if (_callerCh && _callerCh !== _tcCh) try { putItem("", "status:tool:" + _callerCh); } catch {}
     }, Math.max(0, delayMs));
   }
 }
