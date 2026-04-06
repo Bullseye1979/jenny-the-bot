@@ -6,7 +6,7 @@
 /*          (stored under the channel ID from the prior run), so artifacts do not  *
 /*          need to be passed back — the context already contains them.            *
 /*                                                                                 *
-/* Config: uses toolsconfig.getSubAgent (shared config — apiUrl, apiSecret, types) *
+/* Config: uses toolsconfig.getAgentResume (apiUrl, apiSecret, types)                *
 /**********************************************************************************/
 
 import { getSecret } from "../core/secrets.js";
@@ -20,7 +20,7 @@ const MODULE_NAME = "getAgentResume";
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo  = coreData?.workingObject || {};
-  const cfg = wo?.toolsconfig?.["getSubAgent"] || {};
+  const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
 
   const projectId = String(args?.projectId || "").trim();
   const task      = String(args?.task      || "").trim();
@@ -40,7 +40,7 @@ async function getInvoke(args, coreData) {
   const channelId = String(types[agentType] || "").trim();
 
   if (!channelId) {
-    return { ok: false, error: `Cannot determine channel for agentType "${agentType}" in projectId "${projectId}". Check toolsconfig.getSubAgent.types.` };
+    return { ok: false, error: `Cannot determine channel for agentType "${agentType}" in projectId "${projectId}". Check toolsconfig.getAgentResume.types.` };
   }
 
   const _apiBase      = String(cfg.apiUrl || wo.apiBaseUrl || "http://localhost:3400");
