@@ -193,69 +193,57 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg, wo) {
 
   const systemPrompt = (typeof atCfg.systemPrompt === "string" && atCfg.systemPrompt.trim())
     ? atCfg.systemPrompt
-    : "You are a music tagging assistant for a tabletop RPG (D&D) ambient music library.\n" +
-      "Assign exactly 6 structured tags to a music track. The 6 positions are FIXED:\n" +
-      "  1. LOCATION  — WHERE the music belongs (a physical place). NEVER put a situation or mood word here.\n" +
-      `                 Known locations in this library: ${locList}.\n` +
-      "                 Use empty string \"\" if the track suits any location.\n" +
-      "  2. SITUATION — WHAT is happening (type of scene/activity). NEVER put a location or mood word here.\n" +
-      `                 Known situations in this library: ${sitList}.\n` +
-      "                 Use empty string \"\" if the track suits any situation.\n" +
-      "  3-6. MOOD    — exactly 4 mood/atmosphere words ordered by fit: most fitting first.\n" +
-      `                 Known moods in this library: ${moodList}.\n` +
-      "                 Prefer existing mood words; only invent a new one if nothing fits.\n" +
-      "                 NEVER put a location or situation word in a mood slot.\n" +
-      "IMPORTANT: positions are independent — an empty position 1 does NOT shift position 2.\n" +
-      "Each non-empty tag must be a single lowercase word (only a-z, 0-9, hyphens allowed).\n" +
-      "Output ONLY a JSON array of exactly 6 strings. No explanation, no extra text.\n" +
-      "Example (tavern rest music):        [\"tavern\",\"rest\",\"cozy\",\"calm\",\"warm\",\"ambient\"]\n" +
-      "Example (combat, any location):     [\"\",\"combat\",\"intense\",\"dark\",\"battle\",\"danger\"]\n" +
-      "Example (dungeon, any situation):   [\"dungeon\",\"\",\"dark\",\"eerie\",\"tense\",\"mysterious\"]\n" +
-      "Example (forest exploration):       [\"forest\",\"exploration\",\"mysterious\",\"eerie\",\"calm\",\"ambient\"]";
+    : "You are a music tagging assistant for a tabletop RPG ambient music library. " +
+      "Return only a JSON array with exactly six strings: [location, situation, mood1, mood2, mood3, mood4]. " +
+      "Use lowercase single-word tags where possible.";
   const userPromptTemplate = (typeof atCfg.userPrompt === "string" && atCfg.userPrompt.trim())
     ? atCfg.userPrompt
     : "Track title: \"{title}\"\n\n" +
+      "Known locations: {locList}\n" +
+      "Known situations: {sitList}\n" +
+      "Known moods: {moodList}\n\n" +
       "Web search results for this track:\n{tavilySnippet}\n\n" +
-      "Output a JSON array of exactly 6 strings: [location, situation, mood1, mood2, mood3, mood4].\n" +
-      "Use empty string \"\" for location and/or situation if the track fits any.";
-  const userPrompt = userPromptTemplate
-    .replace("{title}",         title)
+      "Return exactly six tags as JSON array: [location, situation, mood1, mood2, mood3, mood4].";
+
+  const payload = `${systemPrompt}\n\n` + userPromptTemplate
+    .replace("{title}", title)
+    .replace("{locList}", locList)
+    .replace("{sitList}", sitList)
+    .replace("{moodList}", moodList)
     .replace("{tavilySnippet}", tavilySnippet || "No search results available.");
-  const reqBody = {
-    model:       atCfg.model || "gpt-4o-mini",
-    messages:    [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-    temperature: Number.isFinite(Number(atCfg.temperature)) ? Number(atCfg.temperature) : 0.2,
-    max_tokens:  Number(atCfg.maxTokens) || 200
-  };
-  const timeoutMs = Number(atCfg.llmTimeoutMs) || 30000;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let data = null;
+
+  const apiBase = String(atCfg.apiUrl || wo.apiBaseUrl || "http://localhost:3400").replace(/\/+$/, "");
+  const channelId = String(atCfg.channelId || atCfg.llmChannelId || "").trim();
+  const apiSecretKey = String(atCfg.apiSecret || wo.apiSecret || "").trim();
+  const apiSecret = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
+  if (!channelId) return ["", "", "ambient", "ambient", "ambient", "ambient"];
+
+  const headers = { "Content-Type": "application/json" };
+  if (apiSecret) headers.Authorization = `Bearer ${apiSecret}`;
+
+  let text = "";
   try {
-    const res = await fetch(atCfg.endpoint || "https://api.openai.com/v1/chat/completions", {
+    const res = await fetch(`${apiBase}/api`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, atCfg.apiKey || "")}` },
-      body: JSON.stringify(reqBody),
-      signal: controller.signal
+      headers,
+      body: JSON.stringify({ channelID: channelId, payload, doNotWriteToContext: true })
     });
-    const raw = await res.text();
-    try { data = JSON.parse(raw); } catch (_e) { data = null; }
-  } catch (_e) { /* timeout or network error */ }
-  finally { clearTimeout(timer); }
-  const text = data?.choices?.[0]?.message?.content || "";
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.ok) text = String(data.response || "");
+  } catch {}
+
   let parsed = [];
-  try { parsed = JSON.parse(text.trim()); } catch (_e) {
+  try { parsed = JSON.parse(text.trim()); } catch {
     const matches = text.match(/"([^"]*)"/g) || [];
-    parsed = matches.map(m => m.replace(/"/g, ""));
+    parsed = matches.map((m) => m.replace(/"/g, ""));
   }
+
   while (parsed.length < 6) parsed.push("");
-  parsed = parsed.slice(0, 6);
-  const tags = parsed.map((t, i) => {
-    const clean = String(t || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
-    if (i >= 2 && !clean) return "ambient";
+  return parsed.slice(0, 6).map((value, index) => {
+    const clean = String(value || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (index >= 2 && !clean) return "ambient";
     return clean;
   });
-  return tags;
 }
 
 

@@ -166,13 +166,15 @@ async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const cfgTool = wo?.toolsconfig?.getHistory || {};
-  const overrideChannelId = args?.channel_id ? String(args.channel_id).trim() : "";
+  const overrideChannelId = args?.channelId ? String(args.channelId).trim() : (args?.channel_id ? String(args.channel_id).trim() : "");
   const primaryChannelId = overrideChannelId
     || String(wo?.callerChannelId || "").trim()
     || String(wo?.channelID || "").trim();
-  const argChannelIds = Array.isArray(args?.channel_ids)
-    ? args.channel_ids.map(c => String(c || "").trim()).filter(Boolean)
-    : [];
+  const argChannelIds = Array.isArray(args?.channelIds)
+    ? args.channelIds.map(c => String(c || "").trim()).filter(Boolean)
+    : (Array.isArray(args?.channel_ids)
+      ? args.channel_ids.map(c => String(c || "").trim()).filter(Boolean)
+      : []);
   const woCallerChannelIds = Array.isArray(wo?.callerChannelIds)
     ? wo.callerChannelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
@@ -220,7 +222,7 @@ async function getHistoryInvoke(args, coreData) {
     }
     endExclusive = false;
   }
-  const startCtxIdRaw = args?.start_ctx_id ?? args?.start_ctx ?? null;
+  const startCtxIdRaw = args?.startCtxId ?? args?.start_ctx_id ?? args?.start_ctx ?? null;
   const startCtxId = startCtxIdRaw != null ? Number(startCtxIdRaw) : null;
   const maxRows = Math.max(1, Number.isFinite(Number(cfgTool?.maxRows)) ? Number(cfgTool.maxRows) : 5000);
   const pageSize = Math.max(1, Number.isFinite(Number(cfgTool?.pagesize)) ? Number(cfgTool.pagesize) : 1000);

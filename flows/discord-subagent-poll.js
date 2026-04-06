@@ -1,6 +1,6 @@
 /************************************************************************************/
 /* filename: discord-subagent-poll.js                                               */
-/* Version 1.5                                                                      */
+/* Version 1.0                                                                      */
 /* Purpose: Polls the registry for completed async subagent jobs whose callerFlow   */
 /*          is "discord" or "discord-voice" and delivers results via the full       */
 /*          Discord/Discord-Voice module pipeline (all modules except AI).          */
