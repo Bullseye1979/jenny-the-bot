@@ -95,11 +95,11 @@ async function getInvoke(args, coreData) {
   const wo  = coreData?.workingObject || {};
   const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
 
-  const task      = String(args?.task || "").trim();
+  const task      = String(args?.task || wo.payload || "").trim();
   const projectId = args?.projectId ? String(args.projectId).trim() : "";
   const explicitChannel = String(args?.channel_id || "").trim();
   const orchestration   = args?.orchestration ?? null;
-  const typeName  = projectId ? "generic" : String(args?.type || "generic").trim();
+  const typeName = String(args?.type || "generic").trim();
 
   const _invokeCallerChannelId = String(wo.callerChannelId || wo.channelID || "").trim();
   logSubagent("info", "getSubAgent", "invoke_called", {
@@ -204,13 +204,14 @@ async function getInvoke(args, coreData) {
     authorDisplayname:      String(wo.authorDisplayname || ""),
     projectId:              projectId || undefined,
     systemPromptAddition:   projectId
-      ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. For tasks you can complete from this context — summarisation, analysis, continuation — respond directly without using tools. Only spawn a subagent via getSubAgent for genuinely new and independent sub-tasks that require a separate tool palette. If the context contains no prior messages, say so and complete the task as best you can.`
+      ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. IMPORTANT: Before asking the user for any URLs, file paths, or artifact references — scan your loaded conversation history first. All previously produced URLs and ARTIFACTS blocks from prior turns are available there. Use them directly. Only ask the user if the information is genuinely absent from your context. You may call tools freely using URLs found in your context. Only spawn a new subagent via getSubAgent for genuinely independent sub-tasks that require a different tool palette.`
       : undefined,
     callerChannelId:        callerChannelId || undefined,
     callerChannelIds:       callerChannelIds.length ? callerChannelIds : undefined,
     callerTurnId:           callerTurnId || undefined,
     callerFlow:             String(wo.callerFlow || wo.flow || ""),
     callerContextChannelID: _parentContextChannelID || undefined,
+    callerPayload:          String(wo.payload || "").slice(0, 500) || undefined,
     agentDepth:             agentDepth + 1,
     agentType:              typeName,
   });

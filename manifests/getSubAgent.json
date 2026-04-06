@@ -10,7 +10,7 @@
       },
       "type": {
         "type": "string",
-        "description": "Subagent type determining which tool palette is used.",
+        "description": "Subagent type determining which tool palette is used. ALWAYS required — including resume calls. For resumes, pass the same type as the original spawn (visible in the prior tool result, e.g. type: media).",
         "enum": ["history", "research", "generate", "media", "atlassian", "microsoft", "develop", "patch", "orchestrate", "test"]
       },
       "orchestration": {
@@ -37,7 +37,7 @@
         "description": "Pass the project ID (26-char string, e.g. 01KNFCB4DBHTXBGC91HQZ1KC0A) to resume an existing project. The subagent continues from its full prior context. Pass an empty string for new jobs. Never embed the project ID in the task field."
       }
     },
-    "required": ["task", "projectId"],
+    "required": ["type", "projectId"],
     "additionalProperties": false
   }
 }

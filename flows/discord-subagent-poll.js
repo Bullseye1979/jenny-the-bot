@@ -46,7 +46,8 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   _wo.userId              = String(job.userId || "");
   _wo.authorDisplayname   = String(job.authorDisplayname || "");
   _wo.response            = response;
-  _wo.question            = `Async ${job.agentType || "subagent"} result`;
+  _wo.question            = job.callerPayload || "";
+  _wo.deliverSubagentJob  = { projectId: job.projectId || "" };
   _wo.skipAiCompletions   = true;
   _wo.doNotWriteToContext = true;
   _wo.bypassTriggerGate   = true;

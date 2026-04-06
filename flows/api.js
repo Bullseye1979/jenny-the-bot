@@ -391,6 +391,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       });
 
       const _spawnPayload = String(parsedSpawnBody.payload || "").trim();
+      const _spawnCallerPayload = parsedSpawnBody.callerPayload ? String(parsedSpawnBody.callerPayload) : null;
       const _spawnJobEntry = {
         status: "running",
         jobId,
@@ -404,6 +405,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         agentDepth: _spawnAgentDepth,
         agentType: _spawnAgentType,
         payload: _spawnPayload,
+        callerPayload: _spawnCallerPayload,
         authorDisplayname: _spawnAuthorDisplayname,
         startedAt: new Date().toISOString(),
         finishedAt: null,

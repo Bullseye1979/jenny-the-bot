@@ -53,48 +53,31 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     logSubagent("warn", "poll-delivery", "persona_pass_ctx_load_failed", { jobId, error: e?.message || String(e) });
   }
 
-  const _syntheticId = `async-${jobId}`;
   const _projectId = String(ctx.projectId || "");
   const _rawText = String(rawResult || "").trim();
-  const _toolContent = (_rawText || "(The subagent completed but produced no output.)")
-    + (_projectId ? `\n\nProject ID: ${_projectId}` : "");
+  const _resultContent = _rawText || "(The subagent completed but produced no output.)";
+  const _projectSuffix = _projectId ? `\n\nProject ID: ${_projectId}` : "";
+
   logSubagent("info", "poll-delivery", "persona_pass_result_preview", {
     jobId,
     rawResultLen: _rawText.length,
     rawResultPreview: _rawText.slice(0, 120),
   });
-  _snapshot = [
-    ..._snapshot,
-    {
-      role: "assistant",
-      content: null,
-      tool_calls: [{
-        id:       _syntheticId,
-        type:     "function",
-        function: {
-          name:      "getSubAgent",
-          arguments: JSON.stringify({ task: `Background ${agentType || "subagent"} task`, projectId: "", type: agentType || "generic" })
-        }
-      }]
-    },
-    {
-      role:         "tool",
-      tool_call_id: _syntheticId,
-      name:         "getSubAgent",
-      content:      _toolContent
-    }
-  ];
+
+  // Put the result directly in payload (not as a synthetic tool exchange) so it
+  // is always visible to the AI regardless of includeHistoryTools setting.
+  const _payload = `[Background task completed]\n\n${_resultContent}${_projectSuffix}\n\nPresent this result to the user in your current character and persona. Include ALL URLs, links, ARTIFACTS blocks, and the Project ID verbatim — do not omit or paraphrase them.`;
 
   logSubagent("info", "poll-delivery", "persona_pass_start", {
     jobId,
     callerChannelId,
     callerFlow,
     snapshotLen:  _snapshot.length,
-    rawResultLen: String(rawResult || "").length,
+    rawResultLen: _rawText.length,
   });
 
   _wo._contextSnapshot      = _snapshot;
-  _wo.payload               = "(The background task above has completed. Present its result to the user in your current character and persona. Include ALL URLs, links, ARTIFACTS blocks, and the Project ID from the result verbatim — do not omit or paraphrase them.)";
+  _wo.payload               = _payload;
   _wo.toolChoice            = "none";
   _wo.timestamp             = new Date().toISOString();
 
