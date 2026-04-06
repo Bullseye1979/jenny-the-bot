@@ -254,7 +254,6 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
   _wo.agentDepth        = Number(_project.agentDepth || 0);
   _wo.agentType         = _project.agentType || "";
   _wo.toolChoice        = "none";
-  _wo.includeHistoryTools = true;
   _wo.doNotWriteToContext = true;
   _wo.timestamp         = new Date().toISOString();
 

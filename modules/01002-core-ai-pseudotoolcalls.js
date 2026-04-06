@@ -46,6 +46,16 @@ function getBool(value, def) { return typeof value === "boolean" ? value : def; 
 function getStr(value, def) { return (typeof value === "string" && value.length) ? value : def; }
 
 
+function getToolStatusScope(wo) {
+  const explicit =
+    String(wo?.toolcallScope ?? wo?.toolStatusScope ?? wo?.statusScope ?? "").trim();
+  if (explicit) return explicit;
+  const callerFlow = String(wo?.callerFlow || "").trim();
+  if (callerFlow) return callerFlow;
+  return String(wo?.flow || "").trim();
+}
+
+
 function getTryParseJSON(text, fallback = {}) { try { return JSON.parse(text); } catch { return fallback; } }
 
 
@@ -506,9 +516,12 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
   }
 
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
+  const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
+  const _statusScope = getToolStatusScope(coreData?.workingObject || {});
   try {
-    try { await putItem({ name, flow: String(coreData?.workingObject?.flow || "") }, "status:tool"); } catch {}
+    try { await putItem({ name, flow: String(coreData?.workingObject?.flow || ""), scope: _statusScope }, "status:tool"); } catch {}
     if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
+    if (_callerCh && _callerCh !== _tcCh) try { await putItem(name, "status:tool:" + _callerCh); } catch {}
     const result = await tool.invoke(normalizedArgs, coreData);
     const durationMs = Date.now() - startTs;
 
@@ -525,6 +538,7 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
     setTimeout(() => {
       try { putItem("", "status:tool"); } catch {}
       if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
+      if (_callerCh && _callerCh !== _tcCh) try { putItem("", "status:tool:" + _callerCh); } catch {}
     }, Math.max(0, delayMs));
   }
 }
