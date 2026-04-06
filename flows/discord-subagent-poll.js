@@ -46,7 +46,7 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   _wo.authorDisplayname   = String(job.authorDisplayname || "");
   _wo.response            = response;
   _wo.question            = job.callerPayload || "";
-  _wo.deliverSubagentJob  = { projectId: job.projectId || "" };
+  _wo.deliverSubagentJob  = { projectId: job.projectId || "", jobId: job.jobId || "" };
   _wo.skipAiCompletions   = true;
   _wo.doNotWriteToContext = true;
   _wo.bypassTriggerGate   = true;
@@ -122,9 +122,6 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
         const _result = _job.status === "done"
           ? String(_job.result || "").trim()
           : `Background task failed: ${_job.error || "unknown error"}`;
-        const _contextContent  = _job.status === "done"
-          ? `[Async child job completed — type: ${_job.agentType}, jobId: ${_job.jobId}]\n\n${_result}`
-          : `[Async child job failed — type: ${_job.agentType}, jobId: ${_job.jobId}]\nError: ${_job.error || "unknown"}`;
 
         logSubagent("info", "discord-poll", "branch_parent_chain", { jobId: _job.jobId, parentProjectId: _parentProjectId });
 
@@ -135,11 +132,12 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
                 ..._job,
                 callerFlow:     cFlow,
                 callerChannelId: cChannelId,
-                jobId:          projId || _job.jobId,
+                projectId:      projId || _job.projectId,
+                jobId:          _job.jobId,
               };
               await deliverViaFlow(_syntheticJob, resp, createRunCore, runFlow, log);
             };
-            await runParentChain(_parentProjectId, _contextContent, baseCore, createRunCore, runFlow, _deliverFn, log);
+            await runParentChain(_parentProjectId, _job, _result, baseCore, createRunCore, runFlow, _deliverFn, log);
           } catch (e) {
             logSubagent("error", "discord-poll", "parent_chain_exception", { jobId: _job.jobId, error: e?.message || String(e) });
           }
