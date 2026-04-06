@@ -4,14 +4,37 @@
   "parameters": {
     "type": "object",
     "properties": {
-      "start": { "type": "string", "description": "REQUIRED: start timestamp (YYYY-MM-DD, DD.MM.YYYY, or ISO 8601). If date-only, time defaults to 00:00:00." },
-      "end": { "type": "string", "description": "OPTIONAL: end timestamp. If omitted, defaults to 23:59:59 of the start date. If date-only, end is exclusive at next day 00:00:00." },
-      "start_ctx_id": { "type": "number", "description": "OPTIONAL: continue pagination from after this ctx_id (applies across all channels)." },
-      "channel_id": { "type": "string", "description": "OPTIONAL: override the channel to query. Use the caller's channel ID when running as a subagent." },
-      "channel_ids": { "type": "array", "items": { "type": "string" }, "description": "OPTIONAL: additional channel IDs to include in the query (merged with channel_id)." },
-      "prompt": { "type": "string", "description": "OPTIONAL: additional instructions to steer the AI summary (e.g. 'focus on combat events')." }
+      "start": {
+        "type": "string",
+        "description": "REQUIRED: start timestamp (YYYY-MM-DD, DD.MM.YYYY, or ISO 8601). If date-only, time defaults to 00:00:00."
+      },
+      "end": {
+        "type": "string",
+        "description": "OPTIONAL: end timestamp. If omitted, defaults to 23:59:59 of the start date. If date-only, end is exclusive at next day 00:00:00."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "OPTIONAL: additional instructions to steer the AI summary (e.g. 'focus on combat events')."
+      },
+      "startCtxId": {
+        "type": "number",
+        "description": "OPTIONAL: continue pagination from after this ctx_id (applies across all channels). Legacy aliases: start_ctx_id, start_ctx."
+      },
+      "channelId": {
+        "type": "string",
+        "description": "OPTIONAL: override the channel to query. Use the caller's channel ID when running as a subagent. Legacy alias: channel_id."
+      },
+      "channelIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "OPTIONAL: additional channel IDs to include in the query (merged with channelId). Legacy alias: channel_ids."
+      }
     },
-    "required": ["start"],
+    "required": [
+      "start"
+    ],
     "additionalProperties": false
   }
 }

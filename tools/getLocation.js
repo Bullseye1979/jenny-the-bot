@@ -5,10 +5,10 @@
 /*          URL with optional directions text.                                     *
 /**********************************************************************************/
 
-import path from "node:path";
 import { saveFile } from "../core/file.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSecret } from "../core/secrets.js";
 
 const MODULE_NAME = "getLocation";
 
@@ -183,19 +183,27 @@ async function getInvoke(args, coreData) {
   try {
     const wo = coreData?.workingObject || {};
     const toolCfg = wo?.toolsconfig?.getLocation || {};
-    const apiKey = getStr(toolCfg.googleApiKey, null);
+    const apiKey = await getSecret(wo, getStr(toolCfg.googleApiKey, ""));
     const timeoutMs = getNum(toolCfg.timeoutMs, 20000);
 
     if (!apiKey) {
-      return "[ERROR]: MAPS_CONFIG — Missing GOOGLE_API_KEY (toolsconfig.getLocation.googleApiKey).";
+      return "[ERROR]: MAPS_CONFIG — Missing Google API key (toolsconfig.getLocation.googleApiKey in secret storage).";
     }
 
     const isRouteRequested = !!args?.route;
     const inputLocations = Array.isArray(args?.locations) ? args.locations : [];
-    const streetSize = getStr(args?.street_size, getStr(toolCfg.streetSize, "640x400"));
-    const streetFov = getClamp(getNum(args?.street_fov, getNum(toolCfg.streetFov, 90)), 1, 120);
-    const streetHeading = Number.isFinite(args?.street_heading) ? Number(args.street_heading) : (Number.isFinite(toolCfg.street_heading) ? Number(toolCfg.street_heading) : undefined);
-    const streetPitch = Number.isFinite(args?.street_pitch) ? Number(args.street_pitch) : (Number.isFinite(toolCfg.street_pitch) ? Number(toolCfg.street_pitch) : undefined);
+    const streetSize = getStr(args?.streetSize, getStr(args?.street_size, getStr(toolCfg.streetSize, "640x400")));
+    const streetFov = getClamp(getNum(args?.streetFov, getNum(args?.street_fov, getNum(toolCfg.streetFov, 90))), 1, 120);
+    const streetHeading = Number.isFinite(args?.streetHeading)
+      ? Number(args.streetHeading)
+      : (Number.isFinite(args?.street_heading)
+        ? Number(args.street_heading)
+        : (Number.isFinite(toolCfg.streetHeading) ? Number(toolCfg.streetHeading) : undefined));
+    const streetPitch = Number.isFinite(args?.streetPitch)
+      ? Number(args.streetPitch)
+      : (Number.isFinite(args?.street_pitch)
+        ? Number(args.street_pitch)
+        : (Number.isFinite(toolCfg.streetPitch) ? Number(toolCfg.streetPitch) : undefined));
 
     if (!inputLocations.length) return "[ERROR]: MAPS_INPUT — No locations provided.";
 

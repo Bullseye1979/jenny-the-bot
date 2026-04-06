@@ -148,17 +148,17 @@ async function getInvoke(args, coreData) {
   const searchMaxResults = getNum(cfg.searchMaxResults, 5);
   const obj = args?.json || args || {};
   const mode = getStr(obj.mode, "transcript");
-  const userPrompt = getStr(obj.user_prompt, "");
-  const videoRaw = getStr(obj.video_url, obj.url || obj.videoId || obj.video_id || "");
+  const userPrompt = getStr(obj.userPrompt, getStr(obj.user_prompt, ""));
+  const videoRaw = getStr(obj.videoUrl, getStr(obj.video_url, obj.url || obj.videoId || obj.video_id || ""));
   const videoId = mode === "transcript" ? getExtractVideoId(videoRaw) : null;
   const wantMetaOnly = obj.metaOnly === true;
   if (mode === "search") {
     const q = getStr(obj.query, userPrompt);
     if (!q) return { ok: false, error: "YT_SEARCH_NO_QUERY", took_ms: Date.now() - started };
-    const res = await getSearchVideos({ googleApiKey, query: q, maxResults: obj.max_results ?? searchMaxResults, relevanceLanguage, regionCode, safeSearch: obj.safe_search || "none" });
+    const res = await getSearchVideos({ googleApiKey, query: q, maxResults: obj.maxResults ?? obj.max_results ?? searchMaxResults, relevanceLanguage, regionCode, safeSearch: obj.safeSearch || obj.safe_search || "none" });
     return { ok: !!res.ok, mode: "search", query: q, results: res.results || [], error: res.error, took_ms: Date.now() - started };
   }
-  if (!videoId) return { ok: false, error: "YT_BAD_ID — provide video_url or 11-char ID", took_ms: Date.now() - started };
+  if (!videoId) return { ok: false, error: "YT_BAD_ID — provide videoUrl or 11-char ID", took_ms: Date.now() - started };
   const [tRes, mRes] = await Promise.all([getFetchTranscript(videoId, transcriptLangs), getFetchVideoMeta(googleApiKey, videoId, regionCode)]);
   if (!tRes.ok || !tRes.items.length) {
     return { ok: false, error: tRes.error || "YT_NO_TRANSCRIPT", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta: mRes?.meta || null, took_ms: Date.now() - started };

@@ -5,13 +5,38 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "mode": { "type": "string", "enum": ["transcript", "search"], "description": "transcript = fetch and dump or summarize; search = YouTube search via Data API." },
-      "video_url": { "type": "string", "description": "Full YouTube URL or 11-character video ID. Required when mode='transcript'." },
-      "user_prompt": { "type": "string", "description": "Optional: if provided, runs a focused QA over the transcript instead of a generic summary." },
-      "metaOnly": { "type": "boolean", "description": "If true, return only video metadata without fetching the transcript (requires valid googleApiKey)." },
-      "query": { "type": "string", "description": "Search query when mode='search'." },
-      "max_results": { "type": "number", "description": "Maximum search results when mode='search' (1–10)." },
-      "safe_search": { "type": "string", "description": "YouTube safeSearch setting: 'none', 'moderate', or 'strict'." }
+      "mode": {
+        "type": "string",
+        "enum": [
+          "transcript",
+          "search"
+        ],
+        "description": "transcript = fetch and dump or summarize; search = YouTube search via Data API."
+      },
+      "metaOnly": {
+        "type": "boolean",
+        "description": "If true, return only video metadata without fetching the transcript (requires valid googleApiKey)."
+      },
+      "query": {
+        "type": "string",
+        "description": "Search query when mode='search'."
+      },
+      "videoUrl": {
+        "type": "string",
+        "description": "Full YouTube URL or 11-character video ID. Required when mode='transcript'."
+      },
+      "userPrompt": {
+        "type": "string",
+        "description": "Optional: if provided, runs a focused QA over the transcript instead of a generic summary."
+      },
+      "maxResults": {
+        "type": "number",
+        "description": "Maximum search results when mode='search' (1–10)."
+      },
+      "safeSearch": {
+        "type": "string",
+        "description": "YouTube safeSearch setting: 'none', 'moderate', or 'strict'."
+      }
     }
   }
 }

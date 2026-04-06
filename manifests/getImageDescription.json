@@ -1,13 +1,22 @@
 {
   "name": "getImageDescription",
-  "description": "Analyze and describe an image via vision AI. Always execute a fresh analysis for each request — never reuse descriptions from previous calls or conversation history. If a previous call failed, retry with the same imageURL. Provide a public HTTP/HTTPS image URL. The optional 'prompt' focuses the analysis on specific aspects.",
+  "description": "Analyze and describe an image via vision AI. Always execute a fresh analysis for each request \u2014 never reuse descriptions from previous calls or conversation history. If a previous call failed, retry with the same imageUrl. Provide a public HTTP/HTTPS image URL. The optional 'prompt' focuses the analysis on specific aspects.",
   "parameters": {
     "type": "object",
     "properties": {
-      "imageURL": { "type": "string", "format": "uri", "description": "Public image URL (http/https) to analyze." },
-      "prompt": { "type": "string", "description": "Optional instruction for what to focus on (style, objects, text, layout, etc.)." }
+      "prompt": {
+        "type": "string",
+        "description": "Optional instruction for what to focus on (style, objects, text, layout, etc.)."
+      },
+      "imageUrl": {
+        "type": "string",
+        "format": "uri",
+        "description": "Public image URL (http/https) to analyze. Legacy alias: imageURL."
+      }
     },
-    "required": ["imageURL"],
+    "required": [
+      "imageUrl"
+    ],
     "additionalProperties": false
   }
 }

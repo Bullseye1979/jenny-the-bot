@@ -36,49 +36,49 @@
         "type": "object",
         "description": "Optional orchestration context that scopes this subagent's work. Prevents duplicate side effects when multiple subagents are coordinated.",
         "properties": {
-          "global_goal": {
+          "globalGoal": {
             "type": "string"
           },
-          "your_task": {
+          "yourTask": {
             "type": "string"
           },
-          "your_role": {
+          "yourRole": {
             "type": "string"
           },
-          "do_only": {
+          "doOnly": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "do_not": {
+          "doNot": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "existing_artifacts": {
+          "existingArtifacts": {
             "type": "object"
           },
-          "assigned_to_others": {
+          "assignedToOthers": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "tool_locks": {
+          "toolLocks": {
             "type": "object"
           }
         },
         "additionalProperties": false
       },
-      "channel_id": {
-        "type": "string",
-        "description": "Optional explicit channel ID override."
-      },
       "projectId": {
         "type": "string",
         "description": "Required only when mode='resume'. Ignored in mode='normal'."
+      },
+      "channelId": {
+        "type": "string",
+        "description": "Optional explicit channel ID override."
       }
     },
     "required": [
