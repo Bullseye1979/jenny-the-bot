@@ -537,19 +537,7 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 
 `getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. Results are delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes.
 
-#### getAgentResume
-
-Resumes an existing async subagent project by spawning a follow-up task on the mapped subagent channel.
-
-| Key | Type | Example | Description |
-|---|---|---|---|
-| `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
-| `apiSecret` | string | `"API_SECRET"` | Placeholder name for bearer auth; resolved from `bot_secrets` |
-| `asyncSpawnPath` | string | `"/api/spawn"` | Spawn endpoint path |
-| `spawnTimeoutMs` | number | `10000` | Timeout for spawn request |
-| `types` | object | `{"research":"subagent-research"}` | Subagent type map used to resolve the target channel from stored project metadata |
-
-`getAgentResume` reads only `toolsconfig.getAgentResume` and the runtime `workingObject`.
+Type routing convention: route planning and location lookup tasks belong to the `research` subagent type.
 
 #### getAgentResume
 

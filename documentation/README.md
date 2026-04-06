@@ -554,6 +554,8 @@ Subagent execution is asynchronous by design and is routed through the internal 
 4. The subagent runs in an isolated channel config (own tools, prompts, limits).
 5. `discord-subagent-poll` detects completion and delivers the final result into the original Discord channel.
 
+**Type routing convention:** route planning and location lookup tasks belong to the `research` subagent type.
+
 **Resume flow (v1.0):**
 
 - `getAgentResume` continues an existing async project by `projectId`.

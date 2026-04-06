@@ -6149,9 +6149,9 @@ The subagent system allows the main AI to delegate tasks to isolated sub-process
 ### How It Works
 
 1. The main AI calls `getSubAgent(type, task)`.
-2. `getSubAgent` sends a POST to `http://localhost:3400/api` with the virtual channel ID for the requested type.
-3. The API flow loads `core-channel-config` for that virtual channel, applies tool/model/instruction overrides, and runs the full pipeline.
-4. The subagent returns a single text result passed back to the main AI.
+2. `getSubAgent` sends a POST to `http://localhost:3400/api/spawn` with the virtual channel ID for the requested type.
+3. The API flow loads `core-channel-config` for that virtual channel, applies tool/model/instruction overrides, and runs the full pipeline asynchronously.
+4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery happens via `discord-subagent-poll` to the originating Discord channel.
 
 The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically so that tools like `getHistory` and `getInformation` query the correct data source.
 
@@ -6164,7 +6164,7 @@ Subagent calls use `doNotWriteToContext: true` — no context DB entries are wri
 | Type | Virtual Channel | Tools | Use when |
 |------|----------------|-------|----------|
 | `history` | `subagent-history` | getInformation, getHistory, getTime, getSubAgent | Questions about persons, places, events, or time periods from session logs |
-| `research` | `subagent-research` | getInformation, getHistory, getYoutube, getWebpage, getLocation, getTavily, getTime, getZIP, getSubAgent | General knowledge, current events, web research, YouTube |
+| `research` | `subagent-research` | getInformation, getHistory, getYoutube, getWebpage, getLocation, getTavily, getTime, getZIP, getSubAgent | General knowledge, current events, web research, YouTube, route planning, and location lookups |
 | `generate` | `subagent-generate` | getPDF, getText, getFile, getZIP, getSubAgent | PDF or text document generation |
 | `media` | `subagent-media` | getImage, getAnimatedPicture, getVideoFromText, getImageDescription, getToken, getZIP | Image/video/token generation and image description (leaf node — no getSubAgent) |
 | `atlassian` | `subagent-atlassian` | getJira, getConfluence, getZIP, getSubAgent | Jira/Confluence tasks |
@@ -6179,7 +6179,7 @@ Main channels have `getSubAgent`, `getTavily`, and `getImage` directly available
 - **Simple web search** (facts, current events) → `getTavily` directly — no subagent needed
 - **Simple image generation** → `getImage` directly — no subagent needed
 - **Session history questions** (who is X, what happened at Y, when did Z) → `getSubAgent(type: history)`
-- **General knowledge / YouTube / location** → `getSubAgent(type: research)`
+- **General knowledge / YouTube / route planning / location queries** → `getSubAgent(type: research)`
 - **Code / development requests** → `getSubAgent(type: develop)`
 - **Complex media** (animated token, video generation, multi-step image) → `getSubAgent(type: media)`
 - **If the answer is in the current conversation context** → answer directly without tool call
