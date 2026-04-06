@@ -1,11 +1,11 @@
-/************************************************************************************/
-/* filename: 00011-webpage-channel-config.js                                        *
-/* Version 1.0                                                                      *
-/* Purpose: Applies hierarchical channel/flow/user overrides for the webpage flow.  *
-/*          Identical logic to core-channel-config but with its own config section  *
-/*          ("webpage-channel-config") so webpage channels are configured           *
-/*          independently from Discord/API channels.                                *
-/************************************************************************************/
+
+
+
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 
@@ -162,9 +162,9 @@ export default async function getWebpageChannelConfig(coreData) {
   const channels = cfg.channels;
   if (!Array.isArray(channels)) return coreData;
 
-  /* Always expose the full channel list so downstream modules (e.g. 00048-webpage-chat)
-     can apply overrides just-in-time when channelID is only known at request time
-     (e.g. from a POST body parsed after this module already ran). */
+  
+
+
   workingObject._webpageChannelConfig = channels;
 
   const channelId = normalizeStr(workingObject?.channelID);

@@ -1,50 +1,50 @@
-/************************************************************************************
-/* filename: 00999-core-ai-context-loader.js                                       *
-/* Version 1.0                                                                     *
-/* Purpose: Pre-loads the conversation context (snapshot) from the context DB into *
-/*          wo._contextSnapshot before any core-ai module runs.                    *
-/*                                                                                 *
-/*          Optionally applies per-channel context optimizations to the snapshot.  *
-/*          Optimizations are purely navigational — DB rows are never modified.    *
-/*          Applies to all core-ai modules (01000–01003) which all read from       *
-/*          wo._contextSnapshot when available.                                    *
-/*                                                                                 *
-/*          Modules positioned between 00999 and the core-ai modules (01000–01003) *
-/*          can inspect and modify wo._contextSnapshot before the AI sees it,      *
-/*          enabling context injection / filtering at pipeline level.              *
-/*                                                                                 *
-/*          All core-ai modules retain a direct getContext() fallback so that      *
-/*          synthetic pipelines (e.g. wiki image generation) which call a core-ai  *
-/*          module directly — without running the module pipeline — continue to    *
-/*          work.                                                                  *
-/*                                                                                 *
-/* Special source handling:                                                        *
-/*   Rows with source "voice-transcription" receive special treatment during       *
-/*   context optimization. All voice paths must set this source on context writes: *
-/*   - Discord voice (00070-discord-add-context, when wo.voiceTranscribed=true)    *
-/*   - Webpage always-on voice (00031-webpage-voice-add-context)                   *
-/*   - Diarize sessions (00047-webpage-voice)                                      *
-/*   - Meeting recorder (00027-webpage-voice-record)                               *
-/*                                                                                 *
-/* Config (contextOptimization in channel override):                               *
-/*   enabled                       — master toggle (default: false)                *
-/*   transcriptions.minWords       — voice rows with fewer words than this are     *
-/*                                   excluded from the snapshot when outside the   *
-/*                                   protected recent window (default: 5)          *
-/*   transcriptions.keepRecentCount — number of most-recent snapshot rows that are *
-/*                                   always kept regardless of word count           *
-/*                                   (default: 3)                                  *
-/*   relevance.enabled             — relevance-based filtering (default: false)    *
-/*   relevance.keepRecentCount     — always keep N most-recent rows (default: 5)   *
-/*   relevance.minScore            — minimum Jaccard score to retain an older row  *
-/*                                   (0.0–1.0, default: 0.05)                     *
-/*                                                                                 *
-/*   Relevance filtering applies only to non-voice-transcription rows.             *
-/*   Requires non-simplified context (simplifiedContext !== true) for source       *
-/*   field detection.                                                              *
-/*                                                                                 *
-/* Flow: discord, discord-voice, discord-status, api, bard-label-gen, webpage      *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import { getContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
 

@@ -7,7 +7,10 @@
     "persona": "Helpful AI Assistant",
     "instructions": "Answer concisely and helpfully.",
     "tracePipeline": false,
-    "tracePipelineExcludeFlows": ["webpage*", "bard-*"],
+    "tracePipelineExcludeFlows": [
+      "webpage*",
+      "bard-*"
+    ],
     "moderationEnabled": false,
     "trigger": "jenny",
     "triggerWordWindow": 3,
@@ -281,8 +284,8 @@
       "getGraph": {
         "__description": "Microsoft Graph API — delegated OAuth2. Users must connect their account at /graph-auth. No credentials here.",
         "defaultSharePointHostname": "mycompany.sharepoint.com",
-        "defaultMailFolderId":       "inbox",
-        "defaultPageSize":           25
+        "defaultMailFolderId": "inbox",
+        "defaultPageSize": 25
       },
       "getSpotify": {
         "__description": "Spotify API — delegated OAuth2. Users must connect their account at /spotify-auth. No credentials here. Requires Spotify Premium for playback control."
@@ -362,7 +365,10 @@
         "__description": "YouTube transcript fetcher — returns raw transcript dump. LLM processing is done by the calling subagent.",
         "googleApiKey": "GOOGLE",
         "dumpThresholdChars": 40000,
-        "transcriptLangs": ["de", "en"],
+        "transcriptLangs": [
+          "de",
+          "en"
+        ],
         "searchMaxResults": 5,
         "regionCode": "DE",
         "relevanceLanguage": "de"
@@ -376,20 +382,37 @@
         "spawnTimeoutMs": 10000,
         "maxSpawnDepth": 2,
         "types": {
-          "resume":   "subagent-resume",
+          "resume": "subagent-resume",
           "research": "subagent-research",
-          "media":    "subagent-media",
-          "generic":  "subagent-generic"
+          "media": "subagent-media",
+          "generic": "subagent-generic"
         }
       },
       "getImageDescription": {
-        "__description": "Vision model for image descriptions — requires apiKey",
-        "apiKey": "OPENAI",
-        "model": "gpt-4o-mini",
-        "endpoint": "https://api.openai.com/v1/chat/completions",
-        "temperature": 0.2,
-        "max_tokens": 1000,
-        "timeoutMs": 60000
+        "__description": "Internal API-backed image description tool",
+        "channelId": "browser-extension",
+        "apiUrl": "http://localhost:3400",
+        "apiSecret": "API_SECRET",
+        "maxTokens": 1000,
+        "timeoutMs": 60000,
+        "systemPrompt": "You are an expert vision analyst. Provide faithful, useful descriptions and extract visible text.",
+        "defaultPrompt": "Describe the image accurately. Extract visible text if present."
+      },
+      "getImageSD": {
+        "__description": "Local Stable Diffusion image generation",
+        "baseUrl": "http://127.0.0.1:7860",
+        "publicBaseUrl": "https://yourserver.example.com",
+        "size": "256x256",
+        "n": 1,
+        "steps": 15,
+        "cfgScale": 7,
+        "sampler": "Euler a",
+        "seed": -1,
+        "model": "realisticVisionV60B1_v51HyperVAE.safetensors",
+        "negativePrompt": "worst quality, low quality, normal quality, lowres, jpeg artifacts, blurry, oversaturated, undersaturated, washed out, bad lighting, harsh lighting, overexposed, underexposed, noisy, grainy, posterized, bad anatomy, malformed anatomy, deformed, disfigured, mutated, distorted, asymmetrical, bad proportions, out of frame, cropped body, warped perspective, bad hands, bad feet, deformed hands, malformed hands, mangled hands, extra fingers, extra digits, extra limbs, extra arms, extra legs, missing fingers, fewer digits, fewer fingers, fused fingers, webbed fingers, long fingers, short fingers, broken fingers, distorted fingers, incorrect finger count, more than 5 fingers per hand, less than 5 fingers per hand, polydactyly, syndactyly, floating limbs, disconnected limbs, duplicate limbs, fused limbs, cross-eye, lazy eye, wonky eyes, deformed face, malformed face, text, watermark, signature, logo, captions, UI, interface elements, glitches, tiling, pattern artifacts, banding, moire",
+        "negativeExtra": "overprocessed, muddy colors",
+        "timeoutMs": 1400000,
+        "networkTimeoutMs": 14400000
       }
     }
   },
@@ -459,7 +482,9 @@
     },
     "webpage-router": {
       "__description": "Maps HTTP port+path to a named flow and sets wo.channelID. Runs before core-channel-config so flow-specific overrides apply to web endpoints.",
-      "flow": ["webpage"],
+      "flow": [
+        "webpage"
+      ],
       "routes": [
         {
           "__description": "Route /wiki requests to flow 'webpage-wiki'; channelId from first path segment after /wiki",
@@ -479,24 +504,45 @@
     },
     "webpage-auth": {
       "__description": "Discord OAuth2 SSO for all web modules. The Jenny bot must be invited to every guild listed in 'guilds'. First guild where the user is a member wins. Backward compat: old top-level guildId still works.",
-      "flow": ["webpage"],
-      "clientId":         "YOUR_DISCORD_CLIENT_ID",
-      "clientSecret":     "DISCORD_CLIENT_SECRET",
-      "sessionSecret":    "SESSION_SECRET",
-      "redirectUri":      "",
-      "scope":            "identify guilds.members.read",
-      "loginPort":        3111,
-      "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120, 3121, 3122, 3126],
+      "flow": [
+        "webpage"
+      ],
+      "clientId": "YOUR_DISCORD_CLIENT_ID",
+      "clientSecret": "DISCORD_CLIENT_SECRET",
+      "sessionSecret": "SESSION_SECRET",
+      "redirectUri": "",
+      "scope": "identify guilds.members.read",
+      "loginPort": 3111,
+      "ports": [
+        3111,
+        3112,
+        3113,
+        3114,
+        3115,
+        3116,
+        3117,
+        3118,
+        3119,
+        3120,
+        3121,
+        3122,
+        3126
+      ],
       "sessionMaxAgeSec": 43200,
-      "sameSite":         "Lax",
-      "ssoPartners":      [],
+      "sameSite": "Lax",
+      "ssoPartners": [],
       "guilds": [
         {
-          "guildId":      "YOUR_PRIMARY_DISCORD_GUILD_ID",
-          "defaultRole":  "member",
+          "guildId": "YOUR_PRIMARY_DISCORD_GUILD_ID",
+          "defaultRole": "member",
           "allowRoleIds": [],
-          "rolePriority": ["YOUR_ADMIN_ROLE_ID"],
-          "roleMap":      { "YOUR_ADMIN_ROLE_ID": "admin", "YOUR_MEMBER_ROLE_ID": "member" }
+          "rolePriority": [
+            "YOUR_ADMIN_ROLE_ID"
+          ],
+          "roleMap": {
+            "YOUR_ADMIN_ROLE_ID": "admin",
+            "YOUR_MEMBER_ROLE_ID": "member"
+          }
         }
       ]
     },
@@ -506,11 +552,32 @@
         "webpage"
       ],
       "items": [
-        { "text": "⚙️ Config",      "link": "/config",     "roles": ["admin"] },
-        { "text": "💬 Chat",         "link": "/chat"                          },
-        { "text": "🖼️ Inpainting",  "link": "/inpainting"                    },
-        { "text": "🎵 Bard",          "link": "/bard",       "roles": ["admin"] },
-        { "text": "🎶 Bard Stream",  "link": "/bard-stream"                   }
+        {
+          "text": "⚙️ Config",
+          "link": "/config",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "💬 Chat",
+          "link": "/chat"
+        },
+        {
+          "text": "🖼️ Inpainting",
+          "link": "/inpainting"
+        },
+        {
+          "text": "🎵 Bard",
+          "link": "/bard",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "🎶 Bard Stream",
+          "link": "/bard-stream"
+        }
       ]
     },
     "discord-admin": {
@@ -530,8 +597,14 @@
         "discord-status",
         "toolcall"
       ],
-      "allowedScopes": ["discord", "discord-voice"],
-      "allowedFlows": ["discord", "discord-voice"],
+      "allowedScopes": [
+        "discord",
+        "discord-voice"
+      ],
+      "allowedFlows": [
+        "discord",
+        "discord-voice"
+      ],
       "status": "online",
       "placeholderEnabled": false,
       "placeholderText": "",
@@ -693,33 +766,44 @@
     },
     "webpage-wiki": {
       "__description": "AI-driven Fandom-style wiki (port 3117, /wiki). One channel entry per Discord channel.",
-      "flow": ["webpage"],
+      "flow": [
+        "webpage"
+      ],
       "port": 3117,
       "basePath": "/wiki",
       "overrides": {
-        "useAiModule":      "completions",
-        "model":            "gpt-4o-mini",
-        "temperature":      0.7,
-        "maxTokens":        4000,
-        "maxLoops":         5,
+        "useAiModule": "completions",
+        "model": "gpt-4o-mini",
+        "temperature": 0.7,
+        "maxTokens": 4000,
+        "maxLoops": 5,
         "requestTimeoutMs": 120000,
-        "includeHistory":   false,
-        "contextSize":      150,
-        "tools":            ["getImage", "getInformation"],
-        "systemPrompt":     "",
-        "persona":          "",
-        "instructions":     ""
+        "includeHistory": false,
+        "contextSize": 150,
+        "tools": [
+          "getImage",
+          "getInformation"
+        ],
+        "systemPrompt": "",
+        "persona": "",
+        "instructions": ""
       },
       "channels": [
         {
-          "_title":       "My Channel Wiki",
-          "channelId":    "YOUR_DISCORD_CHANNEL_ID",
+          "_title": "My Channel Wiki",
+          "channelId": "YOUR_DISCORD_CHANNEL_ID",
           "allowedRoles": [],
-          "adminRoles":   ["admin"],
-          "editorRoles":  ["editor"],
-          "creatorRoles": ["creator"],
-          "maxAgeDays":   7,
-          "overrides":    {}
+          "adminRoles": [
+            "admin"
+          ],
+          "editorRoles": [
+            "editor"
+          ],
+          "creatorRoles": [
+            "creator"
+          ],
+          "maxAgeDays": 7,
+          "overrides": {}
         }
       ]
     },
@@ -796,17 +880,21 @@
     },
     "webpage-keymanager": {
       "__description": "Admin UI for managing API secrets (placeholder → real value). Port 3122, /key-manager. Add 3122 to webpage.ports and webpage-auth.ports.",
-      "flow": ["webpage"],
+      "flow": [
+        "webpage"
+      ],
       "port": 3122,
       "basePath": "/key-manager",
-      "allowedRoles": ["admin"]
+      "allowedRoles": [
+        "admin"
+      ]
     },
     "bard": {
       "__description": "Bard bot — second Discord bot that plays D&D mood music in voice channels",
       "flow": [],
-      "token":          "BARD_DISCORD",
-      "musicDir":       "assets/bard",
-      "idlePresence":   "Waiting for adventure...",
+      "token": "BARD_DISCORD",
+      "musicDir": "assets/bard",
+      "idlePresence": "Waiting for adventure...",
       "pollIntervalMs": 30000
     },
     "bard-cron": {
@@ -967,7 +1055,9 @@
         },
         {
           "__description": "Subagent: resume — dedicated route for project resume/follow-up calls. Spawned by getSubAgent(projectId=..., type='resume').",
-          "channelMatch": ["subagent-resume"],
+          "channelMatch": [
+            "subagent-resume"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -998,7 +1088,9 @@
         },
         {
           "__description": "Subagent: research — handles getHistory, getInformation, getGoogle, getTavily, getWebpage. Spawned by getSubAgent(type='research'). No getSubAgent in tools to prevent recursion.",
-          "channelMatch": ["subagent-research"],
+          "channelMatch": [
+            "subagent-research"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1024,7 +1116,9 @@
         },
         {
           "__description": "Subagent: media — handles YouTube transcripts and web pages. Spawned by getSubAgent(type='media'). No getSubAgent in tools to prevent recursion.",
-          "channelMatch": ["subagent-media"],
+          "channelMatch": [
+            "subagent-media"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1047,7 +1141,9 @@
         },
         {
           "__description": "Subagent: generic — full standard tool palette. Spawned by getSubAgent(type='generic'). No getSubAgent in tools to prevent recursion.",
-          "channelMatch": ["subagent-generic"],
+          "channelMatch": [
+            "subagent-generic"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1078,7 +1174,9 @@
         },
         {
           "__description": "Subagent: image prompt enhancer — used by getImage tool to improve prompts before generation.",
-          "channelMatch": ["subagent-img-enhance"],
+          "channelMatch": [
+            "subagent-img-enhance"
+          ],
           "overrides": {
             "systemPrompt": "You are a Stable Diffusion prompt enhancer. Given a basic prompt, output an improved, detailed prompt optimized for image generation. Output ONLY the enhanced prompt text, no explanations.",
             "model": "gpt-4o-mini",
@@ -1091,7 +1189,9 @@
         },
         {
           "__description": "Subagent: webpage summary — used by getWebpage tool to summarize fetched page content.",
-          "channelMatch": ["subagent-webpage-summary"],
+          "channelMatch": [
+            "subagent-webpage-summary"
+          ],
           "overrides": {
             "systemPrompt": "You summarize web page content concisely and accurately. Focus on the key information. Output plain text only.",
             "model": "gpt-4o-mini",
@@ -1104,74 +1204,79 @@
         }
       ]
     },
-
     "webpage-graph-auth": {
-      "flow": ["webpage"],
+      "flow": [
+        "webpage"
+      ],
       "port": 3124,
       "auth": {
-        "tenantId":     "SECRET:graph_tenant_id",
-        "clientId":     "SECRET:graph_client_id",
+        "tenantId": "SECRET:graph_tenant_id",
+        "clientId": "SECRET:graph_client_id",
         "clientSecret": "SECRET:graph_client_secret",
-        "redirectUri":  "https://YOUR_DOMAIN/graph-auth/callback",
-        "scope":        "offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send Files.ReadWrite.All Sites.ReadWrite.All"
+        "redirectUri": "https://YOUR_DOMAIN/graph-auth/callback",
+        "scope": "offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send Files.ReadWrite.All Sites.ReadWrite.All"
       }
     },
-
     "cron-graph-token-refresh": {
-      "flow": ["cron"],
+      "flow": [
+        "cron"
+      ],
       "auth": {
-        "tenantId":     "SECRET:graph_tenant_id",
-        "clientId":     "SECRET:graph_client_id",
+        "tenantId": "SECRET:graph_tenant_id",
+        "clientId": "SECRET:graph_client_id",
         "clientSecret": "SECRET:graph_client_secret"
       },
       "refreshBufferMinutes": 10
     },
-
     "webpage-spotify-auth": {
-      "flow": ["webpage"],
+      "flow": [
+        "webpage"
+      ],
       "port": 3125,
       "auth": {
-        "clientId":     "SECRET:spotify_client_id",
+        "clientId": "SECRET:spotify_client_id",
         "clientSecret": "SECRET:spotify_client_secret",
-        "redirectUri":  "https://YOUR_DOMAIN/spotify-auth/callback",
-        "scope":        "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private"
+        "redirectUri": "https://YOUR_DOMAIN/spotify-auth/callback",
+        "scope": "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private"
       }
     },
-
     "cron-spotify-token-refresh": {
-      "flow": ["cron"],
+      "flow": [
+        "cron"
+      ],
       "auth": {
-        "clientId":     "SECRET:spotify_client_id",
+        "clientId": "SECRET:spotify_client_id",
         "clientSecret": "SECRET:spotify_client_secret"
       },
       "refreshBufferMinutes": 10
     },
-
     "webpage-chatgpt-auth": {
       "__description": "ChatGPT / OpenAI OAuth2 per-user token management. Users connect at /chatgpt-auth. Requires port 3126 in webpage.ports and webpage-auth.ports.",
-      "flow": ["webpage"],
+      "flow": [
+        "webpage"
+      ],
       "port": 3126,
       "auth": {
-        "authUrl":      "https://auth.openai.com/authorize",
-        "tokenUrl":     "https://auth.openai.com/oauth/token",
-        "clientId":     "YOUR_OPENAI_OAUTH_CLIENT_ID",
+        "authUrl": "https://auth.openai.com/authorize",
+        "tokenUrl": "https://auth.openai.com/oauth/token",
+        "clientId": "YOUR_OPENAI_OAUTH_CLIENT_ID",
         "clientSecret": "YOUR_OPENAI_OAUTH_CLIENT_SECRET",
-        "redirectUri":  "https://YOUR_DOMAIN/chatgpt-auth/callback",
-        "scope":        "openid offline_access model.request"
+        "redirectUri": "https://YOUR_DOMAIN/chatgpt-auth/callback",
+        "scope": "openid offline_access model.request"
       }
     },
-
     "cron-chatgpt-token-refresh": {
       "__description": "Refreshes expiring ChatGPT OAuth tokens from chatgpt_tokens table. Add a cron job entry with flow 'cron-chatgpt-token-refresh'.",
-      "flow": ["cron"],
+      "flow": [
+        "cron"
+      ],
       "auth": {
-        "tokenUrl":     "https://auth.openai.com/oauth/token",
-        "clientId":     "YOUR_OPENAI_OAUTH_CLIENT_ID",
+        "tokenUrl": "https://auth.openai.com/oauth/token",
+        "clientId": "YOUR_OPENAI_OAUTH_CLIENT_ID",
         "clientSecret": "YOUR_OPENAI_OAUTH_CLIENT_SECRET"
       },
       "refreshBufferMinutes": 10
     },
-
     "core-ai-chatgpt": {
       "__description": "AI completions using per-user ChatGPT OAuth tokens. Activated when useAiModule='chatGPT' on a channel. Falls back to authPageUrl if the user has no connected token.",
       "flow": [
@@ -1179,26 +1284,30 @@
         "discord-voice",
         "api"
       ],
-      "endpoint":    "https://api.openai.com/v1/chat/completions",
-      "model":       "gpt-4o",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "model": "gpt-4o",
       "authPageUrl": "/chatgpt-auth"
     },
-
     "webpage-manifests": {
-      "flow": ["webpage"],
+      "flow": [
+        "webpage"
+      ],
       "port": 3126,
       "basePath": "/manifests",
-      "allowedRoles": ["admin"]
+      "allowedRoles": [
+        "admin"
+      ]
     },
-
     "discord-subagent-poll": {
       "__description": "Polls the registry for completed async subagent jobs and delivers results to the originating Discord channel. Set enabled:true to activate. pollIntervalMs: how often to check (ms). callerFlowPattern: flow name prefixes that trigger delivery. maxJobAgeMs: running jobs older than this are expired as errors.",
       "enabled": false,
       "pollIntervalMs": 5000,
-      "callerFlowPattern": ["discord", "discord-voice"],
+      "callerFlowPattern": [
+        "discord",
+        "discord-voice"
+      ],
       "maxJobAgeMs": 86400000
     },
-
     "webpage-subagent-poll": {
       "__description": "Polls the registry for completed async subagent jobs whose callerFlow starts with 'webpage' and delivers results via SSE to the originating webpage client. Requires GET /api/async-results/stream?channelID=<callerChannelId> to be open on the client side. Set enabled:true to activate.",
       "enabled": false,

@@ -1,19 +1,19 @@
-/************************************************************************************/
-/* filename: 00066-webpage-manifests.js                                             *
-/* Version 1.0                                                                      *
-/* Purpose: Admin-only web UI to view and edit tool manifest JSON files.            *
-/*          Lists all manifests/, supports inline JSON editing with validation.     *
-/*                                                                                  *
-/* Port: 3126 (cfg.port)                                                            *
-/* Base path: /manifests (cfg.basePath)                                             *
-/* Roles: cfg.allowedRoles (default: ["admin"])                                     *
-/*                                                                                  *
-/* Routes:                                                                          *
-/*   GET  /manifests               — main UI page                                   *
-/*   GET  /manifests/api/list      — JSON list of manifest names                   *
-/*   GET  /manifests/api/get       — fetch manifest content (?name=...)            *
-/*   POST /manifests/api/save      — save manifest content {name, content}         *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";

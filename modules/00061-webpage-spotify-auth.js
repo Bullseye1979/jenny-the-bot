@@ -1,13 +1,13 @@
-/**********************************************************************************/
-/* filename: 00061-webpage-spotify-auth.js                                        *
-/* Version 1.0                                                                    *
-/* Purpose: Spotify OAuth2 delegated auth for webpage users.                      *
-/*          Stores tokens per Discord user in spotify_tokens DB table.            *
-/*          Routes: GET /spotify-auth, /spotify-auth/start,                       *
-/*                  /spotify-auth/callback, /spotify-auth/disconnect               *
-/* Flow: webpage                                                                  *
-/* Port: 3125 (cfg.port)                                                          *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 "use strict";
 

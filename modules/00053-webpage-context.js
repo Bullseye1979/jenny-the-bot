@@ -1,27 +1,27 @@
-/**********************************************************************************/
-/* filename: 00053-webpage-context.js                                             */
-/* Version 1.0                                                                    */
-/* Purpose: Context DB editor SPA — browse (paginated), search, edit,            */
-/*          search & replace, and bulk-delete conversation context rows.          */
-/*          Served on its own port with role-based access control.                */
-/*          Config section: config["webpage-context"].                            */
-/*                                                                                */
-/* Routes:                                                                        */
-/*   GET  /context                    — main SPA (HTML)                           */
-/*   GET  /context/style.css          — shared + module stylesheet                */
-/*   GET  /context/api/channels       — distinct channel IDs with row counts      */
-/*   GET  /context/api/columns        — column metadata from INFORMATION_SCHEMA   */
-/*   GET  /context/api/records        — paginated record browse                   */
-/*   GET  /context/api/search         — full-text search (paginated)              */
-/*   GET  /context/api/record         — single row by ctx_id                      */
-/*   PATCH /context/api/record        — update a single field of a row            */
-/*   DELETE /context/api/delete       — bulk delete by ctx_id list                */
-/*   DELETE /context/api/delete-channel — bulk delete by channelID                */
-/*   DELETE /context/api/delete-channels — bulk delete by channelID list          */
-/*   POST /context/api/replace/find   — find search & replace matches             */
-/*   POST /context/api/replace/apply  — apply one replacement                     */
-/*   POST /context/api/replace/all    — replace all matches in one call           */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -36,9 +36,9 @@ const CTX_TABLE    = "context";
 const PAGE_SIZE    = 50;
 const SHARED_CSS   = path.join(__dirname, "..", "shared", "webpage", "style.css");
 
-/**********************************************************************************/
-/* Helpers                                                                        */
-/**********************************************************************************/
+
+
+
 function getStr(v) { return typeof v === "string" ? v : v == null ? "" : String(v); }
 function getInt(v, def = 0) { const n = parseInt(v, 10); return isNaN(n) ? def : n; }
 
@@ -67,9 +67,9 @@ function escLike(s) {
   return getStr(s).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
-/**********************************************************************************/
-/* DB queries                                                                     */
-/**********************************************************************************/
+
+
+
 async function dbChannels(pool) {
   const [rows] = await pool.execute(
     `SELECT id, COUNT(*) AS cnt FROM ${CTX_TABLE} GROUP BY id ORDER BY id ASC`
@@ -86,7 +86,7 @@ async function dbColumns(pool) {
       [CTX_TABLE]
     );
     if (rows.length) return rows.map(r => ({ name: getStr(r.COLUMN_NAME), type: getStr(r.DATA_TYPE) }));
-  } catch (_) { /* fall through to defaults */ }
+  } catch (_) {  }
   return [
     { name: "ctx_id",   type: "bigint"   },
     { name: "ts",       type: "datetime" },
@@ -259,9 +259,9 @@ async function dbReplaceAll(pool, { search, replace, channel, searchFields, mode
   return total;
 }
 
-/**********************************************************************************/
-/* Module-specific CSS (appended after shared stylesheet)                         */
-/**********************************************************************************/
+
+
+
 function getContextCss() {
   return `
 body{font-size:13px}
@@ -370,9 +370,9 @@ mark{background:#fef3c7;color:#92400e;border-radius:2px;padding:0 1px}
 `.trim();
 }
 
-/**********************************************************************************/
-/* HTML / SPA                                                                     */
-/**********************************************************************************/
+
+
+
 function getContextHtml({ menu, role, activePath, base, dbStatus, dbInfo, webAuth }) {
   const menuHtml = getMenuHtml(menu, activePath, role, null, null, webAuth);
   const dbBanner = dbStatus === "error"
@@ -1221,9 +1221,9 @@ async function loadAll() {
 </body></html>`;
 }
 
-/**********************************************************************************/
-/* Module export                                                                   */
-/**********************************************************************************/
+
+
+
 export default async function getWebpageContext(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
@@ -1241,7 +1241,7 @@ export default async function getWebpageContext(coreData) {
 
   if (method === "GET" && urlPath === basePath + "/style.css") {
     let sharedCss = "";
-    try { sharedCss = fs.readFileSync(SHARED_CSS, "utf-8"); } catch { /* ignore */ }
+    try { sharedCss = fs.readFileSync(SHARED_CSS, "utf-8"); } catch {  }
     setCssResp(wo, sharedCss + "\n" + getContextCss());
     wo.jump = true; await setSendNow(wo); return coreData;
   }

@@ -1,18 +1,3 @@
-/**********************************************************************************/
-/* filename: voice-diarize.js                                                     */
-/* Version 1.0                                                                    */
-/* Purpose: Database operations and audio helpers for sample-anchored speaker     */
-/*          diarization. Manages voice_speakers, voice_sessions,                  */
-/*          voice_chunks, and voice_chunk_speakers tables.                         */
-/*                                                                                */
-/* Exports:                                                                       */
-/*   DB:    getEnsureDiarizePool, ensureDiarizeTables                             */
-/*          listSpeakers, getSpeaker, createSpeaker, updateSpeakerSample,         */
-/*          deleteSpeaker, createSession, listSessions, createChunk,              */
-/*          upsertChunkSpeaker, listChunksForSession                              */
-/*   Audio: buildSamplePreamble, concatPreambleWithAudio, resolveSpeakerMapping   */
-/**********************************************************************************/
-
 import fs           from "node:fs";
 import path         from "node:path";
 import mysql        from "mysql2/promise";
@@ -245,7 +230,6 @@ function makeSilenceWav(outFile) {
   buf.writeUInt16LE(bitsPerSample, 34);
   buf.write("data", 36);
   buf.writeUInt32LE(dataSize, 40);
-
   return fs.promises.writeFile(outFile, buf);
 }
 

@@ -1,20 +1,20 @@
-/************************************************************************************/
-/* filename: 00058-webpage-keymanager.js                                            *
-/* Version 1.0                                                                      *
-/* Purpose: Admin CRUD web UI for the bot_secrets table.                            *
-/*          Allows viewing, adding, editing, and deleting secret mappings           *
-/*          (placeholder name → real value) used by core/secrets.js.               *
-/*                                                                                  *
-/* Port: 3122 (cfg.port)                                                            *
-/* Base path: /key-manager (cfg.basePath)                                           *
-/* Roles: cfg.allowedRoles (default: ["admin"])                                     *
-/*                                                                                  *
-/* Routes:                                                                          *
-/*   GET  /key-manager           — main UI page                                     *
-/*   GET  /key-manager/api/list  — JSON list of secrets                             *
-/*   POST /key-manager/api/set   — create or update {name, value, description}      *
-/*   POST /key-manager/api/delete — delete {name}                                   *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { getIsAllowedRoles, setSendNow } from "../shared/webpage/utils.js";

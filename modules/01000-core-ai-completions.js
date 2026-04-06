@@ -1,9 +1,9 @@
-/********************************************************************************
-/* filename: 01000-core-ai-completions.js                                           *
-/* Version 1.0                                                                  *
-/* Purpose: Platform-agnostic AI runner for chat completions with real tool     *
-/*          calls only                                                          *
-/********************************************************************************/
+
+
+
+
+
+
 import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -88,9 +88,19 @@ function getTryParseJSON(text, fallback = {}) { try { return JSON.parse(text); }
 
 
 function getWithTurnId(rec, wo) {
-  const t = typeof wo?.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
+  const t = typeof wo?.turnId === "string" && wo.turnId ? wo.turnId : undefined;
   const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined;
-  return { ...(t ? { ...rec, turn_id: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() };
+  return { ...(t ? { ...rec, turnId: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() };
+}
+
+function getToolcallLogBase(wo) {
+  return {
+    ts: new Date().toISOString(),
+    turnId: String(wo.turnId || wo.callerTurnId || ""),
+    channel: String(wo.channelID || ""),
+    callerChannel: String(wo.callerChannelId || ""),
+    flow: String(wo.flow || "")
+  };
 }
 
 
@@ -271,14 +281,14 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   const startTs = Date.now();
   args = getExpandedToolArgs(args, wo);
   if (!name) {
-    writeToolcallLog({ ts: new Date().toISOString(), turn_id: String(wo.turn_id || wo.callerTurnId || ""), channel: String(wo.channelID || ""), caller_channel: String(wo.callerChannelId || ""), flow: String(wo.flow || ""), tool: "", status: "skipped_no_name", duration_ms: 0 });
+    writeToolcallLog({ ...getToolcallLogBase(wo), tool: "", status: "skipped_no_name", durationMs: 0 });
     return { role: "tool", tool_call_id: toolCall?.id, name: null, content: JSON.stringify({ error: "Tool call has no function name" }) };
   }
   log("Tool call start", "info", { tool_call_id: toolCall?.id || null, tool: name || null, args_preview: getPreview(getJsonSafe(args), ARG_PREVIEW_MAX) });
   if (!tool) {
     const msg = { error: `Tool "${name}" not found` };
     log("Tool call failed (not found)", "error", { tool_call_id: toolCall?.id || null, tool: name || null });
-    writeToolcallLog({ ts: new Date().toISOString(), turn_id: String(wo.turn_id || wo.callerTurnId || ""), channel: String(wo.channelID || ""), caller_channel: String(wo.callerChannelId || ""), flow: String(wo.flow || ""), tool: String(name || ""), status: "not_found", duration_ms: 0 });
+    writeToolcallLog({ ...getToolcallLogBase(wo), tool: String(name || ""), status: "not_found", durationMs: 0 });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
@@ -296,14 +306,14 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     if (_callerCh && _callerCh !== _tcCh) try { await putItem(name, "status:tool:" + _callerCh); } catch {}
     const result = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
-    log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
-    writeToolcallLog({ ts: new Date().toISOString(), turn_id: String(wo.turn_id || wo.callerTurnId || ""), channel: String(wo.channelID || ""), caller_channel: String(wo.callerChannelId || ""), flow: String(wo.flow || ""), tool: name, status: "success", duration_ms: durationMs });
+    log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, durationMs: durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
+    writeToolcallLog({ ...getToolcallLogBase(wo), tool: name, status: "success", durationMs });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
     const durationMs = Date.now() - startTs;
-    log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, error: String(e?.message || e) });
-    writeToolcallLog({ ts: new Date().toISOString(), turn_id: String(wo.turn_id || wo.callerTurnId || ""), channel: String(wo.channelID || ""), caller_channel: String(wo.callerChannelId || ""), flow: String(wo.flow || ""), tool: name, status: "error", duration_ms: durationMs, error: String(e?.message || e) });
+    log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, durationMs: durationMs, error: String(e?.message || e) });
+    writeToolcallLog({ ...getToolcallLogBase(wo), tool: name, status: "error", durationMs, error: String(e?.message || e) });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
   } finally {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs)
@@ -338,15 +348,7 @@ async function getSystemContent(wo, kiCfg, moduleCfg) {
     "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
   ].join("\n");
 
-  const defaultPolicy = [
-    "Policy:",
-    "- Do not answer unrelated older user requests.",
-    "- If the latest user message asks you to continue your previous response, continue exactly where you stopped \u2014 do not repeat, summarize, or restart.",
-    "- If tools are available, use them only when necessary.",
-    "- When you emit a tool call, do not include extra prose in the same turn.",
-    "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format"
-  ].join("\n");
-  const commonPolicy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "") || defaultPolicy;
+  const commonPolicy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "");
 
   const multiChannelNote = (() => {
     const raw = Array.isArray(wo?.contextIDs) ? wo.contextIDs : [];
@@ -504,12 +506,12 @@ export default async function getCoreAi(coreData) {
           wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
           let _tcStatus = "success";
           try { if (JSON.parse(toolMsg.content || "{}").ok === false) _tcStatus = "failed"; } catch {}
-          toolCallLog.push({ tool: tcName, task: tcTask, status: _tcStatus, duration_ms: _tcMs });
+          toolCallLog.push({ tool: tcName, task: tcTask, status: _tcStatus, durationMs: _tcMs });
           totalToolCalls++;
           if (tcName === "getSubAgent") {
             try {
               const r = JSON.parse(toolMsg.content || "{}");
-              subagentLog.push({ type: r.type || "generic", channel_id: r.channel_id || "?", ok: !!r.ok, error: r.error || null });
+              subagentLog.push({ type: r.type || "generic", channelId: r.channelId || "?", ok: !!r.ok, error: r.error || null });
             } catch (e) {
               log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
             }
@@ -545,7 +547,7 @@ export default async function getCoreAi(coreData) {
     const parts = [];
     if (subagentLog.length) {
       parts.push(subagentLog.map((s, i) =>
-        `--- Subagent ${i + 1} (${s.type} → ${s.channel_id}) ---\n` +
+        `--- Subagent ${i + 1} (${s.type} → ${s.channelId}) ---\n` +
         (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
       ).join("\n\n"));
     }

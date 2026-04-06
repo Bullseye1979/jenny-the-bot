@@ -1,47 +1,47 @@
-/************************************************************************************
-/* filename: 00030-core-voice-transcribe.js                                        *
-/* Version 1.0                                                                     *
-/* Purpose: Source-agnostic audio transcription module.                            *
-/*          Reads a WAV file from wo.audioFile, applies quality gates (SNR,        *
-/*          voiced duration), calls the OpenAI audio transcriptions API, and       *
-/*          stores the result in wo.payload.                                        *
-/*                                                                                 *
-/*          Large files (> MAX_FILE_BYTES) are split into overlapping chunks       *
-/*          and transcribed sequentially. For diarized models, speaker labels      *
-/*          are stitched across chunk boundaries using an overlap-based heuristic: *
-/*          speakers identified in the overlap region are mapped to the global     *
-/*          label from the previous chunk by order of first appearance; unmatched  *
-/*          speakers receive an offset label (e.g. "C_2") to signal uncertain      *
-/*          identity. The overlap region is excluded from the final output so that  *
-/*          no text appears twice in wo.payload.                                   *
-/*                                                                                 *
-/*          The diarize meeting path (wo.transcribeOnly=true) splits audio into    *
-/*          Opus/OGG chunks. Chunk size is configured in MB; duration is derived   *
-/*          from the configured Opus bitrate.                                      *
-/*                                                                                 *
-/* Trigger: wo.transcribeAudio === true                                             *
-/*                                                                                 *
-/* Input:   wo.audioFile   — absolute path to WAV file                             *
-/*          wo.audioStats  — { snrDb, usefulMs } (optional; quality gate)          *
-/*                                                                                 *
-/* Output:  wo.payload          — transcribed text                                 *
-/*          wo.voiceTranscribed — true on success                                  *
-/*                                                                                 *
-/* Config (config["core-voice-transcribe"]):                                       *
-/*   transcribeModel        — model for always-on / discord-voice turns            *
-/*   transcribeModelDiarize — model for meeting recorder (wo.transcribeOnly=true)  *
-/*   chunkDurationS         — seconds per chunk for large files (default 300)      *
-/*   overlapDurationS       — overlap seconds between chunks for stitching (def 60)*
-/*   diarizeChunkMB         — max chunk size in MB for diarize meeting path        *
-/*                            (default 1). Duration derived from opusBitrateKbps. *
-/*   opusBitrateKbps        — Opus bitrate for diarize chunks (default 32 kbps)   *
-/*   transcribeLanguage     — force language (ISO 639-1); empty = auto-detect      *
-/*   transcribeEndpoint     — OpenAI-compatible API base URL                       *
-/*   transcribeApiKey       — API key (falls back to wo fields / env var)          *
-/*   keepWav                — retain temp WAV files after transcription            *
-/*   minVoicedMs            — quality gate: minimum voiced ms (default 2000)       *
-/*   snrDbThreshold         — quality gate: minimum SNR in dB (default 3.5)        *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs           from "node:fs";
 import os           from "node:os";

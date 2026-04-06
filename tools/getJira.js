@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getJira.js                                                            *
-/* Version 1.0                                                                     *
-/* Purpose: Jira Cloud proxy with high-level ops and normalization/repair          *
-/*          for requests and payloads.                                             *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";

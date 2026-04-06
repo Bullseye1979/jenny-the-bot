@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getTavily.js                                                          *
-/* Version 1.0                                                                     *
-/* Purpose: Perform web search via Tavily Search API and expose results            *
-/*          as a function toolcall.                                                *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";

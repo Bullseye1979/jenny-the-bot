@@ -1,13 +1,13 @@
-/**********************************************************************************/
-/* filename: 00057-webpage-graph-auth.js                                          *
-/* Version 1.0                                                                    *
-/* Purpose: Microsoft Graph OAuth2 delegated auth for webpage users.              *
-/*          Stores tokens per Discord user in graph_tokens DB table.              *
-/*          Routes: GET /graph-auth, /graph-auth/start,                           *
-/*                  /graph-auth/callback, /graph-auth/disconnect                  *
-/* Flow: webpage                                                                  *
-/* Port: 3118 (cfg.port)                                                          *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 "use strict";
 

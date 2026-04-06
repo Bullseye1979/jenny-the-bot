@@ -1,12 +1,12 @@
-/**********************************************************************************/
-/* filename: core/setup.js                                                        */
-/* Version 1.0                                                                    */
-/* Purpose: First-run setup wizard. Serves a minimal HTTP form that collects     */
-/*          the required configuration values and writes a starter core.json.    */
-/*          Called by main.js when core.json does not exist.                     */
-/*          Returns a promise that resolves once core.json has been written.     */
-/*          The caller should then restart the process (or re-read core.json).  */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
 
 import http from "node:http";
 import fs   from "node:fs";

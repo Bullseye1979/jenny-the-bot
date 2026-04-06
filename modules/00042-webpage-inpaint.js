@@ -1,11 +1,11 @@
-/************************************************************************************/
-/* filename: 00042-webpage-inpaint.js                                               *
-/* Version 1.0                                                                      *
-/* Purpose: Redirects eligible image GET requests under /documents to a             *
-/*          configurable inpainting host, sends the response immediately, and       *
-/*          sets jump so normal modules are skipped while jump-modules run.         *
-/*          Forwards request query param `id` to the redirect target.               *
-/************************************************************************************/
+
+
+
+
+
+
+
+
 
 import path from "node:path";
 import { setSendNow } from "../shared/webpage/utils.js";

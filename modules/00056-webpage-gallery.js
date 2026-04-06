@@ -1,11 +1,11 @@
-/************************************************************************************/
-/* filename: 00056-webpage-gallery.js                                                *
-/* Version 1.0                                                                       *
-/* Purpose: Gallery SPA — shows images in the logged-in user's documents directory.  *
-/*          Users can open images in inpainting or delete them.                      *
-/* Flow: webpage                                                                     *
-/* Port: 3120 (cfg.port)                                                             *
-/************************************************************************************/
+
+
+
+
+
+
+
+
 
 import fs   from "node:fs";
 import path from "node:path";

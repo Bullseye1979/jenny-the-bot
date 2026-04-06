@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getVideoFromText.js                                                   *
-/* Version 1.0                                                                     *
-/* Purpose: Create a short video from text via Replicate (Google Veo 3), save      *
-/*          it under ./pub/documents, and return a public URL.                     *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { saveFile } from "../core/file.js";
 import { getSecret } from "../core/secrets.js";

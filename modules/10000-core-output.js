@@ -1,10 +1,10 @@
-/**************************************************************
-/* filename: 10000-core-output.js                                 *
-/* Version 1.0                                                *
-/* Purpose: Safely dumps coreData with redaction, rolling logs,*
-/*          per-flow object logs and per-flow last-object file *
-/*          without mutating workingObject.                   *
-/**************************************************************/
+
+
+
+
+
+
+
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

@@ -1,15 +1,15 @@
-/************************************************************************************/
-/* filename: subagent-poll-helpers.js                                               *
-/* Version 1.0                                                                      *
-/* Purpose: Shared helpers for async subagent poll flows.                           *
-/*          runPersonaPass  — runs the API flow with the caller's channelID so that *
-/*            core-channel-config applies the channel persona to the subagent       *
-/*            result before delivery.                                                *
-/*          runParentChain  — wakes up a parent project by writing the child result *
-/*            to the project context and re-running the parent via the API flow.    *
-/*            Recurses until there is no parent context channel, then calls the     *
-/*            supplied deliverFn.                                                    *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { getItem }              from "./registry.js";
 import { setContext, getContext } from "./context.js";
@@ -89,19 +89,19 @@ async function setWriteSubagentToolExchange(contextWo, job, rawResult) {
 }
 
 
-/**
- * Run the API flow with the caller's channelID so core-channel-config applies
- * the channel persona. Injects the job result as a synthetic tool response in
- * the caller channel context so the AI continues naturally (Old English, etc.).
- * Returns the AI response text, or "" on failure.
- *
- * @param {{ callerChannelId, callerFlow, userId, guildId, authorDisplayname, agentType, jobId }} ctx
- * @param {string}   rawResult      — raw job result string (job.result or error text)
- * @param {Function} createRunCore
- * @param {Function} runFlow
- * @param {Function} log
- * @returns {Promise<string>}
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
 export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log) {
   const { callerChannelId, callerFlow, userId, guildId, authorDisplayname, agentType, jobId } = ctx;
 
@@ -191,19 +191,19 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
 }
 
 
-/**
- * Wake up a parent project: write child result to project context, re-run the
- * parent via the API flow (with caller channel persona), then either recurse to
- * the grandparent or call deliverFn with the final response.
- *
- * @param {string}   projectId
- * @param {string}   contextContent — content to write as user message into project context
- * @param {object}   baseCore
- * @param {Function} createRunCore
- * @param {Function} runFlow
- * @param {Function} deliverFn       — async (callerFlow, callerChannelId, response, projectId) => void
- * @param {Function} log
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
 export async function runParentChain(projectId, job, rawResult, baseCore, createRunCore, runFlow, deliverFn, log) {
   logSubagent("info", "poll-chain", "chain_start", {
     projectId,
@@ -316,12 +316,12 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
 }
 
 
-/**
- * Build the delivery payload string from a completed or failed job result.
- *
- * @param {{ status, result, error, agentType }} job
- * @returns {string}
- */
+
+
+
+
+
+
 export function buildResultPayload(job) {
   const _result = job.status === "done"
     ? String(job.result || "").trim()

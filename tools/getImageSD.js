@@ -1,31 +1,14 @@
-/**********************************************************************************/
-/* filename: getImageSD.js                                                         *
-/* Version 1.0                                                                     *
-/* Purpose: Generate images via Stable Diffusion A1111 API, save to                *
-/*          ./pub/documents and return public links.                               *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { fetch, Agent } from "undici";
 import { saveFile } from "../core/file.js";
 
 const MODULE_NAME = "getImageSD";
-
-const DEFAULT_NEGATIVE_PROMPT = [
-  "worst quality, low quality, normal quality, lowres, jpeg artifacts, blurry, oversaturated, undersaturated, washed out",
-  "bad lighting, harsh lighting, overexposed, underexposed, noisy, grainy, posterized",
-  "bad anatomy, malformed anatomy, deformed, disfigured, mutated, distorted, asymmetrical",
-  "bad proportions, out of frame, cropped body, warped perspective",
-  "bad hands, bad feet, deformed hands, malformed hands, mangled hands",
-  "extra fingers, extra digits, extra limbs, extra arms, extra legs",
-  "missing fingers, fewer digits, fewer fingers, fused fingers, webbed fingers",
-  "long fingers, short fingers, broken fingers, distorted fingers",
-  "incorrect finger count, more than 5 fingers per hand, less than 5 fingers per hand",
-  "polydactyly, syndactyly",
-  "floating limbs, disconnected limbs, duplicate limbs, fused limbs",
-  "cross-eye, lazy eye, wonky eyes, deformed face, malformed face",
-  "text, watermark, signature, logo, captions, UI, interface elements",
-  "glitches, tiling, pattern artifacts, banding, moire"
-].join(", ");
 
 
 function getParseSize(sizeStr, defW = 1024, defH = 1024) {
@@ -102,8 +85,9 @@ async function getInvoke(args, coreData) {
   const sampler_name = typeof toolCfg.sampler === "string" && toolCfg.sampler.length ? toolCfg.sampler : "DPM++ 2M Karras";
   const seed = getNumSafe(toolCfg.seed, -1);
 
+  const negativePrompt = String(toolCfg.negativePrompt || "").trim();
   const negative_prompt = [
-    DEFAULT_NEGATIVE_PROMPT,
+    negativePrompt,
     (typeof toolCfg.negativeExtra === "string" && toolCfg.negativeExtra.trim()) ? toolCfg.negativeExtra.trim() : ""
   ].filter(Boolean).join(", ");
 

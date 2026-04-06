@@ -1,12 +1,12 @@
-/**********************************************************************************/
-/* filename: getSpotify.js                                                        */
-/* Version 1.0                                                                    */
-/* Purpose: Spotify API tool — search catalog, control playback, manage playlists */
-/*          Uses delegated OAuth2 tokens stored per Discord user in spotify_tokens*/
-/*          Token is resolved via wo.userId + wo.db at runtime.                  */
-/*          Requires Spotify Premium for playback control operations.             */
-/*          All operations return { ok, error } instead of throwing.             */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 
@@ -18,9 +18,9 @@ const DEFAULT_TIMEOUT_MS = 15000;
 let _dbPool = null;
 
 
-/**********************************************************************************/
-/* Scalar helpers                                                                  */
-/**********************************************************************************/
+
+
+
 function getStr(v, f = "") {
   return typeof v === "string" && v.length ? v : f;
 }
@@ -42,10 +42,10 @@ function getObj(v, f = {}) {
 }
 
 
-/**********************************************************************************/
-/* getDbPool                                                                      */
-/* Creates or returns a cached mysql2 connection pool from wo.db config.          */
-/**********************************************************************************/
+
+
+
+
 async function getDbPool(coreData) {
   if (_dbPool) return _dbPool;
   const mysql2 = await import("mysql2/promise");
@@ -64,10 +64,10 @@ async function getDbPool(coreData) {
 }
 
 
-/**********************************************************************************/
-/* getDelegatedToken                                                               */
-/* Reads the Spotify access token for the current Discord user from spotify_tokens*/
-/**********************************************************************************/
+
+
+
+
 async function getDelegatedToken(coreData) {
   const wo     = getObj(coreData?.workingObject, {});
   const userId = String(wo?.userId || "").trim();
@@ -84,11 +84,11 @@ async function getDelegatedToken(coreData) {
 }
 
 
-/**********************************************************************************/
-/* makeRequest                                                                     */
-/* Performs an authenticated HTTP request to the Spotify Web API.                 */
-/* Returns { ok, status, data, error }.                                           */
-/**********************************************************************************/
+
+
+
+
+
 async function makeRequest(token, { method = "GET", path, query = {}, body } = {}) {
   const { default: https } = await import("node:https");
 
@@ -164,15 +164,15 @@ async function makeRequest(token, { method = "GET", path, query = {}, body } = {
 }
 
 
-/**********************************************************************************/
-/* getOperationSearch                                                              */
-/* Searches the Spotify catalog for tracks, albums, artists, or playlists.       */
-/* args.query    — search string (required)                                       */
-/* args.types    — array of types: track, album, artist, playlist (default: track)*/
-/* args.limit    — max results per type (1–50, default: 20)                      */
-/* args.offset   — pagination offset (default: 0)                                */
-/* args.market   — ISO 3166-1 alpha-2 market code (optional)                     */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
 async function getOperationSearch(token, args) {
   const query  = getStr(args.query, "");
   if (!query) return { ok: false, error: "Missing required argument: query" };
@@ -189,7 +189,7 @@ async function getOperationSearch(token, args) {
   if (!res.ok) return { ok: false, error: res.error };
 
   const out = { ok: true, operation: "search", query, types, results: {} };
-  if (res.data?.tracks)    out.results.tracks    = res.data.tracks.items.map(t => ({ uri: t.uri, name: t.name, artists: t.artists?.map(a => a.name), album: t.album?.name, durationMs: t.duration_ms, explicit: t.explicit, popularity: t.popularity }));
+  if (res.data?.tracks)    out.results.tracks    = res.data.tracks.items.map(t => ({ uri: t.uri, name: t.name, artists: t.artists?.map(a => a.name), album: t.album?.name, durationMs: t.durationMs, explicit: t.explicit, popularity: t.popularity }));
   if (res.data?.albums)    out.results.albums    = res.data.albums.items.map(a => ({ uri: a.uri, name: a.name, artists: a.artists?.map(x => x.name), releaseDate: a.release_date, totalTracks: a.total_tracks }));
   if (res.data?.artists)   out.results.artists   = res.data.artists.items.map(a => ({ uri: a.uri, name: a.name, genres: a.genres, popularity: a.popularity, followers: a.followers?.total }));
   if (res.data?.playlists) out.results.playlists = res.data.playlists.items.map(p => ({ uri: p.uri, name: p.name, owner: p.owner?.display_name, tracks: p.tracks?.total, public: p.public }));
@@ -197,10 +197,10 @@ async function getOperationSearch(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationGetPlayback                                                         */
-/* Returns the current playback state for the user.                               */
-/**********************************************************************************/
+
+
+
+
 async function getOperationGetPlayback(token) {
   const res = await makeRequest(token, { method: "GET", path: "/me/player" });
   if (!res.ok) return { ok: false, error: res.error };
@@ -212,7 +212,7 @@ async function getOperationGetPlayback(token) {
     isPlaying: getBool(d.is_playing, false),
     progressMs: getNum(d.progress_ms, 0),
     device:    d.device ? { id: d.device.id, name: d.device.name, type: d.device.type, volumePercent: d.device.volume_percent } : null,
-    item:      d.item   ? { uri: d.item.uri, name: d.item.name, artists: d.item.artists?.map(a => a.name), album: d.item.album?.name, durationMs: d.item.duration_ms } : null,
+    item:      d.item   ? { uri: d.item.uri, name: d.item.name, artists: d.item.artists?.map(a => a.name), album: d.item.album?.name, durationMs: d.item.durationMs } : null,
     shuffleState:  d.shuffle_state,
     repeatState:   d.repeat_state,
     context:   d.context ? { uri: d.context.uri, type: d.context.type } : null,
@@ -220,16 +220,16 @@ async function getOperationGetPlayback(token) {
 }
 
 
-/**********************************************************************************/
-/* getOperationPlay                                                                */
-/* Starts or resumes playback.                                                    */
-/* args.uris        — array of Spotify track URIs to play (optional)             */
-/* args.contextUri  — album/playlist/artist URI to play (optional)               */
-/* args.deviceId    — device ID to start playback on (optional)                  */
-/* args.offsetIndex — track index within context to start at (optional)          */
-/* args.positionMs  — seek position in ms (optional)                             */
-/* If neither uris nor contextUri is provided, resumes current playback.          */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
 async function getOperationPlay(token, args) {
   const deviceId    = getStr(args.deviceId, "");
   const uris        = getArr(args.uris, []);
@@ -253,11 +253,11 @@ async function getOperationPlay(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationPause                                                               */
-/* Pauses playback.                                                               */
-/* args.deviceId — device ID to pause (optional, defaults to active device)      */
-/**********************************************************************************/
+
+
+
+
+
 async function getOperationPause(token, args) {
   const deviceId = getStr(args.deviceId, "");
   const query    = deviceId ? { device_id: deviceId } : {};
@@ -267,10 +267,10 @@ async function getOperationPause(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationListDevices                                                         */
-/* Returns all available Spotify devices for the current user.                   */
-/**********************************************************************************/
+
+
+
+
 async function getOperationListDevices(token) {
   const res = await makeRequest(token, { method: "GET", path: "/me/player/devices" });
   if (!res.ok) return { ok: false, error: res.error };
@@ -287,12 +287,12 @@ async function getOperationListDevices(token) {
 }
 
 
-/**********************************************************************************/
-/* getOperationTransferPlayback                                                    */
-/* Transfers playback to the specified device.                                    */
-/* args.deviceId — target device ID (required)                                   */
-/* args.play     — whether to start playing immediately (default: false)         */
-/**********************************************************************************/
+
+
+
+
+
+
 async function getOperationTransferPlayback(token, args) {
   const deviceId = getStr(args.deviceId, "");
   if (!deviceId) return { ok: false, error: "Missing required argument: deviceId" };
@@ -303,12 +303,12 @@ async function getOperationTransferPlayback(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationGetPlaylists                                                        */
-/* Returns the current user's playlists.                                          */
-/* args.limit  — max results (1–50, default: 20)                                 */
-/* args.offset — pagination offset (default: 0)                                  */
-/**********************************************************************************/
+
+
+
+
+
+
 async function getOperationGetPlaylists(token, args) {
   const limit  = Math.min(50, Math.max(1, getNum(args.limit, DEFAULT_LIMIT)));
   const offset = Math.max(0, getNum(args.offset, 0));
@@ -327,13 +327,13 @@ async function getOperationGetPlaylists(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationCreatePlaylist                                                      */
-/* Creates a new playlist for the current user.                                  */
-/* args.name        — playlist name (required)                                   */
-/* args.description — playlist description (optional)                            */
-/* args.public      — whether the playlist is public (default: false)            */
-/**********************************************************************************/
+
+
+
+
+
+
+
 async function getOperationCreatePlaylist(token, coreData, args) {
   const name        = getStr(args.name, "");
   if (!name) return { ok: false, error: "Missing required argument: name" };
@@ -362,13 +362,13 @@ async function getOperationCreatePlaylist(token, coreData, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationAddToPlaylist                                                       */
-/* Adds one or more tracks to a playlist.                                        */
-/* args.playlistId — Spotify playlist ID (required)                              */
-/* args.uris       — array of Spotify track URIs to add (required)              */
-/* args.position   — insert position (0 = top, default: append to end)          */
-/**********************************************************************************/
+
+
+
+
+
+
+
 async function getOperationAddToPlaylist(token, args) {
   const playlistId = getStr(args.playlistId, "");
   const uris       = getArr(args.uris, []);
@@ -384,13 +384,13 @@ async function getOperationAddToPlaylist(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationRemoveFromPlaylist                                                  */
-/* Removes one or more tracks from a playlist.                                   */
-/* args.playlistId  — Spotify playlist ID (required)                             */
-/* args.uris        — array of Spotify track URIs to remove (required)          */
-/* args.snapshotId  — playlist snapshot ID for conflict detection (optional)     */
-/**********************************************************************************/
+
+
+
+
+
+
+
 async function getOperationRemoveFromPlaylist(token, args) {
   const playlistId = getStr(args.playlistId, "");
   const uris       = getArr(args.uris, []);
@@ -407,15 +407,15 @@ async function getOperationRemoveFromPlaylist(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationPlayByName                                                          */
-/* One-call play: search → pick best match → get active device → play.           */
-/* Eliminates the need for separate search + listDevices + play calls.            */
-/* args.track   — track name (provide when user wants a specific song)           */
-/* args.album   — album name (provide when user wants a whole album)             */
-/* args.artist  — artist name (optional but improves accuracy)                   */
-/* Exactly one of track or album is required.                                    */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
 async function getOperationPlayByName(token, args) {
   const artist = getStr(args.artist, "").trim();
   const track  = getStr(args.track,  "").trim();
@@ -471,12 +471,12 @@ async function getOperationPlayByName(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationSetVolume                                                           */
-/* Sets the playback volume.                                                      */
-/* args.volumePercent — integer 0–100 (required)                                 */
-/* args.deviceId      — device ID to target (optional, defaults to active device)*/
-/**********************************************************************************/
+
+
+
+
+
+
 async function getOperationSetVolume(token, args) {
   const volumePercent = Math.round(Math.min(100, Math.max(0, getNum(args.volumePercent, -1))));
   if (volumePercent < 0) return { ok: false, error: "Missing required argument: volumePercent (0–100)" };
@@ -489,10 +489,10 @@ async function getOperationSetVolume(token, args) {
 }
 
 
-/**********************************************************************************/
-/* getInvoke                                                                       */
-/* Main entry point called by core-ai-completions when the AI uses this tool.    */
-/**********************************************************************************/
+
+
+
+
 async function getInvokeInternal(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   try {

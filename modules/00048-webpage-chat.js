@@ -1,27 +1,27 @@
-/************************************************************************************/
-/* filename: 00048-webpage-chat.js                                                   *
-/* Version 1.0                                                                       *
-/* Purpose: Webpage chat SPA (port 3112, /chat). Handles channel listing, context    *
-/*          display, AI completions (via internal POST /api proxy), and subchannel   *
-/*          CRUD. Config section: config["webpage-chat"]. Reads wo.db for DB access. *
-/*          Subchannel names stored in chat_subchannels table.                       *
-/*          AI calls are routed through POST localhost:3400/api — channel config      *
-/*          is handled by core-channel-config (api flow), not webpage-channel-config.*
-/*                                                                                   *
-/* Routes:                                                                           *
-/*   GET  /chat                            — main SPA (HTML)                        *
-/*   GET  /chat/style.css                  — shared stylesheet                      *
-/*   GET  /chat/api/chats                  — visible chat list for current user      *
-/*   GET  /chat/api/context                — conversation history for a channel      *
-/*   GET  /chat/api/toolstatus?channelID=  — active toolcall name for channel        *
-/*   GET  /chat/api/jobs?channelID=        — async subagent results (consume=true deletes done jobs)    *
-/*   GET  /chat/api/subchannels            — list subchannels for a channel          *
-/*   POST /chat/api/subchannels            — create subchannel                       *
-/*   PATCH /chat/api/subchannels           — rename / update subchannel settings     *
-/*   DELETE /chat/api/subchannels          — delete subchannel                       *
-/*   POST /chat/api/chat                   — send message (proxy to /api)            *
-/*   POST /chat/api/upload                 — upload file attachment (proxy)          *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs     from "node:fs";
 import crypto from "node:crypto";
@@ -511,7 +511,7 @@ export default async function getWebpageChat(coreData) {
         "SELECT channel_id FROM chat_subchannels WHERE subchannel_id = ? LIMIT 1",
         [subchannelId]
       );
-      const channelIDForSub = scRows?.[0]?.channel_id ? String(scRows[0].channel_id) : null;
+      const channelIDForSub = scRows?.[0]?.channelId ? String(scRows[0].channelId) : null;
 
       await pool.execute(
         "DELETE FROM chat_subchannels WHERE subchannel_id = ?",

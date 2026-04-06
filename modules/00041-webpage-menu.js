@@ -1,10 +1,10 @@
-/**********************************************************************************/
-/* filename: 00041-webpage-menu.js                                                */
-/* Version 1.0                                                                    */
-/* Purpose: Global menu provider for webpage flows. Sets wo.web.menu from config  */
-/*          and filters items by wo.webAuth.role (if present).                    */
-/*          If no role is set, all items without role restriction are shown.       */
-/**********************************************************************************/
+
+
+
+
+
+
+
 
 "use strict";
 

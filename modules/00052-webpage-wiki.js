@@ -1,11 +1,11 @@
-/**********************************************************************************/
-/* filename: 00052-webpage-wiki.js                                                */
-/* Version 1.0                                                                    */
-/* Purpose: Fandom-style AI-driven wiki. Per-channel wiki at /wiki/{channelId}.  */
-/*          Articles stored in MySQL; AI generates article + DALL-E image on     */
-/*          first search. Roles: allowedRoles (read), creatorRoles (generate),   */
-/*          editorRoles (edit+delete), adminRoles (all — includes editor+creator).*/
-/**********************************************************************************/
+
+
+
+
+
+
+
+
 
 import fs   from "node:fs";
 import path from "node:path";
@@ -13,20 +13,20 @@ import { fileURLToPath } from "node:url";
 import { getMenuHtml, getDb, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { setSendNow, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
 import { getSecret } from "../core/secrets.js";
-/* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
+
 let sharp = null;
-try { sharp = (await import("sharp")).default; } catch { /* sharp not available */ }
+try { sharp = (await import("sharp")).default; } catch {  }
 
 const MODULE_NAME = "webpage-wiki";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-/* Width used for article card thumbnails on the homepage */
+
 const THUMB_WIDTH = 400;
 
-/* Resolve or generate a JPEG thumbnail cached to thumbsDir/{filename}.jpg.
- * Regenerates automatically when the source file is newer than the cached thumbnail.
- * Returns { buf, mime } or null on failure (also null when sharp is not installed). */
+
+
+
 async function getThumb(srcPath, thumbsDir, filename, width) {
   if (!sharp) return null;
   const thumbPath = path.join(thumbsDir, filename + ".jpg");
@@ -38,7 +38,7 @@ async function getThumb(srcPath, thumbsDir, filename, width) {
     if (thumbStat && thumbStat.mtimeMs >= srcStat.mtimeMs) {
       return { buf: await fs.promises.readFile(thumbPath), mime: "image/jpeg" };
     }
-  } catch { /* srcPath missing — fall through to sharp */ }
+  } catch {  }
   try {
     await fs.promises.mkdir(thumbsDir, { recursive: true });
     const buf = await sharp(srcPath)
@@ -50,15 +50,15 @@ async function getThumb(srcPath, thumbsDir, filename, width) {
   } catch { return null; }
 }
 
-/* Extract the URL path from an absolute or relative URL */
+
 function getUrlPath(url) {
   if (!url) return "";
   try { return new URL(url).pathname.split("?")[0]; } catch { return String(url).split("?")[0]; }
 }
 
-/* Derive the thumbnail URL for a given image URL and width.
- * Works for both relative (/documents/wiki/img.png) and absolute (https://host/documents/wiki/img.png).
- * Returns the pre-generated thumbnail path; the original URL is used as onerror fallback. */
+
+
+
 function getThumbUrl(imageUrl, width) {
   if (!imageUrl) return imageUrl;
   const urlPath = getUrlPath(imageUrl);
@@ -69,7 +69,7 @@ function getThumbUrl(imageUrl, width) {
   try { const u = new URL(imageUrl); return u.origin + thumbPath; } catch { return thumbPath; }
 }
 
-/* Eagerly generate a thumbnail for a freshly saved image URL (fire-and-forget). */
+
 async function ensureThumb(imageUrl, width) {
   if (!imageUrl || !sharp) return;
   const urlPath = getUrlPath(imageUrl);
@@ -210,7 +210,7 @@ async function dbSearchArticles(db, channelId, query, maxAgeDays = 0) {
         ftParams
       );
       if (rows.length) return rows;
-    } catch { /* fall through to LIKE */ }
+    } catch {  }
   }
   const like = `%${q}%`;
   const likeParams = [channelId, like, like, ...(maxAgeDays > 0 ? [maxAgeDays] : [])];
@@ -289,16 +289,16 @@ async function dbUpdateArticle(db, channelId, slug, updates) {
   );
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   Embedded image generation — independent of tools/getImage.js.
-   Config keys under core.json["webpage-wiki"].imageGen:
-     apiKey        — API key for the image generation endpoint (required)
-     endpoint      — image endpoint URL (default: OpenAI images/generations)
-     model         — model name (default: gpt-image-1)
-     size          — explicit size string e.g. "1024x1024" (overrides aspect)
-     aspect        — aspect ratio e.g. "1:1", "16:9", "portrait" (default: 1:1)
-     publicBaseUrl — prefix for returned image URLs (optional; relative if unset)
-   ───────────────────────────────────────────────────────────────────────────── */
+
+
+
+
+
+
+
+
+
+
 
 function wikiImgResolveSize(cfg) {
   const raw = String(cfg?.size || "").trim();
@@ -389,19 +389,19 @@ async function wikiGenImage(prompt, imgCfg, wo) {
 }
 
 
-/* NOTE: The wiki AI system prompt and tools (getInformation, getTimeline) are
- * configured in core.json per wiki channelId (api-channel-config), just like
- * the browser-extension channel. cfg.apiUrl points to the internal API flow. */
+
+
+
 
 
 async function callPipelineForArticle(query, channel, coreData, promptAddition) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
 
-  /* POST to the internal API flow.
-   * All AI parameters (model, endpoint, apiKey, systemPrompt, tools, etc.) are
-   * configured per channel-ID in core.json (api-channel-config / core-channel-config),
-   * mirroring how the browser-extension channel is configured. */
+  
+
+
+
   const apiUrl    = getStr(cfg.apiUrl || "http://localhost:3400/api");
   const apiSecret = await getSecret(wo, getStr(wo.apiSecret || ""));
 
@@ -426,7 +426,7 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
   let article = null;
   try { article = JSON.parse(responseText); } catch {
     const m = responseText.match(/\{[\s\S]*\}/);
-    if (m) { try { article = JSON.parse(m[0]); } catch { /* ignored */ } }
+    if (m) { try { article = JSON.parse(m[0]); } catch {  } }
   }
   if (!article || typeof article !== "object") {
     throw new Error("AI returned no valid JSON article: " + responseText.slice(0, 200));
@@ -444,7 +444,7 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
   if (imgPrompt) {
     try {
       article.image_url = await wikiGenImage(imgPrompt, imgCfg, wo);
-    } catch { /* image generation failed — article saves without image, regen available in editor */ }
+    } catch {  }
   }
 
   return article;
@@ -476,7 +476,7 @@ function getStyleCss() {
   try {
     const cssPath = path.join(__dirname, "..", "shared", "webpage", "style.css");
     sharedCss = fs.readFileSync(cssPath, "utf-8");
-  } catch { /* ignore */ }
+  } catch {  }
   return sharedCss;
 }
 
@@ -1226,8 +1226,8 @@ export default async function getWebpageWiki(coreData) {
     return coreData;
   }
 
-  /* Role checks: admin ⊇ editor ⊇ {}, admin ⊇ creator ⊇ {}
-     All three: empty array = nobody. No implicit defaults. */
+  
+
   const adminRoles   = Array.isArray(channel.adminRoles)   ? channel.adminRoles   : [];
   const editorRoles  = Array.isArray(channel.editorRoles)  ? channel.editorRoles  : [];
   const creatorRoles = Array.isArray(channel.creatorRoles) ? channel.creatorRoles : [];
@@ -1295,13 +1295,13 @@ export default async function getWebpageWiki(coreData) {
       if (articleToDelete?.image_url) {
         const imgUrlStr = getStr(articleToDelete.image_url);
         const deleteFileAndThumbs = (absPath) => {
-          try { fs.unlinkSync(absPath); } catch { /* already gone */ }
+          try { fs.unlinkSync(absPath); } catch {  }
           const thumbsRoot = path.join(path.dirname(absPath), "thumbnails");
           try {
             for (const sz of fs.readdirSync(thumbsRoot)) {
-              try { fs.unlinkSync(path.join(thumbsRoot, sz, path.basename(absPath) + ".jpg")); } catch { /* ignore */ }
+              try { fs.unlinkSync(path.join(thumbsRoot, sz, path.basename(absPath) + ".jpg")); } catch {  }
             }
-          } catch { /* no thumbnails dir */ }
+          } catch {  }
         };
         const wikiImgPrefix = `/wiki/${channelId}/images/`;
         if (imgUrlStr.startsWith(wikiImgPrefix)) {
@@ -1380,7 +1380,7 @@ export default async function getWebpageWiki(coreData) {
   if (method === "POST" && seg1 === "api" && seg2 === "regen-image" && seg3) {
     if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden – editor role required" }); return coreData; }
     let articleForRegen = null;
-    try { articleForRegen = await dbGetArticle(db, channelId, seg3, 0); } catch { /* ignore */ }
+    try { articleForRegen = await dbGetArticle(db, channelId, seg3, 0); } catch {  }
     if (!articleForRegen) { await sendJson(wo, 404, { ok: false, error: "Article not found" }); return coreData; }
     let regenPromptAddition = "";
     let regenPromptOverride = "";
@@ -1388,20 +1388,20 @@ export default async function getWebpageWiki(coreData) {
       const bodyJson = wo.http?.json || (wo.http?.rawBody ? JSON.parse(wo.http.rawBody) : {});
       regenPromptAddition = getStr(bodyJson.promptAddition || "").trim();
       regenPromptOverride = getStr(bodyJson.promptOverride || "").trim();
-    } catch { /* ignore */ }
+    } catch {  }
     try {
       const imageUrl = await callPipelineForImageOnly(articleForRegen, channel, coreData, regenPromptAddition, regenPromptOverride);
 
       const oldUrl = getStr(articleForRegen.image_url || "");
       const deleteOldImageFile = (absPath) => {
-        try { fs.unlinkSync(absPath); } catch { /* already gone */ }
+        try { fs.unlinkSync(absPath); } catch {  }
         const thumbsRoot = path.join(path.dirname(absPath), "thumbnails");
         try {
           const sizes = fs.readdirSync(thumbsRoot);
           for (const sz of sizes) {
-            try { fs.unlinkSync(path.join(thumbsRoot, sz, path.basename(absPath) + ".jpg")); } catch { /* ignore */ }
+            try { fs.unlinkSync(path.join(thumbsRoot, sz, path.basename(absPath) + ".jpg")); } catch {  }
           }
-        } catch { /* no thumbnails dir — ignore */ }
+        } catch {  }
       };
       const wikiImgPrefix = `/wiki/${channelId}/images/`;
       if (oldUrl.startsWith(wikiImgPrefix)) {
@@ -1410,8 +1410,8 @@ export default async function getWebpageWiki(coreData) {
           deleteOldImageFile(path.join(__dirname, "..", "pub", "wiki", channelId, "images", oldFilename));
         }
       }
-      /* Delete AI-generated wiki image from pub/documents/wiki/
-         (safe to delete — this subdirectory is exclusively used by the wiki) */
+      
+
       const docsWikiMatch = oldUrl.match(/\/documents\/wiki\/([^?#/]+)$/);
       if (docsWikiMatch) {
         const oldFilename = docsWikiMatch[1];
@@ -1457,7 +1457,7 @@ export default async function getWebpageWiki(coreData) {
   if (method === "GET" && seg2 === "edit" && seg1) {
     if (!isEditor) { await sendText(wo, 403, "403 Forbidden"); return coreData; }
     let article = null;
-    try { article = await dbGetArticle(db, channelId, seg1, maxAgeDays); } catch { /* ignore */ }
+    try { article = await dbGetArticle(db, channelId, seg1, maxAgeDays); } catch {  }
     if (!article) {
       await sendHtml(wo, 404, buildFullPage({
         head: "404 – Article Not Found",
@@ -1495,7 +1495,7 @@ export default async function getWebpageWiki(coreData) {
 
   if (seg1 && method === "GET") {
     let article = null;
-    try { article = await dbGetArticle(db, channelId, seg1, maxAgeDays); } catch { /* ignore */ }
+    try { article = await dbGetArticle(db, channelId, seg1, maxAgeDays); } catch {  }
     if (!article) {
       await sendHtml(wo, 404, buildFullPage({
         head: "404 – Article Not Found",

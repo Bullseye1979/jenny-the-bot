@@ -1,31 +1,31 @@
-/**********************************************************************************/
-/* filename: getSubAgent.js                                                        *
-/* Version 1.0                                                                     *
-/* Purpose: Spawns an isolated AI subagent as a fire-and-forget async job.        *
-/*          Always async — result is delivered back to the originating channel     *
-/*          when complete. For simple single-step tasks use direct tools instead.  *
-/*                                                                                 *
-/*          Orchestration context: callers may pass an `orchestration` object to   *
-/*          give the subagent explicit scope, tool locks, and artifact hand-offs.  *
-/*          This prevents subagents from re-doing work assigned to others and      *
-/*          eliminates duplicate side effects (double image generation, etc.).     *
-/*                                                                                 *
-/* Config (toolsconfig.getSubAgent):                                               *
-/*   apiUrl         - Internal API base URL (default: http://localhost:3400)       *
-/*   apiSecret      - Bearer token key name for internal API auth (resolved via DB)*
-/*   asyncSpawnPath - Path for spawn endpoint (default: /api/spawn)               *
-/*   spawnTimeoutMs - Timeout for the spawn HTTP call (default: 10000)            *
-/*   types          - Map of type name to channelID, e.g.:                        *
-/*                    { "research": "subagent-research", "develop": "subagent-develop" } *
-/*                                                                                 *
-/* Adding a new subagent type:                                                     *
-/*   1. Add an entry to toolsconfig.getSubAgent.types in core.json:               *
-/*      "mytool": "subagent-mytool"                                                *
-/*   2. Add a channel block in config.core-channel-config.channels:               *
-/*      { "channelMatch": ["subagent-mytool"], "overrides": { "tools": [...],     *
-/*        "apiEnabled": 1, "apiSecret": "API_SECRET", ... } }                     *
-/*   3. No Discord channel is required — the channel name is virtual.             *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
@@ -39,7 +39,7 @@ const MODULE_NAME = "getSubAgent";
 function buildOrchestrationBlock(orchestration, turnId) {
   const lines = ["[ORCHESTRATION CONTEXT]"];
 
-  if (turnId) lines.push(`turn_id: ${turnId}`);
+  if (turnId) lines.push(`turnId: ${turnId}`);
 
   const o = typeof orchestration === "string"
     ? (() => { try { return JSON.parse(orchestration); } catch { return null; } })()
@@ -50,17 +50,17 @@ function buildOrchestrationBlock(orchestration, turnId) {
     return lines.join("\n");
   }
 
-  if (o.globalGoal ?? o.global_goal)  lines.push(`globalGoal: "${o.globalGoal ?? o.global_goal}"`);
-  if (o.yourTask ?? o.your_task)    lines.push(`yourTask: "${o.yourTask ?? o.your_task}"`);
-  if (o.yourRole ?? o.your_role)    lines.push(`yourRole: ${o.yourRole ?? o.your_role}`);
+  if (typeof o.globalGoal === "string" && o.globalGoal.trim()) lines.push(`globalGoal: "${o.globalGoal}"`);
+  if (typeof o.yourTask === "string" && o.yourTask.trim()) lines.push(`yourTask: "${o.yourTask}"`);
+  if (typeof o.yourRole === "string" && o.yourRole.trim()) lines.push(`yourRole: ${o.yourRole}`);
 
-  const doOnly = Array.isArray(o.doOnly) ? o.doOnly : o.do_only;
+  const doOnly = Array.isArray(o.doOnly) ? o.doOnly : null;
   if (Array.isArray(doOnly) && doOnly.length) {
     lines.push("doOnly:");
     for (const item of doOnly) lines.push(`  - ${item}`);
   }
 
-  const doNot = Array.isArray(o.doNot) ? o.doNot : o.do_not;
+  const doNot = Array.isArray(o.doNot) ? o.doNot : null;
   if (Array.isArray(doNot) && doNot.length) {
     lines.push("doNot:");
     for (const item of doNot) lines.push(`  - ${item}`);
@@ -68,7 +68,7 @@ function buildOrchestrationBlock(orchestration, turnId) {
 
   const existingArtifacts = o.existingArtifacts && typeof o.existingArtifacts === "object"
     ? o.existingArtifacts
-    : (o.existing_artifacts && typeof o.existing_artifacts === "object" ? o.existing_artifacts : null);
+    : null;
   if (existingArtifacts) {
     const entries = Object.entries(existingArtifacts);
     if (entries.length) {
@@ -77,7 +77,7 @@ function buildOrchestrationBlock(orchestration, turnId) {
     }
   }
 
-  const assignedToOthers = Array.isArray(o.assignedToOthers) ? o.assignedToOthers : o.assigned_to_others;
+  const assignedToOthers = Array.isArray(o.assignedToOthers) ? o.assignedToOthers : null;
   if (Array.isArray(assignedToOthers) && assignedToOthers.length) {
     lines.push("assignedToOthers (DO NOT redo these):");
     for (const item of assignedToOthers) lines.push(`  - ${item}`);
@@ -85,7 +85,7 @@ function buildOrchestrationBlock(orchestration, turnId) {
 
   const toolLocks = o.toolLocks && typeof o.toolLocks === "object"
     ? o.toolLocks
-    : (o.tool_locks && typeof o.tool_locks === "object" ? o.tool_locks : null);
+    : null;
   if (toolLocks) {
     const locks = Object.entries(toolLocks);
     if (locks.length) {
@@ -109,7 +109,7 @@ async function getInvoke(args, coreData) {
   const mode = modeRaw === "resume" ? "resume" : "normal";
   const inputProjectId = args?.projectId ? String(args.projectId).trim() : "";
   const projectId = mode === "resume" ? inputProjectId : "";
-  const explicitChannel = String(args?.channelId || args?.channel_id || "").trim();
+  const explicitChannel = String(args?.channelId || "").trim();
   const orchestration   = args?.orchestration ?? null;
   const requestedType = String(args?.type || "").trim();
   let typeName = requestedType || "generic";
@@ -151,7 +151,7 @@ async function getInvoke(args, coreData) {
     ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
 
-  const callerTurnId = String(wo.callerTurnId || wo.turn_id || "").trim();
+  const callerTurnId = String(wo.callerTurnId || wo.turnId || "").trim();
 
   let fullPayload = task;
   if (orchestration !== null && orchestration !== undefined) {
@@ -235,8 +235,9 @@ async function getInvoke(args, coreData) {
     agentDepth:             nextAgentDepth,
   });
 
-  const systemPromptAddition = projectId
-    ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. IMPORTANT: Before asking the user for any URLs, file paths, or artifact references — scan your loaded conversation history first. All previously produced URLs and ARTIFACTS blocks from prior turns are available there. Use them directly. Only ask the user if the information is genuinely absent from your context. You may call tools freely using URLs found in your context. Only spawn a new subagent via getSubAgent for genuinely independent sub-tasks that require a different tool palette.`
+  const projectContextPromptTemplate = typeof cfg.projectContextPrompt === "string" ? cfg.projectContextPrompt.trim() : "";
+  const systemPromptAddition = projectId && projectContextPromptTemplate
+    ? projectContextPromptTemplate.replace(/\$\{projectId\}/g, projectId)
     : undefined;
 
   const _spawnBody = JSON.stringify({
@@ -265,7 +266,7 @@ async function getInvoke(args, coreData) {
     if (!_spawnRes.ok || !_spawnData.ok) {
       const _spawnErr = _spawnData.error || `HTTP ${_spawnRes.status}`;
       logSubagent("error", "getSubAgent", "spawn_http_error", { typeName, channelId, projectId: projectId || null, error: _spawnErr, httpStatus: _spawnRes.status });
-      return { ok: false, error: _spawnErr, type: typeName, channelId: channelId, channel_id: channelId };
+      return { ok: false, error: _spawnErr, type: typeName, channelId };
     }
 
     log(`Subagent spawned — job: ${_spawnData.jobId}, project: ${_spawnData.projectId}`);
@@ -283,8 +284,7 @@ async function getInvoke(args, coreData) {
       status:    "started",
       message:   "Working on it — result will be delivered when complete.",
       type:      typeName,
-      channelId: channelId,
-      channel_id: channelId,
+      channelId,
       _meta: {
         event: "subagent_started",
         visibility: "internal"
@@ -301,8 +301,7 @@ async function getInvoke(args, coreData) {
       ok:    false,
       error: isAbort ? "Spawn request timed out" : (e?.message || String(e)),
       type:  typeName,
-      channelId: channelId,
-      channel_id: channelId,
+      channelId,
     };
   }
 }

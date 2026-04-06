@@ -1,26 +1,26 @@
-/************************************************************************************
-/* filename: 00028-webpage-voice-input.js                                          *
-/* Version 1.0                                                                     *
-/* Purpose: Handles POST /voice/audio — validates auth + channelId, converts       *
-/*          the incoming audio body to a 16 kHz mono WAV temp file, and sets       *
-/*          wo fields so the shared pipeline (transcription → AI → TTS) runs       *
-/*          identically to the Discord voice flow.                                 *
-/*                                                                                 *
-/* MUST run before 00030-core-voice-transcribe (which gates on wo.transcribeAudio) *
-/*                                                                                 *
-/* Flow: webpage                                                                   *
-/*                                                                                 *
-/* wo fields set on success:                                                       *
-/*   wo.audioFile          — path to converted WAV                                 *
-/*   wo._audioCaptureDir   — temp dir for cleanup                                  *
-/*   wo.audioMimeType      — original MIME type                                    *
-/*   wo.transcribeAudio    — true                                                  *
-/*   wo.synthesizeSpeech   — true                                                  *
-/*   wo.ttsFormat          — "mp3"                                                 *
-/*   wo.channelID          — from ?channelId query param                           *
-/*   wo.isWebpageVoice     — true                                                  *
-/*   wo.userId             — Discord user ID from OAuth session (wo.webAuth.userId)*
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs   from "node:fs";
 import os   from "node:os";

@@ -1,13 +1,13 @@
-/**********************************************************************************/
-/* filename: getZIP.js                                                             *
-/* Version 1.0                                                                     *
-/* Purpose: Downloads one or more files by URL and packages them into a ZIP        *
-/*          archive. A reference base URL can be supplied so that the relative     *
-/*          path of each file is preserved inside the archive, maintaining the     *
-/*          original directory structure.                                          *
-/*                                                                                 *
-/* Config: none — relies solely on workingObject for userId and baseUrl.          *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 import path from "node:path";
 import JSZip from "jszip";

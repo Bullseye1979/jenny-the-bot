@@ -1,11 +1,11 @@
-/**********************************************************************************/
-/* filename: 00040-webpage-auth.js                                                */
-/* Version 1.0                                                                    */
-/* Purpose: Discord OAuth2 SSO for webpage ports. Scope controlled via cfg.ports. */
-/*          Login routes handled only on cfg.loginPort. Writes wo.webAuth (role). */
-/*          Non-/auth/* requests pass through unchanged (passive module).          */
-/*          Gate redirects use the public baseUrl (without :loginPort).            */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
 
 "use strict";
 
@@ -304,9 +304,9 @@ export default async function getWebpageAuth(coreData) {
   const { loginPort, ports } = getPorts(cfg);
   const reqPort = Number(wo?.http?.port);
 
-  /**************************************************************/
-  /* Scope ONLY via ports whitelist                              */
-  /**************************************************************/
+  
+  
+  
   if (!ports.includes(reqPort)) return coreData;
 
   const clientId = String(cfg.clientId || "").trim();
@@ -337,9 +337,9 @@ export default async function getWebpageAuth(coreData) {
   const sessTok = String(cookies[COOKIE_SESS] || "");
   const sessObj = sessTok ? getVerifyToken(secret, sessTok) : null;
 
-  /**************************************************************/
-  /* /auth/logout must work on any scoped port                   */
-  /**************************************************************/
+  
+  
+  
   if (path === "/auth/logout") {
     const c1 = getCookieLine(COOKIE_SESS, "", { ...cookieBase, maxAge: 0 });
     const c2 = getCookieLine(COOKIE_STATE, "", { ...cookieBase, maxAge: 0 });
@@ -349,9 +349,9 @@ export default async function getWebpageAuth(coreData) {
     return coreData;
   }
 
-  /**************************************************************/
-  /* /auth/me — returns current session as JSON (any scoped port) */
-  /**************************************************************/
+  
+  
+  
   if (path === "/auth/me") {
     if (sessObj) {
       setApplyAuthToWorkingObject(wo, cfg, sessObj);
@@ -369,9 +369,9 @@ export default async function getWebpageAuth(coreData) {
     return coreData;
   }
 
-  /**************************************************************/
-  /* /auth/sso — cross-domain token handoff (any scoped port)   */
-  /**************************************************************/
+  
+  
+  
   if (path === "/auth/sso") {
     const tokenId = String(wo.http?.query?.token || "").trim();
     const returnTo = String(wo.http?.query?.returnTo || "/").trim();
@@ -438,17 +438,17 @@ export default async function getWebpageAuth(coreData) {
     return coreData;
   }
 
-  /**************************************************************/
-  /* Apply session to workingObject (passive)                    */
-  /**************************************************************/
+  
+  
+  
   if (sessObj && typeof sessObj === "object") {
     setApplyAuthToWorkingObject(wo, cfg, sessObj);
   }
 
-  /**************************************************************/
-  /* Gate: if not logged in, redirect to login for app routes    */
-  /* but DO NOT block static assets / documents                  */
-  /**************************************************************/
+  
+  
+  
+  
   if (!sessObj && !getIsAuthPath(path)) {
     const isAsset =
       path === "/favicon.ico" ||
@@ -470,19 +470,19 @@ export default async function getWebpageAuth(coreData) {
     }
   }
 
-  /**************************************************************/
-  /* Non-/auth/* requests are not blocked                        */
-  /**************************************************************/
+  
+  
+  
   if (!getIsAuthPath(path)) return coreData;
 
-  /**************************************************************/
-  /* /auth/login + /auth/callback handled ONLY on loginPort      */
-  /**************************************************************/
+  
+  
+  
   if (reqPort !== loginPort) {
-    /* Re-use the existing ?next= query param (or fall back to /) so the URL
-       doesn't grow on every bounce.  Also derive the login base from the
-       public redirectUri origin so direct-port access (host:3115) still
-       ends up at the Caddy-proxied login page, not back on the same port. */
+    
+
+
+
     const next = String(wo.http?.query?.next || "/");
     let loginBase = publicBase;
     if (cfg.redirectUri) {

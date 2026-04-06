@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getAnimatedPicture.js                                                 *
-/* Version 1.0                                                                     *
-/* Purpose: Animate an image via Replicate (Veo) and save the video to             *
-/*          ./pub/documents, returning a public URL.                               *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { saveFile } from "../core/file.js";
 import { getSecret } from "../core/secrets.js";

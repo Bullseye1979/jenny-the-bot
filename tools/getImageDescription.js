@@ -1,8 +1,8 @@
-/**********************************************************************************/
-/* filename: getImageDescription.js                                                *
-/* Version 1.0                                                                     *
-/* Purpose: Request image analysis via the internal API flow and return text.      *
-/**********************************************************************************/
+
+
+
+
+
 
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
@@ -29,7 +29,7 @@ function getStrictConfig(workingObject) {
 
 async function getInvoke(args, coreData) {
   const workingObject = coreData?.workingObject || {};
-  const imageUrl = getIsValidImageUrl(args?.imageURL || args?.imageUrl);
+  const imageUrl = getIsValidImageUrl(args?.imageUrl);
   if (!imageUrl) return { ok: false, error: `[${MODULE_NAME}] Missing or invalid imageUrl (must be http/https).` };
 
   try {
@@ -38,7 +38,10 @@ async function getInvoke(args, coreData) {
 
     const systemPrompt = String(toolCfg.systemPrompt || "").trim();
     const userPrompt = String(args?.prompt || "").trim();
-    const instruction = userPrompt || String(toolCfg.defaultPrompt || "Describe the image accurately. Extract visible text if present.").trim();
+    const instruction = userPrompt || String(toolCfg.defaultPrompt || "").trim();
+    if (!instruction) {
+      return { ok: false, error: `[${MODULE_NAME}] missing toolsconfig.${MODULE_NAME}.defaultPrompt or args.prompt` };
+    }
 
     const payloadParts = [systemPrompt, `Image URL: ${imageUrl}`, `Task: ${instruction}`].filter(Boolean);
     const headers = { "Content-Type": "application/json" };

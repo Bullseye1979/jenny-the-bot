@@ -1,14 +1,14 @@
-/************************************************************************************/
-/* filename: 00057-webpage-gdpr.js                                                  *
-/* Version 1.0                                                                      *
-/* Purpose: GDPR data-export SPA.  Authenticated users can download an Excel file  *
-/*          containing all personal data held for their account:                   *
-/*            • Sheet 1 – Context entries (id = userId or id = userId-prefixed)    *
-/*            • Sheet 2 – GDPR consent records                                     *
-/*            • Sheet 3 – Files stored in the user documents directory             *
-/* Flow: webpage                                                                    *
-/* Port: 3121 (cfg.port)                                                            *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
 
 import fs   from "node:fs";
 import path from "node:path";
@@ -71,7 +71,7 @@ async function buildGdprWorkbook(userId, dbCfg, gdprTable) {
         [userId]
       );
       ctxRows = rows;
-    } catch { /* table might not exist */ }
+    } catch {  }
 
     for (const r of ctxRows) {
       ctxSheet.addRow([
@@ -103,12 +103,12 @@ async function buildGdprWorkbook(userId, dbCfg, gdprTable) {
         [userId]
       );
       gdprRows = rows;
-    } catch { /* table might not exist */ }
+    } catch {  }
 
     for (const r of gdprRows) {
       gdprSheet.addRow([
         String(r.user_id ?? ""),
-        String(r.channel_id ?? ""),
+        String(r.channelId ?? ""),
         r.chat       ? "yes" : "no",
         r.voice      ? "yes" : "no",
         r.disclaimer ? "yes" : "no",

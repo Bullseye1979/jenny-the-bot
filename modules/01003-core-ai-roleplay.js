@@ -1,17 +1,17 @@
-/*******************************************************************************
-/* filename: 01003-core-ai-roleplay.js                                             *
-/* Version 1.0                                                                 *
-/* Purpose: Two-pass generation for models that struggle with multi-step.      *
-/*          Pass 1 (LLM): Generate normal text response.                       *
-/*          Pass 2 (LLM): Turn that text into ONE image description/prompt.    *
-/*              - Pass 2 receives persona + optional ImagePersonaHint.         *
-/*              - Pass 2 also receives CONTEXT (recent history) + latest user  *
-/*                input, so the prompt reflects events, not just vibes.        *
-/*          Then call ONLY the FIRST tool in tools[] with {prompt:<imgPrompt>} *
-/*          Parse returned URL (string or JSON) and append it to the END of    *
-/*          the Pass-1 text on its own line.                                   *
-/* Persistence: Only persist the Pass-1 assistant text (NOT the prompt pass). *
-/*******************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import { getContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
@@ -58,9 +58,9 @@ function getShouldRunForThisModule(wo) {
 
 
 function getWithTurnId(rec, wo) {
-  const t = typeof wo?.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
+  const t = typeof wo?.turnId === "string" && wo.turnId ? wo.turnId : undefined;
   const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined;
-  return { ...(t ? { ...rec, turn_id: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() };
+  return { ...(t ? { ...rec, turnId: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() };
 }
 
 
@@ -334,7 +334,7 @@ export default async function getCoreAi(coreData) {
   const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory);
   const system1 = getSystemContentTextRun(wo);
 
-  /***** PASS 1: TEXT (with continue loop) *****/
+  
   const pass1Messages = [
     { role: "system", content: system1 },
     ...history,
@@ -383,7 +383,7 @@ export default async function getCoreAi(coreData) {
   const assistantPass1 = { role: "assistant", authorName: getAssistantAuthorName(wo), content: textOut };
   if (assistantPass1.authorName == null) delete assistantPass1.authorName;
 
-  /***** PASS 2: IMAGE PROMPT (NOT persisted) *****/
+  
   const personaForImages = getStr(wo?.persona, "");
   const system2 = getSystemContentImagePromptRun(personaForImages, kiCfg.imagePersonaHint, kiCfg.imagePromptRules);
 
@@ -424,7 +424,7 @@ export default async function getCoreAi(coreData) {
     imagePrompt = getCleanSingleLinePrompt(imagePrompt);
   }
 
-  /***** TOOL: FIRST TOOL ONLY *****/
+  
   const toolsList = Array.isArray(kiCfg.toolsList) ? kiCfg.toolsList : [];
   const firstToolName = toolsList.length ? String(toolsList[0] ?? "").trim() : "";
   let finalUrl = "";

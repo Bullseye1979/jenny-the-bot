@@ -1,8 +1,8 @@
-/**********************************************************************************/
-/* filename: getTime.js                                                            *
-/* Version 1.0                                                                     *
-/* Purpose: Return current UTC time (ISO 8601) as tool output.                     *
-/**********************************************************************************/
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 

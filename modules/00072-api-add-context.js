@@ -1,8 +1,8 @@
-/****************************************************************************************************************
-* filename: 00072-api-add-context.js                                                                               *
-* Version 1.0                                                                                                  *
-* Purpose: Append the current API payload to the DB context with role=user and preserved turn_id when present.  *
-****************************************************************************************************************/
+
+
+
+
+
 
 import { setContext } from "../core/context.js";
 
@@ -59,14 +59,14 @@ export default async function getApiAddContext(coreData) {
   }
 
   const turnId =
-    typeof workingObject.turn_id === "string" && workingObject.turn_id.length > 0
-      ? workingObject.turn_id
+    typeof workingObject.turnId === "string" && workingObject.turnId.length > 0
+      ? workingObject.turnId
       : undefined;
 
   const record = {
     ts: getString(workingObject.timestamp || ""),
     role: "user",
-    turn_id: turnId,
+    turnId: turnId,
     content: getString(text),
     source: getString(workingObject.source ?? workingObject.flow ?? "api"),
   };

@@ -1,9 +1,9 @@
-/************************************************************************************/
-/* filename: 00044-webpage-config-editor.js                                         *
-/* Version 1.0                                                                      *
-/* Purpose: Web-based config editor SPA. Serves the editor UI and handles           *
-/*          read/write of core.json. Config section: config["webpage-config-editor"]*
-/************************************************************************************/
+
+
+
+
+
+
 "use strict";
 
 import fs from "node:fs";
@@ -177,8 +177,8 @@ function getConfigHtml(opts) {
     '<button id="save-btn" disabled onclick="saveConfig()">Saved</button>';
   const menuHtml   = getMenuHtml(opts?.menu || [], activePath, role, rightHtml, null, opts?.webAuth);
 
-  /* The embedded <script> closing tag must be split so the browser parser doesn't
-     terminate the script block early when this string is part of a larger file. */
+  
+
   const SCRIPT_CLOSE = "<" + "/script>";
 
   return `<!DOCTYPE html>

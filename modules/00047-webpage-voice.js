@@ -1,36 +1,36 @@
-/**********************************************************************************/
-/* filename: 00047-webpage-voice.js                                               */
-/* Version 1.0                                                                    */
-/* Purpose: Webpage voice interface — serves a browser-based always-on SPA       */
-/*          with meeting recording, speaker management, and diarization review.  */
-/*                                                                                */
-/* Routes (port 3119):                                                            */
-/*   GET  /voice                        → SPA (Voice / Speakers / Review tabs)   */
-/*   GET  /voice/style.css              → shared stylesheet                       */
-/*   POST /voice/audio                  → audio upload for always-on / meeting    */
-/*   GET  /voice/api/speakers           → list speakers (?channelId=)             */
-/*   POST /voice/api/speakers           → create speaker {name, channelId}        */
-/*   DELETE /voice/api/speakers/:id     → delete speaker + sample file            */
-/*   POST /voice/api/sample/:speakerId  → upload sample audio → transcribe+store  */
-/*   GET  /voice/api/sessions           → list sessions (?channelId=)             */
-/*   GET  /voice/api/session/:id        → chunks + speaker mappings for session   */
-/*   DELETE /voice/api/session/:id      → delete session + chunks + assignments   */
-/*   POST /voice/api/assign             → {chunkId, chunkLabel, speakerId}        */
-/*   POST /voice/api/speakers/new-and-assign → {name,channelId,chunkId,chunkLabel}*/
-/*                                                                                */
-/* Config (config["webpage-voice"]):                                              */
-/*   port             — HTTP port (default 3119)                                  */
-/*   silenceTimeoutMs — silence before auto-send (default 2500)                  */
-/*   maxDurationMs    — hard recording cap (default 30000)                       */
-/*   allowedRoles     — role whitelist (empty = open)                            */
-/*   channels         — [{id, label}] shown in channel dropdown                  */
-/*   clearContextChannels — array of channel IDs whose context DB is purged      */
-/*                          (non-frozen rows only) before storing a transcript.  */
-/*                          Default: []                                           */
-/*   sampleModel      — model for sample transcription (default gpt-4o-mini-transcribe) */
-/*   transcribeApiKey — API key placeholder for sample transcription              */
-/*   transcribeEndpoint — optional custom API base URL                           */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs           from "node:fs";
 import os           from "node:os";
@@ -1315,9 +1315,9 @@ export default async function getWebpageVoice(coreData) {
         const chunks = await listChunksForSession(pool, sessionId);
 
         const prevChannelId = wo.channelID;
-        wo.channelID = sess.channel_id;
+        wo.channelID = sess.channelId;
 
-        if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(sess.channel_id)) await setPurgeContext(wo);
+        if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(sess.channelId)) await setPurgeContext(wo);
 
         let words = 0;
         for (const chunk of chunks) {

@@ -1,15 +1,15 @@
-/**********************************************************************************/
-/* filename: shared/webpage/utils.js                                              */
-/* Version 1.0                                                                    */
-/* Purpose: Shared HTTP-response helpers used by all webpage modules.             */
-/*          Centralises setSendNow, setJsonResp, getUserRoleLabels,               */
-/*          getIsAllowedRoles so each module no longer defines its own copy.      */
-/**********************************************************************************/
 
-/**
- * Send wo.http.response to the client immediately via wo.http.res.
- * Safe to call multiple times — guards writableEnded and headersSent.
- */
+
+
+
+
+
+
+
+
+
+
+
 export async function setSendNow(wo) {
   const res = wo?.http?.res;
   if (!res || res.writableEnded || res.headersSent) return;
@@ -26,9 +26,9 @@ export async function setSendNow(wo) {
 }
 
 
-/**
- * Set a JSON response on wo.http.response.
- */
+
+
+
 export function setJsonResp(wo, status, data) {
   wo.http.response = {
     status,
@@ -38,10 +38,10 @@ export function setJsonResp(wo, status, data) {
 }
 
 
-/**
- * Extract all role labels from wo.webAuth (primary role + roles array),
- * lower-cased and de-duplicated.
- */
+
+
+
+
 export function getUserRoleLabels(wo) {
   const out  = [];
   const seen = new Set();
@@ -62,10 +62,10 @@ export function getUserRoleLabels(wo) {
 }
 
 
-/**
- * Return true if the user holds at least one of the required roles.
- * Empty allowedRoles array → everyone is allowed.
- */
+
+
+
+
 export function getIsAllowedRoles(wo, allowedRoles) {
   const req = Array.isArray(allowedRoles) ? allowedRoles : [];
   if (!req.length) return true;

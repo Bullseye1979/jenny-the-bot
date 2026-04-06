@@ -1,9 +1,9 @@
-/************************************************************************************/
-/* filename: registry.js                                                             *
-/* Version 1.0                                                                       *
-/* Purpose: In-memory registry with single TTL, optional LRU, and automatic garbage  *
-/*          collection.                                                              *
-/************************************************************************************/
+
+
+
+
+
+
 
 const MODULE_NAME = "registry";
 

@@ -1,11 +1,11 @@
-/************************************************************************************/
-/* filename: 00012-subchannel-config.js                                              *
-/* Version 1.0                                                                       *
-/* Purpose: When wo.subchannel is set, loads system_prompt / persona / instructions  *
-/*          from chat_subchannels and overrides the corresponding workingObject       *
-/*          fields. Runs after core-channel-config (00010) so subchannel settings    *
-/*          take precedence. Only overrides if the field is non-empty.               *
-/************************************************************************************/
+
+
+
+
+
+
+
+
 
 import mysql from "mysql2/promise";
 

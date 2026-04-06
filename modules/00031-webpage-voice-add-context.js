@@ -1,28 +1,28 @@
-/************************************************************************************
-/* filename: 00031-webpage-voice-add-context.js                                    *
-/* Version 1.0                                                                     *
-/* Purpose: Writes the voice transcription to the context DB immediately after     *
-/*          transcription for the always-on voice path only.                       *
-/*          Skips when wo.transcribeOnly is true (meeting recorder) — those        *
-/*          transcripts are stored in the diarize review DB and written to context *
-/*          only when the user explicitly clicks Apply in the Review tab.          *
-/*                                                                                 *
-/*          Diarized transcripts contain lines of the form "LABEL: text" where     *
-/*          LABEL is either a single letter (A, B, …) for matched speakers or an  *
-/*          offset label (A_2, B_3, …) for speakers whose identity could not be    *
-/*          confirmed across chunk boundaries. Both formats are parsed; each        *
-/*          speaker turn produces one context DB entry.                             *
-/*          Plain (non-diarized) transcripts produce a single entry with userId A. *
-/*                                                                                 *
-/* Gate:    wo.isWebpageVoice === true  AND  wo.transcribeOnly !== true            *
-/*          AND  wo.payload non-empty  AND  wo.channelID set  AND  wo.db available *
-/*                                                                                 *
-/* Config (config["webpage-voice-add-context"]):                                   *
-/*   (none — no context purge on always-on turns; purging only happens when       *
-/*    applying a meeting transcript in 00047 or via POST /voice/record in 00027)  *
-/*                                                                                 *
-/* Flow:    webpage                                                                 *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { setContext } from "../core/context.js";
 import { getPrefixedLogger }           from "../core/logging.js";
@@ -73,7 +73,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
   }
 
   const ts     = String(wo.timestamp || new Date().toISOString());
-  const turnId = typeof wo.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
+  const turnId = typeof wo.turnId === "string" && wo.turnId ? wo.turnId : undefined;
 
   try {
     const segments = parseDiarizeSegments(text);
@@ -83,7 +83,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
         await setContext(wo, {
           ts,
           role:       "user",
-          turn_id:    turnId,
+          turnId:    turnId,
           content:    seg.text,
           userId:     seg.label,
           authorName: "",
@@ -97,7 +97,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
       await setContext(wo, {
         ts,
         role:       "user",
-        turn_id:    turnId,
+        turnId:    turnId,
         content:    text,
         userId:     "A",
         authorName: "",

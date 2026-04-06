@@ -1,9 +1,9 @@
-/************************************************************************************
-/* filename: 00037-discord-admin-join.js                                                 *
-/* Version 1.0                                                                     *
-/* Purpose: Handles /join and /leave; manages voice connection and per-guild       *
-/*          session store via admin snapshots.                                     *
-/************************************************************************************/
+
+
+
+
+
+
 
 import {
   joinVoiceChannel,

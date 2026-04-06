@@ -1,22 +1,22 @@
-/************************************************************************************
-/* filename: 08100-core-voice-tts.js                                                     *
-/* Version 1.0                                                                     *
-/* Purpose: Source-agnostic text-to-speech renderer.                               *
-/*          Parses wo.response into voice segments (honouring [speaker: <voice>]   *
-/*          tags), calls the OpenAI TTS API for each segment, and stores the       *
-/*          resulting audio buffers in wo.ttsSegments for the downstream output    *
-/*          module to deliver (Discord voice player, HTTP response, etc.).         *
-/*                                                                                 *
-/* Trigger:  wo.response is set                                                    *
-/*           AND ( voiceSessionRef is usable  OR  wo.synthesizeSpeech === true )  *
-/*           AND  wo.deactivateSpeech !== true                                     *
-/*                                                                                 *
-/* Output:  wo.ttsSegments = [{ voice, text, buffer }]                             *
-/*          wo.ttsDefaultVoice — effective default voice used                      *
-/*                                                                                 *
-/* Audio format is controlled by wo.ttsFormat / cfg.ttsFormat (default "opus").   *
-/* Discord output needs "opus"; webpage output typically requests "mp3".           *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";

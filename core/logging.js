@@ -1,9 +1,9 @@
-/************************************************************************************/
-/* filename: logging.js                                                              *
-/* Version 1.0                                                                       *
-/* Purpose: In-memory logger to push structured entries into workingObject.logging   *
-/*          with optional prefixes.                                                  *
-/************************************************************************************/
+
+
+
+
+
+
 
 import path from "path";
 import { fileURLToPath } from "url";

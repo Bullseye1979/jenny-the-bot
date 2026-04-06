@@ -1,8 +1,8 @@
-/**********************************************************************************/
-/* filename: 00049-webpage-inpainting.js                                          */
-/* Version 1.0                                                                    */
-/* Purpose: Webpage-flow wrapper for the inpainting UI with role gate.            */
-/**********************************************************************************/
+
+
+
+
+
 
 "use strict";
 
@@ -26,7 +26,7 @@ const _inpaintAuthTokens = new Map();
 
 
 
-/**********************************************************************************/
+
 function getBasePath(cfg) {
   const bp = String(cfg?.basePath ?? "/inpainting").trim();
   if (!bp || !bp.startsWith("/")) return "/inpainting";
@@ -37,7 +37,7 @@ function getBasePath(cfg) {
 
 
 
-/**********************************************************************************/
+
 function getIsAllowedByRoles(wo, cfg) {
   const required = Array.isArray(cfg?.allowedRoles) ? cfg.allowedRoles : [];
   if (!required.length) return true;
@@ -55,7 +55,7 @@ function getIsAllowedByRoles(wo, cfg) {
 
 
 
-/**********************************************************************************/
+
 function setHtmlResp(wo, html) {
   wo.http.response = {
     status: 200,
@@ -66,7 +66,7 @@ function setHtmlResp(wo, html) {
 
 
 
-/**********************************************************************************/
+
 function setCssResp(wo, cssText) {
   wo.http.response = {
     status: 200,
@@ -108,7 +108,7 @@ ${menuHtml}
 
 
 
-/**********************************************************************************/
+
 function getMultipartBoundary(ct) {
   const m = /boundary=([^\s;]+)/i.exec(String(ct || ""));
   return m ? m[1].replace(/^"|"$/g, "") : null;
@@ -274,7 +274,7 @@ function inpaintGetIsAuthed(wo) {
 
 
 
-/**********************************************************************************/
+
 function getProxyRequestBody(wo) {
   if (Buffer.isBuffer(wo?.http?.rawBodyBytes)) return wo.http.rawBodyBytes;
   const s = String(wo?.http?.rawBody ?? wo?.http?.body ?? "");
@@ -283,7 +283,7 @@ function getProxyRequestBody(wo) {
 
 
 
-/**********************************************************************************/
+
 async function setProxy(wo, targetUrl) {
   const method = String(wo?.http?.method || "GET").toUpperCase();
   const hdrIn = wo?.http?.headers || {};
@@ -343,7 +343,7 @@ async function setProxy(wo, targetUrl) {
 
 
 
-/**********************************************************************************/
+
 function getInpaintHtml(opts) {
   const basePath   = String(opts?.basePath || "/inpainting").replace(/\/+$/,"") || "/inpainting";
   const activePath = String(opts?.activePath || basePath) || basePath;
@@ -2125,7 +2125,7 @@ ${toolScript}
 
 
 
-/**********************************************************************************/
+
 export default async function getWebpageInpainting(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
@@ -2245,7 +2245,7 @@ export default async function getWebpageInpainting(coreData) {
   if (urlPath === basePath + "/api/config" && method === "GET") {
     const wl = cfg?.imageWhitelist || {};
     const authEnabled = inpaintGetAuthEnabled(cfg);
-    /**********************************************************************************/
+    
     const rawChannels = Array.isArray(cfg?.apiChannels) ? cfg.apiChannels : [];
     const apiChannelsPub = rawChannels
       .filter(ch => ch && String(ch.channelId || "").trim())
@@ -2475,7 +2475,7 @@ export default async function getWebpageInpainting(coreData) {
     if (!channelId) { setJsonResp(wo, 400, { error: "missing_channelId" });  wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData; }
     if (!editedUrl) { setJsonResp(wo, 400, { error: "missing_editedUrl" });  wo.web.useLayout = false; wo.jump = true; await setSendNow(wo); return coreData; }
 
-    /**********************************************************************************/
+    
     const chCfg = rawChannels.find(ch => String(ch.channelId || "") === channelId);
     if (!chCfg) {
       setJsonResp(wo, 403, { error: "channel_not_allowed" });

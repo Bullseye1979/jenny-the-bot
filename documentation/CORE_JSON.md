@@ -274,13 +274,14 @@ Local Stable Diffusion image generation.
 | `sampler` | string | `"Euler a"` | Sampler algorithm |
 | `seed` | number | `-1` | Seed (-1 = random) |
 | `model` | string | `"realisticVisionV60B1_v51HyperVAE.safetensors"` | Checkpoint model filename |
+| `negativePrompt` | string | `"worst quality, low quality, ..."` | Base negative prompt text applied to every image generation request |
 | `negativeExtra` | string | `"overprocessed, muddy colors"` | Extra negative prompt text |
 | `timeoutMs` | number | `1400000` | Request timeout in milliseconds |
 | `networkTimeoutMs` | number | `14400000` | Network-level timeout in milliseconds |
 
 #### getImageDescription
 
-Internal API-backed image analysis tool.
+Internal API-backed image analysis tool. The tool sends its request through the local `/api` endpoint instead of calling a vision model directly.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
@@ -533,9 +534,10 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 | `asyncSpawnPath` | string | `"/api/spawn"` | Path used for spawning jobs (`POST /api/spawn`). Defaults to `"/api/spawn"`. |
 | `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request (ms). The subagent itself then runs independently. |
 | `maxSpawnDepth` | number | `2` | Maximum nesting depth for subagent spawning. A subagent at depth ≥ `maxSpawnDepth` may not spawn further subagents. |
+| `projectContextPrompt` | string | `"Context: You are operating within project context ..."` | Prompt template injected for resume calls. Use `${projectId}` as the placeholder for the resumed project ID. |
 | `types` | object | `{"research":"subagent-research"}` | Map of type name → virtual channel ID. Each entry enables one subagent type. |
 
-`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. Results are delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes.
+`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. Results are delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes. Resume-specific context instructions come from `toolsconfig.getSubAgent.projectContextPrompt` rather than hardcoded tool text.
 
 Type routing convention: route planning and location lookup tasks belong to the `research` subagent type.
 

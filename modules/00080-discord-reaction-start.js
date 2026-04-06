@@ -1,9 +1,9 @@
-/**************************************************************
-/* filename: 00080-discord-reaction-start.js                      *
-/* Version 1.0                                                *
-/* Purpose: Add ⏳ reaction to the triggering Discord message *
-/*          (only if wo.showReactions === true)               *
-/**************************************************************/
+
+
+
+
+
+
 import { getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 

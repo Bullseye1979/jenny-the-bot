@@ -1,13 +1,13 @@
-/**********************************************************************************/
-/* filename: getFile.js                                                            *
-/* Version 1.0                                                                     *
-/* Purpose: Saves text or binary content to pub/documents/ and returns a          *
-/*          public URL. Supports subdirectory paths in the filename so that        *
-/*          subagents can write entire project structures, e.g.                    *
-/*          'src/components/Button.js'. Directories are created automatically.    *
-/*                                                                                 *
-/* Config: none — relies solely on workingObject for userId and baseUrl.          *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 import fs   from "node:fs/promises";
 import path from "node:path";

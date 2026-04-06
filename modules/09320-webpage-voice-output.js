@@ -1,20 +1,20 @@
-/************************************************************************************
-/* filename: 09320-webpage-voice-output.js                                               *
-/* Version 1.0                                                                     *
-/* Purpose: Sends the TTS audio response back to the browser as an HTTP response.  *
-/*          Runs at the end of the webpage-voice pipeline regardless of wo.stop    *
-/*          so the browser always receives a well-formed response (audio or error).*
-/*                                                                                 *
-/* Gate:    wo.isWebpageVoice === true                                             *
-/*                                                                                 *
-/* Success: HTTP 200  Content-Type: audio/mpeg                                    *
-/*          Header X-Transcript: <transcribed text>                               *
-/*          Header X-Response:   <AI response text>                               *
-/*          Body: concatenated MP3 buffers from wo.ttsSegments                    *
-/*                                                                                 *
-/* Error:   HTTP 4xx/5xx  Content-Type: application/json                          *
-/*          Body: { "error": "<reason>" }                                          *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 

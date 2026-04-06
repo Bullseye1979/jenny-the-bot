@@ -1,15 +1,15 @@
-/************************************************************************************/
-/* filename: 00035-bard-join.js                                                     */
-/* Version 1.0                                                                      */
-/* Purpose: Handles bardstart / bardstop across all configured flows.               */
-/*          Creates or removes channel-based bard sessions (no voice channel        */
-/*          required). Supports discord-admin (slash command), discord and webpage. */
-/*                                                                                  */
-/* Config (config["bard-join"]):                                                    */
-/*   flow          — array of flow names to subscribe to (default: all three)      */
-/*   commandPrefix — prefix char(s) for text flows (default: ["!", "/"])            */
-/*   allowedRoles  — role/permission whitelist for non-admin flows (default: [])   */
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -18,7 +18,7 @@ const MODULE_NAME    = "bard-join";
 const DEFAULT_PREFIX = ["!", "/"];
 
 
-/* ── registry helpers ─────────────────────────────────────────────────────── */
+
 
 async function getBardRegistry() {
   const key = "bard:registry";
@@ -48,7 +48,7 @@ async function setRemoveBardSessionKey(sessionKey) {
 }
 
 
-/* ── command detection ────────────────────────────────────────────────────── */
+
 
 function getDetectCommand(wo, cfg) {
   if (wo.flow === "discord-admin" && wo.admin?.command) {
@@ -81,7 +81,7 @@ function getChannelId(wo) {
 }
 
 
-/* ── main export ──────────────────────────────────────────────────────────── */
+
 
 export default async function getBardJoin(coreData) {
   const wo  = coreData?.workingObject || {};

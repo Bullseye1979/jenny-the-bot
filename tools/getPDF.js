@@ -1,19 +1,19 @@
-/**********************************************************************************/
-/* filename: getPDF.js                                                             *
-/* Version 1.0                                                                     *
-/* Purpose: Generates a print-ready A4 PDF and matching HTML file from HTML/CSS   *
-/*          input. Saves both files to pub/documents/ and returns public URLs.    *
-/*          Accepts structured fields (html, css, title, filename) or a           *
-/*          free-form raw string containing fenced code blocks or inline HTML.    *
-/*                                                                                 *
-/* Config (toolsconfig.getPDF):                                                    *
-/*   headless    - puppeteer headless mode (default: "new")                       *
-/*   chromeArgs  - array of Chrome launch args (default: ["--no-sandbox"])        *
-/*   waitUntil   - puppeteer page load event (default: "networkidle0")            *
-/*   timeoutMs   - puppeteer page load timeout in ms (default: 120000)            *
-/*   format      - PDF paper format (default: "A4")                               *
-/*   printBackground - include backgrounds in PDF (default: true)                 *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import path from "path";
 import fs from "fs/promises";

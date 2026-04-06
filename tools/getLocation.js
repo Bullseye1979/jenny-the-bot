@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getLocation.js                                                        *
-/* Version 1.0                                                                     *
-/* Purpose: Generate Street View image/link, interactive pano, and Google Maps     *
-/*          URL with optional directions text.                                     *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { saveFile } from "../core/file.js";
 import { fetchWithTimeout } from "../core/fetch.js";

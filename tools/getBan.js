@@ -1,8 +1,8 @@
-/**********************************************************************************/
-/* filename: getBan.js                                                             *
-/* Version 1.0                                                                     *
-/* Purpose: Send a ban request to the configured admin via DM.                     *
-/**********************************************************************************/
+
+
+
+
+
 
 import { getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";

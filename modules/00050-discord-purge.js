@@ -1,12 +1,12 @@
-/************************************************************************************/
-/* filename: 00050-discord-purge.js                                                 *
-/* Version 1.0                                                                      *
-/* Purpose: Handles Discord message deletion commands only.                         *
-/*          /purge (slash, discord-admin flow) and !purge [N] (DM text, discord    *
-/*          flow). These are Discord-specific operations that delete actual Discord *
-/*          messages. DB-level commands (purgedb, freeze) are handled by            *
-/*          00055-core-admin-commands.                                              *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
 

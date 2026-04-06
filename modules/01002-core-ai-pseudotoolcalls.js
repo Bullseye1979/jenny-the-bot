@@ -1,14 +1,14 @@
-/******************************************************************************* 
-/* filename: 01002-core-ai-pseudotoolcalls.js                                      *
-/* Version 1.0                                                                 *
-/* Purpose: Pseudo tool runner that renders a compact tool catalog and         *
-/*          executes pseudo tool invocations with schema checks.               *
-/* Fixes:                                                                     *
-/*          - Supports multi-line AND inline pseudo tool calls.                *
-/*          - Allows multiple tool calls per request (soft limit).             *
-/*          - Extracts URL(s) from tool results and injects plain-text hints   *
-/*            so the follow-up assistant turn reliably appends the link.       *
-/*******************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
 import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -75,9 +75,9 @@ function getShouldRunForThisModule(wo) {
 
 
 function getWithTurnId(rec, wo) {
-  const t = typeof wo?.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
+  const t = typeof wo?.turnId === "string" && wo.turnId ? wo.turnId : undefined;
   const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined;
-  return { ...(t ? { ...rec, turn_id: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() };
+  return { ...(t ? { ...rec, turnId: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() };
 }
 
 
@@ -525,13 +525,13 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
     const result = await tool.invoke(normalizedArgs, coreData);
     const durationMs = Date.now() - startTs;
 
-    log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
+    log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, durationMs: durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
 
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
     const durationMs = Date.now() - startTs;
-    log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, duration_ms: durationMs, error: String(e?.message || e) });
+    log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, durationMs: durationMs, error: String(e?.message || e) });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ ok: false, error: e?.message || String(e) }) };
   } finally {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs) ? Number(coreData?.workingObject?.StatusToolClearDelayMs) : 800;
@@ -544,7 +544,7 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
 }
 
 
-function getSystemContentBase(wo) {
+function getSystemContentBase(wo, moduleCfg) {
   const now = new Date();
   const tz = getStr(wo?.timezone, "Europe/Berlin");
   const nowIso = now.toISOString();
@@ -562,28 +562,8 @@ function getSystemContentBase(wo) {
     "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
   ].join("\n");
 
-  const moduleCfg = coreData?.config?.[MODULE_NAME] || {};
-
-  const defaultPolicy = [
-    "Policy:",
-    "- Always answer the latest user turn.",
-    "- Use recent conversation history for continuity and accuracy.",
-    "- If the user asks to recall or summarize prior discussion, use the provided history.",
-    "- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
-    "- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context"
-  ].join("\n");
-  const policy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "") || defaultPolicy;
-
-  const defaultToolContract = [
-    "Tool call contract:",
-    "- If you decide to use a tool, emit it using either:",
-    "  (A) [tool:NAME]{JSON}",
-    "  (B) [tool:NAME] then on following lines the JSON object (starting with '{' and ending with '}').",
-    "- Tool calls MAY appear inline within text. If you emit a tool call, the tool will be executed.",
-    "- JSON must be valid. Set ALL required fields.",
-    "- After receiving [tool_result:NAME], continue your previous answer and append any provided URL(s) at the very end."
-  ].join("\n");
-  const toolContract = getStr(wo?.toolContractPrompt, "") || getStr(moduleCfg?.toolContractPrompt, "") || defaultToolContract;
+  const policy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "");
+  const toolContract = getStr(wo?.toolContractPrompt, "") || getStr(moduleCfg?.toolContractPrompt, "");
 
   const multiChannelNote = (() => {
     const raw = Array.isArray(wo?.contextIDs) ? wo.contextIDs : [];
@@ -628,8 +608,8 @@ function getParseArtifactsBlock(text) {
 }
 
 
-async function getSystemContent(wo, specs) {
-  const parts = getSystemContentBase(wo);
+async function getSystemContent(wo, specs, moduleCfg) {
+  const parts = getSystemContentBase(wo, moduleCfg);
   const catalog = getRenderPseudoCatalog(specs || []);
   if (catalog) parts.push(catalog);
   return parts.filter(Boolean).join("\n\n");
@@ -674,7 +654,7 @@ export default async function getCoreAi(coreData) {
   const toolSpecsByName = {};
   specsArr.forEach(s => { toolSpecsByName[s.name] = s; });
 
-  const systemContent = await getSystemContent(wo, specsArr);
+  const systemContent = await getSystemContent(wo, specsArr, moduleCfg);
   const messagesFromHistory = getPromptFromSnapshot(snapshot, kiCfg);
   const lastRecord = Array.isArray(snapshot) && snapshot.length ? snapshot[snapshot.length - 1] : null;
 
@@ -776,13 +756,13 @@ export default async function getCoreAi(coreData) {
         const _tc02DurationMs = Date.now() - _tc02StartMs;
         let _tc02Status = "success";
         try { const _tc02R = JSON.parse(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}")); if (_tc02R?.ok === false) _tc02Status = "failed"; } catch {}
-        toolCallLog.push({ tool: extracted.name, status: _tc02Status, duration_ms: _tc02DurationMs, task: "" });
+        toolCallLog.push({ tool: extracted.name, status: _tc02Status, durationMs: _tc02DurationMs, task: "" });
 
         wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
         if (extracted.name === "getSubAgent") {
           try {
             const r = JSON.parse(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}"));
-            subagentLog.push({ type: r.type || "generic", channel_id: r.channel_id || "?", ok: !!r.ok, error: r.error || null });
+            subagentLog.push({ type: r.type || "generic", channelId: r.channelId || "?", ok: !!r.ok, error: r.error || null });
           } catch (e) {
             log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
           }
@@ -810,9 +790,8 @@ export default async function getCoreAi(coreData) {
 
       const cutOff = !wo.__noContinuation && (finish === "length" || getLooksCutOff(cleanAssistantText));
       if (cutOff) {
-        /* Instruct model not to embed new tool calls in the continuation pass */
-        const defaultContinuationPrompt = "Continue exactly where you stopped. Do not call any more tools. Output only the missing text continuation.";
-        const continuationPromptText = getStr(wo?.continuationPrompt, "") || getStr(moduleCfg?.continuationPrompt, "") || defaultContinuationPrompt;
+        
+        const continuationPromptText = getStr(wo?.continuationPrompt, "") || getStr(moduleCfg?.continuationPrompt, "");
         const cont = { role: "user", content: continuationPromptText };
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
@@ -836,7 +815,7 @@ export default async function getCoreAi(coreData) {
     const parts = [];
     if (subagentLog.length) {
       parts.push(subagentLog.map((s, i) =>
-        `--- Subagent ${i + 1} (${s.type} → ${s.channel_id}) ---\n` +
+        `--- Subagent ${i + 1} (${s.type} → ${s.channelId}) ---\n` +
         (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
       ).join("\n\n"));
     }
@@ -845,7 +824,7 @@ export default async function getCoreAi(coreData) {
       parts.push("Tools called:\n" + directTools.map(e => {
         if (typeof e === "object") {
           const icon = e.status === "success" ? "✅" : (e.status === "failed" ? "❌" : "⚠️");
-          const ms = e.duration_ms >= 1000 ? `${(e.duration_ms / 1000).toFixed(1)}s` : `${e.duration_ms}ms`;
+          const ms = e.durationMs >= 1000 ? `${(e.durationMs / 1000).toFixed(1)}s` : `${e.durationMs}ms`;
           const task = e.task ? ` — ${e.task}` : "";
           return `${icon} **${e.tool}** (${ms})${task}`;
         }

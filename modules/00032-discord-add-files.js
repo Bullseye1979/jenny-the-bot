@@ -1,9 +1,9 @@
-/************************************************************************************
-/* filename: 00032-discord-add-files.js                                                  *
-/* Version 1.0                                                                     *
-/* Purpose: Appends Discord file URLs from workingObject.fileUrls into payload     *
-/*          as plain lines (one URL per line).                                     *
-/************************************************************************************/
+
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 
@@ -84,7 +84,7 @@ function getShouldSkipForSource(wo) {
 
 
 export default async function getCore(coreData) {
-  const wo = coreData?.workingObject || coreData?.working_object || {};
+  const wo = coreData?.workingObject || coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
   if (wo.__filesAppendedToPayload) {
     log("Files already appended to payload in this turn (__filesAppendedToPayload=true).");

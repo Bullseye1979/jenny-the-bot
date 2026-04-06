@@ -1,24 +1,24 @@
-/**********************************************************************************/
-/* filename: 00027-webpage-voice-record.js                                        */
-/* Version 1.0                                                                    */
-/* Purpose: Handles POST /voice/record — receives a full meeting recording,       */
-/*          transcribes it with the configured model (default: gpt-4o-transcribe),*/
-/*          optionally runs a diarization pass via GPT-4o, optionally purges the  */
-/*          channel context (preserving frozen rows), and stores the formatted    */
-/*          transcript in the channel context via setContext.                     */
-/*                                                                                */
-/* Routes (port 3119):                                                            */
-/*   POST /voice/record?channelId=<id>                                            */
-/*                                                                                */
-/* Config (config["webpage-voice-record"]):                                              */
-/*   recordModel                  — transcription model (default: gpt-4o-transcribe) */
-/*   diarize                      — run speaker-attribution pass (default: true)  */
-/*   clearContextChannels            — array of channel IDs for which the context */
-/*                                    DB is purged (non-frozen rows only) before  */
-/*                                    storing the transcript. Default: []         */
-/*   allowedRoles                 — role whitelist (empty = open)                */
-/*   port                         — HTTP port (default 3119)                     */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs   from "node:fs";
 import os   from "node:os";
@@ -102,16 +102,9 @@ async function getDiarizedText(transcript, cfg, wo) {
   const apiSecretKey = String(cfg.apiSecret || wo.apiSecret || "").trim();
   const apiSecret = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
 
-  const defaultDiarizationPrompt =
-    "You receive numbered transcript segments. Assign each segment to a speaker " +
-    "(Speaker 1, Speaker 2, etc.) based on context and turn-taking patterns. " +
-    "Return only the formatted transcript with one line per segment in the format " +
-    "'Speaker X: <text>'.";
-  const promptPrefix = (typeof cfg.diarizationSystemPrompt === "string" && cfg.diarizationSystemPrompt.trim())
-    ? cfg.diarizationSystemPrompt.trim()
-    : defaultDiarizationPrompt;
+  const promptPrefix = typeof cfg.diarizationSystemPrompt === "string" ? cfg.diarizationSystemPrompt.trim() : "";
 
-  if (!channelId) return transcript.text || "";
+  if (!channelId || !promptPrefix) return transcript.text || "";
 
   const headers = { "Content-Type": "application/json" };
   if (apiSecret) headers.Authorization = `Bearer ${apiSecret}`;

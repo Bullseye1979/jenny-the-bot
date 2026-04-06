@@ -1,19 +1,19 @@
-/**************************************************************
-/* filename: 09300-webpage-output.js                              *
-/* Version 1.0                                                *
-/* Purpose:                                                   *
-/*  Output jump for flow "webpage": retrieves req/res from    *
-/*  registry by requestKey, serves /documents/* with          *
-/*  range support, otherwise sends wo.http.response.          *
-/*  Treats client disconnect / write-after-end as SOFT.       *
-/**************************************************************/
+
+
+
+
+
+
+
+
+
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPrefixedLogger } from "../core/logging.js";
-/* sharp is optional — if not installed, thumbnail generation is skipped gracefully */
+
 let sharp = null;
-try { sharp = (await import("sharp")).default; } catch { /* sharp not available */ }
+try { sharp = (await import("sharp")).default; } catch {  }
 
 const MODULE_NAME = "webpage-output";
 
@@ -240,10 +240,10 @@ function getServeFileWithRange(req, res, absPath, stat, cacheControl = "no-store
 
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
 
-/* Resolve or generate a thumbnail for srcPath at the given pixel width.
- * Thumbnails are cached to thumbsDir/{filename}.jpg.
- * Regenerates automatically when the source file is newer than the cached thumbnail.
- * Returns { buf: Buffer, mime: string } or null on failure. */
+
+
+
+
 async function getThumb(srcPath, thumbsDir, filename, width) {
   if (!sharp) return null;
   const thumbPath = path.join(thumbsDir, filename + ".jpg");
@@ -255,7 +255,7 @@ async function getThumb(srcPath, thumbsDir, filename, width) {
     if (thumbStat && thumbStat.mtimeMs >= srcStat.mtimeMs) {
       return { buf: await fs.promises.readFile(thumbPath), mime: "image/jpeg" };
     }
-  } catch { /* srcPath missing — let sharp fail gracefully below */ }
+  } catch {  }
   try {
     await fs.promises.mkdir(thumbsDir, { recursive: true });
     const buf = await sharp(srcPath)
@@ -300,7 +300,7 @@ function getHandleStaticDocument(wo, req, res, log) {
       const isImage = IMAGE_MIMES.has(ctype);
       const cacheControl = isImage ? "public, max-age=604800, immutable" : "no-store";
 
-      /* Serve thumbnail when ?w=N is requested and file is an image */
+      
       if (thumbW > 0 && isImage) {
         const thumbsDir = path.join(path.dirname(target), "thumbnails", String(thumbW));
         const filename  = path.basename(target);
@@ -372,7 +372,7 @@ function getHandleHttpResponse(wo, req, res, log) {
     if (!headers["Content-Type"] && !headers["content-type"]) {
       headers["Content-Type"] = "application/json; charset=utf-8";
     }
-    /* If the AI pipeline produced a response, forward it as JSON */
+    
     if (typeof wo.response === "string" && wo.response) {
       body = JSON.stringify({ response: wo.response });
     } else {

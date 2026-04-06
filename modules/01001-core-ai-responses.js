@@ -1,15 +1,15 @@
-/************************************************************************************/
-/* filename: 01001-core-ai-responses.js                                             *
-/* Version 1.0                                                                      *
-/* Purpose: Responses runner with context translation, real tool handling,          *
-/*          image persistence via file.js, and file-based logging (no console).     *
-/*          Accumulates reasoning summaries across iterations (incl. tool calls)    *
-/*          and returns a final combined summary.                                   *
-/*          When tool-call budget is exhausted, forces a final synthesis run        *
-/*          with tools disabled (tool_choice="none").                               *
-/*          Built-in Responses tools are controlled via workingObject.responseTools *
-/*          (defaults to OFF when missing/empty).                                   *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
 import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { saveFile } from "../core/file.js";
@@ -47,7 +47,7 @@ function getNum(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; 
 function getJSON(t, f = null) { try { return JSON.parse(t); } catch { return f; } }
 
 
-function getWithTurnId(rec, wo) { const t = (typeof wo?.turn_id === "string" && wo.turn_id) ? wo.turn_id : undefined; const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined; return { ...(t ? { ...rec, turn_id: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() }; }
+function getWithTurnId(rec, wo) { const t = (typeof wo?.turnId === "string" && wo.turnId) ? wo.turnId : undefined; const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined; return { ...(t ? { ...rec, turnId: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() }; }
 
 
 function getPreview(s, n = 400) { const t = getToString(s); return t.length > n ? t.slice(0, n) + " …[truncated]" : t; }
@@ -1053,15 +1053,8 @@ export default async function getCoreAi(coreData) {
       "- If you generate calendar-like text, prefer explicit dates (YYYY-MM-DD) when helpful."
     ].join("\n");
 
-    const defaultPolicy = [
-      "Policy:",
-      "- NEVER ANSWER TO OLDER USER REQUESTS",
-      "- Use tools only when necessary.",
-      "- When you emit a tool call, do not include extra prose in the same turn.",
-      "- ALWAYS answer in human readable plain text, unless explicitly told to use a different format."
-    ].join("\n");
     const moduleCfg = coreData.config?.[MODULE_NAME] || {};
-    const policy = getStr(wo2?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "") || defaultPolicy;
+    const policy = getStr(wo2?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "");
 
     const multiChannelNote = (() => {
       const raw = Array.isArray(wo2?.contextIDs) ? wo2.contextIDs : [];
@@ -1117,10 +1110,10 @@ export default async function getCoreAi(coreData) {
   let totalToolCalls = 0;
   let attempts = 0;
   const maxAttempts = Math.max(1, getNum(wo?.MaxAttempts, Math.min(3, maxLoops)));
-  /* Tracks consecutive iterations with no visible output but truncated=true.
-   * Reasoning models (e.g. GPT-5) can exhaust max_output_tokens with reasoning tokens,
-   * producing empty visible text every iteration → infinite loop.
-   * After 2 such iterations we break the loop to avoid spinning. */
+  
+
+
+
   let emptyOutputConsec = 0;
 
   for (let iter = 0; iter < maxLoops; iter++) {
@@ -1260,12 +1253,12 @@ export default async function getCoreAi(coreData) {
             ranAnyTool = true;
             let _tcStatus = "success";
             try { const _tcR = JSON.parse(getToString(result?.content || "{}")); if (_tcR?.ok === false) _tcStatus = "failed"; } catch {}
-            toolCallLog.push({ tool: tc?.name || "?", status: _tcStatus, duration_ms: _tcDurationMs, task: "" });
+            toolCallLog.push({ tool: tc?.name || "?", status: _tcStatus, durationMs: _tcDurationMs, task: "" });
             if (tc?.name === "getSubAgent") {
               try {
                 const r = JSON.parse(getToString(result?.content || "{}"));
                 const inner = r?.data ?? r;
-                subagentLog.push({ type: inner.type || "generic", channel_id: inner.channel_id || "?", ok: !!inner.ok, error: inner.error || null });
+                subagentLog.push({ type: inner.type || "generic", channelId: inner.channelId || "?", ok: !!inner.ok, error: inner.error || null });
               } catch (e) {
                 log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
               }
@@ -1304,9 +1297,9 @@ export default async function getCoreAi(coreData) {
       const looksCutOff = getLooksCutOff(assistantText);
       const cutOff = !wo.__noContinuation && (truncated || looksCutOff);
       if (cutOff) {
-        /* Guard against reasoning models exhausting max_output_tokens with no visible output.
-         * If the model produced no visible text AND the API says truncated (reasoning ate all tokens),
-         * continuing blindly loops forever. After 2 consecutive empty-output truncated iterations, break. */
+        
+
+
         if (truncated && !assistantText.trim()) {
           emptyOutputConsec++;
           if (emptyOutputConsec >= 2) {
@@ -1343,7 +1336,7 @@ export default async function getCoreAi(coreData) {
     const reasoningJoined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
     const subagentBlock = subagentLog.length
       ? "=== Subagents ===\n" + subagentLog.map((s, i) =>
-          `--- Subagent ${i + 1} (${s.type} → ${s.channel_id}) ---\n` +
+          `--- Subagent ${i + 1} (${s.type} → ${s.channelId}) ---\n` +
           (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
         ).join("\n\n")
       : "";
@@ -1351,7 +1344,7 @@ export default async function getCoreAi(coreData) {
     const toolsBlock = directTools.length ? "Tools called:\n" + directTools.map(e => {
       if (typeof e === "object") {
         const icon = e.status === "success" ? "✅" : (e.status === "failed" ? "❌" : "⚠️");
-        const ms = e.duration_ms >= 1000 ? `${(e.duration_ms / 1000).toFixed(1)}s` : `${e.duration_ms}ms`;
+        const ms = e.durationMs >= 1000 ? `${(e.durationMs / 1000).toFixed(1)}s` : `${e.durationMs}ms`;
         const task = e.task ? ` — ${e.task}` : "";
         return `${icon} **${e.tool}** (${ms})${task}`;
       }

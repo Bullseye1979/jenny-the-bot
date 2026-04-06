@@ -1,10 +1,3 @@
-/************************************************************************************
-/* filename: 00021-api-token-gate.js                                                     *
-/* Version 1.0                                                                     *
-/* Purpose: Gates API requests: apiEnabled=0 always blocks; apiEnabled=1 checks    *
-/*          Bearer token against apiSecret. Only runs for the "api" flow.          *
-/************************************************************************************/
-
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 

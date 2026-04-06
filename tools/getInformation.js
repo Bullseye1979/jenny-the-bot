@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getInformation.js                                                     *
-/* Version 1.0                                                                     *
-/* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
-/*          info snippets ranked by coverage then frequency.                       *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import mysql from "mysql2/promise";
 import { fetchWithTimeout } from "../core/fetch.js";
@@ -55,26 +55,6 @@ async function getPool(wo) {
   return pool;
 }
 
-
-function getNormalizePhrasesToWords(arr) {
-  if (!Array.isArray(arr)) return [];
-  const seen = new Set();
-  const out = [];
-  for (const raw of arr) {
-    const s = String(raw ?? "").toLowerCase();
-    const words = s.split(/\s+/).map(w => w.trim()).filter(Boolean);
-    for (const w of words) {
-      if (w.length < 2 || w.length > 200) continue;
-      if (!seen.has(w)) {
-        seen.add(w);
-        out.push(w);
-        if (out.length >= 48) break;
-      }
-    }
-    if (out.length >= 48) break;
-  }
-  return out;
-}
 
 
 function getStripLargeCodeBlocks(text) {
@@ -135,14 +115,16 @@ function getParseTs(ts) {
   return Number.isFinite(t) ? t : null;
 }
 
-
 function getFmtDelta(ms) {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  const totalMinutes = Math.max(0, Math.round(Number(ms || 0) / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
+
 
 
 function getNormalizeGroupsFromArgs(args) {
@@ -251,10 +233,10 @@ function getBuildClustersFromHits(hitRows, rowsPerCluster) {
     if (!c) {
       c = {
         key,
-        channel_id: ch,
+        channelId: ch,
         idx,
-        start_rn: idx * R + 1,
-        end_rn: (idx + 1) * R,
+        startRn: idx * R + 1,
+        endRn: (idx + 1) * R,
         hitCount: 0
       };
       set.set(key, c);
@@ -371,8 +353,8 @@ function getBuildFetchRangeSQL(includeAssistantTurns, includeAnsweredTurns) {
 }
 
 
-/* Run a single search pass for the given groups.
-   Returns { blocks, analyzed, hitCount } or null when no hits. */
+
+
 async function getRunSearchPass(db, channelIds, groups, opts) {
   const {
     rowsPerCluster, padRows, tokenWindow, stripCode,
@@ -403,8 +385,8 @@ async function getRunSearchPass(db, channelIds, groups, opts) {
     const [rowsInRange] = await db.execute(
       fetchRangeSQL,
       includeAnsweredTurns
-        ? [c.channel_id, c.start_rn, c.end_rn]
-        : [c.channel_id, c.channel_id, c.start_rn, c.end_rn]
+        ? [c.channelId, c.startRn, c.endRn]
+        : [c.channelId, c.channelId, c.startRn, c.endRn]
     );
     const metrics = getAnalyzeClusterRows(rowsInRange, groups, { tokenWindow, stripCode });
     let firstTs = null, lastTs = null;
@@ -422,8 +404,8 @@ async function getRunSearchPass(db, channelIds, groups, opts) {
     if (b.totalHits !== a.totalHits) return b.totalHits - a.totalHits;
     if (b.rowsMulti !== a.rowsMulti) return b.rowsMulti - a.rowsMulti;
     if (b.rowsAny !== a.rowsAny) return b.rowsAny - a.rowsAny;
-    if (a.channel_id !== b.channel_id) return a.channel_id.localeCompare(b.channel_id);
-    return a.start_rn - b.start_rn;
+    if (a.channelId !== b.channelId) return a.channelId.localeCompare(b.channelId);
+    return a.startRn - b.startRn;
   });
 
   const blocks = [];
@@ -432,24 +414,24 @@ async function getRunSearchPass(db, channelIds, groups, opts) {
   for (const c of analyzed) {
     if (c.coverage < minCoverage) break;
 
-    const padStart = Math.max(1, c.start_rn - padRows);
-    const padEnd = c.end_rn + padRows;
+    const padStart = Math.max(1, c.startRn - padRows);
+    const padEnd = c.endRn + padRows;
     const [rowsFull] = await db.execute(
       fetchRangeSQL,
       includeAnsweredTurns
-        ? [c.channel_id, padStart, padEnd]
-        : [c.channel_id, c.channel_id, padStart, padEnd]
+        ? [c.channelId, padStart, padEnd]
+        : [c.channelId, c.channelId, padStart, padEnd]
     );
 
     const lines = [];
     const seenLocal = new Set();
 
     lines.push({
-      channel_id: c.channel_id,
-      rn: c.start_rn - 0.0001,
+      channelId: c.channelId,
+      rn: c.startRn - 0.0001,
       ts: null,
       sender: "meta",
-      content: `[[ CLUSTER channel=${c.channel_id} idx=${c.idx} rows=${c.start_rn}-${c.end_rn} coverage=${c.coverage} hits=${c.totalHits} ]]`
+      content: `[[ CLUSTER channel=${c.channelId} idx=${c.idx} rows=${c.startRn}-${c.endRn} coverage=${c.coverage} hits=${c.totalHits} ]]`
     });
 
     let firstTs = null, lastTs = null;
@@ -469,17 +451,17 @@ async function getRunSearchPass(db, channelIds, groups, opts) {
         if (lastTs == null || t > lastTs) lastTs = t;
       }
 
-      lines.push({ channel_id: r.id, rn: r.rn, ts: r.ts, sender, content: safe });
+      lines.push({ channelId: r.id, rn: r.rn, ts: r.ts, sender, content: safe });
     }
 
     if (usedLines + lines.length > maxOutputLines) {
       const remaining = Math.max(0, maxOutputLines - usedLines);
-      if (remaining > 0) blocks.push({ channel_id: c.channel_id, start_rn: c.start_rn, idx: c.idx, lines: lines.slice(0, remaining), firstTs, lastTs });
+      if (remaining > 0) blocks.push({ channelId: c.channelId, startRn: c.startRn, idx: c.idx, lines: lines.slice(0, remaining), firstTs, lastTs });
       usedLines = maxOutputLines;
       break;
     }
 
-    blocks.push({ channel_id: c.channel_id, start_rn: c.start_rn, idx: c.idx, lines, firstTs, lastTs });
+    blocks.push({ channelId: c.channelId, startRn: c.startRn, idx: c.idx, lines, firstTs, lastTs });
     usedLines += lines.length;
   }
 
@@ -524,18 +506,10 @@ async function getExtractAliases(contentLines, originalGroups, giCfg) {
 
   const searchTerms = originalGroups.map(g => g.base);
 
-  const defaultAliasPrompt =
-    `You are an alias extractor for tabletop RPG session transcripts. ` +
-    `Given conversation excerpts and a list of search terms (entity names), find ALL other ways the SAME entities are referred to. ` +
-    `Include: alternative names, nicknames, titles, shortened forms, descriptive labels, creature types, and role descriptions. ` +
-    `Also include shortened/partial forms of any name: first word of compound names, common abbreviations, root words (e.g. "Hippo" for "Hippomann", "Vect" for "Vecna", "Lord" for "Lord of Shadows"). ` +
-    `Look for IMPLICIT connections too — e.g. if the text says "the creature turned out to be a Slaad" right after mentioning one of the search terms, "Slaad" is an alias. ` +
-    `Return ONLY a JSON array of short strings (single words or short phrases, NOT full sentences). ` +
-    `Max ${maxAliases} items. Exclude the original search terms themselves. If none found, return []. ` +
-    `Example: ["Hippo","Hippomann","Slaad","die Kreatur","der Unbekannte"]`;
-  const systemPrompt = (giCfg.aliasSystemPrompt && String(giCfg.aliasSystemPrompt).trim())
-    ? String(giCfg.aliasSystemPrompt).trim().replace(/\$\{maxAliases\}/g, String(maxAliases))
-    : defaultAliasPrompt;
+  const systemPrompt = typeof giCfg.aliasSystemPrompt === "string"
+    ? giCfg.aliasSystemPrompt.trim().replace(/\$\{maxAliases\}/g, String(maxAliases))
+    : "";
+  if (!systemPrompt) return [];
 
   const userPrompt =
     `Search terms (find aliases FOR these): ${JSON.stringify(searchTerms)}\n\nConversation excerpts:\n${excerpts}`;
@@ -565,7 +539,7 @@ function getBlockRowKeys(blocks) {
   const keys = new Set();
   for (const b of blocks)
     for (const l of b.lines)
-      if (Number.isInteger(l.rn)) keys.add(`${l.channel_id}:${l.rn}`);
+      if (Number.isInteger(l.rn)) keys.add(`${l.channelId}:${l.rn}`);
   return keys;
 }
 
@@ -574,7 +548,7 @@ function getDiffLines(newBlocks, existingKeys) {
   const lines = [];
   for (const b of newBlocks)
     for (const l of b.lines)
-      if (Number.isInteger(l.rn) && !existingKeys.has(`${l.channel_id}:${l.rn}`))
+      if (Number.isInteger(l.rn) && !existingKeys.has(`${l.channelId}:${l.rn}`))
         lines.push(l);
   return lines;
 }
@@ -590,7 +564,7 @@ function getMergeBlocks(blocks1, blocks2) {
     for (const l of b.lines) {
       const isHeader = !Number.isInteger(l.rn);
       if (isHeader) { lines.push(l); continue; }
-      const key = `${l.channel_id}:${l.rn}`;
+      const key = `${l.channelId}:${l.rn}`;
       if (seenRN.has(key)) continue;
       seenRN.add(key);
       lines.push(l);
@@ -601,8 +575,8 @@ function getMergeBlocks(blocks1, blocks2) {
   }
 
   merged.sort((a, b) => {
-    if (a.channel_id !== b.channel_id) return a.channel_id.localeCompare(b.channel_id);
-    return a.start_rn - b.start_rn;
+    if (a.channelId !== b.channelId) return a.channelId.localeCompare(b.channelId);
+    return a.startRn - b.startRn;
   });
 
   return merged;
@@ -620,7 +594,14 @@ async function getEnrichTimeline(db, snippetRows, channelIds) {
         ORDER BY start_ts ASC, start_idx ASC`,
       channelIds
     );
-    periods = rows || [];
+    periods = (rows || []).map((row) => ({
+      channelId: row.channel_id || "",
+      startIdx: row.start_idx,
+      endIdx: row.end_idx,
+      startTs: row.start_ts,
+      endTs: row.end_ts,
+      summary: row.summary || ""
+    }));
   } catch {
     return snippetRows.length
       ? [{ type: "unplaced", snippets: snippetRows }]
@@ -635,7 +616,7 @@ async function getEnrichTimeline(db, snippetRows, channelIds) {
 
   const snippetsByChannel = new Map();
   for (const row of snippetRows) {
-    const cid = row.channel_id || "";
+    const cid = row.channelId || "";
     if (!snippetsByChannel.has(cid)) snippetsByChannel.set(cid, []);
     snippetsByChannel.get(cid).push(row);
   }
@@ -644,9 +625,9 @@ async function getEnrichTimeline(db, snippetRows, channelIds) {
   const entries = [];
 
   for (const period of periods) {
-    const cid = period.channel_id;
-    const pStart = period.start_ts ? new Date(period.start_ts).getTime() : null;
-    const pEnd   = period.end_ts   ? new Date(period.end_ts).getTime()   : null;
+    const cid = period.channelId;
+    const pStart = period.startTs ? new Date(period.startTs).getTime() : null;
+    const pEnd   = period.endTs   ? new Date(period.endTs).getTime()   : null;
 
     const matching = (snippetsByChannel.get(cid) || []).filter(row => {
       if (!row.ts) return false;
@@ -658,32 +639,32 @@ async function getEnrichTimeline(db, snippetRows, channelIds) {
     });
 
     if (matching.length) {
-      for (const row of matching) placedKeys.add(`${row.channel_id}:${row.rn}`);
+      for (const row of matching) placedKeys.add(`${row.channelId}:${row.rn}`);
       entries.push({
-        type:       "detail",
-        channel_id: cid,
-        start_ts:   period.start_ts,
-        end_ts:     period.end_ts,
-        snippets:   matching
+        type: "detail",
+        channelId: cid,
+        startTs: period.startTs,
+        endTs: period.endTs,
+        snippets: matching
       });
     } else {
       entries.push({
-        type:       "period",
-        channel_id: cid,
-        start_ts:   period.start_ts,
-        end_ts:     period.end_ts,
-        summary:    period.summary || ""
+        type: "period",
+        channelId: cid,
+        startTs: period.startTs,
+        endTs: period.endTs,
+        summary: period.summary || ""
       });
     }
   }
 
-  const unplaced = snippetRows.filter(row => !placedKeys.has(`${row.channel_id}:${row.rn}`));
+  const unplaced = snippetRows.filter(row => !placedKeys.has(`${row.channelId}:${row.rn}`));
   if (unplaced.length) {
     const unplacedTimes = unplaced.map(r => r.ts ? new Date(r.ts).getTime() : null).filter(t => t !== null && Number.isFinite(t));
     const unplacedEntry = { type: "unplaced", snippets: unplaced };
     if (unplacedTimes.length) {
-      unplacedEntry.start_ts = new Date(Math.min(...unplacedTimes)).toISOString();
-      unplacedEntry.end_ts   = new Date(Math.max(...unplacedTimes)).toISOString();
+      unplacedEntry.startTs = new Date(Math.min(...unplacedTimes)).toISOString();
+      unplacedEntry.endTs = new Date(Math.max(...unplacedTimes)).toISOString();
     }
     entries.push(unplacedEntry);
   }
@@ -711,7 +692,7 @@ async function getInformationInvoke(args, coreData) {
   for (const cid of extraChannelIds) channelIdSet.add(cid);
   const channelIds = [...channelIdSet];
 
-  if (!channelIds.length) return { error: "ERROR: channel_id missing (wo.channelID / wo.channelIds)" };
+  if (!channelIds.length) return { error: "ERROR: channelId missing (wo.channelID / wo.channelIds)" };
 
   const mainChannelId = primaryChannelId || channelIds[0];
   const groups = getNormalizeGroupsFromArgs(args);
@@ -752,13 +733,15 @@ async function getInformationInvoke(args, coreData) {
       return {
         items: [],
         meta: {
-          channel_id: mainChannelId, channel_ids: channelIds,
+          channelId: mainChannelId, channelIds,
           groups: groups.map(g => ({ base: g.base, parts: g.parts })),
-          rows_per_cluster: rowsPerCluster, clusters_considered: 0,
-          clusters_selected: 0, printed_rows: 0,
-          duration_ms: Date.now() - startedAt,
-          include_assistant_turns: includeAssistantTurns,
-          include_answered_turns: includeAnsweredTurns,
+          rowsPerCluster,
+          clustersConsidered: 0,
+          clustersSelected: 0,
+          printedRows: 0,
+          durationMs: Date.now() - startedAt,
+          includeAssistantTurns,
+          includeAnsweredTurns,
           note: "No matching rows found. Try broader keywords or call getHistory with a date range for a chronological overview."
         }
       };
@@ -804,15 +787,16 @@ async function getInformationInvoke(args, coreData) {
       return {
         items: [],
         meta: {
-          channel_id: mainChannelId, channel_ids: channelIds,
+          channelId: mainChannelId, channelIds,
           groups: groups.map(g => ({ base: g.base, parts: g.parts })),
-          rows_per_cluster: rowsPerCluster,
-          clusters_considered: clustersConsidered,
-          clusters_selected: 0, printed_rows: 0,
-          duration_ms: Date.now() - startedAt,
-          include_assistant_turns: includeAssistantTurns,
-          include_answered_turns: includeAnsweredTurns,
-          aliases_searched: totalAliases.length ? totalAliases : undefined,
+          rowsPerCluster,
+          clustersConsidered,
+          clustersSelected: 0,
+          printedRows: 0,
+          durationMs: Date.now() - startedAt,
+          includeAssistantTurns,
+          includeAnsweredTurns,
+          aliasesSearched: totalAliases.length ? totalAliases : undefined,
           note: "Hits found but no cluster met minCoverage. Try broader keywords or call getHistory with a date range for a chronological overview."
         }
       };
@@ -827,7 +811,7 @@ async function getInformationInvoke(args, coreData) {
       for (const L of B.lines) {
         const isHeader = !Number.isInteger(L.rn);
         if (isHeader) { allPrinted.push(L); continue; }
-        const key = `${L.channel_id}:${L.rn}`;
+        const key = `${L.channelId}:${L.rn}`;
         if (seenGlobalRN.has(key)) continue;
         seenGlobalRN.add(key);
         allPrinted.push(L);
@@ -839,7 +823,7 @@ async function getInformationInvoke(args, coreData) {
         const bigGap = gapOK && (next.firstTs - B.lastTs) >= EVENT_GAP_MS;
         if (bigGap) {
           allPrinted.push({
-            channel_id: B.channel_id,
+            channelId: B.channelId,
             rn: (B.lines[B.lines.length - 1]?.rn ?? 0) + 0.00001,
             ts: null,
             sender: "meta",
@@ -849,22 +833,22 @@ async function getInformationInvoke(args, coreData) {
       }
     }
 
-    const compact = allPrinted.map(({ channel_id, rn, ts, sender, content }) => ({ channel_id, rn, ts, sender, content }));
+    const compact = allPrinted.map(({ channelId, rn, ts, sender, content }) => ({ channelId, rn, ts, sender, content }));
 
     const timeline = await getEnrichTimeline(db, compact, channelIds);
 
     const meta = {
-      channel_id: mainChannelId,
-      channel_ids: channelIds,
+      channelId: mainChannelId,
+      channelIds,
       groups: groups.map(g => ({ base: g.base, parts: g.parts })),
-      rows_per_cluster: rowsPerCluster,
-      clusters_considered: clustersConsidered,
-      clusters_selected: allBlocks.length,
-      printed_rows: allPrinted.length,
-      duration_ms: Date.now() - startedAt,
-      include_assistant_turns: includeAssistantTurns,
-      include_answered_turns: includeAnsweredTurns,
-      aliases_searched: totalAliases.length ? totalAliases : undefined,
+      rowsPerCluster,
+      clustersConsidered,
+      clustersSelected: allBlocks.length,
+      printedRows: allPrinted.length,
+      durationMs: Date.now() - startedAt,
+      includeAssistantTurns,
+      includeAnsweredTurns,
+      aliasesSearched: totalAliases.length ? totalAliases : undefined,
       note:
         "Timeline entries show the full chronological structure. " +
         "Entries of type 'detail' contain exact matching snippets; entries of type 'period' are coarse summaries. " +

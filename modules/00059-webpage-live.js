@@ -1,23 +1,23 @@
-/************************************************************************************/
-/* filename: 00059-webpage-live.js                                                   *
-/* Version 1.0                                                                       *
-/* Purpose: Live context monitor SPA. Shows real-time conversation transcripts       *
-/*          from the context table. Channels and fields are selectable;             *
-/*          new rows are polled at a configurable interval.                          *
-/*          Author name and message text are parsed from the json field.             *
-/*          Autoscroll is toggleable. State (autoscroll, paused) persists in         *
-/*          localStorage.                                                             *
-/*                                                                                   *
-/* Port:      cfg.port      (default 3123)                                           *
-/* Base path: cfg.basePath  (default /live)                                          *
-/* Config:    config["webpage-live"]                                                 *
-/*                                                                                   *
-/* Routes:                                                                           *
-/*   GET  /live                  — main SPA                                          *
-/*   GET  /live/style.css        — shared stylesheet                                 *
-/*   GET  /live/api/channels     — distinct channel IDs with row counts              *
-/*   GET  /live/api/messages     — rows since cursor (afterId, channels, limit)      *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs   from "node:fs";
 import { fileURLToPath } from "node:url";

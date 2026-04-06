@@ -1,10 +1,10 @@
-/************************************************************************************/
-/* filename: core/file.js                                                            *
-/* Version 1.0                                                                       *
-/* Purpose: Centralised file persistence for all tools and flows.                    *
-/*          Files are stored per user in pub/documents/{userId}/                     *
-/*          Public URLs: {wo.baseUrl}/documents/{userId}/{filename}                  *
-/************************************************************************************/
+
+
+
+
+
+
+
 
 import fs   from "node:fs/promises";
 import path from "node:path";

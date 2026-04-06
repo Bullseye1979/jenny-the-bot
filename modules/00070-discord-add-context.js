@@ -1,9 +1,9 @@
-/********************************************************************************
-/* filename: 00070-discord-add-context.js                                           *
-/* Version 1.0                                                                  *
-/* Purpose: Append the current user payload to the DB context with role=user    *
-/*          and preserved turn_id when present.                                 *
-/********************************************************************************/
+
+
+
+
+
+
 import { setContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
@@ -32,11 +32,11 @@ export default async function getDiscordAddContext(coreData) {
   }
   const files = getAttachmentUrlsFromWO(wo);
   const role = "user";
-  const turnId = typeof wo.turn_id === "string" && wo.turn_id ? wo.turn_id : undefined;
+  const turnId = typeof wo.turnId === "string" && wo.turnId ? wo.turnId : undefined;
   const record = {
     ts: getString(wo.timestamp || ""),
     role,
-    turn_id: turnId,
+    turnId: turnId,
     content: getString(text),
     authorName: getString(wo.authorDisplayName || wo.authorDisplayname || ""),
     channelId: getString(wo.channelID || ""),

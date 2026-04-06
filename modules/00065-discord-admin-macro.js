@@ -1,15 +1,15 @@
-/**************************************************************
-/* filename: 00065-discord-admin-macro.js                        *
-/* Version 1.0                                               *
-/* Purpose: Slash admin command /macro with subcommands:     *
-/*          /macro create <name> <text> (overwrites)         *
-/*          /macro run <name>                                *
-/*          /macro delete <name>                             *
-/*          /macro list                                      *
-/*                                                            *
-/* Macros are stored per user in a MySQL table using         *
-/* workingObject.db configuration.                           *
-/**************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
 import mysql from "mysql2/promise";
 import { getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";

@@ -1,13 +1,13 @@
-/************************************************************************************
-/* filename: 08110-discord-voice-tts-play.js                                             *
-/* Version 1.0                                                                     *
-/* Purpose: Discord-specific TTS playback module.                                  *
-/*          Takes pre-rendered audio buffers from wo.ttsSegments (set by           *
-/*          core-voice-tts) and plays them sequentially through the guild's        *
-/*          Discord voice connection with guild-level lock management.             *
-/*                                                                                 *
-/* Trigger: wo.ttsSegments exists + wo.voiceSessionRef is usable                  *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import {

@@ -1,10 +1,10 @@
-/**********************************************************************************/
-/* filename: getConfluence.js                                                      *
-/* Version 1.0                                                                     *
-/* Purpose: Confluence Cloud proxy with v2 pages                                   *
-/*          (create/append/read/list/delete/move),                                 *
-/*          Markdown to storage HTML, enforced space, and v1 attachment upload.    *
-/**********************************************************************************/
+
+
+
+
+
+
+
 
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";

@@ -1,9 +1,9 @@
-/************************************************************************************/
-/* filename: context.js                                                              *
-/* Version 1.0                                                                       *
-/* Purpose: Minimal MySQL context store with monotonic IDs, rolling timeline         *
-/*          summaries, user-block capping, extra channels, and subchannel support.   *
-/************************************************************************************/
+
+
+
+
+
+
 
 import mysql from "mysql2/promise";
 import crypto from "crypto";
@@ -299,10 +299,10 @@ export async function setContext(workingObject, record) {
   const role = String(normalized?.role || workingObject?.role || "user");
 
   const turnId =
-    typeof workingObject?.turn_id === "string" && workingObject.turn_id.length > 0
-      ? workingObject.turn_id
-      : typeof normalized?.turn_id === "string" && normalized.turn_id.length > 0
-        ? normalized.turn_id
+    typeof workingObject?.turnId === "string" && workingObject.turnId.length > 0
+      ? workingObject.turnId
+      : typeof normalized?.turnId === "string" && normalized.turnId.length > 0
+        ? normalized.turnId
         : null;
 
   const ts = getResolvedTimestamp(workingObject, normalized);
@@ -438,8 +438,8 @@ function getBuildMetaFrame(obj, row, rowChannelId, roleLc) {
   const parts = [];
 
   const tid =
-    (typeof obj?.turn_id === "string" && obj.turn_id.length ? obj.turn_id : null) ||
-    (typeof row?.turn_id === "string" && row.turn_id.length ? row.turn_id : null) ||
+    (typeof obj?.turnId === "string" && obj.turnId.length ? obj.turnId : null) ||
+    (typeof row?.turnId === "string" && row.turnId.length ? row.turnId : null) ||
     null;
 
   const ch = typeof rowChannelId === "string" && rowChannelId.length ? rowChannelId : null;

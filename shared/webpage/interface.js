@@ -1,12 +1,12 @@
-/**********************************************************************************/
-/* filename: interface.js                                                          *
-/* Version 1.0                                                                     *
-/* Purpose: Shared webpage utilities and menu renderer.                            *
-/**********************************************************************************/
 
-/**********************************************************************************/
-/*                                                                                 *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
 
 "use strict";
 
@@ -84,8 +84,8 @@ async function getDb(coreData) {
 }
 
 
-/* getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, userInfo)
-   userInfo = { userId, username, guildId }  — optional; enables profile dropdown */
+
+
 function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, userInfo) {
   const items = Array.isArray(menu) ? menu : [];
 
@@ -127,7 +127,7 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, us
   const uid     = String(ui.userId   || "");
   const uname   = String(ui.username || "");
   const gid     = String(ui.guildId  || "");
-  const isDark  = false; /* initial state resolved by script below */
+  const isDark  = false; 
 
   let profileRows = "";
   if (uname) profileRows += '<div class="nav-pi-row"><span class="nav-pi-lbl">User</span><span class="nav-pi-val">'  + escHtml(uname) + "</span></div>";
@@ -169,9 +169,9 @@ function getMenuHtml(menu, activePath, role, rightHtmlOpt, extraDropdownHtml, us
     '}();<\/script>';
 
   const rightHtml = String(rightHtmlOpt || "");
-  /* nav-wrap contains only the ... dropdown (flex:0 so h1 sits right next to it).
-     nav-right-slot is a separate header sibling so margin-left:auto pushes it to the
-     far right of the header regardless of the h1 width. */
+  
+
+
   const rightSlot =
     '<div class="nav-right-slot">' +
       (rightHtml ? rightHtml : "") +
@@ -206,7 +206,7 @@ function getThemeHeadScript() {
          'document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light");}();<\/script>';
 }
 
-/**********************************************************************************/
-/* Named exports                                                                   *
-/**********************************************************************************/
+
+
+
 export { getBody, readJsonFile, writeJsonFile, isAuthorized, getDb, getMenuHtml, getThemeHeadScript, escHtml };

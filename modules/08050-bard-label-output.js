@@ -1,13 +1,13 @@
-/************************************************************************************/
-/* filename: 08050-bard-label-output.js                                                  */
-/* Version 1.0                                                                     */
-/* Purpose: Output module for the bard-label-gen flow. Reads wo.response from     */
-/*          core-ai-completions, parses the comma-separated tag list, validates    */
-/*          against wo._bardValidTags, and writes bard:labels:{channelId} to the  */
-/*          registry. Also writes bard:lastrun:{channelId} only on success, so    */
-/*          that a failed AI call does not advance the context window and cause    */
-/*          the system to get permanently stuck with no new context to process.   */
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 import { getItem, putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";

@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getYoutube.js                                                         *
-/* Version 1.0                                                                     *
-/* Purpose: Fetch YouTube transcripts as raw text dumps; optional video search.   *
-/*          LLM processing is handled by the calling agent or subagent.            *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
@@ -99,7 +99,7 @@ async function getFetchVideoMeta(googleApiKey, videoId, region = "DE") {
   const item = r?.data?.items?.[0];
   if (!item?.snippet) return { ok: false, error: "YT_META_NOT_FOUND", meta: null };
   const sn = item.snippet;
-  return { ok: true, meta: { video_id: videoId, title: sn.title || "", channel_title: sn.channelTitle || "", channel_id: sn.channelId || "", published_at: sn.publishedAt || "", region } };
+  return { ok: true, meta: { video_id: videoId, title: sn.title || "", channel_title: sn.channelTitle || "", channelId: sn.channelId || "", published_at: sn.publishedAt || "", region } };
 }
 
 
@@ -128,7 +128,7 @@ async function getSearchVideos({ googleApiKey, query, maxResults, relevanceLangu
   const results = items.map((it) => {
     const id = it?.id?.videoId || "";
     const sn = it?.snippet || {};
-    return { video_id: id, video_url: id ? `https://www.youtube.com/watch?v=${id}` : "", title: sn.title || "", channel_title: sn.channelTitle || "", channel_id: sn.channelId || "", published_at: sn.publishedAt || "", description: (sn.description || "").slice(0, 400) };
+    return { video_id: id, video_url: id ? `https://www.youtube.com/watch?v=${id}` : "", title: sn.title || "", channel_title: sn.channelTitle || "", channelId: sn.channelId || "", published_at: sn.publishedAt || "", description: (sn.description || "").slice(0, 400) };
   });
   return { ok: true, results };
 }

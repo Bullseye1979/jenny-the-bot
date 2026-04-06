@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getImage.js                                                           *
-/* Version 1.0                                                                     *
-/* Purpose: Generate high-quality images via OpenAI API and persist them to        *
-/*          ./pub/documents with AI prompt enhancement and aspect handling.        *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { saveFile } from "../core/file.js";
 import { getSecret } from "../core/secrets.js";

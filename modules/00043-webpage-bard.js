@@ -1,24 +1,24 @@
-/**********************************************************************************/
-/* filename: 00043-webpage-bard.js                                                */
-/* Version 1.0                                                                    */
-/* Purpose: Bard music manager SPA (port 3114, /bard). Provides MP3 upload with  */
-/*          auto-tagging, tag editor, play-preview buttons, and a live Now        */
-/*          Playing card. Serves the audio stream for the browser player via      */
-/*          HTTP range requests. Reads config only from config["webpage-bard"].   */
-/*          Access is tiered: allowedRoles grants basic access (Now Playing +      */
-/*          audio stream); adminRoles additionally grants upload, library          */
-/*          management and autotag. No matching role = full 403 deny.             */
-/*                                                                                */
-/* Routes:                                                                        */
-/*   GET  /bard                       SPA main page (requires any allowed role)   */
-/*   GET  /bard/style.css             Shared stylesheet (public)                  */
-/*   GET  /bard/api/nowplaying        Current track info (requires any role)      */
-/*   GET  /bard/api/audio             MP3 stream (requires any role)              */
-/*   GET  /bard/api/library           Track list + file list (admin only)         */
-/*   POST /bard/api/tags              Save track title/tags/volume (admin only)   */
-/*   POST /bard/api/autotag-upload    Upload + AI-tag MP3 file (admin only)       */
-/*   DELETE /bard/api/track          Remove track from library + disk (admin only) */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs   from "node:fs";
 import path from "node:path";
@@ -177,7 +177,7 @@ async function callTavily(title, atCfg, wo) {
     });
     const raw = await res.text();
     try { data = JSON.parse(raw); } catch (_e) { data = null; }
-  } catch (_e) { /* timeout or network error — proceed without search context */ }
+  } catch (_e) {  }
   finally { clearTimeout(timer); }
   if (!Array.isArray(data?.results) || !data.results.length) return "";
   return data.results.slice(0, 3)
@@ -367,7 +367,7 @@ export default async function getWebpageBard(coreData) {
             rejectedLabels: Array.isArray(latestLabels.rejected) ? latestLabels.rejected : []
           });
         }
-      } catch { /* ignore — fall back to labels from track start */ }
+      } catch {  }
     }
 
     setJsonResp(wo, 200, streamEntry || null);

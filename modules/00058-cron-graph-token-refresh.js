@@ -1,11 +1,11 @@
-/**********************************************************************************/
-/* filename: 00058-cron-graph-token-refresh.js                                    *
-/* Version 1.0                                                                    *
-/* Purpose: Cron module — refreshes Microsoft Graph OAuth tokens that are about   *
-/*          to expire. Queries graph_tokens for rows with expires_at within the   *
-/*          configured buffer window and calls the MS token refresh endpoint.     *
-/* Flow: cron                                                                     *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
 
 "use strict";
 

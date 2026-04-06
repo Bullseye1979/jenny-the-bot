@@ -1,23 +1,23 @@
-/************************************************************************************
-/* filename: 00029-discord-voice-capture.js                                              *
-/* Version 1.0                                                                     *
-/* Purpose: Discord-voice-specific segment capture + VAD filtering.                *
-/*          Combines all voiced PCM frames into a single WAV file and writes       *
-/*          the path to wo.audioFile so the downstream transcription module        *
-/*          can work source-agnostically.                                           *
-/*                                                                                 *
-/* Trigger: wo.voiceIntent.action === "describe_and_transcribe"                    *
-/*          + wo.voiceIntent.userId                                                 *
-/*                                                                                 *
-/* Output:  wo.audioFile        — absolute path to voiced WAV (temp file)          *
-/*          wo.audioStats       — { snrDb, usefulMs } for quality gate downstream  *
-/*          wo.transcribeAudio  — true (signals transcription module to run)       *
-/*                                                                                 *
-/* Quality decisions (SNR threshold, min voiced ms) are made by the               *
-/* downstream transcription module, not here.                                      *
-/*                                                                                 *
-/* On skip: wo.transcribeSkipped = "<reason>", wo.stop = true                      *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import fs from "node:fs";
 import os from "node:os";

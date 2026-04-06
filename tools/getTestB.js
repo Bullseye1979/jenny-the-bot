@@ -1,10 +1,10 @@
-/**********************************************************************************/
-/* filename: getTestB.js                                                           *
-/* Version 1.0                                                                     *
-/* Purpose: Dummy test tool B. Returns a fake video URL immediately without        *
-/*          calling any external API. Used to test the subagent pipeline without   *
-/*          incurring video generation costs.                                      *
-/**********************************************************************************/
+
+
+
+
+
+
+
 
 const MODULE_NAME = "getTestB";
 const DEFAULT_DELAY_MS = 30_000;

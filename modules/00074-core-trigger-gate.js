@@ -1,15 +1,15 @@
-/************************************************************************************
-/* filename: 00074-core-trigger-gate.js                                            *
-/* Version 1.0                                                                     *
-/* Purpose: Flow-agnostic trigger gate.                                            *
-/*          Stops the pipeline when wo.payload does not start with the configured  *
-/*          trigger word (within the first N words).                               *
-/*                                                                                 *
-/* Trigger: wo.trigger (string) must be set; if empty/unset, all payloads pass.   *
-/* Flows:   discord, discord-voice, webpage                                        *
-/*          Skips automatically for webpage flows that are not voice               *
-/*          (wo.isWebpageVoice !== true) — wiki, chat, etc. pass without check.   *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 

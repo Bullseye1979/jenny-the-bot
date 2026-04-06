@@ -1,10 +1,10 @@
-/**********************************************************************************/
-/* filename: getHistory.js                                                         *
-/* Version 1.0                                                                     *
-/* Purpose: Retrieve channel history as raw row dumps with paging and filtering.  *
-/*          Returns rows up to maxRows cap; use start_ctx_id for pagination.       *
-/*          LLM processing is handled by the calling agent or subagent.            *
-/**********************************************************************************/
+
+
+
+
+
+
+
 
 import mysql from "mysql2/promise";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -166,14 +166,14 @@ async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const cfgTool = wo?.toolsconfig?.getHistory || {};
-  const overrideChannelId = args?.channelId ? String(args.channelId).trim() : (args?.channel_id ? String(args.channel_id).trim() : "");
+  const overrideChannelId = args?.channelId ? String(args.channelId).trim() : (args?.channelId ? String(args.channelId).trim() : "");
   const primaryChannelId = overrideChannelId
     || String(wo?.callerChannelId || "").trim()
     || String(wo?.channelID || "").trim();
   const argChannelIds = Array.isArray(args?.channelIds)
     ? args.channelIds.map(c => String(c || "").trim()).filter(Boolean)
-    : (Array.isArray(args?.channel_ids)
-      ? args.channel_ids.map(c => String(c || "").trim()).filter(Boolean)
+    : (Array.isArray(args?.channelIds)
+      ? args.channelIds.map(c => String(c || "").trim()).filter(Boolean)
       : []);
   const woCallerChannelIds = Array.isArray(wo?.callerChannelIds)
     ? wo.callerChannelIds.map(c => String(c || "").trim()).filter(Boolean)
@@ -189,7 +189,7 @@ async function getHistoryInvoke(args, coreData) {
   for (const cid of extraChannelIds) channelIdSet.add(cid);
   const channelIds = [...channelIdSet];
   if (!channelIds.length) {
-    return { ok: false, error: "channel_id missing (wo.channelID / wo.channelIds)" };
+    return { ok: false, error: "channelId missing (wo.channelID / wo.channelIds)" };
   }
   const mainChannelId = primaryChannelId || channelIds[0];
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
@@ -267,7 +267,7 @@ async function getHistoryInvoke(args, coreData) {
       ctx_id: r.ctx_id,
       ts: r.ts,
       id: r.id,
-      channel_id: r.id,
+      channelId: r.id,
       text: r.text,
       role: r.role ?? null
     };
@@ -278,7 +278,7 @@ async function getHistoryInvoke(args, coreData) {
     ctx_id: lastRow.ctx_id,
     ts: lastRow.ts,
     id: mainChannelId,
-    channel_id: mainChannelId,
+    channelId: mainChannelId,
     text: `[effective_end_ts]\n${lastRow.ts}`,
     role: null
   });

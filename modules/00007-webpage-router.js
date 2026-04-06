@@ -1,30 +1,30 @@
-/************************************************************************************
-/* filename: 00007-webpage-router.js                                               *
-/* Version 1.0                                                                     *
-/* Purpose: Flow router for webpage requests.                                      *
-/*          Sets wo.flow and wo.channelID before core-channel-config (00010) runs, *
-/*          based on configurable endpoint-to-flow mappings in core.json.          *
-/*          This allows core-channel-config to apply flow-specific overrides via   *
-/*          its flows[].flowMatch entries (e.g. "webpage-voice", "webpage-wiki").  *
-/*                                                                                 *
-/* Config key: webpage-router                                                      *
-/*   routes[]:                                                                     *
-/*     port             — HTTP port to match                                       *
-/*     pathPrefix       — URL path prefix (e.g. "/voice", "/wiki")                 *
-/*     flow             — wo.flow value to set (e.g. "webpage-voice")              *
-/*     channelIdSource  — how to derive wo.channelID:                              *
-/*                        "query:<param>" — from URL query string param            *
-/*                        "path:<N>"      — path segment N after prefix (0-based)  *
-/*                        "<literal>"     — static string value                    *
-/*                                                                                 *
-/* Note: The module pipeline is already built when this runs (based on the         *
-/*       initial wo.flow = "webpage"). Changing wo.flow here only affects how      *
-/*       downstream modules read it — in particular core-channel-config uses       *
-/*       wo.flow for its internal flowMatch logic.                                 *
-/*                                                                                 *
-/* MUST run before 00010-core-channel-config.                                      *
-/* Flow: webpage                                                                   *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 

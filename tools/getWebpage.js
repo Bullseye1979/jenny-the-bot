@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getWebpage.js                                                         *
-/* Version 1.0                                                                     *
-/* Purpose: Fetch webpages, dump cleaned text or summarize via internal API        *
-/*          if long.                                                                *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
@@ -84,35 +84,6 @@ function getWordCount(text) {
 }
 
 
-function getBuildMessages(userPrompt, title, url, text, extraPrompt, systemPrompt) {
-  const baseSystem = {
-    role: "system",
-    content: (systemPrompt && systemPrompt.trim())
-      ? systemPrompt.trim()
-      : "You are a precise web analyst. Answer strictly from the provided page text. " +
-        "If the answer isn't present, say so clearly. Keep chronology and avoid speculation."
-  };
-  const extraSystem =
-    extraPrompt && extraPrompt.trim()
-      ? {
-          role: "system",
-          content:
-            "ADDITIONAL INSTRUCTIONS (bias the summary; do not override facts):\n" +
-            extraPrompt.trim()
-        }
-      : null;
-
-  const pageHeader = [title ? `Title: ${title}` : "", url ? `URL: ${url}` : ""]
-    .filter(Boolean)
-    .join("\n");
-
-  const msgs = [baseSystem];
-  if (extraSystem) msgs.push(extraSystem);
-  msgs.push({ role: "user", content: `User request: "${userPrompt}"` });
-  msgs.push({ role: "user", content: pageHeader ? pageHeader + "\n\n" + text : text });
-  return msgs;
-}
-
 
 async function callSummaryApi(text, cfg, wo) {
   const channelId = String(cfg.summaryChannelId || "").trim();
@@ -144,7 +115,7 @@ async function getInvoke(args, coreData) {
   const toolCfg = wo?.toolsconfig?.getWebpage || {};
 
   const url = getStr(args?.url, "").trim();
-  const userPrompt = getStr(args?.userPrompt, getStr(args?.user_prompt, "")).trim();
+  const userPrompt = getStr(args?.userPrompt, "").trim();
   const prompt = getStr(args?.prompt, "");
 
   if (!url) return { ok: false, error: "Missing url" };

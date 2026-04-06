@@ -1,12 +1,12 @@
-/**********************************************************************************/
-/* filename: getFileContent.js                                                     *
-/* Version 1.0                                                                     *
-/* Purpose: Fetches a file by URL and returns its raw text content. Intended for   *
-/*          reading previously generated source files before applying edits.       *
-/*          Binary files (images, PDFs, ZIPs) are rejected with a clear error.    *
-/*                                                                                 *
-/* Config: none — timeout and size limit are fixed constants.                      *
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
 
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";

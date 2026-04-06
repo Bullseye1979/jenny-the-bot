@@ -1,6 +1,6 @@
 # Jenny — Discord AI Bot
 
-> **Version:** 1.0 · **Date:** 2026-04-05
+> **Version:** 1.0 · **Date:** 2026-04-06
 
 Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice, browser voice interface), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management with a self-service data-export portal, a live terminal dashboard with hot-reload, and a web-based image gallery. A first-run setup wizard eliminates manual `core.json` creation.
 
@@ -155,7 +155,8 @@ The current codebase follows these baseline rules:
 - Secrets are resolved via `core/secrets.js` (`getSecret`) instead of plaintext values.
 - File writes from tools should use helpers in `core/file.js`.
 - LLM requests from tools/modules are routed through the internal API (`http://localhost:3400`) unless the feature is explicitly non-LLM (for example image/video generation or transcription providers).
-- Public tool parameters should use camelCase. Legacy snake_case aliases may still be accepted for backward compatibility.
+- Public tool parameters should use camelCase. Backward-compatibility aliases should only remain where an external API contract requires them.
+- Remaining snake_case inside source should exist only for database column names, SQL snippets, or third-party API wire formats.
 
 Subagent orchestration updates are standardized as **1.0**, including async spawn/resume behavior (`getSubAgent`, `getAgentResume`) and explicit project-context continuation.
 
@@ -564,16 +565,17 @@ Subagent execution is asynchronous by design and is routed through the internal 
 
 **Configuration boundaries:**
 
-- `getSubAgent` reads only `toolsconfig.getSubAgent` + runtime `workingObject`.
+- `getSubAgent` reads only `toolsconfig.getSubAgent` + runtime `workingObject`, including the configurable `projectContextPrompt` template.
 - `getAgentResume` reads only `toolsconfig.getAgentResume` + runtime `workingObject`.
 - Both tools authenticate via `apiSecret` placeholders resolved through `core/secrets.js`.
 
 **Canonical payload keys (camelCase):**
 
-- `channelId` (legacy alias: `channel_id`)
+- `channelId`
+- `projectId`
 - `orchestration.globalGoal`, `yourTask`, `yourRole`, `doOnly`, `doNot`, `existingArtifacts`, `assignedToOthers`, `toolLocks`
 
-Legacy snake_case aliases are still accepted for backward compatibility, but new callers should use camelCase.
+Subagent orchestration payloads are documented and maintained in camelCase.
 
 ---
 
@@ -870,7 +872,7 @@ export default {
 | `getGoogle` | Google Custom Search API; returns titles, snippets, and links |
 | `getWebpage` | Fetches and parses a web page; returns extracted text |
 | `getImage` | Generates images via OpenAI Images API; persists to `./pub/documents/` |
-| `getImageDescription` | Analyses an image URL using the Vision API |
+| `getImageDescription` | Analyses an image URL through the internal API flow |
 | `getImageSD` | Generates images via Stable Diffusion |
 | `getAnimatedPicture` | Animates a still image into a short video (WAN/Replicate) |
 | `getVideoFromText` | Generates a video from a text prompt (Veo-3/Replicate) |

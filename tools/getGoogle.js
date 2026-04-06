@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getGoogle.js                                                          *
-/* Version 1.0                                                                     *
-/* Purpose: Perform Google Custom Search via toolsconfig and expose results        *
-/*          as a function toolcall.                                                *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";

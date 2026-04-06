@@ -1,13 +1,13 @@
-/************************************************************************************
-/* filename: 00033-webpage-voice-transcribe-gate.js                                *
-/* Version 1.0                                                                     *
-/* Purpose: When wo.transcribeOnly is true (set by 00028 from ?transcribeOnly=1), *
-/*          stops the pipeline after transcription so AI and TTS never run.       *
-/*          09320 detects wo.transcribeOnly and returns only the transcript.       *
-/*                                                                                 *
-/* MUST run after 00030-core-voice-transcribe (needs wo.payload).                 *
-/* Flow: webpage                                                                   *
-/************************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 import { getPrefixedLogger } from "../core/logging.js";
 

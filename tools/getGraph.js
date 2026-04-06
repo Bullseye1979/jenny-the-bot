@@ -1,13 +1,13 @@
-/**********************************************************************************/
-/* filename: getGraph.js                                                          */
-/* Version 1.0                                                                    */
-/* Purpose: Microsoft Graph API tool — SharePoint files, OneDrive, Exchange mail, */
-/*          Azure AD users and generic Graph API access.                          */
-/*          Uses delegated OAuth2 tokens stored per Discord user in graph_tokens. */
-/*          Token is resolved via wo.userId + wo.db at runtime.                  */
-/*          Auto-discovers siteId and driveId; uses /me paths when no userId set. */
-/*          All operations return { ok, error } instead of throwing.             */
-/**********************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -22,9 +22,9 @@ const discoveryCache = new Map();
 let   _dbPool        = null;
 
 
-/**********************************************************************************/
-/* getDbPool                                                                      */
-/**********************************************************************************/
+
+
+
 async function getDbPool(coreData) {
   if (_dbPool) return _dbPool;
   const mysql2 = await import("mysql2/promise");
@@ -43,58 +43,58 @@ async function getDbPool(coreData) {
 }
 
 
-/**********************************************************************************/
-/* getStr                                                                         */
-/**********************************************************************************/
+
+
+
 function getStr(v, f = "") {
   return typeof v === "string" && v.length ? v : f;
 }
 
 
-/**********************************************************************************/
-/* getNum                                                                         */
-/**********************************************************************************/
+
+
+
 function getNum(v, f = 0) {
   return Number.isFinite(v) ? Number(v) : f;
 }
 
 
-/**********************************************************************************/
-/* getBool                                                                        */
-/**********************************************************************************/
+
+
+
 function getBool(v, f = false) {
   return typeof v === "boolean" ? v : f;
 }
 
 
-/**********************************************************************************/
-/* getArr                                                                         */
-/**********************************************************************************/
+
+
+
 function getArr(v, f = []) {
   return Array.isArray(v) ? v : f;
 }
 
 
-/**********************************************************************************/
-/* getObj                                                                         */
-/**********************************************************************************/
+
+
+
 function getObj(v, f = {}) {
   return v && typeof v === "object" && !Array.isArray(v) ? v : f;
 }
 
 
-/**********************************************************************************/
-/* getClamp                                                                       */
-/**********************************************************************************/
+
+
+
 function getClamp(n, min, max) {
   const x = Number.isFinite(n) ? Number(n) : min;
   return Math.max(min, Math.min(max, x));
 }
 
 
-/**********************************************************************************/
-/* getJoinUrl                                                                     */
-/**********************************************************************************/
+
+
+
 function getJoinUrl(baseUrl, path) {
   const root = String(baseUrl || GRAPH_BASE).replace(/\/+$/, "");
   const p = String(path || "").trim();
@@ -104,9 +104,9 @@ function getJoinUrl(baseUrl, path) {
 }
 
 
-/**********************************************************************************/
-/* getBuildUrl                                                                    */
-/**********************************************************************************/
+
+
+
 function getBuildUrl(baseUrl, path, query) {
   const url = new URL(getJoinUrl(baseUrl, path));
   const q = getObj(query, {});
@@ -125,43 +125,43 @@ function getBuildUrl(baseUrl, path, query) {
 }
 
 
-/**********************************************************************************/
-/* getHeaders                                                                     */
-/**********************************************************************************/
+
+
+
 function getHeaders(baseHeaders, extraHeaders) {
   return { ...getObj(baseHeaders, {}), ...getObj(extraHeaders, {}) };
 }
 
 
-/**********************************************************************************/
-/* getGraphRelativeUrl                                                            */
-/**********************************************************************************/
+
+
+
 function getGraphRelativeUrl(path, query = {}) {
   const url = new URL(getBuildUrl("https://graph.local", path, query));
   return `${url.pathname}${url.search}`;
 }
 
 
-/**********************************************************************************/
-/* getDecodeBase64ToBytes                                                         */
-/**********************************************************************************/
+
+
+
 function getDecodeBase64ToBytes(input) {
   return Buffer.from(String(input || "").replace(/\s+/g, ""), "base64");
 }
 
 
-/**********************************************************************************/
-/* getIsProbablyTextContentType                                                   */
-/**********************************************************************************/
+
+
+
 function getIsProbablyTextContentType(contentType) {
   const v = getStr(contentType, "").toLowerCase();
   return v.startsWith("text/") || v.includes("json") || v.includes("xml") || v.includes("javascript") || v.includes("csv");
 }
 
 
-/**********************************************************************************/
-/* getFetch                                                                       */
-/**********************************************************************************/
+
+
+
 async function getFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const res = await fetchWithTimeout(url, { ...options }, timeoutMs);
   const text = await res.text();
@@ -171,9 +171,9 @@ async function getFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
 }
 
 
-/**********************************************************************************/
-/* getFetchBinary                                                                 */
-/**********************************************************************************/
+
+
+
 async function getFetchBinary(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const res = await fetchWithTimeout(url, { ...options }, timeoutMs);
   const bytes = Buffer.from(await res.arrayBuffer());
@@ -181,9 +181,9 @@ async function getFetchBinary(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS)
 }
 
 
-/**********************************************************************************/
-/* getNormalizeToolConfig                                                         */
-/**********************************************************************************/
+
+
+
 function getNormalizeToolConfig(rawToolCfg) {
   const toolCfg = getObj(rawToolCfg, {});
   return {
@@ -208,9 +208,9 @@ function getNormalizeToolConfig(rawToolCfg) {
 }
 
 
-/**********************************************************************************/
-/* getDelegatedToken                                                              */
-/**********************************************************************************/
+
+
+
 async function getDelegatedToken(coreData) {
   const wo     = getObj(coreData?.workingObject, {});
   const userId = String(wo?.userId || "").trim();
@@ -227,9 +227,9 @@ async function getDelegatedToken(coreData) {
 }
 
 
-/**********************************************************************************/
-/* getApplyConfiguredIds                                                          */
-/**********************************************************************************/
+
+
+
 function getApplyConfiguredIds(args, toolCfg) {
   const nextArgs = JSON.parse(JSON.stringify(getObj(args, {})));
 
@@ -262,9 +262,9 @@ function getApplyConfiguredIds(args, toolCfg) {
 }
 
 
-/**********************************************************************************/
-/* Resolve helpers                                                                */
-/**********************************************************************************/
+
+
+
 function getResolveUserId(args, toolCfg) {
   return getStr(args?.userId, getStr(toolCfg.defaultUserId, ""));
 }
@@ -328,10 +328,10 @@ function getResolveSharePointSiteBase(args, toolCfg) {
 }
 
 
-/**********************************************************************************/
-/* getResolveDriveItemPath                                                        */
-/* Returns null when no stable target can be resolved (never throws).            */
-/**********************************************************************************/
+
+
+
+
 function getResolveDriveItemPath(args, toolCfg) {
   const userId = getResolveUserId(args, toolCfg);
   const driveId = getResolveDriveId(args, toolCfg);
@@ -361,10 +361,10 @@ function getResolveDriveItemPath(args, toolCfg) {
 }
 
 
-/**********************************************************************************/
-/* getResolveUploadRootPath                                                       */
-/* Returns null when no stable target can be resolved (never throws).            */
-/**********************************************************************************/
+
+
+
+
 function getResolveUploadRootPath(args, toolCfg) {
   const userId = getResolveUserId(args, toolCfg);
   const driveId = getResolveDriveId(args, toolCfg);
@@ -380,9 +380,9 @@ function getResolveUploadRootPath(args, toolCfg) {
 }
 
 
-/**********************************************************************************/
-/* getResolveFolderPath                                                           */
-/**********************************************************************************/
+
+
+
 function getResolveFolderPath(args, toolCfg) {
   const base = getResolveDriveItemPath(args, toolCfg);
   if (!base) return null;
@@ -397,9 +397,9 @@ function getResolveFolderPath(args, toolCfg) {
 }
 
 
-/**********************************************************************************/
-/* getBuildSearchRequest                                                          */
-/**********************************************************************************/
+
+
+
 function getBuildSearchRequest(args, toolCfg) {
   const queryText = getStr(args.query, "").trim();
   if (!queryText) return null;
@@ -410,17 +410,17 @@ function getBuildSearchRequest(args, toolCfg) {
 }
 
 
-/**********************************************************************************/
-/* getNormalizeMessageBodyPreference                                              */
-/**********************************************************************************/
+
+
+
 function getNormalizeMessageBodyPreference(args) {
   return getStr(args.bodyType, "text").toLowerCase() === "html" ? "html" : "text";
 }
 
 
-/**********************************************************************************/
-/* getExtractBatchResponses                                                       */
-/**********************************************************************************/
+
+
+
 function getExtractBatchResponses(batchRes) {
   return getArr(batchRes?.data?.responses, []).map(item => ({
     id: item.id,
@@ -431,9 +431,9 @@ function getExtractBatchResponses(batchRes) {
 }
 
 
-/**********************************************************************************/
-/* getGraphRequest                                                                */
-/**********************************************************************************/
+
+
+
 async function getGraphRequest(toolCfg, req = {}) {
   const timeoutMs = getNum(req.timeoutMs, getNum(toolCfg.timeoutMs, DEFAULT_TIMEOUT_MS));
   const token = getStr(req.accessToken, "") || getStr(toolCfg._token, "");
@@ -454,9 +454,9 @@ async function getGraphRequest(toolCfg, req = {}) {
 }
 
 
-/**********************************************************************************/
-/* getGraphBinaryRequest                                                          */
-/**********************************************************************************/
+
+
+
 async function getGraphBinaryRequest(toolCfg, req = {}) {
   const timeoutMs = getNum(req.timeoutMs, getNum(toolCfg.timeoutMs, DEFAULT_TIMEOUT_MS));
   const token = getStr(req.accessToken, "") || getStr(toolCfg._token, "");
@@ -470,9 +470,9 @@ async function getGraphBinaryRequest(toolCfg, req = {}) {
 }
 
 
-/**********************************************************************************/
-/* getRunBatch                                                                    */
-/**********************************************************************************/
+
+
+
 async function getRunBatch(toolCfg, version, requests) {
   const baseUrl = getResolveBaseUrl(toolCfg, version);
   const res = await getGraphRequest(toolCfg, { baseUrl, path: "/$batch", method: "POST", body: { requests } });
@@ -480,9 +480,9 @@ async function getRunBatch(toolCfg, version, requests) {
 }
 
 
-/**********************************************************************************/
-/* getCachedDiscovery / setCachedDiscovery                                        */
-/**********************************************************************************/
+
+
+
 function getCachedDiscovery(key) {
   const entry = discoveryCache.get(key);
   if (!entry) return null;
@@ -495,12 +495,12 @@ function setCachedDiscovery(key, value) {
 }
 
 
-/**********************************************************************************/
-/* getAutoDiscoverIds                                                             */
-/* Auto-discovers siteId from the configured SharePoint hostname and driveId     */
-/* from the resolved site or default user. Results are cached for 5 minutes.     */
-/* Returns an enriched copy of toolCfg; never throws.                            */
-/**********************************************************************************/
+
+
+
+
+
+
 async function getAutoDiscoverIds(toolCfg) {
   const hostname = getStr(toolCfg.defaultSharePointHostname, "");
   const token = getStr(toolCfg._token, "");
@@ -563,9 +563,9 @@ async function getAutoDiscoverIds(toolCfg) {
 }
 
 
-/**********************************************************************************/
-/* getOperationResolveDefaultTargets                                              */
-/**********************************************************************************/
+
+
+
 async function getOperationResolveDefaultTargets(toolCfg, args) {
   const version = getResolveApiVersion(args, toolCfg);
   const baseUrl = getResolveBaseUrl(toolCfg, version);
@@ -603,9 +603,9 @@ async function getOperationResolveDefaultTargets(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationFulltextSearch                                                     */
-/**********************************************************************************/
+
+
+
 async function getOperationFulltextSearch(toolCfg, args) {
   const body = getBuildSearchRequest(args, toolCfg);
   if (!body) return { operation: "fulltextSearch", ok: false, error: "Missing search query" };
@@ -618,9 +618,9 @@ async function getOperationFulltextSearch(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationSearchFiles                                                        */
-/**********************************************************************************/
+
+
+
 async function getOperationSearchFiles(toolCfg, args) {
   const query = getStr(args.query, "").trim();
   if (!query) return { operation: "searchFiles", ok: false, error: "Missing search query" };
@@ -658,9 +658,9 @@ async function getOperationSearchFiles(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationShowFile                                                           */
-/**********************************************************************************/
+
+
+
 async function getOperationShowFile(toolCfg, args) {
   const path = getResolveDriveItemPath(args, toolCfg);
   if (!path) return { operation: "showFile", ok: false, error: "Could not resolve file target. Configure defaultUserId, defaultDriveId, defaultSiteId, or defaultSharePointHostname." };
@@ -676,9 +676,9 @@ async function getOperationShowFile(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationListFiles                                                          */
-/**********************************************************************************/
+
+
+
 async function getOperationListFiles(toolCfg, args) {
   const folder = getResolveFolderPath(args, toolCfg);
   if (!folder) return { operation: "listFiles", ok: false, error: "Could not resolve folder target. Configure defaultUserId, defaultDriveId, defaultSiteId, or defaultSharePointHostname." };
@@ -695,9 +695,9 @@ async function getOperationListFiles(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationDownloadFile                                                       */
-/**********************************************************************************/
+
+
+
 async function getOperationDownloadFile(toolCfg, args) {
   const itemPath = getResolveDriveItemPath(args, toolCfg);
   if (!itemPath) return { operation: "downloadFile", ok: false, error: "Could not resolve file target. Configure defaultUserId, defaultDriveId, defaultSiteId, or defaultSharePointHostname." };
@@ -726,9 +726,9 @@ async function getOperationDownloadFile(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationUploadFile                                                         */
-/**********************************************************************************/
+
+
+
 async function getOperationUploadFile(toolCfg, args) {
   const contentBase64 = getStr(args.contentBase64, "");
   if (!contentBase64) return { operation: "uploadFile", ok: false, error: "Missing contentBase64" };
@@ -758,9 +758,9 @@ async function getOperationUploadFile(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationCreateUploadSession                                                */
-/**********************************************************************************/
+
+
+
 async function getOperationCreateUploadSession(toolCfg, args) {
   const fileName = getStr(args.fileName, "");
   if (!fileName) return { operation: "createUploadSession", ok: false, error: "Missing fileName" };
@@ -783,9 +783,9 @@ async function getOperationCreateUploadSession(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationSearchEmails                                                       */
-/**********************************************************************************/
+
+
+
 async function getOperationSearchEmails(toolCfg, args) {
   const query = getStr(args.query, "").trim();
   if (!query) return { operation: "searchEmails", ok: false, error: "Missing email search query" };
@@ -813,9 +813,9 @@ async function getOperationSearchEmails(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationShowEmails                                                         */
-/**********************************************************************************/
+
+
+
 async function getOperationShowEmails(toolCfg, args) {
   const messageIds = getArr(args.messageIds, []).map(v => getStr(v, "")).filter(Boolean);
   if (!messageIds.length) return { operation: "showEmails", ok: false, error: "Missing messageIds" };
@@ -838,9 +838,9 @@ async function getOperationShowEmails(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationListMailFolders                                                    */
-/**********************************************************************************/
+
+
+
 async function getOperationListMailFolders(toolCfg, args) {
   const version = getResolveApiVersion(args, toolCfg);
   const baseUrl = getResolveBaseUrl(toolCfg, version);
@@ -856,9 +856,9 @@ async function getOperationListMailFolders(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationSearchMailFolders                                                  */
-/**********************************************************************************/
+
+
+
 async function getOperationSearchMailFolders(toolCfg, args) {
   const query = getStr(args.query, "").trim().toLowerCase();
   if (!query) return { operation: "searchMailFolders", ok: false, error: "Missing mail folder search query" };
@@ -871,9 +871,9 @@ async function getOperationSearchMailFolders(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationDeleteFiles                                                        */
-/**********************************************************************************/
+
+
+
 async function getOperationDeleteFiles(toolCfg, args) {
   const version = getResolveApiVersion(args, toolCfg);
   const items = getArr(args.items, []);
@@ -906,9 +906,9 @@ async function getOperationDeleteFiles(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationDeleteMails                                                        */
-/**********************************************************************************/
+
+
+
 async function getOperationDeleteMails(toolCfg, args) {
   const messageIds = getArr(args.messageIds, []).map(v => getStr(v, "")).filter(Boolean);
   if (!messageIds.length) return { operation: "deleteMails", ok: false, error: "Missing messageIds" };
@@ -934,9 +934,9 @@ async function getOperationDeleteMails(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationRenameFiles                                                        */
-/**********************************************************************************/
+
+
+
 async function getOperationRenameFiles(toolCfg, args) {
   const version = getResolveApiVersion(args, toolCfg);
   const items = getArr(args.items, []);
@@ -958,9 +958,9 @@ async function getOperationRenameFiles(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationMoveEmails                                                         */
-/**********************************************************************************/
+
+
+
 async function getOperationMoveEmails(toolCfg, args) {
   const messageIds = getArr(args.messageIds, []).map(v => getStr(v, "")).filter(Boolean);
   if (!messageIds.length) return { operation: "moveEmails", ok: false, error: "Missing messageIds" };
@@ -995,9 +995,9 @@ async function getOperationMoveEmails(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationSearchUsers                                                        */
-/**********************************************************************************/
+
+
+
 async function getOperationSearchUsers(toolCfg, args) {
   const query = getStr(args.query, "").trim();
   if (!query) return { operation: "searchUsers", ok: false, error: "Missing user search query" };
@@ -1020,9 +1020,9 @@ async function getOperationSearchUsers(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationShowUser                                                           */
-/**********************************************************************************/
+
+
+
 async function getOperationShowUser(toolCfg, args) {
   const userId = getResolveUserId(args, toolCfg);
   if (!userId) return { operation: "showUser", ok: false, error: "Missing userId" };
@@ -1038,9 +1038,9 @@ async function getOperationShowUser(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationCreateUser                                                         */
-/**********************************************************************************/
+
+
+
 async function getOperationCreateUser(toolCfg, args) {
   const user = getObj(args.user, {});
   if (!Object.keys(user).length) return { operation: "createUser", ok: false, error: "Missing user payload" };
@@ -1053,9 +1053,9 @@ async function getOperationCreateUser(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationUpdateUser                                                         */
-/**********************************************************************************/
+
+
+
 async function getOperationUpdateUser(toolCfg, args) {
   const userId = getResolveUserId(args, toolCfg);
   if (!userId) return { operation: "updateUser", ok: false, error: "Missing userId" };
@@ -1071,9 +1071,9 @@ async function getOperationUpdateUser(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationDeleteUser                                                         */
-/**********************************************************************************/
+
+
+
 async function getOperationDeleteUser(toolCfg, args) {
   const userId = getResolveUserId(args, toolCfg);
   if (!userId) return { operation: "deleteUser", ok: false, error: "Missing userId" };
@@ -1086,9 +1086,9 @@ async function getOperationDeleteUser(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationSendMail                                                           */
-/**********************************************************************************/
+
+
+
 async function getOperationSendMail(toolCfg, args) {
   const subject = getStr(args.subject, "").trim();
   if (!subject) return { operation: "sendMail", ok: false, error: "Missing subject" };
@@ -1138,9 +1138,9 @@ async function getOperationSendMail(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getOperationGraphRequest                                                       */
-/**********************************************************************************/
+
+
+
 async function getOperationGraphRequest(toolCfg, args) {
   const request = getObj(args.request, {});
   const path = getStr(request.path, "");
@@ -1161,9 +1161,9 @@ async function getOperationGraphRequest(toolCfg, args) {
 }
 
 
-/**********************************************************************************/
-/* getInvoke                                                                      */
-/**********************************************************************************/
+
+
+
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   try {
@@ -1210,9 +1210,9 @@ async function getInvoke(args, coreData) {
 }
 
 
-/**********************************************************************************/
-/* module export                                                                  */
-/**********************************************************************************/
+
+
+
 export default {
   name: MODULE_NAME,
   invoke: getInvoke

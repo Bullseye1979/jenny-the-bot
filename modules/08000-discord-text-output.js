@@ -1,13 +1,13 @@
-/********************************************************************************
-/* filename: 08000-discord-text-output.js                                           *
-/* Version 1.0                                                                  *
-/* Purpose: Single-embed reply that shows the entire question as a Markdown     *
-/*          code block above the answer. Works in DMs (direct send) and guilds  *
-/*          (via webhook).                                                     *
-/*          If wo.reasoningSummary exists, attach it as a Discord message       *
-/*          thread created from the LAST answer embed message (Create Thread on *
-/*          message). Preserves fenced code blocks across embed splits.         *
-/********************************************************************************/
+
+
+
+
+
+
+
+
+
+
 
 import discordJs from "discord.js";
 const { EmbedBuilder, PermissionFlagsBits, WebhookClient } = discordJs;

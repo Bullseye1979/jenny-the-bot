@@ -1,9 +1,9 @@
-/**********************************************************************************/
-/* filename: getText.js                                                            *
-/* Version 1.0                                                                     *
-/* Purpose: Toolcall-ready saver for arbitrary plaintext into ../pub/documents     *
-/*          with a guessed extension.                                              *
-/**********************************************************************************/
+
+
+
+
+
+
 
 import { saveFile } from "../core/file.js";
 
@@ -104,9 +104,9 @@ async function getInvoke(args, coreData){
   }
 }
 
-/**********************************************************************************/
-/* export default (tool def)                                                       *
-/**********************************************************************************/
+
+
+
 export default {
   name: MODULE_NAME,
   invoke: getInvoke
