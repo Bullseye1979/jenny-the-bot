@@ -863,12 +863,44 @@ function getPayload(row) {
 
 function getSnapshotMappedToChat(rows) {
   const out = [];
+  let lastAssistantCallIds = new Set();
   for (const r of rows || []) {
     const role = r?.role;
     const payload = getPayload(r);
     if (role === "system") out.push({ role: "system", content: payload });
-    else if (role === "user") out.push({ role: "user", content: payload });
-    else if (role === "assistant") out.push({ role: "assistant", content: payload });
+    else if (role === "user") {
+      out.push({ role: "user", content: payload });
+      lastAssistantCallIds = new Set();
+    } else if (role === "assistant") {
+      const msg = { role: "assistant", content: payload };
+      if (Array.isArray(r?.tool_calls) && r.tool_calls.length) {
+        msg.tool_calls = r.tool_calls
+          .map((tc) => ({
+            id: tc?.id,
+            type: "function",
+            function: {
+              name: tc?.function?.name,
+              arguments: typeof tc?.function?.arguments === "string"
+                ? tc.function.arguments
+                : JSON.stringify(tc?.function?.arguments ?? {})
+            }
+          }))
+          .filter((tc) => tc.id && tc?.function?.name);
+        lastAssistantCallIds = new Set(msg.tool_calls.map((tc) => tc.id));
+      } else {
+        lastAssistantCallIds = new Set();
+      }
+      out.push(msg);
+    } else if (role === "tool") {
+      const tcid = String(r?.tool_call_id || "").trim();
+      if (!tcid || !lastAssistantCallIds.has(tcid)) continue;
+      out.push({
+        role: "tool",
+        tool_call_id: tcid,
+        name: String(r?.name || ""),
+        content: typeof r?.content === "string" ? r.content : JSON.stringify(r?.content ?? "")
+      });
+    }
   }
   return out;
 }
@@ -879,6 +911,32 @@ function getResponsesInputFromMessages(messages) {
   for (const m of messages || []) {
     if (m && typeof m === "object" && typeof m.type === "string" && !("role" in m)) { out.push(m); continue; }
     const role = m.role;
+    if (role === "assistant" && Array.isArray(m?.tool_calls) && m.tool_calls.length) {
+      for (const tc of m.tool_calls) {
+        const callId = String(tc?.id || "").trim();
+        const name = String(tc?.function?.name || tc?.name || "").trim();
+        if (!callId || !name) continue;
+        const args = typeof tc?.function?.arguments === "string"
+          ? tc.function.arguments
+          : JSON.stringify(tc?.function?.arguments ?? {});
+        out.push({ type: "function_call", call_id: callId, name, arguments: args });
+      }
+      const assistantText = getToString(m?.content ?? "").trim();
+      if (assistantText.length) {
+        out.push({ role: "assistant", content: [{ type: "output_text", text: assistantText }] });
+      }
+      continue;
+    }
+    if (role === "tool") {
+      const callId = String(m?.tool_call_id || m?.id || "").trim();
+      if (!callId) continue;
+      out.push({
+        type: "function_call_output",
+        call_id: callId,
+        output: getToString(m?.content ?? "")
+      });
+      continue;
+    }
     const type = (role === "assistant") ? "output_text" : "input_text";
     const text = getToString(m.content ?? "");
     out.push({ role, content: [{ type, text }] });
@@ -1274,7 +1332,13 @@ export default async function getCoreAi(coreData) {
 
   setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: wo._contextPersistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
 
-  wo.response = finalText || "[Empty AI response]";
+  if (finalText) {
+    wo.response = finalText;
+  } else if (subagentLog.length) {
+    wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
+  } else {
+    wo.response = "[Empty AI response]";
+  }
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");

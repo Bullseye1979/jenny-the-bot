@@ -791,7 +791,7 @@ export default async function getDiscordTextOutput(coreData) {
     const timeStr = getLocalTimeString(new Date(), wo.timezone || "Europe/Berlin");
     const botNameRaw = (typeof wo.botName === "string" && wo.botName.trim()) ? wo.botName.trim() : "Bot";
     const reasoningText = getReasoningText(wo);
-    const projectId = typeof wo.deliverSubagentJob?.projectId === "string" ? wo.deliverSubagentJob.projectId : null;
+    const projectId = null;
 
     if (isDM) {
       const embeds = setBuildEmbedsForAnswer({

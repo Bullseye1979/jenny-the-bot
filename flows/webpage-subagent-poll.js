@@ -111,9 +111,6 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
 
       if (_job.callerContextChannelID) {
         const _parentProjectId = String(_job.callerContextChannelID).replace(/^project-/, "");
-        const _contextContent  = _job.status === "done"
-          ? `[Async child job completed — type: ${_job.agentType}, jobId: ${_job.jobId}]\n\n${_result}`
-          : `[Async child job failed — type: ${_job.agentType}, jobId: ${_job.jobId}]\nError: ${_job.error || "unknown"}`;
 
         logSubagent("info", "webpage-poll", "branch_parent_chain", { jobId: _job.jobId, parentProjectId: _parentProjectId });
 
@@ -121,7 +118,7 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
           try {
             const _deliverFn = (cFlow, cChannelId, resp, projId) =>
               deliverToOutput(cFlow, cChannelId, resp, _job.jobId, projId, _job.agentType, log);
-            await runParentChain(_parentProjectId, _contextContent, baseCore, createRunCore, runFlow, _deliverFn, log);
+            await runParentChain(_parentProjectId, _job, _result, baseCore, createRunCore, runFlow, _deliverFn, log);
           } catch (e) {
             logSubagent("error", "webpage-poll", "parent_chain_exception", { jobId: _job.jobId, error: e?.message || String(e) });
           }

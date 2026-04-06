@@ -852,7 +852,13 @@ export default async function getCoreAi(coreData) {
     wo._pendingSubtaskLogs = [];
   }
 
-  wo.response = finalText || "[Empty AI response]";
+  if (finalText) {
+    wo.response = finalText;
+  } else if (subagentLog.length) {
+    wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
+  } else {
+    wo.response = "[Empty AI response]";
+  }
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");
