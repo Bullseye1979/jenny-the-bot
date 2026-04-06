@@ -36,6 +36,8 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
   const _wo = (_rc.workingObject ||= {});
   _wo.channelID             = callerChannelId;
   _wo.flow                  = "api";
+  _wo.channelType           = "API";
+  _wo.isDM                  = false;
   if (String(callerFlow || "").startsWith("discord")) {
     _wo.overrideFlow        = String(callerFlow);
   }

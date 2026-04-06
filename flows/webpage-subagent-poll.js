@@ -23,7 +23,8 @@ const MODULE_NAME = "webpage-subagent-poll";
 
 
 function getIsHandledFlow(callerFlow) {
-  return String(callerFlow || "").startsWith("webpage");
+  const _f = String(callerFlow || "");
+  return _f.startsWith("webpage") || _f === "api";
 }
 
 
@@ -137,21 +138,22 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
       (async () => {
         try {
           const _response = await runPersonaPass(
-            {
-              callerChannelId:   _capturedJob.callerChannelId,
-              callerFlow:        _capturedJob.callerFlow,
-              userId:            _capturedJob.userId,
-              guildId:           _capturedJob.guildId,
-              authorDisplayname: _capturedJob.authorDisplayname,
-              agentType:         _capturedJob.agentType,
-              jobId:             _capturedJob.jobId,
-              projectId:         _capturedJob.projectId,
-            },
-            _rawResult,
-            createRunCore,
-            runFlow,
-            log
-          );
+              {
+                callerChannelId:   _capturedJob.callerChannelId,
+                callerFlow:        _capturedJob.callerFlow,
+                userId:            _capturedJob.userId,
+                guildId:           _capturedJob.guildId,
+                authorDisplayname: _capturedJob.authorDisplayname,
+                agentType:         _capturedJob.agentType,
+                jobId:             _capturedJob.jobId,
+                projectId:         _capturedJob.projectId,
+              },
+              _rawResult,
+              createRunCore,
+              runFlow,
+              log
+            );
+
           if (_response) {
             const _sent = await deliverToOutput(_capturedJob.callerFlow, _capturedJob.callerChannelId, _response, _capturedJob.jobId, _capturedJob.projectId, _capturedJob.agentType, log);
             if (_sent === 0) {
