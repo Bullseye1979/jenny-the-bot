@@ -374,7 +374,9 @@
         "timeoutMs": 120000,
         "asyncSpawnPath": "/api/spawn",
         "spawnTimeoutMs": 10000,
+        "maxSpawnDepth": 2,
         "types": {
+          "resume":   "subagent-resume",
           "research": "subagent-research",
           "media":    "subagent-media",
           "generic":  "subagent-generic"
@@ -961,6 +963,37 @@
             "instructions": "When given a URL, use getWebpage or getYoutube to fetch and summarize the content. Check at least one source. Write how you came to your conclusion. Do not give out unverified information.",
             "contextSize": 70,
             "channelIds": []
+          }
+        },
+        {
+          "__description": "Subagent: resume — dedicated route for project resume/follow-up calls. Spawned by getSubAgent(projectId=..., type='resume').",
+          "channelMatch": ["subagent-resume"],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "includeHistory": true,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are a resume subagent. Continue the existing project context exactly from where it left off and perform only the requested follow-up task.",
+            "tools": [
+              "getGoogle",
+              "getTavily",
+              "getWebpage",
+              "getHistory",
+              "getInformation",
+              "getYoutube",
+              "getImage",
+              "getImageDescription",
+              "getTime",
+              "getToken",
+              "getLocation"
+            ]
           }
         },
         {

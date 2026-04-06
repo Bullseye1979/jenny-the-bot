@@ -99,11 +99,15 @@ async function getInvoke(args, coreData) {
   const projectId = args?.projectId ? String(args.projectId).trim() : "";
   const explicitChannel = String(args?.channel_id || "").trim();
   const orchestration   = args?.orchestration ?? null;
-  const typeName = String(args?.type || "generic").trim();
+  const requestedType = String(args?.type || "").trim();
+  const typeName = projectId
+    ? "resume"
+    : (requestedType || "generic");
 
   const _invokeCallerChannelId = String(wo.callerChannelId || wo.channelID || "").trim();
   logSubagent("info", "getSubAgent", "invoke_called", {
     typeName,
+    requestedType:       requestedType || null,
     projectId:           projectId || null,
     callerChannelId:     _invokeCallerChannelId || null,
     callerFlow:          String(wo.callerFlow || wo.flow || "") || null,
@@ -146,6 +150,14 @@ async function getInvoke(args, coreData) {
   const types      = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
   const agentDepth = Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0;
   const agentType  = String(wo.agentType || "").trim();
+
+  if (projectId && !explicitChannel && !types.resume) {
+    logSubagent("error", "getSubAgent", "resume_type_missing", { projectId, requestedType: requestedType || null });
+    return {
+      ok: false,
+      error: "Resume routing requires toolsconfig.getSubAgent.types.resume to be configured (or pass channel_id explicitly)."
+    };
+  }
 
   const maxSpawnDepth = Number.isFinite(Number(cfg.maxSpawnDepth)) ? Number(cfg.maxSpawnDepth) : 2;
 
