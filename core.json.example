@@ -978,7 +978,7 @@
             "temperature": 0.2,
             "maxTokens": 4000,
             "maxLoops": 10,
-            "includeHistory": false,
+            "includeHistory": true,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a resume subagent. Continue the existing project context exactly from where it left off and perform only the requested follow-up task.",
             "tools": [
