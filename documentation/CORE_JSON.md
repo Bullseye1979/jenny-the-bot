@@ -530,13 +530,26 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 |---|---|---|---|
 | `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
 | `apiSecret` | string | `"API_SECRET"` | Placeholder name for the bearer token — resolved from `bot_secrets` at runtime |
-| `timeoutMs` | number | `120000` | Maximum wait time for a synchronous subagent response (ms) |
-| `asyncSpawnPath` | string | `"/api/spawn"` | Path for async job spawning (`POST /api/spawn`). Defaults to `"/api/spawn"`. |
-| `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request in async mode (ms). The subagent itself then runs independently. |
+| `asyncSpawnPath` | string | `"/api/spawn"` | Path used for spawning jobs (`POST /api/spawn`). Defaults to `"/api/spawn"`. |
+| `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request (ms). The subagent itself then runs independently. |
 | `maxSpawnDepth` | number | `2` | Maximum nesting depth for subagent spawning. A subagent at depth ≥ `maxSpawnDepth` may not spawn further subagents. |
 | `types` | object | `{"research":"subagent-research"}` | Map of type name → virtual channel ID. Each entry enables one subagent type. |
 
-**Async mode** (`async: true`): the tool posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. The result is delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes.
+`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. Results are delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes.
+
+#### getAgentResume
+
+Resumes an existing async subagent project by spawning a follow-up task on the mapped subagent channel.
+
+| Key | Type | Example | Description |
+|---|---|---|---|
+| `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
+| `apiSecret` | string | `"API_SECRET"` | Placeholder name for bearer auth; resolved from `bot_secrets` |
+| `asyncSpawnPath` | string | `"/api/spawn"` | Spawn endpoint path |
+| `spawnTimeoutMs` | number | `10000` | Timeout for spawn request |
+| `types` | object | `{"research":"subagent-research"}` | Subagent type map used to resolve the target channel from stored project metadata |
+
+`getAgentResume` reads only `toolsconfig.getAgentResume` and the runtime `workingObject`.
 
 #### getAgentResume
 
@@ -1743,7 +1756,7 @@ Polls the registry for completed async subagent jobs and delivers results back t
 | `maxJobAgeMs` | number | `86400000` | Jobs still `"running"` after this many ms are marked as `"error"` (timed out). Minimum 60000. |
 
 **How async delivery works:**
-1. The main AI calls `getSubAgent(type, task, async: true)`.
+1. The main AI calls `getSubAgent(type, task)`.
 2. `getSubAgent` posts to `/api/spawn` and returns `{ jobId, projectId, status: "started" }` immediately.
 3. The API flow runs the subagent pipeline in the background and stores the result under `"job:<jobId>"` in the registry.
 4. The `discord-subagent-poll` interval fires, finds the completed job, removes it from the registry, and runs the `discord` pipeline with `wo.deliverSubagentJob = <job>` set — which causes the result to be sent to the original Discord channel.
