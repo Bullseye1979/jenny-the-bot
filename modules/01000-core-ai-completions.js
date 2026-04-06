@@ -562,7 +562,14 @@ export default async function getCoreAi(coreData) {
   }
   wo.toolCallLog  = toolCallLog;
   wo.subagentLog  = subagentLog;
-  wo.response = (accumulatedText || "").trim() || "[Empty AI response]";
+  const _finalText = (accumulatedText || "").trim();
+  if (_finalText) {
+    wo.response = _finalText;
+  } else if (subagentLog.length) {
+    wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
+  } else {
+    wo.response = "[Empty AI response]";
+  }
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   if (Array.isArray(wo._pendingSubtaskLogs) && wo._pendingSubtaskLogs.length) {
