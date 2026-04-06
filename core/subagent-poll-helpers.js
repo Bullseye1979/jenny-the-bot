@@ -15,6 +15,79 @@ import { getItem }              from "./registry.js";
 import { setContext, getContext } from "./context.js";
 import { logSubagent }           from "./subagent-logger.js";
 
+const SUBAGENT_RESULT_TOOL_NAME = "getSubAgentResult";
+
+function getSubagentCallId(jobId) {
+  const raw = String(jobId || "").trim() || "unknown";
+  return `subagent_${raw}`.slice(0, 120);
+}
+
+function getSubagentToolArgs(job) {
+  const projectId = String(job?.projectId || "").trim();
+  return {
+    event: "subagent_result",
+    source: "async_subagent_poll",
+    jobId: String(job?.jobId || "").trim() || "unknown",
+    agentType: String(job?.agentType || "").trim() || "unknown",
+    status: String(job?.status || "").trim() || "unknown",
+    ...(projectId ? { projectId } : {})
+  };
+}
+
+function getSubagentToolOutput(job, rawResult) {
+  const isDone = String(job?.status || "") === "done";
+  const projectId = String(job?.projectId || "").trim();
+  const base = {
+    ok: isDone,
+    event: "subagent_result",
+    jobId: String(job?.jobId || "").trim() || "unknown",
+    agentType: String(job?.agentType || "").trim() || "unknown",
+    status: String(job?.status || "").trim() || "unknown"
+  };
+
+  if (isDone) {
+    return {
+      ...base,
+      result: String(rawResult || "").trim()
+    };
+  }
+
+  return {
+    ...base,
+    error: String(job?.error || rawResult || "unknown error"),
+    ...(projectId ? { _meta: { projectId } } : {})
+  };
+}
+
+async function setWriteSubagentToolExchange(contextWo, job, rawResult) {
+  const toolCallId = getSubagentCallId(job?.jobId);
+  const toolName = SUBAGENT_RESULT_TOOL_NAME;
+  const args = getSubagentToolArgs(job);
+  const output = getSubagentToolOutput(job, rawResult);
+
+  await setContext(contextWo, {
+    role: "assistant",
+    content: "",
+    tool_calls: [
+      {
+        id: toolCallId,
+        type: "function",
+        function: {
+          name: toolName,
+          arguments: JSON.stringify(args)
+        }
+      }
+    ]
+  });
+
+  await setContext(contextWo, {
+    role: "tool",
+    name: toolName,
+    tool_call_id: toolCallId,
+    content: JSON.stringify(output)
+  });
+}
+
 
 /**
  * Run the API flow with the caller's channelID so core-channel-config applies
@@ -55,7 +128,7 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     rawResultPreview: _rawText.slice(0, 120),
   });
 
-  const _payload = `[Background task completed]\n\n${_resultContent}\n\nPresent this result to the user in your current character and persona.`;
+  const _payload = "A background subagent tool result is now available in context. Continue naturally and present it to the user in your current persona.";
 
   logSubagent("info", "poll-delivery", "persona_pass_start", {
     jobId,
@@ -70,6 +143,20 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
   _wo.doNotWriteToContext = true;
   _wo.__noContinuation    = true;
   _wo.timestamp           = new Date().toISOString();
+
+  try {
+    await setWriteSubagentToolExchange(_wo, {
+      jobId,
+      agentType,
+      status: "done",
+      projectId: _projectId
+    }, _resultContent);
+  } catch (e) {
+    logSubagent("warn", "poll-delivery", "persona_pass_tool_exchange_write_failed", {
+      jobId,
+      error: e?.message || String(e)
+    });
+  }
 
   const _startMs = Date.now();
 
@@ -122,8 +209,13 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
  * @param {Function} deliverFn       — async (callerFlow, callerChannelId, response, projectId) => void
  * @param {Function} log
  */
-export async function runParentChain(projectId, contextContent, baseCore, createRunCore, runFlow, deliverFn, log) {
-  logSubagent("info", "poll-chain", "chain_start", { projectId, contextContentLen: contextContent.length });
+export async function runParentChain(projectId, job, rawResult, baseCore, createRunCore, runFlow, deliverFn, log) {
+  logSubagent("info", "poll-chain", "chain_start", {
+    projectId,
+    jobId: job?.jobId || null,
+    status: job?.status || null,
+    rawResultLen: String(rawResult || "").length
+  });
 
   const _project = getItem("project:" + projectId);
   if (!_project?.channelId) {
@@ -146,7 +238,7 @@ export async function runParentChain(projectId, contextContent, baseCore, create
   const _contextWo = { ...(baseCore?.workingObject || {}), contextChannelID: _contextChannelID };
 
   try {
-    await setContext(_contextWo, { role: "user", content: contextContent });
+    await setWriteSubagentToolExchange(_contextWo, job, rawResult);
     logSubagent("info", "poll-chain", "chain_context_written", { projectId, contextChannelID: _contextChannelID });
   } catch (e) {
     log(`Context write failed for ${projectId}: ${e?.message || String(e)}`, "error");
@@ -159,7 +251,7 @@ export async function runParentChain(projectId, contextContent, baseCore, create
   _wo.flow              = "api";
   _wo.channelID         = _project.callerChannelId || _project.channelId;
   _wo.contextChannelID  = _contextChannelID;
-  _wo.payload           = "[Child job completed] A background subtask returned results. Continue based on your context.";
+  _wo.payload           = "A new background subagent tool result was added to context. Continue from this tool output and respond accordingly.";
   _wo.callerChannelId   = _project.callerChannelId;
   _wo.userId            = _project.userId || "";
   _wo.guildId           = _project.guildId || "";
@@ -167,6 +259,7 @@ export async function runParentChain(projectId, contextContent, baseCore, create
   _wo.agentDepth        = Number(_project.agentDepth || 0);
   _wo.agentType         = _project.agentType || "";
   _wo.toolChoice        = "none";
+  _wo.doNotWriteToContext = true;
   _wo.timestamp         = new Date().toISOString();
 
   logSubagent("info", "poll-chain", "chain_api_run_start", {
@@ -203,9 +296,23 @@ export async function runParentChain(projectId, contextContent, baseCore, create
 
   if (_project.callerContextChannelID) {
     const _grandparentProjectId = String(_project.callerContextChannelID).replace(/^project-/, "");
-    const _grandparentContent   = `[Subtask in project ${projectId} completed]\n\n${_response}`;
     logSubagent("info", "poll-chain", "chain_recurse", { projectId, grandparentProjectId: _grandparentProjectId });
-    await runParentChain(_grandparentProjectId, _grandparentContent, baseCore, createRunCore, runFlow, deliverFn, log);
+    await runParentChain(
+      _grandparentProjectId,
+      {
+        ...job,
+        projectId,
+        result: _response,
+        status: "done",
+        agentType: job?.agentType || _project.agentType || "subagent-parent"
+      },
+      _response,
+      baseCore,
+      createRunCore,
+      runFlow,
+      deliverFn,
+      log
+    );
     return;
   }
 

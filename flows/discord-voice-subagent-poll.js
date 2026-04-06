@@ -140,9 +140,6 @@ export default async function getDiscordVoiceSubagentPollFlow(baseCore, runFlow,
         const _result = _job.status === "done"
           ? String(_job.result || "").trim()
           : `Background task failed: ${_job.error || "unknown error"}`;
-        const _contextContent = _job.status === "done"
-          ? `[Async child job completed — type: ${_job.agentType}, jobId: ${_job.jobId}]\n\n${_result}`
-          : `[Async child job failed — type: ${_job.agentType}, jobId: ${_job.jobId}]\nError: ${_job.error || "unknown"}`;
 
         logSubagent("info", "discord-voice-poll", "branch_parent_chain", { jobId: _job.jobId, parentProjectId: _parentProjectId });
 
@@ -152,7 +149,7 @@ export default async function getDiscordVoiceSubagentPollFlow(baseCore, runFlow,
               const _syntheticJob = { ..._job, callerFlow: cFlow, callerChannelId: cChannelId, jobId: projId || _job.jobId };
               await deliverViaFlow(_syntheticJob, resp, createRunCore, runFlow, log);
             };
-            await runParentChain(_parentProjectId, _contextContent, baseCore, createRunCore, runFlow, _deliverFn, log);
+            await runParentChain(_parentProjectId, _job, _result, baseCore, createRunCore, runFlow, _deliverFn, log);
           } catch (e) {
             logSubagent("error", "discord-voice-poll", "parent_chain_exception", { jobId: _job.jobId, error: e?.message || String(e) });
           }
