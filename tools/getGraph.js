@@ -9,6 +9,9 @@
 /*          All operations return { ok, error } instead of throwing.             */
 /**********************************************************************************/
 
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
+
 const MODULE_NAME = "getGraph";
 const GRAPH_BASE = "https://graph.microsoft.com";
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -160,17 +163,11 @@ function getIsProbablyTextContentType(contentType) {
 /* getFetch                                                                       */
 /**********************************************************************************/
 async function getFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), Math.max(1, timeoutMs));
-  try {
-    const res = await fetch(url, { ...options, signal: ctrl.signal });
-    const text = await res.text();
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    return { ok: res.ok, status: res.status, statusText: res.statusText, headers: Object.fromEntries(res.headers.entries()), data };
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetchWithTimeout(url, { ...options }, timeoutMs);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  return { ok: res.ok, status: res.status, statusText: res.statusText, headers: Object.fromEntries(res.headers.entries()), data };
 }
 
 
@@ -178,15 +175,9 @@ async function getFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
 /* getFetchBinary                                                                 */
 /**********************************************************************************/
 async function getFetchBinary(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), Math.max(1, timeoutMs));
-  try {
-    const res = await fetch(url, { ...options, signal: ctrl.signal });
-    const bytes = Buffer.from(await res.arrayBuffer());
-    return { ok: res.ok, status: res.status, statusText: res.statusText, headers: Object.fromEntries(res.headers.entries()), bytes };
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetchWithTimeout(url, { ...options }, timeoutMs);
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return { ok: res.ok, status: res.status, statusText: res.statusText, headers: Object.fromEntries(res.headers.entries()), bytes };
 }
 
 
@@ -552,8 +543,6 @@ async function getAutoDiscoverIds(toolCfg) {
           if (driveId) setCachedDiscovery(cacheKey, driveId);
         } catch {}
       }
-      // Store SharePoint site drive separately — must NOT overwrite defaultDriveId
-      // which would cause OneDrive operations to land on SharePoint.
       if (driveId) result._siteDriveId = driveId;
     } else {
       const cacheKey = userId ? `driveId:user:${userId}` : `driveId:me`;
@@ -1176,6 +1165,7 @@ async function getOperationGraphRequest(toolCfg, args) {
 /* getInvoke                                                                      */
 /**********************************************************************************/
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   try {
     const wo = getObj(coreData?.workingObject, {});
     const rawToolCfg = getObj(getObj(wo.toolsconfig, {})[MODULE_NAME], {});

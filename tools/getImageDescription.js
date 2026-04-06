@@ -6,6 +6,7 @@
 /**********************************************************************************/
 
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
 
 const MODULE_NAME = "getImageDescription";
 

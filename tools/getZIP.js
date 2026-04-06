@@ -12,6 +12,8 @@
 import path from "node:path";
 import JSZip from "jszip";
 import { saveFile, getUserId, getPublicBaseUrl } from "../core/file.js";
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getZIP";
 
@@ -49,22 +51,19 @@ function getSafeZipPath(relPath) {
 
 
 async function getDownloadBuffer(url, timeoutMs) {
-  const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(String(url), { signal: ctrl.signal });
+    const res = await fetchWithTimeout(String(url), {}, timeoutMs);
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
     const buf = Buffer.from(await res.arrayBuffer());
     return { ok: true, buf };
   } catch (e) {
     return { ok: false, error: e?.name === "AbortError" ? `Timeout after ${timeoutMs}ms` : (e?.message || String(e)) };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
 
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo = coreData?.workingObject || {};
 
   const urls       = Array.isArray(args?.urls) ? args.urls.map(u => String(u || "").trim()).filter(Boolean) : [];

@@ -1,8 +1,12 @@
 /**********************************************************************************/
 /* filename: getWebpage.js                                                         *
 /* Version 1.0                                                                     *
-/* Purpose: Fetch webpages, dump cleaned text or summarize via OpenAI if long.     *
+/* Purpose: Fetch webpages, dump cleaned text or summarize via internal API        *
+/*          if long.                                                                *
 /**********************************************************************************/
+
+import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
 
 const MODULE_NAME = "getWebpage";
 
@@ -110,6 +114,31 @@ function getBuildMessages(userPrompt, title, url, text, extraPrompt, systemPromp
 }
 
 
+async function callSummaryApi(text, cfg, wo) {
+  const channelId = String(cfg.summaryChannelId || "").trim();
+  if (!channelId) return null;
+  const apiUrl = String(cfg.summaryApiUrl || "http://localhost:3400").replace(/\/+$/, "") + "/api";
+  const secretKey = String(cfg.summaryApiSecret || "").trim();
+  const secret = secretKey ? await getSecret(wo, secretKey) : "";
+  const headers = { "Content-Type": "application/json" };
+  if (secret) headers["Authorization"] = `Bearer ${secret}`;
+  const timeoutMs = Math.max(5000, Number.isFinite(Number(cfg.summaryTimeoutMs)) ? Number(cfg.summaryTimeoutMs) : 45000);
+  try {
+    const res = await fetchWithTimeout(apiUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ channelID: channelId, payload: text, doNotWriteToContext: true })
+    }, timeoutMs);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const summary = String(data?.response || "").trim();
+    return summary || null;
+  } catch {
+    return null;
+  }
+}
+
+
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getWebpage || {};
@@ -160,47 +189,28 @@ async function getInvoke(args, coreData) {
     };
   }
 
-  const endpoint = getStr(toolCfg.endpoint, "");
-  const apiKey = getStr(toolCfg.apiKey, "");
-  const model = getStr(toolCfg.model, "");
-  if (!endpoint) return { ok: false, error: "Missing toolsconfig.getWebpage.endpoint" };
-  if (!apiKey) return { ok: false, error: "Missing toolsconfig.getWebpage.apiKey" };
-  if (!model) return { ok: false, error: "Missing toolsconfig.getWebpage.model" };
+  const summaryInput = [
+    user_prompt ? `User request: "${user_prompt}"` : "",
+    title ? `Title: ${title}` : "",
+    url ? `URL: ${url}` : "",
+    prompt ? `Additional context: ${prompt}` : "",
+    pageText
+  ].filter(Boolean).join("\n\n");
 
-  const temperature = getNum(toolCfg.temperature, 0.1);
-  const maxTokens = getClamp(getNum(toolCfg.maxTokens, 1400), 100, 4096);
-  const aiTimeoutMs = getNum(toolCfg.aiTimeoutMs, 45000);
+  const summary = await callSummaryApi(summaryInput, toolCfg, wo);
 
-  const messages = getBuildMessages(user_prompt, title, url, pageText, prompt, getStr(toolCfg.systemPrompt, ""));
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), aiTimeoutMs);
-  let res, raw, data;
-  try {
-    res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
-      signal: controller.signal
-    });
-    raw = await res.text();
-    try { data = JSON.parse(raw); } catch { data = null; }
-  } catch (e) {
-    clearTimeout(timer);
-    return { ok: false, error: e?.message || String(e) };
-  }
-  clearTimeout(timer);
-
-  if (!res.ok) {
+  if (summary == null) {
     return {
-      ok: false,
-      error: `OpenAI HTTP ${res.status} ${res.statusText}`,
-      details: (data && data.error && data.error.message) || null
+      ok: true,
+      mode: "dump",
+      url,
+      title,
+      contentType: ct,
+      words: wordCount,
+      characters: pageText.length,
+      text: pageText
     };
   }
-
-  const answer = (data?.choices?.[0]?.message?.content || "").trim();
-  if (!answer) return { ok: false, error: "Empty answer from model", model };
 
   return {
     ok: true,
@@ -208,10 +218,9 @@ async function getInvoke(args, coreData) {
     url,
     title,
     contentType: ct,
-    model,
     words: wordCount,
     characters: pageText.length,
-    answer
+    answer: summary
   };
 }
 

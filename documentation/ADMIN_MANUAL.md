@@ -1,6 +1,6 @@
 # Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-03-20
+> **Version:** 1.0 · **Date:** 2026-04-05
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -54,7 +54,6 @@
    - [getInformation](#getinformation)
    - [getLocation](#getlocation)
    - [getTime](#gettime)
-   - [getTimeline](#gettimeline)
    - [getToken](#gettoken)
    - [getBan](#getban)
    - [getGraph](#getgraph)
@@ -63,7 +62,8 @@
    - 9.2 [context.js — MySQL Conversation Storage](#92-contextjs--mysql-conversation-storage)
    - 9.3 [logging.js — Structured Logging](#93-loggingjs--structured-logging)
    - 9.4 [secrets.js — Centralized Secret Store](#94-secretsjs--centralized-secret-store)
-   - 9.5 [shared/webpage/ — Shared Web Helpers](#95-sharedwebpage--shared-web-helpers)
+   - 9.5 [fetch.js — HTTP Timeout Wrapper](#95-fetchjs--http-timeout-wrapper)
+   - 9.6 [shared/webpage/ — Shared Web Helpers](#96-sharedwebpage--shared-web-helpers)
 10. [GDPR & Consent Workflow](#10-gdpr--consent-workflow)
 11. [Macro System](#11-macro-system)
 12. [Discord Slash Commands — Overview](#12-discord-slash-commands--overview)
@@ -317,7 +317,8 @@ Event source (Discord / HTTP API / Cron / Voice / Webpage)
 ├── core/
 │   ├── registry.js          # In-memory KV store with TTL/LRU
 │   ├── context.js           # MySQL conversation storage
-│   └── logging.js           # Structured logging
+│   ├── logging.js           # Structured logging
+│   └── fetch.js             # Centralized HTTP timeout wrapper (fetchWithTimeout)
 ├── flows/
 │   ├── discord.js           # Discord message listener
 │   ├── discord-admin.js     # Slash command handler
@@ -643,16 +644,14 @@ Fetches and reads web page content.
 
 ```json
 "getWebpage": {
-  "userAgent":     "Mozilla/5.0 ...",
-  "timeoutMs":     30000,
-  "maxInputChars": 240000,
-  "model":         "gpt-4.1",
-  "temperature":   0.2,
-  "maxTokens":     18000,
-  "aiTimeoutMs":   45000,
-  "wordThreshold": 2000,
-  "endpoint":      "https://api.openai.com/v1/chat/completions",
-  "apiKey":        "YOUR_OPENAI_API_KEY"
+  "userAgent":        "Mozilla/5.0 ...",
+  "timeoutMs":        30000,
+  "maxInputChars":    240000,
+  "wordThreshold":    2000,
+  "summaryApiUrl":    "http://localhost:3400",
+  "summaryChannelId": "",
+  "summaryApiSecret": "",
+  "summaryTimeoutMs": 45000
 }
 ```
 
@@ -662,12 +661,10 @@ Fetches and reads web page content.
 | `timeoutMs` | number | `30000` | HTTP timeout for page fetch (ms) |
 | `maxInputChars` | number | `240000` | Hard character cap on extracted page text |
 | `wordThreshold` | number | `2000` | Below this word count: dump mode; above: AI summary |
-| `endpoint` | string | — | **Required for summary mode.** Chat completions endpoint |
-| `apiKey` | string | — | **Required for summary mode.** API key |
-| `model` | string | — | **Required for summary mode.** Model ID |
-| `temperature` | number | `0.2` | Sampling temperature for AI summary |
-| `maxTokens` | number | `18000` | Max tokens for AI summary |
-| `aiTimeoutMs` | number | `45000` | Timeout for AI call (ms) |
+| `summaryApiUrl` | string | `"http://localhost:3400"` | Internal API base URL for AI summarization |
+| `summaryChannelId` | string | `""` | Channel ID for the summarizer; if empty, raw text is returned |
+| `summaryApiSecret` | string | `""` | Optional bearer token key name for the summary API |
+| `summaryTimeoutMs` | number | `45000` | Timeout for the AI summary call (ms) |
 
 ---
 
@@ -677,20 +674,17 @@ Generates images from a natural-language prompt using an OpenAI-compatible Image
 
 ```json
 "getImage": {
-  "apiKey":               "YOUR_OPENAI_API_KEY",
-  "endpoint":             "https://api.openai.com/v1/images/generations",
-  "model":                "dall-e-3",
-  "size":                 "1024x1024",
-  "n":                    1,
-  "publicBaseUrl":        "https://myserver.com/",
-  "targetLongEdge":       1152,
-  "aspect":               "",
-  "enhancerEndpoint":     "https://api.openai.com/v1/chat/completions",
-  "enhancerApiKey":       "YOUR_OPENAI_API_KEY",
-  "enhancerModel":        "gpt-4o-mini",
-  "enhancerTemperature":  0.2,
-  "enhancerMaxTokens":    350,
-  "enhancerTimeoutMs":    60000
+  "apiKey":              "YOUR_OPENAI_API_KEY",
+  "endpoint":            "https://api.openai.com/v1/images/generations",
+  "model":               "dall-e-3",
+  "size":                "1024x1024",
+  "n":                   1,
+  "publicBaseUrl":       "https://myserver.com/",
+  "targetLongEdge":      1152,
+  "aspect":              "",
+  "enhancerApiUrl":      "http://localhost:3400",
+  "enhancerChannelId":   "",
+  "enhancerApiSecret":   ""
 }
 ```
 
@@ -704,12 +698,9 @@ Generates images from a natural-language prompt using an OpenAI-compatible Image
 | `publicBaseUrl` | string | — | Base URL for public image links |
 | `targetLongEdge` | number | `1024` | Target pixels for the long edge when `size` is omitted |
 | `aspect` | string | — | Aspect preset: `"portrait"`, `"landscape"`, `"1:1"`, `"16:9"`, etc. |
-| `enhancerEndpoint` | string | Chat URL | Endpoint for the prompt enhancer |
-| `enhancerApiKey` | string | — | API key for the prompt enhancer |
-| `enhancerModel` | string | `"gpt-4o-mini"` | Model for the prompt enhancer |
-| `enhancerTemperature` | number | `0.2` | Temperature for the enhancer |
-| `enhancerMaxTokens` | number | `350` | Max tokens for the enhancer |
-| `enhancerTimeoutMs` | number | `60000` | Timeout for the enhancer (ms) |
+| `enhancerApiUrl` | string | `"http://localhost:3400"` | Internal API base URL for prompt enhancement |
+| `enhancerChannelId` | string | `""` | Channel ID for the prompt enhancer; if empty, heuristic fallback is used |
+| `enhancerApiSecret` | string | `""` | Optional bearer token key name for the enhancer API |
 
 ---
 
@@ -1096,9 +1087,6 @@ Cost per round: one cheap AI call (`gpt-4o-mini`, ~300 tokens output) + one DB q
 > ```
 > The wiki flow applies **hard caps** — values from `core.json` are clamped to wiki-safe maximums:
 > - `getInformation`: `maxOutputLines` ≤ 150, `maxLogChars` ≤ 800, `stripCode: true`
-> - `getTimeline`: `maxTimelinePeriods` ≤ 10
->
-> `getInformation` no longer returns timeline data. Call `getTimeline` separately to get the chronological event history.
 
 ---
 
@@ -1908,6 +1896,7 @@ Every module can be restricted to specific flows via its config block:
 | `bard-label-output` | bard-label-gen |
 | `webpage-bard` | webpage |
 | `webpage-config-editor` | webpage |
+| `webpage-manifests` | webpage |
 | `webpage-chat` | webpage |
 | `webpage-inpaint` | webpage |
 | `webpage-inpainting` | webpage |
@@ -2081,11 +2070,16 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 
 **Endpoints:**
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api` | Submit a request; returns JSON `{ turn_id, response }` |
-| `GET` | `/toolcall` | Poll global tool-call status from registry |
-| `GET` | `/toolcall?channelID=<id>` | Poll **channel-specific** tool-call status (used by browser extension and chat UI) |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | None | Returns `{ ok: true, botname }` — used by reverse proxy health checks |
+| `POST` | `/api` | Bearer | Synchronous AI pipeline; returns `{ ok, response, turn_id, ... }` |
+| `GET` | `/toolcall` | Bearer | Poll global tool-call status from registry |
+| `GET` | `/toolcall?channelID=<id>` | Bearer | Poll channel-specific tool-call status (browser extension, chat UI) |
+| `GET` | `/context?channelID=<id>` | Bearer | Read recent conversation history for a channel; optional `?limit=N` |
+| `POST` | `/api/spawn` | Bearer | Spawn async subagent job; returns `{ ok, jobId, projectId }` immediately |
+| `GET` | `/api/jobs?channelID=<id>` | Bearer | List all async jobs whose `callerChannelId` matches the given channel |
+| `POST` | `/upload` | Bearer | Upload a file (raw body, `X-Filename` header); returns `{ ok, filename, url }` |
 
 **POST /api request:**
 ```json
@@ -2094,12 +2088,17 @@ Flows are event sources that create a `workingObject` and trigger the module pip
   "channelID":            "optional-channel-id",
   "userId":               "optional-user-id",
   "subchannel":           "optional-subchannel-id",
-  "doNotWriteToContext":  true
+  "doNotWriteToContext":  true,
+  "callerChannelId":      "optional-parent-channel-id",
+  "agentDepth":           0,
+  "agentType":            ""
 }
 ```
 
 - `subchannel` — optional; routes the request through a specific subchannel context (applied by `00012-subchannel-config`)
 - `doNotWriteToContext` — optional boolean; when `true`, neither the user message (`00072`) nor the AI response (`01004`) are written to the MySQL context. Used for internal system calls (e.g. wiki article generation) that must not pollute the conversation history.
+- `callerChannelId` — forwarded from the parent when called by `getSubAgent`; used to mirror tool-call status to the original Discord channel
+- `agentDepth` / `agentType` — subagent nesting controls forwarded by `getSubAgent`
 
 **POST /api response:**
 ```json
@@ -2111,11 +2110,35 @@ Flows are event sources that create a `workingObject` and trigger the module pip
   "subchannel":     "optional-subchannel-id",
   "channelallowed": true,
   "response":       "The weather in Berlin is...",
+  "toolCallLog":    [...],
+  "subagentLog":    [...],
   "botname":        "Jenny"
 }
 ```
 
-`subchannel` is only present in the response when the request included one.
+`subchannel`, `toolCallLog`, and `subagentLog` are only present when applicable.
+
+**POST /api/spawn request:**
+```json
+{
+  "channelID":        "subagent-develop",
+  "payload":          "Write a Python script that ...",
+  "userId":           "",
+  "guildId":          "",
+  "projectId":        "optional-stable-project-id",
+  "callerChannelId":  "originating-discord-channel-id",
+  "callerFlow":       "discord",
+  "agentDepth":       1,
+  "agentType":        "develop"
+}
+```
+
+Returns immediately:
+```json
+{ "ok": true, "jobId": "01JXXX...", "projectId": "01JYYY..." }
+```
+
+The subagent pipeline runs in the background. The `discord-subagent-poll` flow detects completion and delivers the result to `callerChannelId`.
 
 ---
 
@@ -2172,7 +2195,7 @@ Also supports `*/N * * * *` (every N minutes).
 - Last N context entries loaded from MySQL on channel/subchannel select (controlled by `contextSize`)
 - Large scrollable message window (top) + auto-resize input (bottom)
 - Enter = send, Shift+Enter = newline
-- **Thinking indicator with tool name:** the currently active tool is shown next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel)
+- **Thinking indicator with tool name:** the currently active tool is shown next to the animated dots. The chat frontend opens a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelID=<id>` and receives an event only when the active tool changes — no repeated polling overhead. The server checks the registry at `toolStatusPollMs` ms intervals and pushes a `data:` event when the value changes. The stream is opened at chat start and closed when the page unloads.
 - **Markdown rendering:** `#`/`##`/`###` headings, bold/italic, fenced and inline code, blockquotes, lists, and `---` HR are fully rendered in chat bubbles
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
 
@@ -2418,6 +2441,7 @@ export default async function myModule(coreData) {
 | 00059 | `webpage-live` | Live context monitor SPA (port 3123, `/live`) — selectable channel checkboxes, field toggles (timestamp, channel, role), configurable poll interval, autoscroll toggle. Collapsible settings sidebar (◀/▶). All UI state persists in `localStorage`. Parses `json.authorName` and `json.content` from Discord context entries to display chat transcripts in real time. New messages are inserted into the DOM sorted by `ts` (tiebreaker: `ctx_id`) regardless of arrival order — each message element carries `data-ts` and `data-ctx-id` attributes so out-of-order poll responses (race condition) are placed at the correct position rather than appended at the bottom. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
+| 00066 | `webpage-manifests` | Admin-only manifest JSON editor SPA (port 3126, `/manifests`). Routes: `GET /manifests` (UI), `GET /manifests/api/list`, `GET /manifests/api/get?name=`, `POST /manifests/api/save`. Config key: `webpage-manifests`. Access controlled by `allowedRoles` (default `["admin"]`). |
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
 | 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user). Skipped when `wo.doNotWriteToContext === true` (e.g. internal wiki/system API calls). |
 | 00073 | *(deleted)* | `webpage-add-context` has been removed. Its logic was inlined into `00048-webpage-chat`. |
@@ -2531,6 +2555,8 @@ Modules positioned between the last `core-ai-*` module and `01004` can inspect o
 
 #### core-ai-completions (01000) — Detailed flow
 
+**`skipAiCompletions` flag:** If `wo.skipAiCompletions === true` when this module runs, it exits immediately without making any LLM call. Use this when a preceding module has already populated `wo.response` (e.g. a delivery module for async subagent jobs that simply forwards a pre-computed result) and the AI step should be suppressed entirely for that pipeline pass.
+
 1. Builds the message array: system prompt → history (if `includeHistory=true`) → current user turn
 2. Calls `POST /chat/completions`; loops up to `maxLoops` (default 20):
    - **Tool calls present and `maxToolCalls` not yet reached** → executes each tool, increments `totalToolCalls`, appends results, loops
@@ -2568,7 +2594,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 | No. | File | Purpose |
 |---|---|---|
 | 02000 | `moderation-output` | Content filtering; can suppress or replace the response |
-| 03000 | `discord-status-apply` | Applies the generated Discord presence status. Uses `wo.response` from the AI module; falls back to the `status:ai` registry cache, then to `placeholderText`. If the AI returns `[Empty AI response]` or `[Empty response]`, the presence is set to `"..."` instead of showing the literal marker string. Tool-call status (e.g. `"⏳ Generating an image …"`) takes priority over AI-generated text — but only if the originating flow matches `cfg.allowedFlows` (e.g. `["discord","discord-voice"]`). If `allowedFlows` is empty or absent, all flows are shown. |
+| 03000 | `discord-status-apply` | Applies the generated Discord presence status. Uses `wo.response` from the AI module; falls back to the `status:ai` registry cache, then to `placeholderText`. If the AI returns `[Empty AI response]` or `[Empty response]`, the presence is set to `"..."` instead of showing the literal marker string. Tool-call status (e.g. `"⏳ Generating an image …"`) takes priority over AI-generated text — but only if the originating flow matches `cfg.allowedFlows`. Set `allowedFlows` to `["discord","discord-voice"]` to prevent API/webpage tool calls from appearing in Discord presence. Default is `[]` (all flows shown). |
 | 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
 | 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow into a **6-position structured label array** `[location, situation, mood1, mood2, mood3, mood4]`. Applies **category-based position rescue**: scans all 6 AI values and assigns each to the correct slot by checking `wo._bardLocations` / `wo._bardSituations` regardless of where the AI placed them (e.g. `'',dungeon,joy,fun,tense,battle` → `dungeon,battle,joy,fun,tense,''`). Unknown words at positions 0/1 are accepted as fallback. Mood slots are validated against `wo._bardValidTags`; invalid entries are replaced with empty string. Writes `bard:labels:{channelId}` and `bard:lastrun:{channelId}` only on success (prevents context window from advancing on AI failure). |
@@ -3028,7 +3054,6 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 - **`answered_turns` filter** (default `on`): excludes user/agent rows whose `turn_id` also has a matching `assistant` row in the same channel. This keeps the result set focused on raw, unprocessed transcriptions. Set `includeAnsweredTurns: true` (or `includeAssistantTurns: true`) to disable this filter — required when searching voice transcriptions in channels where the bot always produces a reply.
 - **Results ranking:** coverage (distinct keyword groups found) → total hits → multi-group rows → any-group rows; then sorted chronologically per channel for output.
 - **Output budget:** controlled by `maxOutputLines` and `maxLogChars`. Clusters below `minCoverage` are silently dropped. A `NEW EVENT` separator is emitted between clusters with a time gap ≥ `eventGapMinutes`.
-- **No timeline data** — `getInformation` does not return timeline periods. Call `getTimeline` separately to get the full chronological event history.
 
 **Wiki usage note:**
 
@@ -3063,21 +3088,6 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 | Parameter | Type | Description |
 |---|---|---|
 | `timezone` | string | Timezone, e.g. `"Europe/Berlin"` |
-
----
-
-### getTimeline
-
-**File:** `tools/getTimeline.js`
-**Purpose:** Generate a historical timeline from context data
-
-**LLM parameters:**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `channel_id` | string | Channel ID (optional) |
-| `query` | string | Topic/time-range filter |
-| `max_periods` | number | Max time periods |
 
 ---
 
@@ -3458,6 +3468,8 @@ import {
 
 **Purge/Freeze scoping:** `setPurgeContext` and `setFreezeContext` respect the same filter. The channel-wide timeline rows are only affected when targeting the full channel (not a specific subchannel).
 
+**`contextChannelID`:** Both `setContext` and `getContext` use `wo.contextChannelID || wo.channelID` as the storage key. Setting `wo.contextChannelID` redirects all context reads and writes to a different channel ID without changing `wo.channelID`. This is used in scenarios where one virtual channel (e.g. a subagent channel) should read or write history belonging to a different channel.
+
 **`userId` resolution in `setContext`:** The `userId` stored in the DB is resolved automatically using the following priority chain — callers do **not** need to populate it manually:
 1. `record.userId` (if the caller explicitly passes one)
 2. `workingObject.webAuth?.userId` (set by `webpage-auth` for all authenticated web requests)
@@ -3595,7 +3607,22 @@ By default, secrets are read from the `bot_secrets` table. Set `wo.secretsTable`
 
 ---
 
-### 9.5 shared/webpage/ — Shared Web Helpers
+### 9.5 fetch.js — HTTP Timeout Wrapper
+
+**File:** `core/fetch.js`
+**Purpose:** Centralized HTTP timeout wrapper used by all tools and AI modules.
+
+```javascript
+import { fetchWithTimeout } from "../core/fetch.js";
+
+const res = await fetchWithTimeout(url, { method: "POST", body: "..." }, timeoutMs);
+```
+
+`fetchWithTimeout(url, options, timeoutMs)` wraps the native `fetch` call with an `AbortController` that fires after `timeoutMs` milliseconds. All tools and AI modules use this function instead of calling `fetch` directly to ensure consistent timeout behaviour across the codebase.
+
+---
+
+### 9.6 shared/webpage/ — Shared Web Helpers
 
 All web modules (`modules/000xx-webpage-*.js`) should import shared helpers from `shared/webpage/` instead of duplicating them locally.
 
@@ -4318,6 +4345,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00059-webpage-live.js` | 3123 | `/live` | `webpage-live` | Live context monitor — real-time transcript stream, channel/field selection, autoscroll, collapsible settings sidebar |
 | `00061-webpage-spotify-auth.js` | 3125 | `/spotify-auth` | `webpage-spotify-auth` | Spotify OAuth2 delegated auth — connect/disconnect Spotify account, stores token in `spotify_tokens` |
 | `00062-cron-spotify-token-refresh.js` | — | — | `cron-spotify-token-refresh` | Cron — refreshes expiring Spotify tokens in `spotify_tokens` using Basic auth |
+| `00066-webpage-manifests.js` | 3126 | `/manifests` | `webpage-manifests` | Admin-only manifest JSON editor — list, view, and save tool manifest files |
 
 ### How Web Modules Work
 
@@ -4558,7 +4586,7 @@ Configure in `core.json["webpage-bard"]`:
     "maxLoops":         5,
     "requestTimeoutMs": 120000,
     "contextSize":      150,
-    "tools":            ["getImage", "getTimeline", "getInformation"],
+    "tools":            ["getImage", "getInformation"],
     "systemPrompt":     "",
     "persona":          "",
     "instructions":     ""
@@ -4603,7 +4631,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 | `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
 | `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. **Default `false`** — see note below |
 | `overrides.contextSize` | number | `150` | Number of recent messages loaded when `includeHistory: true` |
-| `overrides.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
+| `overrides.tools` | array | `["getImage","getInformation"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona string injected into the AI call |
 | `overrides.instructions` | string | `""` | Instructions injected into the AI call |
@@ -4617,7 +4645,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 
 - Channel NOT listed in `channels[]` → 404
 - `allowedRoles: []` → publicly accessible (no login required)
-- `getInformation`, `getTimeline`, and **`getImage`** are all **mandatory** in the built-in prompt; AI uses **only tool results** as facts; events always in **chronological order**
+- `getInformation` and **`getImage`** are both mandatory in the built-in prompt; AI uses **only tool results** as facts; events always in **chronological order**
 - **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles.
 - **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB) + **🔄 Regenerate Image via AI** button with a **"Replace base prompt entirely"** checkbox and a textarea below it. Without the checkbox: text is sent as `promptAddition` and appended to the article's base prompt. With the checkbox checked: text is sent as `promptOverride` and replaces the base prompt completely (useful when the original `infobox.imageAlt` triggers content filters). Old local image file is automatically deleted on successful regeneration; updates DB + preview immediately; save the article to persist the new URL
 - **Search page:** creators see an optional **"Additional context for generation"** textarea before the results/generate section. Text entered here is sent as `promptAddition` with the generate request and appended to the AI payload. Non-creators never see this textarea. When no results are found, creators see a **"✨ Generate article"** button (not an auto-spinner) so they can fill in context before triggering generation.
@@ -4634,7 +4662,7 @@ The wiki module no longer imports AI modules directly. `callPipelineForArticle` 
 Key points:
 - The wiki AI call is fully isolated from the Discord/API flow context
 - All AI parameters come from the `api-channel-config` entry for the wiki's channel
-- `channelID` is set to the wiki's channel ID for `getInformation` / `getTimeline` tool calls
+- `channelID` is set to the wiki's channel ID for `getInformation` tool calls
 - Article generation never writes to the conversation context (`doNotWriteToContext: true` in the API payload)
 - After the AI returns the article JSON, `callPipelineForArticle` reads the model from the wiki's own channel overrides (`channel.overrides.model` → `cfg.overrides.model`, same chain used by `callPipelineForImageOnly`) and stores it in `article._model`, which is persisted to `wiki_articles.model` and shown at the bottom of the article page as "Generated by …". This maps directly to `webpage-wiki.overrides.model` (global) or the per-channel `overrides.model` in `webpage-wiki.channels[]`.
 
@@ -4644,7 +4672,7 @@ Key points:
 >
 > When `includeHistory: true`, core-ai injects the channel's recent Discord conversation as message history into the AI context. This history consists of plain conversational turns (user/assistant chat). Some models pick up on this pattern and respond in conversational plain text instead of the required JSON — even though the system prompt mandates JSON output.
 >
-> The default is `includeHistory: false`. If you enable it and article generation fails with `"AI returned no valid JSON article"` and the response is plain prose, set it back to `false`. The AI will then receive context only via `getInformation` and `getTimeline` tool calls, which is the safer default for JSON-format compliance.
+> The default is `includeHistory: false`. If you enable it and article generation fails with `"AI returned no valid JSON article"` and the response is plain prose, set it back to `false`. The AI will then receive context only via `getInformation` tool calls, which is the safer default for JSON-format compliance.
 
 #### Embedded Image Generation (`wikiGenImage`)
 
@@ -4683,9 +4711,9 @@ Image generation is **built into the wiki module** and does **not** depend on `t
 
 #### System Prompt
 
-The built-in system prompt (`DEFAULT_WIKI_SYSTEM_PROMPT`) instructs the AI to call `getInformation` and `getTimeline` — in that order — then output a JSON article. Image generation happens outside the AI pipeline and requires no `getImage` tool call.
+The built-in system prompt (`DEFAULT_WIKI_SYSTEM_PROMPT`) instructs the AI to call `getInformation` and then output a JSON article. Image generation happens outside the AI pipeline and requires no `getImage` tool call.
 
-**Tools active in the article pipeline:** `getInformation`, `getTimeline` (configurable via `overrides.tools`).
+**Tools active in the article pipeline:** `getInformation` (configurable via `overrides.tools`).
 
 **Recommended channel override for reliable article quality:**
 
@@ -4695,7 +4723,7 @@ The built-in system prompt (`DEFAULT_WIKI_SYSTEM_PROMPT`) instructs the AI to ca
 }
 ```
 
-With `maxLoops: 5` there is enough budget for up to 2× `getInformation` + `getTimeline` + the final JSON response.
+With `maxLoops: 5` there is enough budget for up to 2× `getInformation` + the final JSON response.
 
 #### Article JSON Schema
 
@@ -6118,6 +6146,10 @@ The subagent system allows the main AI to delegate tasks to isolated sub-process
 
 The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically so that tools like `getHistory` and `getInformation` query the correct data source.
 
+### Context and Statefulness
+
+Subagent calls use `doNotWriteToContext: true` — no context DB entries are written for the subagent turn. Subagent channels are **stateless/virtual**: the same channel name (e.g. `subagent-research`) can serve multiple concurrent users without context collision. The full task context is passed via the payload (orchestration block) rather than being read from the DB. The `callerChannelId` is forwarded so a subagent can optionally read the parent channel's context if its context-loader is configured to do so (e.g. for `getInformation` / `getHistory` calls).
+
 ### Available Subagent Types
 
 | Type | Virtual Channel | Tools | Use when |
@@ -6298,6 +6330,52 @@ Node.js default `maxListeners` is 10. With concurrent subagent HTTP calls each r
 ```js
 EventEmitter.defaultMaxListeners = 30;
 ```
+
+### Async Subagent Mode
+
+For long-running tasks (code generation, document assembly) that would time out a synchronous `getSubAgent` call, use `async: true`. The tool returns immediately and the result is delivered to the Discord channel when the subagent finishes.
+
+**How it works:**
+1. The AI calls `getSubAgent(type, task, async: true)` (and optionally `projectId` to resume an existing project).
+2. `getSubAgent` posts to `/api/spawn` (configured via `toolsconfig.getSubAgent.asyncSpawnPath`).
+3. The API flow stores a `"job:<jobId>"` entry in the registry with `status: "running"`, then starts the pipeline as a fire-and-forget async IIFE.
+4. The `discord-subagent-poll` flow polls the registry every `pollIntervalMs` ms, finds completed/failed jobs, removes them, and runs a `discord` pipeline pass with `wo.deliverSubagentJob` set.
+5. The Discord output module sends the result as a message in the original channel.
+
+**`getSubAgent` return value (async mode):**
+```json
+{
+  "ok": true,
+  "jobId": "01JXXX...",
+  "projectId": "01JYYY...",
+  "status": "started",
+  "message": "Working on it — result will be delivered when complete.",
+  "type": "develop",
+  "channel_id": "subagent-develop"
+}
+```
+
+**`projectId` resume:** If `projectId` is passed and a job with that project ID is already `"running"`, `getSubAgent` returns an error instead of spawning a duplicate. Use the `projectId` from the previous async response to continue a project.
+
+**Config keys** (`toolsconfig.getSubAgent`):
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `asyncSpawnPath` | `"/api/spawn"` | Path appended to `apiUrl` for async spawning |
+| `spawnTimeoutMs` | `10000` | HTTP timeout for the spawn request (ms). The subagent runs beyond this. |
+
+**`discord-subagent-poll` config** (`config["discord-subagent-poll"]`):
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Must be set to `true` to activate the poller |
+| `pollIntervalMs` | `5000` | How often to scan the registry (ms) |
+| `callerFlowPattern` | `["discord","discord-voice"]` | Only deliver jobs whose `callerFlow` starts with one of these prefixes |
+| `maxJobAgeMs` | `86400000` | Jobs still `"running"` after this many ms are expired as errors |
+
+**Activation:** Set `config["discord-subagent-poll"].enabled = true` in `core.json`. The flow auto-starts on bot startup.
+
+---
 
 ### Pipeline Abort Mechanism
 

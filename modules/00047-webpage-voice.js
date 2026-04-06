@@ -338,12 +338,13 @@ if (channelSelect) {
   if (savedSel && channelSelect.querySelector('option[value="' + CSS.escape(savedSel) + '"]')) channelSelect.value = savedSel;
   function updateCustomRow() { if (customRow) customRow.style.display = (channelSelect.value === '__custom__') ? '' : 'none'; }
   updateCustomRow();
-  channelSelect.addEventListener('change', function() { localStorage.setItem('voiceChannelSel', channelSelect.value); updateCustomRow(); });
+  channelSelect.addEventListener('change', function() { localStorage.setItem('voiceChannelSel', channelSelect.value); updateCustomRow(); var _cid=getSelectedChannelId();if(_cid)startAsyncSSE(_cid); });
 }
 if (channelInput) {
   channelInput.value = localStorage.getItem('voiceChannelId') || '';
-  channelInput.addEventListener('change', function() { localStorage.setItem('voiceChannelId', channelInput.value.trim()); });
+  channelInput.addEventListener('change', function() { var _cid=channelInput.value.trim(); localStorage.setItem('voiceChannelId', _cid); if(_cid)startAsyncSSE(_cid); });
 }
+(function() { var _cid = getSelectedChannelId(); if (_cid) startAsyncSSE(_cid); })();
 
 /* mic enumeration */
 function populateMics() {
@@ -389,8 +390,9 @@ var audioPlaying = false;
 var currentAudio = null;
 
 /* processing / toolcall state */
-var requestPending   = false;
+var requestPending    = false;
 var toolcallPollTimer = null;
+var asyncSseSource    = null;
 
 function getApiBase() {
   if (API_BASE_URL) return API_BASE_URL;
@@ -418,6 +420,24 @@ function startToolcallPoll() {
 }
 function stopToolcallPoll() {
   if (toolcallPollTimer) { clearInterval(toolcallPollTimer); toolcallPollTimer = null; }
+}
+function startAsyncSSE(channelId) {
+  stopAsyncSSE();
+  if (!window.EventSource || !channelId) return;
+  var sseUrl = '/voice/api/async-results/stream?channelID=' + encodeURIComponent(channelId);
+  asyncSseSource = new EventSource(sseUrl);
+  asyncSseSource.onmessage = function(e) {
+    try {
+      var d = JSON.parse(e.data);
+      if (d && d.type === 'async_result' && d.response) {
+        showTranscript('', d.response);
+      }
+    } catch (_) {}
+  };
+  asyncSseSource.onerror = function() {};
+}
+function stopAsyncSSE() {
+  if (asyncSseSource) { asyncSseSource.close(); asyncSseSource = null; }
 }
 
 function playNextAudio() {

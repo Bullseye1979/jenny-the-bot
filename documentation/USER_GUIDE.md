@@ -1,6 +1,6 @@
 # Jenny — User Guide
 
-> **Version:** 1.0 · **Date:** 2026-03-20
+> **Version:** 1.0 · **Date:** 2026-04-05
 
 Jenny is an AI assistant that lives in your Discord server. She can chat, answer questions, generate images and videos, look things up on the web, read YouTube transcripts, manage Confluence and Jira, and even talk back to you in voice channels.
 
@@ -17,6 +17,7 @@ This guide explains everything you need to know to use Jenny as a regular user.
 5. [What Jenny Can Do — Tools](#what-jenny-can-do--tools)
 6. [Generating Images](#generating-images)
 7. [Generating Videos](#generating-videos)
+7a. [Background Tasks (Async Subagents)](#background-tasks-async-subagents)
 8. [Editing Images (Inpainting)](#editing-images-inpainting)
 9. [Web Search & Pages](#web-search--pages)
 10. [YouTube](#youtube)
@@ -201,6 +202,7 @@ During a conversation Jenny can call tools automatically to fulfil your request.
 | Look up a location / show Street View | Location / Maps tool |
 | Query or create Jira tickets | Jira tool |
 | Search Confluence pages | Confluence tool |
+| Write or generate code, large documents, or multi-step media | Background subagent (result delivered when ready) |
 
 ---
 
@@ -249,6 +251,48 @@ jenny, generate a short clip showing a time-lapse of a city at night
 ```
 
 Jenny uses Google's Veo-3 model via Replicate. Generation typically takes 5–15 minutes.
+
+---
+
+## Background Tasks (Async Subagents)
+
+Some requests take too long to complete within a single conversation turn — for example, writing a large amount of code, generating a full document with images, or a complex multi-step research task. For these, Jenny uses **async mode**: she starts the work in the background and delivers the result as a follow-up message when it is ready.
+
+### What happens
+
+1. You ask Jenny for something that requires extended work (e.g. "write a complete Python web app for...").
+2. Jenny acknowledges the request immediately — something like: *"Working on it — result will be delivered when complete."*
+3. The task runs in the background. You can continue chatting while you wait.
+4. When the task finishes, Jenny posts the result directly in the same Discord channel, even if you have sent other messages in the meantime.
+
+You do not need to do anything special to trigger this. Jenny decides when async mode is appropriate based on the complexity of the task.
+
+### Resuming a project with projectId
+
+When Jenny starts a background task she tells you the **project ID**:
+
+```
+Working on it — result will be delivered when complete.
+jobId: 01JXXX...
+projectId: 01JYYY...
+```
+
+If you want Jenny to **continue or extend** work from a previous background job (e.g. "now add unit tests to that project"), include the project ID in your follow-up:
+
+```
+jenny, continue the project 01JYYY... — add unit tests to every module
+```
+
+Jenny will resume the existing conversation context for that project rather than starting from scratch, so the subagent has full access to everything it produced before.
+
+If the project is still running when you ask to resume, Jenny will let you know and will not start a duplicate.
+
+### What the delivery message looks like
+
+When the background task completes, Jenny posts the result in your channel. For code or document generation this typically includes:
+- A summary of what was built or written.
+- One or more download links (ZIP archives, PDFs, text files).
+- An ARTIFACTS block listing all produced URLs so you can reference them in follow-up requests.
 
 ---
 
@@ -338,7 +382,6 @@ She uses two tools for this:
 
 - **`getHistory`** — retrieves and summarises older messages, page by page.
 - **`getInformation`** — finds specific facts or events across the entire conversation log.
-- **`getTimeline`** — shows a chronological overview of topics discussed.
 
 ---
 

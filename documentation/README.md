@@ -1,6 +1,6 @@
 # Jenny — Discord AI Bot
 
-> **Version:** 1.0 · **Date:** 2026-03-20
+> **Version:** 1.0 · **Date:** 2026-04-05
 
 Jenny is a modular, production-grade Discord AI assistant built on Node.js. It features a pipeline-based module architecture, multi-platform support (Discord, HTTP API, voice, browser voice interface), advanced OpenAI integration with full tool-calling, GDPR-compliant consent management with a self-service data-export portal, a live terminal dashboard with hot-reload, and a web-based image gallery. A first-run setup wizard eliminates manual `core.json` creation.
 
@@ -40,6 +40,7 @@ Jenny is a modular, production-grade Discord AI assistant built on Node.js. It f
    - [core/registry.js — In-Memory Store](#coreregistryjs--in-memory-store)
    - [core/logging.js — Structured Logging](#coreloggingjs--structured-logging)
    - [core/secrets.js — Centralized Secret Store](#coresecretsjs--centralized-secret-store)
+   - [core/fetch.js — HTTP Timeout Wrapper](#corefetchjs--http-timeout-wrapper)
    - [shared/webpage/ — Shared Web Helpers](#sharedwebpage--shared-web-helpers)
 12. [GDPR & Consent](#gdpr--consent)
 13. [Macro System](#macro-system)
@@ -196,6 +197,8 @@ These values serve as **runtime defaults** for every flow. They can be overridde
 | `requestTimeoutMs` | number | `1000000` | HTTP request timeout in milliseconds |
 | `triggerWordWindow` | number | `3` | Number of words at start of message to scan for trigger |
 | `doNotWriteToContext` | boolean | `false` | Skip writing this turn to MySQL context |
+| `contextChannelID` | string | `""` | Override the channel ID used for context reads/writes; when set, context is stored under this ID instead of `channelID` |
+| `skipAiCompletions` | boolean | `false` | When `true`, `core-ai-completions` exits immediately without calling the LLM |
 | `modAdmin` | string | — | Discord user ID of the bot admin |
 | `modSilence` | string | `"[silence]"` | Token that suppresses output if found in response |
 | `apiSecret` | string | `""` | Shared secret for the HTTP API token gate. When set, every `POST /api` request must supply `Authorization: Bearer <secret>`. Leave empty to disable token checking. |
@@ -212,7 +215,7 @@ These values serve as **runtime defaults** for every flow. They can be overridde
 | `trigger` | string | `"jenny"` | Trigger word that activates the bot |
 
 **Default enabled tools:**
-`getGoogle`, `getWebpage`, `getAnimatedPicture`, `getConfluence`, `getYoutube`, `getImage`, `getImageDescription`, `getHistory`, `getText`, `getInformation`, `getJira`, `getLocation`, `getPDF`, `getTime`, `getTimeline`, `getToken`, `getVideoFromText`
+`getGoogle`, `getWebpage`, `getAnimatedPicture`, `getConfluence`, `getYoutube`, `getImage`, `getImageDescription`, `getHistory`, `getText`, `getInformation`, `getJira`, `getLocation`, `getPDF`, `getTime`, `getToken`, `getVideoFromText`
 
 ---
 
@@ -467,8 +470,11 @@ Starts an HTTP server (default port **3400**).
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api` (configurable) | Submit a request; returns JSON `{ turn_id, response }` |
+| `POST` | `/api` (configurable) | Submit a synchronous request; returns JSON `{ turn_id, response }` |
 | `GET` | `/toolcall` (configurable) | Poll tool-call status from registry |
+| `POST` | `/api/spawn` | Spawn an async subagent job; returns `{ ok, jobId, projectId }` immediately |
+| `GET` | `/api/jobs?channelID=<id>` | List async jobs whose `callerChannelId` matches the given channel |
+| `GET` | `/context?channelID=<id>` | Read recent conversation history for a channel |
 
 **POST `/api` request body:**
 
@@ -505,6 +511,22 @@ Runs scheduled jobs defined in `config.cron.jobs`. On each tick (default every 1
 **File:** `flows/toolcall.js`
 
 Watches the `status:tool` registry key. When a tool-call result is deposited into the registry, this flow triggers, allowing deferred or async tool execution to feed back into the pipeline.
+
+---
+
+### discord-subagent-poll Flow
+
+**File:** `flows/discord-subagent-poll.js`
+
+Background poller that detects completed async subagent jobs and delivers their results back to the originating Discord channel.
+
+1. Starts a `setInterval` on bot startup (disabled unless `config["discord-subagent-poll"].enabled = true`).
+2. On each tick, scans all `job:*` registry keys.
+3. Jobs with `status: "running"` are left alone (expired jobs older than `maxJobAgeMs` are marked `error`).
+4. Jobs with `status: "done"` or `"error"` whose `callerFlow` matches `callerFlowPattern` are picked up.
+5. The job entry is removed from the registry, then a full Discord pipeline pass is run with `wo.deliverSubagentJob` set — causing the result to be posted to `wo.channelID = job.callerChannelId`.
+
+Activate by setting `config["discord-subagent-poll"].enabled = true` in `core.json`. See [getSubAgent](#getsubagent) for the full async job lifecycle.
 
 ---
 
@@ -553,7 +575,7 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - Channel selector dropdown (configured via `chats[]` in `config["webpage-chat"]`); subchannel selector for scoped conversation threads
 - Fixed-height textarea with internal scroll; `Enter` sends, `Shift + Enter` adds a newline
 - **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
-- **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; polled from `/api/toolcall?channelID=<id>` every 800 ms (per-channel, no cross-channel interference)
+- **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; the chat frontend holds a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelID=<id>` and receives a push event only when the active tool name changes (no per-tick polling from the browser)
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
 
 **📖 AI Wiki** (`modules/00052`, `GET /wiki`)
@@ -579,7 +601,7 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
     "maxLoops":         5,
     "requestTimeoutMs": 120000,
     "contextSize":      150,
-    "tools":            ["getImage", "getTimeline", "getInformation"],
+    "tools":            ["getImage", "getInformation"],
     "systemPrompt":     "",
     "persona":          "",
     "instructions":     ""
@@ -702,6 +724,7 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 | `00055` | core-admin-commands | Core admin operations (purge, freeze, DB commands) |
 | `00060` | discord-admin-avatar | Generates or uploads a new bot avatar via DALL-E or URL |
 | `00065` | discord-admin-macro | Personal text-macro management (create, list, delete, run) |
+| `00066` | webpage-manifests | Admin-only manifest JSON editor SPA (port 3126, `/manifests`) — list, view, and save tool manifest JSON files |
 | `00070` | discord-add-context | Loads conversation history from MySQL into the context window |
 | `00072` | api-add-context | Loads context for API flow requests |
 | `00075` | discord-trigger-gate | Filters messages based on configured trigger words |
@@ -747,7 +770,7 @@ This is the primary AI module. It runs a loop of up to `maxLoops` iterations:
 | Module | Name | Description |
 |---|---|---|
 | `02000` | moderation-output | Content filtering; can suppress or replace the response |
-| `03000` | discord-status-apply | Applies the prepared Discord status/presence update |
+| `03000` | discord-status-apply | Applies the prepared Discord status/presence update. Tool-call status messages are only shown when the originating flow matches `cfg.allowedFlows` (recommended: `["discord","discord-voice"]`). If `allowedFlows` is empty or absent, all flows are shown. |
 | `07000` | core-add-id | Tags the response with a context ID before writing to MySQL |
 | `08000` | discord-text-output | Formats and sends the response as a Discord embed; creates reasoning thread |
 | `08100` | discord-voice-tts | Synthesises TTS audio with speaker-tagged voice selection |
@@ -807,7 +830,6 @@ export default {
 | `getInformation` | Clusters and retrieves information from the context log |
 | `getLocation` | Geolocation, Google Maps, and Street View look-up |
 | `getTime` | Current time and timezone information |
-| `getTimeline` | Historical timeline generation from context data |
 | `getToken` | Converts an image or video into an animated GIF token |
 | `getBan` | Issues user bans (admin-only) |
 
@@ -971,6 +993,18 @@ const apiKey = await getSecret(wo, cfg.apiKey);      // cfg.apiKey is a placehol
 ```
 
 If the placeholder is not found in the DB, the placeholder string is returned unchanged (the bot fails at the API level, not at startup).
+
+---
+
+### core/fetch.js — HTTP Timeout Wrapper
+
+Provides `fetchWithTimeout(url, options, timeoutMs)` — a centralized HTTP timeout wrapper used by all tools and AI modules to make outbound HTTP requests with a consistent timeout mechanism.
+
+```js
+import { fetchWithTimeout } from "../core/fetch.js";
+
+const res = await fetchWithTimeout(url, { method: "POST", body: "..." }, 30000);
+```
 
 ---
 

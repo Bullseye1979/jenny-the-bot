@@ -315,6 +315,9 @@ details[open].nav-more .nav-more-drop{display:flex}
   0%,100%{transform:translateY(0);opacity:.30}
   50%{transform:translateY(-3px);opacity:.95}
 }
+/* Project ID annotation in async result bubbles */
+.chat-bubble .project-id{display:block;font-size:0.7em;text-align:right;opacity:0.45;margin-top:6px;font-family:monospace;}
+
 /* Hide label only when empty to prevent leading whitespace; show it when toolcall name is set */
 .chat-bubble.chat-thinking .label:empty{
   display: none;

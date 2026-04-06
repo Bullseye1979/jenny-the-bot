@@ -10,6 +10,8 @@ var messages = [];
 var sending   = false;
 var pollTimer = null;
 var pendingFile = null;
+var jobPollTimer = null, jobPollEmptyCount = 0, jobPollDeadline = 0;
+var asyncSseSource = null;
 
 /* ============================================================
    Markdown renderer  (no external dependencies, XSS-safe)
@@ -213,6 +215,84 @@ function stopPoll() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
+function startJobPoll() {
+  stopJobPoll();
+  if (!cfg.apiUrl || !cfg.channelID) return;
+  jobPollEmptyCount = 0;
+  jobPollDeadline = Date.now() + 600000;
+  var jobsUrl = cfg.apiUrl.replace(/\/api\/?$/, "") + "/api/jobs";
+  var channelID = cfg.channelID;
+  jobPollTimer = setInterval(function() {
+    if (Date.now() > jobPollDeadline) { stopJobPoll(); return; }
+    var headers = {};
+    if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
+    fetch(jobsUrl + "?channelID=" + encodeURIComponent(channelID) + "&consume=true", { headers: headers })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var jobs = d && Array.isArray(d.jobs) ? d.jobs : [];
+        var hasRunning = jobs.some(function(j) { return j.status === "running"; });
+        var hasDone = false;
+        jobs.forEach(function(j) {
+          if (j.status === "done" && j.result) {
+            if (j.originalRequest) appendMsg("user", j.originalRequest);
+            var raw = String(j.result || "").split("\n").filter(function(l) { return !/^META\|/.test(l.trim()); }).join("\n").trim();
+            appendMsg("assistant", raw);
+            if (j.projectId) {
+              var msgsEl = document.getElementById("msgs");
+              var lastBubble = msgsEl && msgsEl.querySelector(".msg.assistant:last-child .bubble");
+              if (lastBubble) { var ps = document.createElement("span"); ps.className = "project-id"; ps.textContent = "Project: " + j.projectId; lastBubble.appendChild(ps); }
+            }
+            hasDone = true;
+          } else if (j.status === "error") {
+            if (j.originalRequest) appendMsg("user", j.originalRequest);
+            appendMsg("assistant", "\u26a0\ufe0f Background task failed: " + (j.error || "unknown"));
+            if (j.projectId) {
+              var msgsEl2 = document.getElementById("msgs");
+              var lastBubble2 = msgsEl2 && msgsEl2.querySelector(".msg.assistant:last-child .bubble");
+              if (lastBubble2) { var ps2 = document.createElement("span"); ps2.className = "project-id"; ps2.textContent = "Project: " + j.projectId; lastBubble2.appendChild(ps2); }
+            }
+            hasDone = true;
+          }
+        });
+        if (hasRunning || hasDone) { jobPollEmptyCount = 0; }
+        else { jobPollEmptyCount++; if (jobPollEmptyCount >= 6) stopJobPoll(); }
+      }).catch(function() {});
+  }, 5000);
+}
+
+function stopJobPoll() {
+  if (jobPollTimer) { clearInterval(jobPollTimer); jobPollTimer = null; }
+}
+
+function startAsyncSSE() {
+  stopAsyncSSE();
+  if (!cfg.apiUrl || !cfg.channelID) return;
+  var sseUrl = cfg.apiUrl.replace(/\/api\/?$/, "") + "/api/async-results/stream?channelID=" + encodeURIComponent(cfg.channelID);
+  try {
+    asyncSseSource = new EventSource(sseUrl);
+    asyncSseSource.onmessage = function(e) {
+      try {
+        var d = JSON.parse(e.data);
+        if (d && d.type === "async_result" && d.response) {
+          var raw = String(d.response || "").split("\n").filter(function(l) { return !/^META\|/.test(l.trim()); }).join("\n").trim();
+          appendMsg("assistant", raw);
+          var msgsEl = document.getElementById("msgs");
+          if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
+          if (d.projectId) {
+            var lastBubble = msgsEl && msgsEl.querySelector(".msg.assistant:last-child .bubble");
+            if (lastBubble) { var ps = document.createElement("span"); ps.className = "project-id"; ps.textContent = "Project: " + d.projectId; lastBubble.appendChild(ps); }
+          }
+        }
+      } catch (_) {}
+    };
+    asyncSseSource.onerror = function() {};
+  } catch (_) {}
+}
+
+function stopAsyncSSE() {
+  if (asyncSseSource) { try { asyncSseSource.close(); } catch (_) {} asyncSseSource = null; }
+}
+
 /* ============================================================
    Send message
    ============================================================ */
@@ -326,6 +406,7 @@ function sendMessage(payload) {
       appendMsg("assistant", raw);
     } else if (d && d.error) appendMsg("assistant", "\u26a0\ufe0f Error: " + d.error);
     else appendMsg("assistant", "\u26a0\ufe0f Unexpected response");
+    startJobPoll();
   })
   .catch(function(e) {
     stopPoll();
@@ -375,6 +456,7 @@ function init() {
     }
 
     renderEmpty();
+    startAsyncSSE();
 
     /* ── Auth session check ── */
     function setAuthBar(sess) {

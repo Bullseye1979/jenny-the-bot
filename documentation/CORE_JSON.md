@@ -1,6 +1,6 @@
 # core.json — Complete Reference
 
-> **Version:** 1.0 · **Date:** 2026-03-20
+> **Version:** 1.0 · **Date:** 2026-04-05
 
 `core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime — any change triggers an automatic hot-reload within seconds. No restart is required.
 
@@ -47,7 +47,7 @@ All key names follow **camelCase** throughout.
      - [getToken](#gettoken)
      - [getLocation](#getlocation)
      - [getTime](#gettime)
-     - [getTimeline](#gettimeline)
+     - [getSubAgent](#getsubagent)
      - [getBan](#getban)
 2. [config](#config)
    - [discord](#discord)
@@ -83,6 +83,7 @@ All key names follow **camelCase** throughout.
    - [webpage-voice](#webpage-voice)
    - [webpage-voice-output](#webpage-voice-output)
    - [toolcall](#toolcall)
+   - [discord-subagent-poll](#discord-subagent-poll)
    - [Module Flow Subscriptions](#module-flow-subscriptions)
    - [core-channel-config — Channel Overrides](#core-channel-config--channel-overrides)
 3. [Complete Annotated Template](#complete-annotated-template)
@@ -125,6 +126,8 @@ All key names follow **camelCase** throughout.
 | `triggerWordWindow` | number | `3` | Words scanned at the start of a message for the trigger word |
 | `trigger` | string | `"jenny"` | Trigger word that activates the bot (empty = always active) |
 | `doNotWriteToContext` | boolean | `false` | Skip writing this turn to MySQL (useful for status flows) |
+| `contextChannelID` | string | `""` | Override the channel ID used when reading/writing context. When set, context is stored under this ID instead of `channelID`. Useful when one channel (e.g. a subagent channel) should share history with another. |
+| `skipAiCompletions` | boolean | `false` | When `true`, the `core-ai-completions` module exits immediately without running the AI. Use this in flows where the AI call is handled by a different module or must be suppressed entirely for that pipeline pass. |
 | `showReactions` | boolean | `true` | Add emoji reactions to Discord messages during processing |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone for time-aware modules and tools |
 | `baseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving generated files (images, PDFs, etc.) |
@@ -517,13 +520,21 @@ Returns the current UTC time as an ISO 8601 string. No admin configuration requi
 |---|---|---|
 | *(no keys)* | — | This tool requires no toolsconfig entry |
 
-#### getTimeline
+#### getSubAgent
 
-Returns stored timeline periods for the current channel.
+Spawns an isolated AI subagent via the internal API flow. Each subagent type maps to a virtual channel configured with its own tool palette, model, and system prompt.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| *(no keys)* | — | Timeline periods are read from MySQL; no toolsconfig entry required | |
+| `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
+| `apiSecret` | string | `"API_SECRET"` | Placeholder name for the bearer token — resolved from `bot_secrets` at runtime |
+| `timeoutMs` | number | `120000` | Maximum wait time for a synchronous subagent response (ms) |
+| `asyncSpawnPath` | string | `"/api/spawn"` | Path for async job spawning (`POST /api/spawn`). Defaults to `"/api/spawn"`. |
+| `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request in async mode (ms). The subagent itself then runs independently. |
+| `maxSpawnDepth` | number | `2` | Maximum nesting depth for subagent spawning. A subagent at depth ≥ `maxSpawnDepth` may not spawn further subagents. |
+| `types` | object | `{"research":"subagent-research"}` | Map of type name → virtual channel ID. Each entry enables one subagent type. |
+
+**Async mode** (`async: true`): the tool posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. The result is delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes.
 
 #### getBan
 
@@ -588,10 +599,43 @@ The `config` section wires flows and modules together, and provides per-module s
 ### api
 
 ```jsonc
-"api": { "flowName": "api" }
+"api": {
+  "flowName":   "api",
+  "host":       "0.0.0.0",
+  "port":       3400,
+  "path":       "/api",
+  "toolcallPath": "/toolcall",
+  "contextPath":  "/context",
+  "spawnPath":    "/api/spawn",
+  "jobsPath":     "/api/jobs",
+  "uploadPath":   "/upload",
+  "publicBaseUrl": "https://yourserver.example.com"
+}
 ```
 
-The API flow is configured via command-line or defaults (host `0.0.0.0`, port `3400`). Additional keys (`host`, `port`, `path`, `toolcallPath`) can be added here as needed.
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `host` | string | `"0.0.0.0"` | Bind address for the HTTP server |
+| `port` | number | `3400` | Port number |
+| `path` | string | `"/api"` | Path for the synchronous `POST` endpoint |
+| `toolcallPath` | string | `"/toolcall"` | `GET` endpoint for polling tool-call registry status |
+| `contextPath` | string | `"/context"` | `GET` endpoint for reading channel conversation history |
+| `spawnPath` | string | `"/api/spawn"` | `POST` endpoint for spawning async subagent jobs |
+| `jobsPath` | string | `"/api/jobs"` | `GET` endpoint for listing async jobs by `callerChannelId` |
+| `uploadPath` | string | `"/upload"` | `POST` endpoint for uploading files (returns public URL) |
+| `publicBaseUrl` | string | — | Public base URL used when constructing file URLs returned by `/upload` |
+
+**Endpoints summary:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | None | Returns `{ ok: true, botname }` |
+| `POST` | `/api` | Bearer | Synchronous AI pipeline request; returns `{ ok, response, turn_id, ... }` |
+| `GET` | `/toolcall` | Bearer | Poll current tool-call status; `?channelID=` for channel-specific key |
+| `GET` | `/context` | Bearer | Read recent conversation; requires `?channelID=`; optional `?limit=` |
+| `POST` | `/api/spawn` | Bearer | Spawn async subagent job; returns `{ ok, jobId, projectId }` immediately |
+| `GET` | `/api/jobs` | Bearer | List async jobs for a caller channel; requires `?channelID=` |
+| `POST` | `/upload` | Bearer | Upload a file and receive its public URL |
 
 ---
 
@@ -656,7 +700,7 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 }
 ```
 
-**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), active toolcall name polled per channel during AI calls via `GET /chat/api/toolstatus?channelID=<id>` (shown inside the thinking bubble), subchannel CRUD endpoints, file attachments (📎 button in footer).
+**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), active toolcall name displayed in the thinking bubble via a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelID=<id>` (server pushes an event only when the tool name changes — no polling overhead on the client), subchannel CRUD endpoints, file attachments (📎 button in footer).
 
 **File upload flow:** images → `POST /gallery/api/files` (session cookie auth, same-origin); non-images or gallery failure → `POST /chat/api/upload` (server-side proxy to `apiUrl.replace(/\/api/, '/upload')` with optional Bearer token). The uploaded URL is prepended to the message payload before the AI call.
 
@@ -669,7 +713,7 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 | `systemPrompt` | Optional system prompt prepended to every AI call (default `""`) |
 | `contextSize` | Recent user turns to include in AI context (default `20`) |
 | `maxTokens` | Max tokens in AI response (default `1024`) |
-| `toolStatusPollMs` | Polling interval in ms for toolcall status display in the thinking bubble (default `500`) |
+| `toolStatusPollMs` | Server-side check interval in ms for the toolstatus SSE stream (default `500`). The server polls the registry at this rate and pushes a new SSE event only when the active tool name changes. |
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
 | `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Also used to derive the upload endpoint (`/upload`). |
@@ -752,7 +796,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
     "requestTimeoutMs": 120000,               // AI request timeout in ms
     "includeHistory":   false,                // true = load channel chat history; see note in ADMIN_MANUAL
     "contextSize":      150,                  // messages to load when includeHistory=true
-    "tools":            ["getImage", "getTimeline", "getInformation"],
+    "tools":            ["getImage", "getInformation"],
     "systemPrompt":     "",                   // empty = use built-in prompt
     "persona":          "",
     "instructions":     ""
@@ -760,7 +804,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
   "channels": [
     {
       "_title":       "My Channel Wiki",
-      "channelId":    "YOUR_DISCORD_CHANNEL_ID", // source channel for getInformation/getTimeline
+      "channelId":    "YOUR_DISCORD_CHANNEL_ID", // source channel for getInformation tool calls
       "allowedRoles": [],                         // [] = public; ["member"] = role-gated
       "adminRoles":   ["admin"],                  // full access; implicitly includes editor + creator; [] = no admin
       "editorRoles":  ["editor"],                 // may edit and delete articles
@@ -798,7 +842,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 | `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
 | `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. Default `false` — see `includeHistory` note in ADMIN_MANUAL |
 | `overrides.contextSize` | number | `150` | Number of recent messages loaded when `includeHistory: true` |
-| `overrides.tools` | array | `["getImage","getTimeline","getInformation"]` | Tools available to the AI |
+| `overrides.tools` | array | `["getImage","getInformation"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona injected into the AI call |
 | `overrides.instructions` | string | `""` | Instructions injected into the AI call |
@@ -811,7 +855,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 | `channels[].overrides` | object | `{}` | Per-channel override block — same keys as global `overrides`; channel values take precedence |
 
 - Channel not in `channels[]` → HTTP 404
-- AI uses **only tool results** as facts — `getInformation` and `getTimeline` are both mandatory; events always in **chronological order**
+- AI uses **only tool results** as facts — `getInformation` is the primary source for article content
 - Search always shows the results overview — even a single match never auto-redirects to the article
 - The "Generate new article" button passes `force: true` to `/api/generate`, bypassing the existing-article check and always creating a new article
 - Non-creator users see search results but no generate button/spinner
@@ -1636,6 +1680,34 @@ Sends TTS audio back to the webpage voice caller. Must run in the output phase (
 
 ---
 
+### discord-subagent-poll
+
+Polls the registry for completed async subagent jobs and delivers results back to the originating Discord channel. This flow is started at bot startup as a background interval — it is not wired to any flow array.
+
+```jsonc
+"discord-subagent-poll": {
+  "enabled":           false,
+  "pollIntervalMs":    5000,
+  "callerFlowPattern": ["discord", "discord-voice"],
+  "maxJobAgeMs":       86400000
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | boolean | `false` | Set to `true` to activate the poller. When `false` the flow file loads but immediately returns. |
+| `pollIntervalMs` | number | `5000` | How often to scan the registry for finished jobs (ms). Minimum 1000. |
+| `callerFlowPattern` | array | `["discord","discord-voice"]` | Only deliver jobs whose `callerFlow` starts with one of these prefixes. Jobs from other flows (e.g. `api`) are left in the registry until they expire. |
+| `maxJobAgeMs` | number | `86400000` | Jobs still `"running"` after this many ms are marked as `"error"` (timed out). Minimum 60000. |
+
+**How async delivery works:**
+1. The main AI calls `getSubAgent(type, task, async: true)`.
+2. `getSubAgent` posts to `/api/spawn` and returns `{ jobId, projectId, status: "started" }` immediately.
+3. The API flow runs the subagent pipeline in the background and stores the result under `"job:<jobId>"` in the registry.
+4. The `discord-subagent-poll` interval fires, finds the completed job, removes it from the registry, and runs the `discord` pipeline with `wo.deliverSubagentJob = <job>` set — which causes the result to be sent to the original Discord channel.
+
+---
+
 ### Module Flow Subscriptions
 
 Every module has an entry under `config` that declares which flows it participates in. The key is the exact module name (filename prefix stripped).
@@ -1845,7 +1917,7 @@ Below is a minimal but functional `core.json` template with every section includ
       "getGoogle", "getWebpage", "getImage", "getImageDescription",
       "getAnimatedPicture", "getVideoFromText", "getYoutube",
       "getHistory", "getInformation", "getText", "getPDF",
-      "getTime", "getTimeline", "getToken", "getLocation"
+      "getTime", "getToken", "getLocation", "getSubAgent"
     ],
 
     // ── Voice (TTS / Whisper) ─────────────────────────────────────────────────
@@ -2117,7 +2189,7 @@ Below is a minimal but functional `core.json` template with every section includ
         "requestTimeoutMs": 120000,
         "includeHistory":   false,
         "contextSize":      150,
-        "tools":            ["getImage", "getTimeline", "getInformation"],
+        "tools":            ["getImage", "getInformation"],
         "systemPrompt":     "",
         "persona":          "",
         "instructions":     ""
@@ -2169,4 +2241,4 @@ Below is a minimal but functional `core.json` template with every section includ
 
 ---
 
-*Documentation updated 2026-03-20. Version 1.0.*
+*Documentation updated 2026-04-05. Version 1.0.*

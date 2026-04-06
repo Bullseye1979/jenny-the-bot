@@ -404,9 +404,6 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
         const chunkId    = await createChunk(pool, { sessionId, chunkIndex: index, transcript: chunkTranscript });
         const seenLabels = new Set();
         for (const seg of cleanSegsToPersist) {
-          // Use the same label format as the transcript so the review UI can match them.
-          // With preamble: recognised speakers use their name, others use Chunk#Speaker#.
-          // Without preamble: always Chunk#Speaker# (nameMap is empty).
           const chunkLabel = nameMap[seg.speaker] ?? `Chunk${chunkNum}Speaker${seg.speaker}`;
           if (!seenLabels.has(chunkLabel)) {
             seenLabels.add(chunkLabel);

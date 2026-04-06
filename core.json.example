@@ -32,7 +32,7 @@
       "getToken",
       "getLocation",
       "getBan",
-      "spawnSubagent"
+      "getSubAgent"
     ],
     "includeHistory": true,
     "includeHistoryTools": false,
@@ -296,16 +296,13 @@
         "timeoutMs": 20000
       },
       "getWebpage": {
-        "__description": "Web page fetcher — requires apiKey + endpoint + model for summary mode",
+        "__description": "Web page fetcher — routes AI summary through internal subagent API",
         "timeoutMs": 30000,
         "maxInputChars": 100000,
         "wordThreshold": 1500,
-        "endpoint": "https://api.openai.com/v1/chat/completions",
-        "apiKey": "OPENAI",
-        "model": "gpt-4o-mini",
-        "temperature": 0.2,
-        "max_tokens": 4000,
-        "aiTimeoutMs": 45000
+        "summaryApiUrl": "http://localhost:3400",
+        "summaryChannelId": "subagent-webpage-summary",
+        "summaryTimeoutMs": 45000
       },
       "getImage": {
         "__description": "DALL-E image generation — requires apiKey and publicBaseUrl",
@@ -316,12 +313,9 @@
         "n": 1,
         "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL/",
         "targetLongEdge": 1024,
-        "enhancerEndpoint": "https://api.openai.com/v1/chat/completions",
-        "enhancerApiKey": "OPENAI",
-        "enhancerModel": "gpt-4o-mini",
-        "enhancerTemperature": 0.2,
-        "enhancerMaxTokens": 350,
-        "enhancerTimeoutMs": 60000
+        "enhancerApiUrl": "http://localhost:3400",
+        "enhancerChannelId": "subagent-img-enhance",
+        "enhancerApiSecret": ""
       },
       "getTime": {
         "__description": "No API configuration required"
@@ -373,11 +367,13 @@
         "regionCode": "DE",
         "relevanceLanguage": "de"
       },
-      "spawnSubagent": {
+      "getSubAgent": {
         "__description": "Routes a task to an isolated subagent channel via the internal API flow. Each type maps to a dedicated channelID configured in core-channel-config.",
         "apiUrl": "http://localhost:3400",
         "apiSecret": "API_SECRET",
         "timeoutMs": 120000,
+        "asyncSpawnPath": "/api/spawn",
+        "spawnTimeoutMs": 10000,
         "types": {
           "research": "subagent-research",
           "media":    "subagent-media",
@@ -551,12 +547,11 @@
         "getText": "⏳ Generating a file …",
         "getHistory": "⏳ Checking history …",
         "getInformation": "⏳ Searching information …",
-        "getTimeline": "⏳ Checking the timeline …",
         "getToken": "⏳ Generating a token …",
         "getLocation": "⏳ Looking up a location …",
         "getJira": "⏳ Working with Jira …",
         "getConfluence": "⏳ Working with Confluence …",
-        "spawnSubagent": "⏳ Consulting subagent …"
+        "getSubAgent": "⏳ Consulting subagent …"
       }
     },
     "discord-voice-transcribe": {
@@ -659,15 +654,6 @@
         "api"
       ]
     },
-    "config-editor": {
-      "__description": "DEPRECATED — replaced by webpage-config-editor. Remove after confirming migration.",
-      "port": 3111,
-      "host": "127.0.0.1",
-      "token": "",
-      "configPath": "",
-      "apiUrl": "",
-      "chats": []
-    },
     "webpage-config-editor": {
       "__description": "JSON config editor SPA (webpage module). Set token to require a password.",
       "flow": [
@@ -716,7 +702,7 @@
         "requestTimeoutMs": 120000,
         "includeHistory":   false,
         "contextSize":      150,
-        "tools":            ["getImage", "getTimeline", "getInformation"],
+        "tools":            ["getImage", "getInformation"],
         "systemPrompt":     "",
         "persona":          "",
         "instructions":     ""
@@ -977,7 +963,7 @@
           }
         },
         {
-          "__description": "Subagent: research — handles getHistory, getInformation, getGoogle, getTavily, getWebpage. Spawned by spawnSubagent(type='research'). No spawnSubagent in tools to prevent recursion.",
+          "__description": "Subagent: research — handles getHistory, getInformation, getGoogle, getTavily, getWebpage. Spawned by getSubAgent(type='research'). No getSubAgent in tools to prevent recursion.",
           "channelMatch": ["subagent-research"],
           "overrides": {
             "apiEnabled": 1,
@@ -1003,7 +989,7 @@
           }
         },
         {
-          "__description": "Subagent: media — handles YouTube transcripts and web pages. Spawned by spawnSubagent(type='media'). No spawnSubagent in tools to prevent recursion.",
+          "__description": "Subagent: media — handles YouTube transcripts and web pages. Spawned by getSubAgent(type='media'). No getSubAgent in tools to prevent recursion.",
           "channelMatch": ["subagent-media"],
           "overrides": {
             "apiEnabled": 1,
@@ -1026,7 +1012,7 @@
           }
         },
         {
-          "__description": "Subagent: generic — full standard tool palette. Spawned by spawnSubagent(type='generic'). No spawnSubagent in tools to prevent recursion.",
+          "__description": "Subagent: generic — full standard tool palette. Spawned by getSubAgent(type='generic'). No getSubAgent in tools to prevent recursion.",
           "channelMatch": ["subagent-generic"],
           "overrides": {
             "apiEnabled": 1,
@@ -1054,6 +1040,32 @@
               "getToken",
               "getLocation"
             ]
+          }
+        },
+        {
+          "__description": "Subagent: image prompt enhancer — used by getImage tool to improve prompts before generation.",
+          "channelMatch": ["subagent-img-enhance"],
+          "overrides": {
+            "systemPrompt": "You are a Stable Diffusion prompt enhancer. Given a basic prompt, output an improved, detailed prompt optimized for image generation. Output ONLY the enhanced prompt text, no explanations.",
+            "model": "gpt-4o-mini",
+            "maxTokens": 350,
+            "temperature": 0.7,
+            "tools": [],
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET"
+          }
+        },
+        {
+          "__description": "Subagent: webpage summary — used by getWebpage tool to summarize fetched page content.",
+          "channelMatch": ["subagent-webpage-summary"],
+          "overrides": {
+            "systemPrompt": "You summarize web page content concisely and accurately. Focus on the key information. Output plain text only.",
+            "model": "gpt-4o-mini",
+            "maxTokens": 1400,
+            "temperature": 0.1,
+            "tools": [],
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET"
           }
         }
       ]
@@ -1136,6 +1148,28 @@
       "endpoint":    "https://api.openai.com/v1/chat/completions",
       "model":       "gpt-4o",
       "authPageUrl": "/chatgpt-auth"
+    },
+
+    "webpage-manifests": {
+      "flow": ["webpage"],
+      "port": 3126,
+      "basePath": "/manifests",
+      "allowedRoles": ["admin"]
+    },
+
+    "discord-subagent-poll": {
+      "__description": "Polls the registry for completed async subagent jobs and delivers results to the originating Discord channel. Set enabled:true to activate. pollIntervalMs: how often to check (ms). callerFlowPattern: flow name prefixes that trigger delivery. maxJobAgeMs: running jobs older than this are expired as errors.",
+      "enabled": false,
+      "pollIntervalMs": 5000,
+      "callerFlowPattern": ["discord", "discord-voice"],
+      "maxJobAgeMs": 86400000
+    },
+
+    "webpage-subagent-poll": {
+      "__description": "Polls the registry for completed async subagent jobs whose callerFlow starts with 'webpage' and delivers results via SSE to the originating webpage client. Requires GET /api/async-results/stream?channelID=<callerChannelId> to be open on the client side. Set enabled:true to activate.",
+      "enabled": false,
+      "pollIntervalMs": 5000,
+      "maxJobAgeMs": 86400000
     }
   }
 }

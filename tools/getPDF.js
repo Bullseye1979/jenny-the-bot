@@ -19,6 +19,7 @@ import path from "path";
 import fs from "fs/promises";
 import puppeteer from "puppeteer";
 import { ensureUserDir, getUniqueFilename, getUserId, getPublicBaseUrl } from "../core/file.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getPDF";
 
@@ -364,6 +365,7 @@ async function generatePdfAndHtml(parsed, cfg, wo) {
 
 
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   try {
     const wo = coreData?.workingObject || {};
     const cfg = wo?.toolsconfig?.getPDF || {};

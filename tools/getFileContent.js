@@ -8,6 +8,9 @@
 /* Config: none — timeout and size limit are fixed constants.                      *
 /**********************************************************************************/
 
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
+
 const MODULE_NAME  = "getFileContent";
 const MAX_BYTES    = 512 * 1024;
 const TIMEOUT_MS   = 30000;
@@ -33,7 +36,8 @@ function getExtension(url) {
 }
 
 
-async function getInvoke(args) {
+async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const url = String(args?.url || "").trim();
 
   if (!url) return { ok: false, error: "url is required" };
@@ -49,11 +53,8 @@ async function getInvoke(args) {
     return { ok: false, error: `Binary file type '${ext}' cannot be read as text` };
   }
 
-  const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-
   try {
-    const res = await fetch(url, { signal: ctrl.signal });
+    const res = await fetchWithTimeout(url, {}, TIMEOUT_MS);
 
     if (!res.ok) {
       return { ok: false, error: `HTTP ${res.status} ${res.statusText}` };
@@ -89,8 +90,6 @@ async function getInvoke(args) {
       ok: false,
       error: isAbort ? `Timed out after ${TIMEOUT_MS}ms` : (e?.message || String(e))
     };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

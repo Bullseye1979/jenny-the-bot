@@ -31,6 +31,9 @@ export default async function getApiTokenGate(coreData) {
 
   if (String(wo?.flow || "") !== "api") return coreData;
 
+  // Internal programmatic calls have no HTTP request — gate does not apply.
+  if (!wo.http) return coreData;
+
   const enabled = getApiEnabled(wo);
 
   if (enabled === 0) {

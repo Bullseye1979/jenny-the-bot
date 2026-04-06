@@ -7,6 +7,7 @@
 
 import { saveFile } from "../core/file.js";
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
 
 const MODULE_NAME = "getImage";
 
@@ -117,114 +118,28 @@ function getHeuristicEnhancedPrompt(basePrompt, { extraNegatives = [], extraQual
 }
 
 
-function getResolveEnhancerConfig(args, wo, toolCfg, imageModelName) {
-  const epArg = args?.enhancerEndpoint;
-  const epCfg = toolCfg?.enhancerEndpoint || toolCfg?.endpoint;
-  const epWO  = wo?.endpoint;
-  const endpoint = String(epArg || epCfg || epWO || "https://api.openai.com/v1/chat/completions");
-  const keyArg = args?.enhancerApiKey;
-  const keyCfg = toolCfg?.enhancerApiKey || toolCfg?.apiKey;
-  const keyWO  = wo?.apiKey;
-  const apiKey = String(keyArg || keyCfg || keyWO || "");
-  const model = String(args?.enhancerModel || toolCfg?.enhancerModel || toolCfg?.model || wo?.model || "gpt-4o-mini");
-  const tempArg = args?.enhancerTemperature;
-  const tempCfg = toolCfg?.enhancerTemperature;
-  const tempWO  = wo?.temperature;
-  const temperature = Number.isFinite(tempArg) ? tempArg : Number.isFinite(tempCfg) ? tempCfg : Number.isFinite(tempWO) ? tempWO : 0.7;
-  const mtArg = args?.enhancerMaxTokens;
-  const mtCfg = toolCfg?.enhancerMaxTokens;
-  const mtWO  = wo?.maxTokens;
-  const max_tokens = Number.isFinite(mtArg) ? mtArg : Number.isFinite(mtCfg) ? mtCfg : Number.isFinite(mtWO) ? mtWO : 350;
-  const timeout = Number.isFinite(toolCfg?.enhancerTimeoutMs) ? toolCfg.enhancerTimeoutMs : Number.isFinite(wo?.requestTimeoutMs) ? wo.requestTimeoutMs : 60000;
-  const preferDigitalPainting = args?.preferDigitalPainting !== false;
-  const enhancerSystemPrompt = String(toolCfg?.enhancerSystemPrompt || "").trim();
-  return { endpoint, apiKey, model, temperature, max_tokens, timeout, preferDigitalPainting, imageModelName, enhancerSystemPrompt };
-}
-
-
-async function getAiEnhancedPrompt({
-  endpoint,
-  apiKey,
-  enhancerModel,
-  temperature,
-  max_tokens,
-  basePrompt,
-  imageModelName,
-  preferDigitalPainting = true,
-  extraQuality = [],
-  extraNegatives = [],
-  timeoutMs = 60000,
-  systemPrompt = ""
-}) {
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  const system = (systemPrompt && systemPrompt.trim())
-    ? [systemPrompt.trim(), ...getModelPolicyHints(imageModelName)].join(" ")
-    : [
-        "You are an expert prompt engineer for image generation.",
-        "Rewrite and enhance the user's prompt for an image generation model.",
-        "Prefer a digital painting aesthetic when appropriate, but exercise creative freedom to make the image compelling.",
-        "Include suitable camera angle and lens suggestions when beneficial.",
-        "Ensure the result is a single line of plain text with no explanations.",
-        ...getModelPolicyHints(imageModelName)
-      ].join(" ");
-  const content = [
-    `USER_PROMPT: ${getSanitized(basePrompt)}`,
-    `MANDATORY_QUALITY_TAGS: ${[...(preferDigitalPainting ? ["digital painting","painterly brushwork","studio quality"] : []), "cinematic", "creative angles", "symbolism", "no text", "vibrant colors", "vibrant lighting", "realistic faces", "faces with character", "high quality", "highly detailed faces", "anatomically correct hands: 5 fingers per hand", "no additional limbs", "sharp focus", "clean edges", "cohesive lighting", "consistent perspective", ...extraQuality].join(", ")}`,
-    `NEGATIVE_TAGS: ${["text, captions, logos, watermarks", "misspelled words", "deformed hands, extra fingers, fused fingers", "doll-like faces, plastic skin", "low-res, heavy compression artifacts, banding", "distorted anatomy, extra limbs, missing limbs", "overexposed highlights, crushed blacks", ...extraNegatives].join(", ")}`,
-    "OUTPUT_FORMAT: single line; no markdown; no quotes; no role labels."
-  ].join("\n");
+async function callEnhancerApi(prompt, cfg, wo) {
+  const channelId = String(cfg.enhancerChannelId || "").trim();
+  if (!channelId) return null;
+  const apiUrl = String(cfg.enhancerApiUrl || "http://localhost:3400").replace(/\/+$/, "") + "/api";
+  const secretKey = String(cfg.enhancerApiSecret || "").trim();
+  const secret = secretKey ? await getSecret(wo, secretKey) : "";
+  const headers = { "Content-Type": "application/json" };
+  if (secret) headers["Authorization"] = `Bearer ${secret}`;
+  const timeoutMs = Math.max(5000, Number.isFinite(Number(cfg.enhancerTimeoutMs)) ? Number(cfg.enhancerTimeoutMs) : 30000);
   try {
-    const res = await fetch(endpoint, {
+    const res = await fetchWithTimeout(apiUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: enhancerModel, messages: [{ role: "system", content: system }, { role: "user", content }], temperature, max_tokens }),
-      signal: controller ? controller.signal : undefined
-    });
-    const raw = await res.text();
-    let data = null;
-    try { data = JSON.parse(raw); } catch { throw new Error("Invalid JSON from Enhancer API"); }
-    if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status} ${res.statusText}`);
-    const text = data?.choices?.[0]?.message?.content || "";
-    const singleLine = getSanitized(text).replace(/^["“”'`]+|["“”'`]+$/g, "");
-    if (!singleLine) throw new Error("Empty enhancer result");
-    return singleLine;
-  } catch (e) {
-    return getHeuristicEnhancedPrompt(basePrompt, { extraNegatives, extraQuality, preferDigitalPainting });
-  } finally {
-    if (timer) clearTimeout(timer);
+      headers,
+      body: JSON.stringify({ channelID: channelId, payload: prompt, doNotWriteToContext: true })
+    }, timeoutMs);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const text = String(data?.response || "").trim();
+    return text || null;
+  } catch {
+    return null;
   }
-}
-
-
-async function getBuildEnhancedPrompt({
-  wo,
-  toolCfg,
-  args,
-  basePrompt,
-  imageModelName,
-  negative,
-  extraTags = []
-}) {
-  const cfg = getResolveEnhancerConfig(args, wo, toolCfg, imageModelName);
-  const extraNeg = Array.isArray(negative) ? negative : (negative ? [negative] : []);
-  if (!cfg.apiKey) {
-    return getHeuristicEnhancedPrompt(basePrompt, { extraNegatives: extraNeg, extraQuality: Array.isArray(extraTags) ? extraTags : [], preferDigitalPainting: cfg.preferDigitalPainting });
-  }
-  return await getAiEnhancedPrompt({
-    endpoint: cfg.endpoint,
-    apiKey: cfg.apiKey,
-    enhancerModel: cfg.model,
-    temperature: cfg.temperature,
-    max_tokens: cfg.max_tokens,
-    basePrompt,
-    imageModelName,
-    preferDigitalPainting: cfg.preferDigitalPainting,
-    extraQuality: Array.isArray(extraTags) ? extraTags : [],
-    extraNegatives: extraNeg,
-    timeoutMs: cfg.timeout,
-    systemPrompt: cfg.enhancerSystemPrompt
-  });
 }
 
 
@@ -293,7 +208,15 @@ async function getInvoke(args, coreData) {
   if (n > 4) n = 4;
   const strictPrompt = Boolean(args?.strictPrompt || false);
   const negative = args?.negative || null;
-  const enhancedPrompt = strictPrompt ? promptRaw : await getBuildEnhancedPrompt({ wo, toolCfg, args, basePrompt: promptRaw, imageModelName: model, negative, extraTags: [] });
+  const preferDigitalPainting = args?.preferDigitalPainting !== false;
+  const extraNeg = Array.isArray(negative) ? negative : (negative ? [negative] : []);
+  let enhancedPrompt;
+  if (strictPrompt) {
+    enhancedPrompt = promptRaw;
+  } else {
+    const aiEnhanced = await callEnhancerApi(promptRaw, toolCfg, wo);
+    enhancedPrompt = aiEnhanced ?? getHeuristicEnhancedPrompt(promptRaw, { extraNegatives: extraNeg, extraQuality: [], preferDigitalPainting });
+  }
   const finalSize = getBuiltSize({ size: requestedSize, aspect, targetLongEdge });
   const body = { model, prompt: enhancedPrompt, size: finalSize, n };
   let res, data;

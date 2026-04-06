@@ -149,6 +149,9 @@ function getEffectiveChannelId(workingObject) {
 
 
 function ensureFlow(workingObject, effectiveChannelId, log) {
+  const overrideFlow = normalizeStr(workingObject?.overrideFlow);
+  if (overrideFlow) return overrideFlow;
+
   let flow = normalizeStr(workingObject?.flow);
 
   if (!flow && normalizeStr(effectiveChannelId).toUpperCase() === "DM") {

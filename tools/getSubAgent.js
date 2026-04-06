@@ -1,9 +1,9 @@
 /**********************************************************************************/
 /* filename: getSubAgent.js                                                        *
-/* Version 1.0                                                                     *
-/* Purpose: Spawns an isolated AI subagent by routing a task through the bot's    *
-/*          internal API flow. Each subagent type maps to a dedicated channel      *
-/*          configured with its own tool palette and system prompt.                *
+/* Version 1.1                                                                     *
+/* Purpose: Spawns an isolated AI subagent as a fire-and-forget async job.        *
+/*          Always async — result is delivered back to the originating channel     *
+/*          when complete. For simple single-step tasks use direct tools instead.  *
 /*                                                                                 *
 /*          Orchestration context: callers may pass an `orchestration` object to   *
 /*          give the subagent explicit scope, tool locks, and artifact hand-offs.  *
@@ -11,21 +11,12 @@
 /*          eliminates duplicate side effects (double image generation, etc.).     *
 /*                                                                                 *
 /* Config (toolsconfig.getSubAgent):                                               *
-/*   apiUrl      - Internal API base URL (default: http://localhost:3400)          *
-/*   apiSecret   - Bearer token key name for internal API auth (resolved via DB)   *
-/*   timeoutMs   - Max wait time in ms for subagent response (default: 120000)     *
-/*   types       - Map of type name to channelID, e.g.:                           *
-/*                 { "research": "subagent-research", "generate": "subagent-generate" } *
-/*                                                                                 *
-/* Orchestration context schema (orchestration parameter):                         *
-/*   global_goal        - The overall user request this subagent is part of       *
-/*   your_task          - Exact deliverable this subagent must produce            *
-/*   your_role          - Role label for this subagent (e.g. "image generation")  *
-/*   do_only            - Array of strings: what this subagent is allowed to do   *
-/*   do_not             - Array of strings: explicit prohibitions                 *
-/*   existing_artifacts - Map of artifact type → URL/value already produced       *
-/*   assigned_to_others - Array of task descriptions handled by other subagents   *
-/*   tool_locks         - Map of tool name → reason string (must not be called)   *
+/*   apiUrl         - Internal API base URL (default: http://localhost:3400)       *
+/*   apiSecret      - Bearer token key name for internal API auth (resolved via DB)*
+/*   asyncSpawnPath - Path for spawn endpoint (default: /api/spawn)               *
+/*   spawnTimeoutMs - Timeout for the spawn HTTP call (default: 10000)            *
+/*   types          - Map of type name to channelID, e.g.:                        *
+/*                    { "research": "subagent-research", "develop": "subagent-develop" } *
 /*                                                                                 *
 /* Adding a new subagent type:                                                     *
 /*   1. Add an entry to toolsconfig.getSubAgent.types in core.json:               *
@@ -37,6 +28,10 @@
 /**********************************************************************************/
 
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
+import { getItem, listKeys } from "../core/registry.js";
+import { logSubagent } from "../core/subagent-logger.js";
 
 const MODULE_NAME = "getSubAgent";
 
@@ -96,42 +91,41 @@ function buildOrchestrationBlock(orchestration, turnId) {
 
 
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo  = coreData?.workingObject || {};
   const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
 
-  const task            = String(args?.task    || "").trim();
-  const typeName        = String(args?.type    || "research").trim();
+  const task      = String(args?.task || "").trim();
+  const projectId = args?.projectId ? String(args.projectId).trim() : "";
   const explicitChannel = String(args?.channel_id || "").trim();
   const orchestration   = args?.orchestration ?? null;
+  const typeName  = projectId ? "generic" : String(args?.type || "generic").trim();
 
-  if (!task) return { ok: false, error: "task is required" };
-  if (wo.aborted) return { ok: false, error: "Pipeline aborted — parent context disconnected" };
+  const _invokeCallerChannelId = String(wo.callerChannelId || wo.channelID || "").trim();
+  logSubagent("info", "getSubAgent", "invoke_called", {
+    typeName,
+    projectId:           projectId || null,
+    callerChannelId:     _invokeCallerChannelId || null,
+    callerFlow:          String(wo.callerFlow || wo.flow || "") || null,
+    callerContextChanID: String(wo.contextChannelID || "") || null,
+    agentDepth:          Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0,
+    agentType:           String(wo.agentType || "") || null,
+    taskLen:             task.length,
+    hasOrchestration:    orchestration !== null,
+  });
 
-  const maxSpawnDepth = Number.isFinite(Number(cfg.maxSpawnDepth)) ? Number(cfg.maxSpawnDepth) : 2;
-  const agentDepth    = Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0;
-  const agentType     = String(wo.agentType || "").trim();
-
-  if (agentDepth >= maxSpawnDepth) {
-    return { ok: false, error: `Spawn depth limit reached (depth=${agentDepth}, max=${maxSpawnDepth}). This agent may not spawn further subagents.` };
+  if (!task) {
+    logSubagent("warn", "getSubAgent", "invoke_rejected", { reason: "task_empty" });
+    return { ok: false, error: "task is required" };
   }
-  if (agentType && agentType === typeName) {
-    return { ok: false, error: `A subagent of type "${typeName}" may not spawn another subagent of the same type.` };
+  if (wo.aborted) {
+    logSubagent("warn", "getSubAgent", "invoke_rejected", { reason: "pipeline_aborted", callerChannelId: _invokeCallerChannelId });
+    return { ok: false, error: "Pipeline aborted — parent context disconnected" };
   }
 
-  const types     = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
-  const channelId = explicitChannel || String(types[typeName] || types["research"] || "").trim();
-
-  if (!channelId) {
-    return {
-      ok: false,
-      error: `No channel configured for subagent type "${typeName}". Set toolsconfig.getSubAgent.types.${typeName} in core.json.`
-    };
-  }
-
-  const apiUrl       = String(cfg.apiUrl || wo.apiBaseUrl || "http://localhost:3400") + "/api";
+  const _apiBase     = String(cfg.apiUrl || wo.apiBaseUrl || "http://localhost:3400");
   const apiSecretKey = String(cfg.apiSecret || "").trim();
   const apiSecret    = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
-  const timeoutMs    = Math.max(5000, Number.isFinite(Number(cfg.timeoutMs)) ? Number(cfg.timeoutMs) : 120000);
 
   const headers = { "Content-Type": "application/json" };
   if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
@@ -149,70 +143,119 @@ async function getInvoke(args, coreData) {
     fullPayload = `${block}\n\n[YOUR TASK]\n${task}\n[/YOUR TASK]`;
   }
 
-  const body = JSON.stringify({
-    channelID:           channelId,
-    payload:             fullPayload,
-    userId:              String(wo.userId || ""),
-    guildId:             String(wo.guildId || ""),
-    doNotWriteToContext: true,
-    callerChannelId:     callerChannelId || undefined,
-    callerChannelIds:    callerChannelIds.length ? callerChannelIds : undefined,
-    callerTurnId:        callerTurnId || undefined,
-    agentDepth:          agentDepth + 1,
-    agentType:           typeName
-  });
+  const types      = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
+  const agentDepth = Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0;
+  const agentType  = String(wo.agentType || "").trim();
 
-  const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const maxSpawnDepth = Number.isFinite(Number(cfg.maxSpawnDepth)) ? Number(cfg.maxSpawnDepth) : 2;
 
-  try {
-    const res  = await fetch(apiUrl, { method: "POST", headers, body, signal: ctrl.signal });
-    const data = await res.json().catch(() => ({}));
+  if (agentDepth >= maxSpawnDepth) {
+    logSubagent("warn", "getSubAgent", "depth_limit_reached", { agentDepth, maxSpawnDepth, typeName });
+    return { ok: false, error: `Spawn depth limit reached (depth=${agentDepth}, max=${maxSpawnDepth}). This agent may not spawn further subagents.` };
+  }
+  if (agentType && agentType === typeName) {
+    logSubagent("warn", "getSubAgent", "same_type_blocked", { typeName, agentType });
+    return { ok: false, error: `A subagent of type "${typeName}" may not spawn another subagent of the same type.` };
+  }
 
-    if (!res.ok || !data.ok) {
-      return {
-        ok: false,
-        error: data.error || `HTTP ${res.status}`,
-        type: typeName,
-        channel_id: channelId
-      };
-    }
+  const channelId = explicitChannel || String(types[typeName] || types["generic"] || "").trim();
 
-    const result = String(data.response || "").trim();
-    if (!result || result === "[Empty AI response]") return { ok: false, error: "Subagent returned empty response", type: typeName, channel_id: channelId };
-
-    const _primaryUrl = typeof data.primaryImageUrl === "string" && data.primaryImageUrl ? data.primaryImageUrl : null;
-    if (_primaryUrl) wo.primaryImageUrl = _primaryUrl;
-
-    const toolCallLog = Array.isArray(data.toolCallLog) ? data.toolCallLog : undefined;
-
-    if (toolCallLog && toolCallLog.length) {
-      const rows = toolCallLog.map(e => {
-        const icon = e.status === "success" ? "✅" : (e.status === "failed" ? "❌" : "⚠️");
-        const ms   = e.duration_ms >= 1000 ? `${(e.duration_ms / 1000).toFixed(1)}s` : `${e.duration_ms}ms`;
-        const task = e.task ? ` — ${e.task}` : "";
-        return `${icon} **${e.tool}** (${ms})${task}`;
-      });
-      const block = `**${typeName} subtask log:**\n` + rows.join("\n");
-      if (!Array.isArray(wo._pendingSubtaskLogs)) wo._pendingSubtaskLogs = [];
-      wo._pendingSubtaskLogs.push(block);
-    }
-
-    const _resultWithPrimary = _primaryUrl && !result.includes(_primaryUrl)
-      ? `PRIMARY_RESULT: ${_primaryUrl}\n\n${result}`
-      : result;
-
-    return { ok: true, type: typeName, channel_id: channelId, result: _resultWithPrimary };
-  } catch (e) {
-    const isAbort = e?.name === "AbortError";
+  if (!channelId) {
+    logSubagent("error", "getSubAgent", "no_channel_configured", { typeName });
     return {
       ok: false,
-      error: isAbort ? `Subagent timed out after ${timeoutMs}ms` : (e?.message || String(e)),
-      type: typeName,
-      channel_id: channelId
+      error: `No channel configured for subagent type "${typeName}". Set toolsconfig.getSubAgent.types.${typeName} in core.json.`
     };
-  } finally {
-    clearTimeout(timer);
+  }
+
+  if (projectId) {
+    const _spawnJobKeys = listKeys("job:");
+    for (const _spawnKey of _spawnJobKeys) {
+      const _spawnJob = getItem(_spawnKey);
+      if (_spawnJob?.projectId === projectId && _spawnJob?.status === "running") {
+        logSubagent("warn", "getSubAgent", "project_already_running", { projectId, runningJobId: _spawnJob.jobId, typeName });
+        return {
+          ok: false,
+          error: `You are already running inside project ${projectId} (job: ${_spawnJob.jobId}). Do not spawn additional subagents for this project — the full project context is already loaded in your conversation. Work with what you have and return your result directly.`
+        };
+      }
+    }
+  }
+
+  const spawnUrl = _apiBase + String(cfg.asyncSpawnPath || "/api/spawn");
+  const _parentContextChannelID = String(wo.contextChannelID || "").trim();
+
+  logSubagent("info", "getSubAgent", "spawn_sending", {
+    typeName,
+    channelId,
+    projectId:              projectId || null,
+    resume:                 !!projectId,
+    callerChannelId:        callerChannelId || null,
+    callerFlow:             String(wo.callerFlow || wo.flow || "") || null,
+    callerContextChannelID: _parentContextChannelID || null,
+    agentDepth:             agentDepth + 1,
+  });
+
+  const _spawnBody = JSON.stringify({
+    channelID:              channelId,
+    payload:                fullPayload,
+    userId:                 String(wo.userId || ""),
+    guildId:                String(wo.guildId || ""),
+    authorDisplayname:      String(wo.authorDisplayname || ""),
+    projectId:              projectId || undefined,
+    systemPromptAddition:   projectId
+      ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. For tasks you can complete from this context — summarisation, analysis, continuation — respond directly without using tools. Only spawn a subagent via getSubAgent for genuinely new and independent sub-tasks that require a separate tool palette. If the context contains no prior messages, say so and complete the task as best you can.`
+      : undefined,
+    callerChannelId:        callerChannelId || undefined,
+    callerChannelIds:       callerChannelIds.length ? callerChannelIds : undefined,
+    callerTurnId:           callerTurnId || undefined,
+    callerFlow:             String(wo.callerFlow || wo.flow || ""),
+    callerContextChannelID: _parentContextChannelID || undefined,
+    agentDepth:             agentDepth + 1,
+    agentType:              typeName,
+  });
+
+  try {
+    const _spawnTimeoutMs = Math.max(5000, Number.isFinite(Number(cfg.spawnTimeoutMs)) ? Number(cfg.spawnTimeoutMs) : 10000);
+    const _spawnRes  = await fetchWithTimeout(spawnUrl, { method: "POST", headers, body: _spawnBody }, _spawnTimeoutMs);
+    const _spawnData = await _spawnRes.json().catch(() => ({}));
+
+    if (!_spawnRes.ok || !_spawnData.ok) {
+      const _spawnErr = _spawnData.error || `HTTP ${_spawnRes.status}`;
+      logSubagent("error", "getSubAgent", "spawn_http_error", { typeName, channelId, projectId: projectId || null, error: _spawnErr, httpStatus: _spawnRes.status });
+      return { ok: false, error: _spawnErr, type: typeName, channel_id: channelId };
+    }
+
+    log(`Subagent spawned — job: ${_spawnData.jobId}, project: ${_spawnData.projectId}`);
+    logSubagent("info", "getSubAgent", "spawn_ok", {
+      typeName,
+      channelId,
+      jobId:     _spawnData.jobId,
+      projectId: _spawnData.projectId,
+    });
+
+    return {
+      ok:        true,
+      jobId:     _spawnData.jobId,
+      projectId: _spawnData.projectId,
+      status:    "started",
+      message:   "Working on it — result will be delivered when complete.",
+      type:      typeName,
+      channel_id: channelId,
+    };
+  } catch (e) {
+    const isAbort = e?.name === "AbortError";
+    logSubagent("error", "getSubAgent", "spawn_exception", {
+      typeName, channelId, projectId: projectId || null,
+      error: isAbort ? "timeout" : (e?.message || String(e)),
+      isTimeout: isAbort,
+    });
+    return {
+      ok:    false,
+      error: isAbort ? "Spawn request timed out" : (e?.message || String(e)),
+      type:  typeName,
+      channel_id: channelId,
+    };
   }
 }
 

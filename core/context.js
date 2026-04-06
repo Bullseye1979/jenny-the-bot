@@ -289,7 +289,7 @@ function getResolvedTimestamp(workingObject, record) {
 
 export async function setContext(workingObject, record) {
   if (record?.internal_meta === true) return false;
-  const id = String(workingObject?.channelID || "");
+  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
 
@@ -460,7 +460,7 @@ function getBuildMetaFrame(obj, row, rowChannelId, roleLc) {
 
 
 export async function getContext(workingObject) {
-  const baseId = String(workingObject?.channelID || "");
+  const baseId = String(workingObject?.contextChannelID || workingObject?.channelID || "");
   if (!baseId) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
 
@@ -729,7 +729,7 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
 
 
 export async function setPurgeContext(workingObject) {
-  const id = String(workingObject?.channelID || "");
+  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
   const { sql: subSql, args: subArgs, subchannel, subchannelFallback } = getSubchannelFilter(workingObject);
@@ -778,7 +778,7 @@ export async function setPurgeSubchannel(workingObject, subchannelId) {
 
 
 export async function setFreezeContext(workingObject) {
-  const id = String(workingObject?.channelID || "");
+  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
   const { sql: subSql, args: subArgs, subchannel } = getSubchannelFilter(workingObject);
@@ -802,7 +802,7 @@ export async function setFreezeContext(workingObject) {
 
 
 export async function getContextLastSeconds(workingObject, seconds = 60) {
-  const id = String(workingObject?.channelID || "");
+  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
   if (!id) return [];
   try {
     const pool = await getEnsurePool(workingObject);
@@ -826,7 +826,7 @@ export async function getContextLastSeconds(workingObject, seconds = 60) {
 
 
 export async function getContextSince(workingObject, since) {
-  const id = String(workingObject?.channelID || "");
+  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
   if (!id || !since) return [];
   let sinceDate;
   try {

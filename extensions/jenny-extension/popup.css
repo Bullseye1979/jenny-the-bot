@@ -195,6 +195,8 @@ header {
   color: #fff;
   border-bottom-right-radius: 3px;
 }
+.bubble .project-id { display: block; font-size: 0.68em; text-align: right; opacity: 0.42; margin-top: 5px; font-family: monospace; }
+
 .msg.assistant .bubble {
   background: var(--card);
   color: var(--txt);

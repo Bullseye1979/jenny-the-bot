@@ -11,6 +11,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getItem } from "../core/registry.js";
+import { registerSseConnection, unregisterSseConnection } from "../core/async-sse.js";
 
 const MODULE_NAME = "webpage";
 
@@ -140,6 +142,66 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
       const method = String(req.method || "GET").toUpperCase();
       const urlPath = String(req.url.split("?")[0].split("#")[0] || "/");
 
+      if (method === "GET" && urlPath.endsWith("/api/async-results/stream")) {
+        const _arUrlObj   = new URL(req.url, `http://localhost:${port}`);
+        const _arChannel  = String(_arUrlObj.searchParams.get("channelID") || "").trim();
+        if (!_arChannel) return setSendResponse(res, 400, "channelID required");
+        res.writeHead(200, {
+          "Content-Type":      "text/event-stream; charset=utf-8",
+          "Cache-Control":     "no-cache",
+          "Connection":        "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        res.flushHeaders();
+        res.write(": connected\n\n");
+        registerSseConnection(_arChannel, res);
+        const _arKeepalive = setInterval(() => {
+          try { res.write(": keepalive\n\n"); } catch { clearInterval(_arKeepalive); }
+        }, 25000);
+        req.once("close", () => {
+          clearInterval(_arKeepalive);
+          unregisterSseConnection(_arChannel, res);
+          if (!res.writableEnded) res.end();
+        });
+        return;
+      }
+
+      if (method === "GET" && urlPath.endsWith("/api/toolstatus/stream")) {
+        const _sseUrlObj = new URL(req.url, `http://localhost:${port}`);
+        const _sseChannel = String(_sseUrlObj.searchParams.get("channelID") || "").trim();
+        const _ssePollMs = Math.max(300, Number(baseCore?.config?.["webpage-chat"]?.toolStatusPollMs ?? 500) || 500);
+
+        if (!_sseChannel) return setSendResponse(res, 400, "channelID required");
+
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        res.flushHeaders();
+
+        let _sseLast = null;
+
+        const _sseSend = (tool) => {
+          if (!res.writableEnded) res.write(`data: ${JSON.stringify({ tool })}\n\n`);
+        };
+
+        _sseSend("");
+
+        const _sseTimer = setInterval(async () => {
+          if (res.writableEnded) { clearInterval(_sseTimer); return; }
+          try {
+            const val = await getItem("status:tool:" + _sseChannel);
+            const tool = typeof val === "string" ? val.trim() : (typeof val?.name === "string" ? val.name.trim() : "");
+            if (tool !== _sseLast) { _sseLast = tool; _sseSend(tool); }
+          } catch { }
+        }, _ssePollMs);
+
+        req.once("close", () => { clearInterval(_sseTimer); if (!res.writableEnded) res.end(); });
+        return;
+      }
+
       const runCore = createRunCore();
       const wo = runCore.workingObject;
       const log = getPrefixedLogger(wo, import.meta.url);
@@ -150,7 +212,7 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
       wo.turn_id = getNewUlid();
       wo.source = "http";
       wo.aborted = false;
-      req.socket?.on("close", () => { if (!res.writableEnded) wo.aborted = true; });
+      req.socket?.once("close", () => { if (!res.writableEnded) wo.aborted = true; });
       wo.timestamp = nowIso;
 
       wo.http = wo.http || {};

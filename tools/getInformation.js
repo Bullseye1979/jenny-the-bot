@@ -9,6 +9,8 @@
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getInformation";
 const POOLS = new Map();
@@ -499,18 +501,13 @@ async function callInternalLlm(payload, cfg, timeoutMs) {
 
   const body = JSON.stringify({ channelID: channelId, payload, doNotWriteToContext: true });
 
-  const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), Math.max(5000, timeoutMs || DEFAULT_ALIAS_TIMEOUT_MS));
-
   try {
-    const res  = await fetch(apiUrl, { method: "POST", headers, body, signal: ctrl.signal });
+    const res  = await fetchWithTimeout(apiUrl, { method: "POST", headers, body }, Math.max(5000, timeoutMs || DEFAULT_ALIAS_TIMEOUT_MS));
     const data = await res.json().catch(() => ({}));
     if (!data.ok) return { ok: false, text: "" };
     return { ok: true, text: String(data.response || "") };
   } catch {
     return { ok: false, text: "" };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -615,7 +612,6 @@ function getMergeBlocks(blocks1, blocks2) {
 
 
 async function getEnrichTimeline(db, snippetRows, channelIds) {
-  // Fetch timeline periods for all channels
   const placeholders = channelIds.map(() => "?").join(", ");
   let periods = [];
   try {
@@ -628,20 +624,17 @@ async function getEnrichTimeline(db, snippetRows, channelIds) {
     );
     periods = rows || [];
   } catch {
-    // timeline_periods table may not exist or be unreachable — return snippets as-is
     return snippetRows.length
       ? [{ type: "unplaced", snippets: snippetRows }]
       : [];
   }
 
   if (!periods.length) {
-    // No timeline data — return all snippets as a single unplaced block
     return snippetRows.length
       ? [{ type: "unplaced", snippets: snippetRows }]
       : [];
   }
 
-  // Index snippets by channel so we can match them to per-channel periods
   const snippetsByChannel = new Map();
   for (const row of snippetRows) {
     const cid = row.channel_id || "";
@@ -686,7 +679,6 @@ async function getEnrichTimeline(db, snippetRows, channelIds) {
     }
   }
 
-  // Snippets that didn't fall into any period
   const unplaced = snippetRows.filter(row => !placedKeys.has(`${row.channel_id}:${row.rn}`));
   if (unplaced.length) {
     const unplacedTimes = unplaced.map(r => r.ts ? new Date(r.ts).getTime() : null).filter(t => t !== null && Number.isFinite(t));
@@ -703,6 +695,7 @@ async function getEnrichTimeline(db, snippetRows, channelIds) {
 
 
 async function getInformationInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
 
@@ -873,7 +866,6 @@ async function getInformationInvoke(args, coreData) {
 
     const compact = allPrinted.map(({ channel_id, rn, ts, sender, content }) => ({ channel_id, rn, ts, sender, content }));
 
-    // --- Timeline enrichment ---
     const timeline = await getEnrichTimeline(db, compact, channelIds);
 
     const meta = {

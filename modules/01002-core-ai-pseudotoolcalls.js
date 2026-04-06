@@ -13,6 +13,7 @@ import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -51,8 +52,9 @@ function getTryParseJSON(text, fallback = {}) { try { return JSON.parse(text); }
 function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
   if (!s) return false;
-  const last = s[s.length - 1];
-  return !/[.!?:;*"»)\]}>~`]/.test(last);
+  if (/[.!?:;*"»)\]}>~`]$/.test(s)) return false;
+  if (/https?:\/\/\S+$/.test(s)) return false;
+  return true;
 }
 
 
@@ -629,6 +631,11 @@ export default async function getCoreAi(coreData) {
     return coreData;
   }
 
+  if (wo.skipAiCompletions === true) {
+    log("Skipped: skipAiCompletions flag set", "info");
+    return coreData;
+  }
+
   const kiCfg = getKiCfg(wo);
   const userPromptRaw = String(wo.payload ?? "");
   if (!userPromptRaw.trim()) {
@@ -680,9 +687,6 @@ export default async function getCoreAi(coreData) {
       wo.response = "[Empty AI response]";
       return coreData;
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
-
     try {
       const body = {
         model: wo.model,
@@ -691,12 +695,11 @@ export default async function getCoreAi(coreData) {
         max_tokens: kiCfg.maxTokens
       };
 
-      const res = await fetch(wo.endpoint, {
+      const res = await fetchWithTimeout(wo.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
+        body: JSON.stringify(body)
+      }, kiCfg.requestTimeoutMs);
 
       const raw = await res.text();
       if (!res.ok) {
@@ -811,8 +814,6 @@ export default async function getCoreAi(coreData) {
       wo.response = "[Empty AI response]";
       log(isAbort ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       return coreData;
-    } finally {
-      clearTimeout(timer);
     }
   }
 

@@ -787,7 +787,7 @@ function getInpaintHtml(opts) {
       <input
         id="fileInput"
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+        accept="image/png,image/jpeg,image/webp,image/bmp"
         style="display:none;"
       />`;
 

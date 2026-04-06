@@ -5,6 +5,7 @@
 /**********************************************************************************/
 
 import { getItem } from "../core/registry.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getBan";
 
@@ -45,6 +46,7 @@ function getPayload(wo, reason) {
 
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const reasonProvided = getStr(args?.reason || "");
   const effectiveReason = reasonProvided || "Inappropriate behaviour";
 

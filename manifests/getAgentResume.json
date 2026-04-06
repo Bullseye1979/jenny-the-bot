@@ -1,0 +1,18 @@
+{
+  "name": "getAgentResume",
+  "description": "Resumes an async subagent project with a new follow-up task. The subagent automatically has access to all prior context and results from the same project — no need to pass artifacts or URLs. Use this when the user provides a projectId and wants a follow-up, refinement, or to retrieve the last result from a previous async job.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "projectId": {
+        "type": "string",
+        "description": "The projectId returned by the previous getSubAgent(async:true) call. Identifies the project whose context should be resumed."
+      },
+      "task": {
+        "type": "string",
+        "description": "The new follow-up task or instruction for the subagent. The subagent will see all prior context from this project automatically."
+      }
+    },
+    "required": ["projectId", "task"]
+  }
+}

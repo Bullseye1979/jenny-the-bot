@@ -8,6 +8,7 @@ import { getContext } from "../core/context.js";
 import { putItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
 import { readFileSync, appendFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -78,6 +79,7 @@ function getLooksCutOff(text) {
   const s = String(text ?? "").trimEnd();
   if (!s) return false;
   if (/[.!?)\]"'`}]$/.test(s)) return false;
+  if (/https?:\/\/\S+$/.test(s)) return false;
   return true;
 }
 
@@ -309,7 +311,8 @@ async function getSystemContent(wo, kiCfg, moduleCfg) {
   const base = [
     typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
     typeof wo.persona === "string" ? wo.persona.trim() : "",
-    typeof wo.instructions === "string" ? wo.instructions.trim() : ""
+    typeof wo.instructions === "string" ? wo.instructions.trim() : "",
+    typeof wo._deliveryInstructions === "string" ? wo._deliveryInstructions.trim() : ""
   ].filter(Boolean).join("\n\n");
 
   const runtimeInfo = [
@@ -346,8 +349,11 @@ async function getSystemContent(wo, kiCfg, moduleCfg) {
     }
     return lines.join("\n");
   })();
+  const systemPromptAddition = typeof wo?.systemPromptAddition === "string" ? wo.systemPromptAddition.trim() : "";
+
   const parts = [];
   if (base) parts.push(base);
+  if (systemPromptAddition) parts.push(systemPromptAddition);
   parts.push(runtimeInfo);
   parts.push(commonPolicy);
   if (multiChannelNote) parts.push(multiChannelNote);
@@ -360,6 +366,10 @@ export default async function getCoreAi(coreData) {
   const log = getPrefixedLogger(wo, import.meta.url);
   if (!getShouldRunForThisModule(wo)) {
     log(`Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" != "completions"`, "info");
+    return coreData;
+  }
+  if (wo.skipAiCompletions === true) {
+    log("Skipped: skipAiCompletions flag set", "info");
     return coreData;
   }
   const kiCfg = getKiCfg(wo);
@@ -405,8 +415,6 @@ export default async function getCoreAi(coreData) {
       wo.response = "[Empty AI response]";
       return coreData;
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), kiCfg.requestTimeoutMs);
     try {
       const toolsDisabled = wo.__forceNoTools === true || totalToolCalls >= kiCfg.maxToolCalls;
       const body = {
@@ -417,12 +425,11 @@ export default async function getCoreAi(coreData) {
         tools: (!toolsDisabled && toolDefs.length) ? toolDefs : undefined,
         tool_choice: (!toolsDisabled && toolDefs.length) ? kiCfg.toolChoice : undefined
       };
-      const res = await fetch(wo.endpoint, {
+      const res = await fetchWithTimeout(wo.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
+        body: JSON.stringify(body)
+      }, kiCfg.requestTimeoutMs);
       const raw = await res.text();
       if (!res.ok) {
         wo.response = "[Empty AI response]";
@@ -516,8 +523,6 @@ export default async function getCoreAi(coreData) {
         ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
         : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       return coreData;
-    } finally {
-      clearTimeout(timer);
     }
   }
   const reasoningEnabled = wo?.reasoning != null && wo?.reasoning !== false && wo?.reasoning !== 0;

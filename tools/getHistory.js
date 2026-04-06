@@ -7,6 +7,7 @@
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getHistory";
 const POOLS = new Map();
@@ -163,6 +164,7 @@ async function getPreloadUpToCap(
 
 async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const cfgTool = wo?.toolsconfig?.getHistory || {};
   const overrideChannelId = args?.channel_id ? String(args.channel_id).trim() : "";
   const primaryChannelId = overrideChannelId

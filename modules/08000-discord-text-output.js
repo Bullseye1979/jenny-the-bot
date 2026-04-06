@@ -191,6 +191,7 @@ function getAskerDisplay(wo, baseMessage) {
 
 
 function getLikelyQuestion(wo) {
+  if (typeof wo?.question === "string" && wo.question.trim()) return wo.question.trim();
   const v = wo?.payload;
   if (v == null) return "";
   if (typeof v === "string") return v.trim();
@@ -515,12 +516,14 @@ function getJoinLen(parts) {
 }
 
 
-function getFooterText(botName, model, useAiModule, timeStr) {
-  return `${botName} (${model || "-"} / ${useAiModule || "-"}) - ${timeStr}`;
+function getFooterText(botName, model, useAiModule, timeStr, projectId) {
+  const base = `${botName} (${model || "-"} / ${useAiModule || "-"})`;
+  const pid  = projectId ? ` - ${projectId}` : "";
+  return `${base}${pid}`;
 }
 
 
-function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName, model, useAiModule, timeStr, imageUrl }) {
+function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName, model, useAiModule, timeStr, imageUrl, projectId }) {
   const qBlock = getBuildYamlQuestionBlock(askerDisplay, questionText);
   const joined = [qBlock, String(answerChunk || "")].filter(Boolean).join("\n\n") || "\u200b";
   const desc = joined.slice(0, EMBED_DESC_MAX) || "\u200b";
@@ -528,7 +531,7 @@ function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName
   const e = new EmbedBuilder()
     .setColor(COLOR_PRIMARY)
     .setDescription(desc)
-    .setFooter({ text: getFooterText(botName, model, useAiModule, timeStr) })
+    .setFooter({ text: getFooterText(botName, model, useAiModule, timeStr, projectId) })
     .setTimestamp(new Date());
 
   if (imageUrl) e.setImage(getWithCachebuster(imageUrl));
@@ -536,18 +539,18 @@ function getBuildPrimaryEmbed({ askerDisplay, questionText, answerChunk, botName
 }
 
 
-function getBuildAnswerEmbed({ answerChunk, botName, model, useAiModule, timeStr }) {
+function getBuildAnswerEmbed({ answerChunk, botName, model, useAiModule, timeStr, projectId }) {
   const desc = String(answerChunk || "").slice(0, EMBED_DESC_MAX) || "\u200b";
 
   return new EmbedBuilder()
     .setColor(COLOR_PRIMARY)
     .setDescription(desc)
-    .setFooter({ text: getFooterText(botName, model, useAiModule, timeStr) })
+    .setFooter({ text: getFooterText(botName, model, useAiModule, timeStr, projectId) })
     .setTimestamp(new Date());
 }
 
 
-function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botName, model, useAiModule, timeStr, imageUrl, isDM }) {
+function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botName, model, useAiModule, timeStr, imageUrl, isDM, projectId }) {
   const qBlock = getBuildYamlQuestionBlock(askerDisplay, questionText);
 
   const baseMax = isDM ? DM_ANSWER_MAX : GUILD_ANSWER_MAX;
@@ -580,7 +583,8 @@ function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botNa
         model,
         useAiModule,
         timeStr,
-        imageUrl
+        imageUrl,
+        projectId
       }));
     } else {
       embeds.push(getBuildAnswerEmbed({
@@ -588,7 +592,8 @@ function setBuildEmbedsForAnswer({ askerDisplay, questionText, answerText, botNa
         botName,
         model,
         useAiModule,
-        timeStr
+        timeStr,
+        projectId
       }));
     }
   }
@@ -781,11 +786,12 @@ export default async function getDiscordTextOutput(coreData) {
     const questionRaw = getLikelyQuestion(wo);
     const askerDisplay = getAskerDisplay(wo, baseMessage);
 
-    const model = String(wo.model || wo.model || "");
-    const useAiModule = String(wo.useAiModule || wo.useAiModule || "");
+    const model = String(wo.model || "");
+    const useAiModule = String(wo.useAiModule || "");
     const timeStr = getLocalTimeString(new Date(), wo.timezone || "Europe/Berlin");
     const botNameRaw = (typeof wo.botName === "string" && wo.botName.trim()) ? wo.botName.trim() : "Bot";
     const reasoningText = getReasoningText(wo);
+    const projectId = typeof wo.deliverSubagentJob?.projectId === "string" ? wo.deliverSubagentJob.projectId : null;
 
     if (isDM) {
       const embeds = setBuildEmbedsForAnswer({
@@ -797,7 +803,8 @@ export default async function getDiscordTextOutput(coreData) {
         useAiModule,
         timeStr,
         imageUrl: firstImage,
-        isDM: true
+        isDM: true,
+        projectId
       });
 
       const sentEmbeds = await setSendDirectEmbeds(baseChannel, embeds);
@@ -833,7 +840,8 @@ export default async function getDiscordTextOutput(coreData) {
       useAiModule,
       timeStr,
       imageUrl: firstImage,
-      isDM: false
+      isDM: false,
+      projectId
     });
 
     const answerPayloadBase = {

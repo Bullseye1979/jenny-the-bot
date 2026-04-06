@@ -15,6 +15,7 @@ import { putItem } from "../core/registry.js";
 import { saveFile } from "../core/file.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -923,6 +924,11 @@ export default async function getCoreAi(coreData) {
     return coreData;
   }
 
+  if (wo.skipAiCompletions === true) {
+    log("Skipped: skipAiCompletions flag set", "info");
+    return coreData;
+  }
+
   const endpoint = getStr(wo?.endpointResponses, "");
   const apiKey = await getSecret(wo, getStr(wo?.apiKey, ""));
   const model = getStr(wo?.model, "");
@@ -1052,8 +1058,6 @@ export default async function getCoreAi(coreData) {
       return coreData;
     }
     attempts++;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       setLogConsole(`iteration-${iter + 1}-messages-before-request`, { count: messages.length, messages });
@@ -1073,9 +1077,7 @@ export default async function getCoreAi(coreData) {
 
       setLogBig("responses-request-body", { endpoint, model, tool_choice: body.tool_choice, tools: body.tools, input: body.input, instructions: body.instructions, reasoning: body.reasoning }, { toFile: debugOn });
 
-      const f = await getFetch();
-      const res = await f(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: controller.signal });
-      clearTimeout(timer);
+      const res = await fetchWithTimeout(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }, body: JSON.stringify(body) }, timeoutMs);
 
       const rawText = await res.text();
       const hdr = {}; try { res.headers?.forEach?.((v, k) => { hdr[k] = v; }); } catch {}
@@ -1229,7 +1231,6 @@ export default async function getCoreAi(coreData) {
       finalText = [primaryText, linkText].filter(Boolean).join("\n\n");
       break;
     } catch (err) {
-      clearTimeout(timer);
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
       if (isAbort && attempts < maxAttempts) { log(`Retrying due to timeout after ${timeoutMs}ms`, "warn"); continue; }
       wo.response = "[Empty AI response]";

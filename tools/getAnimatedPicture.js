@@ -7,6 +7,7 @@
 
 import { saveFile } from "../core/file.js";
 import { getSecret } from "../core/secrets.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getAnimatedPicture";
 
@@ -152,6 +153,7 @@ async function getRunSinglePrediction({ cfg, model, input, wo }) {
 
 
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo = coreData?.workingObject || {};
   let cfg;
   try {

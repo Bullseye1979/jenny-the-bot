@@ -15,6 +15,7 @@
 import { getContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -256,16 +257,12 @@ function getSystemContentImagePromptRun(personaText, imagePersonaHint, imageProm
 
 
 async function getCallChat(wo, body, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const res = await fetch(wo.endpoint, {
+    const res = await fetchWithTimeout(wo.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
+      body: JSON.stringify(body)
+    }, timeoutMs);
 
     const raw = await res.text();
     if (!res.ok) return { ok: false, status: res.status, statusText: res.statusText, raw };
@@ -279,8 +276,6 @@ async function getCallChat(wo, body, timeoutMs) {
   } catch (e) {
     const isAbort = e?.name === "AbortError" || String(e?.type).toLowerCase() === "aborted";
     return { ok: false, error: isAbort ? "timeout" : (e?.message || String(e)) };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -314,6 +309,11 @@ export default async function getCoreAi(coreData) {
 
   if (!getShouldRunForThisModule(wo)) {
     log(`Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" not handled by ${MODULE_NAME}`, "info");
+    return coreData;
+  }
+
+  if (wo.skipAiCompletions === true) {
+    log("Skipped: skipAiCompletions flag set", "info");
     return coreData;
   }
 

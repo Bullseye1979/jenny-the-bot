@@ -69,7 +69,7 @@ export default async function getWebpageInpaint(coreData) {
   if (!urlPath.startsWith("/documents/")) return coreData;
 
   const extension = path.extname(urlPath).toLowerCase();
-  const isImage = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"].includes(extension);
+  const isImage = [".png", ".jpg", ".jpeg", ".webp", ".bmp"].includes(extension);
 
   const wantRaw = query.raw === "1";
   const bypass = getShouldBypassRedirect(wo, inpaintingHost);

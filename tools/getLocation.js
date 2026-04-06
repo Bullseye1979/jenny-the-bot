@@ -7,6 +7,8 @@
 
 import path from "node:path";
 import { saveFile } from "../core/file.js";
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getLocation";
 
@@ -73,16 +75,10 @@ async function getHttpJson(url, params, timeoutMs = 20000) {
   Object.entries(params || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, String(v));
   });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
-  let res, raw, data;
-  try {
-    res = await fetch(u.toString(), { signal: controller.signal });
-    raw = await res.text();
-    try { data = JSON.parse(raw); } catch { data = null; }
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetchWithTimeout(u.toString(), {}, timeoutMs);
+  const raw = await res.text();
+  let data;
+  try { data = JSON.parse(raw); } catch { data = null; }
   if (!res.ok) {
     const msg = data?.error_message || res.statusText || "HTTP error";
     throw new Error(`HTTP ${res.status} ${msg}`);
@@ -93,17 +89,11 @@ async function getHttpJson(url, params, timeoutMs = 20000) {
 
 
 async function getHttpBuffer(url, timeoutMs = 30000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    const buf = Buffer.from(await res.arrayBuffer());
-    const ct = String(res.headers.get("content-type") || "").toLowerCase();
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    return { buffer: buf, contentType: ct };
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetchWithTimeout(url, {}, timeoutMs);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const ct = String(res.headers.get("content-type") || "").toLowerCase();
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  return { buffer: buf, contentType: ct };
 }
 
 
@@ -189,6 +179,7 @@ async function setDownloadStreetViewToLocal(imageUrl, nameHint, cfg, timeoutMs, 
 
 
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   try {
     const wo = coreData?.workingObject || {};
     const toolCfg = wo?.toolsconfig?.getLocation || {};

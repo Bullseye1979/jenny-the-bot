@@ -1,0 +1,14 @@
+{
+  "name": "getTestA",
+  "description": "Dummy test tool that returns a fake image URL immediately without calling any external API. Use this during testing to simulate image generation without cost.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "label": {
+        "type": "string",
+        "description": "Optional label for the fake image URL."
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -8,6 +8,8 @@
 /*          All operations return { ok, error } instead of throwing.             */
 /**********************************************************************************/
 
+import { getPrefixedLogger } from "../core/logging.js";
+
 const MODULE_NAME    = "getSpotify";
 const SPOTIFY_BASE   = "https://api.spotify.com/v1";
 const DEFAULT_LIMIT  = 20;
@@ -492,6 +494,7 @@ async function getOperationSetVolume(token, args) {
 /* Main entry point called by core-ai-completions when the AI uses this tool.    */
 /**********************************************************************************/
 async function getInvokeInternal(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   try {
     const token     = await getDelegatedToken(coreData);
     const operation = getStr(args?.operation, "").trim();

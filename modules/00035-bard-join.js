@@ -51,14 +51,12 @@ async function setRemoveBardSessionKey(sessionKey) {
 /* ── command detection ────────────────────────────────────────────────────── */
 
 function getDetectCommand(wo, cfg) {
-  // discord-admin: slash command
   if (wo.flow === "discord-admin" && wo.admin?.command) {
     const cmd = String(wo.admin.command).toLowerCase();
     if (cmd === "bardstart" || cmd === "bardstop") return cmd;
     return null;
   }
 
-  // Text-based flows: check wo.message or wo.payload (api flow via webpage-chat proxy)
   const raw = String(wo.message || wo.payload || "").trim();
   if (!raw) return null;
 
@@ -72,7 +70,6 @@ function getDetectCommand(wo, cfg) {
     if (lower.startsWith(pp + "bardstart")) return "bardstart";
     if (lower.startsWith(pp + "bardstop"))  return "bardstop";
   }
-  // Also accept bare word (exact match)
   if (lower === "bardstart") return "bardstart";
   if (lower === "bardstop")  return "bardstop";
 
@@ -123,7 +120,6 @@ export default async function getBardJoin(coreData) {
       return coreData;
     }
 
-    // bardstart
     if (live) {
       try { if (live._trackTimer) clearTimeout(live._trackTimer); } catch {}
       try { await deleteItem(sessionKey); } catch {}

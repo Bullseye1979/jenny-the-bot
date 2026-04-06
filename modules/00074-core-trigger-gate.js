@@ -26,6 +26,11 @@ export default async function getCoreTriggerGate(coreData) {
     return coreData;
   }
 
+  if (wo.bypassTriggerGate === true) {
+    log("Allowed: bypassTriggerGate set", "info", { moduleName: MODULE_NAME });
+    return coreData;
+  }
+
   const triggerRaw = typeof wo.trigger === "string" ? wo.trigger : "";
   const payloadRaw = typeof wo.payload === "string" ? wo.payload : "";
   const windowRaw  = wo.triggerWordWindow;

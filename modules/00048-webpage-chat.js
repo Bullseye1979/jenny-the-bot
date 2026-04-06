@@ -14,6 +14,7 @@
 /*   GET  /chat/api/chats                  — visible chat list for current user      *
 /*   GET  /chat/api/context                — conversation history for a channel      *
 /*   GET  /chat/api/toolstatus?channelID=  — active toolcall name for channel        *
+/*   GET  /chat/api/jobs?channelID=        — async subagent results (consume=true deletes done jobs)    *
 /*   GET  /chat/api/subchannels            — list subchannels for a channel          *
 /*   POST /chat/api/subchannels            — create subchannel                       *
 /*   PATCH /chat/api/subchannels           — rename / update subchannel settings     *
@@ -306,8 +307,9 @@ export default async function getWebpageChat(coreData) {
       const reqBody = {
         channelID,
         payload,
-        userId:   String(wo.userId || wo.webAuth?.userId || "webpage-chat"),
-        guildId:  String(wo.webAuth?.guildId || ""),
+        userId:      String(wo.userId || wo.webAuth?.userId || "webpage-chat"),
+        guildId:     String(wo.webAuth?.guildId || ""),
+        callerFlow:  "webpage-chat",
         ...(subchannelId ? { subchannel: subchannelId } : {})
       };
 
@@ -464,6 +466,31 @@ export default async function getWebpageChat(coreData) {
     return coreData;
   }
 
+  if (method === "GET" && urlPath === basePath + "/api/jobs") {
+    if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    const rawUrl     = String(wo.http?.url ?? "");
+    const urlObj     = new URL(rawUrl, "http://localhost");
+    const channelID  = String(urlObj.searchParams.get("channelID") || "").trim();
+    const consume    = urlObj.searchParams.get("consume") === "true";
+    if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    try {
+      const chatEntry  = getChatEntryByChannelID(chats, channelID) || {};
+      const apiUrl     = String(chatEntry.apiUrl || cfg.apiUrl || "http://localhost:3400/api").trim();
+      const apiSecret  = await getSecret(wo, String(chatEntry.apiSecret || cfg.apiSecret || "").trim());
+      const jobsUrl    = apiUrl.replace(/\/api\/?$/, "") + "/api/jobs?channelID=" + encodeURIComponent(channelID) + (consume ? "&consume=true" : "");
+      const headers    = {};
+      if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
+      const res2 = await fetch(jobsUrl, { headers });
+      const data2 = await res2.json();
+      setJsonResp(wo, res2.ok ? 200 : res2.status, data2);
+    } catch (e) {
+      setJsonResp(wo, 500, { error: String(e?.message || e) });
+    }
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
   if (method === "DELETE" && urlPath === basePath + "/api/subchannels") {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
@@ -604,10 +631,43 @@ function getChatHtml(opts) {
     "<script>\n" +
     "var CHAT_BASE=\"" + chatBase + "\";\n" +
     "var chatChannelID=\"\", chatSubchannelId=\"\", chatMessages=[], chatSending=false, chatSubchannelList=[], chatPendingFile=null;\n" +
-    "var toolPollTimer=null;\n" +
+    "var toolSseSource=null,asyncSseSource=null;\n" +
+    "var jobPollTimer=null,jobPollEmptyCount=0,jobPollDeadline=0;\n" +
     "\n" +
-    "function startToolPoll(channelID,lbl){stopToolPoll();toolPollTimer=setInterval(function(){fetch(CHAT_BASE+\"/api/toolstatus?channelID=\"+encodeURIComponent(channelID)).then(function(r){return r.json();}).then(function(d){lbl.textContent=d&&d.tool?d.tool+\" \":\"\";}).catch(function(){});},"+pollMs+");}\n" +
-    "function stopToolPoll(){if(toolPollTimer){clearInterval(toolPollTimer);toolPollTimer=null;}}\n" +
+    "function startJobPoll(channelID){\n" +
+    "  stopJobPoll();jobPollEmptyCount=0;jobPollDeadline=Date.now()+600000;\n" +
+    "  jobPollTimer=setInterval(function(){\n" +
+    "    if(Date.now()>jobPollDeadline){stopJobPoll();return;}\n" +
+    "    fetch(CHAT_BASE+\"/api/jobs?channelID=\"+encodeURIComponent(channelID)+\"&consume=true\")\n" +
+    "      .then(function(r){return r.json();})\n" +
+    "      .then(function(d){\n" +
+    "        var jobs=d&&Array.isArray(d.jobs)?d.jobs:[];\n" +
+    "        var hasRunning=jobs.some(function(j){return j.status===\"running\";});\n" +
+    "        var hasDone=false;\n" +
+    "        jobs.forEach(function(j){\n" +
+    "          if(j.status===\"done\"&&j.result){\n" +
+    "            if(j.originalRequest)appendMessage(\"user\",j.originalRequest);\n" +
+    "            appendMessage(\"assistant\",j.result);\n" +
+    "            if(j.projectId){var _lb=document.querySelector(\"#chat-msgs .chat-msg.assistant:last-child .chat-bubble\");if(_lb){var _ps=document.createElement(\"span\");_ps.className=\"project-id\";_ps.textContent=\"Project: \"+j.projectId;_lb.appendChild(_ps);}}\n" +
+    "            hasDone=true;\n" +
+    "          } else if(j.status===\"error\"){\n" +
+    "            if(j.originalRequest)appendMessage(\"user\",j.originalRequest);\n" +
+    "            appendMessage(\"assistant\",\"\u26a0\ufe0f Background task failed: \"+(j.error||\"unknown\"));\n" +
+    "            if(j.projectId){var _lb2=document.querySelector(\"#chat-msgs .chat-msg.assistant:last-child .chat-bubble\");if(_lb2){var _ps2=document.createElement(\"span\");_ps2.className=\"project-id\";_ps2.textContent=\"Project: \"+j.projectId;_lb2.appendChild(_ps2);}}\n" +
+    "            hasDone=true;\n" +
+    "          }\n" +
+    "        });\n" +
+    "        if(hasRunning||hasDone){jobPollEmptyCount=0;}else{jobPollEmptyCount++;if(jobPollEmptyCount>=6)stopJobPoll();}\n" +
+    "      }).catch(function(){});\n" +
+    "  },5000);\n" +
+    "}\n" +
+    "function stopJobPoll(){if(jobPollTimer){clearInterval(jobPollTimer);jobPollTimer=null;}}\n" +
+    "\n" +
+    "function startToolPoll(channelID,lbl){stopToolPoll();if(!window.EventSource){return;}toolSseSource=new EventSource(CHAT_BASE+\"/api/toolstatus/stream?channelID=\"+encodeURIComponent(channelID));toolSseSource.onmessage=function(e){try{var d=JSON.parse(e.data);lbl.textContent=d&&d.tool?d.tool+\" \":\"\";}catch(ex){}};toolSseSource.onerror=function(){stopToolPoll();};}\n" +
+    "function stopToolPoll(){if(toolSseSource){toolSseSource.close();toolSseSource=null;}}\n" +
+    "\n" +
+    "function startAsyncSSE(channelID){stopAsyncSSE();if(!window.EventSource||!channelID){return;}asyncSseSource=new EventSource(CHAT_BASE+\"/api/async-results/stream?channelID=\"+encodeURIComponent(channelID));asyncSseSource.onmessage=function(e){try{var d=JSON.parse(e.data);if(d&&d.type===\"async_result\"&&d.response){appendMessage(\"assistant\",d.response);var msgsEl=document.getElementById(\"chat-msgs\");if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;if(d.projectId){var lb=document.querySelector(\"#chat-msgs .chat-msg.assistant:last-child .chat-bubble\");if(lb){var ps=document.createElement(\"span\");ps.className=\"project-id\";ps.textContent=\"Project: \"+d.projectId;lb.appendChild(ps);}}toast(\"\\u23F3 Background task completed\");}}catch(ex){}};asyncSseSource.onerror=function(){};}\n" +
+    "function stopAsyncSSE(){if(asyncSseSource){asyncSseSource.close();asyncSseSource=null;}}\n" +
     "\n" +
     "function toast(msg,ms){var t=document.getElementById(\"toast\");t.textContent=msg;t.classList.add(\"on\");setTimeout(function(){t.classList.remove(\"on\");},ms||2400);}\n" +
     "\n" +
@@ -627,7 +687,9 @@ function getChatHtml(opts) {
     "function onChatSel(channelID){\n" +
     "  chatChannelID=channelID;\n" +
     "  chatSubchannelId=\"\";\n" +
+    "  stopAsyncSSE();\n" +
     "  if(!channelID){document.getElementById(\"chat-msgs\").innerHTML=\"<div class='chat-loading'>Select a channel.</div>\";hideSubUI();return;}\n" +
+    "  startAsyncSSE(channelID);\n" +
     "  loadSubchannels(channelID);\n" +
     "}\n" +
     "\n" +
@@ -884,6 +946,7 @@ function getChatHtml(opts) {
     "    chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
     "    if(d&&d.response!==undefined)appendMessage(\"assistant\",String(d.response||\"\"));\n" +
     "    else if(d&&d.error)toast(\"Error: \"+d.error,6000);\n" +
+    "    startJobPoll(chatChannelID);\n" +
     "  })\n" +
     "  .catch(function(e){\n" +
     "    stopToolPoll();\n" +

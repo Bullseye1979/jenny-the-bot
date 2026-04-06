@@ -1,0 +1,14 @@
+{
+  "name": "getTestB",
+  "description": "Dummy test tool that returns a fake video URL immediately without calling any external API. Use this during testing to simulate video generation without cost.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "label": {
+        "type": "string",
+        "description": "Optional label for the fake video URL."
+      }
+    },
+    "additionalProperties": false
+  }
+}

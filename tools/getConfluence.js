@@ -7,6 +7,8 @@
 /**********************************************************************************/
 
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getConfluence";
 const SPACE_ID_CACHE = new Map();
@@ -56,33 +58,21 @@ function setDefaultDownloadHeaders(){
 
 
 async function getFetchJson(url, opts = {}, timeoutMs = 60000){
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), Math.max(1, timeoutMs));
-  try {
-    const res = await fetch(url, { ...opts, signal: ctrl.signal });
-    const text = await res.text();
-    const ct = String(res.headers.get("content-type") || "");
-    const isJson = ct.includes("application/json");
-    const data = isJson ? (text ? JSON.parse(text) : null) : text;
-    return { ok: res.ok, status: res.status, headers: res.headers, data, raw: text };
-  } finally {
-    clearTimeout(t);
-  }
+  const res = await fetchWithTimeout(url, { ...opts }, timeoutMs);
+  const text = await res.text();
+  const ct = String(res.headers.get("content-type") || "");
+  const isJson = ct.includes("application/json");
+  const data = isJson ? (text ? JSON.parse(text) : null) : text;
+  return { ok: res.ok, status: res.status, headers: res.headers, data, raw: text };
 }
 
 
 async function getFetchBinary(url, opts = {}, timeoutMs = 60000){
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), Math.max(1, timeoutMs));
-  try {
-    const merged = { ...opts };
-    merged.headers = { ...(setDefaultDownloadHeaders()), ...(opts.headers||{}) };
-    const res = await fetch(url, { ...merged, signal: ctrl.signal });
-    const ab = await res.arrayBuffer();
-    return { ok: res.ok, status: res.status, headers: res.headers, data: ab };
-  } finally {
-    clearTimeout(t);
-  }
+  const merged = { ...opts };
+  merged.headers = { ...(setDefaultDownloadHeaders()), ...(opts.headers||{}) };
+  const res = await fetchWithTimeout(url, { ...merged }, timeoutMs);
+  const ab = await res.arrayBuffer();
+  return { ok: res.ok, status: res.status, headers: res.headers, data: ab };
 }
 
 
@@ -576,6 +566,7 @@ function getNormalizeStatus(statusStr){
 
 
 async function getInvoke(args, coreData){
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
   const cfg = wo?.toolsconfig?.getConfluence || {};

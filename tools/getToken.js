@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { ensureUserDir, getUserId } from "../core/file.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 
 function setEnsureDir(absPath) {
@@ -345,6 +346,7 @@ async function setTokenizeAnimated(cfg, inAbs, outAbs, size, ringColor, ringPx, 
 
 
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const MODULE_NAME = "getToken";
   const wo = coreData?.workingObject || {};
   const cfg = getStrictCfg(wo);

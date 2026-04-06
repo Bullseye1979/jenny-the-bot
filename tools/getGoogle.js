@@ -5,8 +5,9 @@
 /*          as a function toolcall.                                                *
 /**********************************************************************************/
 
-import fetch from "node-fetch";
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getGoogle";
 
@@ -32,16 +33,10 @@ async function getHttpJson(url, params, timeoutMs = 20000) {
   Object.entries(params || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, String(v));
   });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
-  let res, raw, data;
-  try {
-    res = await fetch(u.toString(), { signal: controller.signal });
-    raw = await res.text();
-    try { data = JSON.parse(raw); } catch { data = null; }
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetchWithTimeout(u.toString(), {}, timeoutMs);
+  const raw = await res.text();
+  let data;
+  try { data = JSON.parse(raw); } catch { data = null; }
   if (!res.ok) {
     const msg = data?.error?.message || res.statusText || "HTTP error";
     throw new Error(`HTTP ${res.status} ${msg}`);
@@ -64,6 +59,7 @@ function getNormalizeItems(items) {
 
 
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getGoogle || {};
   const apiKey = await getSecret(wo, getStr(toolCfg.apiKey, "")) || null;

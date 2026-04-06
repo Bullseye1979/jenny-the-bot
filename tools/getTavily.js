@@ -5,8 +5,9 @@
 /*          as a function toolcall.                                                *
 /**********************************************************************************/
 
-import fetch from "node-fetch";
 import { getSecret } from "../core/secrets.js";
+import { fetchWithTimeout } from "../core/fetch.js";
+import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getTavily";
 
@@ -28,21 +29,14 @@ function getClamp(n, min, max) {
 
 
 async function getHttpPostJson(url, body, headers, timeoutMs = 20000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
   let res, raw, data;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-    raw = await res.text();
-    try { data = JSON.parse(raw); } catch { data = null; }
-  } finally {
-    clearTimeout(timer);
-  }
+  res = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body)
+  }, Math.max(1, timeoutMs));
+  raw = await res.text();
+  try { data = JSON.parse(raw); } catch { data = null; }
   if (!res.ok) {
     const msg = data?.message || data?.detail || res.statusText || "HTTP error";
     throw new Error(`HTTP ${res.status} ${msg}`);
@@ -64,6 +58,7 @@ function getNormalizeResults(results) {
 
 
 async function getInvoke(args, coreData) {
+  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getTavily || {};
   const apiKey = await getSecret(wo, getStr(toolCfg.apiKey, "")) || null;
