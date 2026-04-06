@@ -251,12 +251,18 @@ body{font-size:13px}
 .ctx-sidebar.collapsed .sidebar-title{justify-content:center;padding:9px 4px}
 .ctx-sidebar.collapsed .sidebar-title-text{display:none}
 .ctx-sidebar.collapsed #channel-list{display:none}
+.ctx-sidebar.collapsed .sidebar-channel-tools{display:none}
 #sidebar-toggle{background:none;border:none;cursor:pointer;padding:0 2px;color:var(--muted);font-size:13px;line-height:1;flex-shrink:0}
 #sidebar-toggle:hover{color:var(--txt)}
+#btn-delete-channels{font-size:14px;line-height:1;padding:2px 4px}
+#btn-delete-channels:disabled{opacity:.35;cursor:not-allowed}
+.sidebar-channel-tools{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 10px;border-bottom:1px solid var(--bdr);font-size:11px;color:var(--muted)}
+.sidebar-channel-tools label{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
 #channel-list{overflow-y:auto;flex:1}
 .channel-item{padding:7px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--bdr);user-select:none}
 .channel-item:hover{background:var(--bg)}
 .channel-item.active{background:#dbeafe;color:var(--acc)}
+.channel-item-left{display:flex;align-items:center;gap:7px;min-width:0;flex:1}
 .ch-id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:12px}
 .ch-cnt{color:var(--muted);font-size:11px;flex-shrink:0}
 .ctx-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -371,6 +377,10 @@ ${dbBanner}
       <div class="sidebar-title">
         <span class="sidebar-title-text">Channels</span>
         <button id="sidebar-toggle" title="Toggle channel list">&#9664;</button>
+      </div>
+      <div class="sidebar-channel-tools">
+        <label><input type="checkbox" id="chk-channel-select-all"> Select all</label>
+        <button class="btn-icon" id="btn-delete-channels" title="Delete selected channels">🗑</button>
       </div>
       <div id="channel-list"></div>
     </div>
@@ -537,20 +547,50 @@ async function loadChannels() {
 function renderChannels(channels) {
   var list = document.getElementById('channel-list');
   list.innerHTML = '';
+  var validIds = new Set(channels.map(function (c) { return String(c.id); }));
+  selectedChannelIds.forEach(function (id) { if (!validIds.has(String(id))) selectedChannelIds.delete(String(id)); });
   var total = channels.reduce(function (s, c) { return s + c.cnt; }, 0);
   addChannelItem(list, null, 'All Channels', total);
-  channels.forEach(function (ch) { addChannelItem(list, ch.id, ch.id, ch.cnt); });
+  channels.forEach(function (ch) { addChannelItem(list, ch.id, ch.id, ch.cnt, true); });
   if (!channels.length) {
     var hint = document.createElement('div');
     hint.style.cssText = 'padding:8px 12px;color:#555;font-size:11px;font-style:italic';
     hint.textContent = total === 0 ? 'No data in DB' : '';
     list.appendChild(hint);
   }
+  syncChannelSelectAll();
+  updateChannelDeleteBtn();
 }
-function addChannelItem(container, id, label, cnt) {
+function addChannelItem(container, id, label, cnt, selectable) {
   var div = document.createElement('div');
   div.className = 'channel-item' + (currentChannel === id ? ' active' : '');
-  div.innerHTML = '<span class="ch-id">' + escHtml(label) + '</span><span class="ch-cnt">' + cnt + '</span>';
+  var left = document.createElement('div');
+  left.className = 'channel-item-left';
+  if (selectable) {
+    var chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.className = 'channel-select-check';
+    chk.dataset.channelId = String(id);
+    chk.checked = selectedChannelIds.has(String(id));
+    chk.addEventListener('click', function (e) { e.stopPropagation(); });
+    chk.addEventListener('change', function () {
+      var cid = String(this.dataset.channelId || '');
+      if (!cid) return;
+      if (this.checked) selectedChannelIds.add(cid); else selectedChannelIds.delete(cid);
+      syncChannelSelectAll();
+      updateChannelDeleteBtn();
+    });
+    left.appendChild(chk);
+  }
+  var idSpan = document.createElement('span');
+  idSpan.className = 'ch-id';
+  idSpan.textContent = label;
+  left.appendChild(idSpan);
+  div.appendChild(left);
+  var cntSpan = document.createElement('span');
+  cntSpan.className = 'ch-cnt';
+  cntSpan.textContent = String(cnt);
+  div.appendChild(cntSpan);
   div.addEventListener('click', function () {
     currentChannel = id; currentPage = 1; isSearchMode = false;
     document.getElementById('search-input').value = ''; lastQ = '';
