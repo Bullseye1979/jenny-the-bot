@@ -187,12 +187,7 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     }
   }
 
-  /* Append project ID tag after context write so TTS can strip it */
-  const _deliveryResponse = (_response && _projectId)
-    ? `${_response}\n\n<PROJECTID>${_projectId}</PROJECTID>`
-    : _response;
-
-  return _deliveryResponse;
+  return _response;
 }
 
 
