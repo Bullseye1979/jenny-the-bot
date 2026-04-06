@@ -1103,7 +1103,7 @@
           }
         },
         {
-          "__description": "Subagent: research ? handles web research, webpage fetches, YouTube, route searches, route planning, and location lookups. Spawned by getSubAgent(type='research'). No getSubAgent in tools to prevent recursion.",
+          "__description": "Subagent: research ? handles web research, webpage fetches, YouTube, route searches, route planning, and location lookups. Summarizing YouTube videos or finding videos from specific creators or with specific content is also handled with this subagent. Spawned by getSubAgent(type='research'). No getSubAgent in tools to prevent recursion.",
           "channelMatch": [
             "subagent-research"
           ],

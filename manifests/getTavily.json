@@ -1,6 +1,6 @@
 {
   "name": "getTavily",
-  "description": "Search the web using Tavily for current news, events, or factual information. Always execute a fresh search — never reuse results from conversation history. If a previous call returned an error or empty result, retry with a revised query or different topic. Supports topic filtering (news, finance) and time range. Do not use it for route planning.",
+  "description": "Search the web using Tavily for current news, events, or factual information. Always execute a fresh search — never reuse results from conversation history. If a previous call returned an error or empty result, retry with a revised query or different topic. Supports topic filtering (news, finance) and time range. \nDo not use it for youtube searches.\nDo not use it for route planning.",
   "parameters": {
     "type": "object",
     "properties": {
