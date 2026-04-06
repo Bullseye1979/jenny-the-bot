@@ -7,9 +7,16 @@
 /**********************************************************************************/
 
 const MODULE_NAME = "getTestB";
+const DEFAULT_DELAY_MS = 30_000;
+
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 
 async function getInvoke(args) {
+  await sleep(DEFAULT_DELAY_MS);
   const label = String(args?.label || "test-video").trim().replace(/[^a-z0-9_-]/gi, "_");
   const fakeUrl = `https://example.com/test/video_${label}_${Date.now()}.mp4`;
 
@@ -18,7 +25,8 @@ async function getInvoke(args) {
     type: "video",
     url: fakeUrl,
     label,
-    message: `Test video generated for label: ${label}`,
+    delayMs: DEFAULT_DELAY_MS,
+    message: `Test video generated for label: ${label} (delay: ${DEFAULT_DELAY_MS}ms)`,
   };
 }
 
