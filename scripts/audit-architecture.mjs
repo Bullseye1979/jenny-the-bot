@@ -33,6 +33,31 @@ function checkImports(file, source) {
   }
 }
 
+function checkForeignConfigAccess(file, source) {
+  if (!(file.startsWith("modules/") || file.startsWith("tools/"))) return;
+  const own = path.basename(file, ".js").replace(/^\d+-/, "");
+  const re = /\bconfig\s*\.?\s*\[\s*["']([^"']+)["']\s*\]/g;
+  let match;
+  while ((match = re.exec(source))) {
+    const key = match[1];
+    if (key.includes("${")) continue;
+    if (key !== own) violations.push(`${file}: accesses foreign config key "${key}" (own key: "${own}")`);
+  }
+}
+
+function checkDirectLlmEndpoints(file, source) {
+  if (!(file.startsWith("modules/") || file.startsWith("tools/"))) return;
+  const forbidden = [
+    "https://api.openai.com/v1/chat/completions",
+    "https://api.openai.com/v1/responses",
+    "/v1/chat/completions",
+    "/v1/responses"
+  ];
+  for (const token of forbidden) {
+    if (source.includes(token)) violations.push(`${file}: contains direct LLM endpoint reference (${token})`);
+  }
+}
+
 function checkVersion(file, source) {
   const m = source.match(/Version\s+([0-9]+\.[0-9]+)/i);
   if (!m) return;
@@ -56,6 +81,8 @@ for (const root of ROOTS) {
   for (const file of listJsFiles(root)) {
     const src = fs.readFileSync(file, "utf8");
     checkImports(file, src);
+    checkForeignConfigAccess(file, src);
+    checkDirectLlmEndpoints(file, src);
     checkVersion(file, src);
   }
 }

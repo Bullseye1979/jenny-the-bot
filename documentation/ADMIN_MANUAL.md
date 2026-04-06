@@ -1670,7 +1670,7 @@ Handles `POST /voice/audio` — converts incoming audio to WAV and sets `wo` fie
 
 #### config.webpage-voice-record
 
-Handles `POST /voice/record` — full meeting recording: transcribes with Whisper, optionally diarizes with GPT, stores transcript in context DB. Reads config from `config["webpage-voice-record"]`.
+Handles `POST /voice/record` — full meeting recording: transcribes audio, optionally runs diarization through the internal API channel, then stores transcript in context DB. Reads config from `config["webpage-voice-record"]`.
 
 ```json
 "webpage-voice-record": {
@@ -1680,8 +1680,10 @@ Handles `POST /voice/record` — full meeting recording: transcribes with Whispe
   "recordModel":          "gpt-4o-transcribe",
   "whisperApiKey":        "",
   "diarize":              true,
-  "model":                "gpt-4o-mini",
-  "apiKey":               "",
+  "diarizationChannelId": "voice-diarize",
+  "apiUrl":               "http://localhost:3400",
+  "apiSecret":            "API_SECRET",
+  "diarizationSystemPrompt": "",
   "clearContextChannels": []
 }
 ```
@@ -1693,9 +1695,11 @@ Handles `POST /voice/record` — full meeting recording: transcribes with Whispe
 | `allowedRoles` | array | `[]` | Roles allowed to use the recorder. Empty = open |
 | `recordModel` | string | `"gpt-4o-transcribe"` | Whisper model for transcription |
 | `whisperApiKey` | string | `wo.apiKey` fallback | API key for the Whisper endpoint |
-| `diarize` | boolean | `true` | Run a GPT speaker-attribution pass after transcription |
-| `model` | string | `wo.model` fallback | Chat model used for diarization |
-| `apiKey` | string | `wo.apiKey` fallback | API key for the diarization chat endpoint |
+| `diarize` | boolean | `true` | Run speaker-attribution pass after transcription |
+| `diarizationChannelId` | string | `""` | Internal API channel used for diarization inference |
+| `apiUrl` | string | `http://localhost:3400` | Internal API base URL for diarization requests |
+| `apiSecret` | string | `""` | Optional bearer token placeholder resolved via `bot_secrets` |
+| `diarizationSystemPrompt` | string | built-in default | Prompt prefix sent before segment list |
 | `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before storing the transcript. Frozen rows are never deleted. |
 
 ---
@@ -2837,7 +2841,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `url` | string | Yes | Absolute URL (http/https) |
-| `user_prompt` | string | Yes | User question/task against the page text |
+| `userPrompt` | string | Yes | User question/task against the page text (legacy alias: `user_prompt`) |
 | `prompt` | string | — | Optional extra system instructions to bias the summary |
 
 **Modes:**
@@ -2876,7 +2880,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `url` | string | Yes | Image URL |
+| `imageUrl` | string | Yes | Image URL (legacy alias: `imageURL`) |
 | `prompt` | string | — | Specific analysis request |
 
 ---
@@ -2941,12 +2945,12 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `mode` | string | — | `"transcript"` (default) or `"search"` |
-| `video_url` | string | For transcript mode | YouTube URL or 11-character video ID |
-| `user_prompt` | string | — | Question/task against the transcript (QA mode) |
+| `videoUrl` | string | For transcript mode | YouTube URL or 11-character video ID (legacy alias: `video_url`) |
+| `userPrompt` | string | — | Question/task against the transcript (QA mode; legacy alias: `user_prompt`) |
 | `metaOnly` | boolean | — | Return only video metadata |
 | `query` | string | For search mode | Search query |
-| `max_results` | number | — | Max search results (1–10) |
-| `safe_search` | string | — | `"none"` \| `"moderate"` \| `"strict"` |
+| `maxResults` | number | — | Max search results (1–10, legacy alias: `max_results`) |
+| `safeSearch` | string | — | `"none"` \| `"moderate"` \| `"strict"` (legacy alias: `safe_search`) |
 
 ---
 
@@ -3026,9 +3030,11 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `channel_id` | string | Channel ID (empty = current channel) |
+| `channelId` | string | Channel ID (empty = current channel; legacy alias: `channel_id`) |
+| `channelIds` | array | Additional channel IDs (legacy alias: `channel_ids`) |
+| `startCtxId` | number | Pagination cursor (legacy aliases: `start_ctx_id`, `start_ctx`) |
 | `limit` | number | Max rows |
-| `user_prompt` | string | Specific question/task against the history |
+| `prompt` | string | Specific question/task against the history |
 | `mode` | string | `"dump"` \| `"summary"` \| `"chunks"` |
 | `include_tools` | boolean | Include tool-call rows |
 
@@ -3043,7 +3049,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `keyword_groups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE for initial candidate selection; parts are used only for proximity scoring within selected clusters. |
+| `keywordGroups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE for initial candidate selection; parts are used only for proximity scoring within selected clusters. Legacy alias: `keyword_groups`. |
 | `keywords` | array | Fallback: plain search phrases. Each phrase is used as a full-form LIKE token (no internal splitting). |
 
 **Search behaviour:**
@@ -4511,7 +4517,7 @@ Configure in `core.json["webpage-bard"]`:
 - `GET /bard/api/nowplaying` — current track info (requires any allowed role)
 - `GET /bard/api/audio` — MP3 audio stream (requires any allowed role)
 - `GET /bard/api/library` — track list + file list (admin only)
-- `POST /bard/api/autotag-upload` — upload + AI-tag MP3 file (admin only). Queries Tavily for song context, calls LLM to generate 6 structured tags (`[location, situation, mood1, mood2, mood3, mood4]`), writes library.xml entry. Requires `config["webpage-bard"].autoTag.enabled = true`.
+- `POST /bard/api/autotag-upload` — upload + AI-tag MP3 file (admin only). Queries Tavily for song context, then calls the **internal API** (`autoTag.apiUrl`) on the configured channel (`autoTag.channelId`) to generate 6 structured tags (`[location, situation, mood1, mood2, mood3, mood4]`). Optional bearer auth comes from `autoTag.apiSecret`. Writes library.xml entry. Requires `config["webpage-bard"].autoTag.enabled = true`.
 - `POST /bard/api/tags` — updates track metadata: title, tags, volume (admin only)
 - `DELETE /bard/api/track` — removes a track from the library and deletes the MP3 file (admin only)
 

@@ -622,6 +622,12 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
 - **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; the chat frontend holds a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelID=<id>` and receives a push event only when the active tool name changes (no per-tick polling from the browser)
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
+- **Subchannels:** the chat UI supports isolated per-channel threads stored in `chat_subchannels`.
+  - `GET /chat/api/subchannels?channelID=<id>` list subchannels
+  - `POST /chat/api/subchannels` create (`{ channelID, name }`)
+  - `PATCH /chat/api/subchannels` rename (`{ subchannelId, name }`)
+  - `DELETE /chat/api/subchannels` delete (`{ subchannelId }`, moves frozen rows to main channel)
+  - Chat send payload can include `subchannel` to scope context isolation
 
 **📖 AI Wiki** (`modules/00052`, `GET /wiki`)
 - Per-channel Fandom-style wiki at `/wiki/{channelId}`; each channel has independent articles
