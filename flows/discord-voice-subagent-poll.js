@@ -57,7 +57,7 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   _wo.authorDisplayname   = String(job.authorDisplayname || "");
   _wo.response            = response;
   _wo.question            = job.callerPayload || "";
-  _wo.deliverSubagentJob  = { projectId: job.projectId || "" };
+  _wo.deliverSubagentJob  = { projectId: job.projectId || "", jobId: job.jobId || "" };
   _wo.skipAiCompletions   = true;
   _wo.doNotWriteToContext = true;
   _wo.bypassTriggerGate   = true;
@@ -146,7 +146,13 @@ export default async function getDiscordVoiceSubagentPollFlow(baseCore, runFlow,
         (async () => {
           try {
             const _deliverFn = async (cFlow, cChannelId, resp, projId) => {
-              const _syntheticJob = { ..._job, callerFlow: cFlow, callerChannelId: cChannelId, jobId: projId || _job.jobId };
+              const _syntheticJob = {
+                ..._job,
+                callerFlow: cFlow,
+                callerChannelId: cChannelId,
+                projectId: projId || _job.projectId,
+                jobId: _job.jobId
+              };
               await deliverViaFlow(_syntheticJob, resp, createRunCore, runFlow, log);
             };
             await runParentChain(_parentProjectId, _job, _result, baseCore, createRunCore, runFlow, _deliverFn, log);

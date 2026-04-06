@@ -137,9 +137,9 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     rawResultLen: _rawText.length,
   });
 
-  _wo._contextSnapshot    = [];
   _wo.payload             = _payload;
   _wo.toolChoice          = "none";
+  _wo.includeHistoryTools = true;
   _wo.doNotWriteToContext = true;
   _wo.__noContinuation    = true;
   _wo.timestamp           = new Date().toISOString();
