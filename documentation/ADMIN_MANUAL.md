@@ -3064,17 +3064,20 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 ### getLocation
 
 **File:** `tools/getLocation.js`
-**Purpose:** Google Maps Street View, interactive panorama, and map URL generation
+**Purpose:** Generates a Street View image, an interactive Street View link, and a Google Maps link for one or more locations. Optional route mode adds turn-by-turn text.
 
 **LLM parameters:**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `location` | string | Yes | Address or coordinates |
-| `heading` | number | — | Viewing direction (0–360 degrees) |
-| `pitch` | number | — | Tilt (-90–90 degrees) |
-| `fov` | number | — | Field of view (10–120 degrees) |
-| `mode` | string | — | `"streetview"` \| `"map"` \| `"both"` |
+| `locations` | string[] | Yes | One or more addresses or `lat,lng` coordinates. The last item is used as destination. |
+| `route` | boolean | No | When `true`, input is interpreted as origin → optional waypoints → destination. |
+| `streetSize` | string | No | Static Street View image size (for example `640x400`). |
+| `streetFov` | number | No | Camera field of view (1–120). |
+| `streetHeading` | number | No | Camera heading in degrees. |
+| `streetPitch` | number | No | Camera pitch in degrees. |
+
+**Compatibility:** legacy snake_case parameter aliases are still accepted (`street_size`, `street_fov`, `street_heading`, `street_pitch`), but camelCase is the canonical interface.
 
 ---
 

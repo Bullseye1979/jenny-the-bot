@@ -3,9 +3,6 @@
 /* Version 1.0                                                                     *
 /* Purpose: Query channel context in MariaDB using fixed-size clusters to build    *
 /*          info snippets ranked by coverage then frequency.                       *
-/*          v1.1: 2-pass alias search — Pass 1 finds rows for original keywords,  *
-/*          a small AI call extracts aliases, Pass 2 searches for those aliases,   *
-/*          results are merged and deduplicated before returning.                  *
 /**********************************************************************************/
 
 import mysql from "mysql2/promise";
@@ -512,7 +509,7 @@ async function callInternalLlm(payload, cfg, timeoutMs) {
 }
 
 
-async function getExtractAliases(contentLines, originalGroups, giCfg, wo) {
+async function getExtractAliases(contentLines, originalGroups, giCfg) {
   const maxAliases = Math.max(1, Math.floor(giCfg.aliasMaxCount ?? DEFAULT_ALIAS_MAX));
   const timeoutMs  = Math.max(5000, Math.floor(giCfg.aliasTimeoutMs ?? DEFAULT_ALIAS_TIMEOUT_MS));
 
@@ -765,13 +762,6 @@ async function getInformationInvoke(args, coreData) {
         }
       };
     }
-
-    /* Strategy: aliases are added as variants to the ORIGINAL groups so that
-       - SQL in each pass searches for ALL accumulated terms together
-       - Scoring treats aliases as variants of the original entity (same coverage slot)
-       - Rows found only via alias still contribute coverage = 1 for the original group
-       allSearched: all terms already covered by previous SQL passes (avoids duplicate queries)
-       latestBlocks: blocks from the most recent pass (source for next alias extraction)  */
     const allSearched    = new Set(groups.flatMap(g => g.variants));
     let allBlocks        = pass1.blocks;
     let prevBlockRowKeys = getBlockRowKeys(pass1.blocks);
@@ -780,17 +770,11 @@ async function getInformationInvoke(args, coreData) {
 
     if (includeAliasSearch && pass1.blocks.length) {
       for (let depth = 0; depth < aliasMaxDepth; depth++) {
-        /* Alias input: rows from the relevant chunks of the current pass.
-           depth=0 → all content rows from pass1 blocks (already scored/relevant chunks).
-           depth>0 → only NEW rows added by the last merge (diff), so the AI focuses on
-                     the new context instead of re-reading already-processed content.
-           Rows are spread evenly across blocks so a large `aliasSampleRows` (default 300)
-           covers the full span of each chunk, not just the first N rows.              */
         const sourceLines = depth === 0
           ? pass1.blocks.flatMap(b => b.lines).filter(l => Number.isInteger(l.rn))
           : getDiffLines(allBlocks, prevBlockRowKeys);
 
-        const newAliases = (await getExtractAliases(sourceLines, groups, giCfg, wo))
+        const newAliases = (await getExtractAliases(sourceLines, groups, giCfg))
           .filter(a => !allSearched.has(a));
 
         if (!newAliases.length) break;
