@@ -20,7 +20,6 @@ const MODULE_NAME = "main";
 const LOGS_DIR    = path.join(path.dirname(fileURLToPath(import.meta.url)), "logs");
 const JSON_ERR_LOG = path.join(LOGS_DIR, "json-error.log");
 
-// --- Pipeline diff logger ---
 const PIPELINE_DIR       = path.join(LOGS_DIR, "pipeline");
 const PIPELINE_BASENAME  = "pipeline";
 const PIPELINE_MAX_BYTES = 2 * 1024 * 1024;
@@ -120,7 +119,6 @@ function getPipelineExcluded(wo) {
     return new RegExp(`^${escaped}$`).test(flow);
   });
 }
-// --- End pipeline diff logger ---
 
 
 function logJsonError(err, context) {

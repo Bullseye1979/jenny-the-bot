@@ -26,7 +26,6 @@ function ensureDir() {
   _dirReady = true;
 }
 
-// Log resolved paths on first load so we can verify in console output
 console.log(`[subagent-logger] LOG_FILE resolved to: ${LOG_FILE}`);
 
 
@@ -50,7 +49,6 @@ export function logSubagent(level, source, event, fields = {}) {
     };
     fs.appendFileSync(LOG_FILE, JSON.stringify(entry) + "\n");
   } catch (e) {
-    // logging must never crash the caller — but do report so the path can be debugged
     process.stderr.write(`[subagent-logger] write failed: ${e?.message || String(e)}\n`);
   }
 }
