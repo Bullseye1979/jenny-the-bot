@@ -503,7 +503,7 @@ export default async function getCoreAi(coreData) {
         wo._fullAssistantText = undefined;
         continue;
       }
-      const cutOff = finish === "length" || getLooksCutOff(chunkText);
+      const cutOff = !wo.__noContinuation && (finish === "length" || getLooksCutOff(chunkText));
       if (cutOff) {
         const cont = {
           role: "user",

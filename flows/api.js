@@ -519,7 +519,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
             agentType: _job.agentType,
             startedAt: _job.startedAt,
             finishedAt: _job.finishedAt,
-            result: _job.result,
+            result: _job.personaResult || _job.result,
             primaryImageUrl: _job.primaryImageUrl || null,
             originalRequest: _job.payload || null,
             authorDisplayname: _job.authorDisplayname || null,

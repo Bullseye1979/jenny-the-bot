@@ -51,6 +51,8 @@ async function deliverToOutput(callerFlow, callerChannelId, response, jobId, pro
   } else {
     logSubagent("info", "webpage-poll", "sse_push_ok", { callerChannelId, sent: _sent, jobId });
   }
+
+  return _sent;
 }
 
 
@@ -88,6 +90,7 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
       if (_job.status !== "done" && _job.status !== "error") continue;
       if (!_job.callerChannelId) continue;
       if (!getIsHandledFlow(_job.callerFlow)) continue;
+      if (_job.personaResult) continue;
 
       logSubagent("info", "webpage-poll", "job_found", {
         jobId:          _job.jobId,
@@ -129,18 +132,20 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
         ? String(_job.result || "").trim()
         : `Background task failed: ${_job.error || "unknown error"}`;
 
+      const _capturedJob = _job;
+      const _capturedKey = _key;
       (async () => {
         try {
           const _response = await runPersonaPass(
             {
-              callerChannelId:   _job.callerChannelId,
-              callerFlow:        _job.callerFlow,
-              userId:            _job.userId,
-              guildId:           _job.guildId,
-              authorDisplayname: _job.authorDisplayname,
-              agentType:         _job.agentType,
-              jobId:             _job.jobId,
-              projectId:         _job.projectId,
+              callerChannelId:   _capturedJob.callerChannelId,
+              callerFlow:        _capturedJob.callerFlow,
+              userId:            _capturedJob.userId,
+              guildId:           _capturedJob.guildId,
+              authorDisplayname: _capturedJob.authorDisplayname,
+              agentType:         _capturedJob.agentType,
+              jobId:             _capturedJob.jobId,
+              projectId:         _capturedJob.projectId,
             },
             _rawResult,
             createRunCore,
@@ -148,10 +153,18 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
             log
           );
           if (_response) {
-            await deliverToOutput(_job.callerFlow, _job.callerChannelId, _response, _job.jobId, _job.projectId, _job.agentType, log);
+            const _sent = await deliverToOutput(_capturedJob.callerFlow, _capturedJob.callerChannelId, _response, _capturedJob.jobId, _capturedJob.projectId, _capturedJob.agentType, log);
+            if (_sent === 0) {
+              try {
+                await putItem({ ..._capturedJob, personaResult: _response, status: "done" }, _capturedKey);
+                logSubagent("info", "webpage-poll", "sse_miss_fallback_saved", { jobId: _capturedJob.jobId, callerChannelId: _capturedJob.callerChannelId });
+              } catch (e) {
+                logSubagent("error", "webpage-poll", "sse_miss_fallback_failed", { jobId: _capturedJob.jobId, error: e?.message || String(e) });
+              }
+            }
           }
         } catch (e) {
-          logSubagent("error", "webpage-poll", "delivery_failed", { jobId: _job.jobId, error: e?.message || String(e) });
+          logSubagent("error", "webpage-poll", "delivery_failed", { jobId: _capturedJob.jobId, error: e?.message || String(e) });
         }
       })();
     }

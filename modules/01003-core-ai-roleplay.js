@@ -368,7 +368,7 @@ export default async function getCoreAi(coreData) {
     textOut += (textOut ? "\n" : "") + chunkText;
     pass1Messages.push({ role: "assistant", content: chunkText });
 
-    const cutOff = pass1.finish === "length" || getLooksCutOff(chunkText);
+    const cutOff = !wo.__noContinuation && (pass1.finish === "length" || getLooksCutOff(chunkText));
     if (cutOff) {
       pass1Messages.push({ role: "user", content: "continue" });
       log(`Continue triggered: finish_reason="${pass1.finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`, "info");

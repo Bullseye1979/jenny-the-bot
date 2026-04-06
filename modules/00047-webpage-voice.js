@@ -338,13 +338,13 @@ if (channelSelect) {
   if (savedSel && channelSelect.querySelector('option[value="' + CSS.escape(savedSel) + '"]')) channelSelect.value = savedSel;
   function updateCustomRow() { if (customRow) customRow.style.display = (channelSelect.value === '__custom__') ? '' : 'none'; }
   updateCustomRow();
-  channelSelect.addEventListener('change', function() { localStorage.setItem('voiceChannelSel', channelSelect.value); updateCustomRow(); var _cid=getSelectedChannelId();if(_cid)startAsyncSSE(_cid); });
+  channelSelect.addEventListener('change', function() { localStorage.setItem('voiceChannelSel', channelSelect.value); updateCustomRow(); var _cid=getSelectedChannelId();if(_cid){startAsyncSSE(_cid);startJobPoll(_cid);} });
 }
 if (channelInput) {
   channelInput.value = localStorage.getItem('voiceChannelId') || '';
-  channelInput.addEventListener('change', function() { var _cid=channelInput.value.trim(); localStorage.setItem('voiceChannelId', _cid); if(_cid)startAsyncSSE(_cid); });
+  channelInput.addEventListener('change', function() { var _cid=channelInput.value.trim(); localStorage.setItem('voiceChannelId', _cid); if(_cid){startAsyncSSE(_cid);startJobPoll(_cid);} });
 }
-(function() { var _cid = getSelectedChannelId(); if (_cid) startAsyncSSE(_cid); })();
+(function() { var _cid = getSelectedChannelId(); if (_cid) { startAsyncSSE(_cid); startJobPoll(_cid); } })();
 
 /* mic enumeration */
 function populateMics() {
@@ -439,6 +439,28 @@ function startAsyncSSE(channelId) {
 function stopAsyncSSE() {
   if (asyncSseSource) { asyncSseSource.close(); asyncSseSource = null; }
 }
+var jobPollTimer = null, jobPollEmptyCount = 0, jobPollDeadline = 0;
+function startJobPoll(channelId) {
+  stopJobPoll();
+  if (!channelId) return;
+  jobPollEmptyCount = 0; jobPollDeadline = Date.now() + 600000;
+  jobPollTimer = setInterval(function() {
+    if (Date.now() > jobPollDeadline) { stopJobPoll(); return; }
+    fetch('/voice/api/jobs?channelID=' + encodeURIComponent(channelId) + '&consume=true')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var jobs = d && Array.isArray(d.jobs) ? d.jobs : [];
+        var hasRunning = jobs.some(function(j) { return j.status === 'running'; });
+        var hasDone = false;
+        jobs.forEach(function(j) {
+          if (j.status === 'done' && j.result) { showTranscript('', j.result); hasDone = true; }
+          else if (j.status === 'error') { showTranscript('', '\u26a0\ufe0f Background task failed: ' + (j.error || 'unknown')); hasDone = true; }
+        });
+        if (hasRunning || hasDone) { jobPollEmptyCount = 0; } else { jobPollEmptyCount++; if (jobPollEmptyCount >= 6) stopJobPoll(); }
+      }).catch(function() {});
+  }, 5000);
+}
+function stopJobPoll() { if (jobPollTimer) { clearInterval(jobPollTimer); jobPollTimer = null; } }
 
 function playNextAudio() {
   if (audioPlaying || !audioQueue.length) return;
@@ -1162,6 +1184,25 @@ export default async function getWebpageVoice(coreData) {
     const TRANSCRIBE_LANG = String(cfg.transcribeLanguage || "auto");
 
     try {
+      if (method === "GET" && urlPath === ROUTE_API + "/jobs") {
+        const _jChanID  = params.get("channelID") || "";
+        const _jConsume = params.get("consume") === "true";
+        if (!_jChanID) { sendJson(res, 400, { error: "channelID_required" }); wo.jump = true; wo.jumpReason = "api_handled"; return coreData; }
+        const _jApiBase   = String(cfg.apiBaseUrl || "http://localhost:3400/api").replace(/\/api\/?$/, "");
+        const _jApiSecret = await getSecret(wo, String(cfg.apiSecret || "").trim());
+        const _jUrl       = _jApiBase + "/api/jobs?channelID=" + encodeURIComponent(_jChanID) + (_jConsume ? "&consume=true" : "");
+        const _jHeaders   = {};
+        if (_jApiSecret) _jHeaders["Authorization"] = `Bearer ${_jApiSecret}`;
+        try {
+          const _jRes  = await fetch(_jUrl, { headers: _jHeaders });
+          const _jData = await _jRes.json().catch(() => ({ error: "invalid_response" }));
+          sendJson(res, _jRes.ok ? 200 : _jRes.status, _jData);
+        } catch (e) {
+          sendJson(res, 500, { error: String(e?.message || e) });
+        }
+        wo.jump = true; wo.jumpReason = "api_handled"; return coreData;
+      }
+
       let pool = null;
       try { pool = await getDiarizePool(wo); } catch (e) {
         sendJson(res, 500, { error: "db_unavailable", detail: e?.message });

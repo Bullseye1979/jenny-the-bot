@@ -794,7 +794,7 @@ export default async function getCoreAi(coreData) {
         continue;
       }
 
-      const cutOff = finish === "length" || getLooksCutOff(cleanAssistantText);
+      const cutOff = !wo.__noContinuation && (finish === "length" || getLooksCutOff(cleanAssistantText));
       if (cutOff) {
         /* Instruct model not to embed new tool calls in the continuation pass */
         const defaultContinuationPrompt = "Continue exactly where you stopped. Do not call any more tools. Output only the missing text continuation.";

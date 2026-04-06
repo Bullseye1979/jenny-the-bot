@@ -457,6 +457,7 @@ function init() {
 
     renderEmpty();
     startAsyncSSE();
+    startJobPoll();
 
     /* ── Auth session check ── */
     function setAuthBar(sess) {

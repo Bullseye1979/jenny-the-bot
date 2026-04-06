@@ -1203,7 +1203,7 @@ export default async function getCoreAi(coreData) {
 
       const truncated = getWasTruncatedOutput(data);
       const looksCutOff = getLooksCutOff(assistantText);
-      const cutOff = truncated || looksCutOff;
+      const cutOff = !wo.__noContinuation && (truncated || looksCutOff);
       if (cutOff) {
         /* Guard against reasoning models exhausting max_output_tokens with no visible output.
          * If the model produced no visible text AND the API says truncated (reasoning ate all tokens),

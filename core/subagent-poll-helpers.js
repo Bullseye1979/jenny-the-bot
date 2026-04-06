@@ -12,7 +12,7 @@
 /************************************************************************************/
 
 import { getItem }              from "./registry.js";
-import { setContext, getContext } from "./context.js"; // setContext used in runParentChain
+import { setContext, getContext } from "./context.js";
 import { logSubagent }           from "./subagent-logger.js";
 
 
@@ -32,9 +32,6 @@ import { logSubagent }           from "./subagent-logger.js";
 export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log) {
   const { callerChannelId, callerFlow, userId, guildId, authorDisplayname, agentType, jobId } = ctx;
 
-  // Build an in-memory context snapshot: load the persistent context, then append
-  // a synthetic assistant tool-call + tool result so the AI sees the subagent output
-  // as a natural continuation — without writing anything to persistent context.
   const _rc = createRunCore();
   const _wo = (_rc.workingObject ||= {});
   _wo.channelID             = callerChannelId;
@@ -45,13 +42,6 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
   _wo.userId                = String(userId || "");
   _wo.guildId               = String(guildId || "");
   _wo.authorDisplayname     = String(authorDisplayname || "");
-
-  let _snapshot = [];
-  try {
-    _snapshot = await getContext(_wo) || [];
-  } catch (e) {
-    logSubagent("warn", "poll-delivery", "persona_pass_ctx_load_failed", { jobId, error: e?.message || String(e) });
-  }
 
   const _projectId = String(ctx.projectId || "");
   const _rawText = String(rawResult || "").trim();
@@ -64,22 +54,21 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     rawResultPreview: _rawText.slice(0, 120),
   });
 
-  // Put the result directly in payload (not as a synthetic tool exchange) so it
-  // is always visible to the AI regardless of includeHistoryTools setting.
   const _payload = `[Background task completed]\n\n${_resultContent}${_projectSuffix}\n\nPresent this result to the user in your current character and persona. Include ALL URLs, links, ARTIFACTS blocks, and the Project ID verbatim — do not omit or paraphrase them.`;
 
   logSubagent("info", "poll-delivery", "persona_pass_start", {
     jobId,
     callerChannelId,
     callerFlow,
-    snapshotLen:  _snapshot.length,
     rawResultLen: _rawText.length,
   });
 
-  _wo._contextSnapshot      = _snapshot;
-  _wo.payload               = _payload;
-  _wo.toolChoice            = "none";
-  _wo.timestamp             = new Date().toISOString();
+  _wo._contextSnapshot    = [];
+  _wo.payload             = _payload;
+  _wo.toolChoice          = "none";
+  _wo.doNotWriteToContext = true;
+  _wo.__noContinuation    = true;
+  _wo.timestamp           = new Date().toISOString();
 
   const _startMs = Date.now();
 
@@ -101,6 +90,15 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     durationMs:  Date.now() - _startMs,
     responseLen: _response.length,
   });
+
+  if (_response) {
+    try {
+      await setContext(_wo, { role: "assistant", content: _response });
+    } catch (e) {
+      logSubagent("warn", "poll-delivery", "persona_pass_ctx_write_failed", { jobId, error: e?.message || String(e) });
+    }
+  }
+
   return _response;
 }
 
