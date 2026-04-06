@@ -448,7 +448,7 @@ export default async function getCoreAi(coreData) {
   wo._contextPersistQueue.push(getWithTurnId(assistantPass1, wo));
 
   wo.reasoningSummary = undefined;
-  wo.response = finalText || "[Empty AI response]";
+  wo.response = finalText || "I could not generate a visible answer in this turn. Please ask again and I will answer directly.";
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");

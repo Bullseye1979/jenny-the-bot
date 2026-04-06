@@ -1346,7 +1346,13 @@ export default async function getCoreAi(coreData) {
 
   setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: wo._contextPersistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
 
-  wo.response = finalText || "[Empty AI response]";
+  if (finalText) {
+    wo.response = finalText;
+  } else if (subagentLog.length) {
+    wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
+  } else {
+    wo.response = "[Empty AI response]";
+  }
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");
