@@ -94,6 +94,16 @@ function getWithTurnId(rec, wo) {
 }
 
 
+function getToolStatusScope(wo) {
+  const explicit =
+    String(wo?.toolcallScope ?? wo?.toolStatusScope ?? wo?.statusScope ?? "").trim();
+  if (explicit) return explicit;
+  const callerFlow = String(wo?.callerFlow || "").trim();
+  if (callerFlow) return callerFlow;
+  return String(wo?.flow || "").trim();
+}
+
+
 function getKiCfg(wo) {
   const includeHistory = getBool(wo?.includeHistory, true);
   const includeHistoryTools = getBool(wo?.includeHistoryTools, false);
@@ -274,13 +284,14 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
   const _currentFlow = String(coreData?.workingObject?.flow || "");
-  const _callerFlowVal = String(coreData?.workingObject?.callerFlow || "");
-  const _isApiFlow = _currentFlow === "api";
-  const _globalStatusFlow = !_isApiFlow ? _currentFlow : (_callerFlowVal.startsWith("discord") ? _callerFlowVal : null);
+  const _statusScope = getToolStatusScope(coreData?.workingObject || {});
+  const _hasGlobalStatus = _currentFlow !== "api" || !!_statusScope;
   if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
   const _myGen = ++wo._statusToolGen;
   try {
-    if (_globalStatusFlow !== null) { try { await putItem({ name, flow: _globalStatusFlow }, "status:tool"); } catch {} }
+    if (_hasGlobalStatus) {
+      try { await putItem({ name, flow: _currentFlow, scope: _statusScope }, "status:tool"); } catch {}
+    }
     if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
     if (_callerCh && _callerCh !== _tcCh) try { await putItem(name, "status:tool:" + _callerCh); } catch {}
     const result = await tool.invoke(args, coreData);
@@ -300,7 +311,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       : 800;
     setTimeout(() => {
       if (wo._statusToolGen !== _myGen) return;
-      if (_globalStatusFlow !== null) { try { putItem("", "status:tool"); } catch {} }
+      if (_hasGlobalStatus) { try { putItem("", "status:tool"); } catch {} }
       if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
       if (_callerCh && _callerCh !== _tcCh) try { putItem("", "status:tool:" + _callerCh); } catch {}
     }, Math.max(0, delayMs));
