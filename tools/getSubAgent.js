@@ -238,13 +238,13 @@ async function getInvoke(args, coreData) {
     return {
       ok:        true,
       jobId:     _spawnData.jobId,
+      projectId: _spawnData.projectId,
       status:    "started",
       message:   "Working on it — result will be delivered when complete.",
       type:      typeName,
       channel_id: channelId,
       _meta: {
         event: "subagent_started",
-        projectId: _spawnData.projectId,
         visibility: "internal"
       }
     };

@@ -42,7 +42,8 @@ function getSubagentToolOutput(job, rawResult) {
     event: "subagent_result",
     jobId: String(job?.jobId || "").trim() || "unknown",
     agentType: String(job?.agentType || "").trim() || "unknown",
-    status: String(job?.status || "").trim() || "unknown"
+    status: String(job?.status || "").trim() || "unknown",
+    ...(projectId ? { projectId } : {})
   };
 
   if (isDone) {
@@ -54,8 +55,7 @@ function getSubagentToolOutput(job, rawResult) {
 
   return {
     ...base,
-    error: String(job?.error || rawResult || "unknown error"),
-    ...(projectId ? { _meta: { projectId } } : {})
+    error: String(job?.error || rawResult || "unknown error")
   };
 }
 
@@ -254,6 +254,7 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
   _wo.agentDepth        = Number(_project.agentDepth || 0);
   _wo.agentType         = _project.agentType || "";
   _wo.toolChoice        = "none";
+  _wo.includeHistoryTools = true;
   _wo.doNotWriteToContext = true;
   _wo.timestamp         = new Date().toISOString();
 
