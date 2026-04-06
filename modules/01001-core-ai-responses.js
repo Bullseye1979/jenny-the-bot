@@ -1221,10 +1221,30 @@ export default async function getCoreAi(coreData) {
         if (assistantText) accumulatedText += (accumulatedText ? "\n" : "") + assistantText;
       }
 
+      let persistedToolCallRequest = false;
       if (!toolsDisabled) {
         let ranAnyTool = false;
 
         if (hasToolCalls && genericTools.length && totalToolCalls < maxToolCalls) {
+          const assistantToolMsg = {
+            role: "assistant",
+            authorName: getAssistantAuthorName(wo),
+            content: "",
+            tool_calls: toolCalls.map((tc) => ({
+              id: tc?.call_id || tc?.id || `${tc?.name || "tool"}:${createHash("sha256").update(getToString(tc?.arguments ?? "")).digest("hex")}`,
+              type: "function",
+              function: {
+                name: tc?.name || "",
+                arguments: (typeof tc?.arguments === "string") ? tc.arguments : JSON.stringify(tc?.arguments ?? {})
+              }
+            })).filter((tc) => tc.id && tc?.function?.name)
+          };
+          if (assistantToolMsg.authorName == null) delete assistantToolMsg.authorName;
+          if (assistantToolMsg.tool_calls.length) {
+            wo._contextPersistQueue.push(getWithTurnId(assistantToolMsg, wo));
+            persistedToolCallRequest = true;
+          }
+
           wo._fullAssistantText = accumulatedText || assistantText || "";
 
           for (const tc of toolCalls) {
@@ -1256,6 +1276,12 @@ export default async function getCoreAi(coreData) {
 
             const outputStr = getToString(result?.content ?? "");
             messages.push({ type: "function_call_output", call_id, output: outputStr });
+            wo._contextPersistQueue.push(getWithTurnId({
+              role: "tool",
+              tool_call_id: call_id,
+              name: String(tc?.name || ""),
+              content: outputStr
+            }, wo));
           }
 
           wo._fullAssistantText = undefined;
@@ -1267,6 +1293,10 @@ export default async function getCoreAi(coreData) {
           setEnsureFinalSynthesisPrompt(messages, wo);
           continue;
         }
+      }
+
+      if (hasToolCalls && !persistAssistantContent.length && persistedToolCallRequest) {
+        log("Persisted assistant tool_call request + tool output pair for context continuity.", "info");
       }
 
       if (toolsDisabled && hasToolCalls) {
