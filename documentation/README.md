@@ -145,6 +145,20 @@ The terminal dashboard will start, showing live flow status, memory usage, and p
 
 Each incoming event (Discord message, HTTP request, cron tick, etc.) creates a **`workingObject`** — a plain JavaScript object that is passed sequentially through every module in the pipeline. Modules read from and write to this object. The pipeline is ordered numerically by module filename prefix.
 
+### Architecture Compliance Baseline (v1.0)
+
+The current codebase follows these baseline rules:
+
+- Modules and tools import reusable logic from `core/` or `shared/`, not from other modules/tools.
+- Modules and tools read their own configuration section (`toolsconfig.<toolName>` or `config.<moduleName>`) and shared runtime defaults from `workingObject`.
+- Tool contracts are defined in `manifests/*.json`; runtime behavior must stay aligned with those manifests.
+- Secrets are resolved via `core/secrets.js` (`getSecret`) instead of plaintext values.
+- File writes from tools should use helpers in `core/file.js`.
+- LLM requests from tools/modules are routed through the internal API (`http://localhost:3400`) unless the feature is explicitly non-LLM (for example image/video generation or transcription providers).
+- Public tool parameters should use camelCase. Legacy snake_case aliases may still be accepted for backward compatibility.
+
+Subagent orchestration updates are standardized as **1.0**, including async spawn/resume behavior (`getSubAgent`, `getAgentResume`) and explicit project-context continuation.
+
 ---
 
 ## Configuration Reference (`core.json`)

@@ -1,6 +1,6 @@
 /**********************************************************************************/
 /* filename: getSubAgent.js                                                        *
-/* Version 1.1                                                                     *
+/* Version 1.0                                                                     *
 /* Purpose: Spawns an isolated AI subagent as a fire-and-forget async job.        *
 /*          Always async — result is delivered back to the originating channel     *
 /*          when complete. For simple single-step tasks use direct tools instead.  *
