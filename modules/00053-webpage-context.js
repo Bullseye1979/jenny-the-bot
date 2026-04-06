@@ -17,6 +17,7 @@
 /*   PATCH /context/api/record        — update a single field of a row            */
 /*   DELETE /context/api/delete       — bulk delete by ctx_id list                */
 /*   DELETE /context/api/delete-channel — bulk delete by channelID                */
+/*   DELETE /context/api/delete-channels — bulk delete by channelID list          */
 /*   POST /context/api/replace/find   — find search & replace matches             */
 /*   POST /context/api/replace/apply  — apply one replacement                     */
 /*   POST /context/api/replace/all    — replace all matches in one call           */
@@ -47,7 +48,15 @@ function getBasePath(cfg) {
 }
 
 function setHtmlResp(wo, html) {
-  wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: html };
+  wo.http.response = {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Pragma": "no-cache"
+    },
+    body: html
+  };
 }
 
 function setCssResp(wo, css) {
@@ -149,6 +158,19 @@ async function dbDeleteChannel(pool, channelID, { protectFrozen = true } = {}) {
   const [r] = await pool.execute(
     `DELETE FROM ${CTX_TABLE} WHERE id = ? ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
     [chan]
+  );
+  return r.affectedRows;
+}
+
+async function dbDeleteChannels(pool, channelIDs, { protectFrozen = true } = {}) {
+  const ids = Array.isArray(channelIDs)
+    ? channelIDs.map(v => getStr(v).trim()).filter(Boolean)
+    : [];
+  if (!ids.length) return 0;
+  const ph = ids.map(() => "?").join(",");
+  const [r] = await pool.execute(
+    `DELETE FROM ${CTX_TABLE} WHERE id IN (${ph}) ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
+    ids
   );
   return r.affectedRows;
 }
@@ -316,9 +338,6 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .form-row textarea:focus{border-color:var(--acc)}
 .checkbox-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
 .checkbox-row label{display:flex;align-items:center;gap:5px;cursor:pointer}
-.toolbar-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.channel-delete-input{padding:5px 8px;background:var(--bg);border:1px solid var(--bdr);color:var(--txt);border-radius:4px;font-size:12px;min-width:180px}
-.channel-delete-input:focus{border-color:var(--acc);outline:none}
 .modal-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .sr-count{font-size:12px;color:var(--muted);margin-left:auto}
 .sr-warn{font-size:11px;color:#92400e;padding:4px 0}
@@ -397,10 +416,6 @@ ${dbBanner}
           <input type="checkbox" id="chk-protect-frozen" checked style="cursor:pointer"> Frozen-Schutz
         </label>
         <div style="flex:1"></div>
-        <div class="toolbar-group">
-          <input id="delete-channel-id" class="channel-delete-input" type="text" placeholder="channelID für Kanal-Löschung">
-          <button class="btn-danger" id="btn-delete-channel">Delete channelID</button>
-        </div>
         <div class="field-toggle">
           <button class="btn-secondary" id="btn-fields">Fields ▾</button>
           <div id="field-panel" class="field-panel hidden"></div>
@@ -503,6 +518,11 @@ var srSkippedSet = new Set();
 var editCtxId = null;
 var editOrig = {};
 var protectFrozen = true;
+var selectedChannelIds = (function () {
+  if (typeof window === 'undefined') return new Set();
+  if (!(window.__ctxSelectedChannelIds instanceof Set)) window.__ctxSelectedChannelIds = new Set();
+  return window.__ctxSelectedChannelIds;
+})();
 
 async function api(path, method, body) {
   var opts = { method: method || 'GET', headers: {} };
@@ -530,6 +550,19 @@ function updateDeleteBtn() { document.getElementById('btn-delete-sel').disabled 
 function getProtectFrozen() {
   var el = document.getElementById('chk-protect-frozen');
   return !!(el && el.checked);
+}
+function updateChannelDeleteBtn() {
+  var btn = document.getElementById('btn-delete-channels');
+  if (btn) btn.disabled = selectedChannelIds.size === 0;
+}
+function syncChannelSelectAll() {
+  var allChecks = Array.from(document.querySelectorAll('.channel-select-check'));
+  var selectable = allChecks.length;
+  var selected = allChecks.filter(function (c) { return c.checked; }).length;
+  var master = document.getElementById('chk-channel-select-all');
+  if (!master) return;
+  master.checked = selectable > 0 && selected === selectable;
+  master.indeterminate = selected > 0 && selected < selectable;
 }
 
 async function loadChannels() {
@@ -774,6 +807,23 @@ async function doDelete() {
     setStatus('Deleted: ' + data.deleted + ' entries.');
     selectedIds.clear(); updateDeleteBtn(); loadAll();
   } catch (e) { alert('Error deleting: ' + e.message); }
+}
+
+async function doDeleteChannels() {
+  var channelIds = Array.from(selectedChannelIds);
+  if (!channelIds.length) { alert('Bitte mindestens einen channel auswählen.'); return; }
+  var prot = getProtectFrozen();
+  var msg = prot
+    ? ('Delete non-frozen entries in ' + channelIds.length + ' selected channel(s)? Frozen entries remain.')
+    : ('Delete ALL entries in ' + channelIds.length + ' selected channel(s) including frozen?');
+  if (!confirm(msg + ' This cannot be undone.')) return;
+  try {
+    var data = await api('/api/delete-channels', 'DELETE', { channelIDs: channelIds, protectFrozen: prot });
+    var left = prot ? ' Frozen entries (if any) are kept.' : '';
+    setStatus('Channel delete: ' + data.deleted + ' entries removed in ' + channelIds.length + ' channel(s).' + left);
+    selectedChannelIds.clear();
+    selectedIds.clear(); updateDeleteBtn(); loadAll();
+  } catch (e) { alert('Error deleting channels: ' + e.message); }
 }
 
 async function doDeleteChannel() {
@@ -1068,7 +1118,18 @@ function setupEvents() {
   document.getElementById('search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
   document.getElementById('btn-clear-search').addEventListener('click', clearSearch);
   document.getElementById('btn-delete-sel').addEventListener('click', doDelete);
-  document.getElementById('btn-delete-channel').addEventListener('click', doDeleteChannel);
+  document.getElementById('btn-delete-channels').addEventListener('click', doDeleteChannels);
+  document.getElementById('chk-channel-select-all').addEventListener('change', function () {
+    var checked = !!this.checked;
+    document.querySelectorAll('.channel-select-check').forEach(function (c) {
+      c.checked = checked;
+      var cid = String(c.dataset.channelId || '');
+      if (!cid) return;
+      if (checked) selectedChannelIds.add(cid); else selectedChannelIds.delete(cid);
+    });
+    syncChannelSelectAll();
+    updateChannelDeleteBtn();
+  });
   document.getElementById('chk-protect-frozen').addEventListener('change', function () {
     protectFrozen = !!this.checked;
     if (!this.checked) {
@@ -1315,6 +1376,18 @@ export default async function getWebpageContext(coreData) {
       else {
         const deleted = await dbDeleteChannel(pool, channelID, { protectFrozen });
         setJsonResp(wo, 200, { ok: true, deleted, channelID, protectFrozen });
+      }
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    if (method === "DELETE" && urlPath === basePath + "/api/delete-channels") {
+      const body = wo.http?.json || {};
+      const channelIDs = Array.isArray(body.channelIDs) ? body.channelIDs : [];
+      const protectFrozen = body.protectFrozen !== false;
+      if (!channelIDs.length) { setJsonResp(wo, 400, { error: "channelIDs required" }); }
+      else {
+        const deleted = await dbDeleteChannels(pool, channelIDs, { protectFrozen });
+        setJsonResp(wo, 200, { ok: true, deleted, channelIDs, protectFrozen });
       }
       wo.jump = true; await setSendNow(wo); return coreData;
     }
