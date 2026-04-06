@@ -96,19 +96,22 @@ async function getInvoke(args, coreData) {
   const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
 
   const task      = String(args?.task || wo.payload || "").trim();
-  const projectId = args?.projectId ? String(args.projectId).trim() : "";
+  const modeRaw = String(args?.mode || "normal").trim().toLowerCase();
+  const mode = modeRaw === "resume" ? "resume" : "normal";
+  const inputProjectId = args?.projectId ? String(args.projectId).trim() : "";
+  const projectId = mode === "resume" ? inputProjectId : "";
   const explicitChannel = String(args?.channel_id || "").trim();
   const orchestration   = args?.orchestration ?? null;
   const requestedType = String(args?.type || "").trim();
-  const typeName = projectId
-    ? "resume"
-    : (requestedType || "generic");
+  let typeName = requestedType || "generic";
 
   const _invokeCallerChannelId = String(wo.callerChannelId || wo.channelID || "").trim();
   logSubagent("info", "getSubAgent", "invoke_called", {
+    mode,
     typeName,
     requestedType:       requestedType || null,
     projectId:           projectId || null,
+    inputProjectId:      inputProjectId || null,
     callerChannelId:     _invokeCallerChannelId || null,
     callerFlow:          String(wo.callerFlow || wo.flow || "") || null,
     callerContextChanID: String(wo.contextChannelID || "") || null,
@@ -150,23 +153,37 @@ async function getInvoke(args, coreData) {
   const types      = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
   const agentDepth = Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0;
   const agentType  = String(wo.agentType || "").trim();
+  const nextAgentDepth = mode === "resume" ? agentDepth : (agentDepth + 1);
 
-  if (projectId && !explicitChannel && !types.resume) {
-    logSubagent("error", "getSubAgent", "resume_type_missing", { projectId, requestedType: requestedType || null });
-    return {
-      ok: false,
-      error: "Resume routing requires toolsconfig.getSubAgent.types.resume to be configured (or pass channel_id explicitly)."
-    };
+  if (modeRaw !== "normal" && modeRaw !== "resume") {
+    logSubagent("warn", "getSubAgent", "invalid_mode", { modeRaw });
+    return { ok: false, error: "Invalid mode. Use mode='normal' or mode='resume'." };
+  }
+
+  if (mode === "resume") {
+    if (!projectId) {
+      return { ok: false, error: "projectId is required when mode='resume'" };
+    }
+    if (!requestedType) {
+      return { ok: false, error: "type is required when mode='resume' so the caller can choose the target subagent." };
+    }
+    typeName = requestedType;
   }
 
   const maxSpawnDepth = Number.isFinite(Number(cfg.maxSpawnDepth)) ? Number(cfg.maxSpawnDepth) : 2;
 
-  if (agentDepth >= maxSpawnDepth) {
+  if (mode !== "resume" && agentDepth >= maxSpawnDepth) {
     logSubagent("warn", "getSubAgent", "depth_limit_reached", { agentDepth, maxSpawnDepth, typeName });
     return { ok: false, error: `Spawn depth limit reached (depth=${agentDepth}, max=${maxSpawnDepth}). This agent may not spawn further subagents.` };
   }
-  if (agentType && agentType === typeName) {
-    logSubagent("warn", "getSubAgent", "same_type_blocked", { typeName, agentType });
+  if (mode !== "resume" && agentType && agentType === typeName) {
+    logSubagent("warn", "getSubAgent", "same_type_blocked", {
+      typeName,
+      agentType,
+      projectId: projectId || null,
+      callerTurnId: callerTurnId || null
+    });
+
     return { ok: false, error: `A subagent of type "${typeName}" may not spawn another subagent of the same type.` };
   }
 
@@ -201,11 +218,12 @@ async function getInvoke(args, coreData) {
     typeName,
     channelId,
     projectId:              projectId || null,
-    resume:                 !!projectId,
+    resume:                 mode === "resume",
+    mode,
     callerChannelId:        callerChannelId || null,
     callerFlow:             String(wo.callerFlow || wo.flow || "") || null,
     callerContextChannelID: _parentContextChannelID || null,
-    agentDepth:             agentDepth + 1,
+    agentDepth:             nextAgentDepth,
   });
 
   const _spawnBody = JSON.stringify({
@@ -214,7 +232,7 @@ async function getInvoke(args, coreData) {
     userId:                 String(wo.userId || ""),
     guildId:                String(wo.guildId || ""),
     authorDisplayname:      String(wo.authorDisplayname || ""),
-    projectId:              projectId || undefined,
+    projectId:              mode === "resume" ? projectId : undefined,
     systemPromptAddition:   projectId
       ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. IMPORTANT: Before asking the user for any URLs, file paths, or artifact references — scan your loaded conversation history first. All previously produced URLs and ARTIFACTS blocks from prior turns are available there. Use them directly. Only ask the user if the information is genuinely absent from your context. You may call tools freely using URLs found in your context. Only spawn a new subagent via getSubAgent for genuinely independent sub-tasks that require a different tool palette.`
       : undefined,
@@ -224,7 +242,7 @@ async function getInvoke(args, coreData) {
     callerFlow:             String(wo.callerFlow || wo.flow || ""),
     callerContextChannelID: _parentContextChannelID || undefined,
     callerPayload:          String(wo.payload || "").slice(0, 500) || undefined,
-    agentDepth:             agentDepth + 1,
+    agentDepth:             nextAgentDepth,
     agentType:              typeName,
   });
 
