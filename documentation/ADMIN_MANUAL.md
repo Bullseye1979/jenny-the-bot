@@ -2445,7 +2445,8 @@ export default async function myModule(coreData) {
 | 00059 | `webpage-live` | Live context monitor SPA (port 3123, `/live`) — selectable channel checkboxes, field toggles (timestamp, channel, role), configurable poll interval, autoscroll toggle. Collapsible settings sidebar (◀/▶). All UI state persists in `localStorage`. Parses `json.authorName` and `json.content` from Discord context entries to display chat transcripts in real time. New messages are inserted into the DOM sorted by `ts` (tiebreaker: `ctx_id`) regardless of arrival order — each message element carries `data-ts` and `data-ctx-id` attributes so out-of-order poll responses (race condition) are placed at the correct position rather than appended at the bottom. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
-| 00066 | `webpage-manifests` | Admin-only manifest JSON editor SPA (port 3126, `/manifests`). Routes: `GET /manifests` (UI), `GET /manifests/api/list`, `GET /manifests/api/get?name=`, `POST /manifests/api/save`. Config key: `webpage-manifests`. Access controlled by `allowedRoles` (default `["admin"]`). |
+| 00066 | `webpage-manifests` | Admin-only manifest JSON editor SPA (port 3126, `/manifests`). Uses a manifest selector and structured JSON editor. Routes: `GET /manifests`, `GET /manifests/api/list`, `GET /manifests/api/get?name=`, `POST /manifests/api/save`. Config key: `webpage-manifests`. |
+| 00067 | `webpage-subagent-manager` | Admin-only subagent manager SPA (port 3127, `/subagents`). Routes: `GET /subagents`, `GET /subagents/api/list`, `GET /subagents/api/get?type=`, `POST /subagents/api/save`, `DELETE /subagents/api/delete?type=`. Saves subagent channel entries into `core.json` and matching blocks into `manifests/getSubAgent.json`. |
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
 | 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user). Skipped when `wo.doNotWriteToContext === true` (e.g. internal wiki/system API calls). |
 | 00073 | *(deleted)* | `webpage-add-context` has been removed. Its logic was inlined into `00048-webpage-chat`. |
@@ -4389,6 +4390,27 @@ The editor renders each object as a collapsible card. Object titles are derived 
 | `+ Add item` | Footer of every object array | Appends an empty `{}` item to the array |
 
 All structural changes (add/remove) immediately re-render the tree and mark the config as dirty. After adding, the affected section automatically opens and scrolls into view. After deleting, the scroll position is preserved. Changes are not written to disk until **Save** is clicked (or Ctrl+S).
+
+### 16.2a Manifest Editor (`/manifests`)
+
+- `GET /manifests` — renders the manifest editor UI (role-gated via `allowedRoles`)
+- `GET /manifests/style.css` — serves shared CSS
+- `GET /manifests/api/list` — returns all manifest names from `manifests/*.json`
+- `GET /manifests/api/get?name=...` — returns one manifest as parsed JSON
+- `POST /manifests/api/save` — writes one manifest from `{name, data}`
+
+The page uses the same collapsible JSON editing pattern as the config editor, but adds a manifest selector so admins can switch between tool manifests quickly.
+
+### 16.2b Subagent Manager (`/subagents`)
+
+- `GET /subagents` — renders the subagent manager UI (role-gated via `allowedRoles`)
+- `GET /subagents/style.css` — serves shared CSS
+- `GET /subagents/api/list` — lists all configured subagents
+- `GET /subagents/api/get?type=...` — loads one subagent definition
+- `POST /subagents/api/save` — saves `{previousTypeKey?, typeKey, channelId, title, manifestBlock, overrides}`
+- `DELETE /subagents/api/delete?type=...` — deletes one subagent definition
+
+Saving a subagent updates both `core.json` and the `xSubagents` areas inside `manifests/getSubAgent.json`. Deleting a subagent removes both the `core-channel-config` entry and the matching manifest block.
 
 ### 16.3 Chat SPA (`/chat`)
 

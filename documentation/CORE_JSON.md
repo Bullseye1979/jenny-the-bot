@@ -68,6 +68,8 @@ All key names follow **camelCase** throughout.
    - [webpage-gallery](#webpage-gallery)
    - [webpage-gdpr](#webpage-gdpr)
    - [webpage-keymanager](#webpage-keymanager)
+   - [webpage-manifests](#webpage-manifests)
+   - [webpage-subagent-manager](#webpage-subagent-manager)
    - [bard](#bard)
    - [bard-join](#bard-join)
    - [bard-cron](#bard-cron)
@@ -1019,6 +1021,8 @@ Global navigation menu for all web modules. Items are filtered by user role befo
     { "text": "🎵 Bard",       "link": "/bard",       "roles": ["admin"] },
     { "text": "📊 Dashboard",  "link": "/dashboard",  "roles": ["admin"] },
     { "text": "⚙️ Config",     "link": "/config",     "roles": ["admin"] },
+    { "text": "📄 Manifests",  "link": "/manifests",  "roles": ["admin"] },
+    { "text": "🧩 Subagents",  "link": "/subagents",  "roles": ["admin"] },
     { "text": "🗄 Context",    "link": "/context",    "roles": ["admin"] }
   ]
 }
@@ -1255,6 +1259,77 @@ Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and 
 - Add `3122` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /key-manager* localhost:3122` to your Caddyfile
 - The `bot_secrets` table is created automatically on first request (idempotent)
+
+---
+
+### webpage-manifests
+
+Structured manifest editor for files in `manifests/*.json`. Includes a manifest selector, the same collapsible JSON editor pattern as the config editor, and role-based access control.
+
+```jsonc
+"webpage-manifests": {
+  "flow":         ["webpage"],
+  "port":         3126,
+  "basePath":     "/manifests",
+  "allowedRoles": ["admin"]
+}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `flow` | — | Must include `"webpage"` |
+| `port` | `3126` | HTTP port this module listens on |
+| `basePath` | `"/manifests"` | URL prefix |
+| `allowedRoles` | `["admin"]` | Roles permitted to access the page |
+
+**HTTP routes:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/manifests` | Required (admin) | Main UI page |
+| `GET` | `/manifests/style.css` | No auth | Shared CSS |
+| `GET` | `/manifests/api/list` | Required (admin) | JSON list of available manifests |
+| `GET` | `/manifests/api/get?name=...` | Required (admin) | Loads one manifest as parsed JSON |
+| `POST` | `/manifests/api/save` | Required (admin) | Saves one manifest. Body: `{name, data}` |
+
+- Add `3126` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /manifests* localhost:3126` to your Caddyfile
+
+---
+
+### webpage-subagent-manager
+
+Admin UI for managing subagent definitions. Creating, editing, or deleting an entry updates both `core.json` and `manifests/getSubAgent.json`.
+
+```jsonc
+"webpage-subagent-manager": {
+  "flow":         ["webpage"],
+  "port":         3127,
+  "basePath":     "/subagents",
+  "allowedRoles": ["admin"]
+}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `flow` | — | Must include `"webpage"` |
+| `port` | `3127` | HTTP port this module listens on |
+| `basePath` | `"/subagents"` | URL prefix |
+| `allowedRoles` | `["admin"]` | Roles permitted to access the page |
+
+**HTTP routes:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/subagents` | Required (admin) | Main UI page |
+| `GET` | `/subagents/style.css` | No auth | Shared CSS |
+| `GET` | `/subagents/api/list` | Required (admin) | Lists all configured subagents |
+| `GET` | `/subagents/api/get?type=...` | Required (admin) | Loads one subagent definition |
+| `POST` | `/subagents/api/save` | Required (admin) | Saves one subagent. Body: `{previousTypeKey?, typeKey, channelId, title, manifestBlock, overrides}` |
+| `DELETE` | `/subagents/api/delete?type=...` | Required (admin) | Deletes one subagent definition |
+
+- Add `3127` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /subagents* localhost:3127` to your Caddyfile
 
 ---
 

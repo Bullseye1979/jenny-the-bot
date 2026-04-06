@@ -498,6 +498,8 @@ Jenny provides several browser-based tools. Your server admin decides which are 
 | `/wiki` | AI-generated wiki for your channel — articles written from conversation history |
 | `/docs` | Project documentation viewer |
 | `/config` | Config editor (admin only) |
+| `/manifests` | Manifest editor (admin only) |
+| `/subagents` | Subagent manager (admin only) |
 | `/dashboard` | Live bot status dashboard (admin only) |
 | `/context` | Conversation context editor (admin only) |
 

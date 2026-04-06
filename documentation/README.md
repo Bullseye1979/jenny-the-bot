@@ -617,6 +617,16 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - **+ Block** (bottom of every object) — prompts for name, adds an empty `{}` sub-object
 - **+ Add item** (bottom of every object array) — append an empty item
 - After adding, the affected section opens and scrolls into view; scroll position preserved on delete
+
+**📄 Manifest Editor** (`modules/00066`, `GET /manifests`)
+- Structured manifest editor with a manifest selector and the same collapsible JSON editing pattern as the config editor
+- Saves parsed JSON directly to files in `manifests/`
+- Access controlled via `allowedRoles[]`
+
+**🧩 Subagent Manager** (`modules/00067`, `GET /subagents`)
+- Create, edit, and delete subagent definitions in one place
+- Updates both `core.json` and `manifests/getSubAgent.json`
+- Access controlled via `allowedRoles[]`
 - `Ctrl + S` to save
 
 **💬 Chat** (`modules/00048`, `GET /chat`)
@@ -779,7 +789,8 @@ A module can halt pipeline execution by setting `workingObject.stop = true`.
 | `00055` | core-admin-commands | Core admin operations (purge, freeze, DB commands) |
 | `00060` | discord-admin-avatar | Generates or uploads a new bot avatar via DALL-E or URL |
 | `00065` | discord-admin-macro | Personal text-macro management (create, list, delete, run) |
-| `00066` | webpage-manifests | Admin-only manifest JSON editor SPA (port 3126, `/manifests`) — list, view, and save tool manifest JSON files |
+| `00066` | webpage-manifests | Admin-only manifest JSON editor SPA (port 3126, `/manifests`) — manifest selector plus structured JSON editor |
+| `00067` | webpage-subagent-manager | Admin-only subagent manager SPA (port 3127, `/subagents`) — synchronizes `core.json` and `manifests/getSubAgent.json` |
 | `00070` | discord-add-context | Loads conversation history from MySQL into the context window |
 | `00072` | api-add-context | Loads context for API flow requests |
 | `00075` | discord-trigger-gate | Filters messages based on configured trigger words |

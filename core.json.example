@@ -477,7 +477,8 @@
         3120,
         3121,
         3122,
-        3126
+        3126,
+        3127
       ]
     },
     "webpage-router": {
@@ -526,7 +527,8 @@
         3120,
         3121,
         3122,
-        3126
+        3126,
+        3127
       ],
       "sessionMaxAgeSec": 43200,
       "sameSite": "Lax",
@@ -555,6 +557,20 @@
         {
           "text": "⚙️ Config",
           "link": "/config",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "📄 Manifests",
+          "link": "/manifests",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "🧩 Subagents",
+          "link": "/subagents",
           "roles": [
             "admin"
           ]
@@ -1294,6 +1310,16 @@
       ],
       "port": 3126,
       "basePath": "/manifests",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    "webpage-subagent-manager": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3127,
+      "basePath": "/subagents",
       "allowedRoles": [
         "admin"
       ]

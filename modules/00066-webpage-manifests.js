@@ -1,422 +1,663 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import { readdir, readFile, writeFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
-import { getIsAllowedRoles, setSendNow, setJsonResp } from "../shared/webpage/utils.js";
+import fs from "node:fs";
+import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
+import { getIsAllowedRoles, setJsonResp, setSendNow } from "../shared/webpage/utils.js";
+import { listManifestNames, readManifest, writeManifest } from "../shared/webpage/subagent-manager.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "webpage-manifests";
 
-const MANIFESTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../manifests");
-
-
-function getStr(v, fb = "") {
-  return (v != null && typeof v === "string") ? v : fb;
+function getStr(value, fallback = "") {
+  return typeof value === "string" ? value : fallback;
 }
-
 
 function getBasePath(cfg) {
-  const bp = getStr(cfg.basePath ?? "/manifests").trim();
-  return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/manifests";
+  const value = getStr(cfg.basePath ?? "/manifests").trim();
+  return value && value.startsWith("/") ? value.replace(/\/+$/, "") : "/manifests";
 }
 
+function buildDeniedHtml(menuHtml, activePath, webAuth) {
+  return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">" +
+    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+    "<title>Manifest Editor</title>" +
+    getThemeHeadScript() +
+    "<link rel=\"stylesheet\" href=\"" + activePath + "/style.css\"></head><body>" +
+    "<header><h1>📄 Manifest Editor</h1>" + menuHtml + "</header>" +
+    "<div style=\"margin-top:var(--hh);padding:16px\">" +
+    "<div style=\"padding:16px;border:1px solid var(--bdr);border-radius:10px;background:var(--bg2)\">" +
+    "<strong>Access denied</strong><br><span style=\"color:var(--muted)\">Your Discord role does not have access to this page.</span>" +
+    "</div></div></body></html>";
+}
 
-function buildPageHtml(menu, basePath) {
+function buildPageHtml(opts) {
+  const basePath = String(opts.basePath || "/manifests").replace(/\/+$/, "") || "/manifests";
+  const menuHtml = opts.menuHtml || "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>Manifest Editor</title>
 ${getThemeHeadScript()}
-<link rel="stylesheet" href="/dashboard/style.css">
+<link rel="stylesheet" href="${basePath}/style.css">
 <style>
-  .me-layout {
-    display: flex;
-    gap: 0;
-    height: calc(100vh - var(--hh, 52px));
-    overflow: hidden;
-  }
-  .me-sidebar {
-    width: 240px;
-    min-width: 180px;
-    max-width: 320px;
-    flex-shrink: 0;
-    background: var(--bg2);
-    border-right: 1px solid var(--bdr);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .me-sidebar-header {
-    padding: .6rem .85rem;
-    font-size: .75rem;
-    font-weight: 600;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    border-bottom: 1px solid var(--bdr);
-    flex-shrink: 0;
-  }
-  .me-list {
-    list-style: none;
-    margin: 0;
-    padding: .3rem 0;
-    overflow-y: auto;
-    flex: 1;
-  }
-  .me-list li {
-    padding: .38rem .85rem;
-    cursor: pointer;
-    font-family: monospace;
-    font-size: .82rem;
-    color: var(--txt);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    border-left: 3px solid transparent;
-    transition: background .12s, border-color .12s;
-  }
-  .me-list li:hover { background: var(--bg3); }
-  .me-list li.active {
-    background: var(--bg3);
-    border-left-color: var(--acc);
-    color: var(--acc);
-    font-weight: 600;
-  }
-  .me-main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: var(--bg);
-  }
-  .me-toolbar {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-    padding: .55rem .9rem;
-    border-bottom: 1px solid var(--bdr);
-    background: var(--bg2);
-    flex-shrink: 0;
-    flex-wrap: wrap;
-  }
-  .me-toolbar-name {
-    font-family: monospace;
-    font-size: .9rem;
-    font-weight: 600;
-    color: var(--txt);
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .me-btn {
-    padding: .35rem .85rem;
-    border-radius: 4px;
-    border: none;
-    cursor: pointer;
-    font-size: .82rem;
-    white-space: nowrap;
-  }
-  .me-btn:disabled { opacity: .45; cursor: default; }
-  .me-btn-primary { background: var(--acc); color: #fff; }
-  .me-btn-secondary { background: var(--bg3); color: var(--txt); border: 1px solid var(--bdr); }
-  .me-btn-ok { background: rgba(16,185,129,.15); color: var(--ok, #10b981); border: 1px solid var(--ok, #10b981); }
-  .me-editor-wrap {
-    flex: 1;
-    overflow: hidden;
-    position: relative;
-  }
-  .me-editor {
-    width: 100%;
-    height: 100%;
-    resize: none;
-    border: none;
-    outline: none;
-    padding: 1rem;
-    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
-    font-size: .83rem;
-    line-height: 1.55;
-    background: var(--bg);
-    color: var(--txt);
-    box-sizing: border-box;
-    tab-size: 2;
-    white-space: pre;
-    overflow: auto;
-  }
-  .me-editor:focus { outline: none; }
-  .me-msg {
-    padding: .38rem .85rem;
-    font-size: .82rem;
-    border-top: 1px solid var(--bdr);
-    flex-shrink: 0;
-    min-height: 2rem;
-    display: flex;
-    align-items: center;
-    gap: .4rem;
-  }
-  .me-msg.ok  { color: var(--ok, #10b981); background: rgba(16,185,129,.08); }
-  .me-msg.err { color: var(--dan); background: rgba(239,68,68,.08); }
-  .me-msg.idle { color: var(--muted); }
-  .me-placeholder {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--muted);
-    font-size: .9rem;
-  }
-  .me-validate-badge {
-    font-size: .75rem;
-    padding: .15rem .45rem;
-    border-radius: 3px;
-    font-family: monospace;
-  }
-  .me-validate-ok  { background: rgba(16,185,129,.15); color: var(--ok, #10b981); }
-  .me-validate-err { background: rgba(239,68,68,.12); color: var(--dan); }
-  @media (max-width: 600px) {
-    .me-sidebar { width: 160px; }
-    .me-editor { font-size: .78rem; }
-  }
-  body { overflow: hidden; }
+.cfg-wrap{margin-top:var(--hh);height:calc(100dvh - var(--hh));overflow-y:auto;padding:12px 14px 40px}
+.cfg-topbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.cfg-select{min-width:220px;max-width:100%;border:1px solid var(--bdr);border-radius:6px;padding:6px 10px;font-size:13px;background:var(--bg);color:var(--txt)}
+.cfg-note{font-size:12px;color:var(--muted)}
+.cs{border:1px solid var(--bdr);border-radius:8px;margin-bottom:8px;background:var(--bg2);overflow:hidden}
+.cs-hdr{display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;user-select:none;background:var(--bg2)}
+.cs.open>.cs-hdr{border-radius:8px 8px 0 0}
+.cs-hdr:hover{background:var(--bg3)}
+.cs-arrow{font-size:10px;transition:transform .15s;display:inline-block;color:var(--muted)}
+.cs.open>.cs-hdr>.cs-arrow{transform:rotate(90deg)}
+.cs-title{font-weight:600;font-size:13px;flex:1;color:var(--txt)}
+.cs-badge{font-size:11px;color:var(--muted);background:rgba(128,128,128,.15);border-radius:10px;padding:1px 7px}
+.cs-body{display:none;padding:10px 14px 12px;grid-gap:7px}
+.cs.open>.cs-body{display:grid}
+.cs .cs{margin-bottom:4px}
+.cs .cs .cs-hdr{background:var(--bg)}
+.cs .cs .cs .cs-hdr{background:var(--bg2)}
+.cf{display:grid;grid-template-columns:160px 1fr;gap:8px;align-items:start}
+.cf label{font-size:12px;color:var(--muted);padding-top:5px;word-break:break-word;overflow-wrap:anywhere}
+.cf input[type=text],.cf input[type=number],.cf input[type=password]{width:100%;border:1px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:13px;background:var(--bg);color:var(--txt);box-sizing:border-box}
+.cf textarea{width:100%;border:1px solid var(--bdr);border-radius:6px;padding:4px 8px;font-size:12px;font-family:monospace;line-height:1.4;background:var(--bg);color:var(--txt);resize:vertical;min-height:54px;box-sizing:border-box}
+.cf input[type=checkbox]{margin-top:6px;width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
+.cfg-pw-row{display:flex;gap:4px;width:100%}
+.cfg-pw-row input{flex:1;min-width:0}
+.cfg-eye{padding:3px 8px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg);color:var(--txt);cursor:pointer;font-size:13px;line-height:1.4}
+.cfg-tags{display:flex;flex-wrap:wrap;gap:4px;padding:4px 6px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg);min-height:32px;align-items:center}
+.cfg-tag{display:inline-flex;align-items:center;gap:2px;background:var(--accent);color:#fff;border-radius:12px;padding:2px 4px 2px 9px;font-size:12px;line-height:1.4}
+.cfg-tag-del{background:none;border:none;color:rgba(255,255,255,.75);cursor:pointer;padding:0 5px;font-size:15px;line-height:1}
+.cfg-tag-del:hover{color:#fff}
+.cfg-tag-inp{border:none;background:none;outline:none;font-size:12px;min-width:60px;color:var(--txt);padding:0 2px}
+.cs-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;border-radius:4px;flex-shrink:0;opacity:.65}
+.cs-edit:hover{opacity:1;color:var(--accent)}
+.cs-title-inp{flex:1;border:1px solid var(--accent);border-radius:4px;padding:1px 6px;font-size:13px;font-weight:600;background:var(--bg2);color:var(--txt);min-width:60px;outline:none}
+.cs-del{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0 2px;border-radius:4px;flex-shrink:0}
+.cs-del:hover{color:#c00;background:rgba(200,0,0,.08)}
+.cf-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0 4px;border-radius:4px;align-self:center}
+.cf-del:hover{color:#c00;background:rgba(200,0,0,.08)}
+.cf.cf-d{grid-template-columns:160px 1fr auto}
+.cs-add-bar{display:flex;gap:6px;padding:4px 0 0;margin-top:2px;border-top:1px dashed var(--bdr)}
+.cs-add-bar button{font-size:11px;padding:2px 8px;border:1px dashed var(--bdr);border-radius:5px;background:none;color:var(--muted);cursor:pointer}
+.cs-add-bar button:hover{color:var(--accent);border-color:var(--accent);background:rgba(128,128,255,.07)}
 </style>
 </head>
 <body>
 <header>
-  <h1>&#128196; Manifest Editor</h1>
-  ${menu}
+  <h1>📄 Manifest Editor</h1>
+${menuHtml ? "  " + menuHtml : ""}
 </header>
-<div class="me-layout">
-  <aside class="me-sidebar">
-    <div class="me-sidebar-header">Manifests</div>
-    <ul class="me-list" id="manifest-list">
-      <li style="color:var(--muted);font-family:sans-serif;font-size:.8rem;padding:.6rem .85rem">Loading…</li>
-    </ul>
-  </aside>
-  <div class="me-main" id="me-main">
-    <div class="me-placeholder" id="me-placeholder">
-      <span>&#8592; Select a manifest to edit</span>
-    </div>
-    <div id="me-editor-panel" style="display:none;flex:1;flex-direction:column;overflow:hidden;display:none">
-      <div class="me-toolbar">
-        <span class="me-toolbar-name" id="me-current-name"></span>
-        <span class="me-validate-badge" id="me-validate-badge" style="display:none"></span>
-        <button class="me-btn me-btn-secondary" id="me-format-btn" onclick="formatJson()" disabled>Pretty-print</button>
-        <button class="me-btn me-btn-primary" id="me-save-btn" onclick="saveManifest()" disabled>Save</button>
-      </div>
-      <div class="me-editor-wrap">
-        <textarea class="me-editor" id="me-editor" spellcheck="false" oninput="onEditorInput()"></textarea>
-      </div>
-      <div class="me-msg idle" id="me-msg">Ready</div>
-    </div>
+<div class="cfg-wrap">
+  <div class="cfg-topbar">
+    <select id="manifest-select" class="cfg-select" onchange="onManifestChange()">
+      <option value="">Select a manifest</option>
+    </select>
+    <button class="btn btn-s" onclick="loadManifestList()">Reload list</button>
+    <button class="btn btn-s" onclick="loadSelectedManifest()">Reload manifest</button>
+    <button class="btn btn-s" onclick="expandAll()">Expand all</button>
+    <button class="btn btn-s" onclick="collapseAll()">Collapse all</button>
+    <span id="status-lbl" style="font-size:12px;color:var(--muted)"></span>
+    <button id="save-btn" disabled onclick="saveManifest()">Saved</button>
   </div>
+  <div class="cfg-note">Structured manifest editor with selector. The Subagent Manager updates <code>getSubAgent</code> blocks directly.</div>
+  <div id="cfg-tree" style="margin-top:10px"></div>
 </div>
-
+<div id="toast" class="toast"></div>
 <script>
-const BASE = ${JSON.stringify(basePath)};
-let currentName = null;
-let savedContent = null;
+var BASE = ${JSON.stringify(basePath)};
+var DATA = null;
+var dirty = false;
+var currentManifest = "";
+var SECRET_RE = /key|secret|token|password|bearer/i;
+var TITLE_FIELDS = ['_title','name','label','id','channelId','channelMatch','text','cron','path','title','type'];
+var TEXTAREA_LEN = 120;
 
-function escHtml(s) {
-  return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
-async function loadList() {
-  const res = await fetch(BASE + "/api/list");
-  const data = await res.json();
-  const ul = document.getElementById("manifest-list");
-  if (!data.ok || !Array.isArray(data.names) || !data.names.length) {
-    ul.innerHTML = '<li style="color:var(--muted);font-family:sans-serif;font-size:.8rem;padding:.6rem .85rem">No manifests found.</li>';
+function toast(msg, ms) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  setTimeout(function(){ t.classList.remove('on'); }, ms || 2400);
+}
+function setDirty(v) {
+  dirty = !!v;
+  var btn = document.getElementById('save-btn');
+  var lbl = document.getElementById('status-lbl');
+  if (!currentManifest) {
+    btn.disabled = true;
+    btn.textContent = 'Saved';
+    lbl.textContent = '';
     return;
   }
-  ul.innerHTML = data.names.map(n =>
-    \`<li onclick="selectManifest(\${escHtml(JSON.stringify(n))})" id="item-\${escHtml(n)}">\${escHtml(n)}</li>\`
-  ).join("");
-}
-
-async function selectManifest(name) {
-  if (currentName === name) return;
-  if (currentName !== null && isDirty()) {
-    if (!confirm("You have unsaved changes in '" + currentName + "'. Discard them?")) return;
-  }
-  setActiveItem(name);
-  currentName = name;
-  document.getElementById("me-placeholder").style.display = "none";
-  const panel = document.getElementById("me-editor-panel");
-  panel.style.display = "flex";
-  panel.style.flexDirection = "column";
-  panel.style.overflow = "hidden";
-  panel.style.flex = "1";
-  document.getElementById("me-current-name").textContent = name + ".json";
-  document.getElementById("me-save-btn").disabled = true;
-  document.getElementById("me-format-btn").disabled = true;
-  setMsg("Loading…", "idle");
-
-  try {
-    const res = await fetch(BASE + "/api/get?name=" + encodeURIComponent(name));
-    const data = await res.json();
-    if (!data.ok) { setMsg("Error: " + (data.error || "failed to load"), "err"); return; }
-    const pretty = tryPretty(data.content);
-    document.getElementById("me-editor").value = pretty;
-    savedContent = pretty;
-    updateValidateBadge(pretty);
-    document.getElementById("me-save-btn").disabled = false;
-    document.getElementById("me-format-btn").disabled = false;
-    setMsg("Loaded " + name + ".json", "ok");
-  } catch (e) {
-    setMsg("Network error: " + e.message, "err");
+  if (dirty) {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+    btn.className = 'dirty';
+    lbl.textContent = 'Unsaved changes in ' + currentManifest;
+  } else {
+    btn.disabled = true;
+    btn.textContent = 'Saved';
+    btn.className = '';
+    lbl.textContent = currentManifest ? ('Editing ' + currentManifest) : '';
   }
 }
-
-function setActiveItem(name) {
-  document.querySelectorAll(".me-list li").forEach(li => li.classList.remove("active"));
-  const el = document.getElementById("item-" + name);
-  if (el) el.classList.add("active");
-}
-
-function isDirty() {
-  return document.getElementById("me-editor").value !== savedContent;
-}
-
-function tryPretty(raw) {
-  try { return JSON.stringify(JSON.parse(raw), null, 2); }
-  catch { return raw; }
-}
-
-function onEditorInput() {
-  updateValidateBadge(document.getElementById("me-editor").value);
-}
-
-function updateValidateBadge(text) {
-  const badge = document.getElementById("me-validate-badge");
-  badge.style.display = "";
-  try {
-    JSON.parse(text);
-    badge.className = "me-validate-badge me-validate-ok";
-    badge.textContent = "✓ valid JSON";
-  } catch (e) {
-    badge.className = "me-validate-badge me-validate-err";
-    badge.textContent = "✗ " + e.message.split("\\n")[0].slice(0, 60);
+function getAtPath(obj, path) {
+  var cur = obj;
+  for (var i = 0; i < path.length; i++) {
+    if (cur == null) return undefined;
+    cur = cur[path[i]];
   }
+  return cur;
 }
-
-function formatJson() {
-  const ta = document.getElementById("me-editor");
-  const pretty = tryPretty(ta.value);
-  if (pretty === ta.value) return;
-  ta.value = pretty;
-  updateValidateBadge(pretty);
+function setAtPath(obj, path, val) {
+  var cur = obj;
+  for (var i = 0; i < path.length - 1; i++) cur = cur[path[i]];
+  cur[path[path.length - 1]] = val;
 }
-
-async function saveManifest() {
-  if (!currentName) return;
-  const content = document.getElementById("me-editor").value;
-  try {
-    JSON.parse(content);
-  } catch (e) {
-    setMsg("Cannot save — invalid JSON: " + e.message.split("\\n")[0].slice(0, 80), "err");
-    return;
-  }
-  const btn = document.getElementById("me-save-btn");
-  btn.disabled = true;
-  setMsg("Saving…", "idle");
-  try {
-    const res = await fetch(BASE + "/api/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: currentName, content })
-    });
-    const data = await res.json();
-    if (data.ok) {
-      savedContent = content;
-      setMsg("Saved " + currentName + ".json", "ok");
-    } else {
-      setMsg("Error: " + (data.error || "unknown"), "err");
+function removeAtPath(path) {
+  if (!path || !path.length) return;
+  var parent = path.length > 1 ? getAtPath(DATA, path.slice(0, -1)) : DATA;
+  var key = path[path.length - 1];
+  if (Array.isArray(parent)) parent.splice(key, 1);
+  else if (parent && typeof parent === 'object') delete parent[key];
+  setDirty(true);
+  var sy = window.scrollY;
+  render(DATA);
+  requestAnimationFrame(function() { window.scrollTo(0, sy); });
+}
+function addToObject(path, name, value) {
+  var obj = path.length ? getAtPath(DATA, path) : DATA;
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+  obj[name] = value;
+  setDirty(true);
+  renderAndFocus(path);
+}
+function addItemToArray(path) {
+  var arr = path.length ? getAtPath(DATA, path) : DATA;
+  if (!Array.isArray(arr)) return;
+  arr.push({});
+  setDirty(true);
+  renderAndFocus(path);
+}
+function renderAndFocus(path) {
+  render(DATA);
+  if (!path || !path.length) return;
+  var pathStr = JSON.stringify(path);
+  requestAnimationFrame(function() {
+    var sections = document.querySelectorAll('.cs[data-cfgpath]');
+    for (var i = 0; i < sections.length; i++) {
+      if (sections[i].getAttribute('data-cfgpath') === pathStr) {
+        sections[i].classList.add('open');
+        sections[i].scrollIntoView({ behavior: 'instant', block: 'nearest' });
+        break;
+      }
     }
-  } catch (e) {
-    setMsg("Network error: " + e.message, "err");
+  });
+}
+function getTitle(key, obj) {
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    for (var i = 0; i < TITLE_FIELDS.length; i++) {
+      var f = TITLE_FIELDS[i];
+      if (typeof obj[f] === 'string' && obj[f]) return obj[f];
+    }
   }
-  btn.disabled = false;
+  return key != null ? String(key) : 'Item';
 }
-
-function setMsg(text, type) {
-  const el = document.getElementById("me-msg");
-  el.className = "me-msg " + (type || "idle");
-  el.textContent = text;
+function isFlat(arr) {
+  for (var i = 0; i < arr.length; i++) {
+    if (arr[i] !== null && typeof arr[i] === 'object') return false;
+  }
+  return true;
 }
-
-window.addEventListener("beforeunload", e => {
-  if (isDirty()) {
+function isPassword(key) {
+  return SECRET_RE.test(String(key));
+}
+function needsTextarea(val) {
+  var s = String(val == null ? '' : val);
+  return s.indexOf('\\n') >= 0 || s.length > TEXTAREA_LEN;
+}
+function mkSection(titleText, depth, defaultOpen) {
+  var section = document.createElement('div');
+  section.className = 'cs';
+  if (defaultOpen) section.classList.add('open');
+  var hdr = document.createElement('div');
+  hdr.className = 'cs-hdr';
+  hdr.innerHTML = '<span class="cs-arrow">&#9658;</span><span class="cs-title">' + esc(titleText) + '</span>';
+  hdr.onclick = function() { section.classList.toggle('open'); };
+  var body = document.createElement('div');
+  body.className = 'cs-body';
+  section.appendChild(hdr);
+  section.appendChild(body);
+  return { section: section, hdr: hdr, body: body };
+}
+function renderFlatArray(key, arr, path) {
+  var wrap = document.createElement('div');
+  wrap.className = 'cf cf-d';
+  var lbl = document.createElement('label');
+  lbl.textContent = key;
+  wrap.appendChild(lbl);
+  var tags = document.createElement('div');
+  tags.className = 'cfg-tags';
+  function refresh() {
+    tags.innerHTML = '';
+    var cur = getAtPath(DATA, path);
+    if (!Array.isArray(cur)) cur = [];
+    cur.forEach(function(item, i) {
+      var tag = document.createElement('span');
+      tag.className = 'cfg-tag';
+      tag.innerHTML = esc(String(item == null ? 'null' : item)) + '<button class="cfg-tag-del" title="Remove">&#215;</button>';
+      (function(idx) {
+        tag.querySelector('button').onclick = function() {
+          cur.splice(idx, 1);
+          setDirty(true);
+          refresh();
+        };
+      })(i);
+      tags.appendChild(tag);
+    });
+    var inp = document.createElement('input');
+    inp.className = 'cfg-tag-inp';
+    inp.type = 'text';
+    inp.placeholder = '+ add';
+    inp.onkeydown = function(e) {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        var v = inp.value.trim().replace(/,$/, '');
+        if (v) {
+          cur.push(v);
+          setDirty(true);
+          refresh();
+        }
+      } else if (e.key === 'Backspace' && !inp.value && cur.length) {
+        cur.pop();
+        setDirty(true);
+        refresh();
+      }
+    };
+    tags.appendChild(inp);
+  }
+  refresh();
+  wrap.appendChild(tags);
+  var del = document.createElement('button');
+  del.className = 'cf-del';
+  del.type = 'button';
+  del.title = 'Remove';
+  del.innerHTML = '&#215;';
+  del.onclick = function() {
+    if (!confirm('Remove "' + key + '"?')) return;
+    removeAtPath(path);
+  };
+  wrap.appendChild(del);
+  return wrap;
+}
+function renderField(key, value, path) {
+  var wrap = document.createElement('div');
+  wrap.className = 'cf cf-d';
+  var lbl = document.createElement('label');
+  lbl.textContent = key;
+  wrap.appendChild(lbl);
+  var ctrl;
+  if (value === null || value === undefined) {
+    ctrl = document.createElement('input');
+    ctrl.type = 'text';
+    ctrl.value = 'null';
+    ctrl.oninput = function() {
+      setAtPath(DATA, path, ctrl.value === 'null' ? null : ctrl.value);
+      setDirty(true);
+    };
+  } else if (typeof value === 'boolean') {
+    ctrl = document.createElement('input');
+    ctrl.type = 'checkbox';
+    ctrl.checked = value;
+    ctrl.onchange = function() {
+      setAtPath(DATA, path, ctrl.checked);
+      setDirty(true);
+    };
+  } else if (typeof value === 'number') {
+    ctrl = document.createElement('input');
+    ctrl.type = 'number';
+    ctrl.value = String(value);
+    ctrl.step = Number.isInteger(value) ? '1' : 'any';
+    ctrl.onchange = function() {
+      setAtPath(DATA, path, Number(ctrl.value));
+      setDirty(true);
+    };
+  } else {
+    var s = String(value == null ? '' : value);
+    if (isPassword(key)) {
+      ctrl = document.createElement('div');
+      ctrl.className = 'cfg-pw-row';
+      var inp = document.createElement('input');
+      inp.type = 'password';
+      inp.value = s;
+      inp.oninput = function() {
+        setAtPath(DATA, path, inp.value);
+        setDirty(true);
+      };
+      var eye = document.createElement('button');
+      eye.className = 'cfg-eye';
+      eye.type = 'button';
+      eye.innerHTML = '&#128065;';
+      eye.title = 'Show / hide';
+      eye.onclick = function() { inp.type = inp.type === 'password' ? 'text' : 'password'; };
+      ctrl.appendChild(inp);
+      ctrl.appendChild(eye);
+    } else if (needsTextarea(s)) {
+      ctrl = document.createElement('textarea');
+      ctrl.value = s;
+      ctrl.rows = Math.min(Math.max((s.match(/\\n/g) || []).length + 2, 3), 14);
+      ctrl.oninput = function() {
+        setAtPath(DATA, path, ctrl.value);
+        setDirty(true);
+      };
+    } else {
+      ctrl = document.createElement('input');
+      ctrl.type = 'text';
+      ctrl.value = s;
+      ctrl.oninput = function() {
+        setAtPath(DATA, path, ctrl.value);
+        setDirty(true);
+      };
+    }
+  }
+  wrap.appendChild(ctrl);
+  var del = document.createElement('button');
+  del.className = 'cf-del';
+  del.type = 'button';
+  del.title = 'Remove';
+  del.innerHTML = '&#215;';
+  del.onclick = function() {
+    if (!confirm('Remove "' + key + '"?')) return;
+    removeAtPath(path);
+  };
+  wrap.appendChild(del);
+  return wrap;
+}
+function renderObject(key, obj, path, depth) {
+  var s = mkSection(getTitle(key, obj), depth, depth < 1);
+  s.section.setAttribute('data-cfgpath', JSON.stringify(path));
+  if ('_title' in obj) {
+    var titleSpan = s.hdr.querySelector('.cs-title');
+    var pencil = document.createElement('button');
+    pencil.className = 'cs-edit';
+    pencil.type = 'button';
+    pencil.title = 'Edit title';
+    pencil.innerHTML = '&#9998;';
+    pencil.onclick = function(e) {
+      e.stopPropagation();
+      var cur = String(getAtPath(DATA, path.concat(['_title'])) != null ? getAtPath(DATA, path.concat(['_title'])) : '');
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = cur;
+      inp.className = 'cs-title-inp';
+      titleSpan.replaceWith(inp);
+      pencil.style.display = 'none';
+      inp.focus();
+      inp.select();
+      var committed = false;
+      function commit() {
+        if (committed) return;
+        committed = true;
+        setAtPath(DATA, path.concat(['_title']), inp.value);
+        setDirty(true);
+        var span = document.createElement('span');
+        span.className = 'cs-title';
+        span.textContent = getTitle(key, obj);
+        inp.replaceWith(span);
+        titleSpan = span;
+        pencil.style.display = '';
+      }
+      inp.onblur = commit;
+      inp.onkeydown = function(ev) {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          commit();
+        }
+        if (ev.key === 'Escape') {
+          inp.value = cur;
+          commit();
+        }
+      };
+    };
+    s.hdr.appendChild(pencil);
+  }
+  if (path.length > 0) {
+    var del = document.createElement('button');
+    del.className = 'cs-del';
+    del.type = 'button';
+    del.title = 'Remove block';
+    del.innerHTML = '&#215;';
+    del.onclick = function(e) {
+      e.stopPropagation();
+      var label = key != null ? String(key) : getTitle(null, obj);
+      if (!confirm('Remove "' + label + '"?')) return;
+      removeAtPath(path);
+    };
+    s.hdr.appendChild(del);
+  }
+  Object.keys(obj).forEach(function(k) {
+    if (k === '__description' || k === '_title') return;
+    s.body.appendChild(renderValue(k, obj[k], path.concat([k]), depth + 1));
+  });
+  var addBar = document.createElement('div');
+  addBar.className = 'cs-add-bar';
+  var btnAttr = document.createElement('button');
+  btnAttr.type = 'button';
+  btnAttr.textContent = '+ Attribute';
+  btnAttr.onclick = function() {
+    var name = prompt('Attribute name:');
+    if (!name || !name.trim()) return;
+    var val = prompt('Value:', '');
+    if (val === null) return;
+    addToObject(path, name.trim(), val);
+  };
+  var btnBlock = document.createElement('button');
+  btnBlock.type = 'button';
+  btnBlock.textContent = '+ Block';
+  btnBlock.onclick = function() {
+    var name = prompt('Block name:');
+    if (!name || !name.trim()) return;
+    addToObject(path, name.trim(), {});
+  };
+  addBar.appendChild(btnAttr);
+  addBar.appendChild(btnBlock);
+  s.body.appendChild(addBar);
+  return s.section;
+}
+function renderObjectArray(key, arr, path, depth) {
+  var s = mkSection(key, depth, false);
+  s.section.setAttribute('data-cfgpath', JSON.stringify(path));
+  var badge = document.createElement('span');
+  badge.className = 'cs-badge';
+  badge.textContent = arr.length;
+  s.hdr.appendChild(badge);
+  if (path.length > 0) {
+    var del = document.createElement('button');
+    del.className = 'cs-del';
+    del.type = 'button';
+    del.title = 'Remove array';
+    del.innerHTML = '&#215;';
+    del.onclick = function(e) {
+      e.stopPropagation();
+      if (!confirm('Remove "' + key + '"?')) return;
+      removeAtPath(path);
+    };
+    s.hdr.appendChild(del);
+  }
+  arr.forEach(function(item, i) {
+    var childPath = path.concat([i]);
+    if (item && typeof item === 'object' && !Array.isArray(item)) s.body.appendChild(renderObject(null, item, childPath, depth + 1));
+    else s.body.appendChild(renderField('[' + i + ']', item, childPath));
+  });
+  var addBar = document.createElement('div');
+  addBar.className = 'cs-add-bar';
+  var btnItem = document.createElement('button');
+  btnItem.type = 'button';
+  btnItem.textContent = '+ Add item';
+  btnItem.onclick = function() { addItemToArray(path); };
+  addBar.appendChild(btnItem);
+  s.body.appendChild(addBar);
+  return s.section;
+}
+function renderValue(key, value, path, depth) {
+  if (Array.isArray(value)) return isFlat(value) ? renderFlatArray(key, value, path) : renderObjectArray(key, value, path, depth);
+  if (value && typeof value === 'object') return renderObject(key, value, path, depth);
+  return renderField(key, value, path);
+}
+function render(cfg) {
+  var tree = document.getElementById('cfg-tree');
+  tree.innerHTML = '';
+  if (!cfg || typeof cfg !== 'object') {
+    tree.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:13px">Select a manifest to begin.</div>';
+    return;
+  }
+  Object.keys(cfg).forEach(function(k) {
+    if (k === '__description') return;
+    tree.appendChild(renderValue(k, cfg[k], [k], 0));
+  });
+}
+function expandAll() { document.querySelectorAll('.cs').forEach(function(s){ s.classList.add('open'); }); }
+function collapseAll() { document.querySelectorAll('.cs').forEach(function(s){ s.classList.remove('open'); }); }
+function setManifestOptions(names) {
+  var select = document.getElementById('manifest-select');
+  select.innerHTML = '<option value="">Select a manifest</option>' + names.map(function(name) {
+    return '<option value="' + esc(name) + '">' + esc(name) + '</option>';
+  }).join('');
+  if (currentManifest) select.value = currentManifest;
+}
+function loadManifestList() {
+  return fetch(BASE + '/api/list')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var names = Array.isArray(data.names) ? data.names : [];
+      setManifestOptions(names);
+      if (!currentManifest && names.length) {
+        currentManifest = names[0];
+        document.getElementById('manifest-select').value = currentManifest;
+      }
+      if (currentManifest && names.indexOf(currentManifest) >= 0) return loadSelectedManifest();
+      DATA = null;
+      render(DATA);
+      setDirty(false);
+    })
+    .catch(function(err) {
+      document.getElementById('cfg-tree').innerHTML = '<div style="padding:16px;color:#c00;font-size:13px">List error: ' + esc(err.message) + '</div>';
+    });
+}
+function onManifestChange() {
+  var nextName = document.getElementById('manifest-select').value;
+  if (nextName === currentManifest) return;
+  if (dirty && !confirm('Discard unsaved changes in ' + currentManifest + '?')) {
+    document.getElementById('manifest-select').value = currentManifest;
+    return;
+  }
+  currentManifest = nextName;
+  loadSelectedManifest();
+}
+function loadSelectedManifest() {
+  if (!currentManifest) {
+    DATA = null;
+    render(DATA);
+    setDirty(false);
+    return Promise.resolve();
+  }
+  document.getElementById('cfg-tree').innerHTML = '<div style="padding:16px;color:var(--muted);font-size:13px">Loading…</div>';
+  return fetch(BASE + '/api/get?name=' + encodeURIComponent(currentManifest))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.ok) throw new Error(data.error || 'Failed to load manifest');
+      DATA = data.data;
+      render(DATA);
+      setDirty(false);
+      toast('Loaded ' + currentManifest);
+    })
+    .catch(function(err) {
+      document.getElementById('cfg-tree').innerHTML = '<div style="padding:16px;color:#c00;font-size:13px">Load error: ' + esc(err.message) + '</div>';
+    });
+}
+function saveManifest() {
+  if (!currentManifest || !DATA) return;
+  var btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  fetch(BASE + '/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: currentManifest, data: DATA })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.ok) throw new Error(data.error || 'Save failed');
+      setDirty(false);
+      toast('Manifest saved');
+    })
+    .catch(function(err) {
+      toast('Save failed: ' + err.message, 6000);
+      btn.textContent = 'Save';
+      btn.disabled = false;
+      btn.className = 'dirty';
+    });
+}
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
-    e.returnValue = "";
+    if (dirty) saveManifest();
   }
 });
-
-loadList();
+loadManifestList();
 </script>
 </body>
 </html>`;
 }
 
-
 export default async function getWebpageManifests(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
-  const log = getPrefixedLogger(wo, import.meta.url);
 
-  const cfg          = coreData?.config?.[MODULE_NAME] || {};
-  const port         = Number(cfg.port ?? 3126);
-  const basePath     = getBasePath(cfg);
+  const log = getPrefixedLogger(wo, import.meta.url);
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
+  const port = Number(cfg.port ?? 3126);
+  const basePath = getBasePath(cfg);
   const allowedRoles = Array.isArray(cfg.allowedRoles) ? cfg.allowedRoles : ["admin"];
 
   if (Number(wo.http?.port) !== port) return coreData;
 
-  const url     = getStr(wo.http?.url || "/");
-  const method  = getStr(wo.http?.method || "GET").toUpperCase();
+  const method = getStr(wo.http?.method || "GET").toUpperCase();
+  const url = getStr(wo.http?.url || "/");
   const urlPath = url.split("?")[0];
 
   if (!urlPath.startsWith(basePath)) return coreData;
 
+  if (method === "GET" && urlPath === basePath + "/style.css") {
+    const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
+    wo.http.response = {
+      status: 200,
+      headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" },
+      body: fs.readFileSync(cssFile, "utf-8")
+    };
+    wo.web = wo.web || {};
+    wo.web.useLayout = false;
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
   if (!getIsAllowedRoles(wo, allowedRoles)) {
     if (!wo.webAuth?.userId) {
-      wo.http.response = { status: 302, headers: { "Location": "/auth/login?next=" + encodeURIComponent(urlPath) }, body: "" };
+      wo.http.response = { status: 302, headers: { Location: "/auth/login?next=" + encodeURIComponent(urlPath) }, body: "" };
     } else if (urlPath.startsWith(basePath + "/api/")) {
-      setJsonResp(wo, 403, { error: "forbidden" });
+      setJsonResp(wo, 403, { ok: false, error: "forbidden" });
     } else {
       const menuHtml = getMenuHtml(wo.web?.menu || [], urlPath, wo.webAuth?.role || "", null, null, wo.webAuth);
       wo.http.response = {
         status: 403,
         headers: { "Content-Type": "text/html; charset=utf-8" },
-        body: "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">" +
-              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
-              "<title>Manifest Editor</title>" + getThemeHeadScript() +
-              "<link rel=\"stylesheet\" href=\"/dashboard/style.css\"></head><body>" +
-              "<header><h1>\uD83D\uDCC4 Manifest Editor</h1>" + menuHtml + "</header>" +
-              "<div style=\"margin-top:var(--hh);padding:1.5rem;display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--hh))\">" +
-              "<div style=\"text-align:center;color:var(--txt)\">" +
-              "<div style=\"font-size:2rem;margin-bottom:0.5rem\">\uD83D\uDD12</div>" +
-              "<div style=\"font-weight:600;margin-bottom:0.5rem\">Access denied</div>" +
-              "<a href=\"/\" style=\"font-size:0.85rem;color:var(--acc)\">&#8592; Back to home</a>" +
-              "</div></div></body></html>"
+        body: buildDeniedHtml(menuHtml, basePath, wo.webAuth)
       };
     }
     wo.jump = true;
@@ -426,118 +667,55 @@ export default async function getWebpageManifests(coreData) {
 
   if (method === "GET" && urlPath === basePath + "/api/list") {
     try {
-      const files = await readdir(MANIFESTS_DIR);
-      const names = files
-        .filter(f => f.endsWith(".json"))
-        .map(f => f.slice(0, -5))
-        .sort((a, b) => a.localeCompare(b));
-      wo.http.response = {
-        status: 200,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ ok: true, names })
-      };
-    } catch (err) {
-      log("list error", err?.message);
-      wo.http.response = {
-        status: 500,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ ok: false, error: String(err?.message || err) })
-      };
+      setJsonResp(wo, 200, { ok: true, names: await listManifestNames() });
+    } catch (error) {
+      log("manifest list failed", String(error?.message || error));
+      setJsonResp(wo, 500, { ok: false, error: String(error?.message || error) });
     }
     wo.jump = true;
+    await setSendNow(wo);
     return coreData;
   }
 
   if (method === "GET" && urlPath === basePath + "/api/get") {
     try {
-      const params   = new URLSearchParams(url.includes("?") ? url.slice(url.indexOf("?") + 1) : "");
-      const name     = getStr(params.get("name")).trim();
-      if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
-        wo.http.response = {
-          status: 400,
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-          body: JSON.stringify({ ok: false, error: "Invalid manifest name" })
-        };
-        wo.jump = true;
-        return coreData;
-      }
-      const filePath = join(MANIFESTS_DIR, name + ".json");
-      const raw      = await readFile(filePath, "utf-8");
-      wo.http.response = {
-        status: 200,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ ok: true, name, content: raw })
-      };
-    } catch (err) {
-      log("get error", err?.message);
-      const notFound = err?.code === "ENOENT";
-      wo.http.response = {
-        status: notFound ? 404 : 500,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ ok: false, error: notFound ? "Manifest not found" : String(err?.message || err) })
-      };
+      const params = new URLSearchParams(url.includes("?") ? url.slice(url.indexOf("?") + 1) : "");
+      const name = getStr(params.get("name")).trim();
+      setJsonResp(wo, 200, { ok: true, name, data: await readManifest(name) });
+    } catch (error) {
+      const notFound = error?.code === "ENOENT";
+      setJsonResp(wo, notFound ? 404 : 400, { ok: false, error: String(error?.message || error) });
     }
     wo.jump = true;
+    await setSendNow(wo);
     return coreData;
   }
 
   if (method === "POST" && urlPath === basePath + "/api/save") {
     try {
-      const body    = wo.http?.json || {};
-      const name    = getStr(body.name).trim();
-      const content = getStr(body.content);
-      if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
-        wo.http.response = {
-          status: 400,
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-          body: JSON.stringify({ ok: false, error: "Invalid manifest name" })
-        };
-        wo.jump = true;
-        return coreData;
-      }
-      try {
-        JSON.parse(content);
-      } catch (parseErr) {
-        wo.http.response = {
-          status: 400,
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-          body: JSON.stringify({ ok: false, error: "Invalid JSON: " + String(parseErr?.message || parseErr) })
-        };
-        wo.jump = true;
-        return coreData;
-      }
-      const filePath = join(MANIFESTS_DIR, name + ".json");
-      await writeFile(filePath, content, "utf-8");
-      log("saved manifest", name);
-      wo.http.response = {
-        status: 200,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ ok: true })
-      };
-    } catch (err) {
-      log("save error", err?.message);
-      wo.http.response = {
-        status: 500,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ ok: false, error: String(err?.message || err) })
-      };
+      const body = wo.http?.json || {};
+      await writeManifest(body.name, body.data);
+      setJsonResp(wo, 200, { ok: true });
+    } catch (error) {
+      log("manifest save failed", String(error?.message || error));
+      setJsonResp(wo, 400, { ok: false, error: String(error?.message || error) });
     }
     wo.jump = true;
+    await setSendNow(wo);
     return coreData;
   }
 
-  if (method === "GET" && urlPath === basePath) {
-    try {
-      const menuItems = Array.isArray(wo.web?.menu) ? wo.web.menu : [];
-      const role      = String(wo.webAuth?.role || "").toLowerCase();
-      const menu      = getMenuHtml(menuItems, basePath, role, null, null, wo.webAuth);
-      const html      = buildPageHtml(menu, basePath);
-      wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: html };
-    } catch (err) {
-      log("page build error", err?.message);
-      wo.http.response = { status: 500, headers: { "Content-Type": "text/plain; charset=utf-8" }, body: "Error: " + String(err?.message || err) };
-    }
+  if (method === "GET" && (urlPath === basePath || urlPath === basePath + "/")) {
+    const menuHtml = getMenuHtml(wo.web?.menu || [], basePath, wo.webAuth?.role || "", null, null, wo.webAuth);
+    wo.http.response = {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+      body: buildPageHtml({ basePath, menuHtml })
+    };
+    wo.web = wo.web || {};
+    wo.web.useLayout = false;
     wo.jump = true;
+    await setSendNow(wo);
     return coreData;
   }
 
