@@ -175,7 +175,8 @@ async function getResolvedIdentity(wo, config, effectiveChannelOrThreadId, clien
 function getAskerDisplay(wo, baseMessage) {
   const nameCandidates = [
     "UserDisplayName", "userDisplayName", "DisplayName", "displayName",
-    "Username", "username", "UserName", "userName", "User", "user", "Author", "author"
+    "Username", "username", "UserName", "userName", "User", "user", "Author", "author",
+    "authorDisplayname", "authorDisplayName"
   ];
 
   for (const k of nameCandidates) {
