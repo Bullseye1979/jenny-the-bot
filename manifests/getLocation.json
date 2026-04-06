@@ -1,6 +1,6 @@
 {
   "name": "getLocation",
-  "description": "Generate Google Street View image URLs, interactive Street View links, and Google Maps URLs for one or more locations. Optionally returns driving directions text. Always generates fresh URLs and supports legacy snake_case parameters for backward compatibility.",
+  "description": "Generate Google Street View image URLs, interactive Street View links, and Google Maps URLs for one or more locations. Optionally returns driving directions text. Always generate fresh URLs and ALWAYS print every link that is returned in the tool output (do not omit any links). Supports legacy snake_case parameters for backward compatibility. Keep this manifest at version 1.",
   "parameters": {
     "type": "object",
     "properties": {
