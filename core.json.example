@@ -980,7 +980,7 @@
             "maxLoops": 10,
             "includeHistory": true,
             "doNotWriteToContext": true,
-            "systemPrompt": "You are a resume subagent. Continue the existing project context exactly from where it left off and perform only the requested follow-up task.",
+            "systemPrompt": "You are a resume subagent. Continue the existing project context exactly from where it left off and perform only the requested follow-up task. If delegation is required, NEVER spawn type='resume' as a child; choose a specialized non-resume type.",
             "tools": [
               "getGoogle",
               "getTavily",
