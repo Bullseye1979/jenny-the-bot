@@ -99,11 +99,15 @@ async function getInvoke(args, coreData) {
   const projectId = args?.projectId ? String(args.projectId).trim() : "";
   const explicitChannel = String(args?.channel_id || "").trim();
   const orchestration   = args?.orchestration ?? null;
-  const typeName = String(args?.type || "generic").trim();
+  const requestedType = String(args?.type || "").trim();
+  const typeName = projectId
+    ? "resume"
+    : (requestedType || "generic");
 
   const _invokeCallerChannelId = String(wo.callerChannelId || wo.channelID || "").trim();
   logSubagent("info", "getSubAgent", "invoke_called", {
     typeName,
+    requestedType:       requestedType || null,
     projectId:           projectId || null,
     callerChannelId:     _invokeCallerChannelId || null,
     callerFlow:          String(wo.callerFlow || wo.flow || "") || null,
@@ -146,6 +150,14 @@ async function getInvoke(args, coreData) {
   const types      = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
   const agentDepth = Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0;
   const agentType  = String(wo.agentType || "").trim();
+
+  if (projectId && !explicitChannel && !types.resume) {
+    logSubagent("error", "getSubAgent", "resume_type_missing", { projectId, requestedType: requestedType || null });
+    return {
+      ok: false,
+      error: "Resume routing requires toolsconfig.getSubAgent.types.resume to be configured (or pass channel_id explicitly)."
+    };
+  }
 
   const maxSpawnDepth = Number.isFinite(Number(cfg.maxSpawnDepth)) ? Number(cfg.maxSpawnDepth) : 2;
 
@@ -196,6 +208,16 @@ async function getInvoke(args, coreData) {
     agentDepth:             agentDepth + 1,
   });
 
+  const _levelContextLine = `Execution context: You are running as subagent type "${typeName}" at depth ${agentDepth + 1}. Parent type: "${agentType || "root"}" (depth ${agentDepth}). Resume is level-1 only; never spawn a child with type "resume".`;
+  const _resumeContextLine = projectId
+    ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. IMPORTANT: Before asking the user for any URLs, file paths, or artifact references — scan your loaded conversation history first. All previously produced URLs and ARTIFACTS blocks from prior turns are available there. Use them directly. Only ask the user if the information is genuinely absent from your context. You may call tools freely using URLs found in your context. Only spawn a new subagent via getSubAgent for genuinely independent sub-tasks that require a different tool palette.`
+    : "";
+
+  const _systemPromptAddition = [_levelContextLine, _resumeContextLine]
+    .map(v => String(v || "").trim())
+    .filter(Boolean)
+    .join("\n\n");
+
   const _spawnBody = JSON.stringify({
     channelID:              channelId,
     payload:                fullPayload,
@@ -203,9 +225,7 @@ async function getInvoke(args, coreData) {
     guildId:                String(wo.guildId || ""),
     authorDisplayname:      String(wo.authorDisplayname || ""),
     projectId:              projectId || undefined,
-    systemPromptAddition:   projectId
-      ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. IMPORTANT: Before asking the user for any URLs, file paths, or artifact references — scan your loaded conversation history first. All previously produced URLs and ARTIFACTS blocks from prior turns are available there. Use them directly. Only ask the user if the information is genuinely absent from your context. You may call tools freely using URLs found in your context. Only spawn a new subagent via getSubAgent for genuinely independent sub-tasks that require a different tool palette.`
-      : undefined,
+    systemPromptAddition:   _systemPromptAddition || undefined,
     callerChannelId:        callerChannelId || undefined,
     callerChannelIds:       callerChannelIds.length ? callerChannelIds : undefined,
     callerTurnId:           callerTurnId || undefined,
