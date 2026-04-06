@@ -16,6 +16,8 @@
 /*   GET  /context/api/record         — single row by ctx_id                      */
 /*   PATCH /context/api/record        — update a single field of a row            */
 /*   DELETE /context/api/delete       — bulk delete by ctx_id list                */
+/*   DELETE /context/api/delete-channel — bulk delete by channelID                */
+/*   DELETE /context/api/delete-channels — bulk delete by channelID list          */
 /*   POST /context/api/replace/find   — find search & replace matches             */
 /*   POST /context/api/replace/apply  — apply one replacement                     */
 /*   POST /context/api/replace/all    — replace all matches in one call           */
@@ -46,7 +48,15 @@ function getBasePath(cfg) {
 }
 
 function setHtmlResp(wo, html) {
-  wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: html };
+  wo.http.response = {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Pragma": "no-cache"
+    },
+    body: html
+  };
 }
 
 function setCssResp(wo, css) {
@@ -94,7 +104,7 @@ function safeFields(rawFields, fallback) {
 }
 
 async function dbRecords(pool, { channel, page, limit, fields }) {
-  const cols = ["ctx_id", ...fields.filter(f => f !== "ctx_id")];
+  const cols = ["ctx_id", "frozen", ...fields.filter(f => f !== "ctx_id" && f !== "frozen")];
   const colSql = safeFields(cols, ["ctx_id", "ts", "id", "role", "text"]).join(", ");
   const offset = (page - 1) * limit;
   const where  = channel ? "WHERE id = ?" : "";
@@ -111,7 +121,7 @@ async function dbRecords(pool, { channel, page, limit, fields }) {
 }
 
 async function dbSearch(pool, { channel, q, page, limit, fields, searchFields }) {
-  const cols = ["ctx_id", ...fields.filter(f => f !== "ctx_id")];
+  const cols = ["ctx_id", "frozen", ...fields.filter(f => f !== "ctx_id" && f !== "frozen")];
   const colSql  = safeFields(cols, ["ctx_id", "ts", "id", "role", "text"]).join(", ");
   const sfSafe  = searchFields.filter(f => ["text", "json", "role", "turn_id", "id"].includes(f));
   if (!sfSafe.length) sfSafe.push("text");
@@ -132,10 +142,36 @@ async function dbSearch(pool, { channel, q, page, limit, fields, searchFields })
   return { rows, total: Number(total), page, pages: Math.ceil(Number(total) / limit) };
 }
 
-async function dbDelete(pool, ids) {
+async function dbDelete(pool, ids, { protectFrozen = true } = {}) {
   if (!ids.length) return 0;
   const ph = ids.map(() => "?").join(",");
-  const [r] = await pool.execute(`DELETE FROM ${CTX_TABLE} WHERE ctx_id IN (${ph})`, ids);
+  const [r] = await pool.execute(
+    `DELETE FROM ${CTX_TABLE} WHERE ctx_id IN (${ph}) ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
+    ids
+  );
+  return r.affectedRows;
+}
+
+async function dbDeleteChannel(pool, channelID, { protectFrozen = true } = {}) {
+  const chan = getStr(channelID).trim();
+  if (!chan) return 0;
+  const [r] = await pool.execute(
+    `DELETE FROM ${CTX_TABLE} WHERE id = ? ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
+    [chan]
+  );
+  return r.affectedRows;
+}
+
+async function dbDeleteChannels(pool, channelIDs, { protectFrozen = true } = {}) {
+  const ids = Array.isArray(channelIDs)
+    ? channelIDs.map(v => getStr(v).trim()).filter(Boolean)
+    : [];
+  if (!ids.length) return 0;
+  const ph = ids.map(() => "?").join(",");
+  const [r] = await pool.execute(
+    `DELETE FROM ${CTX_TABLE} WHERE id IN (${ph}) ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
+    ids
+  );
   return r.affectedRows;
 }
 
@@ -237,12 +273,18 @@ body{font-size:13px}
 .ctx-sidebar.collapsed .sidebar-title{justify-content:center;padding:9px 4px}
 .ctx-sidebar.collapsed .sidebar-title-text{display:none}
 .ctx-sidebar.collapsed #channel-list{display:none}
+.ctx-sidebar.collapsed .sidebar-channel-tools{display:none}
 #sidebar-toggle{background:none;border:none;cursor:pointer;padding:0 2px;color:var(--muted);font-size:13px;line-height:1;flex-shrink:0}
 #sidebar-toggle:hover{color:var(--txt)}
+#btn-delete-channels{font-size:14px;line-height:1;padding:2px 4px}
+#btn-delete-channels:disabled{opacity:.35;cursor:not-allowed}
+.sidebar-channel-tools{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 10px;border-bottom:1px solid var(--bdr);font-size:11px;color:var(--muted)}
+.sidebar-channel-tools label{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
 #channel-list{overflow-y:auto;flex:1}
 .channel-item{padding:7px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--bdr);user-select:none}
 .channel-item:hover{background:var(--bg)}
 .channel-item.active{background:#dbeafe;color:var(--acc)}
+.channel-item-left{display:flex;align-items:center;gap:7px;min-width:0;flex:1}
 .ch-id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:12px}
 .ch-cnt{color:var(--muted);font-size:11px;flex-shrink:0}
 .ctx-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -269,6 +311,9 @@ button:disabled{opacity:.4;cursor:not-allowed}
 #records-table td{padding:4px 8px;border-bottom:1px solid var(--bdr);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:350px;font-size:12px}
 #records-table tbody tr:hover td{background:var(--bg)}
 #records-table tbody tr.row-selected td{background:#dbeafe}
+.row-frozen td{background:rgba(251,191,36,.08)}
+.row-frozen .row-check{cursor:not-allowed}
+.frozen-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#a16207;background:#fef3c7;border:1px solid #fcd34d;border-radius:999px;padding:1px 6px;margin-left:6px}
 .null-cell{color:var(--muted);font-style:italic}
 .cell-expandable{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
 .btn-edit-row{background:transparent;color:var(--muted);border:none;padding:2px 5px;cursor:pointer;font-size:13px;line-height:1;border-radius:3px}
@@ -352,6 +397,10 @@ ${dbBanner}
         <span class="sidebar-title-text">Channels</span>
         <button id="sidebar-toggle" title="Toggle channel list">&#9664;</button>
       </div>
+      <div class="sidebar-channel-tools">
+        <label><input type="checkbox" id="chk-channel-select-all"> Select all</label>
+        <button class="btn-icon" id="btn-delete-channels" title="Delete selected channels">🗑</button>
+      </div>
       <div id="channel-list"></div>
     </div>
     <div class="ctx-main">
@@ -363,6 +412,9 @@ ${dbBanner}
           <input type="checkbox" id="chk-search-json" style="cursor:pointer"> JSON
         </label>
         <button class="btn-secondary" id="btn-replace-open">Search &amp; Replace</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--txt);cursor:pointer;user-select:none">
+          <input type="checkbox" id="chk-protect-frozen" checked style="cursor:pointer"> Frozen-Schutz
+        </label>
         <div style="flex:1"></div>
         <div class="field-toggle">
           <button class="btn-secondary" id="btn-fields">Fields ▾</button>
@@ -465,6 +517,12 @@ var srDone = new Set();
 var srSkippedSet = new Set();
 var editCtxId = null;
 var editOrig = {};
+var protectFrozen = true;
+var selectedChannelIds = (function () {
+  if (typeof window === 'undefined') return new Set();
+  if (!(window.__ctxSelectedChannelIds instanceof Set)) window.__ctxSelectedChannelIds = new Set();
+  return window.__ctxSelectedChannelIds;
+})();
 
 async function api(path, method, body) {
   var opts = { method: method || 'GET', headers: {} };
@@ -489,6 +547,23 @@ function setStatus(msg, isError) {
   el.style.color = isError ? '#f87171' : '';
 }
 function updateDeleteBtn() { document.getElementById('btn-delete-sel').disabled = selectedIds.size === 0; }
+function getProtectFrozen() {
+  var el = document.getElementById('chk-protect-frozen');
+  return !!(el && el.checked);
+}
+function updateChannelDeleteBtn() {
+  var btn = document.getElementById('btn-delete-channels');
+  if (btn) btn.disabled = selectedChannelIds.size === 0;
+}
+function syncChannelSelectAll() {
+  var allChecks = Array.from(document.querySelectorAll('.channel-select-check'));
+  var selectable = allChecks.length;
+  var selected = allChecks.filter(function (c) { return c.checked; }).length;
+  var master = document.getElementById('chk-channel-select-all');
+  if (!master) return;
+  master.checked = selectable > 0 && selected === selectable;
+  master.indeterminate = selected > 0 && selected < selectable;
+}
 
 async function loadChannels() {
   try {
@@ -505,20 +580,50 @@ async function loadChannels() {
 function renderChannels(channels) {
   var list = document.getElementById('channel-list');
   list.innerHTML = '';
+  var validIds = new Set(channels.map(function (c) { return String(c.id); }));
+  selectedChannelIds.forEach(function (id) { if (!validIds.has(String(id))) selectedChannelIds.delete(String(id)); });
   var total = channels.reduce(function (s, c) { return s + c.cnt; }, 0);
   addChannelItem(list, null, 'All Channels', total);
-  channels.forEach(function (ch) { addChannelItem(list, ch.id, ch.id, ch.cnt); });
+  channels.forEach(function (ch) { addChannelItem(list, ch.id, ch.id, ch.cnt, true); });
   if (!channels.length) {
     var hint = document.createElement('div');
     hint.style.cssText = 'padding:8px 12px;color:#555;font-size:11px;font-style:italic';
     hint.textContent = total === 0 ? 'No data in DB' : '';
     list.appendChild(hint);
   }
+  syncChannelSelectAll();
+  updateChannelDeleteBtn();
 }
-function addChannelItem(container, id, label, cnt) {
+function addChannelItem(container, id, label, cnt, selectable) {
   var div = document.createElement('div');
   div.className = 'channel-item' + (currentChannel === id ? ' active' : '');
-  div.innerHTML = '<span class="ch-id">' + escHtml(label) + '</span><span class="ch-cnt">' + cnt + '</span>';
+  var left = document.createElement('div');
+  left.className = 'channel-item-left';
+  if (selectable) {
+    var chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.className = 'channel-select-check';
+    chk.dataset.channelId = String(id);
+    chk.checked = selectedChannelIds.has(String(id));
+    chk.addEventListener('click', function (e) { e.stopPropagation(); });
+    chk.addEventListener('change', function () {
+      var cid = String(this.dataset.channelId || '');
+      if (!cid) return;
+      if (this.checked) selectedChannelIds.add(cid); else selectedChannelIds.delete(cid);
+      syncChannelSelectAll();
+      updateChannelDeleteBtn();
+    });
+    left.appendChild(chk);
+  }
+  var idSpan = document.createElement('span');
+  idSpan.className = 'ch-id';
+  idSpan.textContent = label;
+  left.appendChild(idSpan);
+  div.appendChild(left);
+  var cntSpan = document.createElement('span');
+  cntSpan.className = 'ch-cnt';
+  cntSpan.textContent = String(cnt);
+  div.appendChild(cntSpan);
   div.addEventListener('click', function () {
     currentChannel = id; currentPage = 1; isSearchMode = false;
     document.getElementById('search-input').value = ''; lastQ = '';
@@ -592,6 +697,7 @@ function renderTable(rows) {
   var chkAll = document.createElement('input'); chkAll.type = 'checkbox'; chkAll.id = 'chk-all';
   chkAll.addEventListener('change', function () {
     document.querySelectorAll('.row-check').forEach(function (c) {
+      if (c.disabled) { c.checked = false; return; }
       c.checked = chkAll.checked;
       var id = Number(c.dataset.id);
       if (chkAll.checked) selectedIds.add(id); else selectedIds.delete(id);
@@ -620,6 +726,8 @@ function renderTable(rows) {
 
   rows.forEach(function (row) {
     var tr = document.createElement('tr');
+    var isFrozen = Number(row.frozen || 0) === 1;
+    if (isFrozen) tr.classList.add('row-frozen');
 
     var tdChk = document.createElement('td');
     tdChk.style.cssText = 'padding:4px;';
@@ -627,8 +735,13 @@ function renderTable(rows) {
     chk.type = 'checkbox'; chk.className = 'row-check';
     var rowId = row.ctx_id != null ? row.ctx_id : '';
     chk.dataset.id = rowId;
+    if (isFrozen && protectFrozen) {
+      chk.disabled = true;
+      chk.title = 'Frozen entry (geschützt)';
+    }
     if (selectedIds.has(Number(rowId))) { chk.checked = true; tr.classList.add('row-selected'); }
     chk.addEventListener('change', function () {
+      if (this.disabled) return;
       var id = Number(this.dataset.id);
       if (this.checked) selectedIds.add(id); else selectedIds.delete(id);
       tr.classList.toggle('row-selected', this.checked);
@@ -663,6 +776,12 @@ function renderTable(rows) {
         td.dataset.value = s;
         renderCellContent(td, col, s);
         if (EDITABLE_COLS.has(col)) makeCellEditable(td, rowCtxId, col);
+        if (col === 'ctx_id' && isFrozen) {
+          var chip = document.createElement('span');
+          chip.className = 'frozen-chip';
+          chip.textContent = 'frozen';
+          td.appendChild(chip);
+        }
       }
       tr.appendChild(td);
     });
@@ -680,12 +799,31 @@ function renderPagination(total, page, pages) {
 async function doDelete() {
   if (!selectedIds.size) return;
   var ids = Array.from(selectedIds);
-  if (!confirm('Delete ' + ids.length + ' entries? This cannot be undone.')) return;
+  var prot = getProtectFrozen();
+  var suffix = prot ? ' (frozen bleibt geschützt)' : '';
+  if (!confirm('Delete ' + ids.length + ' entries' + suffix + '? This cannot be undone.')) return;
   try {
-    var data = await api('/api/delete', 'DELETE', { ids: ids });
+    var data = await api('/api/delete', 'DELETE', { ids: ids, protectFrozen: prot });
     setStatus('Deleted: ' + data.deleted + ' entries.');
     selectedIds.clear(); updateDeleteBtn(); loadAll();
   } catch (e) { alert('Error deleting: ' + e.message); }
+}
+
+async function doDeleteChannels() {
+  var channelIds = Array.from(selectedChannelIds);
+  if (!channelIds.length) { alert('Bitte mindestens einen channel auswählen.'); return; }
+  var prot = getProtectFrozen();
+  var msg = prot
+    ? ('Delete non-frozen entries in ' + channelIds.length + ' selected channel(s)? Frozen entries remain.')
+    : ('Delete ALL entries in ' + channelIds.length + ' selected channel(s) including frozen?');
+  if (!confirm(msg + ' This cannot be undone.')) return;
+  try {
+    var data = await api('/api/delete-channels', 'DELETE', { channelIDs: channelIds, protectFrozen: prot });
+    var left = prot ? ' Frozen entries (if any) are kept.' : '';
+    setStatus('Channel delete: ' + data.deleted + ' entries removed in ' + channelIds.length + ' channel(s).' + left);
+    selectedChannelIds.clear();
+    selectedIds.clear(); updateDeleteBtn(); loadAll();
+  } catch (e) { alert('Error deleting channels: ' + e.message); }
 }
 
 function doSearch() {
@@ -962,6 +1100,32 @@ function setupEvents() {
   document.getElementById('search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
   document.getElementById('btn-clear-search').addEventListener('click', clearSearch);
   document.getElementById('btn-delete-sel').addEventListener('click', doDelete);
+  document.getElementById('btn-delete-channels').addEventListener('click', doDeleteChannels);
+  document.getElementById('chk-channel-select-all').addEventListener('change', function () {
+    var checked = !!this.checked;
+    document.querySelectorAll('.channel-select-check').forEach(function (c) {
+      c.checked = checked;
+      var cid = String(c.dataset.channelId || '');
+      if (!cid) return;
+      if (checked) selectedChannelIds.add(cid); else selectedChannelIds.delete(cid);
+    });
+    syncChannelSelectAll();
+    updateChannelDeleteBtn();
+  });
+  document.getElementById('chk-protect-frozen').addEventListener('change', function () {
+    protectFrozen = !!this.checked;
+    if (!this.checked) {
+      var ok = confirm('Frozen-Schutz deaktivieren? Danach können frozen Einträge gelöscht werden.');
+      if (!ok) {
+        this.checked = true;
+        protectFrozen = true;
+        return;
+      }
+    }
+    selectedIds.clear();
+    updateDeleteBtn();
+    loadPage();
+  });
   document.getElementById('btn-prev').addEventListener('click', function () { if (currentPage > 1) { currentPage--; loadPage(); } });
   document.getElementById('btn-next').addEventListener('click', function () { currentPage++; loadPage(); });
   document.getElementById('btn-replace-open').addEventListener('click', function () {
@@ -1032,6 +1196,7 @@ async function loadAll() {
     setStatus('Load error: ' + e.message, true);
   }
   loadColumns().catch(function (e) { console.error('[Context] loadColumns:', e); });
+  protectFrozen = getProtectFrozen();
 })();
 })();
 </script>
@@ -1179,8 +1344,33 @@ export default async function getWebpageContext(coreData) {
     if (method === "DELETE" && urlPath === basePath + "/api/delete") {
       const body = wo.http?.json || {};
       const ids  = Array.isArray(body.ids) ? body.ids.map(Number).filter(n => Number.isFinite(n) && n > 0) : [];
+      const protectFrozen = body.protectFrozen !== false;
       if (!ids.length) { setJsonResp(wo, 400, { error: "No IDs provided" }); }
-      else { const deleted = await dbDelete(pool, ids); setJsonResp(wo, 200, { ok: true, deleted }); }
+      else { const deleted = await dbDelete(pool, ids, { protectFrozen }); setJsonResp(wo, 200, { ok: true, deleted, protectFrozen }); }
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    if (method === "DELETE" && urlPath === basePath + "/api/delete-channel") {
+      const body = wo.http?.json || {};
+      const channelID = getStr(body.channelID).trim();
+      const protectFrozen = body.protectFrozen !== false;
+      if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); }
+      else {
+        const deleted = await dbDeleteChannel(pool, channelID, { protectFrozen });
+        setJsonResp(wo, 200, { ok: true, deleted, channelID, protectFrozen });
+      }
+      wo.jump = true; await setSendNow(wo); return coreData;
+    }
+
+    if (method === "DELETE" && urlPath === basePath + "/api/delete-channels") {
+      const body = wo.http?.json || {};
+      const channelIDs = Array.isArray(body.channelIDs) ? body.channelIDs : [];
+      const protectFrozen = body.protectFrozen !== false;
+      if (!channelIDs.length) { setJsonResp(wo, 400, { error: "channelIDs required" }); }
+      else {
+        const deleted = await dbDeleteChannels(pool, channelIDs, { protectFrozen });
+        setJsonResp(wo, 200, { ok: true, deleted, channelIDs, protectFrozen });
+      }
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
