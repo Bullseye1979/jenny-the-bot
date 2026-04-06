@@ -374,7 +374,7 @@
         "relevanceLanguage": "de"
       },
       "getSubAgent": {
-        "__description": "Routes a task to an isolated subagent channel via the internal API flow. Each type maps to a dedicated channelID configured in core-channel-config.",
+        "__description": "Routes a task to an isolated subagent channel via the internal API flow. Use direct tools first for simple tasks. Each type maps to a dedicated channelID configured in core-channel-config.",
         "apiUrl": "http://localhost:3400",
         "apiSecret": "API_SECRET",
         "timeoutMs": 120000,
@@ -1103,7 +1103,7 @@
           }
         },
         {
-          "__description": "Subagent: research — handles getHistory, getInformation, getGoogle, getTavily, getWebpage. Spawned by getSubAgent(type='research'). No getSubAgent in tools to prevent recursion.",
+          "__description": "Subagent: research ? handles web research, webpage fetches, YouTube, route searches, route planning, and location lookups. Spawned by getSubAgent(type='research'). No getSubAgent in tools to prevent recursion.",
           "channelMatch": [
             "subagent-research"
           ],
