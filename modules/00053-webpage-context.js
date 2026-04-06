@@ -826,6 +826,24 @@ async function doDeleteChannels() {
   } catch (e) { alert('Error deleting channels: ' + e.message); }
 }
 
+async function doDeleteChannel() {
+  var input = document.getElementById('delete-channel-id');
+  var cid = (input && input.value ? input.value : '').trim() || (currentChannel || '');
+  if (!cid) { alert('Bitte channelID eingeben oder links einen Kanal wählen.'); return; }
+  var prot = getProtectFrozen();
+  var msg = prot
+    ? ('Delete non-frozen entries in channel "' + cid + '"? Frozen entries remain.')
+    : ('Delete ALL entries in channel "' + cid + '" including frozen?');
+  if (!confirm(msg + ' This cannot be undone.')) return;
+  try {
+    var data = await api('/api/delete-channel', 'DELETE', { channelID: cid, protectFrozen: prot });
+    var left = prot ? ' Frozen entries (if any) are kept.' : '';
+    setStatus('Channel delete: ' + data.deleted + ' entries removed from "' + cid + '".' + left);
+    if (input) input.value = '';
+    selectedIds.clear(); updateDeleteBtn(); loadAll();
+  } catch (e) { alert('Error deleting channel: ' + e.message); }
+}
+
 function doSearch() {
   var q = document.getElementById('search-input').value.trim();
   if (!q) return;
