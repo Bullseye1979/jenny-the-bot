@@ -145,6 +145,20 @@ The terminal dashboard will start, showing live flow status, memory usage, and p
 
 Each incoming event (Discord message, HTTP request, cron tick, etc.) creates a **`workingObject`** — a plain JavaScript object that is passed sequentially through every module in the pipeline. Modules read from and write to this object. The pipeline is ordered numerically by module filename prefix.
 
+### Architecture Compliance Baseline (v1.0)
+
+The current codebase follows these baseline rules:
+
+- Modules and tools import reusable logic from `core/` or `shared/`, not from other modules/tools.
+- Modules and tools read their own configuration section (`toolsconfig.<toolName>` or `config.<moduleName>`) and shared runtime defaults from `workingObject`.
+- Tool contracts are defined in `manifests/*.json`; runtime behavior must stay aligned with those manifests.
+- Secrets are resolved via `core/secrets.js` (`getSecret`) instead of plaintext values.
+- File writes from tools should use helpers in `core/file.js`.
+- LLM requests from tools/modules are routed through the internal API (`http://localhost:3400`) unless the feature is explicitly non-LLM (for example image/video generation or transcription providers).
+- Public tool parameters should use camelCase. Legacy snake_case aliases may still be accepted for backward compatibility.
+
+Subagent orchestration updates are standardized as **1.0**, including async spawn/resume behavior (`getSubAgent`, `getAgentResume`) and explicit project-context continuation.
+
 ---
 
 ## Configuration Reference (`core.json`)
@@ -528,6 +542,39 @@ Background poller that detects completed async subagent jobs and delivers their 
 
 Activate by setting `config["discord-subagent-poll"].enabled = true` in `core.json`. See [getSubAgent](#getsubagent) for the full async job lifecycle.
 
+### Subagent Orchestration (getSubAgent / getAgentResume)
+
+Subagent execution is asynchronous by design and is routed through the internal API on port `3400`.
+
+**Operational model (v1.0):**
+
+1. Parent assistant calls `getSubAgent` with `{ type, task }`.
+2. The tool resolves the target virtual channel from `toolsconfig.getSubAgent.types`.
+3. The tool posts a spawn request to `/api/spawn` and returns immediately with `{ ok, jobId, projectId, status: "started" }`.
+4. The subagent runs in an isolated channel config (own tools, prompts, limits).
+5. `discord-subagent-poll` detects completion and delivers the final result into the original Discord channel.
+
+**Type routing convention:** route planning and location lookup tasks belong to the `research` subagent type.
+
+**Resume flow (v1.0):**
+
+- `getAgentResume` continues an existing async project by `projectId`.
+- It resolves target routing from `toolsconfig.getAgentResume.types` and starts a new async spawn on the mapped channel.
+- Resume does not require re-sending prior artifacts if they are already part of project context.
+
+**Configuration boundaries:**
+
+- `getSubAgent` reads only `toolsconfig.getSubAgent` + runtime `workingObject`.
+- `getAgentResume` reads only `toolsconfig.getAgentResume` + runtime `workingObject`.
+- Both tools authenticate via `apiSecret` placeholders resolved through `core/secrets.js`.
+
+**Canonical payload keys (camelCase):**
+
+- `channelId` (legacy alias: `channel_id`)
+- `orchestration.globalGoal`, `yourTask`, `yourRole`, `doOnly`, `doNot`, `existingArtifacts`, `assignedToOthers`, `toolLocks`
+
+Legacy snake_case aliases are still accepted for backward compatibility, but new callers should use camelCase.
+
 ---
 
 ### bard Flow
@@ -577,6 +624,12 @@ The webpage flow starts **one HTTP server per port** listed in `config.webpage.p
 - **Markdown rendering** — headings, bold/italic, code blocks, blockquotes, lists, and horizontal rules are fully rendered in chat bubbles
 - **Thinking indicator with tool name** — while the bot is processing, the name of the currently active tool (e.g. `getImage`) is displayed next to the animated dots; the chat frontend holds a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelID=<id>` and receives a push event only when the active tool name changes (no per-tick polling from the browser)
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
+- **Subchannels:** the chat UI supports isolated per-channel threads stored in `chat_subchannels`.
+  - `GET /chat/api/subchannels?channelID=<id>` list subchannels
+  - `POST /chat/api/subchannels` create (`{ channelID, name }`)
+  - `PATCH /chat/api/subchannels` rename (`{ subchannelId, name }`)
+  - `DELETE /chat/api/subchannels` delete (`{ subchannelId }`, moves frozen rows to main channel)
+  - Chat send payload can include `subchannel` to scope context isolation
 
 **📖 AI Wiki** (`modules/00052`, `GET /wiki`)
 - Per-channel Fandom-style wiki at `/wiki/{channelId}`; each channel has independent articles

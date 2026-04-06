@@ -48,6 +48,7 @@ All key names follow **camelCase** throughout.
      - [getLocation](#getlocation)
      - [getTime](#gettime)
      - [getSubAgent](#getsubagent)
+     - [getAgentResume](#getagentresume)
      - [getBan](#getban)
 2. [config](#config)
    - [discord](#discord)
@@ -75,6 +76,7 @@ All key names follow **camelCase** throughout.
    - [webpage](#webpage)
    - [discord-admin](#discord-admin)
    - [discord-voice](#discord-voice)
+   - [webpage-voice-record](#webpage-voice-record)
    - [discord-voice-capture](#discord-voice-capture)
    - [core-voice-transcribe](#core-voice-transcribe)
    - [core-voice-tts](#core-voice-tts)
@@ -278,16 +280,16 @@ Local Stable Diffusion image generation.
 
 #### getImageDescription
 
-Vision model — describe an image.
+Internal API-backed image analysis tool.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `apiKey` | string | `"sk-proj-..."` | API key |
-| `model` | string | `"gpt-4o-mini"` | Vision model |
-| `endpoint` | string | OpenAI completions URL | API endpoint |
-| `temperature` | number | `0.2` | Sampling temperature |
-| `maxTokens` | number | `1000` | Max tokens in the description |
-| `timeoutMs` | number | `60000` | Request timeout |
+| `channelId` | string | `"image-description"` | Internal API channel used for the analysis request |
+| `apiUrl` | string | `"http://localhost:3400"` | Internal API base URL |
+| `apiSecret` | string | `"API_SECRET"` | Optional bearer placeholder resolved via `bot_secrets` |
+| `systemPrompt` | string | `"You are a vision assistant..."` | Optional system instruction prepended to request payload |
+| `defaultPrompt` | string | `"Describe the image accurately..."` | Default task text when tool args omit `prompt` |
+| `timeoutMs` | number | `30000` | Internal API timeout |
 
 #### getAnimatedPicture
 
@@ -528,13 +530,28 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 |---|---|---|---|
 | `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
 | `apiSecret` | string | `"API_SECRET"` | Placeholder name for the bearer token — resolved from `bot_secrets` at runtime |
-| `timeoutMs` | number | `120000` | Maximum wait time for a synchronous subagent response (ms) |
-| `asyncSpawnPath` | string | `"/api/spawn"` | Path for async job spawning (`POST /api/spawn`). Defaults to `"/api/spawn"`. |
-| `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request in async mode (ms). The subagent itself then runs independently. |
+| `asyncSpawnPath` | string | `"/api/spawn"` | Path used for spawning jobs (`POST /api/spawn`). Defaults to `"/api/spawn"`. |
+| `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request (ms). The subagent itself then runs independently. |
 | `maxSpawnDepth` | number | `2` | Maximum nesting depth for subagent spawning. A subagent at depth ≥ `maxSpawnDepth` may not spawn further subagents. |
 | `types` | object | `{"research":"subagent-research"}` | Map of type name → virtual channel ID. Each entry enables one subagent type. |
 
-**Async mode** (`async: true`): the tool posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. The result is delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes.
+`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. Results are delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes.
+
+Type routing convention: route planning and location lookup tasks belong to the `research` subagent type.
+
+#### getAgentResume
+
+Resumes an existing async subagent project by spawning a follow-up task on the mapped subagent channel.
+
+| Key | Type | Example | Description |
+|---|---|---|---|
+| `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
+| `apiSecret` | string | `"API_SECRET"` | Placeholder name for bearer auth; resolved from `bot_secrets` |
+| `asyncSpawnPath` | string | `"/api/spawn"` | Spawn endpoint path |
+| `spawnTimeoutMs` | number | `10000` | Timeout for spawn request |
+| `types` | object | `{"research":"subagent-research"}` | Subagent type map used to resolve the target channel from stored project metadata |
+
+`getAgentResume` reads only `toolsconfig.getAgentResume` and the runtime `workingObject`.
 
 #### getBan
 
@@ -742,12 +759,9 @@ Access is **tiered**: `allowedRoles` grants basic access (Now Playing card + aud
     "tavilyApiKey":     "tvly-…",
     "tavilyMaxResults": 5,
     "tavilyTimeoutMs":  15000,
-    "endpoint":         "https://api.openai.com/v1/chat/completions",
-    "apiKey":           "sk-…",
-    "model":            "gpt-4o-mini",
-    "temperature":      0.2,
-    "maxTokens":        200,
-    "llmTimeoutMs":     30000,
+    "apiUrl":           "http://localhost:3400",
+    "channelId":        "bard-autotag",
+    "apiSecret":        "API_SECRET",
     "systemPrompt":     "You are a music tagging assistant …",
     "userPrompt":       "Track title: \"{title}\" …"
   }
@@ -765,12 +779,9 @@ Access is **tiered**: `allowedRoles` grants basic access (Now Playing card + aud
 | `autoTag.tavilyApiKey` | Tavily API key — used to look up song genre/mood context |
 | `autoTag.tavilyMaxResults` | Number of Tavily results to use for context (default `5`) |
 | `autoTag.tavilyTimeoutMs` | Tavily request timeout in ms (default `15000`) |
-| `autoTag.endpoint` | LLM API endpoint (OpenAI-compatible); defaults to OpenAI chat completions |
-| `autoTag.apiKey` | LLM API key |
-| `autoTag.model` | LLM model for tag generation (default `"gpt-4o-mini"`) |
-| `autoTag.temperature` | LLM temperature (default `0.2`; lower = more consistent) |
-| `autoTag.maxTokens` | Max tokens for the LLM tag response (default `200`) |
-| `autoTag.llmTimeoutMs` | LLM request timeout in ms (default `30000`) |
+| `autoTag.apiUrl` | Internal API base URL for tag generation requests |
+| `autoTag.channelId` | Internal channel used for autotag inference |
+| `autoTag.apiSecret` | Optional bearer placeholder resolved from `bot_secrets` |
 | `autoTag.systemPrompt` | LLM system prompt for tag generation. Overrides the built-in instruction when set to a non-empty string. The built-in prompt automatically injects the known locations, situations and moods from `library.xml` per position, so the LLM reuses existing tags rather than inventing new ones. Custom prompts must instruct the LLM to output a JSON array of exactly 6 strings: `[location, situation, mood1, mood2, mood3, mood4]`. Omit or leave empty to use the built-in default. |
 | `autoTag.userPrompt` | LLM user prompt template. Placeholders: `{title}` (track name), `{tavilySnippet}` (web search results). Falls back to the built-in template when empty. |
 
@@ -1635,6 +1646,38 @@ Browser-based voice interface with two modes: **always-on continuous listening**
 | `allowedRoles` | array | `[]` | Roles that may access `/voice`. Empty = public |
 | `channels` | array | `[]` | Channel list for the SPA dropdown: `[{ "id": "...", "label": "..." }]`. If empty, a free-text input is shown. |
 
+### webpage-voice-record
+
+Dedicated endpoint for full meeting uploads (`POST /voice/record`). Handles transcription, optional diarization, optional context purge, and writes transcript entries into context.
+
+```jsonc
+"webpage-voice-record": {
+  "flow": ["webpage"],
+  "port": 3119,
+  "recordModel": "gpt-4o-transcribe",
+  "diarize": true,
+  "diarizationChannelId": "voice-diarize",
+  "apiUrl": "http://localhost:3400",
+  "apiSecret": "API_SECRET",
+  "clearContextChannels": [],
+  "allowedRoles": [],
+  "diarizationSystemPrompt": ""
+}
+```
+
+| Key | Type | Description |
+|---|---|---|
+| `flow` | array | Must include `"webpage"` |
+| `port` | number | HTTP port (must match webpage flow port) |
+| `recordModel` | string | Transcription model for uploaded meeting recordings |
+| `diarize` | boolean | Enables/disables diarization pass |
+| `diarizationChannelId` | string | Internal API channel used for diarization inference |
+| `apiUrl` | string | Internal API base URL for diarization |
+| `apiSecret` | string | Optional bearer placeholder resolved via `bot_secrets` |
+| `clearContextChannels` | array | Channels that are purged (non-frozen rows) before transcript write |
+| `allowedRoles` | array | Role allowlist for `/voice/record` |
+| `diarizationSystemPrompt` | string | Optional prompt prefix added before segment payload |
+
 - Add `3119` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /voice* localhost:3119` to your Caddyfile
 - Optionally add a `webpage-router` route to assign the `"webpage-voice"` flow for `core-channel-config` flow overrides
@@ -1701,7 +1744,7 @@ Polls the registry for completed async subagent jobs and delivers results back t
 | `maxJobAgeMs` | number | `86400000` | Jobs still `"running"` after this many ms are marked as `"error"` (timed out). Minimum 60000. |
 
 **How async delivery works:**
-1. The main AI calls `getSubAgent(type, task, async: true)`.
+1. The main AI calls `getSubAgent(type, task)`.
 2. `getSubAgent` posts to `/api/spawn` and returns `{ jobId, projectId, status: "started" }` immediately.
 3. The API flow runs the subagent pipeline in the background and stores the result under `"job:<jobId>"` in the registry.
 4. The `discord-subagent-poll` interval fires, finds the completed job, removes it from the registry, and runs the `discord` pipeline with `wo.deliverSubagentJob = <job>` set — which causes the result to be sent to the original Discord channel.

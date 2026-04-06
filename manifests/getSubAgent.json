@@ -1,6 +1,6 @@
 {
   "name": "getSubAgent",
-  "description": "Spawns an isolated AI subagent to handle a complex or multi-step task. Always fire-and-forget — returns immediately with jobId plus internal project metadata in the tool response. The result is delivered back to this Discord channel when the subagent completes.\n\nMODE:\n- mode='normal' (default): starts a NEW project/job. Any provided projectId is ignored.\n- mode='resume': resumes an EXISTING project via projectId and reuses its stored context. The caller still chooses the target subagent type for the follow-up task.\n\nDIRECT TOOLS FIRST: Use available tools directly for simple single-step tasks (getTavily for web search, getImage for a single image, etc.). Only use getSubAgent when the task requires tools not available here, is multi-step, or will take significant time.\n\nNEVER write code inline in your response — any coding task must go through getSubAgent(type: 'develop').\n\nAFTER SPAWNING: When getSubAgent returns with status=started, acknowledge this to the user in your current character and persona. Do NOT expose projectId values in normal user-facing text. Treat projectId as internal metadata unless the user explicitly asks for it. Stay fully in character (Old English, roleplay, etc.) as defined by your system prompt.\n\nRESUME: Only call getSubAgent with mode='resume' when the user asks to continue/follow up/work further on a project outcome that is not already fully answerable from current context. If the user asks for metadata that is already visible in context (e.g., project ID, job ID, status, links), answer directly from context and DO NOT spawn a new subagent.\n\nCONTEXT SCAN BEFORE EVERY CALL: Before writing the task field, scan the recent conversation for any artifact URLs, ARTIFACTS blocks, file URLs, image URLs, or ZIP URLs produced by previous subagent calls. Pass all relevant ones into the task — subagents cannot see the conversation history and will regenerate everything from scratch if you omit them.\n\nONE CALL PER DELIVERABLE: Each subagent call produces one output. Do not split a single deliverable across multiple calls.\n\nNESTED CALLS: If you are already running inside a project context (systemPromptAddition mentions a project-ID), only call getSubAgent for genuinely independent sub-tasks that require a different tool palette. Never use getSubAgent to summarise, analyse, or continue work that is already visible in your loaded context — do that directly.\n\nSEQUENTIAL DEPENDENCIES: If subagent B needs the result of subagent A, call A first, wait for its result, then pass it explicitly in B's task.\n\nAvailable types (for mode='normal'):\n- 'generate': PDF and document assembly.\n- 'media': Image generation, animation, video, and token creation. Pass all sequential steps in ONE task.\n- 'history': Use ONLY when the user EXPLICITLY asks for historical data (history, old events, past time ranges), asks for specific people/places/objects/topics/events from prior sessions that are not available in the current context, or when solving the task strictly requires searching older context information. Do NOT trigger history just because the user says 'summary', 'context', or similarly vague memory-like wording.\n- 'research': Web search, webpage fetch, YouTube.\n- 'develop': Any code writing/fixing/modification task.\n- 'patch': One targeted change to one file URL (only from within a 'develop' subagent).\n- 'atlassian': Jira and Confluence.\n- 'microsoft': Microsoft 365 / Graph API.\n- 'orchestrate': Independent parts requiring different tool sets simultaneously.\n- 'test': Dummy subagent for testing the pipeline without API costs.",
+  "description": "Spawns an isolated AI subagent to handle a complex or multi-step task. Always fire-and-forget — returns immediately with jobId plus internal project metadata in the tool response. The result is delivered back to this Discord channel when the subagent completes.\n\nMODE:\n- mode='normal' (default): starts a NEW project/job. Any provided projectId is ignored.\n- mode='resume': resumes an EXISTING project via projectId and reuses its stored context. The caller still chooses the target subagent type for the follow-up task.\n\nDIRECT TOOLS FIRST: Use available tools directly for simple single-step tasks (getTavily for web search, getImage for a single image, etc.). Only use getSubAgent when the task requires tools not available here, is multi-step, or will take significant time.\n\nNEVER write code inline in your response — any coding task must go through getSubAgent(type: 'develop').\n\nAFTER SPAWNING: When getSubAgent returns with status=started, acknowledge this to the user in your current character and persona. Do NOT expose projectId values in normal user-facing text. Treat projectId as internal metadata unless the user explicitly asks for it. Stay fully in character (Old English, roleplay, etc.) as defined by your system prompt.\n\nRESUME: Only call getSubAgent with mode='resume' when the user asks to continue/follow up/work further on a project outcome that is not already fully answerable from current context. If the user asks for metadata that is already visible in context (e.g., project ID, job ID, status, links), answer directly from context and DO NOT spawn a new subagent.\n\nCONTEXT SCAN BEFORE EVERY CALL: Before writing the task field, scan the recent conversation for any artifact URLs, ARTIFACTS blocks, file URLs, image URLs, or ZIP URLs produced by previous subagent calls. Pass all relevant ones into the task — subagents cannot see the conversation history and will regenerate everything from scratch if you omit them.\n\nONE CALL PER DELIVERABLE: Each subagent call produces one output. Do not split a single deliverable across multiple calls.\n\nNESTED CALLS: If you are already running inside a project context (systemPromptAddition mentions a project-ID), only call getSubAgent for genuinely independent sub-tasks that require a different tool palette. Never use getSubAgent to summarise, analyse, or continue work that is already visible in your loaded context — do that directly.\n\nSEQUENTIAL DEPENDENCIES: If subagent B needs the result of subagent A, call A first, wait for its result, then pass it explicitly in B's task.\n\nAvailable types (for mode='normal'):\n- 'generate': PDF and document assembly.\n- 'media': Image generation, animation, video, and token creation. Pass all sequential steps in ONE task.\n- 'history': Use ONLY when the user EXPLICITLY asks for historical data (history, old events, past time ranges), asks for specific people/places/objects/topics/events from prior sessions that are not available in the current context, or when solving the task strictly requires searching older context information. Do NOT trigger history just because the user says 'summary', 'context', or similarly vague memory-like wording.\n- 'research': Web search, webpage fetch, YouTube, route planning, and location lookups.\n- 'develop': Any code writing/fixing/modification task.\n- 'patch': One targeted change to one file URL (only from within a 'develop' subagent).\n- 'atlassian': Jira and Confluence.\n- 'microsoft': Microsoft 365 / Graph API.\n- 'orchestrate': Independent parts requiring different tool sets simultaneously.\n- 'test': Dummy subagent for testing the pipeline without API costs.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -36,49 +36,49 @@
         "type": "object",
         "description": "Optional orchestration context that scopes this subagent's work. Prevents duplicate side effects when multiple subagents are coordinated.",
         "properties": {
-          "global_goal": {
+          "globalGoal": {
             "type": "string"
           },
-          "your_task": {
+          "yourTask": {
             "type": "string"
           },
-          "your_role": {
+          "yourRole": {
             "type": "string"
           },
-          "do_only": {
+          "doOnly": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "do_not": {
+          "doNot": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "existing_artifacts": {
+          "existingArtifacts": {
             "type": "object"
           },
-          "assigned_to_others": {
+          "assignedToOthers": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "tool_locks": {
+          "toolLocks": {
             "type": "object"
           }
         },
         "additionalProperties": false
       },
-      "channel_id": {
-        "type": "string",
-        "description": "Optional explicit channel ID override."
-      },
       "projectId": {
         "type": "string",
         "description": "Required only when mode='resume'. Ignored in mode='normal'."
+      },
+      "channelId": {
+        "type": "string",
+        "description": "Optional explicit channel ID override."
       }
     },
     "required": [

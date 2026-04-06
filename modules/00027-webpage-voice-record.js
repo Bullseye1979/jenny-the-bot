@@ -94,40 +94,45 @@ async function getDiarizedText(transcript, cfg, wo) {
   if (!segments.length) return transcript.text || "";
 
   const segText = segments.map((s, i) =>
-    `[${i + 1}] (${(s.start || 0).toFixed(1)}s\u2013${(s.end || 0).toFixed(1)}s) ${(s.text || "").trim()}`
+    `[${i + 1}] (${(s.start || 0).toFixed(1)}s–${(s.end || 0).toFixed(1)}s) ${(s.text || "").trim()}`
   ).join("\n");
 
-  const endpoint = String(wo.endpoint || "https://api.openai.com/v1/chat/completions");
-  const apiKey   = String(cfg.apiKey   || wo.apiKey || "");
-  const model    = String(cfg.model    || wo.model  || "gpt-4o-mini");
+  const apiBase = String(cfg.apiUrl || wo.apiBaseUrl || "http://localhost:3400").replace(/\/+$/, "");
+  const channelId = String(cfg.diarizationChannelId || "").trim();
+  const apiSecretKey = String(cfg.apiSecret || wo.apiSecret || "").trim();
+  const apiSecret = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
 
   const defaultDiarizationPrompt =
     "You receive numbered transcript segments. Assign each segment to a speaker " +
     "(Speaker 1, Speaker 2, etc.) based on context and turn-taking patterns. " +
-    "Return ONLY the formatted transcript, one line per segment: " +
-    "\"Speaker X: <text>\". No extra commentary.";
-  const systemPrompt = (typeof cfg.diarizationSystemPrompt === "string" && cfg.diarizationSystemPrompt.trim())
+    "Return only the formatted transcript with one line per segment in the format " +
+    "'Speaker X: <text>'.";
+  const promptPrefix = (typeof cfg.diarizationSystemPrompt === "string" && cfg.diarizationSystemPrompt.trim())
     ? cfg.diarizationSystemPrompt.trim()
     : defaultDiarizationPrompt;
 
-  const resp = await fetch(endpoint, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-    body:    JSON.stringify({
-      model,
-      temperature: 0,
-      max_tokens:  4000,
-      messages: [
-        { role: "system",  content: systemPrompt },
-        { role: "user",    content: segText }
-      ]
-    })
-  });
+  if (!channelId) return transcript.text || "";
 
-  if (!resp.ok) return transcript.text || "";
-  const data   = await resp.json().catch(() => ({}));
-  const result = data?.choices?.[0]?.message?.content || "";
-  return result.trim() || transcript.text || "";
+  const headers = { "Content-Type": "application/json" };
+  if (apiSecret) headers.Authorization = `Bearer ${apiSecret}`;
+
+  try {
+    const response = await fetch(`${apiBase}/api`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        channelID: channelId,
+        payload: `${promptPrefix}\n\nTranscript segments:\n${segText}`,
+        doNotWriteToContext: true
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    const result = String(data?.response || "").trim();
+    if (!response.ok || !data?.ok || !result) return transcript.text || "";
+    return result;
+  } catch {
+    return transcript.text || "";
+  }
 }
 
 

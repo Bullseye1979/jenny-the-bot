@@ -1670,7 +1670,7 @@ Handles `POST /voice/audio` — converts incoming audio to WAV and sets `wo` fie
 
 #### config.webpage-voice-record
 
-Handles `POST /voice/record` — full meeting recording: transcribes with Whisper, optionally diarizes with GPT, stores transcript in context DB. Reads config from `config["webpage-voice-record"]`.
+Handles `POST /voice/record` — full meeting recording: transcribes audio, optionally runs diarization through the internal API channel, then stores transcript in context DB. Reads config from `config["webpage-voice-record"]`.
 
 ```json
 "webpage-voice-record": {
@@ -1680,8 +1680,10 @@ Handles `POST /voice/record` — full meeting recording: transcribes with Whispe
   "recordModel":          "gpt-4o-transcribe",
   "whisperApiKey":        "",
   "diarize":              true,
-  "model":                "gpt-4o-mini",
-  "apiKey":               "",
+  "diarizationChannelId": "voice-diarize",
+  "apiUrl":               "http://localhost:3400",
+  "apiSecret":            "API_SECRET",
+  "diarizationSystemPrompt": "",
   "clearContextChannels": []
 }
 ```
@@ -1693,9 +1695,11 @@ Handles `POST /voice/record` — full meeting recording: transcribes with Whispe
 | `allowedRoles` | array | `[]` | Roles allowed to use the recorder. Empty = open |
 | `recordModel` | string | `"gpt-4o-transcribe"` | Whisper model for transcription |
 | `whisperApiKey` | string | `wo.apiKey` fallback | API key for the Whisper endpoint |
-| `diarize` | boolean | `true` | Run a GPT speaker-attribution pass after transcription |
-| `model` | string | `wo.model` fallback | Chat model used for diarization |
-| `apiKey` | string | `wo.apiKey` fallback | API key for the diarization chat endpoint |
+| `diarize` | boolean | `true` | Run speaker-attribution pass after transcription |
+| `diarizationChannelId` | string | `""` | Internal API channel used for diarization inference |
+| `apiUrl` | string | `http://localhost:3400` | Internal API base URL for diarization requests |
+| `apiSecret` | string | `""` | Optional bearer token placeholder resolved via `bot_secrets` |
+| `diarizationSystemPrompt` | string | built-in default | Prompt prefix sent before segment list |
 | `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before storing the transcript. Frozen rows are never deleted. |
 
 ---
@@ -2837,7 +2841,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `url` | string | Yes | Absolute URL (http/https) |
-| `user_prompt` | string | Yes | User question/task against the page text |
+| `userPrompt` | string | Yes | User question/task against the page text (legacy alias: `user_prompt`) |
 | `prompt` | string | — | Optional extra system instructions to bias the summary |
 
 **Modes:**
@@ -2876,7 +2880,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `url` | string | Yes | Image URL |
+| `imageUrl` | string | Yes | Image URL (legacy alias: `imageURL`) |
 | `prompt` | string | — | Specific analysis request |
 
 ---
@@ -2941,12 +2945,12 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `mode` | string | — | `"transcript"` (default) or `"search"` |
-| `video_url` | string | For transcript mode | YouTube URL or 11-character video ID |
-| `user_prompt` | string | — | Question/task against the transcript (QA mode) |
+| `videoUrl` | string | For transcript mode | YouTube URL or 11-character video ID (legacy alias: `video_url`) |
+| `userPrompt` | string | — | Question/task against the transcript (QA mode; legacy alias: `user_prompt`) |
 | `metaOnly` | boolean | — | Return only video metadata |
 | `query` | string | For search mode | Search query |
-| `max_results` | number | — | Max search results (1–10) |
-| `safe_search` | string | — | `"none"` \| `"moderate"` \| `"strict"` |
+| `maxResults` | number | — | Max search results (1–10, legacy alias: `max_results`) |
+| `safeSearch` | string | — | `"none"` \| `"moderate"` \| `"strict"` (legacy alias: `safe_search`) |
 
 ---
 
@@ -3026,9 +3030,11 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `channel_id` | string | Channel ID (empty = current channel) |
+| `channelId` | string | Channel ID (empty = current channel; legacy alias: `channel_id`) |
+| `channelIds` | array | Additional channel IDs (legacy alias: `channel_ids`) |
+| `startCtxId` | number | Pagination cursor (legacy aliases: `start_ctx_id`, `start_ctx`) |
 | `limit` | number | Max rows |
-| `user_prompt` | string | Specific question/task against the history |
+| `prompt` | string | Specific question/task against the history |
 | `mode` | string | `"dump"` \| `"summary"` \| `"chunks"` |
 | `include_tools` | boolean | Include tool-call rows |
 
@@ -3043,7 +3049,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `keyword_groups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE for initial candidate selection; parts are used only for proximity scoring within selected clusters. |
+| `keywordGroups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE for initial candidate selection; parts are used only for proximity scoring within selected clusters. Legacy alias: `keyword_groups`. |
 | `keywords` | array | Fallback: plain search phrases. Each phrase is used as a full-form LIKE token (no internal splitting). |
 
 **Search behaviour:**
@@ -3064,17 +3070,20 @@ The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOut
 ### getLocation
 
 **File:** `tools/getLocation.js`
-**Purpose:** Google Maps Street View, interactive panorama, and map URL generation
+**Purpose:** Generates a Street View image, an interactive Street View link, and a Google Maps link for one or more locations. Optional route mode adds turn-by-turn text.
 
 **LLM parameters:**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `location` | string | Yes | Address or coordinates |
-| `heading` | number | — | Viewing direction (0–360 degrees) |
-| `pitch` | number | — | Tilt (-90–90 degrees) |
-| `fov` | number | — | Field of view (10–120 degrees) |
-| `mode` | string | — | `"streetview"` \| `"map"` \| `"both"` |
+| `locations` | string[] | Yes | One or more addresses or `lat,lng` coordinates. The last item is used as destination. |
+| `route` | boolean | No | When `true`, input is interpreted as origin → optional waypoints → destination. |
+| `streetSize` | string | No | Static Street View image size (for example `640x400`). |
+| `streetFov` | number | No | Camera field of view (1–120). |
+| `streetHeading` | number | No | Camera heading in degrees. |
+| `streetPitch` | number | No | Camera pitch in degrees. |
+
+**Compatibility:** legacy snake_case parameter aliases are still accepted (`street_size`, `street_fov`, `street_heading`, `street_pitch`), but camelCase is the canonical interface.
 
 ---
 
@@ -4508,7 +4517,7 @@ Configure in `core.json["webpage-bard"]`:
 - `GET /bard/api/nowplaying` — current track info (requires any allowed role)
 - `GET /bard/api/audio` — MP3 audio stream (requires any allowed role)
 - `GET /bard/api/library` — track list + file list (admin only)
-- `POST /bard/api/autotag-upload` — upload + AI-tag MP3 file (admin only). Queries Tavily for song context, calls LLM to generate 6 structured tags (`[location, situation, mood1, mood2, mood3, mood4]`), writes library.xml entry. Requires `config["webpage-bard"].autoTag.enabled = true`.
+- `POST /bard/api/autotag-upload` — upload + AI-tag MP3 file (admin only). Queries Tavily for song context, then calls the **internal API** (`autoTag.apiUrl`) on the configured channel (`autoTag.channelId`) to generate 6 structured tags (`[location, situation, mood1, mood2, mood3, mood4]`). Optional bearer auth comes from `autoTag.apiSecret`. Writes library.xml entry. Requires `config["webpage-bard"].autoTag.enabled = true`.
 - `POST /bard/api/tags` — updates track metadata: title, tags, volume (admin only)
 - `DELETE /bard/api/track` — removes a track from the library and deletes the MP3 file (admin only)
 
@@ -6140,9 +6149,9 @@ The subagent system allows the main AI to delegate tasks to isolated sub-process
 ### How It Works
 
 1. The main AI calls `getSubAgent(type, task)`.
-2. `getSubAgent` sends a POST to `http://localhost:3400/api` with the virtual channel ID for the requested type.
-3. The API flow loads `core-channel-config` for that virtual channel, applies tool/model/instruction overrides, and runs the full pipeline.
-4. The subagent returns a single text result passed back to the main AI.
+2. `getSubAgent` sends a POST to `http://localhost:3400/api/spawn` with the virtual channel ID for the requested type.
+3. The API flow loads `core-channel-config` for that virtual channel, applies tool/model/instruction overrides, and runs the full pipeline asynchronously.
+4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery happens via `discord-subagent-poll` to the originating Discord channel.
 
 The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically so that tools like `getHistory` and `getInformation` query the correct data source.
 
@@ -6155,7 +6164,7 @@ Subagent calls use `doNotWriteToContext: true` — no context DB entries are wri
 | Type | Virtual Channel | Tools | Use when |
 |------|----------------|-------|----------|
 | `history` | `subagent-history` | getInformation, getHistory, getTime, getSubAgent | Questions about persons, places, events, or time periods from session logs |
-| `research` | `subagent-research` | getInformation, getHistory, getYoutube, getWebpage, getLocation, getTavily, getTime, getZIP, getSubAgent | General knowledge, current events, web research, YouTube |
+| `research` | `subagent-research` | getInformation, getHistory, getYoutube, getWebpage, getLocation, getTavily, getTime, getZIP, getSubAgent | General knowledge, current events, web research, YouTube, route planning, and location lookups |
 | `generate` | `subagent-generate` | getPDF, getText, getFile, getZIP, getSubAgent | PDF or text document generation |
 | `media` | `subagent-media` | getImage, getAnimatedPicture, getVideoFromText, getImageDescription, getToken, getZIP | Image/video/token generation and image description (leaf node — no getSubAgent) |
 | `atlassian` | `subagent-atlassian` | getJira, getConfluence, getZIP, getSubAgent | Jira/Confluence tasks |
@@ -6170,7 +6179,7 @@ Main channels have `getSubAgent`, `getTavily`, and `getImage` directly available
 - **Simple web search** (facts, current events) → `getTavily` directly — no subagent needed
 - **Simple image generation** → `getImage` directly — no subagent needed
 - **Session history questions** (who is X, what happened at Y, when did Z) → `getSubAgent(type: history)`
-- **General knowledge / YouTube / location** → `getSubAgent(type: research)`
+- **General knowledge / YouTube / route planning / location queries** → `getSubAgent(type: research)`
 - **Code / development requests** → `getSubAgent(type: develop)`
 - **Complex media** (animated token, video generation, multi-step image) → `getSubAgent(type: media)`
 - **If the answer is in the current conversation context** → answer directly without tool call
@@ -6197,7 +6206,7 @@ Main AI
 
 The caller's channel ID is forwarded at every level so `getHistory` and `getInformation` always query the correct source channel regardless of nesting depth. Tool call status is also mirrored to the caller's Discord channel ID so the status display works correctly.
 
-**Nested subagent timeout:** Main AI → any subagent: `toolsconfig.getSubAgent.timeoutMs = 600000` (10 min global default).
+**Subagent spawn timeout:** `toolsconfig.getSubAgent.spawnTimeoutMs` controls only the initial HTTP spawn request. The job then continues asynchronously and is delivered by `discord-subagent-poll`.
 
 ### Orchestration Context (Multi-Subagent Coordination)
 
@@ -6213,16 +6222,16 @@ When multiple subagents are involved in a single user request, each `getSubAgent
 **Orchestration object schema:**
 ```json
 {
-  "global_goal": "User's original request",
-  "your_task": "Exact deliverable this subagent must produce",
-  "your_role": "e.g. 'portrait image generation'",
-  "do_only": ["generate portrait image of Melissa"],
-  "do_not": ["create character sheet", "generate PDF", "spawn additional media subagents"],
-  "existing_artifacts": {
+  "globalGoal": "User's original request",
+  "yourTask": "Exact deliverable this subagent must produce",
+  "yourRole": "e.g. 'portrait image generation'",
+  "doOnly": ["generate portrait image of Melissa"],
+  "doNot": ["create character sheet", "generate PDF", "spawn additional media subagents"],
+  "existingArtifacts": {
     "portrait_image": "https://example.com/portrait.png"
   },
-  "assigned_to_others": ["PDF assembly → generate agent"],
-  "tool_locks": {
+  "assignedToOthers": ["PDF assembly → generate agent"],
+  "toolLocks": {
     "getImage": "portrait already generated by media agent"
   }
 }
@@ -6234,8 +6243,8 @@ When multiple subagents are involved in a single user request, each `getSubAgent
 ```
 [ORCHESTRATION CONTEXT]
 turn_id: 01JXYZ...
-global_goal: "Create character sheet with portrait for Melissa"
-your_task: "Generate portrait image"
+globalGoal: "Create character sheet with portrait for Melissa"
+yourTask: "Generate portrait image"
 ...
 [/ORCHESTRATION CONTEXT]
 
@@ -6251,7 +6260,7 @@ These tools enable subagents to generate, read, and bundle files:
 | Tool | Purpose |
 |------|---------|
 | `getFile` | Saves text or binary content to `pub/documents/{userId}/path`. Supports subdirectory paths (e.g. `src/main.js`). Returns public URL. Also supports `overwrite: true` to replace an existing file. |
-| `getZIP` | Downloads one or more files by URL and packages them into a ZIP archive. A `base_url` parameter preserves the relative directory structure inside the archive. |
+| `getZIP` | Downloads one or more files by URL and packages them into a ZIP archive. A `baseUrl` parameter preserves the relative directory structure inside the archive. |
 
 **`getFile` parameters:**
 - `content` (required) — UTF-8 text or base64-encoded binary; for code files, raw source code only
@@ -6262,7 +6271,7 @@ These tools enable subagents to generate, read, and bundle files:
 
 **`getZIP` parameters:**
 - `urls` (required) — array of public URLs to include
-- `base_url` — reference URL prefix; each file's path relative to this prefix becomes its path inside the ZIP (e.g. base_url `https://x.de/documents/shared/` + file URL `https://x.de/documents/shared/src/main.js` → ZIP path `src/main.js`)
+- `baseUrl` — reference URL prefix; each file's path relative to this prefix becomes its path inside the ZIP (e.g. baseUrl `https://x.de/documents/shared/` + file URL `https://x.de/documents/shared/src/main.js` → ZIP path `src/main.js`)
 - `filename` — base name for the ZIP (default `archive`)
 - `timeoutMs` — per-file download timeout (default 30 s)
 
@@ -6273,7 +6282,7 @@ When a user supplies a file URL to fix or improve, the `develop` subagent follow
 1. **Read** — The AI reads the file content (passed in the task description, or downloaded via getFile if a URL is given).
 2. **Edit** — The AI analyses the content and produces the corrected version.
 3. **Overwrite** — `getFile(content, filename, overwrite: true)` writes the fixed content back to the same path. The `filename` is extracted from the URL (the path after the userId segment).
-4. **Bundle** *(optional)* — `getZIP([fixedUrl, ...otherUrls], base_url)` to redeliver the full project.
+4. **Bundle** *(optional)* — `getZIP([fixedUrl, ...otherUrls], baseUrl)` to redeliver the full project.
 
 Example prompt:
 > "Jenny, fix this file — the Tetris collision detection is broken: https://xbullseyegaming.de/documents/shared/src/game.js"
@@ -6333,10 +6342,10 @@ EventEmitter.defaultMaxListeners = 30;
 
 ### Async Subagent Mode
 
-For long-running tasks (code generation, document assembly) that would time out a synchronous `getSubAgent` call, use `async: true`. The tool returns immediately and the result is delivered to the Discord channel when the subagent finishes.
+`getSubAgent` is always asynchronous. It returns immediately and the result is delivered to the Discord channel when the subagent finishes.
 
 **How it works:**
-1. The AI calls `getSubAgent(type, task, async: true)` (and optionally `projectId` to resume an existing project).
+1. The AI calls `getSubAgent(type, task)` (and optionally `mode: "resume"` with `projectId` to continue an existing project).
 2. `getSubAgent` posts to `/api/spawn` (configured via `toolsconfig.getSubAgent.asyncSpawnPath`).
 3. The API flow stores a `"job:<jobId>"` entry in the registry with `status: "running"`, then starts the pipeline as a fire-and-forget async IIFE.
 4. The `discord-subagent-poll` flow polls the registry every `pollIntervalMs` ms, finds completed/failed jobs, removes them, and runs a `discord` pipeline pass with `wo.deliverSubagentJob` set.
@@ -6351,7 +6360,7 @@ For long-running tasks (code generation, document assembly) that would time out 
   "status": "started",
   "message": "Working on it — result will be delivered when complete.",
   "type": "develop",
-  "channel_id": "subagent-develop"
+  "channelId": "subagent-develop"
 }
 ```
 

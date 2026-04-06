@@ -1,6 +1,6 @@
 /**********************************************************************************/
 /* filename: getSubAgent.js                                                        *
-/* Version 1.1                                                                     *
+/* Version 1.0                                                                     *
 /* Purpose: Spawns an isolated AI subagent as a fire-and-forget async job.        *
 /*          Always async — result is delivered back to the originating channel     *
 /*          when complete. For simple single-step tasks use direct tools instead.  *
@@ -50,37 +50,46 @@ function buildOrchestrationBlock(orchestration, turnId) {
     return lines.join("\n");
   }
 
-  if (o.global_goal)  lines.push(`global_goal: "${o.global_goal}"`);
-  if (o.your_task)    lines.push(`your_task: "${o.your_task}"`);
-  if (o.your_role)    lines.push(`your_role: ${o.your_role}`);
+  if (o.globalGoal ?? o.global_goal)  lines.push(`globalGoal: "${o.globalGoal ?? o.global_goal}"`);
+  if (o.yourTask ?? o.your_task)    lines.push(`yourTask: "${o.yourTask ?? o.your_task}"`);
+  if (o.yourRole ?? o.your_role)    lines.push(`yourRole: ${o.yourRole ?? o.your_role}`);
 
-  if (Array.isArray(o.do_only) && o.do_only.length) {
-    lines.push("do_only:");
-    for (const item of o.do_only) lines.push(`  - ${item}`);
+  const doOnly = Array.isArray(o.doOnly) ? o.doOnly : o.do_only;
+  if (Array.isArray(doOnly) && doOnly.length) {
+    lines.push("doOnly:");
+    for (const item of doOnly) lines.push(`  - ${item}`);
   }
 
-  if (Array.isArray(o.do_not) && o.do_not.length) {
-    lines.push("do_not:");
-    for (const item of o.do_not) lines.push(`  - ${item}`);
+  const doNot = Array.isArray(o.doNot) ? o.doNot : o.do_not;
+  if (Array.isArray(doNot) && doNot.length) {
+    lines.push("doNot:");
+    for (const item of doNot) lines.push(`  - ${item}`);
   }
 
-  if (o.existing_artifacts && typeof o.existing_artifacts === "object") {
-    const entries = Object.entries(o.existing_artifacts);
+  const existingArtifacts = o.existingArtifacts && typeof o.existingArtifacts === "object"
+    ? o.existingArtifacts
+    : (o.existing_artifacts && typeof o.existing_artifacts === "object" ? o.existing_artifacts : null);
+  if (existingArtifacts) {
+    const entries = Object.entries(existingArtifacts);
     if (entries.length) {
-      lines.push("existing_artifacts:");
+      lines.push("existingArtifacts:");
       for (const [k, v] of entries) lines.push(`  ${k}: ${v}`);
     }
   }
 
-  if (Array.isArray(o.assigned_to_others) && o.assigned_to_others.length) {
-    lines.push("assigned_to_others (DO NOT redo these):");
-    for (const item of o.assigned_to_others) lines.push(`  - ${item}`);
+  const assignedToOthers = Array.isArray(o.assignedToOthers) ? o.assignedToOthers : o.assigned_to_others;
+  if (Array.isArray(assignedToOthers) && assignedToOthers.length) {
+    lines.push("assignedToOthers (DO NOT redo these):");
+    for (const item of assignedToOthers) lines.push(`  - ${item}`);
   }
 
-  if (o.tool_locks && typeof o.tool_locks === "object") {
-    const locks = Object.entries(o.tool_locks);
+  const toolLocks = o.toolLocks && typeof o.toolLocks === "object"
+    ? o.toolLocks
+    : (o.tool_locks && typeof o.tool_locks === "object" ? o.tool_locks : null);
+  if (toolLocks) {
+    const locks = Object.entries(toolLocks);
     if (locks.length) {
-      lines.push("tool_locks (MUST NOT call these tools):");
+      lines.push("toolLocks (MUST NOT call these tools):");
       for (const [tool, reason] of locks) lines.push(`  ${tool}: ${reason}`);
     }
   }
@@ -100,7 +109,7 @@ async function getInvoke(args, coreData) {
   const mode = modeRaw === "resume" ? "resume" : "normal";
   const inputProjectId = args?.projectId ? String(args.projectId).trim() : "";
   const projectId = mode === "resume" ? inputProjectId : "";
-  const explicitChannel = String(args?.channel_id || "").trim();
+  const explicitChannel = String(args?.channelId || args?.channel_id || "").trim();
   const orchestration   = args?.orchestration ?? null;
   const requestedType = String(args?.type || "").trim();
   let typeName = requestedType || "generic";
@@ -226,15 +235,9 @@ async function getInvoke(args, coreData) {
     agentDepth:             nextAgentDepth,
   });
 
-  const _levelContextLine = `Execution context: You are running as subagent type "${typeName}" at depth ${agentDepth + 1}. Parent type: "${agentType || "root"}" (depth ${agentDepth}). Resume is level-1 only; never spawn a child with type "resume".`;
-  const _resumeContextLine = projectId
+  const systemPromptAddition = projectId
     ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. IMPORTANT: Before asking the user for any URLs, file paths, or artifact references — scan your loaded conversation history first. All previously produced URLs and ARTIFACTS blocks from prior turns are available there. Use them directly. Only ask the user if the information is genuinely absent from your context. You may call tools freely using URLs found in your context. Only spawn a new subagent via getSubAgent for genuinely independent sub-tasks that require a different tool palette.`
-    : "";
-
-  const _systemPromptAddition = [_levelContextLine, _resumeContextLine]
-    .map(v => String(v || "").trim())
-    .filter(Boolean)
-    .join("\n\n");
+    : undefined;
 
   const _spawnBody = JSON.stringify({
     channelID:              channelId,
@@ -243,9 +246,7 @@ async function getInvoke(args, coreData) {
     guildId:                String(wo.guildId || ""),
     authorDisplayname:      String(wo.authorDisplayname || ""),
     projectId:              mode === "resume" ? projectId : undefined,
-    systemPromptAddition:   projectId
-      ? `Context: You are operating within project context "project-${projectId}". The full conversation history for this project is loaded into your context above. IMPORTANT: Before asking the user for any URLs, file paths, or artifact references — scan your loaded conversation history first. All previously produced URLs and ARTIFACTS blocks from prior turns are available there. Use them directly. Only ask the user if the information is genuinely absent from your context. You may call tools freely using URLs found in your context. Only spawn a new subagent via getSubAgent for genuinely independent sub-tasks that require a different tool palette.`
-      : undefined,
+    systemPromptAddition,
     callerChannelId:        callerChannelId || undefined,
     callerChannelIds:       callerChannelIds.length ? callerChannelIds : undefined,
     callerTurnId:           callerTurnId || undefined,
@@ -264,7 +265,7 @@ async function getInvoke(args, coreData) {
     if (!_spawnRes.ok || !_spawnData.ok) {
       const _spawnErr = _spawnData.error || `HTTP ${_spawnRes.status}`;
       logSubagent("error", "getSubAgent", "spawn_http_error", { typeName, channelId, projectId: projectId || null, error: _spawnErr, httpStatus: _spawnRes.status });
-      return { ok: false, error: _spawnErr, type: typeName, channel_id: channelId };
+      return { ok: false, error: _spawnErr, type: typeName, channelId: channelId, channel_id: channelId };
     }
 
     log(`Subagent spawned — job: ${_spawnData.jobId}, project: ${_spawnData.projectId}`);
@@ -282,6 +283,7 @@ async function getInvoke(args, coreData) {
       status:    "started",
       message:   "Working on it — result will be delivered when complete.",
       type:      typeName,
+      channelId: channelId,
       channel_id: channelId,
       _meta: {
         event: "subagent_started",
@@ -299,6 +301,7 @@ async function getInvoke(args, coreData) {
       ok:    false,
       error: isAbort ? "Spawn request timed out" : (e?.message || String(e)),
       type:  typeName,
+      channelId: channelId,
       channel_id: channelId,
     };
   }

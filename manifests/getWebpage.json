@@ -4,11 +4,23 @@
   "parameters": {
     "type": "object",
     "properties": {
-      "url": { "type": "string", "description": "Absolute URL to fetch (http/https)." },
-      "user_prompt": { "type": "string", "description": "User question or instruction to execute against the page text (required — this is the main task)." },
-      "prompt": { "type": "string", "description": "OPTIONAL: extra system instructions to bias the summary (e.g., 'focus on statements by user X'). Used only in summary mode; ignored in dump mode." }
+      "url": {
+        "type": "string",
+        "description": "Absolute URL to fetch (http/https)."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "OPTIONAL: extra system instructions to bias the summary (e.g., 'focus on statements by user X'). Used only in summary mode; ignored in dump mode."
+      },
+      "userPrompt": {
+        "type": "string",
+        "description": "User question or instruction to execute against the page text (required — this is the main task)."
+      }
     },
-    "required": ["url", "user_prompt"],
+    "required": [
+      "url",
+      "userPrompt"
+    ],
     "additionalProperties": false
   }
 }

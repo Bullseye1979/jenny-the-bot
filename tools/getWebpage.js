@@ -144,11 +144,11 @@ async function getInvoke(args, coreData) {
   const toolCfg = wo?.toolsconfig?.getWebpage || {};
 
   const url = getStr(args?.url, "").trim();
-  const user_prompt = getStr(args?.user_prompt, "").trim();
+  const userPrompt = getStr(args?.userPrompt, getStr(args?.user_prompt, "")).trim();
   const prompt = getStr(args?.prompt, "");
 
   if (!url) return { ok: false, error: "Missing url" };
-  if (!user_prompt) return { ok: false, error: "Missing user_prompt" };
+  if (!userPrompt) return { ok: false, error: "Missing userPrompt" };
 
   const timeoutMs = getNum(toolCfg.timeoutMs, 30000);
   const ua = getStr(
@@ -190,7 +190,7 @@ async function getInvoke(args, coreData) {
   }
 
   const summaryInput = [
-    user_prompt ? `User request: "${user_prompt}"` : "",
+    userPrompt ? `User request: "${userPrompt}"` : "",
     title ? `Title: ${title}` : "",
     url ? `URL: ${url}` : "",
     prompt ? `Additional context: ${prompt}` : "",

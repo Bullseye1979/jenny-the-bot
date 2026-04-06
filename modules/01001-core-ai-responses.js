@@ -1207,9 +1207,6 @@ export default async function getCoreAi(coreData) {
       const finish = getFinishReasonFromData(data);
       log(`AI turn ${iter + 1}: finish_reason="${finish ?? "null"}" content_length=${assistantText.length} tool_calls=${toolCalls.length}`, "info");
 
-      /********************************************************************************
-      /* Fix v1.1: Persist assistant turn even when text is empty but images exist  *
-      /********************************************************************************/
       const linkBlockThisIter = hostedLinks.length ? hostedLinks.map(u => `- ${u}`).join("\n") : "";
       const persistAssistantContent = [assistantText, linkBlockThisIter].filter(Boolean).join("\n\n").trim();
 
