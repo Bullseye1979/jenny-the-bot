@@ -374,7 +374,7 @@
         "relevanceLanguage": "de"
       },
       "getSubAgent": {
-        "__description": "Routes a task to an isolated subagent channel via the internal API flow. Use direct tools first for simple tasks. Each type maps to a dedicated channelID configured in core-channel-config.",
+        "__description": "Routes a task to an isolated subagent channel via the internal API flow. Subagents inherit the caller instructions for language, style, verbosity, length, and formatting, so the first subagent answer is already ready for delivery without a second persona pass. Each type maps to a dedicated channelID configured in core-channel-config.",
         "apiUrl": "http://localhost:3400",
         "apiSecret": "API_SECRET",
         "timeoutMs": 120000,
@@ -1063,8 +1063,8 @@
             "apiSecret": "API_SECRET",
             "botName": "Jenny",
             "persona": "You are Jenny, a browser extension assistant. You help users summarize web pages and YouTube videos, and answer questions about page content.",
-            "systemPrompt": "Answer in full sentences. Answer only in English.",
-            "instructions": "When given a URL, use getWebpage or getYoutube to fetch and summarize the content. Check at least one source. Write how you came to your conclusion. Do not give out unverified information.",
+            "systemPrompt": "Use fetched page content as the source of truth.",
+            "instructions": "Answer in full sentences. Answer only in English. When given a URL, use getWebpage or getYoutube to fetch and summarize the content. Check at least one source. Write how you came to your conclusion. Do not give out unverified information.",
             "contextSize": 70,
             "channelIds": []
           }
@@ -1086,7 +1086,7 @@
             "maxLoops": 10,
             "includeHistory": true,
             "doNotWriteToContext": true,
-            "systemPrompt": "You are a resume subagent. Continue the existing project context exactly from where it left off and perform only the requested follow-up task. If delegation is required, NEVER spawn type='resume' as a child; choose a specialized non-resume type.",
+            "systemPrompt": "Continue the existing project context exactly from where it left off and perform only the requested follow-up task. If delegation is required, never spawn type resume as a child. Choose a specialized non-resume type instead.",
             "tools": [
               "getGoogle",
               "getTavily",
@@ -1099,7 +1099,9 @@
               "getTime",
               "getToken",
               "getLocation"
-            ]
+            ],
+            "persona": "You are the Resume Subagent. Your task is to continue an existing project exactly from its saved context.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
           }
         },
         {
@@ -1119,15 +1121,19 @@
             "maxLoops": 10,
             "includeHistory": false,
             "doNotWriteToContext": true,
-            "systemPrompt": "You are a research subagent. Use the available tools to retrieve information and return a well-structured, concise answer. Do not ask clarifying questions — answer based on what you find.",
+            "systemPrompt": "Use the available tools to retrieve information and return the requested result. Use getGoogle, getTavily, and getWebpage for research, getInformation and getHistory for prior context, getYoutube for YouTube summaries or creator lookups, and getLocation for route searches, route planning, and place lookups. Do not ask clarifying questions when the available evidence is enough to proceed.",
             "tools": [
               "getHistory",
               "getInformation",
               "getGoogle",
               "getTavily",
               "getWebpage",
+              "getYoutube",
+              "getLocation",
               "getTime"
-            ]
+            ],
+            "persona": "You are the Research Subagent. Your task is to investigate web, route, location, and source questions for the caller.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
           }
         },
         {
@@ -1147,12 +1153,14 @@
             "maxLoops": 6,
             "includeHistory": false,
             "doNotWriteToContext": true,
-            "systemPrompt": "You are a media subagent. Fetch and analyse the requested media (YouTube videos, web pages) and return a structured summary or answer the given question based solely on the content retrieved.",
+            "systemPrompt": "Fetch and analyze the requested media such as YouTube videos and web pages. Base the result only on the retrieved content and do not invent details.",
             "tools": [
               "getYoutube",
               "getWebpage",
               "getTime"
-            ]
+            ],
+            "persona": "You are the Media Subagent. Your task is to fetch and summarize media content for the caller.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
           }
         },
         {
@@ -1172,7 +1180,7 @@
             "maxLoops": 10,
             "includeHistory": false,
             "doNotWriteToContext": true,
-            "systemPrompt": "You are a general-purpose subagent. Complete the assigned task using the available tools and return a concise result.",
+            "systemPrompt": "Complete the assigned task using the available tools. Reuse existing project context when it is already loaded and do not invent missing facts.",
             "tools": [
               "getGoogle",
               "getTavily",
@@ -1185,7 +1193,9 @@
               "getTime",
               "getToken",
               "getLocation"
-            ]
+            ],
+            "persona": "You are the Generic Subagent. Your task is to complete assigned work that does not fit a more specific specialist.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
           }
         },
         {
@@ -1333,6 +1343,12 @@
         "discord-voice"
       ],
       "maxJobAgeMs": 86400000
+    },
+    "subagent-persona": {
+      "__description": "Prepares inherited subagent persona and caller instructions before the AI modules run. This is a subagent-only helper module and can be removed together with the subagent feature set.",
+      "flow": [
+        "api"
+      ]
     },
     "webpage-subagent-poll": {
       "__description": "Polls the registry for completed async subagent jobs whose callerFlow starts with 'webpage' and delivers results via SSE to the originating webpage client. Requires GET /api/async-results/stream?channelID=<callerChannelId> to be open on the client side. Set enabled:true to activate.",

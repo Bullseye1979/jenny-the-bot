@@ -150,6 +150,8 @@ async function getInvoke(args, coreData) {
   const callerChannelIds = Array.isArray(wo.channelIds)
     ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
+  const callerInstructions = String(wo.callerInstructions || wo.instructions || "").trim();
+  const callerPersona = String(wo.callerPersona || wo.persona || "").trim();
 
   const callerTurnId = String(wo.callerTurnId || wo.turnId || "").trim();
 
@@ -250,6 +252,8 @@ async function getInvoke(args, coreData) {
     systemPromptAddition,
     callerChannelId:        callerChannelId || undefined,
     callerChannelIds:       callerChannelIds.length ? callerChannelIds : undefined,
+    callerPersona:          callerPersona || undefined,
+    callerInstructions:     callerInstructions || undefined,
     callerTurnId:           callerTurnId || undefined,
     callerFlow:             String(wo.callerFlow || wo.flow || ""),
     callerContextChannelID: _parentContextChannelID || undefined,

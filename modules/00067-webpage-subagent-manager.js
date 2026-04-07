@@ -41,13 +41,13 @@ function buildPageHtml(opts) {
 ${getThemeHeadScript()}
 <link rel="stylesheet" href="${basePath}/style.css">
 <style>
-.sam-wrap{margin-top:var(--hh);padding:12px 14px 40px}
-.sam-grid{display:grid;grid-template-columns:260px 1fr;gap:12px;align-items:start}
-.sam-panel{border:1px solid var(--bdr);border-radius:12px;background:var(--bg2);overflow:hidden}
+.sam-wrap{margin-top:var(--hh);padding:12px 14px 40px;overflow-x:hidden}
+.sam-grid{display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:12px;align-items:start;width:100%;min-width:0}
+.sam-panel{border:1px solid var(--bdr);border-radius:12px;background:var(--bg2);overflow:hidden;min-width:0}
 .sam-head{padding:12px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;gap:8px}
 .sam-head strong{font-size:14px}
 .sam-list{list-style:none;margin:0;padding:0;max-height:calc(100dvh - var(--hh) - 120px);overflow:auto}
-.sam-item{padding:10px 14px;border-bottom:1px solid var(--bdr);cursor:pointer}
+.sam-item{padding:10px 14px;border-bottom:1px solid var(--bdr);cursor:pointer;width:100%;display:block}
 .sam-item:last-child{border-bottom:none}
 .sam-item:hover{background:var(--bg3)}
 .sam-item.active{background:rgba(59,130,246,.12);border-left:3px solid var(--accent);padding-left:11px}
@@ -103,8 +103,14 @@ ${getThemeHeadScript()}
 .cs-add-bar button{font-size:11px;padding:2px 8px;border:1px dashed var(--bdr);border-radius:5px;background:none;color:var(--muted);cursor:pointer}
 .cs-add-bar button:hover{color:var(--accent);border-color:var(--accent);background:rgba(128,128,255,.07)}
 @media (max-width: 900px){
-  .sam-grid{grid-template-columns:1fr}
+  html,body{overflow-x:hidden;overflow-y:auto}
+  .sam-wrap{padding:12px 0 40px}
+  .sam-grid{display:flex;flex-direction:column;gap:12px;width:100%}
+  .sam-panel{width:100%;max-width:100%;border-left:none;border-right:none;border-radius:0}
+  .sam-head{padding:12px 14px}
   .sam-list{max-height:none}
+  .sam-item{width:100%;box-sizing:border-box}
+  .sam-body{padding:14px}
   .sam-row{grid-template-columns:1fr}
   .sam-row label{padding-top:0}
 }
@@ -117,7 +123,7 @@ ${menuHtml ? "  " + menuHtml : ""}
 </header>
 <div class="sam-wrap">
   <div class="sam-grid">
-    <aside class="sam-panel">
+    <aside class="sam-panel" id="subagent-list-panel">
       <div class="sam-head">
         <strong>Subagents</strong>
         <button class="btn btn-s" onclick="createNewSubagent()">New</button>
@@ -126,7 +132,7 @@ ${menuHtml ? "  " + menuHtml : ""}
         <li class="sam-item"><div class="sam-item-title">Loading…</div></li>
       </ul>
     </aside>
-    <section class="sam-panel">
+    <section class="sam-panel" id="subagent-editor-panel">
       <div class="sam-head">
         <strong id="editor-title">Editor</strong>
         <div class="sam-actions">
@@ -202,6 +208,14 @@ function setStatus(text) {
 }
 function setEditorTitle(text) {
   document.getElementById('editor-title').textContent = text || 'Editor';
+}
+function focusEditorOnMobile() {
+  if (window.innerWidth > 900) return;
+  var panel = document.getElementById('subagent-editor-panel');
+  if (!panel) return;
+  requestAnimationFrame(function() {
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 function getEditorState(kind) {
   return kind === 'manifest' ? MANIFEST_DATA : OVERRIDES_DATA;
@@ -621,6 +635,7 @@ function selectSubagent(typeKey) {
       writeForm(data.item);
       highlightCurrent();
       setStatus('');
+      focusEditorOnMobile();
     })
     .catch(function(err) {
       setStatus('Load failed');
@@ -642,6 +657,7 @@ function createNewSubagent() {
   loadedTypeKey = '';
   highlightCurrent();
   setStatus('');
+  focusEditorOnMobile();
 }
 function reloadSelected() {
   if (!currentTypeKey) {

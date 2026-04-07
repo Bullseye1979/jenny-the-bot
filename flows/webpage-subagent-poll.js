@@ -17,7 +17,7 @@ import { getItem, putItem, deleteItem, listKeys } from "../core/registry.js";
 import { getPrefixedLogger }   from "../core/logging.js";
 import { logSubagent }         from "../core/subagent-logger.js";
 import { pushAsyncResult, getSseConnectionCount } from "../core/async-sse.js";
-import { runPersonaPass, runParentChain } from "../core/subagent-poll-helpers.js";
+import { runParentChain } from "../core/subagent-poll-helpers.js";
 
 const MODULE_NAME = "webpage-subagent-poll";
 
@@ -134,28 +134,11 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
       const _capturedKey = _key;
       (async () => {
         try {
-          const _response = await runPersonaPass(
-              {
-                callerChannelId:   _capturedJob.callerChannelId,
-                callerFlow:        _capturedJob.callerFlow,
-                userId:            _capturedJob.userId,
-                guildId:           _capturedJob.guildId,
-                authorDisplayname: _capturedJob.authorDisplayname,
-                agentType:         _capturedJob.agentType,
-                jobId:             _capturedJob.jobId,
-                projectId:         _capturedJob.projectId,
-              },
-              _rawResult,
-              createRunCore,
-              runFlow,
-              log
-            );
-
-          if (_response) {
-            const _sent = await deliverToOutput(_capturedJob.callerFlow, _capturedJob.callerChannelId, _response, _capturedJob.jobId, _capturedJob.projectId, _capturedJob.agentType, log);
+          if (_rawResult) {
+            const _sent = await deliverToOutput(_capturedJob.callerFlow, _capturedJob.callerChannelId, _rawResult, _capturedJob.jobId, _capturedJob.projectId, _capturedJob.agentType, log);
             if (_sent === 0) {
               try {
-                await putItem({ ..._capturedJob, personaResult: _response, status: "done" }, _capturedKey);
+                await putItem({ ..._capturedJob, personaResult: _rawResult, status: "done" }, _capturedKey);
                 logSubagent("info", "webpage-poll", "sse_miss_fallback_saved", { jobId: _capturedJob.jobId, callerChannelId: _capturedJob.callerChannelId });
               } catch (e) {
                 logSubagent("error", "webpage-poll", "sse_miss_fallback_failed", { jobId: _capturedJob.jobId, error: e?.message || String(e) });

@@ -400,9 +400,9 @@ The live dashboard displays:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `botName` | string | `"Jenny"` | Display name of the bot |
-| `persona` | string | `"Default AI Assistant"` | Persona description injected into the system prompt |
-| `systemPrompt` | string | `"You are a helpful assistant."` | Primary LLM system instruction |
-| `instructions` | string | `"Answer concisely."` | Behavioural rules appended after `systemPrompt` |
+| `persona` | string | `"Default AI Assistant"` | Identity block: who the assistant is and what its job is |
+| `systemPrompt` | string | `"You are a helpful assistant."` | Processing rules and non-negotiable task constraints |
+| `instructions` | string | `"Answer concisely."` | Delivery rules for response style, verbosity, language, length, and formatting |
 | `trigger` | string | `"jenny"` | Trigger word to activate the bot (empty = always active) |
 | `triggerWordWindow` | number | `3` | Number of words from the start of a message in which the trigger is searched |
 | `modAdmin` | string | — | Discord user ID with administrator rights |
@@ -2102,6 +2102,8 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 - `subchannel` — optional; routes the request through a specific subchannel context (applied by `00012-subchannel-config`)
 - `doNotWriteToContext` — optional boolean; when `true`, neither the user message (`00072`) nor the AI response (`01004`) are written to the MySQL context. Used for internal system calls (e.g. wiki article generation) that must not pollute the conversation history.
 - `callerChannelId` — forwarded from the parent when called by `getSubAgent`; used to mirror tool-call status to the original Discord channel
+- `callerPersona` - forwarded from the parent when called by `getSubAgent`; used so the spawned subagent answers as the root caller persona
+- `callerInstructions` - forwarded from the parent when called by `getSubAgent`; used so the spawned subagent answers immediately in the caller delivery style
 - `agentDepth` / `agentType` — subagent nesting controls forwarded by `getSubAgent`
 
 **POST /api response:**
@@ -2131,6 +2133,8 @@ Flows are event sources that create a `workingObject` and trigger the module pip
   "guildId":          "",
   "projectId":        "optional-stable-project-id",
   "callerChannelId":  "originating-discord-channel-id",
+  "callerPersona":    "You are Jenny, a helpful assistant.",
+  "callerInstructions": "Answer in English, concise, plain text",
   "callerFlow":       "discord",
   "agentDepth":       1,
   "agentType":        "develop"
@@ -2142,7 +2146,7 @@ Returns immediately:
 { "ok": true, "jobId": "01JXXX...", "projectId": "01JYYY..." }
 ```
 
-The subagent pipeline runs in the background. The `discord-subagent-poll` flow detects completion and delivers the result to `callerChannelId`.
+The subagent pipeline runs in the background. The spawned subagent inherits `callerPersona` and `callerInstructions`, so its prompt combines its own specialist role with the root caller-facing answer persona and delivery style. The poll flows then deliver that result directly to `callerChannelId` without a second persona-processing run.
 
 ---
 
@@ -4412,6 +4416,12 @@ The page uses the same collapsible JSON editing pattern as the config editor, bu
 
 Saving a subagent updates both `core.json` and the `xSubagents` areas inside `manifests/getSubAgent.json`. Deleting a subagent removes both the `core-channel-config` entry and the matching manifest block.
 
+Prompt field convention for subagents:
+- `persona` defines the subagent identity and job and is used as the `You are` block
+- `systemPrompt` defines processing rules, workflow, and guardrails
+- `instructions` defines response style, verbosity, language, length, and formatting
+- inherited `callerPersona` becomes the `Answer as` block, and nested subagents keep the original top-level caller persona
+
 ### 16.3 Chat SPA (`/chat`)
 
 **Chat (port 3112, /chat):**
@@ -6172,10 +6182,10 @@ The subagent system allows the main AI to delegate tasks to isolated sub-process
 
 1. The main AI calls `getSubAgent(type, task)`.
 2. `getSubAgent` sends a POST to `http://localhost:3400/api/spawn` with the virtual channel ID for the requested type.
-3. The API flow loads `core-channel-config` for that virtual channel, applies tool/model/instruction overrides, and runs the full pipeline asynchronously.
-4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery happens via `discord-subagent-poll` to the originating Discord channel.
+3. The API flow loads `core-channel-config` for that virtual channel, then the dedicated `subagent-persona` pre-AI module applies the root caller persona as an `Answer as` block and appends the caller instructions for delivery style before the core AI modules run.
+4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery then happens via the subagent poll flows to the originating channel without an extra persona pass.
 
-The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically so that tools like `getHistory` and `getInformation` query the correct data source.
+The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically so that tools like `getHistory` and `getInformation` query the correct data source. The root caller persona and caller instructions are also forwarded so the spawned subagent can answer immediately in the caller's role, language, style, verbosity, length, and formatting. Nested subagents keep forwarding the original top-level caller persona instead of replacing it with the immediate parent subagent persona.
 
 ### Context and Statefulness
 
@@ -6442,9 +6452,9 @@ When a subagent's HTTP connection is closed by the client (e.g. because `getSubA
   "channelMatch": ["subagent-mytype"],
   "overrides": {
     "botName": "Jenny",
-    "persona": "Description of the subagent role.",
-    "systemPrompt": "What the subagent should do.",
-    "instructions": "Which tools to use and how.",
+    "persona": "Who the subagent is and what its job is.",
+    "systemPrompt": "How the subagent must process the task and which guardrails apply.",
+    "instructions": "How the subagent should format and style its final answer.",
     "contextSize": 5,
     "useAiModule": "completions",
     "model": "gpt-4o",

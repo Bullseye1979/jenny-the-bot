@@ -184,9 +184,9 @@ These values serve as **runtime defaults** for every flow. They can be overridde
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `botName` | string | `"Jenny"` | The bot's display name and identity |
-| `systemPrompt` | string | `"You are a helpful assistant."` | System-level instruction passed to the LLM |
-| `persona` | string | `"Default AI Assistant"` | Short persona label |
-| `instructions` | string | `"Answer concisely."` | Additional behavioural instructions appended to the system prompt |
+| `systemPrompt` | string | `"You are a helpful assistant."` | Processing rules and non-negotiable task constraints passed to the LLM |
+| `persona` | string | `"Default AI Assistant"` | Identity block: who the assistant is and what its job is |
+| `instructions` | string | `"Answer concisely."` | Delivery rules for response style, verbosity, language, length, and formatting |
 | `reasoning` | boolean | `false` | Enable extended reasoning (thinking) output |
 | `model` | string | `"gpt-5"` | LLM model identifier |
 | `endpoint` | string | OpenAI completions URL | API endpoint for chat completions |
@@ -552,8 +552,8 @@ Subagent execution is asynchronous by design and is routed through the internal 
 1. Parent assistant calls `getSubAgent` with `{ type, task }`.
 2. The tool resolves the target virtual channel from `toolsconfig.getSubAgent.types`.
 3. The tool posts a spawn request to `/api/spawn` and returns immediately with `{ ok, jobId, projectId, status: "started" }`.
-4. The subagent runs in an isolated channel config (own tools, prompts, limits).
-5. `discord-subagent-poll` detects completion and delivers the final result into the original Discord channel.
+4. The subagent runs in an isolated channel config (own tools, prompts, limits), keeps its own specialist persona, and inherits the root caller persona plus the caller instructions for language, style, verbosity, length, and formatting. A dedicated pre-AI module applies this before the core AI modules run. Nested subagents keep forwarding that original top-level caller persona.
+5. The poll flows deliver the subagent result directly into the original channel without a second persona-processing run.
 
 **Type routing convention:** route planning and location lookup tasks belong to the `research` subagent type.
 

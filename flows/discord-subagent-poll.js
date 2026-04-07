@@ -14,7 +14,7 @@
 import { getItem, putItem, deleteItem, listKeys } from "../core/registry.js";
 import { getPrefixedLogger }   from "../core/logging.js";
 import { logSubagent }         from "../core/subagent-logger.js";
-import { runPersonaPass, runParentChain } from "../core/subagent-poll-helpers.js";
+import { runParentChain } from "../core/subagent-poll-helpers.js";
 
 const MODULE_NAME  = "discord-subagent-poll";
 const HANDLED_FLOWS = ["discord"];
@@ -157,24 +157,8 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
 
       (async () => {
         try {
-          const _response = await runPersonaPass(
-            {
-              callerChannelId:   _job.callerChannelId,
-              callerFlow:        _job.callerFlow,
-              userId:            _job.userId,
-              guildId:           _job.guildId,
-              authorDisplayname: _job.authorDisplayname,
-              agentType:         _job.agentType,
-              jobId:             _job.jobId,
-              projectId:         _job.projectId,
-            },
-            _rawResult,
-            createRunCore,
-            runFlow,
-            log
-          );
-          if (_response) {
-            await deliverViaFlow(_job, _response, createRunCore, runFlow, log);
+          if (_rawResult) {
+            await deliverViaFlow(_job, _rawResult, createRunCore, runFlow, log);
           }
         } catch (e) {
           logSubagent("error", "discord-poll", "delivery_failed", { jobId: _job.jobId, error: e?.message || String(e) });

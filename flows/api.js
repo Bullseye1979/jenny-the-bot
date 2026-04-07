@@ -367,6 +367,8 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       const _spawnCallerChannelId = parsedSpawnBody.callerChannelId ? String(parsedSpawnBody.callerChannelId) : String(parsedSpawnBody.channelID);
       const _spawnCallerContextChannelID = parsedSpawnBody.callerContextChannelID ? String(parsedSpawnBody.callerContextChannelID) : "";
       const _spawnCallerFlow = parsedSpawnBody.callerFlow ? String(parsedSpawnBody.callerFlow) : "";
+      const _spawnCallerPersona = parsedSpawnBody.callerPersona ? String(parsedSpawnBody.callerPersona) : "";
+      const _spawnCallerInstructions = parsedSpawnBody.callerInstructions ? String(parsedSpawnBody.callerInstructions) : "";
       const _spawnToolcallScope = parsedSpawnBody.toolcallScope ? String(parsedSpawnBody.toolcallScope) : "";
       const _spawnCallerTurnId = parsedSpawnBody.callerTurnId ? String(parsedSpawnBody.callerTurnId) : "";
       const _spawnUserId = parsedSpawnBody.userId ? String(parsedSpawnBody.userId) : "";
@@ -451,6 +453,8 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       _spawnWo.agentType = _spawnAgentType;
       _spawnWo.contextChannelID = "project-" + projectId;
       if (_spawnCallerFlow) _spawnWo.callerFlow = _spawnCallerFlow;
+      if (_spawnCallerPersona) _spawnWo.callerPersona = _spawnCallerPersona;
+      if (_spawnCallerInstructions) _spawnWo.callerInstructions = _spawnCallerInstructions;
       if (_spawnToolcallScope) _spawnWo.toolcallScope = _spawnToolcallScope;
       if (parsedSpawnBody.systemPromptAddition) _spawnWo.systemPromptAddition = String(parsedSpawnBody.systemPromptAddition);
 
@@ -615,6 +619,8 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     if (parsedBody.agentDepth !== undefined) workingObject.agentDepth = Math.max(0, Number(parsedBody.agentDepth) || 0);
     if (parsedBody.agentType)   workingObject.agentType   = String(parsedBody.agentType);
     if (parsedBody.callerFlow)  workingObject.callerFlow  = String(parsedBody.callerFlow);
+    if (parsedBody.callerPersona) workingObject.callerPersona = String(parsedBody.callerPersona);
+    if (parsedBody.callerInstructions) workingObject.callerInstructions = String(parsedBody.callerInstructions);
     if (parsedBody.toolcallScope) workingObject.toolcallScope = String(parsedBody.toolcallScope);
 
     try {

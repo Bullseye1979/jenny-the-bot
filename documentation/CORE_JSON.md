@@ -105,9 +105,9 @@ All key names follow **camelCase** throughout.
 | Key | Type | Example | Description |
 |---|---|---|---|
 | `botName` | string | `"Jenny"` | Display name and identity of the bot |
-| `systemPrompt` | string | `"You are a helpful assistant."` | System-level instruction prepended to every LLM call |
-| `persona` | string | `"Default AI Assistant"` | Short persona descriptor (used in context injection) |
-| `instructions` | string | `"Answer concisely."` | Behavioural instructions appended after the system prompt |
+| `systemPrompt` | string | `"You are a helpful assistant."` | Processing rules and non-negotiable task constraints for the LLM |
+| `persona` | string | `"Default AI Assistant"` | Identity block: who the assistant is and what its job is |
+| `instructions` | string | `"Answer concisely."` | Delivery rules for response style, verbosity, language, length, and formatting |
 | `reasoning` | boolean | `false` | Enable extended reasoning / chain-of-thought output |
 | `model` | string | `"gpt-5"` | LLM model identifier |
 | `endpoint` | string | `"https://api.openai.com/v1/chat/completions"` | URL for the chat completions API |
@@ -527,7 +527,7 @@ Returns the current UTC time as an ISO 8601 string. No admin configuration requi
 
 #### getSubAgent
 
-Spawns an isolated AI subagent via the internal API flow. Each subagent type maps to a virtual channel configured with its own tool palette, model, and system prompt.
+Spawns an isolated AI subagent via the internal API flow. Each subagent type maps to a virtual channel configured with its own tool palette, model, and prompt split.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
@@ -539,7 +539,7 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 | `projectContextPrompt` | string | `"Context: You are operating within project context ..."` | Prompt template injected for resume calls. Use `${projectId}` as the placeholder for the resumed project ID. |
 | `types` | object | `{"research":"subagent-research"}` | Map of type name → virtual channel ID. Each entry enables one subagent type. |
 
-`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. Results are delivered back to the originating Discord channel by the `discord-subagent-poll` flow when the job completes. Resume-specific context instructions come from `toolsconfig.getSubAgent.projectContextPrompt` rather than hardcoded tool text.
+`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. The spawned subagent inherits the root caller persona together with the caller instructions for language, style, verbosity, length, and formatting. A dedicated pre-AI module applies this inheritance before the core AI modules run, so the core AI modules stay generic. Nested subagents keep forwarding the original top-level caller persona rather than replacing it with the immediate parent subagent persona. Results are then delivered back to the originating channel by the subagent poll flows without a second persona-processing run. Resume-specific context instructions come from `toolsconfig.getSubAgent.projectContextPrompt` rather than hardcoded tool text.
 
 Type routing convention: route planning and location lookup tasks belong to the `research` subagent type.
 
