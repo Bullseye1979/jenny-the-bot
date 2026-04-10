@@ -25,6 +25,24 @@ function getIsHandledFlow(callerFlow) {
 }
 
 
+function clearDeliveredToolStatus(channelId) {
+  const cid = String(channelId || "").trim();
+  if (!cid) return;
+
+  try {
+    const current = getItem("status:tool");
+    const currentChannelId = String(current?.channelId || "").trim();
+    if (currentChannelId && currentChannelId === cid) {
+      deleteItem("status:tool");
+    }
+  } catch {}
+
+  try {
+    deleteItem("status:tool:" + cid);
+  } catch {}
+}
+
+
 async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   const _callerFlow = String(job.callerFlow || "discord");
   const _targetFlow = _callerFlow === "discord-voice" ? "discord-voice" : "discord";
@@ -50,11 +68,15 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   _wo.skipAiCompletions   = true;
   _wo.doNotWriteToContext = true;
   _wo.bypassTriggerGate   = true;
+  _wo.bypassGdprGate      = true;
+  _wo.updateStatus        = true;
   _wo.clientRef           = "discord:client";
   _wo.timestamp           = new Date().toISOString();
+  clearDeliveredToolStatus(job.callerChannelId);
 
   try {
     await runFlow(_targetFlow, _rc);
+    clearDeliveredToolStatus(job.callerChannelId);
     logSubagent("info", "discord-poll", "deliver_flow_done", {
       jobId:      job.jobId,
       targetFlow: _targetFlow,

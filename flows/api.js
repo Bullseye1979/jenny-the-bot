@@ -197,6 +197,49 @@ function getApiSecret(baseCore) {
   return String(baseCore?.workingObject?.apiSecret || "").trim();
 }
 
+function getMergeChannelIds(...groups) {
+  const merged = [];
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    for (const value of group) {
+      const id = String(value || "").trim();
+      if (!id || merged.includes(id)) continue;
+      merged.push(id);
+    }
+  }
+  return merged;
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function getCloneJsonValue(value) {
+  if (Array.isArray(value)) return value.map((item) => getCloneJsonValue(item));
+  if (isPlainObject(value)) {
+    const out = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (key === "__proto__" || key === "prototype" || key === "constructor") continue;
+      out[key] = getCloneJsonValue(entry);
+    }
+    return out;
+  }
+  return value;
+}
+
+function applyWorkingObjectPatch(target, patch) {
+  if (!isPlainObject(target) || !isPlainObject(patch)) return;
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === "__proto__" || key === "prototype" || key === "constructor") continue;
+    if (isPlainObject(value)) {
+      if (!isPlainObject(target[key])) target[key] = {};
+      applyWorkingObjectPatch(target[key], value);
+      continue;
+    }
+    target[key] = getCloneJsonValue(value);
+  }
+}
+
 function getBearerToken(req) {
   const auth = String(req.headers?.authorization || "").trim();
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
@@ -367,8 +410,6 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       const _spawnCallerChannelId = parsedSpawnBody.callerChannelId ? String(parsedSpawnBody.callerChannelId) : String(parsedSpawnBody.channelID);
       const _spawnCallerContextChannelID = parsedSpawnBody.callerContextChannelID ? String(parsedSpawnBody.callerContextChannelID) : "";
       const _spawnCallerFlow = parsedSpawnBody.callerFlow ? String(parsedSpawnBody.callerFlow) : "";
-      const _spawnCallerPersona = parsedSpawnBody.callerPersona ? String(parsedSpawnBody.callerPersona) : "";
-      const _spawnCallerInstructions = parsedSpawnBody.callerInstructions ? String(parsedSpawnBody.callerInstructions) : "";
       const _spawnToolcallScope = parsedSpawnBody.toolcallScope ? String(parsedSpawnBody.toolcallScope) : "";
       const _spawnCallerTurnId = parsedSpawnBody.callerTurnId ? String(parsedSpawnBody.callerTurnId) : "";
       const _spawnUserId = parsedSpawnBody.userId ? String(parsedSpawnBody.userId) : "";
@@ -376,6 +417,11 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       const _spawnAuthorDisplayname = parsedSpawnBody.authorDisplayname ? String(parsedSpawnBody.authorDisplayname) : "";
       const _spawnAgentDepth = Math.max(0, Number(parsedSpawnBody.agentDepth) || 0);
       const _spawnAgentType = parsedSpawnBody.agentType ? String(parsedSpawnBody.agentType) : "";
+      const _spawnIncludeCallerContext = parsedSpawnBody.includeCallerContext === true;
+      const _spawnContextSourceChannelID = parsedSpawnBody.contextSourceChannelID ? String(parsedSpawnBody.contextSourceChannelID) : "";
+      const _spawnContextSourceChannelIds = Array.isArray(parsedSpawnBody.contextSourceChannelIds)
+        ? parsedSpawnBody.contextSourceChannelIds.map(c => String(c || "").trim()).filter(Boolean)
+        : [];
 
       logSubagent("info", "spawn", "spawn_received", {
         jobId,
@@ -391,6 +437,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         userId:                 _spawnUserId || null,
         guildId:                _spawnGuildId || null,
         payloadLen:             String(parsedSpawnBody.payload || "").length,
+        includeCallerContext:   _spawnIncludeCallerContext,
       });
 
       const _spawnPayload = String(parsedSpawnBody.payload || "").trim();
@@ -437,7 +484,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       const _spawnWo = (_spawnCore.workingObject ||= {});
 
       _spawnWo.flow = "api";
-      _spawnWo.turn_id = getUlid();
+      _spawnWo.turnId = getUlid();
       _spawnWo.aborted = false;
       _spawnWo.channelID = String(parsedSpawnBody.channelID);
       _spawnWo.userId = _spawnUserId;
@@ -448,18 +495,23 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       _spawnWo.timestamp = new Date().toISOString();
       _spawnWo.httpAuthorization = String(req.headers?.authorization || "");
       _spawnWo.callerChannelId = _spawnCallerChannelId;
+      if (_spawnCallerContextChannelID) _spawnWo.callerContextChannelID = _spawnCallerContextChannelID;
       _spawnWo.callerTurnId = _spawnCallerTurnId;
       _spawnWo.agentDepth = _spawnAgentDepth;
       _spawnWo.agentType = _spawnAgentType;
       _spawnWo.contextChannelID = "project-" + projectId;
+      _spawnWo.includeCallerContext = _spawnIncludeCallerContext;
       if (_spawnCallerFlow) _spawnWo.callerFlow = _spawnCallerFlow;
-      if (_spawnCallerPersona) _spawnWo.callerPersona = _spawnCallerPersona;
-      if (_spawnCallerInstructions) _spawnWo.callerInstructions = _spawnCallerInstructions;
       if (_spawnToolcallScope) _spawnWo.toolcallScope = _spawnToolcallScope;
       if (parsedSpawnBody.systemPromptAddition) _spawnWo.systemPromptAddition = String(parsedSpawnBody.systemPromptAddition);
 
       if (Array.isArray(parsedSpawnBody.callerChannelIds)) {
         _spawnWo.callerChannelIds = parsedSpawnBody.callerChannelIds.map(c => String(c)).filter(Boolean);
+      }
+
+      if (_spawnIncludeCallerContext) {
+        if (_spawnContextSourceChannelID) _spawnWo.contextSourceChannelID = _spawnContextSourceChannelID;
+        if (_spawnContextSourceChannelIds.length) _spawnWo.contextSourceChannelIds = _spawnContextSourceChannelIds;
       }
 
       const _spawnSubchannel = String(parsedSpawnBody.subchannel || "").trim();
@@ -527,6 +579,8 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
             startedAt: _job.startedAt,
             finishedAt: _job.finishedAt,
             result: _job.personaResult || _job.result,
+            audioBase64: _job.personaAudioBase64 || null,
+            audioMime: _job.personaAudioMime || null,
             primaryImageUrl: _job.primaryImageUrl || null,
             originalRequest: _job.payload || null,
             authorDisplayname: _job.authorDisplayname || null,
@@ -577,7 +631,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     const workingObject = (runCore.workingObject ||= {});
 
     workingObject.flow = "api";
-    workingObject.turn_id = getUlid();
+    workingObject.turnId = getUlid();
     workingObject.aborted = false;
     req.socket?.on("close", () => { if (!res.writableEnded) workingObject.aborted = true; });
 
@@ -610,17 +664,22 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     if (parsedBody.doNotWriteToContext === true) workingObject.doNotWriteToContext = true;
     if (parsedBody.contextChannelID) workingObject.contextChannelID = String(parsedBody.contextChannelID);
     if (parsedBody.systemPromptAddition) workingObject.systemPromptAddition = String(parsedBody.systemPromptAddition);
+    if (parsedBody.workingObjectPatch && typeof parsedBody.workingObjectPatch === "object") {
+      applyWorkingObjectPatch(workingObject, parsedBody.workingObjectPatch);
+    }
 
     if (parsedBody.callerChannelId) workingObject.callerChannelId = String(parsedBody.callerChannelId);
+    if (workingObject.callerChannelId) {
+      workingObject.channelIds = getMergeChannelIds(workingObject.channelIds, [workingObject.callerChannelId]);
+    }
     if (Array.isArray(parsedBody.callerChannelIds)) {
       workingObject.callerChannelIds = parsedBody.callerChannelIds.map(c => String(c)).filter(Boolean);
+      workingObject.channelIds = getMergeChannelIds(workingObject.channelIds, workingObject.callerChannelIds);
     }
     if (parsedBody.callerTurnId) workingObject.callerTurnId = String(parsedBody.callerTurnId);
     if (parsedBody.agentDepth !== undefined) workingObject.agentDepth = Math.max(0, Number(parsedBody.agentDepth) || 0);
     if (parsedBody.agentType)   workingObject.agentType   = String(parsedBody.agentType);
     if (parsedBody.callerFlow)  workingObject.callerFlow  = String(parsedBody.callerFlow);
-    if (parsedBody.callerPersona) workingObject.callerPersona = String(parsedBody.callerPersona);
-    if (parsedBody.callerInstructions) workingObject.callerInstructions = String(parsedBody.callerInstructions);
     if (parsedBody.toolcallScope) workingObject.toolcallScope = String(parsedBody.toolcallScope);
 
     try {
@@ -648,7 +707,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       flow: "api",
       channelID: workingObject.channelID,
       ..._subchannel && { subchannel: _subchannel },
-      turn_id: workingObject.turn_id,
+      turnId: workingObject.turnId,
       channelallowed: workingObject.channelallowed,
       response: text && text !== silenceToken ? text : "",
       toolCallLog:       Array.isArray(workingObject.toolCallLog)  ? workingObject.toolCallLog  : undefined,

@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "07000-core-add-id.js"                                 */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -125,7 +130,7 @@ export default async function getCoreAddId(coreData) {
   const response = typeof wo.response === "string" ? wo.response : "";
   if (!response.trim()) return coreData;
 
-  const idValue = getStr(wo?.channelID).trim();
+  const idValue = getStr(wo?.callerChannelId || wo?.channelID).trim();
   if (!idValue) {
     log("Missing wo.channelID → cannot append id param.", "warn");
     return coreData;

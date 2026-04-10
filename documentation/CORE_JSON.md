@@ -1,8 +1,8 @@
-# core.json — Complete Reference
+﻿# core.json â€” Complete Reference
 
-> **Version:** 1.0 · **Date:** 2026-04-05
+> **Version:** 1.0 Â· **Date:** 2026-04-05
 
-`core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime — any change triggers an automatic hot-reload within seconds. No restart is required.
+`core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime â€” any change triggers an automatic hot-reload within seconds. No restart is required.
 
 The file has two top-level sections:
 
@@ -39,7 +39,7 @@ All key names follow **camelCase** throughout.
      - [getWebpage](#getwebpage)
      - [getYoutube](#getyoutube)
      - [getHistory](#gethistory)
-     - [getInformation](#getinformation)
+     - [getTimeline](#gettimeline)
      - [getConfluence](#getconfluence)
      - [getJira](#getjira)
      - [getPDF](#getpdf)
@@ -48,7 +48,6 @@ All key names follow **camelCase** throughout.
      - [getLocation](#getlocation)
      - [getTime](#gettime)
      - [getSubAgent](#getsubagent)
-     - [getAgentResume](#getagentresume)
      - [getBan](#getban)
 2. [config](#config)
    - [discord](#discord)
@@ -57,7 +56,8 @@ All key names follow **camelCase** throughout.
    - [webpage-chat](#webpage-chat)
    - [webpage-bard](#webpage-bard)
    - [webpage-wiki](#webpage-wiki)
-   - [webpage-context](#webpage-context)
+- [webpage-context](#webpage-context)
+- [webpage-timeline](#webpage-timeline)
    - [webpage-auth](#webpage-auth)
    - [webpage-landing](#webpage-landing)
    - [webpage-menu](#webpage-menu)
@@ -89,7 +89,7 @@ All key names follow **camelCase** throughout.
    - [toolcall](#toolcall)
    - [discord-subagent-poll](#discord-subagent-poll)
    - [Module Flow Subscriptions](#module-flow-subscriptions)
-   - [core-channel-config — Channel Overrides](#core-channel-config--channel-overrides)
+   - [core-channel-config â€” Channel Overrides](#core-channel-config--channel-overrides)
 3. [Complete Annotated Template](#complete-annotated-template)
 
 ---
@@ -112,13 +112,13 @@ All key names follow **camelCase** throughout.
 | `model` | string | `"gpt-5"` | LLM model identifier |
 | `endpoint` | string | `"https://api.openai.com/v1/chat/completions"` | URL for the chat completions API |
 | `endpointResponses` | string | `"https://api.openai.com/v1/responses"` | URL for the Responses API |
-| `apiKey` | string | `"OPENAI"` | Placeholder name resolved at runtime from the `bot_secrets` DB table via `core/secrets.js`. Set to the symbolic name (e.g. `"OPENAI"`) — the real key value lives in `bot_secrets`. |
-| `useAiModule` | string | `"responses"` | AI pipeline to use: `"responses"` · `"completions"` · `"pseudotoolcalls"` |
-| `temperature` | number | `0.2` | Sampling temperature (0.0–2.0) |
+| `apiKey` | string | `"OPENAI"` | Placeholder name resolved at runtime from the `bot_secrets` DB table via `core/secrets.js`. Set to the symbolic name (e.g. `"OPENAI"`) â€” the real key value lives in `bot_secrets`. |
+| `useAiModule` | string | `"responses"` | AI pipeline to use: `"responses"` Â· `"completions"` Â· `"pseudotoolcalls"` |
+| `temperature` | number | `0.2` | Sampling temperature (0.0â€“2.0) |
 | `maxTokens` | number | `2000` | Maximum tokens the LLM may generate per reply |
 | `maxLoops` | number | `15` | Maximum tool-call iterations per turn before forcing a final answer |
 | `maxToolCalls` | number | `7` | Maximum individual tool invocations per turn |
-| `toolChoice` | string | `"auto"` | Tool selection mode: `"auto"` · `"none"` · `"required"` |
+| `toolChoice` | string | `"auto"` | Tool selection mode: `"auto"` Â· `"none"` Â· `"required"` |
 | `tools` | array | `["getGoogle","getImage",...]` | Names of tools the LLM may call this turn |
 | `includeHistory` | boolean | `true` | Include previous conversation history in the context window |
 | `includeHistoryTools` | boolean | `false` | Include tool-call rows when loading history |
@@ -130,20 +130,22 @@ All key names follow **camelCase** throughout.
 | `triggerWordWindow` | number | `3` | Words scanned at the start of a message for the trigger word |
 | `trigger` | string | `"jenny"` | Trigger word that activates the bot (empty = always active) |
 | `doNotWriteToContext` | boolean | `false` | Skip writing this turn to MySQL (useful for status flows) |
-| `contextChannelID` | string | `""` | Override the channel ID used when reading/writing context. When set, context is stored under this ID instead of `channelID`. Useful when one channel (e.g. a subagent channel) should share history with another. |
+| `contextChannelId` | string | `""` | Override the channel ID used when reading/writing context. When set, context is stored under this ID instead of `channelID`. Useful when one channel (e.g. a subagent channel) should share history with another. |
 | `skipAiCompletions` | boolean | `false` | When `true`, the `core-ai-completions` module exits immediately without running the AI. Use this in flows where the AI call is handled by a different module or must be suppressed entirely for that pipeline pass. |
 | `showReactions` | boolean | `true` | Add emoji reactions to Discord messages during processing |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone for time-aware modules and tools |
 | `baseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving generated files (images, PDFs, etc.) |
 | `modAdmin` | string | `"406901027665870848"` | Discord user ID with elevated bot admin rights |
 | `modSilence` | string | `"[silence]"` | If this token appears in the AI response, output is suppressed |
-| `apiSecret` | string | `"API_SECRET"` | Placeholder name for the HTTP API bearer token — resolved from `bot_secrets` at runtime. Every `POST /api` request must supply `Authorization: Bearer <real-value>`. Set to `""` or omit to disable token checking. |
+| `apiSecret` | string | `"API_SECRET"` | Placeholder name for the HTTP API bearer token â€” resolved from `bot_secrets` at runtime. Every `POST /api` request must supply `Authorization: Bearer <real-value>`. Set to `""` or omit to disable token checking. |
 | `apiEnabled` | number | `1` | Controls whether this channel can be reached via the HTTP API. `0` = always blocked (regardless of token). `1` = allowed when token matches or no secret is set. Can be overridden per channel via `core-channel-config`. |
 | `gdprDisclaimer` | string | Long legal text | Full GDPR disclaimer text sent as a DM on first contact |
 | `fileUrls` | array | `[]` | Attachment URLs extracted from the current Discord message |
 | `response` | string | `""` | Final AI-generated response text (written by AI modules) |
 | `reasoningSummary` | string | `""` | Accumulated chain-of-thought reasoning (written by AI modules) |
 | `payload` | string | `""` | The user's input message for this turn |
+
+Secret alias policy: committed config may contain symbolic placeholders such as `OPENAI`, `API_SECRET`, and `DISCORD_CLIENT_SECRET`. Real API keys and bearer tokens must not be stored in `core.json`. `db.password` is the bootstrap exception because the bot must reach MySQL before it can resolve DB-backed secrets.
 
 ---
 
@@ -155,11 +157,11 @@ All key names follow **camelCase** throughout.
 | `ttsModel` | string | `"gpt-4o-mini-tts"` | Text-to-speech model |
 | `ttsVoice` | string | `"nova"` | TTS voice name |
 | `ttsEndpoint` | string | `"https://api.openai.com/v1/audio/speech"` | TTS API endpoint |
-| `ttsApiKey` | string | `"OPENAI"` | Placeholder name for the TTS API key — resolved from `bot_secrets` at runtime |
-| `whisperApiKey` | string | `"OPENAI"` | Placeholder name for the Whisper/transcription API key — resolved from `bot_secrets` at runtime |
-| `whisperModel` | string | `"whisper-1"` | Whisper model identifier (legacy fallback). `core-voice-transcribe` defaults to `"gpt-4o-mini-transcribe"` unless overridden via `transcribeModel` in its config block |
-| `whisperLanguage` | string | `""` | Force a specific transcription language (ISO 639-1, or empty for auto) |
-| `whisperEndpoint` | string | `"https://api.openai.com"` | Base URL for the Whisper/transcription API |
+| `ttsApiKey` | string | `"OPENAI"` | Placeholder name for the TTS API key â€” resolved from `bot_secrets` at runtime |
+| `transcribeApiKey` | string | `"OPENAI"` | Placeholder name for the transcription API key â€” resolved from `bot_secrets` at runtime |
+| `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model identifier |
+| `transcribeLanguage` | string | `""` | Force a specific transcription language (ISO 639-1, or empty for auto) |
+| `transcribeEndpoint` | string | `"https://api.openai.com"` | Base URL for the transcription API |
 
 ---
 
@@ -167,7 +169,7 @@ All key names follow **camelCase** throughout.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `avatarApiKey` | string | `"sk-proj-..."` | API key for avatar image generation |
+| `avatarApiKey` | string | `"OPENAI"` | Alias for avatar image generation, resolved at runtime via `core/secrets.js` |
 | `avatarEndpoint` | string | `"https://api.openai.com/v1/images/generations"` | Endpoint for avatar generation |
 | `avatarModel` | string | `"dall-e-3"` | Image model used for avatar generation |
 | `avatarSize` | string | `"1024x1024"` | Avatar dimensions |
@@ -191,7 +193,7 @@ The `discord-admin` sub-object configures slash commands:
 
 | Key | Type | Description |
 |---|---|---|
-| `slash.silent` | boolean | Suppress the "Bot is thinking…" message |
+| `slash.silent` | boolean | Suppress the "Bot is thinkingâ€¦" message |
 | `slash.ephemeral` | boolean | Make slash command responses visible only to the invoking user |
 | `slash.definitions` | array | Array of slash command definition objects (Discord API format) |
 
@@ -206,6 +208,7 @@ Each definition object contains `name`, `description`, optional `admin` (array o
 | `/purge` | Yes | Delete recent messages |
 | `/purgedb` | Yes | Wipe database entries for this channel |
 | `/freeze` | Yes | Mark database rows as frozen |
+| `/rebuilddb` | Yes | Rebuild derived context tables for this channel and linked channel IDs |
 | `/gdpr` | No | Set GDPR consent flags |
 | `/join` | No | Join user's voice channel |
 | `/leave` | No | Leave voice channel |
@@ -246,7 +249,7 @@ OpenAI DALL-E image generation.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `apiKey` | string | `"sk-proj-..."` | API key |
+| `apiKey` | string | `"OPENAI"` | Secret alias resolved at runtime |
 | `endpoint` | string | `"https://api.openai.com/v1/images/generations"` | Generation endpoint |
 | `model` | string | `"dall-e-3"` | Image model |
 | `size` | string | `"1024x1024"` | Output image dimensions |
@@ -255,7 +258,7 @@ OpenAI DALL-E image generation.
 | `targetLongEdge` | number | `1152` | Target pixel length for the long edge when downscaling |
 | `aspect` | string | `""` | Aspect ratio hint (passed to the model) |
 | `enhancerEndpoint` | string | OpenAI completions URL | LLM endpoint for prompt enhancement |
-| `enhancerApiKey` | string | `"sk-proj-..."` | API key for the prompt enhancer |
+| `enhancerApiKey` | string | `"OPENAI"` | Secret alias for the prompt enhancer |
 | `enhancerModel` | string | `"gpt-4o-mini"` | Model used to enhance/rewrite the image prompt |
 | `enhancerTemperature` | number | `0.2` | Temperature for prompt enhancement |
 | `enhancerMaxTokens` | number | `350` | Max tokens for prompt enhancement |
@@ -329,7 +332,7 @@ Google Custom Search Engine.
 | `apiKey` | string | `"AIza..."` | Google API key |
 | `cseId` | string | `"646890f6ce8ff49f5"` | Custom Search Engine ID |
 | `num` | number | `10` | Results per query |
-| `safe` | string | `"off"` | Safe search (`"off"` · `"medium"` · `"high"`) |
+| `safe` | string | `"off"` | Safe search (`"off"` Â· `"medium"` Â· `"high"`) |
 | `hl` | string | `"de"` | Interface language |
 | `lr` | string | `"lang_de"` | Restrict results to language |
 | `cr` | string | `"countryDE"` | Restrict results to country |
@@ -338,14 +341,14 @@ Google Custom Search Engine.
 
 #### getTavily
 
-Tavily Search API — AI-optimised web search with topic and time-range filters.
+Tavily Search API â€” AI-optimised web search with topic and time-range filters.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
 | `apiKey` | string | `"tvly-..."` | Tavily API key (get at [app.tavily.com](https://app.tavily.com)) |
-| `searchDepth` | string | `"basic"` | Default depth: `"basic"` (1 credit) · `"advanced"` (2 credits) |
-| `maxResults` | number | `5` | Default number of results (1–20) |
-| `topic` | string | `"general"` | Default topic: `"general"` · `"news"` · `"finance"` |
+| `searchDepth` | string | `"basic"` | Default depth: `"basic"` (1 credit) Â· `"advanced"` (2 credits) |
+| `maxResults` | number | `5` | Default number of results (1â€“20) |
+| `topic` | string | `"general"` | Default topic: `"general"` Â· `"news"` Â· `"finance"` |
 | `timeoutMs` | number | `20000` | Request timeout |
 | `includeDomains` | array | `["example.com"]` | Restrict results to these domains (optional) |
 | `excludeDomains` | array | `["spam.com"]` | Exclude these domains from results (optional) |
@@ -367,7 +370,7 @@ Web page fetcher and AI post-processor.
 | `aiTimeoutMs` | number | `45000` | LLM call timeout |
 | `wordThreshold` | number | `2000` | Minimum word count before AI post-processing is triggered |
 | `endpoint` | string | OpenAI completions URL | LLM endpoint |
-| `apiKey` | string | `"sk-proj-..."` | API key |
+| `apiKey` | string | `"OPENAI"` | Secret alias resolved at runtime |
 
 #### getYoutube
 
@@ -377,7 +380,7 @@ YouTube search and transcript fetcher.
 |---|---|---|---|
 | `googleApiKey` | string | `"AIza..."` | Google API key (YouTube Data API v3) |
 | `endpoint` | string | OpenAI completions URL | LLM endpoint for transcript summarisation |
-| `apiKey` | string | `"sk-proj-..."` | API key |
+| `apiKey` | string | `"OPENAI"` | Secret alias resolved at runtime |
 | `model` | string | `"gpt-4.1"` | LLM model for summarisation |
 | `temperature` | number | `0.2` | Sampling temperature |
 | `maxTokens` | number | `8000` | Max tokens for summarisation |
@@ -390,46 +393,22 @@ YouTube search and transcript fetcher.
 
 #### getHistory
 
-Conversation history retrieval and summarisation.
+Hierarchical history zoom retrieval. Each call goes exactly one level deeper and returns either child blocks or raw rows at the bottom.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `pagesize` | number | `1000` | Rows fetched per page from MySQL |
-| `maxRows` | number | `4000` | Absolute maximum rows to read |
-| `threshold` | number | `800` | Token count above which a page is summarised |
-| `model` | string | `"gpt-4.1"` | Summarisation model |
-| `temperature` | number | `0` | Temperature (0 = deterministic for summaries) |
-| `maxTokens` | number | `8000` | Max tokens for each summary |
-| `aiTimeoutMs` | number | `45000` | LLM call timeout |
-| `endpoint` | string | OpenAI completions URL | LLM endpoint |
-| `apiKey` | string | `"sk-proj-..."` | API key |
-| `includeToolRows` | boolean | `false` | Include tool-call rows in history |
-| `chunkMaxTokens` | number | `600` | Maximum token size of each chunk before summarising |
+| `maxRows` | number | `300` | Maximum number of raw rows returned when the selected block is already at the bottom level |
+| `includeToolRows` | boolean | `false` | Include tool-call rows when returning bottom-level raw history |
+| `includeJson` | boolean | `false` | Include the raw stored JSON payload when returning bottom-level raw history |
 
-#### getInformation
+#### getTimeline
 
-Information clustering and retrieval from the context log.
+Chronological timeline retrieval from derived context segments and nodes.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `clusterRows` | number | `200` | Number of context rows to cluster |
-| `padRows` | number | `20` | Rows of padding added around a cluster |
-| `tokenWindow` | number | `5` | Token window for clustering |
-| `maxLogChars` | number | `6000` | Maximum characters from the log to include |
-| `maxOutputLines` | number | `1000` | Maximum output lines |
-| `minCoverage` | number | `1` | Minimum coverage threshold |
-| `eventGapMinutes` | number | `45` | Minutes between events before a new cluster starts |
-| `stripCode` | boolean | `false` | Strip code blocks from context before clustering |
-| `includeAnsweredTurns` | boolean | `false` | Include user turns that already have a bot reply |
-| `includeAssistantTurns` | boolean | `false` | Include `role=assistant` rows; implies `includeAnsweredTurns` |
-| `includeAliasSearch` | boolean | `false` | Enable iterative alias resolution (see ADMIN_MANUAL) |
-| `aliasMaxDepth` | number | `1` | Alias-extraction rounds. `2` handles 3-step chains (A→B→C) |
-| `aliasMaxCount` | number | `8` | Max new aliases per round |
-| `aliasSampleRows` | number | `30` | Pass 1 rows fed to the alias AI call |
-| `aliasEndpoint` | string | `""` | Endpoint for alias AI call; falls back to `wo.endpoint` |
-| `aliasApiKey` | string | `""` | API key for alias AI call; falls back to `wo.apiKey` |
-| `aliasModel` | string | `"gpt-4o-mini"` | Model for alias extraction |
-| `aliasTimeoutMs` | number | `30000` | Timeout for the alias AI call |
+| `maxEntries` | number | `120` | Maximum number of timeline entries returned |
+| `compact` | boolean | `true` | Allow higher-level node summaries when the timeline is large |
 
 #### getConfluence
 
@@ -465,7 +444,7 @@ Atlassian Jira integration.
 
 #### getPDF
 
-HTML → PDF generator.
+HTML â†’ PDF generator.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
@@ -523,7 +502,7 @@ Returns the current UTC time as an ISO 8601 string. No admin configuration requi
 
 | Key | Type | Description |
 |---|---|---|
-| *(no keys)* | — | This tool requires no toolsconfig entry |
+| *(no keys)* | â€” | This tool requires no toolsconfig entry |
 
 #### getSubAgent
 
@@ -532,30 +511,16 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 | Key | Type | Example | Description |
 |---|---|---|---|
 | `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
-| `apiSecret` | string | `"API_SECRET"` | Placeholder name for the bearer token — resolved from `bot_secrets` at runtime |
+| `apiSecret` | string | `"API_SECRET"` | Placeholder name for the bearer token â€” resolved from `bot_secrets` at runtime |
 | `asyncSpawnPath` | string | `"/api/spawn"` | Path used for spawning jobs (`POST /api/spawn`). Defaults to `"/api/spawn"`. |
 | `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request (ms). The subagent itself then runs independently. |
-| `maxSpawnDepth` | number | `2` | Maximum nesting depth for subagent spawning. A subagent at depth ≥ `maxSpawnDepth` may not spawn further subagents. |
+| `maxSpawnDepth` | number | `2` | Maximum nesting depth for subagent spawning. A subagent at depth â‰¥ `maxSpawnDepth` may not spawn further subagents. |
 | `projectContextPrompt` | string | `"Context: You are operating within project context ..."` | Prompt template injected for resume calls. Use `${projectId}` as the placeholder for the resumed project ID. |
-| `types` | object | `{"research":"subagent-research"}` | Map of type name → virtual channel ID. Each entry enables one subagent type. |
+| `types` | object | `{"research":"subagent-research"}` | Map of type name â†’ virtual channel ID. Each entry enables one subagent type. |
 
-`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. The spawned subagent inherits the root caller persona together with the caller instructions for language, style, verbosity, length, and formatting. A dedicated pre-AI module applies this inheritance before the core AI modules run, so the core AI modules stay generic. Nested subagents keep forwarding the original top-level caller persona rather than replacing it with the immediate parent subagent persona. Results are then delivered back to the originating channel by the subagent poll flows without a second persona-processing run. Resume-specific context instructions come from `toolsconfig.getSubAgent.projectContextPrompt` rather than hardcoded tool text.
+`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. The spawned subagent uses the target virtual channel's own `systemPrompt`, `persona`, and `instructions`; caller persona and caller instructions are not injected into the spawned subagent. Results are then delivered back to the originating channel by the subagent poll flows, and webpage delivery may apply a final caller-channel persona pass before returning the answer to the user. Resume-specific context instructions come from `toolsconfig.getSubAgent.projectContextPrompt` rather than hardcoded tool text. Caller context stays opt-in per tool call: `includeCallerContext=true` preloads the original caller context source using the target subagent channel's own `contextSize` and `compressedContextElements` overrides.
 
 Type routing convention: route planning and location lookup tasks belong to the `research` subagent type.
-
-#### getAgentResume
-
-Resumes an existing async subagent project by spawning a follow-up task on the mapped subagent channel.
-
-| Key | Type | Example | Description |
-|---|---|---|---|
-| `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
-| `apiSecret` | string | `"API_SECRET"` | Placeholder name for bearer auth; resolved from `bot_secrets` |
-| `asyncSpawnPath` | string | `"/api/spawn"` | Spawn endpoint path |
-| `spawnTimeoutMs` | number | `10000` | Timeout for spawn request |
-| `types` | object | `{"research":"subagent-research"}` | Subagent type map used to resolve the target channel from stored project metadata |
-
-`getAgentResume` reads only `toolsconfig.getAgentResume` and the runtime `workingObject`.
 
 #### getBan
 
@@ -569,12 +534,12 @@ Sends a ban request DM to the configured admin user.
 
 ### Diagnostics / Pipeline Logging
 
-Controls the pipeline diff logger in `main.js`. When enabled, every module call that changes the `workingObject` writes a `+`/`-` diff to `logs/pipeline/`. See [ADMIN_MANUAL §7.4](ADMIN_MANUAL.md#74-final-logging-10xxx) for full details.
+Controls the pipeline diff logger in `main.js`. When enabled, every module call that changes the `workingObject` writes a `+`/`-` diff to `logs/pipeline/`. See [ADMIN_MANUAL Â§7.4](ADMIN_MANUAL.md#74-final-logging-10xxx) for full details.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `tracePipeline` | boolean | `false` | Master switch. Set to `true` to enable diff logging. No files are written and no snapshots are taken when `false`. |
-| `tracePipelineExcludeFlows` | string[] | `[]` | Blacklist of flow names to **skip**. Supports `*` wildcards — e.g. `"webpage*"` excludes all `webpage-*` flows. Omit or leave empty to trace every flow. |
+| `tracePipelineExcludeFlows` | string[] | `[]` | Blacklist of flow names to **skip**. Supports `*` wildcards â€” e.g. `"webpage*"` excludes all `webpage-*` flows. Omit or leave empty to trace every flow. |
 
 **Recommended production setting** (excludes high-frequency HTTP flows):
 ```json
@@ -617,6 +582,22 @@ The `config` section wires flows and modules together, and provides per-module s
 
 ---
 
+### context
+
+```jsonc
+"context": {
+  "timelineApiChannel": "context-timeline",
+  "timelineSummaryPrompt": "Summarize the supplied channel segment and return strict JSON only..."
+}
+```
+
+| Key | Description |
+|---|---|
+| `timelineApiChannel` | Virtual channel used for timeline summarization requests through the internal API flow |
+| `timelineSummaryPrompt` | Prompt template for timeline summarization. This prompt must live in `core.json`, not in `core/context.js`. |
+
+---
+
 ### api
 
 ```jsonc
@@ -644,25 +625,25 @@ The `config` section wires flows and modules together, and provides per-module s
 | `spawnPath` | string | `"/api/spawn"` | `POST` endpoint for spawning async subagent jobs |
 | `jobsPath` | string | `"/api/jobs"` | `GET` endpoint for listing async jobs by `callerChannelId` |
 | `uploadPath` | string | `"/upload"` | `POST` endpoint for uploading files (returns public URL) |
-| `publicBaseUrl` | string | — | Public base URL used when constructing file URLs returned by `/upload` |
+| `publicBaseUrl` | string | â€” | Public base URL used when constructing file URLs returned by `/upload` |
 
 **Endpoints summary:**
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `GET` | `/health` | None | Returns `{ ok: true, botname }` |
-| `POST` | `/api` | Bearer | Synchronous AI pipeline request; returns `{ ok, response, turn_id, ... }` |
+| `POST` | `/api` | Bearer | Synchronous AI pipeline request; returns `{ ok, response, turnId, ... }` |
 | `GET` | `/toolcall` | Bearer | Poll current tool-call status; `?channelID=` for channel-specific key |
 | `GET` | `/context` | Bearer | Read recent conversation; requires `?channelID=`; optional `?limit=` |
 | `POST` | `/api/spawn` | Bearer | Spawn async subagent job; returns `{ ok, jobId, projectId }` immediately |
-| `GET` | `/api/jobs` | Bearer | List async jobs for a caller channel; requires `?channelID=` |
+| `GET` | `/api/jobs` | Bearer | List async jobs for a caller channel; requires `?channelID=`. When a webpage voice delivery missed SSE, the fallback payload may also include `audioBase64` and `audioMime`. |
 | `POST` | `/upload` | Bearer | Upload a file and receive its public URL |
 
 ---
 
 ### webpage-config-editor
 
-Visual config editor SPA served as a **webpage-flow module** (`modules/00047`) on a dedicated port. Renders `core.json` as a tree of collapsible sections — objects appear as cards, flat arrays as tag chips, secrets as password fields, long strings as textareas. Changes are tracked in-memory and saved atomically with Ctrl+S or the **Save** button.
+Visual config editor SPA served as a **webpage-flow module** (`modules/00047`) on a dedicated port. Renders `core.json` as a tree of collapsible sections â€” objects appear as cards, flat arrays as tag chips, secrets as password fields, long strings as textareas. Changes are tracked in-memory and saved atomically with Ctrl+S or the **Save** button.
 
 The port must also appear in `config.webpage.ports`. The AI chat has moved to [`webpage-chat`](#webpage-chat).
 
@@ -679,12 +660,12 @@ The port must also appear in `config.webpage.ports`. The AI chat has moved to [`
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port (default `3111`) — also add to `config.webpage.ports` |
+| `port` | HTTP port (default `3111`) â€” also add to `config.webpage.ports` |
 | `basePath` | URL prefix served by this module (default `"/config"`) |
-| `file` | Absolute path to the JSON file to edit. Falls back to `core.json` in the project root if omitted. Alias: `configPath` |
+| `file` | Absolute path to the JSON file to edit. Falls back to `core.json` in the project root if omitted |
 | `allowedRoles` | Array of roles allowed to view and save. Empty array `[]` = public. Example: `["admin"]` |
 
-#### _title — Readable Section Names
+#### _title â€” Readable Section Names
 
 Any object in `core.json` can have a `_title` key. The Config Editor uses this string as the section header instead of the raw property key.
 
@@ -695,7 +676,7 @@ Any object in `core.json` can have a `_title` key. The Config Editor uses this s
 }
 ```
 
-`_title` is skipped when the editor renders fields — it never appears as an editable input, and is ignored entirely at runtime.
+`_title` is skipped when the editor renders fields â€” it never appears as an editable input, and is ignored entirely at runtime.
 
 > All module config sections in `core.json` already have `_title` values pre-populated. Update them freely without side effects.
 
@@ -703,7 +684,7 @@ Any object in `core.json` can have a `_title` key. The Config Editor uses this s
 
 ### webpage-chat
 
-AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, routed via `GET /chat`. `00048-webpage-chat` is a **pure HTTP handler** — it sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) and returns. The AI pipeline modules (01000–01003) handle the AI call naturally; `09300-webpage-output` returns `{ response: wo.response }` as JSON. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
+AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, routed via `GET /chat`. `00048-webpage-chat` is a **pure HTTP handler** â€” it sets up `wo` fields (channelID, payload, subchannel, contextSize) and returns. The AI pipeline modules (01000â€“01003) handle the AI call naturally; `09300-webpage-output` returns `{ response: wo.response }` as JSON. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table. Prompt, persona, and instructions come from channel config and manifests, not from subchannel rows.
 
 ```jsonc
 "webpage-chat": {
@@ -711,7 +692,6 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
   "port":               3112,
   "basePath":           "/chat",
   "allowedRoles":       ["member", "admin"],
-  "systemPrompt":       "",
   "contextSize":        20,
   "maxTokens":          1024,
   "toolStatusPollMs":   500,
@@ -721,9 +701,9 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 }
 ```
 
-**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), active toolcall name displayed in the thinking bubble via a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelID=<id>` (server pushes an event only when the tool name changes — no polling overhead on the client), subchannel CRUD endpoints, file attachments (📎 button in footer).
+**Chat features:** markdown rendering, media embeds (YouTube/Vimeo, `<video>`, inline images), active toolcall name displayed in the thinking bubble via a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelID=<id>` (server pushes an event only when the tool name changes â€” no polling overhead on the client), subchannel CRUD endpoints, file attachments (ðŸ“Ž button in footer).
 
-**File upload flow:** images → `POST /gallery/api/files` (session cookie auth, same-origin); non-images or gallery failure → `POST /chat/api/upload` (server-side proxy to `apiUrl.replace(/\/api/, '/upload')` with optional Bearer token). The uploaded URL is prepended to the message payload before the AI call.
+**File upload flow:** images â†’ `POST /gallery/api/files` (session cookie auth, same-origin); non-images or gallery failure â†’ `POST /chat/api/upload` (server-side proxy to `apiUrl.replace(/\/api/, '/upload')` with optional Bearer token). The uploaded URL is prepended to the message payload before the AI call.
 
 | Key | Description |
 |---|---|
@@ -731,17 +711,16 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 | `port` | HTTP port (default `3112`) |
 | `basePath` | URL prefix (default `"/chat"`) |
 | `allowedRoles` | Roles allowed to access the chat. Empty = public |
-| `systemPrompt` | Optional system prompt prepended to every AI call (default `""`) |
 | `contextSize` | Recent user turns to include in AI context (default `20`) |
 | `maxTokens` | Max tokens in AI response (default `1024`) |
 | `toolStatusPollMs` | Server-side check interval in ms for the toolstatus SSE stream (default `500`). The server polls the registry at this rate and pushes a new SSE event only when the active tool name changes. |
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
 | `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Also used to derive the upload endpoint (`/upload`). |
-| `chats[].apiSecret` | Placeholder name resolved from `bot_secrets` at runtime via `getSecret()`, or a literal token. Sent as `Authorization: Bearer` with AI requests and file upload proxy requests. Falls back to top-level `cfg.apiSecret` if omitted per entry. Leave empty if no token gate is configured. |
+| `chats[].apiSecret` | Placeholder name resolved from `bot_secrets` at runtime via `getSecret()`. Sent as `Authorization: Bearer` with AI requests and file upload proxy requests. Falls back to top-level `cfg.apiSecret` if omitted per entry. Leave empty if no token gate is configured. |
 | `chats[].roles` | Optional role restriction for this chat entry |
 
-> AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
+> AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject â€” the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
 
 ---
 
@@ -760,14 +739,14 @@ Access is **tiered**: `allowedRoles` grants basic access (Now Playing card + aud
   "adminRoles":   ["admin"],
   "autoTag": {
     "enabled":          false,
-    "tavilyApiKey":     "tvly-…",
+    "tavilyApiKey":     "tvly-â€¦",
     "tavilyMaxResults": 5,
     "tavilyTimeoutMs":  15000,
     "apiUrl":           "http://localhost:3400",
     "channelId":        "bard-autotag",
     "apiSecret":        "API_SECRET",
-    "systemPrompt":     "You are a music tagging assistant …",
-    "userPrompt":       "Track title: \"{title}\" …"
+    "systemPrompt":     "You are a music tagging assistant â€¦",
+    "userPrompt":       "Track title: \"{title}\" â€¦"
   }
 }
 ```
@@ -775,12 +754,12 @@ Access is **tiered**: `allowedRoles` grants basic access (Now Playing card + aud
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port (default `3114`) — must also be in `config.webpage.ports` |
+| `port` | HTTP port (default `3114`) â€” must also be in `config.webpage.ports` |
 | `basePath` | URL base path (default `"/bard"`) |
 | `allowedRoles` | Roles that may access the page at all (Now Playing + audio stream). Empty `[]` = public access. Example: `["admin","dnd"]` |
 | `adminRoles` | Roles that additionally get full admin rights (upload, tag editing, delete, autotag). Empty `[]` = nobody. Example: `["admin"]` |
 | `autoTag.enabled` | Set to `true` to enable the Bulk Auto-Tag Upload endpoint |
-| `autoTag.tavilyApiKey` | Tavily API key — used to look up song genre/mood context |
+| `autoTag.tavilyApiKey` | Tavily API key â€” used to look up song genre/mood context |
 | `autoTag.tavilyMaxResults` | Number of Tavily results to use for context (default `5`) |
 | `autoTag.tavilyTimeoutMs` | Tavily request timeout in ms (default `15000`) |
 | `autoTag.apiUrl` | Internal API base URL for tag generation requests |
@@ -795,14 +774,14 @@ Access is **tiered**: `allowedRoles` grants basic access (Now Playing card + aud
 
 AI-driven Fandom-style wiki served as a **webpage-flow module** (`modules/00052`) on port 3117. Each Discord channel gets its own wiki at `/wiki/{channelId}`. Articles are stored in MySQL (table `wiki_articles`, auto-created; `model` column added automatically via migration on first start). Search uses MySQL FULLTEXT; on no match a creator-role user triggers article generation via the **core-ai pipeline**. The LLM model used for generation is stored per article and shown as a small *"Generated by \<model\>"* note at the bottom of the article page.
 
-AI settings are configured via the `overrides` block in `config["webpage-wiki"]`. A **global `overrides`** block sets defaults for all channels; each channel entry may add its own `overrides` block that wins over the global defaults. The module reads exclusively from its own config section — no `core-channel-config` entry is needed or supported for wiki AI settings.
+AI settings are configured via the `overrides` block in `config["webpage-wiki"]`. A **global `overrides`** block sets defaults for all channels; each channel entry may add its own `overrides` block that wins over the global defaults. The module reads exclusively from its own config section â€” no `core-channel-config` entry is needed or supported for wiki AI settings.
 
 ```jsonc
 "webpage-wiki": {
   "flow":     ["webpage"],
   "port":     3117,
   "basePath": "/wiki",
-  "overrides": {                              // global defaults — apply to all channels
+  "overrides": {                              // global defaults â€” apply to all channels
     "useAiModule":      "completions",        // completions | responses | pseudotoolcalls
     "model":            "gpt-4o-mini",        // LLM model for article generation
     "temperature":      0.7,
@@ -811,7 +790,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
     "requestTimeoutMs": 120000,               // AI request timeout in ms
     "includeHistory":   false,                // true = load channel chat history; see note in ADMIN_MANUAL
     "contextSize":      150,                  // messages to load when includeHistory=true
-    "tools":            ["getImage", "getInformation"],
+    "tools":            ["getImage", "getTimeline"],
     "systemPrompt":     "",                   // empty = use built-in prompt
     "persona":          "",
     "instructions":     ""
@@ -819,16 +798,16 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
   "channels": [
     {
       "_title":       "My Channel Wiki",
-      "channelId":    "YOUR_DISCORD_CHANNEL_ID", // source channel for getInformation tool calls
+      "channelId":    "YOUR_DISCORD_CHANNEL_ID", // source channel for timeline and history tool calls
       "allowedRoles": [],                         // [] = public; ["member"] = role-gated
       "adminRoles":   ["admin"],                  // full access; implicitly includes editor + creator; [] = no admin
       "editorRoles":  ["editor"],                 // may edit and delete articles
       "creatorRoles": ["creator"],                // may generate new articles via search
       "maxAgeDays":   7,                          // article TTL in days; 0 = never expire
-      "overrides": {                              // optional — channel-specific overrides; win over global
+      "overrides": {                              // optional â€” channel-specific overrides; win over global
         "maxTokens":    6000,
         "contextSize":  200,
-        "instructions": "Always use getInformation to retrieve facts."
+        "instructions": "Use the visible history blocks as the overview of older chronology and use getHistory(blockId) to zoom exactly one level deeper when deeper evidence is needed."
       }
     }
   ]
@@ -839,15 +818,15 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 
 | Role | Key | Allowed actions |
 |---|---|---|
-| `admin` | `adminRoles` | Everything — implicitly includes editor + creator |
+| `admin` | `adminRoles` | Everything â€” implicitly includes editor + creator |
 | `editor` | `editorRoles` | Edit and delete articles |
 | `creator` | `creatorRoles` | Generate new articles via search |
 | *(reader)* | `allowedRoles` | Read articles only |
 
 | Key (`webpage-wiki`) | Type | Default | Description |
 |---|---|---|---|
-| `flow` | array | — | Must include `"webpage"` |
-| `port` | number | `3117` | HTTP port — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `flow` | array | â€” | Must include `"webpage"` |
+| `port` | number | `3117` | HTTP port â€” must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
 | `basePath` | string | `"/wiki"` | URL base path |
 | `overrides.useAiModule` | string | `"completions"` | AI module: `completions`, `responses`, or `pseudotoolcalls` |
 | `overrides.model` | string | `"gpt-4o-mini"` | LLM model for article generation |
@@ -855,29 +834,29 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 | `overrides.maxTokens` | number | `4000` | Max tokens per article |
 | `overrides.maxLoops` | number | `5` | Max tool-call loops |
 | `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
-| `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. Default `false` — see `includeHistory` note in ADMIN_MANUAL |
+| `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. Default `false` â€” see `includeHistory` note in ADMIN_MANUAL |
 | `overrides.contextSize` | number | `150` | Number of recent messages loaded when `includeHistory: true` |
-| `overrides.tools` | array | `["getImage","getInformation"]` | Tools available to the AI |
+| `overrides.tools` | array | `["getImage","getTimeline"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona injected into the AI call |
 | `overrides.instructions` | string | `""` | Instructions injected into the AI call |
-| `channels[].channelId` | string | — | Discord channel ID; forms `/wiki/{channelId}` and used as context source for tool calls |
+| `channels[].channelId` | string | â€” | Discord channel ID; forms `/wiki/{channelId}` and used as context source for tool calls |
 | `channels[].allowedRoles` | array | `[]` | Roles allowed to read this wiki. `[]` = public |
 | `channels[].adminRoles` | array | `[]` | Full admin access (implicitly includes editor + creator). `[]` = no admin |
 | `channels[].editorRoles` | array | `[]` | Roles that may edit and delete articles. `[]` = only admins |
 | `channels[].creatorRoles` | array | `[]` | Roles that may generate new articles via search. `[]` = only admins |
 | `channels[].maxAgeDays` | number | `7` | Article TTL in days (applies only to unedited articles). Manually edited articles never expire. `0` = never expire |
-| `channels[].overrides` | object | `{}` | Per-channel override block — same keys as global `overrides`; channel values take precedence |
+| `channels[].overrides` | object | `{}` | Per-channel override block â€” same keys as global `overrides`; channel values take precedence |
 
-- Channel not in `channels[]` → HTTP 404
-- AI uses **only tool results** as facts — `getInformation` is the primary source for article content
-- Search always shows the results overview — even a single match never auto-redirects to the article
+- Channel not in `channels[]` â†’ HTTP 404
+- AI uses **only visible history blocks and tool results** as facts â€” older history appears as block summaries with IDs, and `getHistory(blockId)` zooms exactly one level deeper when needed
+- Search always shows the results overview â€” even a single match never auto-redirects to the article
 - The "Generate new article" button passes `force: true` to `/api/generate`, bypassing the existing-article check and always creating a new article
 - Non-creator users see search results but no generate button/spinner
-- **Image generation** is a required step in the AI prompt — every new article triggers a `getImage` call. AI-generated images are stored in `pub/documents/`; uploaded images in `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be set, otherwise the image URL in the DB is `null`.
+- **Image generation** is a required step in the AI prompt â€” every new article triggers a `getImage` call. AI-generated images are stored in `pub/documents/`; uploaded images in `pub/wiki/{channelId}/images/`. Requires `toolsconfig.getImage.publicBaseUrl` to be set, otherwise the image URL in the DB is `null`.
 - Only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL; edited articles are permanently retained
 - Expired articles are pruned passively on each request; direct access returns 404
-- All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles
+- All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow â‰¤ 5 days, orange â‰¤ 2 days / expired); no badge on edited articles
 - Add `3117` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /wiki* localhost:3117` to your Caddyfile
 
@@ -899,7 +878,7 @@ Context DB editor SPA served as a **webpage-flow module** (`modules/00053`) on p
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port (default `3118`) — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `port` | HTTP port (default `3118`) â€” must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
 | `basePath` | URL base path (default `"/context"`) |
 | `allowedRoles` | Roles allowed to access the editor. `[]` = no restriction. Default: `["admin"]` |
 
@@ -923,9 +902,49 @@ Context DB editor SPA served as a **webpage-flow module** (`modules/00053`) on p
 
 ---
 
+### webpage-timeline
+
+Timeline DB editor SPA served as a **webpage-flow module** (`modules/00054`) on port 3128. It provides a browser-based interface to browse, search, edit, and bulk-delete timeline summary rows stored in `timeline_periods`.
+
+```jsonc
+"webpage-timeline": {
+  "flow":         ["webpage"],
+  "port":         3128,
+  "basePath":     "/timeline",
+  "allowedRoles": ["admin"]
+}
+```
+
+| Key | Description |
+|---|---|
+| `flow` | Must include `"webpage"` |
+| `port` | HTTP port (default `3128`) - must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `basePath` | URL base path (default `"/timeline"`) |
+| `allowedRoles` | Roles allowed to access the editor. `[]` = no restriction. Default: `["admin"]` |
+
+**HTTP routes:**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/timeline` | Renders the SPA |
+| `GET` | `/timeline/style.css` | CSS |
+| `GET` | `/timeline/api/channels` | Distinct channel IDs with row counts |
+| `GET` | `/timeline/api/columns` | Column names and types from `INFORMATION_SCHEMA` |
+| `GET` | `/timeline/api/records` | Paginated records; params: `channel`, `page`, `limit`, `fields` |
+| `GET` | `/timeline/api/search` | Search; params: `q`, `channel`, `fields`, `searchFields` |
+| `GET` | `/timeline/api/record` | Load a single record for editing; param: `ctx_id` |
+| `PATCH` | `/timeline/api/record` | Update a single editable field; body: `{ctx_id, field, value}` |
+| `DELETE` | `/timeline/api/delete` | Bulk delete timeline rows; body: `{ids: [...]}` |
+| `DELETE` | `/timeline/api/delete-channels` | Bulk delete by channel; body: `{channelIDs: [...]}` |
+
+- Add `3128` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /timeline* localhost:3128` to your Caddyfile
+
+---
+
 ### webpage-auth
 
-Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.webAuth` when a valid session cookie is present. Handles login/logout on `loginPort`. `wo.userId` is automatically populated from `wo.webAuth.userId` for all downstream modules (context writes, AI modules, etc.) — no per-module fallback chains needed.
+Discord OAuth2 SSO module. Runs passively on every webpage request â€” sets `wo.webAuth` when a valid session cookie is present. Handles login/logout on `loginPort`. `wo.userId` is automatically populated from `wo.webAuth.userId` for all downstream modules (context writes, AI modules, etc.) â€” no per-module fallback chains needed.
 
 ```jsonc
 "webpage-auth": {
@@ -957,32 +976,32 @@ Discord OAuth2 SSO module. Runs passively on every webpage request — sets `wo.
 | `flow` | Must include `"webpage"` |
 | `clientId` | Discord application client ID (from the Discord Developer Portal) |
 | `clientSecret` | Discord application client secret |
-| `sessionSecret` | Secret used to sign session cookies — use a long random string |
-| `redirectUri` | OAuth2 callback URL. Set to `""` to auto-derive from the HTTP `Host` header (recommended for multi-domain setups). Must be registered in the Discord Developer Portal under OAuth2 → Redirects. |
+| `sessionSecret` | Secret used to sign session cookies â€” use a long random string |
+| `redirectUri` | OAuth2 callback URL. Set to `""` to auto-derive from the HTTP `Host` header (recommended for multi-domain setups). Must be registered in the Discord Developer Portal under OAuth2 â†’ Redirects. |
 | `scope` | Discord OAuth2 scope. Use `"identify guilds.members.read"` to read guild roles. |
 | `loginPort` | Port that handles `/auth/login`, `/auth/callback`, `/auth/logout`, and `/auth/me`. |
 | `ports` | All ports where the module runs passively to set `wo.webAuth`. Include every port where login state matters. |
 | `sessionMaxAgeSec` | Session cookie lifetime in seconds (default: 43 200 = 12 h) |
 | `sameSite` | Cookie `SameSite` attribute: `"Lax"`, `"Strict"`, or `"None"` |
 | `ssoPartners` | Array of partner base URLs for cross-domain SSO chaining. After login the session is forwarded to each partner via a short-lived token. Leave `[]` to disable. |
-| `guilds` | List of Discord guilds to authenticate against. Guilds are tried in order — the first guild where the user is a member **and** passes `allowRoleIds` wins. If the user is found in a guild but has no permitted role there, iteration continues to the next guild. Each entry has its own `roleMap`/`rolePriority` so different servers can have different role mappings. |
+| `guilds` | List of Discord guilds to authenticate against. Guilds are tried in order â€” the first guild where the user is a member **and** passes `allowRoleIds` wins. If the user is found in a guild but has no permitted role there, iteration continues to the next guild. Each entry has its own `roleMap`/`rolePriority` so different servers can have different role mappings. |
 | `guilds[].guildId` | Discord Guild (server) ID. **The Jenny bot must be invited to this server.** |
 | `guilds[].defaultRole` | Role assigned to authenticated members not matched by `roleMap` |
 | `guilds[].allowRoleIds` | If non-empty, only users with at least one of these role IDs are allowed in |
 | `guilds[].rolePriority` | Role IDs checked first; highest-priority first |
-| `guilds[].roleMap` | Maps Discord Role ID → role label (`"admin"`, `"member"`, etc.) |
+| `guilds[].roleMap` | Maps Discord Role ID â†’ role label (`"admin"`, `"member"`, etc.) |
 
-> **Role label persistence:** The role label (e.g. `"dnd"`, `"admin"`, `"member"`) is normalized once at login time using the matched guild's `roleMap` and stored in the signed session cookie. On every subsequent request it is read directly from the session — no re-normalization occurs. This means custom labels are preserved correctly even when the root config has no `roleMap`.
+> **Role label persistence:** The role label (e.g. `"dnd"`, `"admin"`, `"member"`) is normalized once at login time using the matched guild's `roleMap` and stored in the signed session cookie. On every subsequent request it is read directly from the session â€” no re-normalization occurs. This means custom labels are preserved correctly even when the root config has no `roleMap`.
 
 > **Backward compat:** The old format with `guildId`, `roleMap`, `rolePriority`, `defaultRole`, `allowRoleIds` at the top level (instead of inside `guilds[]`) is still supported.
 
-> **Multi-guild:** Add more entries to `guilds[]`. The bot must be invited to each server (you need admin rights on the target server — no Developer Portal access required). Useful for authenticating users from multiple Discord servers without having them join one central server.
+> **Multi-guild:** Add more entries to `guilds[]`. The bot must be invited to each server (you need admin rights on the target server â€” no Developer Portal access required). Useful for authenticating users from multiple Discord servers without having them join one central server.
 
 > **Multi-domain:** Set `redirectUri: ""` and register all domains in the Discord Developer Portal. The module derives the callback URL from the `Host` header automatically.
 
 - Add all ports used by web modules to `ports`
 - Add `reverse_proxy /auth* localhost:3111` to your Caddyfile (before the catch-all)
-- `GET /auth/me` — returns `{ ok, userId, username, role }` for the current session, or `401 { ok: false }` if not authenticated. Used by the browser extension to retrieve the logged-in user's identity.
+- `GET /auth/me` â€” returns `{ ok, userId, username, role }` for the current session, or `401 { ok: false }` if not authenticated. Used by the browser extension to retrieve the logged-in user's identity.
 
 ---
 
@@ -1012,18 +1031,18 @@ Global navigation menu for all web modules. Items are filtered by user role befo
 "webpage-menu": {
   "flow": ["webpage"],
   "items": [
-    { "text": "💬 Chat",       "link": "/chat",       "roles": ["member", "admin"] },
-    { "text": "🖼 Inpainting", "link": "/inpainting" },
-    { "text": "🖼 Gallery",    "link": "/gallery",    "roles": ["member", "admin"] },
-    { "text": "🔒 GDPR",       "link": "/gdpr",       "roles": ["member", "admin"] },
-    { "text": "📖 Wiki",       "link": "/wiki"       },
-    { "text": "📚 Docs",       "link": "/docs"       },
-    { "text": "🎵 Bard",       "link": "/bard",       "roles": ["admin"] },
-    { "text": "📊 Dashboard",  "link": "/dashboard",  "roles": ["admin"] },
-    { "text": "⚙️ Config",     "link": "/config",     "roles": ["admin"] },
-    { "text": "📄 Manifests",  "link": "/manifests",  "roles": ["admin"] },
-    { "text": "🧩 Subagents",  "link": "/subagents",  "roles": ["admin"] },
-    { "text": "🗄 Context",    "link": "/context",    "roles": ["admin"] }
+    { "text": "ðŸ’¬ Chat",       "link": "/chat",       "roles": ["member", "admin"] },
+    { "text": "ðŸ–¼ Inpainting", "link": "/inpainting" },
+    { "text": "ðŸ–¼ Gallery",    "link": "/gallery",    "roles": ["member", "admin"] },
+    { "text": "ðŸ”’ GDPR",       "link": "/gdpr",       "roles": ["member", "admin"] },
+    { "text": "ðŸ“– Wiki",       "link": "/wiki"       },
+    { "text": "ðŸ“š Docs",       "link": "/docs"       },
+    { "text": "ðŸŽµ Bard",       "link": "/bard",       "roles": ["admin"] },
+    { "text": "ðŸ“Š Dashboard",  "link": "/dashboard",  "roles": ["admin"] },
+    { "text": "âš™ï¸ Config",     "link": "/config",     "roles": ["admin"] },
+    { "text": "ðŸ“„ Manifests",  "link": "/manifests",  "roles": ["admin"] },
+    { "text": "ðŸ§© Subagents",  "link": "/subagents",  "roles": ["admin"] },
+    { "text": "ðŸ—„ Context",    "link": "/context",    "roles": ["admin"] }
   ]
 }
 ```
@@ -1054,7 +1073,7 @@ Live bot telemetry dashboard. Displays flow status, memory usage, and per-module
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port (default `3115`) — must also be in `config.webpage.ports` |
+| `port` | HTTP port (default `3115`) â€” must also be in `config.webpage.ports` |
 | `basePath` | URL base path (default `"/dashboard"`) |
 | `allowedRoles` | Roles allowed to view the dashboard. Typically `["admin"]` |
 | `refreshSeconds` | Auto-refresh interval for the browser page in seconds (default `5`) |
@@ -1080,7 +1099,7 @@ Markdown documentation browser. Reads `.md` files from `documentation/` and rend
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port (default `3116`) — must also be in `config.webpage.ports` |
+| `port` | HTTP port (default `3116`) â€” must also be in `config.webpage.ports` |
 | `basePath` | URL base path (default `"/docs"`) |
 | `allowedRoles` | Roles allowed to view the docs. `[]` = public |
 
@@ -1114,7 +1133,7 @@ AI inpainting SPA. Users load an image, paint a mask, enter a prompt, and the ba
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port (default `3113`) — must also be in `config.webpage.ports` |
+| `port` | HTTP port (default `3113`) â€” must also be in `config.webpage.ports` |
 | `basePath` | URL base path (default `"/inpainting"`) |
 | `allowedRoles` | Roles allowed to access the editor. `[]` = public |
 | `auth.enabled` | Set to `false` to disable auth (proxy and upload accept all requests). `true` = enforce session auth. |
@@ -1143,7 +1162,7 @@ Redirect module (`modules/00042-webpage-inpaint.js`). Intercepts `GET /documents
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `inpaintHost` | Redirect target. **When the value contains a hostname** (does not start with `/`), it is used as-is as the redirect destination host + path, e.g. `"jenny.example.com/inpainting"`. **When the value starts with `/`**, it is treated as a path suffix appended to the request's own hostname, e.g. `"/inpainting"` → `<request-host>/inpainting`. **Recommendation:** use a fixed hostname pointing to the domain where your users log in (e.g. `"jenny.ralfreschke.de/inpainting"`). This ensures the session cookie is always valid on the inpainting SPA regardless of which domain the image link originates from. Use path-only (`"/inpainting"`) only when all image links and the inpainting SPA share the same domain. |
+| `inpaintHost` | Redirect target. **When the value contains a hostname** (does not start with `/`), it is used as-is as the redirect destination host + path, e.g. `"jenny.example.com/inpainting"`. **When the value starts with `/`**, it is treated as a path suffix appended to the request's own hostname, e.g. `"/inpainting"` â†’ `<request-host>/inpainting`. **Recommendation:** use a fixed hostname pointing to the domain where your users log in (e.g. `"jenny.ralfreschke.de/inpainting"`). This ensures the session cookie is always valid on the inpainting SPA regardless of which domain the image link originates from. Use path-only (`"/inpainting"`) only when all image links and the inpainting SPA share the same domain. |
 
 > Image files (PNG, JPG, JPEG, WebP, GIF, BMP) under `/documents/` are redirected. All other paths pass through unchanged. Add `?raw=1` to bypass the redirect and receive the raw file.
 
@@ -1165,7 +1184,7 @@ Image gallery SPA (`modules/00056-webpage-gallery.js`). Shows the logged-in user
 | Key | Description |
 |---|---|
 | `flow` | Must include `"webpage"` |
-| `port` | HTTP port (default `3120`) — must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
+| `port` | HTTP port (default `3120`) â€” must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
 | `basePath` | URL base path (default `"/gallery"`) |
 | `inpaintingUrl` | Full URL of the inpainting SPA. Used by the gallery SPA's "Inpaint" button to construct the deep-link (e.g. `https://jenny.example.com/inpainting?src=<imageUrl>`). Must match the public URL where the inpainting module is served. |
 
@@ -1181,7 +1200,7 @@ Image gallery SPA (`modules/00056-webpage-gallery.js`). Shows the logged-in user
 
 - Add `3120` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /gallery* localhost:3120` to your Caddyfile
-- The module requires `webpage-auth` to be active on port 3120 — unauthenticated requests are redirected to `/`
+- The module requires `webpage-auth` to be active on port 3120 â€” unauthenticated requests are redirected to `/`
 
 ---
 
@@ -1189,9 +1208,9 @@ Image gallery SPA (`modules/00056-webpage-gallery.js`). Shows the logged-in user
 
 GDPR data-export SPA. Authenticated users can download an Excel file (`.xlsx`) containing all personal data held for their account:
 
-- **Sheet 1 – Context** — all conversation history rows where `id = userId`
-- **Sheet 2 – GDPR Consent** — consent records per channel for the user
-- **Sheet 3 – Files** — files stored in the user's personal documents directory (`pub/documents/<userId>/`)
+- **Sheet 1 â€“ Context** â€” all conversation history rows where `id = userId`
+- **Sheet 2 â€“ GDPR Consent** â€” consent records per channel for the user
+- **Sheet 3 â€“ Files** â€” files stored in the user's personal documents directory (`pub/documents/<userId>/`)
 
 The file is generated on demand; no data is cached or stored by the module itself.
 
@@ -1206,7 +1225,7 @@ The file is generated on demand; no data is cached or stored by the module itsel
 
 | Key | Default | Description |
 |---|---|---|
-| `flow` | — | Must include `"webpage"` |
+| `flow` | â€” | Must include `"webpage"` |
 | `port` | `3121` | HTTP port this module listens on |
 | `basePath` | `"/gdpr"` | URL prefix for all GDPR routes |
 | `gdprTable` | `"gdpr"` | MySQL table name for GDPR consent records |
@@ -1221,7 +1240,7 @@ The file is generated on demand; no data is cached or stored by the module itsel
 
 - Add `3121` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
 - Add `reverse_proxy /gdpr* localhost:3121` to your Caddyfile
-- The module requires `webpage-auth` to be active on port 3121 — unauthenticated requests are redirected to `/`
+- The module requires `webpage-auth` to be active on port 3121 â€” unauthenticated requests are redirected to `/`
 - Requires the `exceljs` npm package (`npm install`)
 - Database connection is read from `wo.db` (set by the `context` config block)
 
@@ -1229,7 +1248,7 @@ The file is generated on demand; no data is cached or stored by the module itsel
 
 ### webpage-keymanager
 
-Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and delete secret mappings (placeholder name → real value) without touching MySQL directly. Each row shows the placeholder name with its masked value stacked below it. Icon buttons: **👁** reveal/hide, **📋** copy to clipboard, **✏️** edit, **🗑️** delete. The table fits on mobile without horizontal scroll; the description column is hidden on narrow viewports. See [ADMIN_MANUAL §9.4](#94-secretsjs--centralized-secret-store) for the full secrets system description.
+Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and delete secret mappings from placeholder name to real value without touching MySQL directly. Each row shows the placeholder name with its masked value stacked below it. The table fits on mobile without horizontal scroll; the description column is hidden on narrow viewports. See `ADMIN_MANUAL.md` for the full secrets system description.
 
 ```jsonc
 "webpage-keymanager": {
@@ -1242,7 +1261,7 @@ Admin CRUD web UI for the `bot_secrets` table. Lets admins view, add, edit, and 
 
 | Key | Default | Description |
 |---|---|---|
-| `flow` | — | Must include `"webpage"` |
+| `flow` | â€” | Must include `"webpage"` |
 | `port` | `3122` | HTTP port this module listens on |
 | `basePath` | `"/key-manager"` | URL prefix |
 | `allowedRoles` | `["admin"]` | Roles permitted to access the page |
@@ -1277,7 +1296,7 @@ Structured manifest editor for files in `manifests/*.json`. Includes a manifest 
 
 | Key | Default | Description |
 |---|---|---|
-| `flow` | — | Must include `"webpage"` |
+| `flow` | â€” | Must include `"webpage"` |
 | `port` | `3126` | HTTP port this module listens on |
 | `basePath` | `"/manifests"` | URL prefix |
 | `allowedRoles` | `["admin"]` | Roles permitted to access the page |
@@ -1312,7 +1331,7 @@ Admin UI for managing subagent definitions. Creating, editing, or deleting an en
 
 | Key | Default | Description |
 |---|---|---|
-| `flow` | — | Must include `"webpage"` |
+| `flow` | â€” | Must include `"webpage"` |
 | `port` | `3127` | HTTP port this module listens on |
 | `basePath` | `"/subagents"` | URL prefix |
 | `allowedRoles` | `["admin"]` | Roles permitted to access the page |
@@ -1352,7 +1371,7 @@ Live context monitor SPA (`modules/00059-webpage-live.js`) on port 3123, `/live`
 
 | Key | Default | Description |
 |---|---|---|
-| `flow` | — | Must include `"webpage"` |
+| `flow` | â€” | Must include `"webpage"` |
 | `port` | `3123` | HTTP port |
 | `basePath` | `"/live"` | URL prefix |
 | `allowedRoles` | `["admin"]` | Roles permitted to access the page |
@@ -1430,7 +1449,7 @@ Prepares the `bard-label-gen` cron flow by building the AI prompt and payload fo
 | `prompt` | Custom system prompt template (overrides the built-in default). Supports `{{LOCATION_TAGS}}`, `{{SITUATION_TAGS}}`, `{{MOOD_TAGS}}` (categorised tag lists from `library.xml`), `{{CURRENT_LABELS}}` (current active labels), and `{{EXAMPLE_LINES}}` (four dynamically generated example lines using real library tags) placeholders. The built-in default uses all five placeholders; custom templates that omit `{{EXAMPLE_LINES}}` will not show dynamic examples. Leave empty to use the built-in prompt |
 
 **Built-in prompt behaviour:**
-- Always classifies from the transcript — does not preserve previous labels
+- Always classifies from the transcript â€” does not preserve previous labels
 - Outputs **exactly 6 comma-separated values**: `location,situation,mood1,mood2,mood3,mood4`
 - Empty value for a slot = "unknown this cycle": location/situation fall back to carry-forward; mood slots are left blank
 - Mood tags ordered by importance; the first mood tag carries the highest weight in mood scoring
@@ -1487,18 +1506,110 @@ The `channelID` must match the text channel where your D&D session takes place (
   "endpoint":           "https://api.openai.com/v1/chat/completions",
   "model":              "gpt-4o-mini",
   "apiKey":             "<key>",
-  "periodSize":         600,
+  "segmentTurnCount":   6,
+  "nodeBranchFactor":   4,
+  "recentRawCount":     80,
+  "retrievalMaxSegments": 6,
+  "retrievalNeighborSegments": 1,
+  "retrievalMaxNodeSummaries": 2,
+  "segmentGapMinutes":  20,
+  "summaryMaxLength":   320,
+  "anchorEnabled":      true,
+  "anchorRebuildOnWrite": true,
+  "anchorMinConfidence": 0.2,
+  "anchorMaxEvidenceRows": 12,
+  "anchorOriginDepth":  3,
+  "anchorLinkedContextWeight": 0.55,
+  "anchorLlmFallbackEnabled": false,
+  "embeddingEnabled":   true,
+  "embeddingRebuildOnWrite": true,
+  "embeddingMaxCandidates": 10,
+  "embeddingMinScore":  0.18,
+  "embeddingLinkedContextWeight": 0.5,
+  "historyZoomEnabled": true,
+  "historyZoomBaseSize": 100,
+  "historyZoomMaxLevels": 4,
+  "historyZoomLinkedContextWeight": 0.5,
+  "historyZoomRebuildOnWrite": true,
+  "meshEnabled":        true,
+  "meshRebuildOnWrite": true,
+  "meshTargetMicroRows": 100,
+  "meshRollupFactor":   10,
+  "meshMaxLevels":      4,
+  "meshEntityMinConfidence": 0.25,
+  "meshGraphDepth":     2,
+  "meshLinkedContextWeight": 0.5,
+  "meshNeighborBlockCount": 2,
+  "eventEnabled":       true,
+  "eventRebuildOnWrite": true,
+  "eventMinConfidence": 0.28,
+  "eventMaxCandidates": 8,
+  "eventLinkedContextWeight": 0.45,
+  "eventMinRows":       3,
+  "eventMaxRows":       18,
+  "eventAdaptiveGapMinutes": 12,
+  "timelineChannelDenyList": ["cron", "cron-*"],
+  "timelineFlowDenyList": ["cron", "cron-*"],
   "subchannelFallback": false
 }
 ```
 
 | Key | Description |
 |---|---|
-| `endpoint` | LLM endpoint used by the context summariser |
-| `model` | Model used for rolling timeline summarisation |
-| `apiKey` | API key for the summariser |
-| `periodSize` | Rolling window in seconds; messages older than this are summarised |
-| `subchannelFallback` | `false` (default): when `wo.subchannel` is not set, all functions (getContext, setPurgeContext, setFreezeContext, getContextLastSeconds, getContextSince) operate only on rows where `subchannel IS NULL`. `true`: no subchannel filter — all rows for the channel including subchannel rows are included. |
+| `endpoint` | Reserved compatibility setting for future internal API-based context enrichment. Context modules must not call external LLM providers directly. |
+| `model` | Reserved compatibility setting for future internal API-based context enrichment. |
+| `apiKey` | Reserved compatibility setting for future internal API-based context enrichment. |
+| `segmentTurnCount` | Target number of turns per derived retrieval segment |
+| `nodeBranchFactor` | Number of child segments or nodes grouped into one higher-level node |
+| `recentRawCount` | Number of newest raw rows always considered for recency and continuity |
+| `retrievalMaxSegments` | Maximum number of matched derived segments expanded into the snapshot |
+| `retrievalNeighborSegments` | Number of neighboring segments to include around each matched segment |
+| `retrievalMaxNodeSummaries` | Maximum number of higher-level node summaries added as compression overlays |
+| `segmentGapMinutes` | Time gap threshold that forces a new segment even if the turn limit is not reached |
+| `summaryMaxLength` | Maximum length of summary overlay text injected into the snapshot |
+| `anchorEnabled` | Enables the generic anchor graph on top of raw rows, turns, segments, and nodes |
+| `anchorRebuildOnWrite` | Rebuilds anchor tables together with other derived context tables after new writes |
+| `anchorMinConfidence` | Minimum confidence threshold for anchor retrieval matches |
+| `anchorMaxEvidenceRows` | Maximum evidence windows per matched anchor expanded into the snapshot |
+| `anchorOriginDepth` | Number of earliest segments considered part of the origin window for anchor paths |
+| `anchorLinkedContextWeight` | Weight multiplier applied to anchors from linked `channelIds` compared to the active base context |
+| `anchorLlmFallbackEnabled` | Optional future switch for internal API-based fallback enrichment. Default `false`; modules and tools must not call providers directly. |
+| `embeddingEnabled` | Enables the local semantic fingerprint layer used for hybrid RAG retrieval |
+| `embeddingRebuildOnWrite` | Rebuilds semantic fingerprints together with the other derived context tables after writes |
+| `embeddingMaxCandidates` | Maximum number of semantic matches considered per context source |
+| `embeddingMinScore` | Minimum local vector similarity score required for a semantic match |
+| `embeddingLinkedContextWeight` | Weight multiplier applied to semantic matches from linked `channelIds` compared to the base context |
+| `historyZoomEnabled` | Enables the hierarchical zoom context output for older history |
+| `historyZoomBaseSize` | Base block size used for both the newest raw window and each zoom hierarchy level |
+| `historyZoomMaxLevels` | Maximum number of summary levels built above the raw layer |
+| `historyZoomLinkedContextWeight` | Weight multiplier applied to linked `channelIds` when older zoom blocks are selected |
+| `historyZoomRebuildOnWrite` | Rebuilds the zoom hierarchy together with the other derived context layers after writes |
+| `meshEnabled` | Enables the context mesh built from micro blocks, rollup blocks, and entity links |
+| `meshRebuildOnWrite` | Rebuilds the mesh tables together with the other derived context tables after writes |
+| `meshTargetMicroRows` | Target raw-row size for one adaptive micro block |
+| `meshRollupFactor` | Target number of child blocks grouped into one higher rollup block |
+| `meshMaxLevels` | Maximum number of rollup levels built above the micro blocks |
+| `meshEntityMinConfidence` | Minimum confidence threshold for mesh-entity retrieval matches |
+| `meshGraphDepth` | Maximum expansion depth when traversing the mesh during retrieval |
+| `meshLinkedContextWeight` | Weight multiplier applied to mesh matches from linked `channelIds` compared to the base context |
+| `meshNeighborBlockCount` | Number of neighboring mesh blocks considered during expansion |
+| `eventEnabled` | Enables the generic event-memory layer for unnamed historical episodes and transitions |
+| `eventRebuildOnWrite` | Rebuilds event tables together with the other derived context tables after writes |
+| `eventMinConfidence` | Minimum confidence threshold for event retrieval matches |
+| `eventMaxCandidates` | Maximum number of event candidates considered per context source |
+| `eventLinkedContextWeight` | Weight multiplier applied to events from linked `channelIds` compared to the base context |
+| `eventMinRows` | Minimum raw-row window size for one derived event block |
+| `eventMaxRows` | Maximum raw-row window size for one derived event block |
+| `eventAdaptiveGapMinutes` | Time-gap threshold used when expanding event windows around candidate rows |
+| `timelineChannelAllowList` | Optional wildcard allow-list for channels that may create and keep timeline rows |
+| `timelineChannelDenyList` | Optional wildcard deny-list for channels whose timeline rows are skipped and cleaned up on DB init |
+| `timelineFlowAllowList` | Optional wildcard allow-list for flows that may create and keep timeline rows |
+| `timelineFlowDenyList` | Optional wildcard deny-list for flows whose timeline rows are skipped |
+| `subchannelFallback` | `false` (default): when `wo.subchannel` is not set, all functions (getContext, setPurgeContext, setFreezeContext, getContextLastSeconds, getContextSince) operate only on rows where `subchannel IS NULL`. `true`: no subchannel filter â€” all rows for the channel including subchannel rows are included. |
+
+`rebuildDerivedContextSet(...)` rebuilds the derived timeline for the current channel only. It deletes all existing timeline rows for that channel first, including frozen rows, and then recreates the timeline from the raw context rows in that same channel.
+
+Timeline summaries are stored in the single `summary` field. Important names, places, topics, jokes, and key events are embedded directly in that summary text instead of being stored in separate timeline JSON columns. The summary text may be internally structured with section labels such as `Overview:`, `Topics:`, `Key Events:`, `Locations:`, and `People:`.
 
 ---
 
@@ -1517,7 +1628,7 @@ Declares the webpage flow and the ports it listens on.
 |---|---|
 | `flowName` | Internal name of this flow (`"webpage"`) |
 | `ports` | Array of TCP ports to listen on. One HTTP server is started per port. Each request exposes `wo.http.port` so modules can route by port. Falls back to `port` (single number) or `3000` if omitted |
-| `port` | *(legacy)* Single port — use `ports` array instead for multi-port operation |
+| `port` | *(legacy)* Single port â€” use `ports` array instead for multi-port operation |
 
 ---
 
@@ -1561,7 +1672,7 @@ Controls PCM capture and VAD from the Discord voice receiver. Produces a 16kHz m
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `flow` | array | — | Must include `"discord-voice"` |
+| `flow` | array | â€” | Must include `"discord-voice"` |
 | `pollMs` | number | `1000` | Voice receiver poll interval (ms) |
 | `silenceMs` | number | `1500` | Silence duration that ends a capture segment (ms) |
 | `maxCaptureMs` | number | `25000` | Maximum capture duration per segment (ms) |
@@ -1575,7 +1686,7 @@ Controls PCM capture and VAD from the Discord voice receiver. Produces a 16kHz m
 
 ### core-voice-transcribe
 
-Source-agnostic transcription module. Runs in `discord-voice` and `webpage` flows when `wo.transcribeAudio === true`. Applies a quality gate when `wo.audioStats` is set. API credentials fall back to `workingObject.whisperApiKey` / `workingObject.apiKey` if not set here.
+Source-agnostic transcription module. Runs in `discord-voice` and `webpage` flows when `wo.transcribeAudio === true`. Applies a quality gate when `wo.audioStats` is set. API credentials read `workingObject.transcribeApiKey` and then `workingObject.apiKey` if not set here.
 
 ```jsonc
 "core-voice-transcribe": {
@@ -1592,20 +1703,20 @@ Source-agnostic transcription module. Runs in `discord-voice` and `webpage` flow
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `flow` | array | — | Must include the flows where transcription is needed |
+| `flow` | array | â€” | Must include the flows where transcription is needed |
 | `minVoicedMs` | number | `1000` | Minimum voiced audio (ms) required to attempt transcription; checked against `wo.audioStats.usefulMs` when set |
 | `snrDbThreshold` | number | `3.8` | SNR threshold; segments below this are discarded; checked against `wo.audioStats.snrDb` when set |
 | `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
-| `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model. Overridable per-turn via `wo.transcribeModel`. Alias: `whisperModel` |
-| `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect. Alias: `whisperLanguage` |
-| `transcribeEndpoint` | string | `""` | Base URL for the transcription API. Falls back to `workingObject.whisperEndpoint`. Alias: `whisperEndpoint` |
-| `transcribeApiKey` | string | `""` | API key for transcription. Falls back to `workingObject.whisperApiKey` then `workingObject.apiKey`. Alias: `whisperApiKey` |
+| `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model. Overridable per-turn via `wo.transcribeModel` |
+| `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect |
+| `transcribeEndpoint` | string | `""` | Base URL for the transcription API. Falls back to `workingObject.transcribeEndpoint` |
+| `transcribeApiKey` | string | `""` | API key alias for transcription. Falls back to `workingObject.transcribeApiKey` and then `workingObject.apiKey` |
 
 ---
 
 ### core-voice-tts
 
-Source-agnostic TTS renderer. Runs in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to support multi-voice segments. Calls the OpenAI TTS API for each segment in parallel (concurrency 2). Output format is controlled by `wo.ttsFormat` or `cfg.ttsFormat` — default `"opus"` for Discord, `"mp3"` for webpage voice. TTS credentials fall back to `workingObject.ttsApiKey` / `workingObject.apiKey` if not set here.
+Source-agnostic TTS renderer. Runs in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to support multi-voice segments. Calls the OpenAI TTS API for each segment in parallel (concurrency 2). Output format is controlled by `wo.ttsFormat` or `cfg.ttsFormat` â€” default `"opus"` for Discord, `"mp3"` for webpage voice. TTS credentials fall back to `workingObject.ttsApiKey` / `workingObject.apiKey` if not set here.
 
 ```jsonc
 "core-voice-tts": {
@@ -1621,7 +1732,7 @@ Source-agnostic TTS renderer. Runs in `discord-voice` and `webpage` flows. Parse
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `flow` | array | — | Must include the flows where TTS is needed |
+| `flow` | array | â€” | Must include the flows where TTS is needed |
 | `ttsModel` | string | `"gpt-4o-mini-tts"` | TTS model. Falls back to `workingObject.ttsModel` if not set |
 | `ttsVoice` | string | `"alloy"` | Default TTS voice. Falls back to `workingObject.ttsVoice` if not set |
 | `ttsEndpoint` | string | `""` | TTS API endpoint. Falls back to `workingObject.ttsEndpoint` |
@@ -1681,7 +1792,7 @@ Maps HTTP requests (by port + path prefix) to a named flow and sets `wo.channelI
 | `routes[].flow` | string | Value written to `wo.flow` |
 | `routes[].channelIdSource` | string | How `wo.channelID` is derived: `"query:<param>"` reads a URL query parameter; `"path:<N>"` reads path segment N after the prefix (0-based); any other string is used as a literal static channel ID |
 
-> `webpage-router` only changes `wo.flow` — the module pipeline is already assembled based on the initial `"webpage"` flow. The new flow name is consumed by `core-channel-config` and logging only.
+> `webpage-router` only changes `wo.flow` â€” the module pipeline is already assembled based on the initial `"webpage"` flow. The new flow name is consumed by `core-channel-config` and logging only.
 
 ---
 
@@ -1689,9 +1800,11 @@ Maps HTTP requests (by port + path prefix) to a named flow and sets `wo.channelI
 
 Browser-based voice interface with two modes: **always-on continuous listening** (Mic button) and **meeting recorder** (REC button). Serves a self-contained SPA at `GET /voice`, accepts always-on audio at `POST /voice/audio`, and accepts full meeting recordings at `POST /voice/record`.
 
-**Always-on (`POST /voice/audio`):** Audio is converted to 16kHz mono WAV via ffmpeg, handed to `core-voice-transcribe` → AI pipeline → `core-voice-tts` → `webpage-voice-output`. Returns MP3 audio with `X-Transcript` and `X-Response` headers.
+**Always-on (`POST /voice/audio`):** Audio is converted to 16kHz mono WAV via ffmpeg, handed to `core-voice-transcribe` â†’ AI pipeline â†’ `core-voice-tts` â†’ `webpage-voice-output`. Returns MP3 audio with `X-Transcript` and `X-Response` headers.
 
 **Meeting recorder (`POST /voice/record`):** Transcribes the full recording using `recordModel` with optional speaker diarization. Optionally clears the channel context before storing the transcript. Returns `{ ok, words, speakers }`.
+
+**Async subagent replies:** When the voice channel triggers a background subagent, the completed result is first re-processed through the API flow using the original caller channel ID, then synthesized through the webpage voice flow. This keeps spoken style, caller-specific link patching (`id=<callerChannelId>`), and browser TTS output aligned with the original channel instead of the subagent channel. The SPA also renders returned URLs as clickable links.
 
 ```jsonc
 "webpage-voice": {
@@ -1712,8 +1825,8 @@ Browser-based voice interface with two modes: **always-on continuous listening**
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `flow` | array | — | Must include `"webpage"` |
-| `port` | number | `3119` | HTTP port — must also be in `config.webpage.ports` |
+| `flow` | array | â€” | Must include `"webpage"` |
+| `port` | number | `3119` | HTTP port â€” must also be in `config.webpage.ports` |
 | `basePath` | string | `"/voice"` | URL prefix for this module |
 | `silenceTimeoutMs` | number | `2500` | Silence duration (ms) before the always-on mic auto-sends audio |
 | `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
@@ -1763,7 +1876,7 @@ Dedicated endpoint for full meeting uploads (`POST /voice/record`). Handles tran
 
 ### webpage-voice-output
 
-Sends TTS audio back to the webpage voice caller. Must run in the output phase (≥9000). Triggered unconditionally when `wo.isWebpageVoice === true` — ignores `wo.stop` so a response is always sent.
+Sends TTS audio back to the webpage voice caller. Must run in the output phase (â‰¥9000). Triggered unconditionally when `wo.isWebpageVoice === true` â€” ignores `wo.stop` so a response is always sent.
 
 - **Success:** HTTP 200, `Content-Type: audio/mpeg`, concatenated MP3 buffers from `wo.ttsSegments`. Also sets `X-Transcript` (transcribed user text) and `X-Response` (AI response text) headers.
 - **Error:** HTTP 400, `Content-Type: application/json`, `{error: "<reason>"}`.
@@ -1802,7 +1915,7 @@ Sends TTS audio back to the webpage voice caller. Must run in the output phase (
 
 ### discord-subagent-poll
 
-Polls the registry for completed async subagent jobs and delivers results back to the originating Discord channel. This flow is started at bot startup as a background interval — it is not wired to any flow array.
+Polls the registry for completed async subagent jobs and delivers results back to the originating Discord channel. This flow is started at bot startup as a background interval â€” it is not wired to any flow array.
 
 ```jsonc
 "discord-subagent-poll": {
@@ -1824,7 +1937,13 @@ Polls the registry for completed async subagent jobs and delivers results back t
 1. The main AI calls `getSubAgent(type, task)`.
 2. `getSubAgent` posts to `/api/spawn` and returns `{ jobId, projectId, status: "started" }` immediately.
 3. The API flow runs the subagent pipeline in the background and stores the result under `"job:<jobId>"` in the registry.
-4. The `discord-subagent-poll` interval fires, finds the completed job, removes it from the registry, and runs the `discord` pipeline with `wo.deliverSubagentJob = <job>` set — which causes the result to be sent to the original Discord channel.
+4. The `discord-subagent-poll` interval fires, finds the completed job, removes it from the registry, and runs the `discord` pipeline with `wo.deliverSubagentJob = <job>` set â€” which causes the result to be sent to the original Discord channel.
+
+### webpage-subagent-poll
+
+Polls the registry for completed async subagent jobs for webpage-originated callers. It runs a persona pass on the original caller channel before delivery, so channel-specific formatting and `core-add-id` always use the caller channel ID rather than the subagent channel ID.
+
+For `webpage-voice*` callers the same delivery pass also runs a follow-up webpage voice synthesis step and pushes `audioBase64` plus `audioMime` over SSE. If no SSE client is connected, the poller stores the persona-processed text and optional audio on the job entry so `/api/jobs?consume=true` can still deliver the same caller-channel-correct payload.
 
 ---
 
@@ -1863,11 +1982,12 @@ Every module has an entry under `config` that declares which flows it participat
 | `discord-gdpr-gate` | `discord`, `discord-voice`, `discord-admin`, `webpage` |
 | `discord-channel-gate` | `discord`, `discord-voice`, `discord-admin`, `api` |
 | `discord-trigger-gate` | `discord`, `discord-voice`, `webpage` |
-| `discord-admin-commands` | `discord-admin`, `discord` |
 | `discord-status-prepare` | `discord-status` |
 | `discord-status-apply` | `discord-status`, `toolcall` |
 | `core-channel-config` | `discord`, `discord-voice`, `discord-admin`, `discord-status`, `api`, `webpage` |
 | `core-add-id` | `discord`, `discord-voice`, `api` |
+
+`core-add-id` uses `wo.callerChannelId` as the preferred `id=` value for patched artifact links. It falls back to `wo.channelID` only when no caller channel exists, so async subagent outputs always keep the original caller channel ID on generated image and media URLs.
 | `bard-join` | `discord-admin` |
 | `bard-cron` | `bard-label-gen` |
 | `bard-label-output` | `bard-label-gen` |
@@ -1889,14 +2009,14 @@ Every module has an entry under `config` that declares which flows it participat
 
 ---
 
-### core-channel-config — Channel Overrides
+### core-channel-config â€” Channel Overrides
 
 The most powerful configuration section. Defines a hierarchy of overrides applied before the AI module runs:
 
 ```
 Channel match
-  └── Flow match (within that channel)
-        └── User match (within that flow)
+  â””â”€â”€ Flow match (within that channel)
+        â””â”€â”€ User match (within that flow)
 ```
 
 ```jsonc
@@ -1977,7 +2097,7 @@ Channel match
 **Merge rules:**
 
 - **Objects** are deep-merged (keys are combined; inner keys of `overrides` win over defaults).
-- **Arrays** are replaced wholesale — a `tools` array in an override completely replaces the default.
+- **Arrays** are replaced wholesale â€” a `tools` array in an override completely replaces the default.
 - Rules are evaluated top-to-bottom; **later rules win**.
 - Channel matching is case-insensitive; flow matching is case-insensitive; user matching is case-sensitive.
 
@@ -1991,13 +2111,13 @@ Below is a minimal but functional `core.json` template with every section includ
 {
   "workingObject": {
 
-    // ── Bot identity ──────────────────────────────────────────────────────────
+    // â”€â”€ Bot identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "botName":      "Jenny",
     "persona":      "A helpful AI assistant.",
     "systemPrompt": "You are a helpful assistant.",
     "instructions": "Answer concisely.",
 
-    // ── Primary LLM ───────────────────────────────────────────────────────────
+    // â”€â”€ Primary LLM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "model":             "gpt-4o",
     "endpoint":          "https://api.openai.com/v1/chat/completions",
     "endpointResponses": "https://api.openai.com/v1/responses",
@@ -2011,7 +2131,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "reasoning":         false,
     "requestTimeoutMs":  1000000,
 
-    // ── Context ────────────────────────────────────────────────────────────────
+    // â”€â”€ Context â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "includeHistory":        true,
     "includeHistoryTools":   false,
     "includeRuntimeContext": true,
@@ -2019,7 +2139,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "contextTokenBudget":    60000,
     "contextSize":           20,
 
-    // ── Discord behaviour ──────────────────────────────────────────────────────
+    // â”€â”€ Discord behaviour â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "trigger":                 "jenny",
     "triggerWordWindow":       3,
     "showReactions":           true,
@@ -2028,40 +2148,40 @@ Below is a minimal but functional `core.json` template with every section includ
     "doNotWriteToContext":     false,
     "fileUrls":                [],
 
-    // ── Server / files ─────────────────────────────────────────────────────────
+    // â”€â”€ Server / files â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "timezone": "Europe/Berlin",
     "baseUrl":  "https://yourserver.example.com",
 
-    // ── Tools ─────────────────────────────────────────────────────────────────
+    // â”€â”€ Tools â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "tools": [
       "getGoogle", "getWebpage", "getImage", "getImageDescription",
       "getAnimatedPicture", "getVideoFromText", "getYoutube",
-      "getHistory", "getInformation", "getText", "getPDF",
+      "getHistory", "getTimeline", "getText", "getPDF",
       "getTime", "getToken", "getLocation", "getSubAgent"
     ],
 
-    // ── Voice (TTS / Whisper) ─────────────────────────────────────────────────
+    // â”€â”€ Voice (TTS / Whisper) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "ttsModel":        "gpt-4o-mini-tts",
     "ttsVoice":        "nova",
     "ttsEndpoint":     "https://api.openai.com/v1/audio/speech",
     "ttsApiKey":       "<YOUR_OPENAI_API_KEY>",
-    "whisperApiKey":   "<YOUR_OPENAI_API_KEY>",
-    "whisperModel":    "whisper-1",
-    "whisperLanguage": "",
-    "whisperEndpoint": "https://api.openai.com",
+    "transcribeApiKey":   "<YOUR_OPENAI_API_KEY>",
+    "transcribeModel":    "gpt-4o-mini-transcribe",
+    "transcribeLanguage": "",
+    "transcribeEndpoint": "https://api.openai.com",
     "useVoiceChannel": 0,
 
-    // ── Avatar generation ─────────────────────────────────────────────────────
-    "avatarApiKey":   "<YOUR_OPENAI_API_KEY>",
+    // â”€â”€ Avatar generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    "avatarApiKey":   "OPENAI",
     "avatarEndpoint": "https://api.openai.com/v1/images/generations",
     "avatarModel":    "dall-e-3",
     "avatarSize":     "1024x1024",
     "avatarPrompt":   "",
 
-    // ── GDPR disclaimer (full legal text) ─────────────────────────────────────
+    // â”€â”€ GDPR disclaimer (full legal text) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "gdprDisclaimer": "GDPR Notice & Consent ...",
 
-    // ── Discord slash command definitions ─────────────────────────────────────
+    // â”€â”€ Discord slash command definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "discord-admin": {
       "slash": {
         "silent":      true,
@@ -2070,15 +2190,15 @@ Below is a minimal but functional `core.json` template with every section includ
       }
     },
 
-    // ── Database ──────────────────────────────────────────────────────────────
+    // â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "db": {
       "host":     "localhost",
       "user":     "discord_bot",
-      "password": "<DB_PASSWORD>",
+      "password": "YOUR_DB_PASSWORD",
       "database": "discord_ai"
     },
 
-    // ── Tool configuration ────────────────────────────────────────────────────
+    // â”€â”€ Tool configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "toolsconfig": {
       "getImage": {
         "apiKey":           "<YOUR_OPENAI_API_KEY>",
@@ -2112,13 +2232,14 @@ Below is a minimal but functional `core.json` template with every section includ
         "endpoint":      "https://api.openai.com/v1/chat/completions",
         "apiKey":        "<YOUR_OPENAI_API_KEY>"
       },
-      "getHistory": {
-        "model":    "gpt-4.1",
-        "endpoint": "https://api.openai.com/v1/chat/completions",
-        "apiKey":   "<YOUR_OPENAI_API_KEY>",
-        "pagesize": 1000,
-        "maxRows": 4000
-      },
+        "getHistory": {
+          "model":    "gpt-4.1",
+          "endpoint": "https://api.openai.com/v1/chat/completions",
+          "apiKey":   "<YOUR_OPENAI_API_KEY>",
+          "maxRows": 300,
+          "includeToolRows": false,
+          "includeJson": false
+        },
       "getPDF": {
         "publicBaseUrl":   "https://yourserver.example.com",
         "headless":        "new",
@@ -2149,7 +2270,7 @@ Below is a minimal but functional `core.json` template with every section includ
 
   "config": {
 
-    // ── Flows ─────────────────────────────────────────────────────────────────
+    // â”€â”€ Flows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "discord": {
       "flowName": "discord",
       "token":    "<DISCORD_BOT_TOKEN>",
@@ -2174,16 +2295,43 @@ Below is a minimal but functional `core.json` template with every section includ
       "registryKey":    "status:tool"
     },
 
-    // ── Context summariser ────────────────────────────────────────────────────
+    // â”€â”€ Context summariser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "context": {
       "endpoint":           "https://api.openai.com/v1/chat/completions",
       "model":              "gpt-4o-mini",
       "apiKey":             "<YOUR_OPENAI_API_KEY>",
-      "periodSize":         600,
+      "segmentTurnCount":   6,
+      "nodeBranchFactor":   4,
+      "recentRawCount":     80,
+      "retrievalMaxSegments": 6,
+      "retrievalNeighborSegments": 1,
+      "retrievalMaxNodeSummaries": 2,
+      "segmentGapMinutes":  20,
+      "summaryMaxLength":   320,
+      "anchorEnabled":      true,
+      "anchorRebuildOnWrite": true,
+      "anchorMinConfidence": 0.2,
+      "anchorMaxEvidenceRows": 12,
+      "anchorOriginDepth":  3,
+      "anchorLinkedContextWeight": 0.55,
+      "anchorLlmFallbackEnabled": false,
+      "embeddingEnabled":   true,
+      "embeddingRebuildOnWrite": true,
+      "embeddingMaxCandidates": 10,
+      "embeddingMinScore":  0.18,
+      "embeddingLinkedContextWeight": 0.5,
+      "eventEnabled":       true,
+      "eventRebuildOnWrite": true,
+      "eventMinConfidence": 0.28,
+      "eventMaxCandidates": 8,
+      "eventLinkedContextWeight": 0.45,
+      "eventMinRows":       3,
+      "eventMaxRows":       18,
+      "eventAdaptiveGapMinutes": 12,
       "subchannelFallback": false
     },
 
-    // ── Module flow subscriptions ─────────────────────────────────────────────
+    // â”€â”€ Module flow subscriptions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "core-ai-responses":       { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "core-ai-completions":     { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "core-ai-pseudotoolcalls": { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
@@ -2195,7 +2343,6 @@ Below is a minimal but functional `core.json` template with every section includ
     "discord-gdpr-gate":       { "flow": ["discord","discord-voice","discord-admin","webpage"], "table": "gdpr" },
     "discord-channel-gate":    { "flow": ["discord","discord-voice","discord-admin","api"] },
     "discord-trigger-gate":    { "flow": ["discord","discord-voice","webpage"] },
-    "discord-admin-commands":  { "flow": ["discord-admin","discord"] },
     "core-admin-commands":     { "flow": ["api"] },
     "discord-status-prepare":  { "flow": ["discord-status"], "allowedChannels": ["<STATUS_CHANNEL_ID>"] },
     "discord-status-apply":    { "flow": ["discord-status","toolcall"], "allowedFlows": ["discord","discord-voice"], "status": "online" },
@@ -2249,13 +2396,13 @@ Below is a minimal but functional `core.json` template with every section includ
     "webpage-menu": {
       "flow": ["webpage"],
       "items": [
-        { "text": "💬 Chat",      "link": "/chat"      },
-        { "text": "📖 Wiki",      "link": "/wiki"      },
-        { "text": "📚 Docs",      "link": "/docs"      },
-        { "text": "🎵 Bard",      "link": "/bard",      "roles": ["admin"] },
-        { "text": "⚙️ Config",    "link": "/config",    "roles": ["admin"] },
-        { "text": "📊 Dashboard", "link": "/dashboard", "roles": ["admin"] },
-        { "text": "🗄 Context",   "link": "/context",   "roles": ["admin"] }
+        { "text": "ðŸ’¬ Chat",      "link": "/chat"      },
+        { "text": "ðŸ“– Wiki",      "link": "/wiki"      },
+        { "text": "ðŸ“š Docs",      "link": "/docs"      },
+        { "text": "ðŸŽµ Bard",      "link": "/bard",      "roles": ["admin"] },
+        { "text": "âš™ï¸ Config",    "link": "/config",    "roles": ["admin"] },
+        { "text": "ðŸ“Š Dashboard", "link": "/dashboard", "roles": ["admin"] },
+        { "text": "ðŸ—„ Context",   "link": "/context",   "roles": ["admin"] }
       ]
     },
     "webpage-dashboard": {
@@ -2309,7 +2456,7 @@ Below is a minimal but functional `core.json` template with every section includ
         "requestTimeoutMs": 120000,
         "includeHistory":   false,
         "contextSize":      150,
-        "tools":            ["getImage", "getInformation"],
+        "tools":            ["getImage", "getTimeline"],
         "systemPrompt":     "",
         "persona":          "",
         "instructions":     ""
@@ -2329,7 +2476,7 @@ Below is a minimal but functional `core.json` template with every section includ
     },
     "api-add-context":         { "flow": ["api"] },
 
-    // ── Channel overrides ─────────────────────────────────────────────────────
+    // â”€â”€ Channel overrides â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "core-channel-config": {
       "flow": ["discord","discord-voice","discord-admin","discord-status","api"],
       "channels": [
@@ -2362,3 +2509,4 @@ Below is a minimal but functional `core.json` template with every section includ
 ---
 
 *Documentation updated 2026-04-05. Version 1.0.*
+

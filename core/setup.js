@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "setup.js"                                             */
+/* Version 1.0                                               */
+/* Purpose: Core shared runtime helper.                     */
+/**************************************************************/
 
 
 
@@ -47,8 +52,9 @@ function getSetupHtml(error) {
   ${errHtml}
   <form method="POST" action="/setup">
     <div class="section">OpenAI</div>
-    <label>API Key *</label>
-    <input name="apiKey" type="password" placeholder="sk-proj-..." required autocomplete="off">
+    <label>API Key Alias *</label>
+    <input name="apiKeyAlias" placeholder="OPENAI" value="OPENAI" required autocomplete="off">
+    <p class="hint">Store the real provider key in the secret database and keep only the alias in <code>core.json</code>.</p>
 
     <div class="section">Database (MySQL)</div>
     <div class="row2">
@@ -88,7 +94,7 @@ function parseFormBody(body) {
 
 
 function buildCoreJson(fields) {
-  const apiKey  = (fields.apiKey  || "").trim();
+  const apiKey  = (fields.apiKeyAlias || "OPENAI").trim() || "OPENAI";
   const botName = (fields.botName || "Jenny").trim() || "Jenny";
   const trigger = (fields.trigger || "jenny").trim().toLowerCase();
   const dbHost  = (fields.dbHost  || "localhost").trim();
@@ -182,7 +188,7 @@ export function startSetupWizard(corePath, port) {
           const body   = Buffer.concat(chunks).toString("utf-8");
           const fields = parseFormBody(body);
 
-          const missing = ["apiKey","dbHost","dbUser","dbPass","dbName"].filter(k => !fields[k]?.trim());
+          const missing = ["apiKeyAlias","dbHost","dbUser","dbPass","dbName"].filter(k => !fields[k]?.trim());
           if (missing.length) {
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
             res.end(getSetupHtml("Missing required fields: " + missing.join(", ")));

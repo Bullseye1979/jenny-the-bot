@@ -209,7 +209,7 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
       const nowIso = new Date().toISOString();
 
       wo.flow = flowName;
-      wo.turn_id = getNewUlid();
+wo.turnId = getNewUlid();
       wo.source = "http";
       wo.aborted = false;
       req.socket?.once("close", () => { if (!res.writableEnded) wo.aborted = true; });

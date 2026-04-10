@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "01003-core-ai-roleplay.js"                            */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -67,6 +72,7 @@ function getWithTurnId(rec, wo) {
 function getKiCfg(wo) {
   return {
     includeHistory: getBool(wo?.includeHistory, true),
+    includeHistorySystemMessages: getBool(wo?.includeHistorySystemMessages, false),
     temperature: getNum(wo?.temperature, 0.7),
     maxTokens: getNum(wo?.maxTokens, 1200),
     requestTimeoutMs: getNum(wo?.requestTimeoutMs, 120000),
@@ -80,6 +86,10 @@ function getKiCfg(wo) {
   };
 }
 
+function getLimitNotice() {
+  return "Loop limit reached. This is the partial result so far. Start a new AI run if you want me to continue from here.";
+}
+
 
 function getStripTrailingUrl(text) {
   return String(text ?? "")
@@ -88,12 +98,15 @@ function getStripTrailingUrl(text) {
 }
 
 
-function getPromptFromSnapshot(rows, includeHistory) {
+function getPromptFromSnapshot(rows, includeHistory, includeHistorySystemMessages = false) {
   if (!includeHistory) return [];
   const out = [];
   for (let i = 0; i < (rows || []).length; i++) {
     const r = rows[i] || {};
-    if (r.role === "user") out.push({ role: "user", content: r.content ?? "" });
+    if (r.role === "system") {
+      if (includeHistorySystemMessages) out.push({ role: "system", content: r.content ?? "" });
+    }
+    else if (r.role === "user") out.push({ role: "user", content: r.content ?? "" });
     else if (r.role === "assistant") out.push({ role: "assistant", content: getStripTrailingUrl(r.content ?? "") });
   }
   return out;
@@ -331,7 +344,7 @@ export default async function getCoreAi(coreData) {
     try { snapshot = await getContext(wo); } catch {}
   }
 
-  const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory);
+  const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory, kiCfg.includeHistorySystemMessages);
   const system1 = getSystemContentTextRun(wo);
 
   
@@ -341,6 +354,7 @@ export default async function getCoreAi(coreData) {
     { role: "user", content: userPromptRaw }
   ];
   let textOut = "";
+  let hitMaxLoops = false;
 
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     if (wo.aborted) {
@@ -375,6 +389,9 @@ export default async function getCoreAi(coreData) {
       continue;
     }
     break;
+  }
+  if (!textOut.trim() && pass1Messages.length && pass1Messages[pass1Messages.length - 1]?.role !== "assistant") {
+    hitMaxLoops = true;
   }
 
   textOut = textOut.trim();
@@ -448,7 +465,7 @@ export default async function getCoreAi(coreData) {
   wo._contextPersistQueue.push(getWithTurnId(assistantPass1, wo));
 
   wo.reasoningSummary = undefined;
-  wo.response = finalText || "I could not generate a visible answer in this turn. Please ask again and I will answer directly.";
+  wo.response = finalText || (hitMaxLoops ? ("[Max Loops Hit]\n\n" + getLimitNotice()) : "I could not generate a visible answer in this turn. Please ask again and I will answer directly.");
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");

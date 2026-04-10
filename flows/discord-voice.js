@@ -239,7 +239,7 @@ async function setAttachToSession(baseCore, sessionKey, session, cfg, runFlow, c
 
       const nowIso = new Date().toISOString();
 
-      wo.turn_id = getNewUlid();
+wo.turnId = getNewUlid();
       wo.flow = cfgFlowName;
       wo.source = "discord";
       wo.voiceSessionRef = sessionKey;

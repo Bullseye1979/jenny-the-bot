@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00021-api-token-gate.js"                              */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 

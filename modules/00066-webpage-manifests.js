@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00066-webpage-manifests.js"                           */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 import fs from "node:fs";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getIsAllowedRoles, setJsonResp, setSendNow } from "../shared/webpage/utils.js";

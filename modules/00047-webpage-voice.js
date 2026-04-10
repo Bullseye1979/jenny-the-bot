@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00047-webpage-voice.js"                               */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -46,7 +51,7 @@ import {
   getEnsureDiarizePool, ensureDiarizeTables,
   listSpeakers, getSpeaker, createSpeaker, updateSpeakerSample, deleteSpeaker,
   getSession, listSessions, deleteSession, listChunksForSession, upsertChunkSpeaker
-} from "../core/voice-diarize.js";
+} from "../shared/voice/voice-diarize.js";
 
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || "/usr/bin/ffmpeg");
@@ -69,8 +74,7 @@ try { fs.mkdirSync(SAMPLES_DIR, { recursive: true }); } catch {}
 function getApiUrl(endpoint) {
   const ep = (endpoint || "").trim().replace(/\/+$/, "");
   if (ep) return /\/audio\/transcriptions$/.test(ep) ? ep : `${ep}/v1/audio/transcriptions`;
-  const base = (process.env.OPENAI_BASE_URL || "").trim().replace(/\/+$/, "");
-  return base ? `${base}/v1/audio/transcriptions` : "https://api.openai.com/v1/audio/transcriptions";
+  return "https://api.openai.com/v1/audio/transcriptions";
 }
 
 
@@ -152,7 +156,7 @@ function getSpaHtml(cfg, menuHtml) {
     chanCfgMap[id] = entry;
   });
   const chanCfgJson  = JSON.stringify(chanCfgMap).replace(/<\/script>/gi, "<\\/script>");
-  const apiBaseUrl   = JSON.stringify(String(cfg.apiBaseUrl || "").trim());
+  const apiRootUrl   = JSON.stringify(String(cfg.apiUrl || "").trim());
 
   const chanOptHtml = channels.map(c => {
     const id  = String(c.id  || "").trim();
@@ -298,7 +302,7 @@ ${channelRowHtml}
 
 <script>
 /* server config */
-var API_BASE_URL        = ${apiBaseUrl};
+    var API_ROOT_URL        = ${apiRootUrl};
 var SILENCE_TIMEOUT_MS  = ${silenceMs};
 var MAX_DURATION_MS     = ${maxMs};
 var SILENCE_RMS_THRESH  = ${silenceRmsThresh};
@@ -347,28 +351,49 @@ if (channelInput) {
 (function() { var _cid = getSelectedChannelId(); if (_cid) { startAsyncSSE(_cid); startJobPoll(_cid); } })();
 
 /* mic enumeration */
-function populateMics() {
-  navigator.mediaDevices.getUserMedia({ audio: true }).then(function(tmp) {
-    tmp.getTracks().forEach(function(t) { t.stop(); });
-  }).catch(function() {}).finally(function() {
-    navigator.mediaDevices.enumerateDevices().then(function(devices) {
-      var mics = devices.filter(function(d) { return d.kind === 'audioinput'; });
-      micSelect.innerHTML = '';
-      if (!mics.length) { micSelect.innerHTML = '<option value="">No microphone found</option>'; return; }
-      mics.forEach(function(d, i) {
-        var opt = document.createElement('option');
-        opt.value = d.deviceId;
-        opt.textContent = d.label || ('Microphone ' + (i + 1));
-        micSelect.appendChild(opt);
-      });
-      var saved = localStorage.getItem('voiceMicId');
-      if (saved && micSelect.querySelector('option[value="' + CSS.escape(saved) + '"]')) micSelect.value = saved;
+var micSelectBound = false;
+async function populateMics(requestPermission) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+    micSelect.innerHTML = '<option value="">Not supported</option>';
+    return;
+  }
+  if (requestPermission === true && navigator.mediaDevices.getUserMedia) {
+    try {
+      var tmp = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      tmp.getTracks().forEach(function(t) { t.stop(); });
+    } catch (_) {}
+  }
+  try {
+    var devices = await navigator.mediaDevices.enumerateDevices();
+    var mics = devices.filter(function(d) { return d.kind === 'audioinput'; });
+    micSelect.innerHTML = '';
+    if (!mics.length) {
+      micSelect.innerHTML = '<option value="">No microphone found</option>';
+      return;
+    }
+    var hasNamedDevice = mics.some(function(d) { return String(d.label || '').trim(); });
+    mics.forEach(function(d, i) {
+      var opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || (hasNamedDevice ? ('Microphone ' + (i + 1)) : 'Allow microphone access to reveal device names');
+      micSelect.appendChild(opt);
+    });
+    var saved = localStorage.getItem('voiceMicId');
+    if (saved && micSelect.querySelector('option[value="' + CSS.escape(saved) + '"]')) micSelect.value = saved;
+    if (!micSelectBound) {
       micSelect.addEventListener('change', function() { localStorage.setItem('voiceMicId', micSelect.value); });
-    }).catch(function() { micSelect.innerHTML = '<option value="">Failed to load</option>'; });
-  });
+      micSelectBound = true;
+    }
+  } catch (_) {
+    micSelect.innerHTML = '<option value="">Failed to load</option>';
+  }
 }
-if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) populateMics();
-else micSelect.innerHTML = '<option value="">Not supported</option>';
+if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+  populateMics(false);
+  if (navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', function() { populateMics(false); });
+  }
+} else micSelect.innerHTML = '<option value="">Not supported</option>';
 
 var alwaysOn    = false;
 var mediaRecorder = null;
@@ -395,7 +420,7 @@ var toolcallPollTimer = null;
 var asyncSseSource    = null;
 
 function getApiBase() {
-  if (API_BASE_URL) return API_BASE_URL;
+      if (API_ROOT_URL) return API_ROOT_URL;
   return 'http://' + window.location.hostname + ':3400';
 }
 function startToolcallPoll() {
@@ -431,6 +456,7 @@ function startAsyncSSE(channelId) {
       var d = JSON.parse(e.data);
       if (d && d.type === 'async_result' && d.response) {
         showTranscript('', d.response);
+        if (d.audioBase64) playAudioFromBase64(d.audioBase64, d.audioMime || 'audio/mpeg');
       }
     } catch (_) {}
   };
@@ -453,7 +479,11 @@ function startJobPoll(channelId) {
         var hasRunning = jobs.some(function(j) { return j.status === 'running'; });
         var hasDone = false;
         jobs.forEach(function(j) {
-          if (j.status === 'done' && j.result) { showTranscript('', j.result); hasDone = true; }
+          if (j.status === 'done' && j.result) {
+            showTranscript('', j.result);
+            if (j.audioBase64) playAudioFromBase64(j.audioBase64, j.audioMime || 'audio/mpeg');
+            hasDone = true;
+          }
           else if (j.status === 'error') { showTranscript('', '\u26a0\ufe0f Background task failed: ' + (j.error || 'unknown')); hasDone = true; }
         });
         if (hasRunning || hasDone) { jobPollEmptyCount = 0; } else { jobPollEmptyCount++; if (jobPollEmptyCount >= 6) stopJobPoll(); }
@@ -461,6 +491,17 @@ function startJobPoll(channelId) {
   }, 5000);
 }
 function stopJobPoll() { if (jobPollTimer) { clearInterval(jobPollTimer); jobPollTimer = null; } }
+
+function playAudioFromBase64(base64, mimeType) {
+  try {
+    var binary = atob(String(base64 || ''));
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    var audioBlob = new Blob([bytes], { type: mimeType || 'audio/mpeg' });
+    audioQueue.push({ url: URL.createObjectURL(audioBlob) });
+    playNextAudio();
+  } catch (_) {}
+}
 
 function playNextAudio() {
   if (audioPlaying || !audioQueue.length) return;
@@ -519,9 +560,55 @@ function setStatus(msg)    { statusEl.textContent    = msg || ''; }
 function setError(msg)     { errorEl.textContent     = msg || ''; }
 function setRecStatus(msg) { recStatusEl.textContent = msg || ''; }
 
+function renderBotText(text) {
+  var raw = String(text || '');
+  var out = '';
+  var i = 0;
+  while (i < raw.length) {
+    var mdOpen = raw.indexOf('[', i);
+    var urlOpen = raw.indexOf('http', i);
+    var next = -1;
+    if (mdOpen >= 0 && urlOpen >= 0) next = Math.min(mdOpen, urlOpen);
+    else next = mdOpen >= 0 ? mdOpen : urlOpen;
+    if (next < 0) {
+      out += escHtml(raw.slice(i));
+      break;
+    }
+    out += escHtml(raw.slice(i, next));
+    if (next === mdOpen) {
+      var labelEnd = raw.indexOf('](', mdOpen);
+      var urlEnd = labelEnd >= 0 ? raw.indexOf(')', labelEnd + 2) : -1;
+      var label = labelEnd >= 0 ? raw.slice(mdOpen + 1, labelEnd) : '';
+      var markdownUrl = urlEnd >= 0 ? raw.slice(labelEnd + 2, urlEnd) : '';
+      if (label && (markdownUrl.indexOf('http://') === 0 || markdownUrl.indexOf('https://') === 0)) {
+        out += '<a href="' + escHtml(markdownUrl) + '" target="_blank" rel="noopener noreferrer">' + escHtml(label) + '</a>';
+        i = urlEnd + 1;
+        continue;
+      }
+    }
+    if (next === urlOpen) {
+      var urlStop = raw.length;
+      var stopChars = [' ', String.fromCharCode(10), String.fromCharCode(9), ')', ']', '>', '"', String.fromCharCode(39)];
+      for (var s = 0; s < stopChars.length; s++) {
+        var idx = raw.indexOf(stopChars[s], urlOpen);
+        if (idx >= 0 && idx < urlStop) urlStop = idx;
+      }
+      var directUrl = raw.slice(urlOpen, urlStop);
+      if (directUrl.indexOf('http://') === 0 || directUrl.indexOf('https://') === 0) {
+        out += '<a href="' + escHtml(directUrl) + '" target="_blank" rel="noopener noreferrer">' + escHtml(directUrl) + '</a>';
+        i = urlStop;
+        continue;
+      }
+    }
+    out += escHtml(raw.charAt(next));
+    i = next + 1;
+  }
+  return out.split(String.fromCharCode(10)).join('<br>');
+}
+
 function showTranscript(you, bot) {
   document.getElementById('txt-you').textContent = you || '';
-  document.getElementById('txt-bot').textContent = bot || '';
+  document.getElementById('txt-bot').innerHTML = renderBotText(bot);
   box.classList.toggle('visible', !!(you || bot));
 }
 
@@ -587,6 +674,7 @@ async function startRecording() {
   if (deviceId) audioCfg.deviceId = { exact: deviceId };
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: audioCfg, video: false });
+    await populateMics(true);
   } catch(e) {
     setError('Microphone access denied: ' + e.message);
     alwaysOn = false; btn.className = 'idle'; return;
@@ -689,6 +777,7 @@ btnRec.addEventListener('click', async function() {
     if (deviceId) audioCfg.deviceId = { exact: deviceId };
     try {
       recOwnStream = await navigator.mediaDevices.getUserMedia({ audio: audioCfg, video: false });
+      await populateMics(true);
     } catch(e) {
       setError('Mic access denied: ' + e.message);
       recActive = false; return;
@@ -717,13 +806,19 @@ btnRec.addEventListener('click', async function() {
       var resp = await fetch('/voice/audio?channelId=' + encodeURIComponent(channelId) + '&transcribeOnly=1', {
         method: 'POST', headers: { 'Content-Type': blob.type }, body: blob
       });
-      var transcript = resp.headers.get('X-Transcript') || '';
+      var data = null;
+      try { data = await resp.json(); } catch(e) { data = null; }
+      var transcript = '';
+      if (data && typeof data.transcript === 'string') transcript = data.transcript;
+      if (!transcript) transcript = resp.headers.get('X-Transcript') || '';
       if (resp.ok) {
         var words = transcript.trim().split(' ').filter(function(w){return w.length>0;}).length;
         setRecStatus('Done \u2014 ' + words + ' word(s)');
+        if (data && data.sessionId) reviewSessionId = Number(data.sessionId) || null;
         showTab('review');
       } else {
-        setRecStatus('Error: ' + resp.status);
+        var detail = data && (data.detail || data.error) ? String(data.detail || data.error) : String(resp.status);
+        setRecStatus('Error: ' + detail);
       }
     } catch(e) { setRecStatus('Error: ' + e.message); }
     btnRec.className = 'idle';
@@ -765,7 +860,7 @@ function renderSpeakers(speakers) {
   var list = document.getElementById('sp-list');
   if (!speakers.length) { list.innerHTML = '<p style="color:var(--muted);font-size:.85rem">No speakers yet. Add one below.</p>'; return; }
   list.innerHTML = speakers.map(function(sp) {
-    var sampleTxt = sp.sample_text ? escHtml(sp.sample_text.slice(0, 80)) + (sp.sample_text.length > 80 ? '\u2026' : '') : '<em style="color:var(--muted)">no sample</em>';
+    var sampleTxt = sp.sampleText ? escHtml(sp.sampleText.slice(0, 80)) + (sp.sampleText.length > 80 ? '\u2026' : '') : '<em style="color:var(--muted)">no sample</em>';
     return '<div class="sp-row" id="sp-row-' + sp.id + '">' +
       '<span class="sp-name">' + escHtml(sp.name) + '</span>' +
       '<span class="sp-sample">' + sampleTxt + '</span>' +
@@ -827,6 +922,7 @@ async function toggleSampleRecord(id) {
   if (deviceId) audioCfg.deviceId = { exact: deviceId };
   try {
     spRecStream = await navigator.mediaDevices.getUserMedia({ audio: audioCfg, video: false });
+    await populateMics(true);
   } catch(e) { alert('Mic error: ' + e.message); return; }
   var mt = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg'].find(function(m) { return MediaRecorder.isTypeSupported(m); }) || '';
   spRecRecorder = new MediaRecorder(spRecStream, mt ? { mimeType: mt } : {});
@@ -869,12 +965,16 @@ function loadSessions() {
       var sessions = d.sessions || [];
       if (!sessions.length) { list.innerHTML = '<p style="color:var(--muted);font-size:.85rem">No sessions yet. (channelId: ' + escHtml(cid) + ')</p>'; return; }
       list.innerHTML = sessions.map(function(s) {
-        var dt = new Date(s.started_at).toLocaleString();
+        var dt = new Date(s.startedAt).toLocaleString();
         return '<div class="sess-row" id="sess-row-' + s.id + '">' +
           '<span style="flex:1;cursor:pointer" onclick="loadChunks(' + s.id + ')">' + escHtml(dt) + '</span>' +
           '<button class="ic-btn danger" style="font-size:.75rem;padding:2px 6px;margin-left:6px" onclick="deleteSessionRow(' + s.id + ',event)" title="Delete session">\uD83D\uDDD1\uFE0F</button>' +
           '</div>';
       }).join('');
+      if (reviewSessionId) {
+        var hasSelected = sessions.some(function(s) { return Number(s.id) === Number(reviewSessionId); });
+        if (hasSelected) loadChunks(reviewSessionId);
+      }
       fetch('/voice/api/speakers?channelId=' + encodeURIComponent(cid))
         .then(function(r2) { return r2.json(); })
         .then(function(d2) { reviewSpeakers = d2.speakers || []; });
@@ -902,7 +1002,7 @@ function renderChunks(chunks) {
   var chunksHtml = chunks.map(function(chunk) {
     var parsed   = parseChunkTranscript(chunk.transcript || '');
     var mappings = {};
-    (chunk.speakers || []).forEach(function(m) { mappings[m.chunk_label] = m.speaker_id; });
+    (chunk.speakers || []).forEach(function(m) { mappings[m.chunkLabel] = m.speakerId; });
     var labels = Object.keys(parsed);
     if (!labels.length) return '';
     var blocksHtml = labels.map(function(lbl) {
@@ -913,7 +1013,7 @@ function renderChunks(chunks) {
         '<div class="speaker-hd"><span class="speaker-lbl">' + escHtml(lbl) + '</span>' + selHtml + '</div>' +
         '<div class="speaker-texts">' + texts + '</div></div>';
     }).join('');
-    return '<div class="chunk-card"><div class="chunk-title">Chunk ' + (chunk.chunk_index + 1) + '</div>' + blocksHtml + '</div>';
+    return '<div class="chunk-card"><div class="chunk-title">Chunk ' + (chunk.chunkIndex + 1) + '</div>' + blocksHtml + '</div>';
   }).join('');
   var applyBar =
     '<div class="apply-bar">' +
@@ -998,7 +1098,8 @@ async function applySession() {
 
 function parseChunkTranscript(transcript) {
   var result = {};
-  var lines = String(transcript || '').split(String.fromCharCode(10));
+  var raw = String(transcript || '');
+  var lines = raw.split(String.fromCharCode(10));
   for (var i = 0; i < lines.length; i++) {
     var colon = lines[i].indexOf(':');
     if (colon < 1) continue;
@@ -1008,14 +1109,38 @@ function parseChunkTranscript(transcript) {
     if (!result[lbl]) result[lbl] = [];
     result[lbl].push(txt);
   }
+  if (!Object.keys(result).length && raw.trim()) {
+    result.Transcript = [raw.trim()];
+  }
   return result;
+}
+
+function normalizeSpeakerName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function getAutoSelectedSpeakerId(chunkLabel, currentSpeakerId) {
+  if (currentSpeakerId != null) return currentSpeakerId;
+  var normLabel = normalizeSpeakerName(chunkLabel);
+  if (!normLabel || normLabel === 'transcript') return null;
+  for (var i = 0; i < reviewSpeakers.length; i++) {
+    var sp = reviewSpeakers[i];
+    if (normalizeSpeakerName(sp.name) === normLabel) return Number(sp.id) || null;
+  }
+  return null;
 }
 
 function buildSpeakerSelect(chunkLabel, chunkId, currentSpeakerId) {
   var uid = 'sel-' + chunkId + '-' + chunkLabel.replace(/[^a-z0-9]/gi, '_');
+  var selectedSpeakerId = getAutoSelectedSpeakerId(chunkLabel, currentSpeakerId);
   var opts = '<option value="">\u2014 unassigned \u2014</option>';
   reviewSpeakers.forEach(function(sp) {
-    var sel = (currentSpeakerId != null && String(sp.id) === String(currentSpeakerId)) ? ' selected' : '';
+    var sel = (selectedSpeakerId != null && String(sp.id) === String(selectedSpeakerId)) ? ' selected' : '';
     opts += '<option value="' + sp.id + '"' + sel + '>' + escHtml(sp.name) + '</option>';
   });
   opts += '<option value="__new__">+ New speaker\u2026</option>';
@@ -1188,7 +1313,7 @@ export default async function getWebpageVoice(coreData) {
         const _jChanID  = params.get("channelID") || "";
         const _jConsume = params.get("consume") === "true";
         if (!_jChanID) { sendJson(res, 400, { error: "channelID_required" }); wo.jump = true; wo.jumpReason = "api_handled"; return coreData; }
-        const _jApiBase   = String(cfg.apiBaseUrl || "http://localhost:3400/api").replace(/\/api\/?$/, "");
+        const _jApiBase   = String(cfg.apiUrl || "http://localhost:3400/api").replace(/\/api\/?$/, "");
         const _jApiSecret = await getSecret(wo, String(cfg.apiSecret || "").trim());
         const _jUrl       = _jApiBase + "/api/jobs?channelID=" + encodeURIComponent(_jChanID) + (_jConsume ? "&consume=true" : "");
         const _jHeaders   = {};
@@ -1315,40 +1440,51 @@ export default async function getWebpageVoice(coreData) {
         const chunks = await listChunksForSession(pool, sessionId);
 
         const prevChannelId = wo.channelID;
-        wo.channelID = sess.channelId;
+        try {
+          wo.channelID = String(sess.channelId || "").trim();
+          if (!wo.channelID) throw new Error("session_missing_channel_id");
 
-        if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(sess.channelId)) await setPurgeContext(wo);
+          if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(wo.channelID)) {
+            await setPurgeContext(wo);
+          }
 
-        let words = 0;
-        for (const chunk of chunks) {
-          const nameMap = {};
-          for (const m of (chunk.speakers || [])) {
-            if (m.speaker_name) nameMap[m.chunk_label] = m.speaker_name;
+          let words = 0;
+          for (const chunk of chunks) {
+            const nameMap = {};
+            for (const m of (chunk.speakers || [])) {
+              if (m.speakerName) nameMap[m.chunkLabel] = m.speakerName;
+            }
+            for (const line of (chunk.transcript || "").split("\n")) {
+              const trimmedLine = String(line || "").trim();
+              if (!trimmedLine) continue;
+              const colon = line.indexOf(":");
+              const speakerLabel = colon < 1 ? "Transcript" : line.slice(0, colon).trim();
+              const speakerName = nameMap[speakerLabel] || speakerLabel;
+              const speakerText = colon < 1 ? trimmedLine : line.slice(colon + 1).trim();
+              if (!speakerText) continue;
+              words += (speakerText.match(/\S+/g) || []).length;
+              await setContext(wo, {
+                role:       "user",
+                text:       speakerText,
+                content:    speakerText,
+                userId:     speakerName,
+                authorName: speakerName,
+                source:     "voice-transcription"
+              });
+            }
           }
-          for (const line of (chunk.transcript || "").split("\n")) {
-            const colon = line.indexOf(":");
-            if (colon < 1) continue;
-            const speakerName = nameMap[line.slice(0, colon).trim()] || line.slice(0, colon).trim();
-            const speakerText = line.slice(colon + 1).trim();
-            if (!speakerText) continue;
-            words += (speakerText.match(/\S+/g) || []).length;
-            await setContext(wo, {
-              role:       "user",
-              text:       speakerText,
-              content:    speakerText,
-              userId:     speakerName,
-              authorName: speakerName,
-              source:     "voice-transcription"
-            });
-          }
+
+          await deleteSession(pool, sessionId);
+
+          sendJson(res, 200, { ok: true, words, channelId: wo.channelID });
+          wo.jump = true; wo.jumpReason = "api_handled"; return coreData;
+        } catch (e) {
+          log("Apply session failed", "error", { moduleName: MODULE_NAME, error: e?.message, sessionId, storedChannelId: sess.channelId || null });
+          sendJson(res, 500, { error: "apply_failed", detail: String(e?.message || e) });
+          wo.jump = true; wo.jumpReason = "api_error"; return coreData;
+        } finally {
+          wo.channelID = prevChannelId;
         }
-
-        wo.channelID = prevChannelId;
-
-        await deleteSession(pool, sessionId);
-
-        sendJson(res, 200, { ok: true, words });
-        wo.jump = true; wo.jumpReason = "api_handled"; return coreData;
       }
 
       if (method === "POST" && urlPath === ROUTE_API + "/speakers/new-and-assign") {

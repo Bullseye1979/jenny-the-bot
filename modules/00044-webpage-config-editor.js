@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00044-webpage-config-editor.js"                       */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -27,7 +32,6 @@ function getBasePath(cfg) {
 
 function getConfigFile(cfg) {
   if (cfg.file) return String(cfg.file);
-  if (cfg.configPath) return String(cfg.configPath);
   return (new URL("../core.json", import.meta.url)).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 }
 

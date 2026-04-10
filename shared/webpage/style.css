@@ -60,9 +60,11 @@ header>.nav-wrap{order:0}
   background:rgba(255,255,255,.08);
   color:rgba(255,255,255,.82);
   transition:all .15s;white-space:nowrap;
-  text-decoration:none;display:inline-block;
+  text-decoration:none;display:inline-flex;align-items:center;gap:8px;
   border:1px solid rgba(255,255,255,.18);
 }
+.nav-icon{display:inline-flex;align-items:center;justify-content:center;min-width:1.1em}
+.nav-label{display:inline-block}
 .nav-link:hover{
   background:rgba(255,255,255,.15);
   color:#fff;
@@ -92,7 +94,7 @@ header>.nav-wrap{order:0}
 }
 
 
-.nav-more{position:relative;display:none}
+.nav-more{position:relative;display:block}
 .nav-more.has-overflow{display:block}
 .nav-more-btn{list-style:none;cursor:pointer;user-select:none}
 .nav-more-btn::-webkit-details-marker{display:none}
@@ -106,7 +108,42 @@ header>.nav-wrap{order:0}
 }
 details[open].nav-more .nav-more-drop{display:flex}
 .nav-more-item{display:block;width:100%;border-radius:4px}
-.nav-more-primary{display:none}
+.nav-main-menu .nav-more-drop{
+  min-width:280px;
+  max-width:min(92vw,360px);
+  max-height:min(78dvh,720px);
+  overflow:auto;
+}
+.nav-tree-drop{min-width:220px}
+.nav-main-menu>.nav-more-drop{overflow:visible}
+.nav-cascade{position:relative;display:block}
+.nav-cascade>.nav-more-drop{
+  top:-5px;
+  left:calc(100% + 4px);
+  right:auto;
+  min-width:240px;
+  max-height:none;
+  overflow:visible;
+}
+.nav-cascade-list{display:flex;flex-direction:column;gap:3px}
+.nav-cascade-btn{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  width:100%;
+}
+.nav-cascade-arrow{
+  margin-left:12px;
+  opacity:.72;
+  font-size:15px;
+  line-height:1;
+}
+.nav-cascade[open]>.nav-cascade-btn,
+.nav-cascade-btn:hover{
+  background:rgba(255,255,255,.15);
+  color:#fff;
+  border-color:rgba(255,255,255,.26);
+}
 
 
 .nav-profile .nav-more-drop,.nav-profile-drop{left:auto;right:0;min-width:200px}
@@ -121,9 +158,63 @@ details[open].nav-more .nav-more-drop{display:flex}
 
 
 @media(max-width:640px){
-  .nav-primary{display:none!important}
-  .nav-more{display:block!important}
-  .nav-more-primary{display:block}
+  header{
+    gap:8px;
+    padding:0 10px;
+  }
+  header h1{
+    flex:1 1 auto;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .nav-wrap{
+    gap:8px;
+    flex:0 0 auto;
+  }
+  .nav-right-slot{
+    margin-left:0;
+    flex:0 0 auto;
+    min-width:0;
+  }
+  .nav-main-menu .nav-more-drop{
+    min-width:min(92vw,340px);
+    max-width:92vw;
+    max-height:calc(100dvh - 72px);
+  }
+  .nav-main-menu>.nav-more-drop{
+    overflow:auto;
+  }
+  .nav-main-menu .nav-link{
+    white-space:normal;
+    align-items:flex-start;
+  }
+  .nav-cascade>.nav-more-drop{
+    position:static;
+    top:auto;
+    left:auto;
+    right:auto;
+    min-width:0;
+    max-width:none;
+    margin-top:3px;
+    margin-left:0;
+    padding:3px 0 0 10px;
+    border:none;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
+  }
+  .nav-cascade-list{
+    gap:4px;
+  }
+  .nav-cascade-btn{
+    width:100%;
+  }
+  .nav-profile .nav-more-drop,
+  .nav-profile-drop{
+    min-width:min(92vw,280px);
+    max-width:92vw;
+  }
   .nav-role{display:none}
   .nav-right{max-width:calc(100% - 52px);overflow:hidden}
   .nav-right>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

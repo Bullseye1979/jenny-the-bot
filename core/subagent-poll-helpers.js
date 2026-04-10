@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "subagent-poll-helpers.js"                             */
+/* Version 1.0                                               */
+/* Purpose: Core shared runtime helper.                     */
+/**************************************************************/
 
 
 
@@ -59,6 +64,50 @@ function getSubagentToolOutput(job, rawResult) {
   };
 }
 
+function getExtractHttpUrls(text) {
+  const raw = String(text || "");
+  if (!raw) return [];
+
+  const matches = raw.match(/https?:\/\/[^\s<>"'()]+/gi) || [];
+  const urls = [];
+
+  for (const entry of matches) {
+    const url = String(entry || "").trim();
+    if (!url || urls.includes(url)) continue;
+    urls.push(url);
+  }
+
+  return urls;
+}
+
+function getLooksLikeArtifactUrl(url) {
+  const value = String(url || "").toLowerCase();
+  if (!value) return false;
+
+  return (
+    value.includes("/documents/") ||
+    value.includes("/uploads/") ||
+    value.includes("/pub/") ||
+    /\.(png|jpe?g|gif|webp|bmp|svg|mp4|webm|mov|mp3|wav|ogg|pdf|zip)(\?|#|$)/i.test(value)
+  );
+}
+
+function getMergeArtifactUrlsIntoResponse(rawResult, response) {
+  const rawText = String(rawResult || "").trim();
+  const finalText = String(response || "").trim();
+  if (!rawText) return finalText;
+
+  const rawUrls = getExtractHttpUrls(rawText).filter((url) => getLooksLikeArtifactUrl(url));
+  if (!rawUrls.length) return finalText;
+
+  const responseUrls = getExtractHttpUrls(finalText);
+  const missingUrls = rawUrls.filter((url) => !responseUrls.includes(url));
+  if (!missingUrls.length) return finalText;
+
+  if (!finalText) return missingUrls.join("\n");
+  return `${finalText}\n${missingUrls.join("\n")}`.trim();
+}
+
 async function setWriteSubagentToolExchange(contextWo, job, rawResult) {
   const toolCallId = getSubagentCallId(job?.jobId);
   const toolName = SUBAGENT_RESULT_TOOL_NAME;
@@ -111,7 +160,7 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
   _wo.flow                  = "api";
   _wo.channelType           = "API";
   _wo.isDM                  = false;
-  if (String(callerFlow || "").startsWith("discord")) {
+  if (String(callerFlow || "").trim()) {
     _wo.overrideFlow        = String(callerFlow);
   }
   _wo.userId                = String(userId || "");
@@ -139,7 +188,7 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
 
   _wo.payload             = _payload;
   _wo.toolChoice          = "none";
-  _wo.includeHistoryTools = true;
+  _wo.includeHistoryTools = false;
   _wo.doNotWriteToContext = true;
   _wo.__noContinuation    = true;
   _wo.timestamp           = new Date().toISOString();
@@ -172,11 +221,12 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     return "";
   }
 
-  const _response = String(_wo.response || "").trim();
+  const _response = getMergeArtifactUrlsIntoResponse(rawResult, String(_wo.response || "").trim());
   logSubagent("info", "poll-delivery", "persona_pass_done", {
     jobId,
     durationMs:  Date.now() - _startMs,
     responseLen: _response.length,
+    artifactUrlCount: getExtractHttpUrls(_response).filter((url) => getLooksLikeArtifactUrl(url)).length,
   });
 
   if (_response) {
@@ -246,6 +296,9 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
   _wo.flow              = "api";
   _wo.channelID         = _project.callerChannelId || _project.channelId;
   _wo.contextChannelID  = _contextChannelID;
+  if (String(_project.callerFlow || "").trim()) {
+    _wo.overrideFlow    = String(_project.callerFlow);
+  }
   _wo.payload           = "A new background subagent tool result was added to context. Continue from this tool output and respond accordingly.";
   _wo.callerChannelId   = _project.callerChannelId;
   _wo.userId            = _project.userId || "";
@@ -254,7 +307,7 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
   _wo.agentDepth        = Number(_project.agentDepth || 0);
   _wo.agentType         = _project.agentType || "";
   _wo.toolChoice        = "none";
-  _wo.includeHistoryTools = true;
+  _wo.includeHistoryTools = false;
   _wo.doNotWriteToContext = true;
   _wo.timestamp         = new Date().toISOString();
 

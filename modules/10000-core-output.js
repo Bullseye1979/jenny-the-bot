@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "10000-core-output.js"                                 */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -22,6 +27,7 @@ const EVENT_BASENAME = "events";
 const EVENT_EXT = ".log";
 const EVENT_RE = /^events-(\d+)\.log$/;
 const LAST_OBJECT_NAME = "last-object.json";
+const SECRET_ALIAS_RE = /^[A-Z][A-Z0-9_]*$/;
 
 let WRITE_CHAIN = Promise.resolve();
 
@@ -43,6 +49,9 @@ function getRedact(value, keyPath) {
   const lowerPath = String(keyPath || "").toLowerCase();
   if (lowerPath.endsWith(".password") || lowerPath === "password") {
     return "***redacted***";
+  }
+if (/(^|\.)(apikey|apikeyalias|apisecret|token|bearertoken|videotoken|videoapitoken|secret|clientsecret|sessionsecret|ttsapikey|transcribeapikey|avatarapikey|googleapikey|cseid|email)$/.test(lowerPath)) {
+    if (!SECRET_ALIAS_RE.test(value.trim())) return "***redacted***";
   }
   const MAX = 4000;
   if (value.length > MAX) return value.slice(0, MAX) + ` … [truncated ${value.length - MAX} chars]`;

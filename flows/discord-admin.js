@@ -283,7 +283,7 @@ function getBuildRunCore(createRunCore, interaction, baseWO) {
   if (!wo.clientRef) wo.clientRef = "discord:client";
   if (!wo.refs || typeof wo.refs !== "object") wo.refs = {};
   if (!wo.refs.client) wo.refs.client = "discord:client";
-  wo.turn_id = getNewUlid();
+wo.turnId = getNewUlid();
   const snap = getInteractionSnapshot(interaction);
   wo.id = interaction.channelId || "";
   wo.channelID = wo.id;

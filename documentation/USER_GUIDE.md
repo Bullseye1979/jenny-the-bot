@@ -1,4 +1,4 @@
-# Jenny — User Guide
+﻿# Jenny — User Guide
 
 > **Version:** 1.0 · **Date:** 2026-04-05
 
@@ -120,6 +120,10 @@ Type `/leave` and Jenny will disconnect.
 
 The `/voice` page lets you talk to Jenny directly from any device with a microphone — no Discord required. It has three tabs: **Voice**, **Speakers**, and **Review**.
 
+If a request starts a background task, the follow-up answer still appears in the same selected channel context. In the browser voice interface that follow-up is now spoken automatically as soon as it arrives, and returned URLs appear as clickable links in the reply box. If the background task created an image, video, document, or ZIP, the final artifact URL is preserved in the visible reply instead of being hidden behind a summary sentence.
+
+If the browser does not list microphones immediately, grant microphone access once by pressing **Voice** or **Record**. The page refreshes the microphone list again after permission is granted.
+
 ---
 
 #### Voice tab
@@ -146,7 +150,7 @@ Register known voices so the recorder can identify them automatically:
 2. Click the 🎤 button next to a speaker, say a few sentences, then click the stop button (⏹). The sample is saved and used as a voice reference during future recordings.
 3. Click 🗑️ to delete a speaker and their sample.
 
-During transcription, the bot prepends each registered speaker's sample to the recorded audio and uses the diarization model to determine which label in the meeting corresponds to which known voice. Recognised speakers appear by name; unrecognised speakers appear as generic labels (e.g. `Chunk1SpeakerSPEAKER_00`).
+During transcription, the bot prepends each registered speaker's sample to the recorded audio and uses the diarization model to determine which label in the meeting corresponds to which known voice. If the provider returns meeting timestamps without the preamble offset, the system additionally compares returned segment text with the stored sample texts to recover the mapping. Recognised speakers appear by name; unrecognised speakers appear as generic labels (e.g. `Chunk1SpeakerSPEAKER_00`). If the diarization response only contains sample-preamble segments and no usable meeting speech, the system automatically retries the raw meeting chunk without the sample preamble so you still get a transcript instead of an empty result.
 
 ---
 
@@ -155,14 +159,15 @@ During transcription, the bot prepends each registered speaker's sample to the r
 Each completed meeting recording appears as a session in the Review tab.
 
 1. **Select a session** from the list on the left to see its transcription chunks.
-2. Each chunk shows the speaker label and transcript text. Use the dropdown next to each label to assign or re-assign a known speaker.
+2. Each chunk shows the speaker label and transcript text. Use the dropdown next to each label to assign or re-assign a known speaker. If the detected label already matches a known speaker name, that speaker is preselected automatically in the dropdown. If diarization falls back to a plain transcript without speaker prefixes, the review shows a generic `Transcript` block instead of appearing empty.
 3. To create a new speaker profile directly from a review, select **+ New speaker…** in the dropdown.
 4. Click **💾 Save All** to persist all current assignments to the database without writing to the channel.
 5. When the assignments look correct, click **✓ Apply to Channel**. This:
    - Saves all current assignments first (same as Save All).
    - Rebuilds the transcript with the correct speaker names.
    - Writes one context entry per speaker line, with the speaker name as author.
-   - Optionally purges existing non-frozen context rows for the channel first (controlled by `clearContextChannels` in the admin config — frozen rows are never deleted).
+   - Applies the transcript to the channel stored with that review session.
+   - Optionally purges existing non-frozen context rows for that channel first (controlled by `clearContextChannels` in the admin config — frozen rows are never deleted).
    - Deletes the session from the Review list.
 6. Use the 🗑️ button next to a session to discard it without writing to context.
 
@@ -194,7 +199,7 @@ During a conversation Jenny can call tools automatically to fulfil your request.
 | Animate an image | WAN image-to-video |
 | Create a video from a description | Veo-3 text-to-video |
 | Find a YouTube video / read its transcript | YouTube tool |
-| Look up past conversations | History / Information tool |
+| Look up past conversations | Timeline / History tools |
 | Check the current time | Time tool |
 | Create a PDF | PDF generator |
 | Create a text file | Text file generator |
@@ -380,8 +385,9 @@ jenny, what was the recipe you gave me yesterday?
 
 She uses two tools for this:
 
-- **`getHistory`** — retrieves and summarises older messages, page by page.
-- **`getInformation`** — finds specific facts or events across the entire conversation log.
+- Jenny's internal context engine also builds a context mesh from micro blocks, rollup summaries, entity links, and a local semantic retrieval layer so precise follow-up questions can reach back beyond only the most recent chat window.
+- **`getTimeline`** — returns the chronological timeline of older events and conversation ranges.
+- **`getHistory`** — zooms exactly one level deeper into an older history block and returns either child blocks or raw rows at the bottom.
 
 ---
 
@@ -502,6 +508,7 @@ Jenny provides several browser-based tools. Your server admin decides which are 
 | `/subagents` | Subagent manager (admin only) |
 | `/dashboard` | Live bot status dashboard (admin only) |
 | `/context` | Conversation context editor (admin only) |
+| `/timeline` | Timeline summary editor (admin only) |
 
 To log in, navigate to any of these pages and you will be redirected to Discord OAuth2 login if authentication is required. Once logged in, your access is determined by the role your server admin assigned to your Discord account.
 
@@ -576,7 +583,7 @@ The `/chat` interface supports **subchannels** — separate conversation threads
 | ✎ | Rename the currently selected subchannel |
 | ✕ | Delete the currently selected subchannel (context entries remain in DB) |
 
-> **Note:** Deleting a subchannel removes its name mapping but does not delete the context entries stored under it. Admins can view and manage those via `/context`.
+> **Note:** Deleting a subchannel removes its name mapping and purges its non-frozen context entries. Frozen entries are preserved and promoted back to the Main thread.
 
 ### Channel/subchannel visibility
 
@@ -639,6 +646,7 @@ These commands are available to all users (unless marked **Admin**).
 | `/purge [count]` | **Admin** | Delete the last N messages in this channel (max 5000) |
 | `/purgedb` | **Admin** | Delete Jenny's conversation database for this channel |
 | `/freeze` | **Admin** | Protect the last database entry from deletion |
+| `/rebuilddb` | **Admin** | Rebuild Jenny's derived context tables for the current channel only |
 | `/error` | Everyone | Simulate an internal error (for testing) |
 
 ---
@@ -706,7 +714,7 @@ Run `/gdpr text 1` in the channel. Jenny will send you a DM with the privacy not
 **Jenny seems to have forgotten something**
 
 - Jenny loads a fixed number of messages from history (default: 20 recent rows).
-- For older conversations, ask her explicitly: `jenny, use getHistory to find what we said about X last Tuesday`
+- For older conversations, ask her explicitly: `jenny, zoom deeper into the old history blocks and find what we said about X`
 
 **I want to start fresh**
 

@@ -1,0 +1,1038 @@
+[
+  {
+    "file": "modules\\00005-discord-status-prepare.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "discord",
+      "prompt"
+    ]
+  },
+  {
+    "file": "modules\\00007-webpage-router.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00010-core-channel-config.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00011-webpage-channel-config.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00012-subchannel-config.js",
+    "imports": [
+      "mysql2/promise"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00020-core-channel-gate.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00021-api-token-gate.js",
+    "imports": [
+      "../core/logging.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00022-discord-gdpr-gate.js",
+    "imports": [
+      "mysql2/promise",
+      "../core/logging.js",
+      "../core/registry.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00025-discord-admin-gdpr.js",
+    "imports": [
+      "mysql2/promise",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00027-webpage-voice-record.js",
+    "imports": [
+      "node:fs",
+      "node:os",
+      "node:path",
+      "undici",
+      "fluent-ffmpeg",
+      "../core/logging.js",
+      "../shared/webpage/utils.js",
+      "../core/context.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00028-webpage-voice-input.js",
+    "imports": [
+      "node:fs",
+      "node:os",
+      "node:path",
+      "fluent-ffmpeg",
+      "../core/logging.js",
+      "../shared/webpage/utils.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00029-discord-voice-capture.js",
+    "imports": [
+      "node:fs",
+      "node:os",
+      "node:path",
+      "node:stream",
+      "prism-media",
+      "fluent-ffmpeg",
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00030-core-voice-transcribe.js",
+    "imports": [
+      "node:fs",
+      "node:os",
+      "node:path",
+      "fluent-ffmpeg",
+      "../core/logging.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00031-webpage-voice-add-context.js",
+    "imports": [
+      "../core/context.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00032-discord-add-files.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00033-webpage-voice-transcribe-gate.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00035-bard-join.js",
+    "imports": [
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00036-bard-cron.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "../core/registry.js",
+      "../core/context.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00037-discord-admin-join.js",
+    "imports": [
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00040-webpage-auth.js",
+    "imports": [
+      "node:crypto",
+      "../core/registry.js",
+      "../shared/webpage/utils.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00041-webpage-menu.js",
+    "imports": [],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00042-webpage-inpaint.js",
+    "imports": [
+      "node:path",
+      "../shared/webpage/utils.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00043-webpage-bard.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../core/secrets.js",
+      "../core/registry.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00044-webpage-config-editor.js",
+    "imports": [
+      "node:fs",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00047-webpage-voice.js",
+    "imports": [
+      "node:fs",
+      "node:os",
+      "node:path",
+      "fluent-ffmpeg",
+      "node:url",
+      "../core/logging.js",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../core/secrets.js",
+      "../core/context.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00048-webpage-chat.js",
+    "imports": [
+      "node:fs",
+      "node:crypto",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../core/secrets.js",
+      "../core/registry.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00049-webpage-inpainting.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "pngjs",
+      "../shared/webpage/interface.js",
+      "../core/file.js",
+      "../shared/webpage/utils.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00050-discord-admin-commands.js",
+    "imports": [],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00050-discord-purge.js",
+    "imports": [
+      "../core/logging.js",
+      "../core/registry.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00051-webpage-dashboard.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "../shared/webpage/interface.js",
+      "../core/registry.js",
+      "../shared/webpage/utils.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00052-webpage-wiki.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00053-webpage-context.js",
+    "imports": [
+      "node:fs",
+      "node:url",
+      "node:path",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00054-webpage-documentation.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00055-core-admin-commands.js",
+    "imports": [
+      "../core/logging.js",
+      "../core/context.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00056-webpage-gallery.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../core/file.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00057-webpage-gdpr.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "exceljs",
+      "mysql2/promise",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../core/file.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00057-webpage-graph-auth.js",
+    "imports": [
+      "node:crypto",
+      "node:fs",
+      "node:url",
+      "node:path",
+      "../core/secrets.js",
+      "../core/logging.js",
+      "../shared/webpage/interface.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00058-cron-graph-token-refresh.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00058-webpage-keymanager.js",
+    "imports": [
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00059-webpage-live.js",
+    "imports": [
+      "node:fs",
+      "node:url",
+      "node:path",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00060-discord-admin-avatar.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "node-fetch",
+      "discord.js",
+      "../core/registry.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00061-webpage-spotify-auth.js",
+    "imports": [
+      "node:crypto",
+      "node:fs",
+      "node:url",
+      "node:path",
+      "../core/secrets.js",
+      "../core/logging.js",
+      "../shared/webpage/interface.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00062-cron-spotify-token-refresh.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00065-discord-admin-macro.js",
+    "imports": [
+      "mysql2/promise",
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00066-webpage-manifests.js",
+    "imports": [
+      "node:fs",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../shared/webpage/subagent-manager.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00067-webpage-subagent-manager.js",
+    "imports": [
+      "node:fs",
+      "../shared/webpage/interface.js",
+      "../shared/webpage/utils.js",
+      "../shared/webpage/subagent-manager.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00070-discord-add-context.js",
+    "imports": [
+      "../core/context.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00072-api-add-context.js",
+    "imports": [
+      "../core/context.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00074-core-trigger-gate.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00080-discord-reaction-start.js",
+    "imports": [
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00998-subagent-persona.js",
+    "imports": [],
+    "cfg": []
+  },
+  {
+    "file": "modules\\00999-core-ai-context-loader.js",
+    "imports": [
+      "../core/context.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\01000-core-ai-completions.js",
+    "imports": [
+      "../core/context.js",
+      "../core/registry.js",
+      "../core/logging.js",
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "fs",
+      "path",
+      "url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\01001-core-ai-responses.js",
+    "imports": [
+      "../core/context.js",
+      "../core/registry.js",
+      "../core/file.js",
+      "../core/logging.js",
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "node:fs",
+      "node:path",
+      "node:crypto",
+      "node:url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\01002-core-ai-pseudotoolcalls.js",
+    "imports": [
+      "../core/context.js",
+      "../core/registry.js",
+      "../core/logging.js",
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "fs",
+      "path",
+      "url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\01003-core-ai-roleplay.js",
+    "imports": [
+      "../core/context.js",
+      "../core/logging.js",
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "fs",
+      "path",
+      "url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\01004-core-ai-context-writer.js",
+    "imports": [
+      "../core/context.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\02000-moderation-output.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\03000-discord-status-apply.js",
+    "imports": [
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\07000-core-add-id.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "${MODULE_NAME}"
+    ]
+  },
+  {
+    "file": "modules\\08000-discord-text-output.js",
+    "imports": [
+      "discord.js",
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\08050-bard-label-output.js",
+    "imports": [
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\08100-core-voice-tts.js",
+    "imports": [
+      "../core/logging.js",
+      "../core/secrets.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\08110-discord-voice-tts-play.js",
+    "imports": [
+      "../core/registry.js",
+      "node:stream",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\08200-discord-reaction-finish.js",
+    "imports": [
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\09300-webpage-output.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\09320-webpage-voice-output.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "modules\\10000-core-output.js",
+    "imports": [
+      "node:fs/promises",
+      "node:path",
+      "node:url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getAnimatedPicture.js",
+    "imports": [
+      "../core/file.js",
+      "../core/secrets.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getAnimatedPicture"
+    ]
+  },
+  {
+    "file": "tools\\getBan.js",
+    "imports": [
+      "../core/registry.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getConfluence.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getConfluence"
+    ]
+  },
+  {
+    "file": "tools\\getFile.js",
+    "imports": [
+      "node:fs/promises",
+      "node:path",
+      "../core/file.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getFileContent.js",
+    "imports": [
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getGoogle.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getGoogle"
+    ]
+  },
+  {
+    "file": "tools\\getGraph.js",
+    "imports": [
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getHistory.js",
+    "imports": [
+      "mysql2/promise",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getHistory"
+    ]
+  },
+  {
+    "file": "tools\\getImage.js",
+    "imports": [
+      "../core/file.js",
+      "../core/secrets.js",
+      "../core/fetch.js"
+    ],
+    "cfg": [
+      "getImage"
+    ]
+  },
+  {
+    "file": "tools\\getImageDescription.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/fetch.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getImageSD.js",
+    "imports": [
+      "undici",
+      "../core/file.js"
+    ],
+    "cfg": [
+      "getImageSD"
+    ]
+  },
+  {
+    "file": "tools\\getInformation.js",
+    "imports": [
+      "mysql2/promise",
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getInformation"
+    ]
+  },
+  {
+    "file": "tools\\getJira.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getJira"
+    ]
+  },
+  {
+    "file": "tools\\getLocation.js",
+    "imports": [
+      "../core/file.js",
+      "../core/fetch.js",
+      "../core/logging.js",
+      "../core/secrets.js"
+    ],
+    "cfg": [
+      "getLocation"
+    ]
+  },
+  {
+    "file": "tools\\getPDF.js",
+    "imports": [
+      "path",
+      "fs/promises",
+      "puppeteer",
+      "../core/file.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getPDF"
+    ]
+  },
+  {
+    "file": "tools\\getSpotify.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getSubAgent.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "../core/logging.js",
+      "../core/registry.js",
+      "../core/subagent-logger.js"
+    ],
+    "cfg": [
+      "getSubAgent"
+    ]
+  },
+  {
+    "file": "tools\\getTavily.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getTavily"
+    ]
+  },
+  {
+    "file": "tools\\getTestA.js",
+    "imports": [],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getTestB.js",
+    "imports": [],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getText.js",
+    "imports": [
+      "../core/file.js"
+    ],
+    "cfg": [
+      "getText"
+    ]
+  },
+  {
+    "file": "tools\\getTime.js",
+    "imports": [
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getToken.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:child_process",
+      "../core/file.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "tools\\getVideoFromText.js",
+    "imports": [
+      "../core/file.js",
+      "../core/secrets.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getVideoFromText"
+    ]
+  },
+  {
+    "file": "tools\\getWebpage.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/fetch.js"
+    ],
+    "cfg": [
+      "getWebpage"
+    ]
+  },
+  {
+    "file": "tools\\getYoutube.js",
+    "imports": [
+      "../core/secrets.js",
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": [
+      "getYoutube"
+    ]
+  },
+  {
+    "file": "tools\\getZIP.js",
+    "imports": [
+      "node:path",
+      "jszip",
+      "../core/file.js",
+      "../core/fetch.js",
+      "../core/logging.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "core\\async-sse.js",
+    "imports": [],
+    "cfg": []
+  },
+  {
+    "file": "core\\context.js",
+    "imports": [
+      "mysql2/promise",
+      "crypto",
+      "../core/secrets.js"
+    ],
+    "cfg": [
+      "api",
+      "context"
+    ]
+  },
+  {
+    "file": "core\\fetch.js",
+    "imports": [],
+    "cfg": []
+  },
+  {
+    "file": "core\\file.js",
+    "imports": [
+      "node:fs/promises",
+      "node:path",
+      "node:url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "core\\logging.js",
+    "imports": [
+      "path",
+      "url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "core\\registry.js",
+    "imports": [],
+    "cfg": []
+  },
+  {
+    "file": "core\\secrets.js",
+    "imports": [
+      "./context.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "core\\setup.js",
+    "imports": [
+      "node:http",
+      "node:fs",
+      "node:path"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "core\\subagent-logger.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "core\\subagent-poll-helpers.js",
+    "imports": [
+      "./registry.js",
+      "./context.js",
+      "./subagent-logger.js"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "core\\voice-diarize.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "mysql2/promise",
+      "fluent-ffmpeg"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "shared\\webpage\\interface.js",
+    "imports": [
+      "node:fs",
+      "node:path",
+      "node:url"
+    ],
+    "cfg": []
+  },
+  {
+    "file": "shared\\webpage\\subagent-manager.js",
+    "imports": [
+      "node:fs/promises",
+      "node:path",
+      "node:url"
+    ],
+    "cfg": [
+      "core-channel-config",
+      "getSubAgent"
+    ]
+  },
+  {
+    "file": "shared\\webpage\\utils.js",
+    "imports": [],
+    "cfg": []
+  }
+]

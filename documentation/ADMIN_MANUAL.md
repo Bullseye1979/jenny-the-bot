@@ -1,4 +1,4 @@
-# Jenny Discord AI Bot — Administrator Manual
+﻿# Jenny Discord AI Bot — Administrator Manual
 
 > **Version:** 1.0 · **Date:** 2026-04-05
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
@@ -51,7 +51,7 @@
    - [getPDF](#getpdf)
    - [getText](#gettext)
    - [getHistory](#gethistory)
-   - [getInformation](#getinformation)
+   - [getTimeline](#gettimeline)
    - [getLocation](#getlocation)
    - [getTime](#gettime)
    - [getToken](#gettoken)
@@ -82,7 +82,8 @@
    - 16.7 [Documentation Browser (`/docs`)](#167-documentation-browser-docs)
    - 16.8 [AI Wiki (`/wiki`)](#168-ai-wiki-wiki)
    - 16.9 [Context Editor (`/context`)](#169-context-editor-context)
-   - 16.9a [Webpage Voice Interface (`/voice`)](#169a-webpage-voice-interface-voice)
+   - 16.9a [Timeline Editor (`/timeline`)](#169a-timeline-editor-timeline)
+     - 16.9b [Webpage Voice Interface (`/voice`)](#169b-webpage-voice-interface-voice)
    - 16.10 [Authentication & SSO (`/auth`)](#1610-authentication--sso-auth)
    - 16.11 [Navigation Menu](#1611-navigation-menu)
    - 16.12 [Permission Concept](#1612-permission-concept)
@@ -142,21 +143,6 @@ CREATE TABLE context (
   KEY idx_turn (turn_id),
   KEY idx_id_turn (id, turn_id),
   KEY idx_userid (userid)
-);
-
--- Rolling summary periods
-CREATE TABLE timeline_periods (
-  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  channel_id   VARCHAR(128) NOT NULL,
-  start_idx    INT NOT NULL,
-  end_idx      INT NOT NULL,
-  start_ts     DATETIME NULL,
-  end_ts       DATETIME NULL,
-  summary      TEXT NOT NULL,
-  model        VARCHAR(64) NOT NULL,
-  checksum     CHAR(64) NOT NULL,
-  frozen       TINYINT(1) NOT NULL DEFAULT 0,
-  UNIQUE KEY ux_timeline (channel_id, start_idx, end_idx)
 );
 
 -- GDPR consent table
@@ -229,7 +215,7 @@ The following fields are **mandatory** for the bot to start:
 | `workingObject.apiKey` | Placeholder name for the LLM API key, e.g. `"OPENAI"` — resolved from `bot_secrets` at runtime |
 | `workingObject.db.host` | MySQL host |
 | `workingObject.db.user` | MySQL user |
-| `workingObject.db.password` | MySQL password (stored directly in `core.json`, not in `bot_secrets`) |
+| `workingObject.db.password` | MySQL password alias or runtime-provided DB password. In committed config, use an alias such as `"DB_PASSWORD"` instead of a real secret. |
 | `workingObject.db.database` | MySQL database name |
 | `config.discord.token` | Placeholder name for the Discord bot token, e.g. `"DISCORD"` |
 | `workingObject.modAdmin` | Discord user ID of the administrator |
@@ -237,6 +223,8 @@ The following fields are **mandatory** for the bot to start:
 
 A minimal example file is provided as `core.json.example` in the same directory.
 Copy it to `core.json`. **API keys and tokens are not stored in `core.json`** — they are stored in the `bot_secrets` database table (see Step 2 above). The `core.json` fields that previously held real keys now hold **symbolic placeholder names** (e.g. `"OPENAI"`, `"DISCORD"`) that the bot resolves at runtime via `core/secrets.js`.
+
+Alias policy: values such as `OPENAI`, `API_SECRET`, `DISCORD_CLIENT_SECRET`, and `DB_PASSWORD` are valid committed placeholders. Secret-looking fields are allowed in config only when the value is a symbolic alias. Real provider-issued keys, bearer tokens, and passwords must never be committed.
 
 ```bash
 cp core.json.example core.json
@@ -523,7 +511,7 @@ The live dashboard displays:
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `avatarApiKey` | string | — | API key for avatar generation |
+| `avatarApiKey` | string | — | Alias for avatar generation, resolved via `getSecret()` |
 | `avatarEndpoint` | string | DALL-E URL | Avatar generation endpoint |
 | `avatarModel` | string | `"dall-e-3"` | Image model used for avatars |
 | `avatarSize` | string | `"1024x1024"` | Avatar dimensions |
@@ -591,6 +579,7 @@ The `admin` array on a command or subcommand restricts execution to the listed u
 | `/purge` | Yes | Delete recent messages |
 | `/purgedb` | Yes | Wipe database entries for this channel |
 | `/freeze` | Yes | Mark database rows as frozen |
+| `/rebuilddb` | Yes | Rebuild derived context tables for the current channel only |
 | `/gdpr` | No | Set GDPR consent flags |
 | `/join` | No | Join user's voice channel |
 | `/leave` | No | Leave voice channel |
@@ -974,119 +963,21 @@ Plain-text file generator.
 
 #### toolsconfig.getHistory
 
-Conversation history retrieval and summarisation.
+Hierarchical history zoom retrieval.
 
 ```json
 "getHistory": {
-  "pagesize":       1000,
-  "maxRows":        4000,
-  "threshold":      800,
-  "model":          "gpt-4.1",
-  "temperature":    0,
-  "maxTokens":      8000,
-  "aiTimeoutMs":    45000,
-  "endpoint":       "https://api.openai.com/v1/chat/completions",
-  "apiKey":         "YOUR_OPENAI_API_KEY",
+  "maxRows":        300,
   "includeToolRows": false,
-  "chunkMaxTokens": 600
+  "includeJson":    false
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `pagesize` | number | Rows per page when reading from MySQL |
-| `maxRows` | number | Maximum total rows loaded |
-| `threshold` | number | Below this char count: dump; above: AI summary |
-| `model` | string | Model for AI summary |
-| `temperature` | number | Temperature (0 = deterministic) |
-| `maxTokens` | number | Max tokens for AI response |
-| `aiTimeoutMs` | number | Timeout for AI call (ms) |
-| `endpoint` | string | Chat completions endpoint |
-| `apiKey` | string | API key |
-| `includeToolRows` | boolean | Include tool-call rows in history |
-| `chunkMaxTokens` | number | Max tokens per history chunk |
-
----
-
-#### toolsconfig.getInformation
-
-Semantic cluster search over the stored conversation log.
-
-```json
-"getInformation": {
-  "clusterRows":           400,
-  "padRows":               20,
-  "tokenWindow":           5,
-  "maxLogChars":           6000,
-  "maxOutputLines":        800,
-  "minCoverage":           1,
-  "eventGapMinutes":       45,
-  "stripCode":             false,
-  "includeAnsweredTurns":  false,
-  "includeAssistantTurns": false,
-  "includeAliasSearch":    false,
-  "aliasMaxCount":         8,
-  "aliasSampleRows":       30,
-  "aliasEndpoint":         "",
-  "aliasApiKey":           "",
-  "aliasModel":            "gpt-4o-mini",
-  "aliasTimeoutMs":        30000
-}
-```
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `clusterRows` | number | `400` | Rows per cluster window |
-| `padRows` | number | `20` | Extra context rows to fetch above/below each cluster |
-| `tokenWindow` | number | `5` | Token-proximity window for `parts` scoring |
-| `maxLogChars` | number | `6000` | Hard per-line character limit (truncates longer content) |
-| `maxOutputLines` | number | `800` | Total output line budget across all clusters |
-| `minCoverage` | number | `1` | Minimum distinct keyword groups required for a cluster to be included |
-| `eventGapMinutes` | number | `45` | Minimum gap (minutes) between clusters to emit a `NEW EVENT` separator |
-| `stripCode` | boolean | `false` | Collapse large triple-backtick code blocks (>30 lines) to `«code N lines»` |
-| `includeAnsweredTurns` | boolean | `false` | When `true`, skips the `answered_turns` filter — returns ALL user/agent rows including those that already received a bot reply. Required for voice transcripts (discord-voice always generates bot replies). |
-| `includeAssistantTurns` | boolean | `false` | When `true`, also includes `role=assistant` rows. Implies `includeAnsweredTurns`. |
-| `includeAliasSearch` | boolean | `false` | Enables iterative alias resolution (see below). |
-| `aliasMaxDepth` | number | `1` | Number of alias-extraction rounds. `1` = one extra pass (Irene→Hippomann). `2` = two extra passes (Irene→Hippomann→Slaad). Each round extracts aliases from **new rows only** (diff from previous merge). |
-| `aliasMaxCount` | number | `8` | Maximum number of new aliases per round. |
-| `aliasEndpoint` | string | `wo.endpoint` | AI endpoint for alias extraction. Falls back to `workingObject.endpoint`. |
-| `aliasApiKey` | string | `wo.apiKey` | API key for alias extraction. Falls back to `workingObject.apiKey`. |
-| `aliasModel` | string | `"gpt-4o-mini"` | Model for alias extraction. Cheap model recommended. |
-| `aliasTimeoutMs` | number | `30000` | Timeout for the alias AI call. |
-
-**Iterative alias resolution (`includeAliasSearch: true`):**
-
-Solves the problem of entities referred to by different names across the conversation (e.g. "Irene" → later called "Hippomann" → revealed as "Slaad"). Without alias search, these appear as three unrelated entities.
-
-How it works:
-1. **Pass 1** — standard search for the original keywords → finds matching rows
-2. **Round 1** — alias AI call on Pass 1 rows → finds aliases → SQL search → new rows
-3. **Round 2** (if `aliasMaxDepth ≥ 2`) — alias AI call on Round 1 rows → finds further aliases → SQL search → new rows
-4. … up to `aliasMaxDepth` rounds
-5. **Merge** — all passes combined, deduplicated by `(channel_id, rn)`, sorted chronologically
-
-Each round only extracts aliases from **new rows** (diff between current and previous merge). Already-searched terms are excluded automatically to prevent loops.
-
-**Key design — aliases extend the original group, not a new group:**
-Found aliases (e.g. "Hippomann", "Hippo") are added as **variants of the original search group** (e.g. "Irene"), not as separate groups. This means:
-- SQL in each subsequent round searches for ALL accumulated terms (`WHERE content LIKE '%irene%' OR LIKE '%hippomann%' OR LIKE '%hippo%'`)
-- Scoring treats aliases as equivalent to the original term — a row containing only "Hippomann" still contributes `coverage = 1` for the "Irene" group
-- Clusters that mention only an alias still pass `minCoverage` correctly
-
-**What the alias AI extracts per round:**
-- Alternative names, nicknames, titles
-- Shortened/partial forms of any name (first word of compound names, abbreviations, root words — e.g. `"Hippo"` for `"Hippomann"`, `"Vect"` for `"Vecna"`)
-- Descriptive labels and creature types
-- Implicit connections (e.g. "the creature turned out to be a Slaad" → `"Slaad"` is an alias)
-
-Cost per round: one cheap AI call (`gpt-4o-mini`, ~300 tokens output) + one DB query. Stops early if a round finds no new aliases or no new rows.
-
-> **Context overflow warning:** The defaults (`maxOutputLines: 800`, `maxLogChars: 6000`) can produce very large tool results when a topic appears frequently in the context log. If the AI pipeline hits a context-length error (HTTP 400, 128k tokens exceeded), reduce these values:
-> ```json
-> "getInformation": { "maxOutputLines": 250, "maxLogChars": 1500, "stripCode": true }
-> ```
-> The wiki flow applies **hard caps** — values from `core.json` are clamped to wiki-safe maximums:
-> - `getInformation`: `maxOutputLines` ≤ 150, `maxLogChars` ≤ 800, `stripCode: true`
+| `maxRows` | number | Maximum number of raw rows returned when the selected block is already at the bottom level |
+| `includeToolRows` | boolean | Include tool-call rows when the bottom level returns raw history |
+| `includeJson` | boolean | Include the stored JSON payload when the bottom level returns raw history |
 
 ---
 
@@ -1283,14 +1174,14 @@ Visual config editor served on a dedicated port. Objects render as collapsible c
 | `flow` | array | `["webpage"]` | Must include `"webpage"` for the module to activate |
 | `port` | number | `3111` | HTTP port — must also be listed in `config.webpage.ports` |
 | `basePath` | string | `"/config"` | URL prefix served by this module |
-| `file` | string | *(project root core.json)* | Absolute path to the JSON file to edit. Alias: `configPath` |
+| `file` | string | *(project root core.json)* | Absolute path to the JSON file to edit |
 | `allowedRoles` | array | `["admin"]` | Roles allowed to view and save the config. Empty array = public |
 
 ---
 
 #### config.webpage-chat
 
-Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-chat` is a pure HTTP handler — it sets up the `workingObject` (channelID, payload, systemPrompt, persona, instructions, contextSize) and returns; the AI pipeline modules (01000–01003) then process the request naturally. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table.
+Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-chat` is a pure HTTP handler — it sets up the `workingObject` (channelID, payload, subchannel, contextSize) and returns; the AI pipeline modules (01000–01003) then process the request naturally. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table. Prompt, persona, and instructions come only from channel config and manifests, not from the subchannel table.
 
 ```jsonc
 {
@@ -1329,10 +1220,10 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
 | `chats[].label` | Display name in the channel selector |
 | `chats[].channelID` | Channel ID used as context scope |
 | `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Per-chat override — each entry can point to a different API. |
-| `chats[].apiSecret` | Placeholder name resolved from `bot_secrets` at runtime via `getSecret()`, or a literal token. Sent as `Authorization: Bearer` with every AI request and file upload proxy request. Must match the `apiSecret` in `core-channel-config`. Falls back to top-level `cfg.apiSecret` if omitted. Leave empty if no token gate is active. |
+| `chats[].apiSecret` | Placeholder name resolved from `bot_secrets` at runtime via `getSecret()`. Sent as `Authorization: Bearer` with every AI request and file upload proxy request. Must match the `apiSecret` in `core-channel-config`. Falls back to top-level `cfg.apiSecret` if omitted. Leave empty if no token gate is active. |
 | `chats[].roles` | Optional role restriction for this chat entry |
 
-> `apiUrl` and `apiSecret` are per chat entry. Different chats can use different API endpoints and secrets. If a chat entry omits `apiSecret`, the top-level `cfg.apiSecret` is used as fallback. Both support `bot_secrets` placeholder resolution.
+> `apiUrl` and `apiSecret` are per chat entry. Different chats can use different API endpoints and secret aliases. If a chat entry omits `apiSecret`, the top-level `cfg.apiSecret` is used as fallback. The stored config value must be a placeholder alias, not a committed real token.
 
 > AI credentials (`apiKey`, `model`, `endpoint`) are read from the workingObject — the same global bot config used by all channels. No separate `ai.*` section is needed in `webpage-chat`.
 
@@ -1402,24 +1293,106 @@ Runs scheduled background jobs.
 
 #### config.context
 
-Controls the rolling-summary backend.
+Controls the hierarchical zoom context engine and its supporting derived layers.
 
 ```json
 "context": {
   "endpoint":           "https://api.openai.com/v1/chat/completions",
   "model":              "gpt-4o-mini",
   "apiKey":             "YOUR_OPENAI_API_KEY",
-  "periodSize":         600,
+  "segmentTurnCount":   6,
+  "nodeBranchFactor":   4,
+  "recentRawCount":     80,
+  "retrievalMaxSegments": 6,
+  "retrievalNeighborSegments": 1,
+  "retrievalMaxNodeSummaries": 2,
+  "segmentGapMinutes":  20,
+  "summaryMaxLength":   320,
+  "anchorEnabled":      true,
+  "anchorRebuildOnWrite": true,
+  "anchorMinConfidence": 0.2,
+  "anchorMaxEvidenceRows": 12,
+  "anchorOriginDepth":  3,
+  "anchorLinkedContextWeight": 0.55,
+  "anchorLlmFallbackEnabled": false,
+  "embeddingEnabled":   true,
+  "embeddingRebuildOnWrite": true,
+  "embeddingMaxCandidates": 10,
+  "embeddingMinScore":  0.18,
+  "embeddingLinkedContextWeight": 0.5,
+  "historyZoomEnabled": true,
+  "historyZoomBaseSize": 100,
+  "historyZoomMaxLevels": 4,
+  "historyZoomLinkedContextWeight": 0.5,
+  "historyZoomRebuildOnWrite": true,
+  "meshEnabled":       true,
+  "meshRebuildOnWrite": true,
+  "meshTargetMicroRows": 100,
+  "meshRollupFactor":  10,
+  "meshMaxLevels":     4,
+  "meshEntityMinConfidence": 0.25,
+  "meshGraphDepth":    2,
+  "meshLinkedContextWeight": 0.5,
+  "meshNeighborBlockCount": 2,
+  "eventEnabled":       true,
+  "eventRebuildOnWrite": true,
+  "eventMinConfidence": 0.28,
+  "eventMaxCandidates": 8,
+  "eventLinkedContextWeight": 0.45,
+  "eventMinRows":       3,
+  "eventMaxRows":       18,
+  "eventAdaptiveGapMinutes": 12,
   "subchannelFallback": false
 }
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `endpoint` | string | Endpoint for rolling summary generation |
-| `model` | string | Model for rolling summary generation |
-| `apiKey` | string | API key for rolling summaries |
-| `periodSize` | number | Time window in seconds for rolling periods |
+| `endpoint` | string | Reserved compatibility setting for future internal API-based context enrichment. Modules and tools must not call LLM providers directly. |
+| `model` | string | Reserved compatibility setting for future internal API-based context enrichment |
+| `apiKey` | string | Reserved compatibility setting for future internal API-based context enrichment |
+| `segmentTurnCount` | number | Target number of turns per derived retrieval segment |
+| `nodeBranchFactor` | number | Number of child segments or nodes grouped into one higher-level node |
+| `recentRawCount` | number | Number of newest raw rows always considered for continuity |
+| `retrievalMaxSegments` | number | Maximum number of matched derived segments expanded into the snapshot |
+| `retrievalNeighborSegments` | number | Number of neighboring segments to include around each matched segment |
+| `retrievalMaxNodeSummaries` | number | Maximum number of higher-level node summaries used as compression overlays |
+| `segmentGapMinutes` | number | Time gap threshold that starts a new derived segment |
+| `summaryMaxLength` | number | Maximum length of injected summary overlay text |
+| `anchorEnabled` | boolean | Enables the generic anchor graph on top of the derived context layers |
+| `anchorRebuildOnWrite` | boolean | Rebuilds anchor tables together with the other derived context tables after writes |
+| `anchorMinConfidence` | number | Minimum confidence threshold for anchor retrieval matches |
+| `anchorMaxEvidenceRows` | number | Maximum evidence windows per matched anchor expanded into the snapshot |
+| `anchorOriginDepth` | number | Number of earliest segments treated as the origin window for anchor paths |
+| `anchorLinkedContextWeight` | number | Weight multiplier applied to anchors from linked `channelIds` compared to the base context |
+| `anchorLlmFallbackEnabled` | boolean | Reserved optional switch for future internal API-based fallback enrichment. Default `false`. |
+| `embeddingEnabled` | boolean | Enables the local semantic fingerprint layer used for hybrid RAG retrieval |
+| `embeddingRebuildOnWrite` | boolean | Rebuilds semantic fingerprints together with the other derived context tables after writes |
+| `embeddingMaxCandidates` | number | Maximum number of semantic matches considered per context source |
+| `embeddingMinScore` | number | Minimum local vector similarity score required for a semantic match |
+| `embeddingLinkedContextWeight` | number | Weight multiplier applied to semantic matches from linked `channelIds` compared to the base context |
+| `historyZoomEnabled` | boolean | Enables the hierarchical zoom output for older history |
+| `historyZoomBaseSize` | number | Base block size used for the newest raw window and each zoom hierarchy level |
+| `historyZoomMaxLevels` | number | Maximum number of summary levels built above the raw layer |
+| `historyZoomLinkedContextWeight` | number | Weight multiplier applied to linked `channelIds` when choosing older zoom blocks |
+| `historyZoomRebuildOnWrite` | boolean | Rebuilds the zoom hierarchy together with the other derived context layers after writes |
+| `meshEnabled` | boolean | Enables the context mesh built from micro blocks, rollup blocks, and entity links |
+| `meshRebuildOnWrite` | boolean | Rebuilds the mesh tables together with the other derived context tables after writes |
+| `meshTargetMicroRows` | number | Target raw-row size for one adaptive micro block |
+| `meshRollupFactor` | number | Target number of child blocks grouped into one higher rollup block |
+| `meshMaxLevels` | number | Maximum number of rollup levels built above the micro blocks |
+| `meshEntityMinConfidence` | number | Minimum confidence threshold for mesh-entity retrieval matches |
+| `meshGraphDepth` | number | Maximum expansion depth when traversing the mesh during retrieval |
+| `meshLinkedContextWeight` | number | Weight multiplier applied to mesh matches from linked `channelIds` compared to the base context |
+| `meshNeighborBlockCount` | number | Number of neighboring mesh blocks considered during expansion |
+| `eventEnabled` | boolean | Enables the generic event-memory layer for unnamed historical episodes and transitions |
+| `eventRebuildOnWrite` | boolean | Rebuilds event tables together with the other derived context tables after writes |
+| `eventMinConfidence` | number | Minimum confidence threshold for event retrieval matches |
+| `eventMaxCandidates` | number | Maximum number of event candidates considered per context source |
+| `eventLinkedContextWeight` | number | Weight multiplier applied to events from linked `channelIds` compared to the base context |
+| `eventMinRows` | number | Minimum raw-row window size for one derived event block |
+| `eventMaxRows` | number | Maximum raw-row window size for one derived event block |
+| `eventAdaptiveGapMinutes` | number | Time-gap threshold used when expanding event windows around candidate rows |
 | `subchannelFallback` | boolean | `false` (default): when `wo.subchannel` is not set, all functions (getContext, setPurgeContext, setFreezeContext, getContextLastSeconds, getContextSince) operate only on rows where `subchannel IS NULL`. `true`: no subchannel filter — all rows for the channel including subchannel rows are included. |
 
 ---
@@ -1557,12 +1530,12 @@ API credentials fall back to `workingObject.transcribeApiKey` / `OPENAI_API_KEY`
 | `keepWav` | boolean | `false` | Retain WAV files on disk after transcription (for debugging) |
 | `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model for always-on voice turns and discord-voice. Overridable per-turn via `wo.transcribeModel`. |
 | `transcribeModelDiarize` | string | `"gpt-4o-transcribe-diarize"` | Transcription model used when `wo.transcribeOnly === true` (meeting recorder). |
-| `diarizeChunkMB` | number | `1` | Maximum chunk size in MB for the diarize meeting path (`transcribeOnly`). Chunks are encoded as Opus/OGG. Actual duration per chunk is derived from this value and `opusBitrateKbps`: `MB × 8 × 1024² / (bitrate_bps)`. At 32 kbps, 1 MB ≈ 4 min. Smaller values produce more granular Review chunks but more API calls. |
+| `diarizeChunkMB` | number | `1` | Target chunk size for the diarize meeting path (`transcribeOnly`). The duration heuristic is still derived from `diarizeChunkMB` and `opusBitrateKbps`, but chunks are materialized as 16 kHz mono WAV before the sample preamble is prepended so FFmpeg concatenation stays format-compatible. At the default heuristic (1 MB, 32 kbps), the resulting chunk duration is roughly 4 minutes. Smaller values produce more granular Review chunks but more API calls. |
 | `opusBitrateKbps` | number | `32` | Opus audio bitrate (kbps) used when encoding diarize chunks. 32 kbps is sufficient quality for mono speech and keeps chunk files small. |
 | `chunkDurationS` | number | `300` | Duration (seconds) of each chunk when splitting large audio files. Files >20 MB are split automatically. |
 | `overlapDurationS` | number | `60` | Seconds of audio overlap between consecutive chunks when splitting large files in diarize mode. The overlap is used to match speaker labels across chunks; the overlapping audio is excluded from the final transcript to avoid duplicate text. |
 | `transcribeLanguage` | string | `""` | Force a specific language (ISO 639-1). Empty = auto-detect. |
-| `transcribeEndpoint` | string | `""` | Base URL for the transcription API. Falls back to `workingObject.transcribeEndpoint` then `OPENAI_BASE_URL`. |
+| `transcribeEndpoint` | string | `""` | Base URL for the transcription API. Falls back to `workingObject.transcribeEndpoint` and otherwise uses the default OpenAI transcription endpoint. |
 | `transcribeApiKey` | string | `""` | API key for transcription. Falls back to `workingObject.transcribeApiKey` then `OPENAI_API_KEY` env var. |
 
 ---
@@ -1613,6 +1586,8 @@ Discord-specific TTS playback. Plays `wo.ttsSegments` into the active voice chan
 #### config.webpage-voice
 
 Browser-based always-on voice interface with meeting recorder, speaker management, and diarization review. Serves the SPA at `GET /voice` and accepts audio at `POST /voice/audio`. The meeting recorder uses `?transcribeOnly=1` to skip AI/TTS, store a diarized session in the DB, and let the user review/correct speaker assignments before applying the transcript to the channel context.
+
+Async subagent completions triggered from `/voice` are re-delivered through the original caller channel. The poller runs a persona pass on the caller channel first, then synthesizes the final text through the webpage voice flow. This ensures the spoken answer uses the same caller-specific instructions as the original channel and any generated document or media links are patched with `id=<callerChannelId>` instead of a subagent channel ID. If the raw subagent result already contains artifact URLs, the delivery helper preserves those URLs in the final caller-facing response even when the persona pass rewrites the surrounding prose.
 
 ```json
 "webpage-voice": {
@@ -1670,15 +1645,16 @@ Handles `POST /voice/audio` — converts incoming audio to WAV and sets `wo` fie
 
 #### config.webpage-voice-record
 
-Handles `POST /voice/record` — full meeting recording: transcribes audio, optionally runs diarization through the internal API channel, then stores transcript in context DB. Reads config from `config["webpage-voice-record"]`.
+Handles `POST /voice/record` — full meeting recording: transcribes audio, optionally runs diarization through the internal API channel, then stores transcript in context DB. Reads config from `config["webpage-voice-record"]`. If the diarize transcription path fails, the runtime now retries once with the standard transcription model so the browser still receives a transcript instead of a generic `400`.
 
 ```json
 "webpage-voice-record": {
   "flow":                 ["webpage"],
   "port":                 3119,
   "allowedRoles":         ["member", "admin"],
-  "recordModel":          "gpt-4o-transcribe",
-  "whisperApiKey":        "",
+  "transcribeModel":      "gpt-4o-transcribe",
+  "transcribeApiKey":     "",
+  "transcribeEndpoint":   "",
   "diarize":              true,
   "diarizationChannelId": "voice-diarize",
   "apiUrl":               "http://localhost:3400",
@@ -1693,8 +1669,9 @@ Handles `POST /voice/record` — full meeting recording: transcribes audio, opti
 | `flow` | array | — | Must include `"webpage"` |
 | `port` | number | `3119` | Must match `config["webpage-voice"].port` |
 | `allowedRoles` | array | `[]` | Roles allowed to use the recorder. Empty = open |
-| `recordModel` | string | `"gpt-4o-transcribe"` | Whisper model for transcription |
-| `whisperApiKey` | string | `wo.apiKey` fallback | API key for the Whisper endpoint |
+| `transcribeModel` | string | `"gpt-4o-transcribe"` | Transcription model for the recorder |
+| `transcribeApiKey` | string | `wo.apiKey` | Alias for the transcription API secret |
+| `transcribeEndpoint` | string | `wo.transcribeEndpoint` | Base URL for the transcription API |
 | `diarize` | boolean | `true` | Run speaker-attribution pass after transcription |
 | `diarizationChannelId` | string | `""` | Internal API channel used for diarization inference |
 | `apiUrl` | string | `http://localhost:3400` | Internal API base URL for diarization requests |
@@ -1725,6 +1702,8 @@ Writes the voice transcription to the context DB immediately after transcription
 #### config.webpage-voice-output
 
 Sends TTS audio back to the webpage voice caller. Triggered unconditionally when `wo.isWebpageVoice === true`.
+
+The same synthesis path is also used for async subagent completions in the webpage voice interface. When the SSE stream is connected, the browser receives `audioBase64` plus `audioMime` and plays the spoken answer immediately. If the SSE client missed the event, the fallback `/api/jobs` payload can carry the same audio fields.
 
 ```json
 "webpage-voice-output": {
@@ -1875,7 +1854,6 @@ Every module can be restricted to specific flows via its config block:
 |---|---|
 | `webpage-router` | webpage |
 | `core-channel-config` | discord, discord-voice, discord-admin, discord-status, api, webpage |
-| `webpage-channel-config` | *(deactivated — `flow: []`)* |
 | `core-channel-gate` | discord, discord-voice, discord-admin, api, webpage |
 | `api-token-gate` | api |
 | `discord-gdpr-gate` | discord, discord-voice, discord-admin, webpage |
@@ -2005,7 +1983,7 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 | Field | Description |
 |---|---|
 | `flow` | `"discord"` |
-| `turn_id` | Monotonic ULID (26 characters) |
+| `turnId` | Monotonic ULID (26 characters) |
 | `payload` | Message content |
 | `channelID` | Channel ID |
 | `userId` | Discord user ID of the author |
@@ -2077,12 +2055,12 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `GET` | `/health` | None | Returns `{ ok: true, botname }` — used by reverse proxy health checks |
-| `POST` | `/api` | Bearer | Synchronous AI pipeline; returns `{ ok, response, turn_id, ... }` |
+| `POST` | `/api` | Bearer | Synchronous AI pipeline; returns `{ ok, response, turnId, ... }` |
 | `GET` | `/toolcall` | Bearer | Poll global tool-call status from registry |
 | `GET` | `/toolcall?channelID=<id>` | Bearer | Poll channel-specific tool-call status (browser extension, chat UI) |
 | `GET` | `/context?channelID=<id>` | Bearer | Read recent conversation history for a channel; optional `?limit=N` |
 | `POST` | `/api/spawn` | Bearer | Spawn async subagent job; returns `{ ok, jobId, projectId }` immediately |
-| `GET` | `/api/jobs?channelID=<id>` | Bearer | List all async jobs whose `callerChannelId` matches the given channel |
+| `GET` | `/api/jobs?channelID=<id>` | Bearer | List all async jobs whose `callerChannelId` matches the given channel. Webpage voice fallback entries may include `audioBase64` and `audioMime`. |
 | `POST` | `/upload` | Bearer | Upload a file (raw body, `X-Filename` header); returns `{ ok, filename, url }` |
 
 **POST /api request:**
@@ -2099,11 +2077,9 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 }
 ```
 
-- `subchannel` — optional; routes the request through a specific subchannel context (applied by `00012-subchannel-config`)
+- `subchannel` — optional; routes the request through a specific subchannel context. Subchannels scope context only and do not inject prompt text.
 - `doNotWriteToContext` — optional boolean; when `true`, neither the user message (`00072`) nor the AI response (`01004`) are written to the MySQL context. Used for internal system calls (e.g. wiki article generation) that must not pollute the conversation history.
 - `callerChannelId` — forwarded from the parent when called by `getSubAgent`; used to mirror tool-call status to the original Discord channel
-- `callerPersona` - forwarded from the parent when called by `getSubAgent`; used so the spawned subagent answers as the root caller persona
-- `callerInstructions` - forwarded from the parent when called by `getSubAgent`; used so the spawned subagent answers immediately in the caller delivery style
 - `agentDepth` / `agentType` — subagent nesting controls forwarded by `getSubAgent`
 
 **POST /api response:**
@@ -2111,7 +2087,7 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 {
   "ok":             true,
   "flow":           "api",
-  "turn_id":        "01JXXXXXXXXXXXXXXXXXXXXX",
+"turnId":         "01JXXXXXXXXXXXXXXXXXXXXX",
   "channelID":      "optional-channel-id",
   "subchannel":     "optional-subchannel-id",
   "channelallowed": true,
@@ -2133,8 +2109,6 @@ Flows are event sources that create a `workingObject` and trigger the module pip
   "guildId":          "",
   "projectId":        "optional-stable-project-id",
   "callerChannelId":  "originating-discord-channel-id",
-  "callerPersona":    "You are Jenny, a helpful assistant.",
-  "callerInstructions": "Answer in English, concise, plain text",
   "callerFlow":       "discord",
   "agentDepth":       1,
   "agentType":        "develop"
@@ -2146,7 +2120,7 @@ Returns immediately:
 { "ok": true, "jobId": "01JXXX...", "projectId": "01JYYY..." }
 ```
 
-The subagent pipeline runs in the background. The spawned subagent inherits `callerPersona` and `callerInstructions`, so its prompt combines its own specialist role with the root caller-facing answer persona and delivery style. The poll flows then deliver that result directly to `callerChannelId` without a second persona-processing run.
+The subagent pipeline runs in the background. The spawned subagent uses only its own target-channel persona, system prompt, and instructions. It does not inherit the caller persona or caller instructions. Delivery always targets `callerChannelId`. Discord delivery uses the caller channel directly, while webpage delivery performs a final caller-channel persona pass before sending SSE or fallback job payloads so channel-specific formatting and link patching stay anchored to the original caller channel.
 
 ---
 
@@ -2197,8 +2171,8 @@ Also supports `*/N * * * *` (every N minutes).
 **Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
 - Channel dropdown populated from `webpage-chat.chats[]` in `core.json`
 - `00048` is a **pure HTTP handler** — for AI requests it makes an internal `POST` to the API flow and returns `{ response }` as JSON. The AI pipeline (model, tools, persona, context) is fully controlled by `core-channel-config` for the given `channelID`. `apiUrl` and `apiSecret` are read **per chat entry** from `webpage-chat.chats[x].apiUrl` / `.apiSecret` — different chats can use different endpoints and secrets.
-- **Channel config:** per-channel AI settings (model, persona, systemPrompt, tools, etc.) live in `core-channel-config` — the same entries used by Discord and the browser extension. `webpage-channel-config` (`00011`) is **deactivated** (`flow: []`).
-- **Subchannels:** create, rename, and delete separate conversation threads from the UI; each subchannel has its own isolated context history stored in the `chat_subchannels` DB table. The subchannel ID is forwarded in the internal API call so `00012-subchannel-config` can apply per-subchannel overrides.
+- **Channel config:** per-channel AI settings (model, persona, systemPrompt, tools, etc.) live in `core-channel-config` — the same entries used by Discord and the browser extension.
+- **Subchannels:** create, rename, and delete separate conversation threads from the UI; each subchannel has its own isolated context history stored in the `chat_subchannels` DB table. The subchannel ID is forwarded in the internal API call so the API pipeline can scope context reads and writes to that subchannel.
 - **Context writing:** handled by `00072-api-add-context` (user message) and `01004-core-ai-context-writer` (AI response) on the API side — `00048` does not write to context directly.
 - Last N context entries loaded from MySQL on channel/subchannel select (controlled by `contextSize`)
 - Large scrollable message window (top) + auto-resize input (bottom)
@@ -2411,8 +2385,7 @@ export default async function myModule(coreData) {
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00007 | `webpage-router` | Maps HTTP port + path to a named flow and sets `wo.channelID`. Runs before `core-channel-config` so that flow-specific overrides (e.g. different trigger word for `/voice`) can be applied. Config key: `webpage-router`. Active only in `webpage` flow. |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
-| 00011 | `webpage-channel-config` | **Deactivated** (`flow: []`). Previously applied per-channel AI overrides for the webpage flow. Channel config for the web chat is now handled by `core-channel-config` (api flow), since `00048-webpage-chat` proxies all AI calls through `POST /api`. |
-| 00012 | `subchannel-config` | When `wo.subchannel` is set, loads `system_prompt`, `persona`, and `instructions` from the `chat_subchannels` table and overrides the corresponding workingObject fields. |
+| 00012 | `subchannel-config` | Lightweight compatibility hook for subchannel-aware runs. When `wo.subchannel` is set, the module leaves prompt fields untouched and lets the rest of the pipeline use the subchannel only as a context scope selector. |
 | 00020 | `core-channel-gate` | Checks whether the bot is allowed to respond in this channel — sets `wo.stop = true` when `wo.channelallowed` is falsy |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
@@ -2433,14 +2406,15 @@ export default async function myModule(coreData) {
 | 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — tiered access (allowedRoles = basic listener access, adminRoles = full upload/manage rights, no matching role = 403 deny); bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card. Reads `bard:registry`, `bard:stream`, `bard:labels` from registry via `getItem` for the `/api/nowplaying` endpoint. |
 | 00044 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. |
 | 00047 | `webpage-voice` | Webpage voice interface — three-tab SPA (Voice / Speakers / Review). Voice tab: always-on mic + meeting recorder. Speakers tab: register known voices with sample audio for automatic speaker identification. Review tab: inspect diarized sessions, correct speaker assignments, and apply the final transcript to the channel context via `POST /voice/api/session/:id/apply`. On Apply: rebuilds transcript with DB speaker names, sets `authorName` to participant list, optionally purges context, writes via `setContext`, deletes session. |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, systemPrompt, persona, instructions, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled inline (context logic was inlined; `00073-webpage-add-context` has been deleted). Subchannel names stored in `chat_subchannels` table. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. Admin commands (`/purgedb`, `/freeze`) are **not** handled inline here — they pass through the api proxy to `localhost:3400/api` where `00055-core-admin-commands` handles them. The proxy request body includes `guildId` so downstream modules can identify the originating guild. |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, subchannel, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled by the API-side modules, not inline here. Subchannel names are stored in `chat_subchannels`; no prompt fields are stored there. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. Admin commands (`/purgedb`, `/freeze`, `/rebuilddb`) are **not** handled inline here — they pass through the api proxy to `localhost:3400/api` where `00055-core-admin-commands` handles them. The proxy request body includes `guildId` so downstream modules can identify the originating guild. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
-| 00050 | `discord-purge` | Discord message deletion commands. `/purge` (slash command, discord-admin flow) deletes Discord channel messages with rate-limit backoff. `!purge [N]` (discord DM flow only) deletes up to N bot messages from the DM channel. These are Discord-specific operations — they delete actual Discord messages, not DB rows. DB-level commands (`purgedb`, `freeze`) are handled by `00055-core-admin-commands`. |
+| 00050 | `discord-purge` | Discord message deletion commands. `/purge` (slash command, discord-admin flow) deletes Discord channel messages with rate-limit backoff. `!purge [N]` (discord DM flow only) deletes up to N bot messages from the DM channel. These are Discord-specific operations — they delete actual Discord messages, not DB rows. DB-level commands (`purgedb`, `freeze`, `rebuilddb`) are handled by `00055-core-admin-commands`. |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
 | 00052 | `webpage-wiki` | AI-driven Fandom-style wiki (port 3117, `/wiki`) |
 | 00053 | `webpage-context` | Context DB editor SPA (port 3118, `/context`) — channel browser with collapsible sidebar (state persisted in `localStorage`), field selector, search, search & replace, bulk delete |
+| 00054 | `webpage-timeline` | Timeline DB editor SPA (port 3128, `/timeline`) — browse, search, edit, and bulk-delete timeline summary rows |
 | 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) — collapsible file-navigation sidebar (state persisted in `localStorage`) |
-| 00055 | `core-admin-commands` | DB-level admin commands for all flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` in payload. `api`: `/purgedb`, `/freeze` slash-text in payload. `webpage`: `/purgedb`, `/freeze` in the chat SPA — these are routed via the api proxy in `00048-webpage-chat`, so they arrive as `api` flow requests and are handled here (inline handling in 00048 has been removed). No Discord-API access — pure DB operations only. **Command routing in webpage-chat:** `/purgedb` and `/freeze` commands typed in the chat SPA pass through the api proxy to `localhost:3400/api`, where this module handles them in the api flow. This keeps 00048 free of plugin-specific logic. |
+| 00055 | `core-admin-commands` | DB-level admin commands for all flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`/`rebuilddb`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` and `!rebuilddb` in payload. `api`: `/purgedb`, `/freeze`, `/rebuilddb` slash-text in payload. `webpage`: `/purgedb`, `/freeze`, `/rebuilddb` in the chat SPA — these are routed via the api proxy in `00048-webpage-chat`, so they arrive as `api` flow requests and are handled here (inline handling in 00048 has been removed). No Discord-API access — pure DB operations only. `rebuilddb` rebuilds the derived context tables for the current channel only and recreates its timeline rows from scratch. |
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
 | 00057 | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth page (port 3124, `/graph-auth`). Logged-in users connect or disconnect their Microsoft account. Stores access + refresh tokens in `graph_tokens` DB table. Required before the `getGraph` tool can be used. |
 | 00058 | `cron-graph-token-refresh` | Cron module — refreshes expiring Microsoft Graph tokens. Queries `graph_tokens` for rows with `expires_at` within the configured buffer window and calls the MS token refresh endpoint. Skips on failure (does not delete). Only runs in the `cron-graph-token-refresh` flow (the cron job `id` must match exactly). |
@@ -2457,7 +2431,7 @@ export default async function myModule(coreData) {
 | 00074 | `core-trigger-gate` | Flow-agnostic trigger gate. Stops the pipeline when `wo.payload` does not start with the configured trigger word. |
 | 00075 | *(deleted)* | `discord-trigger-gate` has been removed. Flow-agnostic replacement: `00074-core-trigger-gate`. |
 | 00080 | `discord-reaction-start` | Adds a progress reaction emoji to the user's message |
-| 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelID` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. Optionally applies per-channel context optimizations (transcription trimming, relevance filtering) when `contextOptimization.enabled` is set in the channel override. |
+| 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelID` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. Retrieval planning, compression, and indexing live in `core/context.js`, not in the loader. |
 
 ---
 
@@ -2476,7 +2450,7 @@ Only **one** of these modules runs per turn, selected by `workingObject.useAiMod
 
 #### config.core-ai-context-loader
 
-Pre-loads the conversation context snapshot from the DB into `wo._contextSnapshot` before any `core-ai-*` module runs. Optionally applies per-channel context optimizations to the snapshot. Optimizations are purely navigational — DB rows are never modified.
+Pre-loads the conversation context snapshot from the DB into `wo._contextSnapshot` before any `core-ai-*` module runs. The module is intentionally thin: all retrieval planning, compression, indexing, and subchannel-aware scoping happen inside `core/context.js`.
 
 All `core-ai-*` modules retain a direct `getContext()` fallback, so synthetic pipelines that invoke an AI module directly (without running the full module pipeline) continue to work unchanged.
 
@@ -2492,24 +2466,7 @@ All `core-ai-*` modules retain a direct `getContext()` fallback, so synthetic pi
 
 **`wo._contextSnapshot`** — After this module runs, `wo._contextSnapshot` is an array of context rows (same format as `getContext()` returns). Set it to an empty array `[]` to suppress history. Replace or append rows to inject context.
 
-##### Context Optimization
-
-Activated per channel via the `contextOptimization` key in a channel override. The master toggle `enabled` must be `true`; each sub-feature can be toggled independently. The optimization runs in `00999` and applies to all core-ai modules (01000–01003), which all read `wo._contextSnapshot`.
-
-```json
-"contextOptimization": {
-  "enabled": true,
-  "transcriptions": {
-    "minWords": 5,
-    "keepRecentCount": 3
-  },
-  "relevance": {
-    "enabled": false,
-    "keepRecentCount": 5,
-    "minScore": 0.05
-  }
-}
-```
+There is no separate loader-side `contextOptimization` stage anymore. Tune retrieval through `config.context` in `core.json`.
 
 **`source: "voice-transcription"` — special treatment**
 
@@ -2604,7 +2561,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 |---|---|---|
 | 02000 | `moderation-output` | Content filtering; can suppress or replace the response |
 | 03000 | `discord-status-apply` | Applies the generated Discord presence status. Uses `wo.response` from the AI module; falls back to the `status:ai` registry cache, then to `placeholderText`. If the AI returns `[Empty AI response]` or `[Empty response]`, the presence is set to `"..."` instead of showing the literal marker string. Tool-call status (e.g. `"⏳ Generating an image …"`) takes priority over AI-generated text — but only if the originating flow matches `cfg.allowedFlows`. Set `allowedFlows` to `["discord","discord-voice"]` to prevent API/webpage tool calls from appearing in Discord presence. Default is `[]` (all flows shown). |
-| 07000 | `core-add-id` | Tags the response with a context ID before writing to MySQL |
+| 07000 | `core-add-id` | Appends `id=<callerChannelId>` to eligible artifact links; falls back to `wo.channelID` only when no caller channel is present |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
 | 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow into a **6-position structured label array** `[location, situation, mood1, mood2, mood3, mood4]`. Applies **category-based position rescue**: scans all 6 AI values and assigns each to the correct slot by checking `wo._bardLocations` / `wo._bardSituations` regardless of where the AI placed them (e.g. `'',dungeon,joy,fun,tense,battle` → `dungeon,battle,joy,fun,tense,''`). Unknown words at positions 0/1 are accepted as fallback. Mood slots are validated against `wo._bardValidTags`; invalid entries are replaced with empty string. Writes `bard:labels:{channelId}` and `bard:lastrun:{channelId}` only on success (prevents context window from advancing on AI failure). |
 | 08100 | `core-voice-tts` | Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to split into voice segments, sanitizes text, calls the OpenAI TTS API for each segment (parallel, concurrency 2). Output format is controlled by `wo.ttsFormat` / `cfg.ttsFormat` (default `"opus"` for Discord, `"mp3"` for webpage). Outputs `wo.ttsSegments = [{voice, text, buffer}]` and `wo.ttsDefaultVoice` |
@@ -2719,6 +2676,15 @@ Every tool must have a corresponding manifest file at `manifests/<toolName>.json
 3. **Add toolsconfig** in `core.json` under `toolsconfig.<toolName>` for any admin-configurable values.
 4. **Enable** by adding `"<toolName>"` to the `tools` array in the relevant flow's `workingObject` config.
 
+### Creating a New Module — Checklist
+
+1. **Create `modules/NNNNN-my-module.js`** with a `Version 1.0` header and a default export function.
+2. **Read config only from** `coreData.config["my-module"]` and the current `workingObject`.
+3. **Do not import from `tools/` or other `modules/`**. Shared logic belongs in `core/` or `shared/`.
+4. **If the module needs LLM reasoning**, route it through the internal API flow or the existing `core-ai-*` modules rather than calling the provider directly.
+5. **Subscribe the module** by adding `config["my-module"].flow` in `core.json`.
+6. **Document the module** in the module table and in `CORE_JSON.md` if it has config keys or public HTTP routes.
+
 ---
 
 ### Writing Good Manifest Descriptions
@@ -2750,7 +2716,7 @@ All hardcoded AI prompts — in both tools and modules — have been moved to `c
 | `getWebpage` | `toolsconfig.getWebpage.systemPrompt` | Web analyst system prompt |
 | `getYoutube` | `toolsconfig.getYoutube.systemPrompt` | Transcript analyst system prompt |
 | `getHistory` | `toolsconfig.getHistory.systemPrompt` | History summarizer system prompt |
-| `getInformation` | `toolsconfig.getInformation.aliasSystemPrompt` | Alias extractor prompt (use `${maxAliases}` as placeholder) |
+
 
 #### Module prompts (`config["<module-name>"]`)
 
@@ -3029,46 +2995,22 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 ### getHistory
 
 **File:** `tools/getHistory.js`
-**Purpose:** Retrieve and summarise conversation history from MySQL
+**Purpose:** Zoom exactly one level deeper into the hierarchical history context
 
-**LLM parameters:**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `channelId` | string | Channel ID (empty = current channel; legacy alias: `channel_id`) |
-| `channelIds` | array | Additional channel IDs (legacy alias: `channel_ids`) |
-| `startCtxId` | number | Pagination cursor (legacy aliases: `start_ctx_id`, `start_ctx`) |
-| `limit` | number | Max rows |
-| `prompt` | string | Specific question/task against the history |
-| `mode` | string | `"dump"` \| `"summary"` \| `"chunks"` |
-| `include_tools` | boolean | Include tool-call rows |
-
----
-
-### getInformation
-
-**File:** `tools/getInformation.js`
-**Purpose:** Cluster-based keyword search over the stored conversation log. Returns ranked snippets from fixed-size context windows.
-
-**LLM parameters:**
+**Parameters:**
 
 | Parameter | Type | Description |
 |---|---|---|
-| `keywordGroups` | array | Preferred: each group has `base`, `variants[]`, and optional `parts[]`. Variants are searched via LIKE for initial candidate selection; parts are used only for proximity scoring within selected clusters. Legacy alias: `keyword_groups`. |
-| `keywords` | array | Fallback: plain search phrases. Each phrase is used as a full-form LIKE token (no internal splitting). |
+| `blockId` | integer | Required history block ID from the visible context or a previous `getHistory` result |
+| `channelId` | string | Optional primary channel override |
+| `channelIds` | array | Optional linked channel IDs searched for the same block |
 
-**Search behaviour:**
+**Behavior:**
 
-- **SQL candidate scan** (`LIKE '%token%'`) uses **only `variants`** — `parts` are excluded from the SQL scan to avoid false-positive noise from short substrings.
-- **`parts`** are used exclusively in `getAnalyzeClusterRows` for proximity scoring: two parts found within `tokenWindow` tokens of each other score as a full hit.
-- **`CONTENT_EXPR`** uses JSON-first `COALESCE`: tries `$.content`, `$.message.content`, `$.data.content`, `$.delta.content` from the `json` column, then falls back to the `text` column. This ensures full content is searched, not just the truncated `text` column (which is capped at 500 chars by the indexer).
-- **`answered_turns` filter** (default `on`): excludes user/agent rows whose `turn_id` also has a matching `assistant` row in the same channel. This keeps the result set focused on raw, unprocessed transcriptions. Set `includeAnsweredTurns: true` (or `includeAssistantTurns: true`) to disable this filter — required when searching voice transcriptions in channels where the bot always produces a reply.
-- **Results ranking:** coverage (distinct keyword groups found) → total hits → multi-group rows → any-group rows; then sorted chronologically per channel for output.
-- **Output budget:** controlled by `maxOutputLines` and `maxLogChars`. Clusters below `minCoverage` are silently dropped. A `NEW EVENT` separator is emitted between clusters with a time gap ≥ `eventGapMinutes`.
-
-**Wiki usage note:**
-
-The wiki flow forces `includeAnsweredTurns: true` and applies hard caps (`maxOutputLines` ≤ 150, `maxLogChars` ≤ 800, `stripCode: true`) to avoid AI context overflow. User config values are clamped to these maximums. See [toolsconfig.getInformation](#toolsconfiggetinformation) for all parameters.
+- Each call goes exactly one level deeper
+- If the selected block still has child blocks, those child blocks are returned
+- If the selected block is one level above the bottom, raw rows are returned
+- The tool never skips levels
 
 ---
 
@@ -3452,7 +3394,7 @@ clearAll();                // Clear the entire registry
 
 ### 9.2 context.js — MySQL Conversation Storage
 
-**Purpose:** Persistent conversation history with rolling summaries and token budgeting
+**Purpose:** Persistent conversation history with raw preservation, derived retrieval layers, and token budgeting
 
 **Exported functions:**
 ```javascript
@@ -3478,11 +3420,15 @@ import {
   - `wo.subchannel` not set + `subchannelFallback=false` (default) → only rows where `subchannel IS NULL`
   - `wo.subchannel` not set + `subchannelFallback=true` → no filter (full channel including all subchannels)
 
+**Active context storage:** The current runtime uses the raw `context` table as the source of truth and `timeline_periods` as the only actively maintained derived summary layer. The older `context_turns`, `context_segments`, `context_nodes`, `context_index_*`, `context_anchor_*`, `context_embeddings`, `context_events`, and `context_mesh_*` tables are legacy artifacts and are not part of the active runtime architecture.
+
 **Subchannel deletion (`setPurgeSubchannel`):** When a subchannel is deleted, non-frozen context entries are permanently deleted. Frozen entries are **promoted** to the main channel (their `subchannel` field is set to `NULL`) so they are preserved and become part of the main context.
 
 **Purge/Freeze scoping:** `setPurgeContext` and `setFreezeContext` respect the same filter. The channel-wide timeline rows are only affected when targeting the full channel (not a specific subchannel).
 
-**`contextChannelID`:** Both `setContext` and `getContext` use `wo.contextChannelID || wo.channelID` as the storage key. Setting `wo.contextChannelID` redirects all context reads and writes to a different channel ID without changing `wo.channelID`. This is used in scenarios where one virtual channel (e.g. a subagent channel) should read or write history belonging to a different channel.
+**Timeline summary prompt source:** The active timeline summarizer prompt is configured in `core.json` under `config.context.timelineSummaryPrompt`. It is not hardcoded in `core/context.js`.
+
+**`contextChannelId`:** Both `setContext` and `getContext` use `wo.contextChannelId || wo.channelID` as the storage key. Setting `wo.contextChannelId` redirects all context reads and writes to a different channel ID without changing `wo.channelID`. This is used in scenarios where one virtual channel (e.g. a subagent channel) should read or write history belonging to a different channel.
 
 **`userId` resolution in `setContext`:** The `userId` stored in the DB is resolved automatically using the following priority chain — callers do **not** need to populate it manually:
 1. `record.userId` (if the caller explicitly passes one)
@@ -3492,6 +3438,8 @@ import {
 This means `add-context` modules (00070, 00072) do not include `userId` in the record they pass to `setContext` — it is resolved centrally.
 
 **Internal meta frames:** `setContext()` silently discards any record where `record.internal_meta === true`. Meta frames are generated dynamically at retrieval time by `getContext()` and injected into the AI context window; they are never stored in MySQL. This prevents ghost entries (e.g. `[assistant] Jenny` index strings) from appearing in the database or the chat UI.
+
+**Retrieval flow:** `getContext()` resolves the effective scope, loads recent raw rows, matches indexed segments by payload features such as terms, entities, URLs, and project IDs, optionally adds higher-level node summaries, and returns standard GPT-style rows. The `core-ai-*` modules consume those rows but do not own retrieval policy.
 
 **`getContextSince`** is used by the Bard cron job (`00036-bard-cron.js`) to read chat that occurred since the job last ran. This avoids a fixed time window and ensures no messages are missed even if the cron interval stretches.
 
@@ -3504,9 +3452,9 @@ const rows = lastRun?.ts
 ```
 
 **Rolling summaries:**
-- Messages are grouped into time windows (`periodSize` seconds)
-- After a period closes, an LLM summary is generated
-- Raw messages are replaced by the summary (storage optimisation)
+- Raw rows are preserved unchanged in `context`
+- Derived turns, segments, nodes, and indexes are rebuilt from raw rows
+- Retrieval chooses recent raw rows plus relevant derived ranges instead of replacing stored messages
 
 **Token budgeting:**
 - Context is trimmed until it fits within `contextTokenBudget`
@@ -3560,7 +3508,7 @@ All API keys, tokens, and other secrets are stored in the `bot_secrets` MySQL ta
 
 1. `getSecret(wo, "OPENAI")` is called by a module or tool.
 2. `secrets.js` looks up `"OPENAI"` in the `bot_secrets` table.
-3. The real value (e.g. `sk-proj-...`) is returned and used for the API call.
+3. The real value stored behind the alias is returned and used for the API call.
 4. The real value is never written to `core.json`, never logged, and never appears in the pipeline dump files.
 5. Results are **TTL-cached** (60 seconds) per table to avoid repeated DB queries.
 
@@ -3798,6 +3746,7 @@ export default async function getMyWebModule(coreData) {
 | `/purge [count]` | Yes | Delete last N messages in channel |
 | `/purgedb` | Yes | Delete conversation history from MySQL |
 | `/freeze` | Yes | Mark last DB entries as frozen (protected) |
+| `/rebuilddb` | Yes | Rebuild derived context tables for the current channel only |
 | `/gdpr text <0\|1>` | No | Set GDPR consent for text |
 | `/gdpr voice <0\|1>` | No | Set GDPR consent for voice |
 | `/join` | No | Bot joins current voice channel |
@@ -3824,31 +3773,14 @@ export default async function getMyWebModule(coreData) {
 | `frozen` | TINYINT(1) | 1 = protected from deletion |
 | `subchannel` | VARCHAR(128) NULL | Optional subchannel UUID; `NULL` = main channel |
 
-### Table: timeline_periods
+### Timeline Summary Table
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | BIGINT UNSIGNED AUTO_INCREMENT | Primary key |
-| `channel_id` | VARCHAR(128) | Discord channel ID |
-| `start_idx` | INT | First ctx_id of this period |
-| `end_idx` | INT | Last ctx_id of this period |
-| `start_ts` | DATETIME | Period start timestamp |
-| `end_ts` | DATETIME | Period end timestamp |
-| `summary` | TEXT | AI-generated summary |
-| `model` | VARCHAR(64) | Summary model used |
-| `checksum` | CHAR(64) | SHA256 of the original messages |
-| `frozen` | TINYINT(1) | 1 = protected from deletion |
+Chronological retrieval in the active runtime comes from:
 
-### Table: gdpr
+- `context` for raw per-message context rows
+- `timeline_periods` for compressed timeline summaries that span ranges of raw rows
 
-| Column | Type | Description |
-|---|---|---|
-| `user_id` | VARCHAR(64) | Discord user ID |
-| `channel_id` | VARCHAR(128) | Discord channel ID |
-| `chat` | TINYINT(1) | 1 = text consent granted |
-| `voice` | TINYINT(1) | 1 = voice consent granted |
-| `disclaimer` | TINYINT(1) | 1 = notice seen |
-| `updated_at` | TIMESTAMP | Last change timestamp |
+The previously introduced `context_turns`, `context_segments`, `context_nodes`, `context_index_*`, `context_anchor_*`, `context_embeddings`, `context_events`, and `context_mesh_*` tables are legacy and are not required by the current runtime.
 
 ### Table: graph_tokens
 
@@ -3946,7 +3878,7 @@ CREATE TABLE IF NOT EXISTS wiki_articles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-### Table: gdpr_consent
+### Table: gdpr
 
 Created automatically by `modules/00025-discord-admin-gdpr.js`. Stores per-user GDPR consent flags for chat, voice recording, and disclaimer acknowledgment.
 
@@ -3962,7 +3894,7 @@ Created automatically by `modules/00025-discord-admin-gdpr.js`. Stores per-user 
 Primary key is `(user_id, channel_id)`.
 
 ```sql
-CREATE TABLE IF NOT EXISTS gdpr_consent (
+CREATE TABLE IF NOT EXISTS gdpr (
   user_id    VARCHAR(64) NOT NULL,
   channel_id VARCHAR(64) NOT NULL,
   chat       TINYINT(1)  NOT NULL DEFAULT 0,
@@ -3971,6 +3903,45 @@ CREATE TABLE IF NOT EXISTS gdpr_consent (
   updated_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, channel_id),
   KEY idx_channel (channel_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: timeline_periods
+
+Created automatically by `core/context.js`. Stores compressed timeline summaries derived from raw context rows for one channel at a time.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY | Internal row ID |
+| `channel_id` | VARCHAR(128) NOT NULL | Source channel ID for the summarized period |
+| `start_idx` | BIGINT UNSIGNED NOT NULL | First raw `context.ctx_id` included in this summary block |
+| `end_idx` | BIGINT UNSIGNED NOT NULL | Last raw `context.ctx_id` included in this summary block |
+| `start_ts` | TIMESTAMP NULL | Timestamp of the first raw row covered by the block |
+| `end_ts` | TIMESTAMP NULL | Timestamp of the last raw row covered by the block |
+| `summary` | LONGTEXT NOT NULL | Structured summary text containing overview, topics, key events, locations, people, and timeframe anchors |
+| `model` | VARCHAR(128) NULL | Model name used to generate the summary |
+| `checksum` | CHAR(64) NOT NULL | Hash of the raw input range used to detect drift |
+| `created_at` | TIMESTAMP | Row creation timestamp |
+| `updated_at` | TIMESTAMP | Last regeneration timestamp |
+| `frozen` | TINYINT(1) NOT NULL DEFAULT 0 | Whether this timeline row is protected from purge |
+
+```sql
+CREATE TABLE IF NOT EXISTS timeline_periods (
+  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  channel_id VARCHAR(128)    NOT NULL,
+  start_idx  BIGINT UNSIGNED NOT NULL,
+  end_idx    BIGINT UNSIGNED NOT NULL,
+  start_ts   TIMESTAMP       NULL,
+  end_ts     TIMESTAMP       NULL,
+  summary    LONGTEXT        NOT NULL,
+  model      VARCHAR(128)    NULL,
+  checksum   CHAR(64)        NOT NULL,
+  created_at TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  frozen     TINYINT(1)      NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  KEY idx_timeline_channel_id (channel_id, id),
+  KEY idx_timeline_channel_range (channel_id, start_idx, end_idx)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -4028,7 +3999,7 @@ CREATE TABLE IF NOT EXISTS discord_macros (
 
 ### Table: voice_speakers
 
-Created automatically by `core/voice-diarize.js`. Stores speaker profiles used for voice diarization (speaker identification).
+Created automatically by `shared/voice/voice-diarize.js`. Stores speaker profiles used for voice diarization (speaker identification).
 
 | Column | Type | Description |
 |---|---|---|
@@ -4053,7 +4024,7 @@ CREATE TABLE IF NOT EXISTS voice_speakers (
 
 ### Table: voice_sessions
 
-Created automatically by `core/voice-diarize.js`. Each voice recording session in a channel gets one row.
+Created automatically by `shared/voice/voice-diarize.js`. Each voice recording session in a channel gets one row.
 
 | Column | Type | Description |
 |---|---|---|
@@ -4072,7 +4043,7 @@ CREATE TABLE IF NOT EXISTS voice_sessions (
 
 ### Table: voice_chunks
 
-Created automatically by `core/voice-diarize.js`. Stores audio segments within a voice session with their transcripts.
+Created automatically by `shared/voice/voice-diarize.js`. Stores audio segments within a voice session with their transcripts.
 
 | Column | Type | Description |
 |---|---|---|
@@ -4095,7 +4066,7 @@ CREATE TABLE IF NOT EXISTS voice_chunks (
 
 ### Table: voice_chunk_speakers
 
-Created automatically by `core/voice-diarize.js`. Maps diarization labels within a chunk to identified speakers.
+Created automatically by `shared/voice/voice-diarize.js`. Maps diarization labels within a chunk to identified speakers.
 
 | Column | Type | Description |
 |---|---|---|
@@ -4420,7 +4391,6 @@ Prompt field convention for subagents:
 - `persona` defines the subagent identity and job and is used as the `You are` block
 - `systemPrompt` defines processing rules, workflow, and guardrails
 - `instructions` defines response style, verbosity, language, length, and formatting
-- inherited `callerPersona` becomes the `Answer as` block, and nested subagents keep the original top-level caller persona
 
 ### 16.3 Chat SPA (`/chat`)
 
@@ -4433,7 +4403,7 @@ Prompt field convention for subagents:
 - `POST /chat/api/upload` — server-side file upload proxy; accepts raw binary body with `Content-Type` and `X-Filename` headers; forwards to `cfg.apiUrl` → `/upload` with optional Bearer token; returns `{ ok, url }` or error JSON
 - Subchannel CRUD: `GET/POST/PATCH/DELETE /chat/api/subchannels`
 
-**Architecture note:** `00048-webpage-chat` is a pure HTTP handler. On `POST /chat/api/chat` it makes an internal `POST http://localhost:3400/api` call with `channelID`, `payload`, `userId`, and `subchannel`. All AI processing (model, tools, persona, context write) happens inside the API pipeline — `00048` does not interact with AI or context directly. Channel config comes from `core-channel-config` (same entries used by Discord and the browser extension). `00011-webpage-channel-config` is deactivated (`flow: []`).
+**Architecture note:** `00048-webpage-chat` is a pure HTTP handler. On `POST /chat/api/chat` it makes an internal `POST http://localhost:3400/api` call with `channelID`, `payload`, `userId`, and `subchannel`. All AI processing (model, tools, persona, context write) happens inside the API pipeline — `00048` does not interact with AI or context directly. Channel config comes from `core-channel-config` (same entries used by Discord and the browser extension).
 
 **File attachment UI:**
 - 📎 attach button in the chat footer opens a file picker
@@ -4627,7 +4597,7 @@ Configure in `core.json["webpage-bard"]`:
     "maxLoops":         5,
     "requestTimeoutMs": 120000,
     "contextSize":      150,
-    "tools":            ["getImage", "getInformation"],
+    "tools":            ["getImage", "getTimeline"],
     "systemPrompt":     "",
     "persona":          "",
     "instructions":     ""
@@ -4672,7 +4642,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 | `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
 | `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. **Default `false`** — see note below |
 | `overrides.contextSize` | number | `150` | Number of recent messages loaded when `includeHistory: true` |
-| `overrides.tools` | array | `["getImage","getInformation"]` | Tools available to the AI |
+| `overrides.tools` | array | `["getImage","getTimeline"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona string injected into the AI call |
 | `overrides.instructions` | string | `""` | Instructions injected into the AI call |
@@ -4686,7 +4656,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 
 - Channel NOT listed in `channels[]` → 404
 - `allowedRoles: []` → publicly accessible (no login required)
-- `getInformation` and **`getImage`** are both mandatory in the built-in prompt; AI uses **only tool results** as facts; events always in **chronological order**
+- `getTimeline` and **`getImage`** are both mandatory in the built-in prompt; AI uses **only tool results** as facts; events always in **chronological order**
 - **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles.
 - **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB) + **🔄 Regenerate Image via AI** button with a **"Replace base prompt entirely"** checkbox and a textarea below it. Without the checkbox: text is sent as `promptAddition` and appended to the article's base prompt. With the checkbox checked: text is sent as `promptOverride` and replaces the base prompt completely (useful when the original `infobox.imageAlt` triggers content filters). Old local image file is automatically deleted on successful regeneration; updates DB + preview immediately; save the article to persist the new URL
 - **Search page:** creators see an optional **"Additional context for generation"** textarea before the results/generate section. Text entered here is sent as `promptAddition` with the generate request and appended to the AI payload. Non-creators never see this textarea. When no results are found, creators see a **"✨ Generate article"** button (not an auto-spinner) so they can fill in context before triggering generation.
@@ -4703,7 +4673,7 @@ The wiki module no longer imports AI modules directly. `callPipelineForArticle` 
 Key points:
 - The wiki AI call is fully isolated from the Discord/API flow context
 - All AI parameters come from the `api-channel-config` entry for the wiki's channel
-- `channelID` is set to the wiki's channel ID for `getInformation` tool calls
+- `channelID` is set to the wiki's channel ID for timeline and history tool calls
 - Article generation never writes to the conversation context (`doNotWriteToContext: true` in the API payload)
 - After the AI returns the article JSON, `callPipelineForArticle` reads the model from the wiki's own channel overrides (`channel.overrides.model` → `cfg.overrides.model`, same chain used by `callPipelineForImageOnly`) and stores it in `article._model`, which is persisted to `wiki_articles.model` and shown at the bottom of the article page as "Generated by …". This maps directly to `webpage-wiki.overrides.model` (global) or the per-channel `overrides.model` in `webpage-wiki.channels[]`.
 
@@ -4713,7 +4683,7 @@ Key points:
 >
 > When `includeHistory: true`, core-ai injects the channel's recent Discord conversation as message history into the AI context. This history consists of plain conversational turns (user/assistant chat). Some models pick up on this pattern and respond in conversational plain text instead of the required JSON — even though the system prompt mandates JSON output.
 >
-> The default is `includeHistory: false`. If you enable it and article generation fails with `"AI returned no valid JSON article"` and the response is plain prose, set it back to `false`. The AI will then receive context only via `getInformation` tool calls, which is the safer default for JSON-format compliance.
+> The default is `includeHistory: false`. If you enable it and article generation fails with `"AI returned no valid JSON article"` and the response is plain prose, set it back to `false`. The AI will then receive context only via timeline and history tool calls, which is the safer default for JSON-format compliance.
 
 #### Embedded Image Generation (`wikiGenImage`)
 
@@ -4752,9 +4722,9 @@ Image generation is **built into the wiki module** and does **not** depend on `t
 
 #### System Prompt
 
-The built-in system prompt (`DEFAULT_WIKI_SYSTEM_PROMPT`) instructs the AI to call `getInformation` and then output a JSON article. Image generation happens outside the AI pipeline and requires no `getImage` tool call.
+The configured system prompt for the wiki article pipeline should instruct the AI to call `getTimeline` and use `getHistory` when raw evidence is needed before outputting a JSON article. Image generation happens outside the AI pipeline and requires no `getImage` tool call.
 
-**Tools active in the article pipeline:** `getInformation` (configurable via `overrides.tools`).
+**Tools active in the article pipeline:** `getTimeline` and optionally `getHistory` (configurable via `overrides.tools`).
 
 **Recommended channel override for reliable article quality:**
 
@@ -4764,7 +4734,7 @@ The built-in system prompt (`DEFAULT_WIKI_SYSTEM_PROMPT`) instructs the AI to ca
 }
 ```
 
-With `maxLoops: 5` there is enough budget for up to 2× `getInformation` + the final JSON response.
+With `maxLoops: 5` there is enough budget for timeline retrieval, one targeted history lookup, and the final JSON response.
 
 #### Article JSON Schema
 
@@ -4857,12 +4827,45 @@ Add `3118` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`.
 
 ---
 
-### 16.9a Webpage Voice Interface (`/voice`)
+### 16.9a Timeline Editor (`/timeline`)
+
+**Timeline Editor (port 3128, /timeline):**
+- `GET /timeline` — renders the Timeline DB editor SPA (admin only)
+- `GET /timeline/style.css` — serves CSS
+- `GET /timeline/api/channels` — returns `{channels: [{id, cnt}]}` for `timeline_periods.channel_id`
+- `GET /timeline/api/columns` — returns `{columns: [{name, type}]}` from `INFORMATION_SCHEMA.COLUMNS`
+- `GET /timeline/api/records?channel=&page=&limit=&fields=` — paginated timeline list; returns `{rows, total, page, pages}`
+- `GET /timeline/api/search?q=&channel=&fields=&searchFields=` — LIKE search over `summary` and optional JSON summary columns
+- `GET /timeline/api/record?ctx_id=` — loads one timeline row for editing
+- `PATCH /timeline/api/record` — updates one editable field; body: `{ctx_id, field, value}`
+- `DELETE /timeline/api/delete` — bulk-delete rows; body: `{ids: [id, ...]}`
+- `DELETE /timeline/api/delete-channels` — bulk-delete rows by `channel_id`; body: `{channelIDs: [...]}`
+
+**Why this matters with purge/freeze:**
+- `setPurgeContext` deletes non-frozen timeline rows for full-channel purges
+- `setFreezeContext` marks timeline rows as frozen for full-channel freezes
+- This prevents stale timeline summaries from surviving after raw context rows are removed
+
+**core.json configuration:**
+```json
+"webpage-timeline": {
+  "flow": ["webpage"],
+  "port": 3128,
+  "basePath": "/timeline",
+  "allowedRoles": ["admin"]
+}
+```
+
+Add `3128` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`.
+
+---
+
+### 16.9b Webpage Voice Interface (`/voice`)
 
 **File:** `modules/00047-webpage-voice.js`
 **Port:** 3119
 **Config key:** `webpage-voice`
-**DB helper:** `core/voice-diarize.js` (tables: `voice_speakers`, `voice_sessions`, `voice_chunks`, `voice_chunk_speakers`)
+**DB helper:** `shared/voice/voice-diarize.js` (tables: `voice_speakers`, `voice_sessions`, `voice_chunks`, `voice_chunk_speakers`)
 
 A browser-based voice interface with three tabs: **Voice** (always-on + meeting recorder), **Speakers** (register known voices with sample audio), and **Review** (inspect, correct, and apply diarized meeting transcripts).
 
@@ -4908,9 +4911,9 @@ A browser-based voice interface with three tabs: **Voice** (always-on + meeting 
 - After a meeting recording finishes on the **Record** tab, the SPA automatically switches to the Review tab and loads the new session — no manual navigation required.
 - The session list has a **🔄** button next to the "Sessions" heading. Click it to manually reload the list at any time — useful when a recording was made on another device with the same channel selected.
 - Select a session from the left list to view its chunks. Both lists scroll independently.
-- Each chunk shows one block per unique speaker label. Use the dropdown to assign a known speaker or create one inline.
+- Each chunk shows one block per unique speaker label. Use the dropdown to assign a known speaker or create one inline. If the stored label already matches a known speaker name, the matching speaker is preselected automatically. If a stored chunk contains plain transcript text without `Speaker: text` prefixes, the UI renders it as a generic `Transcript` block instead of hiding it.
 - **💾 Save All:** Persists all speaker assignments currently shown in the chunk panel to the database in one pass. Does not write to channel context.
-- **✓ Apply to Channel:** First saves all assignments (same as Save All), then rebuilds the transcript using DB-resolved speaker names, writes one context row per speaker line with `authorName` set to the speaker name, optionally purges existing non-frozen context rows if the channel is listed in `clearContextChannels` (configured in `webpage-voice` and `webpage-voice-record`), and deletes the session from the review list.
+- **✓ Apply to Channel:** First saves all assignments (same as Save All), then rebuilds the transcript using DB-resolved speaker names, writes one context row per speaker line with `authorName` set to the speaker name, applies the transcript to the session's stored channel ID from `voice_sessions.channel_id`, optionally purges existing non-frozen context rows if that channel is listed in `clearContextChannels` (configured in `webpage-voice` and `webpage-voice-record`), and deletes the session from the review list. On failure, the API returns `apply_failed` plus a `detail` message.
 - 🗑️ deletes a session without writing to context.
 
 > **Cross-device usage:** Sessions are stored in the database keyed by `channel_id`. A session recorded on one device is visible on any other device that has the same channel selected in the dropdown. Use the 🔄 refresh button to reload the list after a remote recording finishes.
@@ -4923,9 +4926,9 @@ When `?transcribeOnly=1` is sent and at least one speaker has a sample, `getDiar
 
 1. Query `voice_speakers` for speakers with `sample_audio_path` for this `channelId`.
 2. Build a preamble WAV: sample 1 + 2 s silence + sample 2 + 2 s silence + … (`buildSamplePreamble`).
-3. Concatenate preamble before the meeting audio via FFmpeg.
+3. Split the meeting audio into 16 kHz mono WAV chunks and concatenate the preamble before each chunk via FFmpeg.
 4. Send combined file to the diarize model (`gpt-4o-transcribe-diarize`).
-5. `resolveSpeakerMapping`: segments with `start < preambleDurationS` → preamble → map labels to speaker IDs in order. Segments with `start >= preambleDurationS` → meeting → use the mapping.
+5. `resolveSpeakerMapping`: first tries the classic time-based split (`start < preambleDurationS` for the preamble, `start >= preambleDurationS` for the meeting). If the provider timestamps the returned speech without the preamble offset, it additionally matches returned segment text against the stored `sample_text` values to recover the label→speaker mapping.
 6. Store session, chunks, and `voice_chunk_speakers` in the DB.
 7. On **Apply**, the endpoint rebuilds the transcript using DB speaker names (not raw labels).
 
@@ -4970,7 +4973,9 @@ POST /voice/audio?channelId=<id>
 POST /voice/audio?channelId=<id>&transcribeOnly=1
  → 00028-webpage-voice-input       (set wo fields, wo.transcribeOnly=true)
  → 00030-core-voice-transcribe     (getDiarizeWithSamples: build preamble, transcribe,
-                                    resolve speaker mapping, store session+chunks in DB
+                                    resolve speaker mapping, retry the raw chunk without
+                                    preamble when only preamble segments are detected,
+                                    store session+chunks in DB
                                     → wo.payload, wo.voiceDiarizeSessionId)
  → 00033-webpage-voice-transcribe-gate  (send HTTP 200 {transcript, sessionId}, set wo.stop=true)
 [AI and TTS skipped — user reviews and applies from the Review tab]
@@ -6182,35 +6187,38 @@ The subagent system allows the main AI to delegate tasks to isolated sub-process
 
 1. The main AI calls `getSubAgent(type, task)`.
 2. `getSubAgent` sends a POST to `http://localhost:3400/api/spawn` with the virtual channel ID for the requested type.
-3. The API flow loads `core-channel-config` for that virtual channel, then the dedicated `subagent-persona` pre-AI module applies the root caller persona as an `Answer as` block and appends the caller instructions for delivery style before the core AI modules run.
-4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery then happens via the subagent poll flows to the originating channel without an extra persona pass.
+3. The API flow loads `core-channel-config` for that virtual channel, and the spawned subagent uses the target virtual channel's own `systemPrompt`, `persona`, and `instructions`.
+4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery then happens via the subagent poll flows to the originating channel. Web delivery may apply a final caller-channel persona pass before returning the answer to the user.
 
-The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically so that tools like `getHistory` and `getInformation` query the correct data source. The root caller persona and caller instructions are also forwarded so the spawned subagent can answer immediately in the caller's role, language, style, verbosity, length, and formatting. Nested subagents keep forwarding the original top-level caller persona instead of replacing it with the immediate parent subagent persona.
+The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically. When the tool call sets `includeCallerContext: true`, the spawned subagent preloads the original caller context source (`callerContextChannelId` plus grouped `callerChannelIds`) using the target subagent channel's own `contextSize` and `compressedContextElements` overrides. Caller persona, caller system prompt, and caller instructions are not injected into the spawned subagent. The subagent answers in its own target-channel role, and only the later delivery layer may restyle that output for the caller channel.
 
 ### Context and Statefulness
 
-Subagent calls use `doNotWriteToContext: true` — no context DB entries are written for the subagent turn. Subagent channels are **stateless/virtual**: the same channel name (e.g. `subagent-research`) can serve multiple concurrent users without context collision. The full task context is passed via the payload (orchestration block) rather than being read from the DB. The `callerChannelId` is forwarded so a subagent can optionally read the parent channel's context if its context-loader is configured to do so (e.g. for `getInformation` / `getHistory` calls).
+Subagent calls use `doNotWriteToContext: true` — no context DB entries are written for the subagent turn. Subagent channels are **stateless/virtual**: the same channel name (e.g. `subagent-research`) can serve multiple concurrent users without context collision. The full task context is passed via the payload (orchestration block) rather than being read from the DB. Caller context is opt-in per tool call via `includeCallerContext`; by default subagents stay context-light and rely only on the supplied task plus caller channel metadata.
 
 ### Available Subagent Types
 
 | Type | Virtual Channel | Tools | Use when |
 |------|----------------|-------|----------|
-| `history` | `subagent-history` | getInformation, getHistory, getTime, getSubAgent | Questions about persons, places, events, or time periods from session logs |
-| `research` | `subagent-research` | getInformation, getHistory, getYoutube, getWebpage, getLocation, getTavily, getTime, getZIP, getSubAgent | General knowledge, current events, web research, YouTube, route planning, and location lookups |
+| `history` | `subagent-history` | getInformation, getHistory, getTime, getSubAgent | Questions about persons, places, events, chronology, or deeper older history from prior session context |
+| `research` | `subagent-research` | getYoutube, getWebpage, getLocation, getTavily, getTime, getSubAgent | General knowledge, current events, web research, YouTube, route planning, and location lookups |
 | `generate` | `subagent-generate` | getPDF, getText, getFile, getZIP, getSubAgent | PDF or text document generation |
-| `media` | `subagent-media` | getImage, getAnimatedPicture, getVideoFromText, getImageDescription, getToken, getZIP | Image/video/token generation and image description (leaf node — no getSubAgent) |
+| `media` | `subagent-media` | getImage, getAnimatedPicture, getVideoFromText, getImageDescription, getToken, getZIP | Image, video, token generation, and media analysis |
 | `atlassian` | `subagent-atlassian` | getJira, getConfluence, getZIP, getSubAgent | Jira/Confluence tasks |
 | `microsoft` | `subagent-microsoft` | getGraph, getZIP, getSubAgent | Microsoft 365/Graph |
 | `develop` | `subagent-develop` | getFile, getZIP, getTavily, getWebpage, getTime, getSubAgent | Code generation — writes files to persistent storage via getFile, returns ZIP; uses getSubAgent(type: media) for image assets |
+| `patch` | `subagent-patch` | getFile, getZIP | One targeted patch to one file artifact |
 | `orchestrate` | `subagent-orchestrate` | getSubAgent, getTavily, getWebpage, getTime | Requests with truly independent parts needing different tool sets; handles simple tasks directly without spawning |
+| `test` | `subagent-test` | getTestA, getTestB | Internal pipeline smoke tests |
+| `generic` | `subagent-generic` | getGoogle, getTavily, getWebpage, getHistory, getYoutube, getImage, getImageDescription, getTime, getToken, getLocation | General-purpose fallback when no specialist fits better |
 
 ### Routing Logic for Main Channels
 
-Main channels have `getSubAgent`, `getTavily`, and `getImage` directly available. Routing logic:
+Main channels typically keep direct tools lightweight and escalate only when needed. Routing logic:
 
 - **Simple web search** (facts, current events) → `getTavily` directly — no subagent needed
 - **Simple image generation** → `getImage` directly — no subagent needed
-- **Session history questions** (who is X, what happened at Y, when did Z) → `getSubAgent(type: history)`
+- **Session history questions** (who is X, what happened at Y, when did Z) → `getSubAgent(type: history, includeCallerContext: true)`
 - **General knowledge / YouTube / route planning / location queries** → `getSubAgent(type: research)`
 - **Code / development requests** → `getSubAgent(type: develop)`
 - **Complex media** (animated token, video generation, multi-step image) → `getSubAgent(type: media)`
@@ -6220,7 +6228,7 @@ Main channels have `getSubAgent`, `getTavily`, and `getImage` directly available
 
 ### Subagent Architecture
 
-`media` is a leaf node — it has no `getSubAgent`. `develop` and `research` can spawn sub-subagents for specialized work. `orchestrate` has only `getSubAgent` + lightweight direct tools (getTavily, getWebpage, getTime).
+`history` must never spawn another `history` subagent. `media` is typically treated as a leaf node for simple asset work. `orchestrate` has only `getSubAgent` plus lightweight direct tools (`getTavily`, `getWebpage`, `getTime`) so it can coordinate without duplicating specialist work.
 
 ```
 Main AI (tools: getSubAgent, getTavily, getImage)
@@ -6236,7 +6244,16 @@ Main AI
        └─ getSubAgent(type: generate, orchestration: {...})  ← STEP 2: receives image URL
 ```
 
-The caller's channel ID is forwarded at every level so `getHistory` and `getInformation` always query the correct source channel regardless of nesting depth. Tool call status is also mirrored to the caller's Discord channel ID so the status display works correctly.
+The caller's channel ID set is forwarded at every level so `getHistory` and `getInformation` can query the correct source channel regardless of nesting depth. Tool call status is also mirrored to the caller's Discord channel ID so the status display works correctly, and the final poll delivery clears any remaining tool status for that caller channel.
+
+### Creating a New Subagent — Checklist
+
+1. **Add the type mapping** under `workingObject.toolsconfig.getSubAgent.types` in `core.json`.
+2. **Add or update the manifest entry** in `manifests/getSubAgent.json` so the AI can discover the type.
+3. **Create a dedicated virtual channel override** under `config["core-channel-config"].channels[]` with its own tools, model, prompts, and context settings.
+4. **Keep prompt text in config or manifests only**. Do not store subagent prompts in the database.
+5. **Decide whether caller context should ever be preloaded**. Default remains off; callers opt in via `includeCallerContext: true`.
+6. **Document the new type** in this subagent section and in `CORE_JSON.md`.
 
 **Subagent spawn timeout:** `toolsconfig.getSubAgent.spawnTimeoutMs` controls only the initial HTTP spawn request. The job then continues asynchronously and is delivered by `discord-subagent-poll`.
 
@@ -6269,12 +6286,12 @@ When multiple subagents are involved in a single user request, each `getSubAgent
 }
 ```
 
-**`callerTurnId` propagation:** `wo.turn_id` is forwarded as `callerTurnId` to every spawned subagent via `api.js`. Each subagent receives it in `wo.callerTurnId`. The orchestration block injected into the subagent's task also includes the `turn_id` for traceability.
+**`callerTurnId` propagation:** `wo.turnId` is forwarded as `callerTurnId` to every spawned subagent via `api.js`. Each subagent receives it in `wo.callerTurnId`. The orchestration block injected into the subagent's task also includes the `turnId` for traceability.
 
 **`buildOrchestrationBlock` (in `getSubAgent.js`):** Serialises the orchestration object into a human-readable block that is prepended to the subagent's task payload:
 ```
 [ORCHESTRATION CONTEXT]
-turn_id: 01JXYZ...
+turnId: 01JXYZ...
 globalGoal: "Create character sheet with portrait for Melissa"
 yourTask: "Generate portrait image"
 ...
@@ -6321,30 +6338,31 @@ Example prompt:
 
 The develop subagent will read `game.js`, identify the bug, write the corrected version back to the same path via `getFile(overwrite: true)`, and return the updated link.
 
-### getInformation Return Format
+### getTimeline Return Format
 
-`getInformation` returns `{ timeline, meta }`.
+`getTimeline` returns `{ timeline, meta }`.
 
 **Timeline entries** — each entry has a `type` field:
 
 | Type | Has snippets? | start_ts / end_ts | Meaning |
 |------|-------------|-------------------|---------|
-| `detail` | Yes (`snippets[]`) | From timeline_periods table | Keyword matches found in this period |
-| `period` | No | From timeline_periods table | No matches — coarse summary only |
+| `detail` | Yes (`snippets[]`) | From derived context segment ranges | Keyword matches found in this period |
+| `period` | No | From derived context segment or node summaries | No matches — coarse summary only |
 | `unplaced` | Yes (`snippets[]`) | Derived from snippet timestamps | Matches not covered by any known period |
 
 Each snippet in `snippets[]` has: `channel_id`, `rn`, `ts`, `sender`, `content`.
 
-**Using start_ts / end_ts**: `detail` and `unplaced` entries expose a time range covering the matched content. Pass these to `getHistory` to retrieve the full surrounding conversation.
+### Deep-Context Pattern (Visible blocks → getHistory zoom)
 
-### Deep-Context Pattern (getInformation → getHistory)
+When the AI needs older surrounding context, it uses a zoom chain:
 
-When the AI needs full surrounding context around a matched entity, it uses a two-step chain:
+1. Read the visible hierarchical history blocks already present in the context.
+2. Pick the most relevant `blockId`.
+3. Call `getHistory(blockId)` to zoom exactly one level deeper.
+4. Repeat only while the deeper level is still needed.
+5. Raw rows appear only at the bottom level.
 
-1. Call `getInformation` with the entity name. The result includes `detail` and `unplaced` entries with `start_ts` and `end_ts`.
-2. Take the `start_ts` / `end_ts` from the relevant entry and pass them to `getHistory` to retrieve the full raw conversation for that period.
-
-This gives the AI broad context (surrounding messages, related events) rather than just the matched snippets. This pattern is implemented in the `history` subagent instructions.
+This keeps the context bounded while still allowing deterministic deep-history navigation. This pattern is implemented in the history-oriented subagent instructions.
 
 ### Tools Called Directly (No Subagent)
 

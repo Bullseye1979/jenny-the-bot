@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "getSubAgent.js"                                       */
+/* Version 1.0                                               */
+/* Purpose: LLM-callable tool implementation.               */
+/**************************************************************/
 
 
 
@@ -111,6 +116,7 @@ async function getInvoke(args, coreData) {
   const projectId = mode === "resume" ? inputProjectId : "";
   const explicitChannel = String(args?.channelId || "").trim();
   const orchestration   = args?.orchestration ?? null;
+  const includeCallerContext = args?.includeCallerContext === true;
   const requestedType = String(args?.type || "").trim();
   let typeName = requestedType || "generic";
 
@@ -128,6 +134,7 @@ async function getInvoke(args, coreData) {
     agentType:           String(wo.agentType || "") || null,
     taskLen:             task.length,
     hasOrchestration:    orchestration !== null,
+    includeCallerContext,
   });
 
   if (!task) {
@@ -139,7 +146,7 @@ async function getInvoke(args, coreData) {
     return { ok: false, error: "Pipeline aborted — parent context disconnected" };
   }
 
-  const _apiBase     = String(cfg.apiUrl || wo.apiBaseUrl || "http://localhost:3400");
+  const _apiBase     = String(cfg.apiUrl || "http://localhost:3400");
   const apiSecretKey = String(cfg.apiSecret || "").trim();
   const apiSecret    = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
 
@@ -147,13 +154,14 @@ async function getInvoke(args, coreData) {
   if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
 
   const callerChannelId  = String(wo.callerChannelId || wo.channelID || "").trim();
-  const callerChannelIds = Array.isArray(wo.channelIds)
-    ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
-    : [];
-  const callerInstructions = String(wo.callerInstructions || wo.instructions || "").trim();
-  const callerPersona = String(wo.callerPersona || wo.persona || "").trim();
-
+  const callerChannelIds = [
+    callerChannelId,
+    ...(Array.isArray(wo.callerChannelIds) ? wo.callerChannelIds : []),
+    ...(Array.isArray(wo.channelIds) && !wo.callerChannelId ? wo.channelIds : [])
+  ].map(c => String(c || "").trim()).filter((value, index, arr) => value && arr.indexOf(value) === index);
   const callerTurnId = String(wo.callerTurnId || wo.turnId || "").trim();
+  const contextSourceChannelId = String(wo.callerContextChannelID || callerChannelId || "").trim();
+  const contextSourceChannelIds = callerChannelIds.slice();
 
   let fullPayload = task;
   if (orchestration !== null && orchestration !== undefined) {
@@ -223,7 +231,7 @@ async function getInvoke(args, coreData) {
   }
 
   const spawnUrl = _apiBase + String(cfg.asyncSpawnPath || "/api/spawn");
-  const _parentContextChannelID = String(wo.contextChannelID || "").trim();
+  const _parentContextChannelID = String(wo.callerContextChannelID || wo.contextChannelID || "").trim();
 
   logSubagent("info", "getSubAgent", "spawn_sending", {
     typeName,
@@ -235,6 +243,7 @@ async function getInvoke(args, coreData) {
     callerFlow:             String(wo.callerFlow || wo.flow || "") || null,
     callerContextChannelID: _parentContextChannelID || null,
     agentDepth:             nextAgentDepth,
+    includeCallerContext,
   });
 
   const projectContextPromptTemplate = typeof cfg.projectContextPrompt === "string" ? cfg.projectContextPrompt.trim() : "";
@@ -252,11 +261,14 @@ async function getInvoke(args, coreData) {
     systemPromptAddition,
     callerChannelId:        callerChannelId || undefined,
     callerChannelIds:       callerChannelIds.length ? callerChannelIds : undefined,
-    callerPersona:          callerPersona || undefined,
-    callerInstructions:     callerInstructions || undefined,
     callerTurnId:           callerTurnId || undefined,
     callerFlow:             String(wo.callerFlow || wo.flow || ""),
     callerContextChannelID: _parentContextChannelID || undefined,
+    includeCallerContext:   includeCallerContext || undefined,
+    contextSourceChannelID: includeCallerContext ? (contextSourceChannelId || undefined) : undefined,
+    contextSourceChannelIds: includeCallerContext && contextSourceChannelIds.length
+      ? contextSourceChannelIds
+      : undefined,
     callerPayload:          String(wo.payload || "").slice(0, 500) || undefined,
     agentDepth:             nextAgentDepth,
     agentType:              typeName,

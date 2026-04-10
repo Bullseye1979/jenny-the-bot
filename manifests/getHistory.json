@@ -10,7 +10,7 @@
       },
       "end": {
         "type": "string",
-        "description": "OPTIONAL: end timestamp. If omitted, defaults to 23:59:59 of the start date. If date-only, end is exclusive at next day 00:00:00."
+        "description": "OPTIONAL: end timestamp. If omitted, retrieval is open-ended from start until now. If date-only, end is exclusive at next day 00:00:00."
       },
       "prompt": {
         "type": "string",

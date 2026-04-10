@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00043-webpage-bard.js"                                */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -212,7 +217,7 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg, wo) {
     .replace("{moodList}", moodList)
     .replace("{tavilySnippet}", tavilySnippet || "No search results available.");
 
-  const apiBase = String(atCfg.apiUrl || wo.apiBaseUrl || "http://localhost:3400").replace(/\/+$/, "");
+  const apiBase = String(atCfg.apiUrl || "http://localhost:3400").replace(/\/+$/, "");
   const channelId = String(atCfg.channelId || atCfg.llmChannelId || "").trim();
   const apiSecretKey = String(atCfg.apiSecret || wo.apiSecret || "").trim();
   const apiSecret = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";

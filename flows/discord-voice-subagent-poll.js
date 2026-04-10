@@ -21,6 +21,24 @@ function getIsHandledFlow(callerFlow) {
 }
 
 
+function clearDeliveredToolStatus(channelId) {
+  const cid = String(channelId || "").trim();
+  if (!cid) return;
+
+  try {
+    const current = getItem("status:tool");
+    const currentChannelId = String(current?.channelId || "").trim();
+    if (currentChannelId && currentChannelId === cid) {
+      deleteItem("status:tool");
+    }
+  } catch {}
+
+  try {
+    deleteItem("status:tool:" + cid);
+  } catch {}
+}
+
+
 async function getVoiceSessionRef(guildId) {
   if (!guildId) return null;
   let reg = null;
@@ -61,8 +79,11 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   _wo.skipAiCompletions   = true;
   _wo.doNotWriteToContext = true;
   _wo.bypassTriggerGate   = true;
+  _wo.bypassGdprGate      = true;
+  _wo.updateStatus        = true;
   _wo.clientRef           = "discord:client";
   _wo.timestamp           = new Date().toISOString();
+  clearDeliveredToolStatus(job.callerChannelId);
 
   /* Bypass channel gate — delivery is always allowed (same as discord-voice.js) */
   _wo.channelallowed = true;
@@ -77,6 +98,7 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
 
   try {
     await runFlow("discord-voice", _rc);
+    clearDeliveredToolStatus(job.callerChannelId);
     logSubagent("info", "discord-voice-poll", "deliver_flow_done", { jobId: job.jobId });
   } catch (e) {
     log(`Delivery flow "discord-voice" failed for ${job.callerChannelId}: ${e?.message || String(e)}`, "error");

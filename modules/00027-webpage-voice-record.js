@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00027-webpage-voice-record.js"                        */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -63,9 +68,9 @@ function getConvertToWav(inputFile, outputFile) {
 
 
 async function getTranscript(wavFile, cfg, wo) {
-  const model    = String(cfg.recordModel || "gpt-4o-transcribe");
-  const endpoint = String(wo.whisperEndpoint || "https://api.openai.com");
-  const apiKey   = await getSecret(wo, cfg.whisperApiKey || wo.whisperApiKey || wo.apiKey || "");
+  const model    = String(cfg.transcribeModel || cfg.recordModel || "gpt-4o-transcribe");
+  const endpoint = String(cfg.transcribeEndpoint || wo.transcribeEndpoint || "https://api.openai.com");
+  const apiKey   = await getSecret(wo, String(cfg.transcribeApiKey || wo.transcribeApiKey || wo.apiKey || ""));
   const url      = endpoint.replace(/\/$/, "") + "/v1/audio/transcriptions";
 
   const audioBuffer = fs.readFileSync(wavFile);
@@ -97,7 +102,7 @@ async function getDiarizedText(transcript, cfg, wo) {
     `[${i + 1}] (${(s.start || 0).toFixed(1)}s–${(s.end || 0).toFixed(1)}s) ${(s.text || "").trim()}`
   ).join("\n");
 
-  const apiBase = String(cfg.apiUrl || wo.apiBaseUrl || "http://localhost:3400").replace(/\/+$/, "");
+  const apiBase = String(cfg.apiUrl || "http://localhost:3400").replace(/\/+$/, "");
   const channelId = String(cfg.diarizationChannelId || "").trim();
   const apiSecretKey = String(cfg.apiSecret || wo.apiSecret || "").trim();
   const apiSecret = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";

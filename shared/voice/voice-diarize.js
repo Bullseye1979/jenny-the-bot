@@ -1,3 +1,10 @@
+/**************************************************************/
+/* filename: "voice-diarize.js"                              */
+/* Version 1.0                                               */
+/* Purpose: Shared helpers for voice diarization persistence */
+/*          and preamble construction.                       */
+/**************************************************************/
+
 import fs           from "node:fs";
 import path         from "node:path";
 import mysql        from "mysql2/promise";
@@ -9,7 +16,7 @@ ffmpeg.setFfprobePath(process.env.FFPROBE_PATH || "/usr/bin/ffprobe");
 
 const SILENCE_S = 2;
 
-let _pool    = null;
+let _pool = null;
 let _poolDsn = "";
 
 
@@ -24,10 +31,14 @@ export async function getEnsureDiarizePool(wo) {
   const key = getDsnKey(db);
   if (_pool && _poolDsn === key) return _pool;
   _pool = mysql.createPool({
-    host: db.host, port: db.port ?? 3306, user: db.user,
-    password: db.password, database: db.database,
+    host: db.host,
+    port: db.port ?? 3306,
+    user: db.user,
+    password: db.password,
+    database: db.database,
     charset: db.charset || "utf8mb4",
-    waitForConnections: true, connectionLimit: 5
+    waitForConnections: true,
+    connectionLimit: 5
   });
   _poolDsn = key;
   return _pool;
@@ -74,7 +85,12 @@ export async function ensureDiarizeTables(pool) {
 
 export async function listSpeakers(pool, channelId) {
   const [rows] = await pool.query(
-    `SELECT id, channel_id, name, sample_text, sample_audio_path, created_at
+    `SELECT id,
+            channel_id AS channelId,
+            name,
+            sample_text AS sampleText,
+            sample_audio_path AS sampleAudioPath,
+            created_at AS createdAt
      FROM voice_speakers WHERE channel_id = ? ORDER BY name`,
     [channelId]
   );
@@ -84,7 +100,11 @@ export async function listSpeakers(pool, channelId) {
 
 export async function getSpeaker(pool, id) {
   const [rows] = await pool.query(
-    `SELECT id, channel_id, name, sample_text, sample_audio_path
+    `SELECT id,
+            channel_id AS channelId,
+            name,
+            sample_text AS sampleText,
+            sample_audio_path AS sampleAudioPath
      FROM voice_speakers WHERE id = ?`,
     [id]
   );
@@ -111,8 +131,8 @@ export async function updateSpeakerSample(pool, id, { sampleAudioPath, sampleTex
 
 export async function deleteSpeaker(pool, id) {
   const sp = await getSpeaker(pool, id);
-  if (sp?.sample_audio_path) {
-    try { await fs.promises.unlink(sp.sample_audio_path); } catch {}
+  if (sp?.sampleAudioPath) {
+    try { await fs.promises.unlink(sp.sampleAudioPath); } catch {}
   }
   await pool.query("DELETE FROM voice_speakers WHERE id = ?", [id]);
 }
@@ -120,7 +140,10 @@ export async function deleteSpeaker(pool, id) {
 
 export async function getSession(pool, sessionId) {
   const [rows] = await pool.query(
-    `SELECT id, channel_id, started_at FROM voice_sessions WHERE id = ?`,
+    `SELECT id,
+            channel_id AS channelId,
+            started_at AS startedAt
+       FROM voice_sessions WHERE id = ?`,
     [sessionId]
   );
   return rows[0] ?? null;
@@ -138,7 +161,9 @@ export async function createSession(pool, channelId) {
 
 export async function listSessions(pool, channelId) {
   const [rows] = await pool.query(
-    `SELECT id, channel_id, started_at
+    `SELECT id,
+            channel_id AS channelId,
+            started_at AS startedAt
      FROM voice_sessions WHERE channel_id = ? ORDER BY started_at DESC LIMIT 50`,
     [channelId]
   );
@@ -148,7 +173,8 @@ export async function listSessions(pool, channelId) {
 
 export async function deleteSession(pool, sessionId) {
   const [chunks] = await pool.query(
-    "SELECT id FROM voice_chunks WHERE session_id = ?", [sessionId]
+    "SELECT id FROM voice_chunks WHERE session_id = ?",
+    [sessionId]
   );
   for (const chunk of chunks) {
     await pool.query("DELETE FROM voice_chunk_speakers WHERE chunk_id = ?", [chunk.id]);
@@ -179,13 +205,18 @@ export async function upsertChunkSpeaker(pool, { chunkId, chunkLabel, speakerId 
 
 export async function listChunksForSession(pool, sessionId) {
   const [chunks] = await pool.query(
-    `SELECT id, chunk_index, transcript, created_at
+    `SELECT id,
+            chunk_index AS chunkIndex,
+            transcript,
+            created_at AS createdAt
      FROM voice_chunks WHERE session_id = ? ORDER BY chunk_index`,
     [sessionId]
   );
   for (const chunk of chunks) {
     const [mappings] = await pool.query(
-      `SELECT vcs.chunk_label, vcs.speaker_id, vs.name AS speaker_name
+      `SELECT vcs.chunk_label AS chunkLabel,
+              vcs.speaker_id AS speakerId,
+              vs.name AS speakerName
        FROM voice_chunk_speakers vcs
        LEFT JOIN voice_speakers vs ON vs.id = vcs.speaker_id
        WHERE vcs.chunk_id = ?`,
@@ -210,12 +241,12 @@ function getFileDurationS(filePath) {
 
 
 function makeSilenceWav(outFile) {
-  const sampleRate    = 16000;
-  const channels      = 1;
+  const sampleRate = 16000;
+  const channels = 1;
   const bitsPerSample = 16;
-  const numSamples    = sampleRate * SILENCE_S * channels;
-  const dataSize      = numSamples * (bitsPerSample / 8);
-  const buf           = Buffer.alloc(44 + dataSize, 0);
+  const numSamples = sampleRate * SILENCE_S * channels;
+  const dataSize = numSamples * (bitsPerSample / 8);
+  const buf = Buffer.alloc(44 + dataSize, 0);
 
   buf.write("RIFF", 0);
   buf.writeUInt32LE(36 + dataSize, 4);
@@ -237,7 +268,7 @@ function makeSilenceWav(outFile) {
 function concatWavFiles(files, outFile) {
   return new Promise((resolve, reject) => {
     const listFile = outFile + ".list";
-    const content  = files.map(f => "file '" + f.replace(/'/g, "'\\''") + "'").join("\n");
+    const content = files.map(f => "file '" + f.replace(/'/g, "'\\''") + "'").join("\n");
     fs.writeFileSync(listFile, content, "utf-8");
     ffmpeg()
       .input(listFile)
@@ -247,26 +278,26 @@ function concatWavFiles(files, outFile) {
       .audioChannels(1)
       .format("wav")
       .save(outFile)
-      .on("end",   () => { try { fs.unlinkSync(listFile); } catch {} resolve(); })
+      .on("end", () => { try { fs.unlinkSync(listFile); } catch {} resolve(); })
       .on("error", reject);
   });
 }
 
 
 export async function buildSamplePreamble(speakers, tmpDir) {
-  const withSamples = speakers.filter(s => s.sample_audio_path);
+  const withSamples = speakers.filter(s => s.sampleAudioPath);
   if (!withSamples.length) return null;
 
   const silenceFile = path.join(tmpDir, "preamble_silence.wav");
   await makeSilenceWav(silenceFile);
 
-  const files             = [];
+  const files = [];
   const orderedSpeakerIds = [];
-  let   preambleDurationS = 0;
+  let preambleDurationS = 0;
 
   for (const sp of withSamples) {
-    const dur = await getFileDurationS(sp.sample_audio_path);
-    files.push(sp.sample_audio_path, silenceFile);
+    const dur = await getFileDurationS(sp.sampleAudioPath);
+    files.push(sp.sampleAudioPath, silenceFile);
     orderedSpeakerIds.push(sp.id);
     preambleDurationS += dur + SILENCE_S;
   }
@@ -280,9 +311,72 @@ export async function concatPreambleWithAudio(preamble, audioFile, outFile) {
 }
 
 
-export function resolveSpeakerMapping(segments, preambleDurationS, orderedSpeakerIds) {
+function normalizeSampleText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+function getTokenSet(text) {
+  return new Set(normalizeSampleText(text).split(" ").filter(Boolean));
+}
+
+
+function getTextOverlapScore(a, b) {
+  const normA = normalizeSampleText(a);
+  const normB = normalizeSampleText(b);
+  if (!normA || !normB) return 0;
+  if (normA.includes(normB) || normB.includes(normA)) return 1;
+
+  const setA = getTokenSet(normA);
+  const setB = getTokenSet(normB);
+  if (!setA.size || !setB.size) return 0;
+
+  let shared = 0;
+  for (const token of setA) {
+    if (setB.has(token)) shared++;
+  }
+  return shared / Math.max(1, Math.min(setA.size, setB.size));
+}
+
+
+function getTextMatchedLabelMap(segments, speakers) {
+  const entries = [];
+  for (const speaker of speakers || []) {
+    const sampleText = String(speaker?.sampleText || "").trim();
+    if (!sampleText) continue;
+    for (const seg of segments || []) {
+      const segText = String(seg?.text || "").trim();
+      const segLabel = String(seg?.speaker || "").trim();
+      if (!segText || !segLabel) continue;
+      const score = getTextOverlapScore(segText, sampleText);
+      if (score >= 0.72) {
+        entries.push({ speakerId: speaker.id, label: segLabel, score });
+      }
+    }
+  }
+
+  entries.sort((a, b) => b.score - a.score);
+  const labelMap = {};
+  const usedIds = new Set();
+  for (const entry of entries) {
+    if (labelMap[entry.label] != null) continue;
+    if (usedIds.has(entry.speakerId)) continue;
+    labelMap[entry.label] = entry.speakerId;
+    usedIds.add(entry.speakerId);
+  }
+  return labelMap;
+}
+
+
+export function resolveSpeakerMapping(segments, preambleDurationS, orderedSpeakerIds, speakers = []) {
   const preambleSegs = segments.filter(s => (s.start ?? 0) < preambleDurationS);
-  const cleanSegs    = segments.filter(s => (s.start ?? 0) >= preambleDurationS);
+  let cleanSegs = segments.filter(s => (s.start ?? 0) >= preambleDurationS);
 
   const labelOrder = [];
   for (const seg of preambleSegs) {
@@ -294,5 +388,22 @@ export function resolveSpeakerMapping(segments, preambleDurationS, orderedSpeake
     mapping[labelOrder[i]] = orderedSpeakerIds[i];
   }
 
-  return { mapping, cleanSegments: cleanSegs };
+  const textMatchedMap = getTextMatchedLabelMap(segments, speakers);
+  for (const [label, speakerId] of Object.entries(textMatchedMap)) {
+    if (mapping[label] == null) mapping[label] = speakerId;
+  }
+
+  if (!cleanSegs.length && Object.keys(textMatchedMap).length) {
+    cleanSegs = segments.filter(seg => textMatchedMap[String(seg?.speaker || "").trim()] == null);
+  }
+
+  const zeroOffsetFallback = !cleanSegs.length && !!segments.length && Object.keys(mapping).length === 1;
+  if (zeroOffsetFallback) cleanSegs = segments.slice();
+
+  return {
+    mapping,
+    cleanSegments: cleanSegs,
+    textMatchedMap,
+    zeroOffsetFallback
+  };
 }

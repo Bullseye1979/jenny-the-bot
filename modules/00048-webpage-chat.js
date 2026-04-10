@@ -11,17 +11,12 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
+/**************************************************************/
+/* filename: "00048-webpage-chat.js"                         */
+/* Version 1.0                                               */
+/* Purpose: Web chat SPA with context-scoped subchannels.    */
+/*          Subchannels no longer store prompts in the DB.   */
+/**************************************************************/
 
 import fs     from "node:fs";
 import crypto from "node:crypto";
@@ -89,15 +84,6 @@ async function getEnsureChatSubchannelsTable(pool) {
       KEY idx_csc_channel (channel_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
-  try {
-    await pool.query(`ALTER TABLE chat_subchannels ADD COLUMN IF NOT EXISTS system_prompt TEXT NULL`);
-  } catch {}
-  try {
-    await pool.query(`ALTER TABLE chat_subchannels ADD COLUMN IF NOT EXISTS persona TEXT NULL`);
-  } catch {}
-  try {
-    await pool.query(`ALTER TABLE chat_subchannels ADD COLUMN IF NOT EXISTS instructions TEXT NULL`);
-  } catch {}
 }
 
 
@@ -289,18 +275,6 @@ export default async function getWebpageChat(coreData) {
       wo.channelID = channelID;
       wo.subchannel = subchannelId || null;
 
-      let subConfig = null;
-      if (subchannelId) {
-        try {
-          const pool = await getDb(coreData);
-          const [scRows] = await pool.query(
-            "SELECT system_prompt, persona, instructions FROM chat_subchannels WHERE subchannel_id = ? LIMIT 1",
-            [subchannelId]
-          );
-          if (scRows && scRows.length) subConfig = scRows[0];
-        } catch {}
-      }
-
       const apiUrl    = String(chatEntry.apiUrl    || cfg.apiUrl    || "http://localhost:3400/api").trim();
       const apiSecret = await getSecret(wo, String(chatEntry.apiSecret || cfg.apiSecret || "").trim());
 
@@ -312,10 +286,6 @@ export default async function getWebpageChat(coreData) {
         callerFlow:  "webpage-chat",
         ...(subchannelId ? { subchannel: subchannelId } : {})
       };
-
-      if (subConfig?.system_prompt) reqBody.systemPrompt  = String(subConfig.system_prompt).trim();
-      if (subConfig?.persona)       reqBody.persona        = String(subConfig.persona).trim();
-      if (subConfig?.instructions)  reqBody.instructions   = String(subConfig.instructions).trim();
 
       const headers = { "Content-Type": "application/json" };
       if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
@@ -360,10 +330,10 @@ export default async function getWebpageChat(coreData) {
       const pool = await getDb(coreData);
       await getEnsureChatSubchannelsTable(pool);
       const [rows] = await pool.query(
-        "SELECT subchannel_id, name, system_prompt, persona, instructions, created_at FROM chat_subchannels WHERE channel_id = ? ORDER BY created_at ASC",
+        "SELECT subchannel_id, name, created_at FROM chat_subchannels WHERE channel_id = ? ORDER BY created_at ASC",
         [channelID]
       );
-      setJsonResp(wo, 200, rows.map(r => ({ subchannelId: r.subchannel_id, name: r.name, systemPrompt: r.system_prompt || "", persona: r.persona || "", instructions: r.instructions || "", createdAt: r.created_at })));
+      setJsonResp(wo, 200, rows.map(r => ({ subchannelId: r.subchannel_id, name: r.name, createdAt: r.created_at })));
     } catch (e) {
       setJsonResp(wo, 500, { error: String(e?.message || e) });
     }
@@ -425,9 +395,6 @@ export default async function getWebpageChat(coreData) {
       const setClauses = [];
       const setArgs    = [];
       if (body?.name         !== undefined) { setClauses.push("name = ?");          setArgs.push(String(body.name         ?? "").trim()); }
-      if (body?.systemPrompt !== undefined) { setClauses.push("system_prompt = ?"); setArgs.push(String(body.systemPrompt ?? "") || null); }
-      if (body?.persona      !== undefined) { setClauses.push("persona = ?");       setArgs.push(String(body.persona      ?? "") || null); }
-      if (body?.instructions !== undefined) { setClauses.push("instructions = ?");  setArgs.push(String(body.instructions ?? "") || null); }
       if (!setClauses.length) { setJsonResp(wo, 400, { error: "nothing to update" }); wo.jump = true; await setSendNow(wo); return coreData; }
       setArgs.push(subchannelId);
       const [res] = await pool.execute(
@@ -567,12 +534,6 @@ function getChatHtml(opts) {
     "#chat-sub-sel:focus{outline:none;border-color:var(--acc)}\n" +
     ".chat-sub-btn{width:26px;height:26px;border:1px solid var(--bdr);border-radius:4px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}\n" +
     ".chat-sub-btn:hover{border-color:var(--acc);color:var(--acc)}\n" +
-    "#sub-cfg-modal textarea{width:100%;margin-top:4px;resize:vertical;background:var(--bg);color:var(--txt);border:1px solid var(--bdr);border-radius:4px;padding:6px;font-size:13px;box-sizing:border-box}\n" +
-    "#sub-cfg-modal .modal-box{background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:20px;width:min(520px,95vw);max-height:80vh;overflow-y:auto;display:flex;flex-direction:column;gap:12px}\n" +
-    "#sub-cfg-modal label{font-size:12px;color:var(--muted)}\n" +
-    "#sub-cfg-modal .modal-footer{display:flex;gap:8px;justify-content:flex-end}\n" +
-    "#sub-cfg-modal .btn-cancel{padding:6px 14px;border:1px solid var(--bdr);background:transparent;color:var(--txt);border-radius:4px;cursor:pointer}\n" +
-    "#sub-cfg-modal .btn-save{padding:6px 14px;border:none;background:var(--acc);color:#fff;border-radius:4px;cursor:pointer}\n" +
     "#chat-file-bar{display:none;align-items:center;gap:6px;padding:4px 10px;background:var(--bg3);border-top:1px solid var(--bdr);font-size:12px;color:var(--muted);flex-shrink:0}\n" +
     "#chat-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;flex:1}\n" +
     "#chat-file-clear{background:none;border:none;color:var(--muted);cursor:pointer;padding:0 4px;font-size:14px;line-height:1;flex-shrink:0}\n" +
@@ -595,7 +556,6 @@ function getChatHtml(opts) {
     "      <button class=\"chat-sub-btn\" id=\"sub-new-btn\" onclick=\"subCreate()\" title=\"New subchannel\" style=\"display:none\">\u271A</button>\n" +
     "      <button class=\"chat-sub-btn\" id=\"sub-ren-btn\" onclick=\"subRename()\" title=\"Rename subchannel\" style=\"display:none\">\u270E</button>\n" +
     "      <button class=\"chat-sub-btn\" id=\"sub-del-btn\" onclick=\"subDelete()\" title=\"Delete subchannel\" style=\"display:none\">\u2715</button>\n" +
-    "      <button class=\"chat-sub-btn\" id=\"sub-cfg-btn\" onclick=\"subConfig()\" title=\"Subchannel settings\" style=\"display:none\">\u2699</button>\n" +
     "      <button id=\"chat-reload-btn\" onclick=\"reloadContext()\" title=\"Reload\">\u21BB</button>\n" +
     "    </div>\n" +
     "    <div id=\"chat-msgs\"><div class=\"chat-loading\">Select a channel to start chatting.</div></div>\n" +
@@ -609,21 +569,6 @@ function getChatHtml(opts) {
     "    <button id=\"chat-attach-btn\" onclick=\"document.getElementById('chat-file-input').click()\" title=\"Attach file\">\uD83D\uDCCE</button>\n" +
     "    <textarea id=\"chat-input\" placeholder=\"Type a message\u2026  (Enter = send \u2022 Shift+Enter = newline)\" rows=\"1\"></textarea>\n" +
     "    <button id=\"chat-send-btn\" onclick=\"sendMessage()\" title=\"Send\">\u27A4</button>\n" +
-    "  </div>\n" +
-    "</div>\n" +
-    "<div id=\"sub-cfg-modal\" style=\"display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:900;align-items:center;justify-content:center\">\n" +
-    "  <div class=\"modal-box\">\n" +
-    "    <div style=\"display:flex;justify-content:space-between;align-items:center\">\n" +
-    "      <strong>Subchannel Settings</strong>\n" +
-    "      <button onclick=\"subConfigClose()\" style=\"background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px\">\u2715</button>\n" +
-    "    </div>\n" +
-    "    <label>System Prompt<br><textarea id=\"cfg-system-prompt\" rows=\"5\"></textarea></label>\n" +
-    "    <label>Persona<br><textarea id=\"cfg-persona\" rows=\"3\"></textarea></label>\n" +
-    "    <label>Instructions<br><textarea id=\"cfg-instructions\" rows=\"3\"></textarea></label>\n" +
-    "    <div class=\"modal-footer\">\n" +
-    "      <button class=\"btn-cancel\" onclick=\"subConfigClose()\">Cancel</button>\n" +
-    "      <button class=\"btn-save\" onclick=\"subConfigSave()\">Save</button>\n" +
-    "    </div>\n" +
     "  </div>\n" +
     "</div>\n" +
     "<div id=\"toast\" class=\"toast\"></div>\n" +
@@ -693,7 +638,7 @@ function getChatHtml(opts) {
     "  loadSubchannels(channelID);\n" +
     "}\n" +
     "\n" +
-    "function hideSubUI(){[\"chat-sub-sel\",\"sub-new-btn\",\"sub-ren-btn\",\"sub-del-btn\",\"sub-cfg-btn\"].forEach(function(id){document.getElementById(id).style.display=\"none\";});}\n" +
+    "function hideSubUI(){[\"chat-sub-sel\",\"sub-new-btn\",\"sub-ren-btn\",\"sub-del-btn\"].forEach(function(id){document.getElementById(id).style.display=\"none\";});}\n" +
     "\n" +
     "function loadSubchannels(channelID, autoSelectId){\n" +
     "  fetch(CHAT_BASE+\"/api/subchannels?channelID=\"+encodeURIComponent(channelID))\n" +
@@ -716,10 +661,8 @@ function getChatHtml(opts) {
     "  chatSubchannelId=subchannelId;\n" +
     "  var renBtn=document.getElementById(\"sub-ren-btn\");\n" +
     "  var delBtn=document.getElementById(\"sub-del-btn\");\n" +
-    "  var cfgBtn=document.getElementById(\"sub-cfg-btn\");\n" +
     "  renBtn.style.display=subchannelId?\"\":\"none\";\n" +
     "  delBtn.style.display=subchannelId?\"\":\"none\";\n" +
-    "  cfgBtn.style.display=subchannelId?\"\":\"none\";\n" +
     "  loadContext(chatChannelID,subchannelId);\n" +
     "}\n" +
     "\n" +
@@ -762,38 +705,6 @@ function getChatHtml(opts) {
     "      chatSubchannelId=\"\";\n" +
     "      loadSubchannels(chatChannelID);\n" +
     "      toast(\"Deleted\");\n" +
-    "    })\n" +
-    "    .catch(function(e){toast(\"Error: \"+e.message,5000);});\n" +
-    "}\n" +
-    "\n" +
-    "function subConfig(){\n" +
-    "  if(!chatSubchannelId)return;\n" +
-    "  var sc=chatSubchannelList.find(function(s){return s.subchannelId===chatSubchannelId;});\n" +
-    "  document.getElementById(\"cfg-system-prompt\").value=sc&&sc.systemPrompt?sc.systemPrompt:\"\";\n" +
-    "  document.getElementById(\"cfg-persona\").value=sc&&sc.persona?sc.persona:\"\";\n" +
-    "  document.getElementById(\"cfg-instructions\").value=sc&&sc.instructions?sc.instructions:\"\";\n" +
-    "  var m=document.getElementById(\"sub-cfg-modal\");m.style.display=\"flex\";\n" +
-    "}\n" +
-    "\n" +
-    "function subConfigClose(){\n" +
-    "  document.getElementById(\"sub-cfg-modal\").style.display=\"none\";\n" +
-    "}\n" +
-    "\n" +
-    "function subConfigSave(){\n" +
-    "  if(!chatSubchannelId)return;\n" +
-    "  var payload={\n" +
-    "    subchannelId:chatSubchannelId,\n" +
-    "    systemPrompt:document.getElementById(\"cfg-system-prompt\").value,\n" +
-    "    persona:document.getElementById(\"cfg-persona\").value,\n" +
-    "    instructions:document.getElementById(\"cfg-instructions\").value\n" +
-    "  };\n" +
-    "  fetch(CHAT_BASE+\"/api/subchannels\",{method:\"PATCH\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify(payload)})\n" +
-    "    .then(function(r){return r.json();})\n" +
-    "    .then(function(d){\n" +
-    "      if(d&&d.error){toast(\"Error: \"+d.error,5000);return;}\n" +
-    "      subConfigClose();\n" +
-    "      loadSubchannels(chatChannelID);\n" +
-    "      toast(\"Settings saved\");\n" +
     "    })\n" +
     "    .catch(function(e){toast(\"Error: \"+e.message,5000);});\n" +
     "}\n" +

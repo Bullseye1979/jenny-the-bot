@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "getZIP.js"                                            */
+/* Version 1.0                                               */
+/* Purpose: LLM-callable tool implementation.               */
+/**************************************************************/
 
 
 
@@ -67,7 +72,7 @@ async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
 
   const urls       = Array.isArray(args?.urls) ? args.urls.map(u => String(u || "").trim()).filter(Boolean) : [];
-  const baseUrl    = String(args?.baseUrl || args?.base_url || "").trim();
+  const baseUrl    = String(args?.baseUrl || "").trim();
   const zipName    = String(args?.filename || "").trim() || "archive";
   const timeoutMs  = Math.max(5000, Number.isFinite(Number(args?.timeoutMs)) ? Number(args.timeoutMs) : 30000);
 

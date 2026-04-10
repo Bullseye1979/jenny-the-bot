@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00074-core-trigger-gate.js"                           */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -28,6 +33,11 @@ export default async function getCoreTriggerGate(coreData) {
 
   if (wo.bypassTriggerGate === true) {
     log("Allowed: bypassTriggerGate set", "info", { moduleName: MODULE_NAME });
+    return coreData;
+  }
+
+  if (wo.isMacro === true) {
+    log("Allowed: macro payload", "info", { moduleName: MODULE_NAME });
     return coreData;
   }
 

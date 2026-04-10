@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "getHistory.js"                                        */
+/* Version 1.0                                               */
+/* Purpose: LLM-callable tool implementation.               */
+/**************************************************************/
 
 
 
@@ -89,6 +94,18 @@ function getAddDaysUTC(yyyy_mm_dd, days) {
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const da = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${da}`;
+}
+
+
+function getNowUtcSql() {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const da = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  const ss = String(d.getUTCSeconds()).padStart(2, "0");
+  return `${y}-${m}-${da} ${hh}:${mm}:${ss}`;
 }
 
 
@@ -207,7 +224,7 @@ async function getHistoryInvoke(args, coreData) {
   let endTs;
   let endExclusive = false;
   if (!endRaw) {
-    endTs = startTs.slice(0, 10) + " 23:59:59";
+    endTs = getNowUtcSql();
     endExclusive = false;
   } else if (getIsDateOnly(endRaw)) {
     const endStart = getParsedHumanDate(endRaw, false);

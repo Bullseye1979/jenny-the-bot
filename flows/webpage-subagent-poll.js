@@ -10,14 +10,15 @@
 /*          formatted response as an SSE event to all connected clients.            *
 /*                                                                                  *
 /*  Event payload:                                                                  *
-/*    { type: "async_result", response, callerFlow, agentType, jobId, projectId }  *
+/*    { type: "async_result", response, callerFlow, agentType, jobId, projectId,   *
+/*      audioBase64?, audioMime? }                                                  *
 /************************************************************************************/
 
 import { getItem, putItem, deleteItem, listKeys } from "../core/registry.js";
 import { getPrefixedLogger }   from "../core/logging.js";
 import { logSubagent }         from "../core/subagent-logger.js";
 import { pushAsyncResult, getSseConnectionCount } from "../core/async-sse.js";
-import { runParentChain } from "../core/subagent-poll-helpers.js";
+import { runPersonaPass, runParentChain } from "../core/subagent-poll-helpers.js";
 
 const MODULE_NAME = "webpage-subagent-poll";
 
@@ -28,13 +29,38 @@ function getIsHandledFlow(callerFlow) {
 }
 
 
-async function deliverToOutput(callerFlow, callerChannelId, response, jobId, projectId, agentType, log) {
+async function deliverToOutput(callerFlow, callerChannelId, response, jobId, projectId, agentType, log, createRunCore, runFlow) {
+  let audioBase64 = null;
+  let audioMime = null;
+
+  if (String(callerFlow || "").startsWith("webpage-voice")) {
+    try {
+      const _voicePayload = await getVoicePayload({
+        callerFlow,
+        callerChannelId,
+        response,
+        jobId,
+        projectId,
+      }, createRunCore, runFlow);
+      audioBase64 = _voicePayload.audioBase64;
+      audioMime = _voicePayload.audioMime;
+    } catch (e) {
+      logSubagent("error", "webpage-poll", "tts_payload_failed", {
+        callerFlow,
+        callerChannelId,
+        jobId,
+        error: e?.message || String(e),
+      });
+    }
+  }
+
   logSubagent("info", "webpage-poll", "sse_push", {
     callerFlow,
     callerChannelId,
     jobId,
     responseLen: response.length,
     connections: getSseConnectionCount(callerChannelId),
+    hasAudio: !!audioBase64,
   });
 
   const _sent = pushAsyncResult(callerChannelId, {
@@ -44,6 +70,8 @@ async function deliverToOutput(callerFlow, callerChannelId, response, jobId, pro
     agentType:  agentType || null,
     jobId:      jobId     || null,
     projectId:  projectId || null,
+    audioBase64,
+    audioMime,
   });
 
   if (_sent === 0) {
@@ -53,7 +81,49 @@ async function deliverToOutput(callerFlow, callerChannelId, response, jobId, pro
     logSubagent("info", "webpage-poll", "sse_push_ok", { callerChannelId, sent: _sent, jobId });
   }
 
-  return _sent;
+  return {
+    sent: _sent,
+    audioBase64,
+    audioMime,
+  };
+}
+
+
+async function getVoicePayload({ callerFlow, callerChannelId, response, jobId, projectId }, createRunCore, runFlow) {
+  const _rc = createRunCore();
+  const _wo = (_rc.workingObject ||= {});
+  _wo.flow                = "webpage";
+  _wo.overrideFlow        = String(callerFlow || "");
+  _wo.channelID           = String(callerChannelId || "");
+  _wo.response            = String(response || "");
+  _wo.skipAiCompletions   = true;
+  _wo.doNotWriteToContext = true;
+  _wo.bypassTriggerGate   = true;
+  _wo.bypassGdprGate      = true;
+  _wo.channelallowed      = true;
+  _wo.isWebpageVoice      = true;
+  _wo.synthesizeSpeech    = true;
+  _wo.ttsFormat           = "mp3";
+  _wo.deliverSubagentJob  = {
+    jobId: String(jobId || ""),
+    projectId: String(projectId || ""),
+  };
+  _wo.timestamp           = new Date().toISOString();
+
+  await runFlow("webpage", _rc);
+
+  const _buffers = Array.isArray(_wo.ttsSegments)
+    ? _wo.ttsSegments.map((segment) => segment?.buffer).filter((buffer) => Buffer.isBuffer(buffer))
+    : [];
+
+  if (!_buffers.length) {
+    return { audioBase64: null, audioMime: null };
+  }
+
+  return {
+    audioBase64: Buffer.concat(_buffers).toString("base64"),
+    audioMime: "audio/mpeg",
+  };
 }
 
 
@@ -117,7 +187,7 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
         (async () => {
           try {
             const _deliverFn = (cFlow, cChannelId, resp, projId) =>
-              deliverToOutput(cFlow, cChannelId, resp, _job.jobId, projId, _job.agentType, log);
+              deliverToOutput(cFlow, cChannelId, resp, _job.jobId, projId, _job.agentType, log, createRunCore, runFlow);
             await runParentChain(_parentProjectId, _job, _result, baseCore, createRunCore, runFlow, _deliverFn, log);
           } catch (e) {
             logSubagent("error", "webpage-poll", "parent_chain_exception", { jobId: _job.jobId, error: e?.message || String(e) });
@@ -134,11 +204,33 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
       const _capturedKey = _key;
       (async () => {
         try {
-          if (_rawResult) {
-            const _sent = await deliverToOutput(_capturedJob.callerFlow, _capturedJob.callerChannelId, _rawResult, _capturedJob.jobId, _capturedJob.projectId, _capturedJob.agentType, log);
-            if (_sent === 0) {
+          const _response = await runPersonaPass(
+            {
+              callerChannelId:   _capturedJob.callerChannelId,
+              callerFlow:        _capturedJob.callerFlow,
+              userId:            _capturedJob.userId,
+              guildId:           _capturedJob.guildId,
+              authorDisplayname: _capturedJob.authorDisplayname,
+              agentType:         _capturedJob.agentType,
+              jobId:             _capturedJob.jobId,
+              projectId:         _capturedJob.projectId,
+            },
+            _rawResult,
+            createRunCore,
+            runFlow,
+            log
+          );
+          if (_response) {
+            const _delivery = await deliverToOutput(_capturedJob.callerFlow, _capturedJob.callerChannelId, _response, _capturedJob.jobId, _capturedJob.projectId, _capturedJob.agentType, log, createRunCore, runFlow);
+            if (_delivery.sent === 0) {
               try {
-                await putItem({ ..._capturedJob, personaResult: _rawResult, status: "done" }, _capturedKey);
+                await putItem({
+                  ..._capturedJob,
+                  personaResult: _response,
+                  personaAudioBase64: _delivery.audioBase64,
+                  personaAudioMime: _delivery.audioMime,
+                  status: "done"
+                }, _capturedKey);
                 logSubagent("info", "webpage-poll", "sse_miss_fallback_saved", { jobId: _capturedJob.jobId, callerChannelId: _capturedJob.callerChannelId });
               } catch (e) {
                 logSubagent("error", "webpage-poll", "sse_miss_fallback_failed", { jobId: _capturedJob.jobId, error: e?.message || String(e) });

@@ -1,5 +1,5 @@
 {
-  "__description": "Minimal core.json for Jenny Discord AI Bot — fill in all YOUR_* placeholders, then: cp core.json.example core.json && node main.js",
+  "__description": "Minimal core.json for Jenny Discord AI Bot. Fill in all YOUR_* placeholders, then copy core.json.example to core.json and start the bot.",
   "workingObject": {
     "__description": "Global runtime defaults for the bot",
     "botName": "Jenny",
@@ -217,6 +217,13 @@
             ]
           },
           {
+            "name": "rebuilddb",
+            "description": "Rebuild derived context tables for this channel and linked channel IDs",
+            "admin": [
+              "YOUR_DISCORD_USER_ID"
+            ]
+          },
+          {
             "name": "gdpr",
             "description": "Set GDPR consent flags",
             "options": [
@@ -340,26 +347,15 @@
         "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL"
       },
       "getHistory": {
-        "__description": "Conversation history tool — returns raw row dump. LLM processing is done by the calling subagent.",
-        "pagesize": 500,
-        "maxRows": 2000,
-        "includeToolRows": false
+        "__description": "Hierarchical history zoom tool — each call goes exactly one level deeper and returns either child blocks or raw rows at the bottom.",
+        "maxRows": 300,
+        "includeToolRows": false,
+        "includeJson": false
       },
-      "getInformation": {
-        "__description": "Information clustering — no API configuration required. aliasLlmChannelId enables optional alias search via internal API flow.",
-        "clusterRows": 200,
-        "padRows": 20,
-        "tokenWindow": 5,
-        "maxLogChars": 6000,
-        "maxOutputLines": 500,
-        "minCoverage": 1,
-        "eventGapMinutes": 45,
-        "stripCode": false,
-        "includeAnsweredTurns": false,
-        "includeAssistantTurns": false,
-        "includeAliasSearch": false,
-        "aliasMaxDepth": 2,
-        "aliasLlmChannelId": ""
+      "getTimeline": {
+        "__description": "Chronological timeline from derived context segments and nodes.",
+        "maxEntries": 120,
+        "compact": true
       },
       "getYoutube": {
         "__description": "YouTube transcript fetcher — returns raw transcript dump. LLM processing is done by the calling subagent.",
@@ -374,7 +370,7 @@
         "relevanceLanguage": "de"
       },
       "getSubAgent": {
-        "__description": "Routes a task to an isolated subagent channel via the internal API flow. Subagents inherit the caller instructions for language, style, verbosity, length, and formatting, so the first subagent answer is already ready for delivery without a second persona pass. Each type maps to a dedicated channelID configured in core-channel-config.",
+        "__description": "Routes a task to an isolated subagent channel via the internal API flow. Subagents inherit the caller instructions for language, style, verbosity, length, and formatting, so the first subagent answer is already ready for delivery without a second persona pass. Each type maps to a dedicated channelID configured in core-channel-config. Caller context is not preloaded unless the tool call sets includeCallerContext=true.",
         "apiUrl": "http://localhost:3400",
         "apiSecret": "API_SECRET",
         "timeoutMs": 120000,
@@ -383,8 +379,16 @@
         "maxSpawnDepth": 2,
         "types": {
           "resume": "subagent-resume",
+          "history": "subagent-history",
           "research": "subagent-research",
+          "generate": "subagent-generate",
           "media": "subagent-media",
+          "atlassian": "subagent-atlassian",
+          "microsoft": "subagent-microsoft",
+          "develop": "subagent-develop",
+          "patch": "subagent-patch",
+          "orchestrate": "subagent-orchestrate",
+          "test": "subagent-test",
           "generic": "subagent-generic"
         }
       },
@@ -414,6 +418,9 @@
         "timeoutMs": 1400000,
         "networkTimeoutMs": 14400000
       }
+    },
+    "context": {
+      "timelineSummaryPrompt": "Summarize the supplied channel segment and return strict JSON only.\nRequired JSON keys: summary.\nsummary must be a structured plain-text block stored in a single string value.\nMake the summary richer and more explicit than a short paragraph.\nUse this exact section order inside the summary string when information exists:\nOverview:\nTopics:\nKey Events:\nLocations:\nPeople:\nWrite concise but informative sentences or bullet-style lines inside those sections.\nInclude important names, places, notable discussion topics, jokes, conflicts, and key events directly in the summary text.\nDo not split those details into separate JSON fields.\nDo not use phrases such as \"in this segment\", \"in these messages\", \"the segment shows\", or similar framing.\nRemain domain-agnostic. Do not assume DnD unless the messages actually indicate it.\nDo not include markdown or any text outside the JSON object."
     }
   },
   "config": {
@@ -455,11 +462,59 @@
       ]
     },
     "context": {
-      "__description": "Rolling summary backend — fill in apiKey",
-      "endpoint": "https://api.openai.com/v1/chat/completions",
-      "model": "gpt-4o-mini",
-      "apiKey": "OPENAI",
-      "periodSize": 600
+      "__description": "Context engine for raw storage and derived retrieval — fill in apiKey",
+      "segmentTurnCount": 6,
+      "nodeBranchFactor": 4,
+      "recentRawCount": 80,
+      "retrievalMaxSegments": 6,
+      "retrievalNeighborSegments": 1,
+      "retrievalMaxNodeSummaries": 2,
+      "segmentGapMinutes": 20,
+      "summaryMaxLength": 320,
+      "anchorEnabled": true,
+      "anchorRebuildOnWrite": true,
+      "anchorMinConfidence": 0.2,
+      "anchorMaxEvidenceRows": 12,
+      "anchorOriginDepth": 3,
+      "anchorLinkedContextWeight": 0.55,
+      "anchorLlmFallbackEnabled": false,
+      "embeddingEnabled": true,
+      "embeddingRebuildOnWrite": true,
+      "embeddingMaxCandidates": 10,
+      "embeddingMinScore": 0.18,
+      "embeddingLinkedContextWeight": 0.5,
+      "historyZoomEnabled": true,
+      "historyZoomBaseSize": 100,
+      "historyZoomMaxLevels": 4,
+      "historyZoomLinkedContextWeight": 0.5,
+      "historyZoomRebuildOnWrite": true,
+      "meshEnabled": true,
+      "meshRebuildOnWrite": true,
+      "meshTargetMicroRows": 100,
+      "meshRollupFactor": 10,
+      "meshMaxLevels": 4,
+      "meshEntityMinConfidence": 0.25,
+      "meshGraphDepth": 2,
+      "meshLinkedContextWeight": 0.5,
+      "meshNeighborBlockCount": 2,
+      "eventEnabled": true,
+      "eventRebuildOnWrite": true,
+      "eventMinConfidence": 0.28,
+      "eventMaxCandidates": 8,
+      "eventLinkedContextWeight": 0.45,
+      "eventMinRows": 3,
+      "eventMaxRows": 18,
+      "eventAdaptiveGapMinutes": 12,
+      "timelineChannelDenyList": [
+        "cron",
+        "cron-*"
+      ],
+      "timelineFlowDenyList": [
+        "cron",
+        "cron-*"
+      ],
+      "subchannelFallback": false,
+      "rebuildOnWrite": true
     },
     "webpage": {
       "flowName": "webpage",
@@ -478,7 +533,8 @@
         3121,
         3122,
         3126,
-        3127
+        3127,
+        3128
       ]
     },
     "webpage-router": {
@@ -528,7 +584,8 @@
         3121,
         3122,
         3126,
-        3127
+        3127,
+        3128
       ],
       "sessionMaxAgeSec": 43200,
       "sameSite": "Lax",
@@ -555,44 +612,59 @@
       ],
       "items": [
         {
-          "text": "⚙️ Config",
-          "link": "/config",
-          "roles": [
-            "admin"
-          ]
-        },
-        {
-          "text": "📄 Manifests",
-          "link": "/manifests",
-          "roles": [
-            "admin"
-          ]
-        },
-        {
-          "text": "🧩 Subagents",
-          "link": "/subagents",
-          "roles": [
-            "admin"
-          ]
-        },
-        {
-          "text": "💬 Chat",
+          "text": "Assistants\\Chat",
+          "iconKey": "chat",
           "link": "/chat"
         },
         {
-          "text": "🖼️ Inpainting",
+          "text": "Tools\\Inpainting",
+          "iconKey": "inpainting",
           "link": "/inpainting"
         },
         {
-          "text": "🎵 Bard",
+          "text": "Tools\\Bard",
+          "iconKey": "bard",
           "link": "/bard",
           "roles": [
             "admin"
           ]
         },
         {
-          "text": "🎶 Bard Stream",
-          "link": "/bard-stream"
+          "text": "Administrator\\Config",
+          "iconKey": "config",
+          "link": "/config",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\Manifests",
+          "iconKey": "manifests",
+          "link": "/manifests",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\Subagents",
+          "iconKey": "subagents",
+          "link": "/subagents",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Data and Information\\Timeline",
+          "iconKey": "timeline",
+          "link": "/timeline",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Data and Information\\Docs",
+          "iconKey": "docs",
+          "link": "/docs"
         }
       ]
     },
@@ -638,7 +710,7 @@
         "getPDF": "⏳ Generating a PDF …",
         "getText": "⏳ Generating a file …",
         "getHistory": "⏳ Checking history …",
-        "getInformation": "⏳ Searching information …",
+        "getTimeline": "⏳ Checking the timeline …",
         "getToken": "⏳ Generating a token …",
         "getLocation": "⏳ Looking up a location …",
         "getJira": "⏳ Working with Jira …",
@@ -707,11 +779,6 @@
         "api"
       ]
     },
-    "api-output": {
-      "flow": [
-        "api"
-      ]
-    },
     "core-add-id": {
       "flow": [
         "discord",
@@ -754,7 +821,7 @@
       "port": 3111,
       "host": "127.0.0.1",
       "token": "",
-      "configPath": "",
+      "file": "",
       "label": "⚙️ Config"
     },
     "webpage-chat": {
@@ -798,7 +865,7 @@
         "contextSize": 150,
         "tools": [
           "getImage",
-          "getInformation"
+          "getTimeline"
         ],
         "systemPrompt": "",
         "persona": "",
@@ -871,12 +938,6 @@
     "discord-admin-macro": {
       "flow": [
         "discord-admin"
-      ]
-    },
-    "discord-admin-commands": {
-      "flow": [
-        "discord-admin",
-        "discord"
       ]
     },
     "core-admin-commands": {
@@ -1092,7 +1153,6 @@
               "getTavily",
               "getWebpage",
               "getHistory",
-              "getInformation",
               "getYoutube",
               "getImage",
               "getImageDescription",
@@ -1105,7 +1165,39 @@
           }
         },
         {
-          "__description": "Subagent: research ? handles web research, webpage fetches, YouTube, route searches, route planning, and location lookups. Summarizing YouTube videos or finding videos from specific creators or with specific content is also handled with this subagent. Spawned by getSubAgent(type='research'). No getSubAgent in tools to prevent recursion.",
+          "__description": "Subagent: history. Deep historical memory and chronology specialist for older events, people, places, and developments from prior session context. Spawned by getSubAgent(type='history', includeCallerContext=true) when visible context is not enough.",
+          "channelMatch": [
+            "subagent-history"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "maxToolCalls": 8,
+            "includeHistory": true,
+            "includeHistoryTools": false,
+            "contextSize": 70,
+            "compressedContextElements": 30,
+            "doNotWriteToContext": true,
+            "systemPrompt": "Use the loaded caller context and timeline blocks as your primary evidence. If the loaded context already answers the question with enough depth, answer directly and do not call tools. If the visible context is missing key details, uncertain, or would only support a shallow answer, use getInformation to identify the relevant older period and then use getHistory with the returned timeframe to retrieve deeper surrounding records. Do not spawn another history subagent.",
+            "tools": [
+              "getInformation",
+              "getHistory",
+              "getTime",
+              "getSubAgent"
+            ],
+            "persona": "You are the History Subagent. Your task is to reconstruct older session knowledge, chronology, people, places, and developments for the caller.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Subagent: research. Handles web research, webpage fetches, YouTube, route searches, route planning, and location lookups. Spawned by getSubAgent(type='research').",
           "channelMatch": [
             "subagent-research"
           ],
@@ -1121,11 +1213,8 @@
             "maxLoops": 10,
             "includeHistory": false,
             "doNotWriteToContext": true,
-            "systemPrompt": "Use the available tools to retrieve information and return the requested result. Use getGoogle, getTavily, and getWebpage for research, getInformation and getHistory for prior context, getYoutube for YouTube summaries or creator lookups, and getLocation for route searches, route planning, and place lookups. Do not ask clarifying questions when the available evidence is enough to proceed.",
+            "systemPrompt": "Use the available tools to retrieve information and return the requested result. Use the visible context first. Use getTavily and getWebpage for research, getYoutube for YouTube summaries or creator lookups, and getLocation for route searches, route planning, and place lookups. Do not ask clarifying questions when the available evidence is enough to proceed.",
             "tools": [
-              "getHistory",
-              "getInformation",
-              "getGoogle",
               "getTavily",
               "getWebpage",
               "getYoutube",
@@ -1137,7 +1226,7 @@
           }
         },
         {
-          "__description": "Subagent: media — handles YouTube transcripts and web pages. Spawned by getSubAgent(type='media'). No getSubAgent in tools to prevent recursion.",
+          "__description": "Subagent: media. Handles image generation, animation, video, and media analysis. Spawned by getSubAgent(type='media').",
           "channelMatch": [
             "subagent-media"
           ],
@@ -1153,18 +1242,21 @@
             "maxLoops": 6,
             "includeHistory": false,
             "doNotWriteToContext": true,
-            "systemPrompt": "Fetch and analyze the requested media such as YouTube videos and web pages. Base the result only on the retrieved content and do not invent details.",
+            "systemPrompt": "Create or analyze the requested media assets. Base the result only on the generated or retrieved content and do not invent details.",
             "tools": [
-              "getYoutube",
-              "getWebpage",
-              "getTime"
+              "getImage",
+              "getAnimatedPicture",
+              "getVideoFromText",
+              "getImageDescription",
+              "getToken",
+              "getZIP"
             ],
-            "persona": "You are the Media Subagent. Your task is to fetch and summarize media content for the caller.",
+            "persona": "You are the Media Subagent. Your task is to create, transform, and analyze media assets for the caller.",
             "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
           }
         },
         {
-          "__description": "Subagent: generic — full standard tool palette. Spawned by getSubAgent(type='generic'). No getSubAgent in tools to prevent recursion.",
+          "__description": "Subagent: generic. General-purpose fallback when no specialist fits better. Spawned by getSubAgent(type='generic').",
           "channelMatch": [
             "subagent-generic"
           ],
@@ -1186,7 +1278,6 @@
               "getTavily",
               "getWebpage",
               "getHistory",
-              "getInformation",
               "getYoutube",
               "getImage",
               "getImageDescription",
@@ -1330,6 +1421,16 @@
       ],
       "port": 3127,
       "basePath": "/subagents",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    "webpage-timeline": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3128,
+      "basePath": "/timeline",
       "allowedRoles": [
         "admin"
       ]

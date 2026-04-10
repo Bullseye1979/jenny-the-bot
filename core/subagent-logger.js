@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "subagent-logger.js"                                   */
+/* Version 1.0                                               */
+/* Purpose: Core shared runtime helper.                     */
+/**************************************************************/
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

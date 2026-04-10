@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "01000-core-ai-completions.js"                         */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -5,7 +10,7 @@
 
 
 import { getContext } from "../core/context.js";
-import { putItem } from "../core/registry.js";
+import { putItem, getItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
@@ -117,11 +122,13 @@ function getToolStatusScope(wo) {
 function getKiCfg(wo) {
   const includeHistory = getBool(wo?.includeHistory, true);
   const includeHistoryTools = getBool(wo?.includeHistoryTools, false);
+  const includeHistorySystemMessages = getBool(wo?.includeHistorySystemMessages, false);
   const includeRuntimeContext = getBool(wo?.includeRuntimeContext, false);
   const toolsList = Array.isArray(wo?.tools) ? wo.tools : [];
   return {
     includeHistory,
     includeHistoryTools,
+    includeHistorySystemMessages,
     includeRuntimeContext,
     exposeTools: toolsList.length > 0,
     toolsList,
@@ -154,10 +161,15 @@ function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
   if (!kiCfg.includeHistory) return [];
   const out = [];
   const includeTools = !!kiCfg.includeHistoryTools && !!allowToolHistory;
+  const includeSystem = !!kiCfg.includeHistorySystemMessages;
   let lastAssistantToolIds = new Set();
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i] || {};
     const role = r.role;
+    if (role === "system") {
+      if (includeSystem) out.push({ role: "system", content: r.content ?? "" });
+      continue;
+    }
     if (role === "user") {
       out.push({ role: "user", content: r.content ?? "" });
       lastAssistantToolIds = new Set();
@@ -271,6 +283,31 @@ function getToolTask(tc) {
 }
 
 
+function getToolResultMeta(result) {
+  const value = typeof result === "string" ? getTryParseJSON(result, result) : result;
+  if (value && typeof value === "object") {
+    if (value.ok === false) {
+      return { ok: false, error: typeof value.error === "string" ? value.error : "" };
+    }
+    if (typeof value.error === "string" && value.error.trim()) {
+      return { ok: false, error: value.error.trim() };
+    }
+  }
+  return { ok: true, error: "" };
+}
+
+
+function getLimitNotice(kind) {
+  if (kind === "tool") {
+    return "Tool budget reached. This is the partial result so far. Start a new AI run if you want me to continue the deep dive.";
+  }
+  if (kind === "loop") {
+    return "Loop limit reached. This is the partial result so far. Start a new AI run if you want me to continue from here.";
+  }
+  return "";
+}
+
+
 async function getExecToolCall(toolModules, toolCall, coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
@@ -296,18 +333,46 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   const _currentFlow = String(coreData?.workingObject?.flow || "");
   const _statusScope = getToolStatusScope(coreData?.workingObject || {});
   const _hasGlobalStatus = _currentFlow !== "api" || !!_statusScope;
+  const _statusToken = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+  const _statusChannelId = String(
+    coreData?.workingObject?.callerChannelId ||
+    coreData?.workingObject?.channelID ||
+    ""
+  ).trim();
+  const _statusPayload = {
+    name,
+    flow: _currentFlow,
+    scope: _statusScope,
+    token: _statusToken,
+    channelId: _statusChannelId
+  };
   if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
   const _myGen = ++wo._statusToolGen;
   try {
     if (_hasGlobalStatus) {
-      try { await putItem({ name, flow: _currentFlow, scope: _statusScope }, "status:tool"); } catch {}
+      try { await putItem(_statusPayload, "status:tool"); } catch {}
     }
-    if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
-    if (_callerCh && _callerCh !== _tcCh) try { await putItem(name, "status:tool:" + _callerCh); } catch {}
+    if (_tcCh) try { await putItem({ name, token: _statusToken }, "status:tool:" + _tcCh); } catch {}
+    if (_callerCh && _callerCh !== _tcCh) try { await putItem({ name, token: _statusToken }, "status:tool:" + _callerCh); } catch {}
     const result = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
-    log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, durationMs: durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
-    writeToolcallLog({ ...getToolcallLogBase(wo), tool: name, status: "success", durationMs });
+    const resultMeta = getToolResultMeta(result);
+    const logLevel = resultMeta.ok ? "info" : "warn";
+    const logLabel = resultMeta.ok ? "Tool call success" : "Tool call returned error payload";
+    log(logLabel, logLevel, {
+      tool_call_id: toolCall?.id || null,
+      tool: name,
+      durationMs: durationMs,
+      error: resultMeta.error || undefined,
+      result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX)
+    });
+    writeToolcallLog({
+      ...getToolcallLogBase(wo),
+      tool: name,
+      status: resultMeta.ok ? "success" : "returned_error",
+      durationMs,
+      ...(resultMeta.error ? { error: resultMeta.error } : {})
+    });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
@@ -321,9 +386,24 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       : 800;
     setTimeout(() => {
       if (wo._statusToolGen !== _myGen) return;
-      if (_hasGlobalStatus) { try { putItem("", "status:tool"); } catch {} }
-      if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
-      if (_callerCh && _callerCh !== _tcCh) try { putItem("", "status:tool:" + _callerCh); } catch {}
+      if (_hasGlobalStatus) {
+        try {
+          const current = getItem("status:tool");
+          if (current?.token === _statusToken) deleteItem("status:tool");
+        } catch {}
+      }
+      if (_tcCh) {
+        try {
+          const current = getItem("status:tool:" + _tcCh);
+          if (current?.token === _statusToken) deleteItem("status:tool:" + _tcCh);
+        } catch {}
+      }
+      if (_callerCh && _callerCh !== _tcCh) {
+        try {
+          const current = getItem("status:tool:" + _callerCh);
+          if (current?.token === _statusToken) deleteItem("status:tool:" + _callerCh);
+        } catch {}
+      }
     }, Math.max(0, delayMs));
   }
 }
@@ -426,6 +506,8 @@ export default async function getCoreAi(coreData) {
   const toolCallLog = [];
   let totalToolCalls = 0;
   let accumulatedText = "";
+  let hitMaxLoops = false;
+  let hitMaxToolCalls = false;
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     if (wo.aborted) {
       log("Pipeline aborted — client disconnected.", "warn");
@@ -488,12 +570,14 @@ export default async function getCoreAi(coreData) {
       }
       if (toolCalls && toolCalls.length && toolModules.length) {
         if (totalToolCalls >= kiCfg.maxToolCalls) {
+          hitMaxToolCalls = true;
           log(`maxToolCalls limit reached (${totalToolCalls}/${kiCfg.maxToolCalls}) — stopping tool execution`, "warn");
           break;
         }
         wo._fullAssistantText = accumulatedText;
         for (const tc of toolCalls) {
           if (totalToolCalls >= kiCfg.maxToolCalls) {
+            hitMaxToolCalls = true;
             log(`maxToolCalls limit reached mid-batch (${totalToolCalls}/${kiCfg.maxToolCalls}) — skipping remaining tool calls`, "warn");
             break;
           }
@@ -505,7 +589,10 @@ export default async function getCoreAi(coreData) {
           messages.push(toolMsg);
           wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
           let _tcStatus = "success";
-          try { if (JSON.parse(toolMsg.content || "{}").ok === false) _tcStatus = "failed"; } catch {}
+          try {
+            const parsedToolMsg = JSON.parse(toolMsg.content || "{}");
+            if (parsedToolMsg?.ok === false || (typeof parsedToolMsg?.error === "string" && parsedToolMsg.error.trim())) _tcStatus = "failed";
+          } catch {}
           toolCallLog.push({ tool: tcName, task: tcTask, status: _tcStatus, durationMs: _tcMs });
           totalToolCalls++;
           if (tcName === "getSubAgent") {
@@ -542,6 +629,9 @@ export default async function getCoreAi(coreData) {
       return coreData;
     }
   }
+  if (!accumulatedText.trim() && !subagentLog.length && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
+    hitMaxLoops = true;
+  }
   const reasoningEnabled = wo?.reasoning != null && wo?.reasoning !== false && wo?.reasoning !== 0;
   if (reasoningEnabled) {
     const parts = [];
@@ -566,9 +656,19 @@ export default async function getCoreAi(coreData) {
   wo.subagentLog  = subagentLog;
   const _finalText = (accumulatedText || "").trim();
   if (_finalText) {
-    wo.response = _finalText;
+    if (hitMaxToolCalls) {
+      wo.response = _finalText + "\n\n" + getLimitNotice("tool");
+    } else if (hitMaxLoops) {
+      wo.response = _finalText + "\n\n" + getLimitNotice("loop");
+    } else {
+      wo.response = _finalText;
+    }
   } else if (subagentLog.length) {
     wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
+  } else if (hitMaxToolCalls) {
+    wo.response = "[Max Tool Calls Hit]\n\n" + getLimitNotice("tool");
+  } else if (hitMaxLoops) {
+    wo.response = "[Max Loops Hit]\n\n" + getLimitNotice("loop");
   } else {
     wo.response = "[Empty AI response]";
   }

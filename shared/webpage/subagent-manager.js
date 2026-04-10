@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "subagent-manager.js"                                  */
+/* Version 1.0                                               */
+/* Purpose: Shared helper implementation.                   */
+/**************************************************************/
 "use strict";
 
 import { readdir, readFile, writeFile } from "node:fs/promises";

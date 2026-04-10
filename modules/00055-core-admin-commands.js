@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00055-core-admin-commands.js"                         */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -11,7 +16,7 @@
 
 
 import { getPrefixedLogger } from "../core/logging.js";
-import { setPurgeContext, setFreezeContext } from "../core/context.js";
+import { rebuildDerivedContextSet, setPurgeContext, setFreezeContext } from "../core/context.js";
 
 const MODULE_NAME = "core-admin-commands";
 
@@ -52,7 +57,7 @@ export default async function getCoreAdminCommands(coreData) {
 
   if (flow === "discord-admin") {
     const cmd = getStr(workingObject.admin?.command).toLowerCase();
-    if (cmd !== "purgedb" && cmd !== "freeze") return coreData;
+    if (cmd !== "purgedb" && cmd !== "freeze" && cmd !== "rebuilddb") return coreData;
 
     const id = getStr(workingObject.admin?.channelId || workingObject.channelID).trim();
     if (!id) {
@@ -74,6 +79,12 @@ export default async function getCoreAdminCommands(coreData) {
         workingObject.response = "";
         return coreData;
       }
+      if (cmd === "rebuilddb") {
+        const results = await rebuildDerivedContextSet({ ...workingObject, channelID: id });
+        log("db rebuild done", "info", { moduleName: MODULE_NAME, channelId: id, rebuilt: results.length });
+        workingObject.response = "";
+        return coreData;
+      }
     } catch (e) {
       log("admin command failed", "error", { moduleName: MODULE_NAME, cmd, reason: e?.message || String(e) });
       workingObject.response = "";
@@ -84,7 +95,7 @@ export default async function getCoreAdminCommands(coreData) {
 
   if (flow === "discord") {
     if (!getIsDMContext(workingObject)) return coreData;
-    if (!/^!purgedb$/i.test(payload))   return coreData;
+    if (!/^!(purgedb|rebuilddb)$/i.test(payload))   return coreData;
 
     const id = getStr(workingObject.channelID).trim();
     if (!id) {
@@ -95,10 +106,15 @@ export default async function getCoreAdminCommands(coreData) {
     }
 
     try {
-      const deleted = await setPurgeContext({ ...workingObject, channelID: id });
-      log("db purge done (DM)", "info", { moduleName: MODULE_NAME, channelId: id, deleted });
+      if (/^!rebuilddb$/i.test(payload)) {
+        const results = await rebuildDerivedContextSet({ ...workingObject, channelID: id });
+        log("db rebuild done (DM)", "info", { moduleName: MODULE_NAME, channelId: id, rebuilt: results.length });
+      } else {
+        const deleted = await setPurgeContext({ ...workingObject, channelID: id });
+        log("db purge done (DM)", "info", { moduleName: MODULE_NAME, channelId: id, deleted });
+      }
     } catch (e) {
-      log("db purge failed (DM)", "error", { moduleName: MODULE_NAME, reason: e?.message || String(e) });
+      log("db admin command failed (DM)", "error", { moduleName: MODULE_NAME, reason: e?.message || String(e) });
     }
     workingObject.response   = "STOP";
     workingObject.stop       = true;
@@ -128,6 +144,11 @@ export default async function getCoreAdminCommands(coreData) {
     if (cmd === "freeze") {
       await setFreezeContext({ ...workingObject, channelID: id });
       setStop(workingObject, `freeze ok (id=${id})`);
+      return coreData;
+    }
+    if (cmd === "rebuilddb") {
+      const results = await rebuildDerivedContextSet({ ...workingObject, channelID: id });
+      setStop(workingObject, `rebuild ok (${results.length} context scopes)`);
       return coreData;
     }
     workingObject.admin = undefined;

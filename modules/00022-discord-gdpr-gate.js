@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00022-discord-gdpr-gate.js"                           */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -113,6 +118,11 @@ export default async function getGdprGate(coreData) {
 
   const flow = String(wo?.flow || "");
   if (flow !== "discord" && flow !== "discord-voice") return coreData;
+
+  if (wo?.bypassGdprGate === true) {
+    log("bypassGdprGate set - skipping gdpr gate", "info", { moduleName: MODULE_NAME, flow });
+    return coreData;
+  }
 
   const isBotUser =
     wo?.message?.author?.bot === true ||

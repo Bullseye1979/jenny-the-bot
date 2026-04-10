@@ -5,8 +5,16 @@
 
 
 
+/**************************************************************/
+/* filename: "context.js"                                    */
+/* Version 1.0                                               */
+/* Purpose: MySQL-backed context storage and timeline         */
+/*          summarization routed through the internal API.    */
+/**************************************************************/
+
 import mysql from "mysql2/promise";
 import crypto from "crypto";
+import { getSecret } from "../core/secrets.js";
 
 let sharedPool = null;
 let sharedDsn = "";
@@ -16,25 +24,18 @@ const TIMELINE_TABLE = "timeline_periods";
 
 function getContextConfig(workingObject) {
   const ctxCfg = workingObject?.config?.context || {};
-  const endpoint =
-    ctxCfg.endpoint ||
-    workingObject?.endpoint ||
-    process.env.OPENAI_ENDPOINT ||
-    "https://api.openai.com/v1/chat/completions";
-  const model =
-    ctxCfg.model ||
-    workingObject?.model ||
-    "gpt-4o-mini";
-  const apiKey =
-    ctxCfg.apiKey ||
-    workingObject?.apiKey ||
-    workingObject?.apiKey ||
-    process.env.OPENAI_API_KEY ||
-    "";
   const periodSize = Number.isFinite(ctxCfg.periodSize)
     ? Number(ctxCfg.periodSize)
     : 600;
-  return { endpoint, model, apiKey, periodSize };
+  const timelineApiChannel =
+    typeof ctxCfg.timelineApiChannel === "string" && ctxCfg.timelineApiChannel.trim()
+      ? ctxCfg.timelineApiChannel.trim()
+      : "context-timeline";
+  const timelineSummaryPrompt =
+    typeof ctxCfg.timelineSummaryPrompt === "string" && ctxCfg.timelineSummaryPrompt.trim()
+      ? ctxCfg.timelineSummaryPrompt.trim()
+      : "";
+  return { periodSize, timelineApiChannel, timelineSummaryPrompt };
 }
 
 
@@ -63,6 +64,30 @@ function getSubchannelFilter(workingObject) {
     return { sql: " AND subchannel IS NULL", args: [], subchannel: null, subchannelFallback };
   }
   return { sql: "", args: [], subchannel: null, subchannelFallback };
+}
+
+
+function getContextIdList(workingObject, channelIdsOverride) {
+  const useCallerContext = workingObject?.includeCallerContext === true;
+  const baseId = String(
+    (useCallerContext
+      ? (workingObject?.contextSourceChannelID || workingObject?.callerContextChannelID || workingObject?.callerChannelId || workingObject?.channelID)
+      : (workingObject?.contextChannelID || workingObject?.channelID)) || ""
+  ).trim();
+  const extraIds = Array.isArray(channelIdsOverride)
+    ? channelIdsOverride
+    : (
+      Array.isArray(workingObject?.contextSourceChannelIds) ? workingObject.contextSourceChannelIds
+      : (Array.isArray(workingObject?.callerChannelIds) ? workingObject.callerChannelIds
+      : (Array.isArray(workingObject?.contextChannelIds) ? workingObject.contextChannelIds
+      : (Array.isArray(workingObject?.channelIds) ? workingObject.channelIds : [])
+      )
+      )
+    );
+  return [
+    baseId,
+    ...extraIds.map((value) => String(value || "").trim())
+  ].filter((value, index, arr) => value && arr.indexOf(value) === index);
 }
 
 
@@ -175,6 +200,17 @@ export async function getEnsurePool(workingObject) {
         ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
     `);
   } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE ${TIMELINE_TABLE}
+        DROP COLUMN IF EXISTS people_json,
+        DROP COLUMN IF EXISTS places_json,
+        DROP COLUMN IF EXISTS bulletpoints_json;
+    `);
+  } catch {}
+  try {
+    await deleteTimelineRowsByPatterns(pool, getTimelineRules(workingObject).channelDenyList);
+  } catch {}
 
   sharedPool = pool;
   sharedDsn = dsnKey;
@@ -274,6 +310,86 @@ function getDeriveIndexText(rec) {
 }
 
 
+function getLooksLikeContextRefusalMessage(content) {
+  const text = String(content || "").trim().toLowerCase();
+  if (!text) return false;
+  const patterns = [
+    "i am unable to summarize",
+    "i am unable to summarize the campaign",
+    "i am unable to summarize the campaign solely from the context",
+    "the context provided doth not reveal any details",
+    "the context provided doth not contain sufficient details",
+    "without using the tools provided",
+    "i could not find any records of the campaign",
+    "i am here to assist thee with the tools at my disposal"
+  ];
+  return patterns.some((pattern) => text.includes(pattern));
+}
+
+
+function getPatternList(values) {
+  return Array.isArray(values)
+    ? values.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)
+    : [];
+}
+
+
+function getPatternMatch(value, pattern) {
+  if (!pattern) return false;
+  if (pattern === "*") return true;
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`, "i").test(String(value || "").trim());
+}
+
+
+function getTimelineRules(workingObject) {
+  const ctxCfg = workingObject?.config?.context || {};
+  return {
+    channelAllowList: getPatternList(workingObject?.timelineChannelAllowList ?? ctxCfg.timelineChannelAllowList),
+    channelDenyList: getPatternList(workingObject?.timelineChannelDenyList ?? ctxCfg.timelineChannelDenyList),
+    flowAllowList: getPatternList(workingObject?.timelineFlowAllowList ?? ctxCfg.timelineFlowAllowList),
+    flowDenyList: getPatternList(workingObject?.timelineFlowDenyList ?? ctxCfg.timelineFlowDenyList)
+  };
+}
+
+
+function getCanUseTimelineForChannel(workingObject, channelId) {
+  const normalizedChannelId = String(channelId || "").trim().toLowerCase();
+  const normalizedFlow = String(workingObject?.flow || "").trim().toLowerCase();
+  if (!normalizedChannelId) return false;
+  const rules = getTimelineRules(workingObject);
+  if (rules.flowDenyList.some((pattern) => getPatternMatch(normalizedFlow, pattern))) return false;
+  if (rules.channelDenyList.some((pattern) => getPatternMatch(normalizedChannelId, pattern))) return false;
+  if (rules.flowAllowList.length && !rules.flowAllowList.some((pattern) => getPatternMatch(normalizedFlow, pattern))) return false;
+  if (rules.channelAllowList.length && !rules.channelAllowList.some((pattern) => getPatternMatch(normalizedChannelId, pattern))) return false;
+  return true;
+}
+
+
+async function deleteTimelineRowsByPatterns(pool, patterns) {
+  const normalizedPatterns = getPatternList(patterns);
+  if (!normalizedPatterns.length) return 0;
+  let affected = 0;
+  for (const pattern of normalizedPatterns) {
+    if (pattern.includes("*")) {
+      const sqlPattern = pattern.replace(/\*/g, "%");
+      const [res] = await pool.execute(
+        `DELETE FROM ${TIMELINE_TABLE} WHERE LOWER(channel_id) LIKE ?`,
+        [sqlPattern]
+      );
+      affected += Number(res?.affectedRows || 0);
+    } else {
+      const [res] = await pool.execute(
+        `DELETE FROM ${TIMELINE_TABLE} WHERE LOWER(channel_id) = ?`,
+        [pattern]
+      );
+      affected += Number(res?.affectedRows || 0);
+    }
+  }
+  return affected;
+}
+
+
 function getResolvedTimestamp(workingObject, record) {
   if (record && typeof record.ts === "string" && record.ts.length) {
     const d = new Date(record.ts);
@@ -331,6 +447,56 @@ export async function setContext(workingObject, record) {
   } catch {}
 
   return true;
+}
+
+
+export async function rebuildDerivedContextSet(workingObject, options = {}) {
+  const contextChannelId = String(options?.contextChannelId || workingObject?.contextChannelID || workingObject?.channelID || "").trim();
+  if (!contextChannelId) return [];
+  const pool = await getEnsurePool(workingObject);
+  const { periodSize } = getContextConfig(workingObject);
+
+  await pool.execute(
+    `DELETE FROM ${TIMELINE_TABLE} WHERE channel_id = ?`,
+    [contextChannelId]
+  );
+
+  const [countRows] = await pool.query(
+    "SELECT COUNT(*) AS c FROM context WHERE id = ?",
+    [contextChannelId]
+  );
+  const total = Number(countRows?.[0]?.c || 0);
+  const rebuilt = [];
+
+  if (!total || total < periodSize) {
+    return [{ contextChannelId, rebuilt: 0, totalRows: total, periodSize, skippedPartialTail: total }];
+  }
+
+  const fullSegments = Math.floor(total / periodSize);
+  for (let segmentIndex = 0; segmentIndex < fullSegments; segmentIndex++) {
+    const startIdx = (segmentIndex * periodSize) + 1;
+    const endIdx = startIdx + periodSize - 1;
+    const offset = startIdx - 1;
+    const rows = await getTimelineSourceRows(pool, contextChannelId, periodSize, offset);
+    if (rows.length !== periodSize) break;
+    const saved = await setUpsertTimelinePeriod(pool, workingObject, contextChannelId, startIdx, endIdx, rows);
+    rebuilt.push({
+      contextChannelId,
+      startIdx,
+      endIdx,
+      checksum: saved.checksum,
+      summary: saved.summary
+    });
+  }
+
+  return [{
+    contextChannelId,
+    rebuilt: rebuilt.length,
+    totalRows: total,
+    periodSize,
+    skippedPartialTail: total - (rebuilt.length * periodSize),
+    segments: rebuilt
+  }];
 }
 
 
@@ -460,29 +626,38 @@ function getBuildMetaFrame(obj, row, rowChannelId, roleLc) {
 
 
 export async function getContext(workingObject) {
-  const baseId = String(workingObject?.contextChannelID || workingObject?.channelID || "");
+  const useCallerContext = workingObject?.includeCallerContext === true;
+  const baseId = String(
+    (useCallerContext
+      ? (workingObject?.contextSourceChannelID || workingObject?.callerContextChannelID || workingObject?.callerChannelId || workingObject?.channelID)
+      : (workingObject?.contextChannelID || workingObject?.channelID)) || ""
+  );
   if (!baseId) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
 
   const nRaw = Number(workingObject?.contextSize ?? 10);
   const nUsers = Number.isFinite(nRaw) ? Math.max(1, Math.floor(nRaw)) : 10;
-  const detailed = workingObject?.detailedContext === true;
+  const nCompressedRaw = Number(workingObject?.compressedContextElements ?? 0);
+  const nCompressed = Number.isFinite(nCompressedRaw) ? Math.max(0, Math.floor(nCompressedRaw)) : 0;
+  const detailed = workingObject?.detailedContext === true && nCompressed <= 0;
   const simplified = workingObject?.simplifiedContext === true;
 
   const { subchannel, subchannelFallback } = getSubchannelFilter(workingObject);
 
   const metaFramesMode = getMetaFramesMode(workingObject);
 
-  const extraIdsRaw = Array.isArray(workingObject?.channelIds)
-    ? workingObject.channelIds
-    : [];
-
-  const allIds = [
-    baseId,
-    ...extraIdsRaw
-      .map((v) => String(v || "").trim())
-      .filter((v) => v.length > 0)
-  ].filter((v, idx, arr) => v && arr.indexOf(v) === idx);
+  const allIds = getContextIdList(
+    workingObject,
+    Array.isArray(workingObject?.contextSourceChannelIds)
+      ? workingObject.contextSourceChannelIds
+      : (Array.isArray(workingObject?.callerChannelIds)
+      ? workingObject.callerChannelIds
+      : (Array.isArray(workingObject?.contextChannelIds)
+      ? workingObject.contextChannelIds
+      : undefined
+      )
+      )
+  );
 
   const multiChannel = allIds.length > 1;
 
@@ -639,6 +814,38 @@ export async function getContext(workingObject) {
     });
   }
 
+  let hasTimelineBlocks = false;
+  if (nCompressed > 0) {
+    const earliestRawTs = rows.length
+      ? rows.reduce((min, row) => {
+          const current = new Date(row.ts).getTime();
+          return Number.isFinite(min) ? Math.min(min, current) : current;
+        }, Number.NaN)
+      : Number.NaN;
+    const timelineBlocks = await getTimelineContextMessagesForIds(
+      pool,
+      allIds,
+      nCompressed,
+      Number.isFinite(earliestRawTs) ? new Date(earliestRawTs) : null
+    );
+    if (timelineBlocks.length) {
+      hasTimelineBlocks = true;
+      messages.unshift(...timelineBlocks);
+    }
+  }
+
+  if (hasTimelineBlocks) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (String(msg?.role || "").toLowerCase() !== "assistant") continue;
+      messages.splice(i, 1);
+    }
+    messages.unshift({
+      role: "system",
+      content: "Timeline blocks are compressed normal context from the conversation database. Treat them like regular context messages that summarize older parts of the conversation. Use them as normal source material for facts, chronology, people, places, and developments. Do not treat visible timeline blocks as missing context."
+    });
+  }
+
   for (let i = messages.length - 1; i >= 0; i--) {
     const roleLc = String(messages[i]?.role || "").toLowerCase();
     if (roleLc !== "user") continue;
@@ -661,6 +868,7 @@ export async function getContext(workingObject) {
 
 
 async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
+  if (!getCanUseTimelineForChannel(workingObject, channelId)) return;
   const { periodSize } = getContextConfig(workingObject);
   const [cntRows] = await pool.query(
     "SELECT COUNT(*) AS c FROM context WHERE id = ?",
@@ -679,52 +887,9 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
   );
   if (exists.length) return;
 
-  const [ctxRowsDesc] = await pool.query(
-    `
-      SELECT ts, json
-        FROM context
-       WHERE id = ?
-       ORDER BY ctx_id DESC
-       LIMIT ?
-    `,
-    [channelId, periodSize]
-  );
-  const ctxRows = ctxRowsDesc
-    .slice()
-    .reverse()
-    .map((r) => ({
-      ts: r.ts,
-      json: (() => {
-        try {
-          return JSON.parse(r.json);
-        } catch {
-          return { content: r.json };
-        }
-      })()
-    }));
-  const startTs = ctxRows[0]?.ts ?? null;
-  const endTs = ctxRows[ctxRows.length - 1]?.ts ?? null;
-  const checksum = getChecksumBatchFromContextRows(ctxRows);
-  const { summary, model } = await getSummarizeContextBatch(workingObject, ctxRows, {
-    startIdx,
-    endIdx,
-    channelId
-  });
-  await pool.query(
-    `
-      INSERT INTO ${TIMELINE_TABLE}
-        (channel_id, start_idx, end_idx, start_ts, end_ts, summary, model, checksum, frozen)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-      ON DUPLICATE KEY UPDATE
-        summary = VALUES(summary),
-        start_ts = VALUES(start_ts),
-        end_ts = VALUES(end_ts),
-        model = VALUES(model),
-        checksum = VALUES(checksum),
-        updated_at = CURRENT_TIMESTAMP
-    `,
-    [channelId, startIdx, endIdx, startTs, endTs, summary, model, checksum]
-  );
+  const ctxRows = await getTimelineSourceRows(pool, channelId, periodSize, startIdx - 1);
+  if (ctxRows.length !== periodSize) return;
+  await setUpsertTimelinePeriod(pool, workingObject, channelId, startIdx, endIdx, ctxRows);
 }
 
 
@@ -740,7 +905,7 @@ export async function setPurgeContext(workingObject) {
   );
   let deleted = Number(res1?.affectedRows || 0);
 
-  if (!subchannel) {
+  if (!subchannel && getCanUseTimelineForChannel(workingObject, id)) {
     const [res2] = await pool.execute(
       `DELETE FROM ${TIMELINE_TABLE} WHERE channel_id = ? AND COALESCE(frozen, 0) = 0`,
       [id]
@@ -789,7 +954,7 @@ export async function setFreezeContext(workingObject) {
   );
   let affected = Number(r1?.affectedRows || 0);
 
-  if (!subchannel) {
+  if (!subchannel && getCanUseTimelineForChannel(workingObject, id)) {
     const [r2] = await pool.execute(
       `UPDATE ${TIMELINE_TABLE} SET frozen = 1 WHERE channel_id = ?`,
       [id]
@@ -910,48 +1075,245 @@ function getChecksumBatchFromContextRows(rows) {
   return h.digest("hex");
 }
 
+async function getTimelineSourceRows(pool, channelId, limit, offset = 0) {
+  const [ctxRows] = await pool.query(
+    `
+      SELECT ts, json
+        FROM context
+       WHERE id = ?
+       ORDER BY ctx_id ASC
+       LIMIT ?
+      OFFSET ?
+    `,
+    [channelId, limit, offset]
+  );
+  return (ctxRows || []).map((r) => ({
+    ts: r.ts,
+    json: (() => {
+      try {
+        return JSON.parse(r.json);
+      } catch {
+        return { content: r.json };
+      }
+    })()
+  }));
+}
+
+
+function getTimelinePayload(rows, meta) {
+  const clipped = (rows || []).map((row) => {
+    const role = typeof row?.json?.role === "string" ? row.json.role : "user";
+    const content =
+      typeof row?.json?.content === "string" && row.json.content.trim()
+        ? row.json.content
+        : typeof row?.json?.text === "string" && row.json.text.trim()
+          ? row.json.text
+          : JSON.stringify(row?.json || {});
+    const authorName = typeof row?.json?.authorName === "string" ? row.json.authorName : "";
+    return {
+      ts: row?.ts || null,
+      role,
+      authorName,
+      content
+    };
+  });
+
+  return JSON.stringify({
+    channelId: meta?.channelId || "",
+    startIdx: meta?.startIdx ?? null,
+    endIdx: meta?.endIdx ?? null,
+    startTs: rows?.[0]?.ts || null,
+    endTs: rows?.[rows.length - 1]?.ts || null,
+    messages: clipped
+  });
+}
+
+
+function getTryParseJsonObject(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const candidates = [raw];
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) candidates.push(String(fenced[1]).trim());
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return null;
+}
+
+
+function getNormalizeStringList(values) {
+  const arr = Array.isArray(values) ? values : [];
+  const out = [];
+  for (const value of arr) {
+    const item = String(value || "").trim();
+    if (!item || out.includes(item)) continue;
+    out.push(item);
+  }
+  return out;
+}
+
 
 async function getSummarizeContextBatch(workingObject, rows, meta) {
-  const { endpoint, model, apiKey } = getContextConfig(workingObject);
-  const clipped = (rows || []).slice(-50);
-  const prompt = [
-    "Summarize the following recent conversation segment concisely.",
-    `Channel: ${meta?.channelId ?? ""}`,
-    `Range: ${meta?.startIdx ?? ""}-${meta?.endIdx ?? ""}`,
-    "Return 1-3 sentences with key actions, decisions, and open questions."
-  ].join(" ");
-  const messages = [{ role: "system", content: prompt }];
-  for (const r of clipped) {
-    const role = typeof r?.json?.role === "string" ? r.json.role : "user";
-    const content =
-      typeof r?.json?.content === "string"
-        ? r.json.content
-        : JSON.stringify(r.json || {});
-    messages.push({ role, content });
+  const { timelineApiChannel, timelineSummaryPrompt } = getContextConfig(workingObject);
+  const apiCfg = workingObject?.config?.api || {};
+  const hostRaw = String(apiCfg.host || "127.0.0.1").trim();
+  const host = hostRaw === "0.0.0.0" ? "127.0.0.1" : hostRaw;
+  const port = Number(apiCfg.port || 3400);
+  const apiPath = String(apiCfg.path || "/api");
+  const url = `http://${host}:${port}${apiPath}`;
+  const apiSecretKey = String(workingObject?.apiSecret || "").trim();
+  const apiSecret = apiSecretKey ? await getSecret(workingObject, apiSecretKey) : "";
+  if (!timelineSummaryPrompt) {
+    throw new Error("[context] Missing config.context.timelineSummaryPrompt");
   }
-  if (!apiKey) {
-    return { summary: "[no-api-key] summary unavailable", model: model || "" };
-  }
+  const payload = `${timelineSummaryPrompt}\n\n${getTimelinePayload(rows, meta)}`;
+
+  const headers = { "Content-Type": "application/json" };
+  if (apiSecret) headers.Authorization = `Bearer ${apiSecret}`;
+
   try {
-    const res = await fetch(endpoint, {
+    const res = await fetch(url, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
+      headers,
       body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.2,
-        max_tokens: 256
+        channelID: timelineApiChannel,
+        payload,
+        contextChannelID: String(meta?.channelId || ""),
+        workingObjectPatch: {
+          doNotWriteToContext: true,
+          includeHistory: false,
+          includeRuntimeContext: false,
+          includeHistoryTools: false,
+          tools: [],
+          maxToolCalls: 0,
+          maxLoops: 1,
+          contextSize: 1,
+          simplifiedContext: true
+        }
       })
     });
     const data = await res.json();
-    const summary = data?.choices?.[0]?.message?.content || "[summary unavailable]";
-    return { summary, model };
+    const content = String(data?.response || data?.responseText || "").trim();
+    const parsed = getTryParseJsonObject(content);
+    const summary = String(parsed?.summary || "").trim() || "[summary unavailable]";
+    return {
+      summary,
+      model: String(data?.model || timelineApiChannel || "")
+    };
   } catch {
-    return { summary: "[summarization failed]", model };
+    return {
+      summary: "[summarization failed]",
+      model: timelineApiChannel || ""
+    };
   }
+}
+
+
+async function setUpsertTimelinePeriod(pool, workingObject, channelId, startIdx, endIdx, ctxRows) {
+  const startTs = ctxRows[0]?.ts ?? null;
+  const endTs = ctxRows[ctxRows.length - 1]?.ts ?? null;
+  const checksum = getChecksumBatchFromContextRows(ctxRows);
+  const result = await getSummarizeContextBatch(workingObject, ctxRows, {
+    startIdx,
+    endIdx,
+    channelId
+  });
+  const summary = String(result?.summary || "").trim() || "[summary unavailable]";
+  const model = String(result?.model || "").trim();
+
+  await pool.query(
+    `
+      INSERT INTO ${TIMELINE_TABLE}
+        (channel_id, start_idx, end_idx, start_ts, end_ts, summary, model, checksum, frozen)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+      ON DUPLICATE KEY UPDATE
+        summary = VALUES(summary),
+        start_ts = VALUES(start_ts),
+        end_ts = VALUES(end_ts),
+        model = VALUES(model),
+        checksum = VALUES(checksum),
+        updated_at = CURRENT_TIMESTAMP
+    `,
+    [channelId, startIdx, endIdx, startTs, endTs, summary, model, checksum]
+  );
+
+  return {
+    summary,
+    model,
+    checksum
+  };
+}
+
+
+function getParseJsonArrayField(value) {
+  if (!value) return [];
+  try {
+    return getNormalizeStringList(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
+
+async function getTimelineContextMessages(pool, channelId, limit, beforeDate) {
+  const args = [channelId];
+  let beforeSql = "";
+  if (beforeDate instanceof Date && !Number.isNaN(beforeDate.getTime())) {
+    beforeSql = " AND end_ts < ? ";
+    args.push(beforeDate);
+  }
+  args.push(limit);
+
+    const [rows] = await pool.query(
+      `
+        SELECT channel_id, start_idx, end_idx, start_ts, end_ts, summary
+          FROM ${TIMELINE_TABLE}
+         WHERE channel_id = ?
+           AND COALESCE(frozen, 0) IN (0, 1)
+         ${beforeSql}
+       ORDER BY end_idx DESC
+       LIMIT ?
+    `,
+    args
+  );
+
+    return (rows || [])
+      .slice()
+      .reverse()
+      .map((row) => {
+        const parts = [
+          `[timeline channel=${row.channel_id} range=${row.start_idx}-${row.end_idx}]`,
+          `Timeframe: firstEntryTs=${row.start_ts ? new Date(row.start_ts).toISOString() : "?"} | lastEntryTs=${row.end_ts ? new Date(row.end_ts).toISOString() : "?"}`,
+          `Summary: ${String(row.summary || "").trim() || "[summary unavailable]"}`
+        ];
+      return {
+        role: "system",
+        content: parts.join("\n")
+      };
+    });
+}
+
+
+async function getTimelineContextMessagesForIds(pool, channelIds, limit, beforeDate) {
+  const ids = Array.isArray(channelIds)
+    ? channelIds.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (!ids.length || !Number.isFinite(limit) || limit <= 0) return [];
+
+  const perChannelLimit = Math.max(1, limit);
+  const out = [];
+  for (const channelId of ids) {
+    const rows = await getTimelineContextMessages(pool, channelId, perChannelLimit, beforeDate);
+    if (!rows.length) continue;
+    out.push(...rows);
+    if (out.length >= limit) break;
+  }
+
+  return out.slice(0, limit);
 }
 
 

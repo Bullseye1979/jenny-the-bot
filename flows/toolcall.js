@@ -129,7 +129,7 @@ async function setTick({ pollMs, registryKey, createRunCore, runFlow, log, lastS
       const rc = createRunCore();
       const wo = rc.workingObject || (rc.workingObject = {});
       const nowIso = new Date().toISOString();
-      wo.turn_id = getNewUlid();
+wo.turnId = getNewUlid();
       wo.timestamp = nowIso;
       wo.flow = flowName;
       wo.updateStatus = true;

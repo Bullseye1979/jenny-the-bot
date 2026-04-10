@@ -207,7 +207,7 @@ export default async function getDiscordFlow(baseCore, runFlow, createRunCore) {
       }
     }
 
-    wo.turn_id = getNewUlid();
+wo.turnId = getNewUlid();
     wo.payload = String(payload || "").trim();
     wo.flow = flowName;
     wo.id = message.channelId;

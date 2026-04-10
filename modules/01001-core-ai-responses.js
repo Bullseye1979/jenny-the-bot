@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "01001-core-ai-responses.js"                           */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -11,7 +16,7 @@
 
 
 import { getContext } from "../core/context.js";
-import { putItem } from "../core/registry.js";
+import { putItem, getItem, deleteItem } from "../core/registry.js";
 import { saveFile } from "../core/file.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
@@ -402,10 +407,25 @@ async function setExecGenericTool(toolModules, call, coreData) {
   const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
   const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
   const _statusScope = getToolStatusScope(coreData?.workingObject || {});
+  if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
+  const _myGen = ++wo._statusToolGen;
+  const _statusToken = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+  const _statusChannelId = String(
+    coreData?.workingObject?.callerChannelId ||
+    coreData?.workingObject?.channelID ||
+    ""
+  ).trim();
+  const _statusPayload = {
+    name,
+    flow: String(coreData?.workingObject?.flow || ""),
+    scope: _statusScope,
+    token: _statusToken,
+    channelId: _statusChannelId
+  };
   try {
-    try { await putItem({ name, flow: String(coreData?.workingObject?.flow || ""), scope: _statusScope }, "status:tool"); } catch {}
-    if (_tcCh) try { await putItem(name, "status:tool:" + _tcCh); } catch {}
-    if (_callerCh && _callerCh !== _tcCh) try { await putItem(name, "status:tool:" + _callerCh); } catch {}
+    try { await putItem(_statusPayload, "status:tool"); } catch {}
+    if (_tcCh) try { await putItem({ name, token: _statusToken }, "status:tool:" + _tcCh); } catch {}
+    if (_callerCh && _callerCh !== _tcCh) try { await putItem({ name, token: _statusToken }, "status:tool:" + _callerCh); } catch {}
     const res = await tool.invoke(args, coreData);
     const mapped = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
@@ -422,9 +442,23 @@ async function setExecGenericTool(toolModules, call, coreData) {
   } finally {
     const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs) ? Number(coreData.workingObject.StatusToolClearDelayMs) : 800;
     setTimeout(() => {
-      try { putItem("", "status:tool"); } catch {}
-      if (_tcCh) try { putItem("", "status:tool:" + _tcCh); } catch {}
-      if (_callerCh && _callerCh !== _tcCh) try { putItem("", "status:tool:" + _callerCh); } catch {}
+      if (wo._statusToolGen !== _myGen) return;
+      try {
+        const current = getItem("status:tool");
+        if (current?.token === _statusToken) deleteItem("status:tool");
+      } catch {}
+      if (_tcCh) {
+        try {
+          const current = getItem("status:tool:" + _tcCh);
+          if (current?.token === _statusToken) deleteItem("status:tool:" + _tcCh);
+        } catch {}
+      }
+      if (_callerCh && _callerCh !== _tcCh) {
+        try {
+          const current = getItem("status:tool:" + _callerCh);
+          if (current?.token === _statusToken) deleteItem("status:tool:" + _callerCh);
+        } catch {}
+      }
     }, Math.max(0, delayMs));
   }
 }
@@ -875,13 +909,16 @@ function getPayload(row) {
 }
 
 
-function getSnapshotMappedToChat(rows) {
+function getSnapshotMappedToChat(rows, options = {}) {
   const out = [];
+  const includeSystem = getBool(options?.includeHistorySystemMessages, false);
   let lastAssistantCallIds = new Set();
   for (const r of rows || []) {
     const role = r?.role;
     const payload = getPayload(r);
-    if (role === "system") out.push({ role: "system", content: payload });
+    if (role === "system") {
+      if (includeSystem) out.push({ role: "system", content: payload });
+    }
     else if (role === "user") {
       out.push({ role: "user", content: payload });
       lastAssistantCallIds = new Set();
@@ -974,6 +1011,16 @@ function getToolsDisabledMode(totalToolCalls, maxToolCalls, wo) {
   return false;
 }
 
+function getLimitNotice(kind) {
+  if (kind === "tool") {
+    return "Tool budget reached. This is the partial result so far. Start a new AI run if you want me to continue the deep dive.";
+  }
+  if (kind === "loop") {
+    return "Loop limit reached. This is the partial result so far. Start a new AI run if you want me to continue from here.";
+  }
+  return "";
+}
+
 
 function setEnsureFinalSynthesisPrompt(messages, wo) {
   if (wo?.__didToolBudgetNotice === true) return false;
@@ -1004,7 +1051,7 @@ export default async function getCoreAi(coreData) {
   const endpoint = getStr(wo?.endpointResponses, "");
   const apiKey = await getSecret(wo, getStr(wo?.apiKey, ""));
   const model = getStr(wo?.model, "");
-  const baseUrl = getStr(wo?.baseUrl ?? wo?.baseUrl ?? wo?.base_url, "");
+  const baseUrl = getStr(wo?.baseUrl, "");
   const endpointFilesContentTemplate = getStr(wo?.EndpointFilesContent, "");
   const maxTokens = getNum(wo?.maxTokens, 2000);
   const maxLoops = getNum(wo?.maxLoops, 16);
@@ -1022,6 +1069,7 @@ export default async function getCoreAi(coreData) {
   }
 
   const responseToolsNormalized = getNormalizedResponseTools(getResponseToolsRaw(wo));
+  const includeHistorySystemMessages = getBool(wo?.includeHistorySystemMessages, false);
   const responseToolsInfo = responseToolsNormalized.length ? responseToolsNormalized.map(x => x?.type).filter(Boolean).join(", ") : "(none)";
 
   log(`Using baseUrl="${baseUrl || "(relative /documents)"}"`, "info");
@@ -1078,7 +1126,7 @@ export default async function getCoreAi(coreData) {
   }
 
   const sys = getSystemContent(wo);
-  const fromDb = getSnapshotMappedToChat(Array.isArray(snapshot) ? snapshot : []);
+  const fromDb = getSnapshotMappedToChat(Array.isArray(snapshot) ? snapshot : [], { includeHistorySystemMessages });
   const userPayloadRaw = getToString(wo?.payload ?? "");
   if (!userPayloadRaw.trim()) {
     log("Skipped: empty payload", "info");
@@ -1110,6 +1158,8 @@ export default async function getCoreAi(coreData) {
   let totalToolCalls = 0;
   let attempts = 0;
   const maxAttempts = Math.max(1, getNum(wo?.MaxAttempts, Math.min(3, maxLoops)));
+  let hitMaxLoops = false;
+  let hitMaxToolCalls = false;
   
 
 
@@ -1240,7 +1290,7 @@ export default async function getCoreAi(coreData) {
           for (const tc of toolCalls) {
             const isGeneric = toolDefs.some(d => d?.name === tc?.name);
             if (!isGeneric) continue;
-            if (totalToolCalls >= maxToolCalls) break;
+            if (totalToolCalls >= maxToolCalls) { hitMaxToolCalls = true; break; }
 
             const call_id = tc?.call_id || tc?.id || `${tc?.name || "tool"}:${createHash("sha256").update(getToString(tc?.arguments ?? "")).digest("hex")}`;
             const callArgsStr = (typeof tc?.arguments === "string") ? tc.arguments : JSON.stringify(tc?.arguments ?? {});
@@ -1278,11 +1328,12 @@ export default async function getCoreAi(coreData) {
           if (ranAnyTool) continue;
         }
 
-        if (hasToolCalls && totalToolCalls >= maxToolCalls) {
-          wo.__forceNoTools = true;
-          setEnsureFinalSynthesisPrompt(messages, wo);
-          continue;
-        }
+      if (hasToolCalls && totalToolCalls >= maxToolCalls) {
+        hitMaxToolCalls = true;
+        wo.__forceNoTools = true;
+        setEnsureFinalSynthesisPrompt(messages, wo);
+        continue;
+      }
       }
 
       if (hasToolCalls && !persistAssistantContent.length && persistedToolCallRequest) {
@@ -1332,6 +1383,10 @@ export default async function getCoreAi(coreData) {
     }
   }
 
+  if (!finalText && !subagentLog.length && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
+    hitMaxLoops = true;
+  }
+
   if (reasoningEnabled) {
     const reasoningJoined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
     const subagentBlock = subagentLog.length
@@ -1367,9 +1422,21 @@ export default async function getCoreAi(coreData) {
   setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: wo._contextPersistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
 
   if (finalText) {
-    wo.response = finalText;
+    if (hitMaxToolCalls) {
+      wo.response = finalText + "\n\n" + getLimitNotice("tool");
+    } else if (hitMaxLoops) {
+      wo.response = finalText + "\n\n" + getLimitNotice("loop");
+    } else {
+      wo.response = finalText;
+    }
   } else if (subagentLog.length) {
     wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
+  } else if (hitMaxToolCalls) {
+    const partial = (accumulatedText || "").trim();
+    wo.response = partial ? (partial + "\n\n" + getLimitNotice("tool")) : ("[Max Tool Calls Hit]\n\n" + getLimitNotice("tool"));
+  } else if (hitMaxLoops) {
+    const partial = (accumulatedText || "").trim();
+    wo.response = partial ? (partial + "\n\n" + getLimitNotice("loop")) : ("[Max Loops Hit]\n\n" + getLimitNotice("loop"));
   } else {
     wo.response = "[Empty AI response]";
   }

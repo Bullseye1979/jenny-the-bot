@@ -1,9 +1,4 @@
-/**************************************************************/
-/* filename: "00053-webpage-context.js"                             */
-/* Version 1.0                                               */
-/* Purpose: Pipeline module implementation.                 */
-/**************************************************************/
-
+﻿
 
 
 
@@ -34,10 +29,11 @@ import path from "node:path";
 import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
 
-const MODULE_NAME = "webpage-context";
+/* Version 1.0 */
+const MODULE_NAME = "webpage-timeline";
 const __filename   = fileURLToPath(import.meta.url);
 const __dirname    = path.dirname(__filename);
-const CTX_TABLE    = "context";
+const CTX_TABLE    = "timeline_periods";
 const PAGE_SIZE    = 50;
 const SHARED_CSS   = path.join(__dirname, "..", "shared", "webpage", "style.css");
 
@@ -48,8 +44,8 @@ function getStr(v) { return typeof v === "string" ? v : v == null ? "" : String(
 function getInt(v, def = 0) { const n = parseInt(v, 10); return isNaN(n) ? def : n; }
 
 function getBasePath(cfg) {
-  const bp = getStr(cfg?.basePath ?? "/context").trim();
-  return bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/context";
+  const bp = getStr(cfg?.basePath ?? "/timeline").trim();
+  return bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/timeline";
 }
 
 function setHtmlResp(wo, html) {
@@ -77,7 +73,7 @@ function escLike(s) {
 
 async function dbChannels(pool) {
   const [rows] = await pool.execute(
-    `SELECT id, COUNT(*) AS cnt FROM ${CTX_TABLE} GROUP BY id ORDER BY id ASC`
+    `SELECT channel_id AS id, COUNT(*) AS cnt FROM ${CTX_TABLE} GROUP BY channel_id ORDER BY channel_id ASC`
   );
   return rows.map(r => ({ id: getStr(r.id), cnt: Number(r.cnt) }));
 }
@@ -93,13 +89,18 @@ async function dbColumns(pool) {
     if (rows.length) return rows.map(r => ({ name: getStr(r.COLUMN_NAME), type: getStr(r.DATA_TYPE) }));
   } catch (_) {  }
   return [
-    { name: "ctx_id",   type: "bigint"   },
-    { name: "ts",       type: "datetime" },
-    { name: "id",       type: "varchar"  },
-    { name: "role",     type: "varchar"  },
-    { name: "turn_id",  type: "varchar"  },
-    { name: "text",     type: "text"     },
-    { name: "json",     type: "text"     }
+    { name: "id", type: "bigint" },
+    { name: "channel_id", type: "varchar" },
+    { name: "start_idx", type: "int" },
+    { name: "end_idx", type: "int" },
+    { name: "start_ts", type: "datetime" },
+    { name: "end_ts", type: "datetime" },
+    { name: "summary", type: "text" },
+    { name: "model", type: "varchar" },
+    { name: "checksum", type: "char" },
+    { name: "frozen", type: "tinyint" },
+    { name: "created_at", type: "datetime" },
+    { name: "updated_at", type: "datetime" }
   ];
 }
 
@@ -109,30 +110,30 @@ function safeFields(rawFields, fallback) {
 }
 
 async function dbRecords(pool, { channel, page, limit, fields }) {
-  const cols = ["ctx_id", "frozen", ...fields.filter(f => f !== "ctx_id" && f !== "frozen")];
-  const colSql = safeFields(cols, ["ctx_id", "ts", "id", "role", "text"]).join(", ");
+  const cols = ["id", "frozen", ...fields.filter(f => f !== "id" && f !== "frozen")];
+  const colSql = safeFields(cols, ["id", "channel_id", "start_idx", "end_idx", "summary"]).join(", ");
   const offset = (page - 1) * limit;
-  const where  = channel ? "WHERE id = ?" : "";
+  const where  = channel ? "WHERE channel_id = ?" : "";
   const wParams = channel ? [channel] : [];
 
   const [[{ total }]] = await pool.execute(
     `SELECT COUNT(*) AS total FROM ${CTX_TABLE} ${where}`, wParams
   );
   const [rows] = await pool.execute(
-    `SELECT ${colSql} FROM ${CTX_TABLE} ${where} ORDER BY ctx_id DESC LIMIT ? OFFSET ?`,
+    `SELECT ${colSql} FROM ${CTX_TABLE} ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
     [...wParams, limit, offset]
   );
   return { rows, total: Number(total), page, pages: Math.ceil(Number(total) / limit) };
 }
 
 async function dbSearch(pool, { channel, q, page, limit, fields, searchFields }) {
-  const cols = ["ctx_id", "frozen", ...fields.filter(f => f !== "ctx_id" && f !== "frozen")];
-  const colSql  = safeFields(cols, ["ctx_id", "ts", "id", "role", "text"]).join(", ");
-  const sfSafe  = searchFields.filter(f => ["text", "json", "role", "turn_id", "id"].includes(f));
-  if (!sfSafe.length) sfSafe.push("text");
+  const cols = ["id", "frozen", ...fields.filter(f => f !== "id" && f !== "frozen")];
+  const colSql  = safeFields(cols, ["id", "channel_id", "start_idx", "end_idx", "summary"]).join(", ");
+  const sfSafe  = searchFields.filter(f => ["summary", "model", "checksum", "channel_id"].includes(f));
+  if (!sfSafe.length) sfSafe.push("summary");
   const like    = `%${escLike(q)}%`;
   const offset  = (page - 1) * limit;
-  const chanCond = channel ? "id = ? AND " : "";
+  const chanCond = channel ? "channel_id = ? AND " : "";
   const srCond   = sfSafe.map(f => `${f} LIKE ?`).join(" OR ");
   const where    = `WHERE ${chanCond}(${srCond})`;
   const wParams  = [...(channel ? [channel] : []), ...sfSafe.map(() => like)];
@@ -141,7 +142,7 @@ async function dbSearch(pool, { channel, q, page, limit, fields, searchFields })
     `SELECT COUNT(*) AS total FROM ${CTX_TABLE} ${where}`, wParams
   );
   const [rows] = await pool.execute(
-    `SELECT ${colSql} FROM ${CTX_TABLE} ${where} ORDER BY ctx_id DESC LIMIT ? OFFSET ?`,
+    `SELECT ${colSql} FROM ${CTX_TABLE} ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
     [...wParams, limit, offset]
   );
   return { rows, total: Number(total), page, pages: Math.ceil(Number(total) / limit) };
@@ -151,7 +152,7 @@ async function dbDelete(pool, ids, { protectFrozen = true } = {}) {
   if (!ids.length) return 0;
   const ph = ids.map(() => "?").join(",");
   const [r] = await pool.execute(
-    `DELETE FROM ${CTX_TABLE} WHERE ctx_id IN (${ph}) ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
+    `DELETE FROM ${CTX_TABLE} WHERE id IN (${ph}) ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
     ids
   );
   return r.affectedRows;
@@ -161,7 +162,7 @@ async function dbDeleteChannel(pool, channelID, { protectFrozen = true } = {}) {
   const chan = getStr(channelID).trim();
   if (!chan) return 0;
   const [r] = await pool.execute(
-    `DELETE FROM ${CTX_TABLE} WHERE id = ? ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
+    `DELETE FROM ${CTX_TABLE} WHERE channel_id = ? ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
     [chan]
   );
   return r.affectedRows;
@@ -174,38 +175,38 @@ async function dbDeleteChannels(pool, channelIDs, { protectFrozen = true } = {})
   if (!ids.length) return 0;
   const ph = ids.map(() => "?").join(",");
   const [r] = await pool.execute(
-    `DELETE FROM ${CTX_TABLE} WHERE id IN (${ph}) ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
+    `DELETE FROM ${CTX_TABLE} WHERE channel_id IN (${ph}) ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
     ids
   );
   return r.affectedRows;
 }
 
 async function dbGetRecord(pool, ctx_id) {
-  const [rows] = await pool.execute(`SELECT * FROM ${CTX_TABLE} WHERE ctx_id = ?`, [ctx_id]);
+  const [rows] = await pool.execute(`SELECT * FROM ${CTX_TABLE} WHERE id = ?`, [ctx_id]);
   return rows[0] || null;
 }
 
 async function dbUpdateRecord(pool, { ctx_id, field, value }) {
-  const allowed = ["text", "json", "role", "id", "turn_id"];
+  const allowed = ["channel_id", "start_idx", "end_idx", "start_ts", "end_ts", "summary", "model", "checksum"];
   if (!allowed.includes(field)) throw new Error("Field not editable: " + field);
   const [r] = await pool.execute(
-    `UPDATE ${CTX_TABLE} SET \`${field}\` = ? WHERE ctx_id = ?`,
+    `UPDATE ${CTX_TABLE} SET \`${field}\` = ? WHERE id = ?`,
     [value, ctx_id]
   );
   return r.affectedRows;
 }
 
 async function dbFindReplace(pool, { search, channel, searchFields }) {
-  const sf   = searchFields.filter(f => ["text", "json"].includes(f));
-  if (!sf.length) sf.push("text");
+  const sf   = searchFields.filter(f => ["summary"].includes(f));
+  if (!sf.length) sf.push("summary");
   const like = `%${escLike(search)}%`;
-  const chanCond = channel ? "id = ? AND " : "";
+  const chanCond = channel ? "channel_id = ? AND " : "";
   const srCond   = sf.map(f => `${f} LIKE ?`).join(" OR ");
   const where    = `WHERE ${chanCond}(${srCond})`;
   const wParams  = [...(channel ? [channel] : []), ...sf.map(() => like)];
 
   const [rows] = await pool.execute(
-    `SELECT ctx_id, id, text, \`json\` FROM ${CTX_TABLE} ${where} ORDER BY ctx_id DESC LIMIT 200`,
+    `SELECT id, channel_id, summary FROM ${CTX_TABLE} ${where} ORDER BY id DESC LIMIT 200`,
     wParams
   );
   const matches = [];
@@ -213,7 +214,7 @@ async function dbFindReplace(pool, { search, channel, searchFields }) {
     for (const field of sf) {
       const val = getStr(row[field]);
       if (val.includes(search)) {
-        matches.push({ ctx_id: row.ctx_id, channel: getStr(row.id), field, value: val });
+        matches.push({ ctx_id: row.id, channel: getStr(row.channel_id), field, value: val });
       }
     }
   }
@@ -221,13 +222,13 @@ async function dbFindReplace(pool, { search, channel, searchFields }) {
 }
 
 async function dbApplyReplace(pool, { ctx_id, field, search, replace, mode }) {
-  if (!["text", "json"].includes(field)) throw new Error("Invalid field");
+  if (!["summary"].includes(field)) throw new Error("Invalid field");
   let sql, params;
   if (mode === "full") {
-    sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = ? WHERE ctx_id = ?`;
+    sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = ? WHERE id = ?`;
     params = [replace, ctx_id];
   } else {
-    sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = REPLACE(\`${field}\`, ?, ?) WHERE ctx_id = ?`;
+    sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = REPLACE(\`${field}\`, ?, ?) WHERE id = ?`;
     params = [search, replace, ctx_id];
   }
   const [r] = await pool.execute(sql, params);
@@ -235,15 +236,15 @@ async function dbApplyReplace(pool, { ctx_id, field, search, replace, mode }) {
 }
 
 async function dbReplaceAll(pool, { search, replace, channel, searchFields, mode }) {
-  const sf = searchFields.filter(f => ["text", "json"].includes(f));
-  if (!sf.length) sf.push("text");
+  const sf = searchFields.filter(f => ["summary"].includes(f));
+  if (!sf.length) sf.push("summary");
   const like = `%${escLike(search)}%`;
   let total = 0;
   for (const field of sf) {
     let sql, params;
     if (mode === "full") {
       if (channel) {
-        sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = ? WHERE id = ? AND \`${field}\` LIKE ?`;
+        sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = ? WHERE channel_id = ? AND \`${field}\` LIKE ?`;
         params = [replace, channel, like];
       } else {
         sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = ? WHERE \`${field}\` LIKE ?`;
@@ -251,7 +252,7 @@ async function dbReplaceAll(pool, { search, replace, channel, searchFields, mode
       }
     } else {
       if (channel) {
-        sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = REPLACE(\`${field}\`, ?, ?) WHERE id = ? AND \`${field}\` LIKE ?`;
+        sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = REPLACE(\`${field}\`, ?, ?) WHERE channel_id = ? AND \`${field}\` LIKE ?`;
         params = [search, replace, channel, like];
       } else {
         sql    = `UPDATE ${CTX_TABLE} SET \`${field}\` = REPLACE(\`${field}\`, ?, ?) WHERE \`${field}\` LIKE ?`;
@@ -267,7 +268,7 @@ async function dbReplaceAll(pool, { search, replace, channel, searchFields, mode
 
 
 
-function getContextCss() {
+function getTimelineCss() {
   return `
 body{font-size:13px}
 .page-wrap{display:flex;flex-direction:column;height:calc(100vh - var(--hh));margin-top:var(--hh)}
@@ -378,22 +379,22 @@ mark{background:#fef3c7;color:#92400e;border-radius:2px;padding:0 1px}
 
 
 
-function getContextHtml({ menu, role, activePath, base, dbStatus, dbInfo, webAuth }) {
+function getTimelineHtml({ menu, role, activePath, base, dbStatus, dbInfo, webAuth }) {
   const menuHtml = getMenuHtml(menu, activePath, role, null, null, webAuth);
   const dbBanner = dbStatus === "error"
     ? `<div id="db-banner" style="background:#fef2f2;color:#dc2626;padding:10px 16px;font-size:13px;font-weight:600;border-bottom:2px solid #ef4444;flex-shrink:0">
-        Database error - context table not reachable: <span style="font-weight:400;font-family:monospace">${dbInfo.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</span>
+        Database error - timeline table not reachable: <span style="font-weight:400;font-family:monospace">${dbInfo.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</span>
        </div>`
     : `<div id="db-banner" style="display:none" data-count="${dbInfo}"></div>`;
   return `<!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Context Editor</title>
+<title>Timeline Editor</title>
 ${getThemeHeadScript()}
 <link rel="stylesheet" href="${base}/style.css">
 </head>
 <body>
-<header><h1>🗃 Context</h1>${menuHtml}</header>
+<header><h1>Timeline</h1>${menuHtml}</header>
 <div class="page-wrap">
 ${dbBanner}
   <div class="ctx-layout">
@@ -404,13 +405,13 @@ ${dbBanner}
       </div>
       <div class="sidebar-channel-tools">
         <label><input type="checkbox" id="chk-channel-select-all"> Select all</label>
-        <button class="btn-icon" id="btn-delete-channels" title="Delete selected channels">🗑</button>
+        <button class="btn-icon" id="btn-delete-channels" title="Delete selected channels">Delete</button>
       </div>
       <div id="channel-list"></div>
     </div>
     <div class="ctx-main">
       <div class="toolbar">
-        <input id="search-input" type="text" placeholder="Search…">
+        <input id="search-input" type="text" placeholder="Search timeline...">
         <button class="btn-primary" id="btn-search">Search</button>
         <button class="btn-secondary" id="btn-clear-search">Reset</button>
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--txt);cursor:pointer;user-select:none">
@@ -422,7 +423,7 @@ ${dbBanner}
         </label>
         <div style="flex:1"></div>
         <div class="field-toggle">
-          <button class="btn-secondary" id="btn-fields">Fields ▾</button>
+          <button class="btn-secondary" id="btn-fields">Fields</button>
           <div id="field-panel" class="field-panel hidden"></div>
         </div>
         <button class="btn-danger" id="btn-delete-sel" disabled>Delete selected</button>
@@ -436,9 +437,9 @@ ${dbBanner}
       </div>
       <div id="pagination">
         <span id="page-info"></span>
-        <button class="btn-secondary" id="btn-prev" disabled>← Back</button>
+        <button class="btn-secondary" id="btn-prev" disabled>Back</button>
         <span id="page-num"></span>
-        <button class="btn-secondary" id="btn-next" disabled>Next →</button>
+        <button class="btn-secondary" id="btn-next" disabled>Next</button>
       </div>
     </div>
   </div>
@@ -447,21 +448,20 @@ ${dbBanner}
 <!-- Search & Replace modal -->
 <div id="modal-replace" class="modal-overlay hidden">
   <div class="modal-box">
-    <div class="modal-header">Search &amp; Replace <button class="btn-icon" id="modal-close">✕</button></div>
+    <div class="modal-header">Search &amp; Replace <button class="btn-icon" id="modal-close">X</button></div>
     <div class="modal-body">
-      <div class="form-row"><span>Search</span><input type="text" id="sr-search" placeholder="Search text…"></div>
-      <div class="form-row"><span>Replace with</span><input type="text" id="sr-replace" placeholder="Replacement…"></div>
+      <div class="form-row"><span>Search</span><input type="text" id="sr-search" placeholder="Search timeline..."></div>
+      <div class="form-row"><span>Replace with</span><input type="text" id="sr-replace" placeholder="Replacement..."></div>
       <div class="checkbox-row">
         <span>Fields:</span>
-        <label><input type="checkbox" name="sr-field" value="text" checked> text</label>
-        <label><input type="checkbox" name="sr-field" value="json"> json</label>
+        <label><input type="checkbox" name="sr-field" value="summary" checked> summary</label>
       </div>
       <div class="checkbox-row">
         <span>Mode:</span>
         <label><input type="radio" name="sr-mode" value="partial" checked> Replace matched text only</label>
         <label><input type="radio" name="sr-mode" value="full"> Replace entire field value</label>
       </div>
-      <p class="sr-warn">⚠ Replacing in <em>json</em> modifies raw JSON strings — use with caution.</p>
+      <p class="sr-warn">Replacing JSON fields modifies raw JSON strings. Use with caution.</p>
       <div class="modal-actions">
         <button class="btn-primary" id="btn-find-matches">Find matches</button>
         <button class="btn-danger" id="btn-replace-all">Replace all (no confirmation)</button>
@@ -475,19 +475,18 @@ ${dbBanner}
 <!-- Edit modal -->
 <div id="modal-edit" class="modal-overlay hidden">
   <div class="modal-box modal-narrow">
-    <div class="modal-header">Edit entry <button class="btn-icon" id="edit-close">✕</button></div>
+    <div class="modal-header">Edit timeline entry <button class="btn-icon" id="edit-close">X</button></div>
     <div class="modal-body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="form-row"><span>ctx_id</span><input type="text" id="edit-ctx-id" readonly></div>
-        <div class="form-row"><span>Timestamp (ts)</span><input type="text" id="edit-ts" readonly></div>
+        <div class="form-row"><span>id</span><input type="text" id="edit-ctx-id" readonly></div>
+        <div class="form-row"><span>Frozen</span><input type="text" id="edit-ts" readonly></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="form-row"><span>Channel (id)</span><input type="text" id="edit-channel"></div>
-        <div class="form-row"><span>Role</span><input type="text" id="edit-role"></div>
+        <div class="form-row"><span>Channel</span><input type="text" id="edit-channel"></div>
+        <div class="form-row"><span>Model</span><input type="text" id="edit-role"></div>
       </div>
-      <div class="form-row"><span>Turn ID</span><input type="text" id="edit-turn-id"></div>
-      <div class="form-row"><span>Text</span><textarea id="edit-text" style="height:110px"></textarea></div>
-      <div class="form-row"><span>JSON</span><textarea id="edit-json" style="height:80px"></textarea></div>
+      <div class="form-row"><span>Range</span><input type="text" id="edit-turn-id"></div>
+      <div class="form-row"><span>Summary</span><textarea id="edit-text" style="height:180px"></textarea></div>
       <div class="modal-actions">
         <button class="btn-primary" id="edit-save">Save</button>
         <button class="btn-secondary" id="edit-cancel">Cancel</button>
@@ -500,7 +499,7 @@ ${dbBanner}
 <!-- Expand overlay -->
 <div id="expand-overlay" class="expand-overlay hidden">
   <div class="expand-box">
-    <button class="btn-icon expand-close" id="expand-close">✕</button>
+    <button class="btn-icon expand-close" id="expand-close">X</button>
     <div id="expand-content"></div>
   </div>
 </div>
@@ -513,7 +512,7 @@ var currentChannel = null;
 var currentPage = 1;
 var pageSize = ${PAGE_SIZE};
 var allCols = [];
-var visibleCols = ['ctx_id', 'ts', 'id', 'role', 'text'];
+var visibleCols = ['id', 'channel_id', 'start_idx', 'end_idx', 'summary'];
 var isSearchMode = false;
 var lastQ = '';
 var selectedIds = new Set();
@@ -545,7 +544,7 @@ function highlight(text, q) {
   var esc = escHtml(q);
   return escHtml(text).split(esc).join('<mark>' + esc + '</mark>');
 }
-function trunc(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+function trunc(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '...' : s; }
 function setStatus(msg, isError) {
   var el = document.getElementById('status-bar');
   el.textContent = msg || '';
@@ -573,10 +572,10 @@ function syncChannelSelectAll() {
 async function loadChannels() {
   try {
     var data = await api('/api/channels');
-    console.log('[Context] /api/channels ->', data);
+    console.log('[Timeline] /api/channels ->', data);
     renderChannels(data.channels || []);
   } catch (e) {
-    console.error('[Context] /api/channels error:', e);
+    console.error('[Timeline] /api/channels error:', e);
     document.getElementById('channel-list').innerHTML =
       '<div style="padding:10px 12px;color:#f87171;font-size:13px;font-weight:600;background:#2a0a0a;border-bottom:1px solid #5a1a1a">' +
       'Error:<br><span style="font-weight:400;font-size:11px;font-family:monospace">' + escHtml(e.message) + '</span></div>';
@@ -672,13 +671,13 @@ async function loadPage() {
   if (isSearchMode && lastQ) {
     endpoint = '/api/search'; p.set('q', lastQ);
     var searchJson = document.getElementById('chk-search-json');
-    var sf = searchJson && searchJson.checked ? 'text,json' : 'text';
+    var sf = 'summary';
     p.set('searchFields', sf);
   }
-  setStatus('Loading…');
+  setStatus('Loading...');
   try {
     var data = await api(endpoint + '?' + p);
-    console.log('[Context] ' + endpoint + ' ->', data);
+    console.log('[Timeline] ' + endpoint + ' ->', data);
     renderTable(data.rows || []);
     renderPagination(data.total, data.page, data.pages);
     if ((data.total || 0) === 0) {
@@ -687,7 +686,7 @@ async function loadPage() {
       setStatus((isSearchMode ? 'Search: ' : 'Entries: ') + data.total + ' total - Page ' + data.page + ' of ' + Math.max(1, data.pages));
     }
   } catch (e) {
-    console.error('[Context] loadPage error:', e);
+    console.error('[Timeline] loadPage error:', e);
     setStatus('Error loading: ' + e.message, true);
   }
 }
@@ -738,7 +737,7 @@ function renderTable(rows) {
     tdChk.style.cssText = 'padding:4px;';
     var chk = document.createElement('input');
     chk.type = 'checkbox'; chk.className = 'row-check';
-    var rowId = row.ctx_id != null ? row.ctx_id : '';
+    var rowId = row.id != null ? row.id : '';
     chk.dataset.id = rowId;
     if (isFrozen && protectFrozen) {
       chk.disabled = true;
@@ -757,16 +756,16 @@ function renderTable(rows) {
     var tdEdit = document.createElement('td');
     tdEdit.style.cssText = 'padding:2px 4px;';
     var btnEdit = document.createElement('button');
-    btnEdit.className = 'btn-edit-row'; btnEdit.title = 'Edit'; btnEdit.textContent = '✏';
+    btnEdit.className = 'btn-edit-row'; btnEdit.title = 'Edit'; btnEdit.textContent = 'Edit';
     (function (cid) {
       btnEdit.addEventListener('click', function () { openEditModal(cid); });
-    })(row.ctx_id);
+    })(row.id);
     tdEdit.appendChild(btnEdit); tr.appendChild(tdEdit);
 
     visibleCols.forEach(function (col) {
       var td = document.createElement('td'); td.dataset.col = col;
       var val = row[col];
-      var rowCtxId = row.ctx_id;
+      var rowCtxId = row.id;
       if (val == null) {
         td.dataset.value = '';
         if (EDITABLE_COLS.has(col)) {
@@ -781,7 +780,7 @@ function renderTable(rows) {
         td.dataset.value = s;
         renderCellContent(td, col, s);
         if (EDITABLE_COLS.has(col)) makeCellEditable(td, rowCtxId, col);
-        if (col === 'ctx_id' && isFrozen) {
+        if (col === 'id' && isFrozen) {
           var chip = document.createElement('span');
           chip.className = 'frozen-chip';
           chip.textContent = 'frozen';
@@ -831,24 +830,6 @@ async function doDeleteChannels() {
   } catch (e) { alert('Error deleting channels: ' + e.message); }
 }
 
-async function doDeleteChannel() {
-  var input = document.getElementById('delete-channel-id');
-  var cid = (input && input.value ? input.value : '').trim() || (currentChannel || '');
-  if (!cid) { alert('Please enter a channelID or select a channel on the left.'); return; }
-  var prot = getProtectFrozen();
-  var msg = prot
-    ? ('Delete non-frozen entries in channel "' + cid + '"? Frozen entries remain.')
-    : ('Delete ALL entries in channel "' + cid + '" including frozen?');
-  if (!confirm(msg + ' This cannot be undone.')) return;
-  try {
-    var data = await api('/api/delete-channel', 'DELETE', { channelID: cid, protectFrozen: prot });
-    var left = prot ? ' Frozen entries (if any) are kept.' : '';
-    setStatus('Channel delete: ' + data.deleted + ' entries removed from "' + cid + '".' + left);
-    if (input) input.value = '';
-    selectedIds.clear(); updateDeleteBtn(); loadAll();
-  } catch (e) { alert('Error deleting channel: ' + e.message); }
-}
-
 function doSearch() {
   var q = document.getElementById('search-input').value.trim();
   if (!q) return;
@@ -860,24 +841,23 @@ function clearSearch() {
 }
 
 async function openEditModal(ctx_id) {
-  document.getElementById('edit-status').textContent = 'Loading…';
+  document.getElementById('edit-status').textContent = 'Loading...';
   document.getElementById('modal-edit').classList.remove('hidden');
   try {
     var data = await api('/api/record?ctx_id=' + encodeURIComponent(ctx_id));
     var row = data.record;
     editCtxId = ctx_id;
     editOrig = {
-      id: String(row.id || ''), role: String(row.role || ''),
-      text: String(row.text || ''), json: String(row.json || ''),
-      turn_id: String(row.turn_id || '')
+      channel_id: String(row.channel_id || ''),
+      model: String(row.model || ''),
+      summary: String(row.summary || '')
     };
-    document.getElementById('edit-ctx-id').value = String(row.ctx_id || '');
-    document.getElementById('edit-ts').value = String(row.ts || '');
-    document.getElementById('edit-channel').value = editOrig.id;
-    document.getElementById('edit-role').value = editOrig.role;
-    document.getElementById('edit-turn-id').value = editOrig.turn_id;
-    document.getElementById('edit-text').value = editOrig.text;
-    document.getElementById('edit-json').value = editOrig.json;
+    document.getElementById('edit-ctx-id').value = String(row.id || '');
+    document.getElementById('edit-ts').value = String(row.frozen || 0);
+    document.getElementById('edit-channel').value = editOrig.channel_id;
+    document.getElementById('edit-role').value = editOrig.model;
+    document.getElementById('edit-turn-id').value = String(row.start_idx || '') + ' - ' + String(row.end_idx || '');
+    document.getElementById('edit-text').value = editOrig.summary;
     document.getElementById('edit-status').textContent = '';
   } catch (e) {
     document.getElementById('edit-status').textContent = 'Error: ' + e.message;
@@ -887,11 +867,9 @@ async function openEditModal(ctx_id) {
 async function saveEdit() {
   if (!editCtxId) return;
   var fields = [
-    { elId: 'edit-channel', field: 'id' },
-    { elId: 'edit-role',    field: 'role' },
-    { elId: 'edit-turn-id', field: 'turn_id' },
-    { elId: 'edit-text',    field: 'text' },
-    { elId: 'edit-json',    field: 'json' }
+    { elId: 'edit-channel', field: 'channel_id' },
+    { elId: 'edit-role', field: 'model' },
+    { elId: 'edit-text', field: 'summary' }
   ];
   var changes = fields.filter(function (f) {
     return document.getElementById(f.elId).value !== editOrig[f.field];
@@ -900,7 +878,7 @@ async function saveEdit() {
     document.getElementById('edit-status').textContent = 'No changes.';
     return;
   }
-  document.getElementById('edit-status').textContent = 'Saving…';
+  document.getElementById('edit-status').textContent = 'Saving...';
   var errors = [];
   for (var i = 0; i < changes.length; i++) {
     var f = changes[i];
@@ -911,7 +889,7 @@ async function saveEdit() {
   if (errors.length) {
     document.getElementById('edit-status').textContent = 'Error: ' + errors.join(', ');
   } else {
-    document.getElementById('edit-status').textContent = '✓ Saved';
+    document.getElementById('edit-status').textContent = 'Saved';
     setTimeout(function () {
       document.getElementById('modal-edit').classList.add('hidden');
       loadPage();
@@ -929,7 +907,7 @@ function getSrMode() {
 async function findMatches() {
   var q = document.getElementById('sr-search').value.trim();
   if (!q) { alert('Enter search text.'); return; }
-  document.getElementById('sr-count').textContent = 'Searching…';
+  document.getElementById('sr-count').textContent = 'Searching...';
   document.getElementById('sr-results-list').innerHTML = '';
   srMatches = [];
   srDone.clear();
@@ -962,11 +940,11 @@ function renderSrMatches(q) {
       '<div class="sr-item-info">' +
         '<div class="sr-item-meta">ID: ' + escHtml(String(m.ctx_id)) + ' &nbsp;|&nbsp; ch: ' + escHtml(m.channel) + ' &nbsp;|&nbsp; field: ' + escHtml(m.field) + '</div>' +
         '<div class="sr-item-before">' + beforeH + '</div>' +
-        '<div class="sr-item-after">→ ' + afterH + '</div>' +
+        '<div class="sr-item-after">&rarr; ' + afterH + '</div>' +
       '</div>' +
       '<div class="sr-item-actions">' +
         (isDone
-          ? '<span class="sr-status">✓ Done</span>'
+          ? '<span class="sr-status">Done</span>'
           : '<button class="btn-primary btn-apply" data-i="' + i + '">Replace</button>' +
             '<button class="btn-secondary btn-skip" data-i="' + i + '">Skip</button>') +
       '</div>';
@@ -1000,7 +978,7 @@ async function applySingle(i) {
     if (el) {
       el.classList.add('replaced');
       var actions = el.querySelector('.sr-item-actions');
-      if (actions) actions.innerHTML = '<span class="sr-status">✓ Done</span>';
+      if (actions) actions.innerHTML = '<span class="sr-status">Done</span>';
     }
   } catch (e) { alert('Error: ' + e.message); }
 }
@@ -1030,18 +1008,18 @@ function expandShow(content, type) {
   document.getElementById('expand-overlay').classList.remove('hidden');
 }
 
-var EDITABLE_COLS = new Set(['text', 'json', 'role', 'turn_id', 'id']);
-var LONG_COLS     = new Set(['text', 'json']);
+var EDITABLE_COLS = new Set(['summary', 'model', 'channel_id']);
+var LONG_COLS     = new Set(['summary']);
 
 function renderCellContent(td, col, val) {
   td.classList.remove('cell-editing', 'cell-saving');
   td.innerHTML = '';
   if (LONG_COLS.has(col)) {
-    var limit = col === 'json' ? 120 : 200;
+    var limit = col === 'summary' ? 200 : 120;
     td.appendChild(document.createTextNode(trunc(val, limit)));
     if (val.length > limit) {
       var btnExp = document.createElement('button');
-      btnExp.className = 'btn-expand-cell'; btnExp.title = 'Expand full content'; btnExp.textContent = '⤢';
+      btnExp.className = 'btn-expand-cell'; btnExp.title = 'Expand full content'; btnExp.textContent = 'Open';
       (function (v, c) { btnExp.addEventListener('click', function (e) { e.stopPropagation(); expandShow(v, c); }); })(val, col);
       td.appendChild(btnExp);
     }
@@ -1068,7 +1046,7 @@ function startInlineEdit(td, ctx_id, col) {
     el = document.createElement('textarea');
     el.className = 'cell-inline-textarea';
     var hint = document.createElement('span');
-    hint.className = 'cell-edit-hint'; hint.textContent = 'Ctrl+Enter to save · Esc to cancel';
+    hint.className = 'cell-edit-hint'; hint.textContent = 'Ctrl+Enter to save | Esc to cancel';
   } else {
     el = document.createElement('input');
     el.type = 'text'; el.className = 'cell-inline-input';
@@ -1212,13 +1190,13 @@ async function loadAll() {
     return;
   }
   if (banner && banner.dataset.count !== undefined) {
-    console.log('[Context] Server-side DB ping OK, total rows:', banner.dataset.count);
+    console.log('[Timeline] Server-side DB ping OK, total rows:', banner.dataset.count);
   }
   try { await loadAll(); } catch (e) {
-    console.error('[Context] loadAll error:', e);
+    console.error('[Timeline] loadAll error:', e);
     setStatus('Load error: ' + e.message, true);
   }
-  loadColumns().catch(function (e) { console.error('[Context] loadColumns:', e); });
+  loadColumns().catch(function (e) { console.error('[Timeline] loadColumns:', e); });
   protectFrozen = getProtectFrozen();
 })();
 })();
@@ -1229,7 +1207,7 @@ async function loadAll() {
 
 
 
-export default async function getWebpageContext(coreData) {
+export default async function getWebpageTimeline(coreData) {
   const wo = coreData?.workingObject || {};
   if (wo?.flow !== "webpage") return coreData;
 
@@ -1247,7 +1225,7 @@ export default async function getWebpageContext(coreData) {
   if (method === "GET" && urlPath === basePath + "/style.css") {
     let sharedCss = "";
     try { sharedCss = fs.readFileSync(SHARED_CSS, "utf-8"); } catch {  }
-    setCssResp(wo, sharedCss + "\n" + getContextCss());
+    setCssResp(wo, sharedCss + "\n" + getTimelineCss());
     wo.jump = true; await setSendNow(wo); return coreData;
   }
 
@@ -1261,14 +1239,14 @@ export default async function getWebpageContext(coreData) {
         const menuHtml = getMenuHtml(wo.web?.menu || [], urlPath, wo.webAuth?.role || "", null, null, wo.webAuth);
         setHtmlResp(wo, "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">" +
           "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
-          "<title>Context</title>" + getThemeHeadScript() +
+          "<title>Timeline</title>" + getThemeHeadScript() +
           "<link rel=\"stylesheet\" href=\"" + basePath + "/style.css\"></head><body>" +
-          "<header><h1>\uD83D\uDDC2\uFE0F Context</h1>" + menuHtml + "</header>" +
+          "<header><h1>Timeline</h1>" + menuHtml + "</header>" +
           "<div style=\"margin-top:var(--hh);padding:1.5rem;display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--hh))\">" +
           "<div style=\"text-align:center;color:var(--txt)\">" +
           "<div style=\"font-size:2rem;margin-bottom:0.5rem\">\uD83D\uDD12</div>" +
           "<div style=\"font-weight:600;margin-bottom:0.5rem\">Access denied</div>" +
-          "<a href=\"/\" style=\"font-size:0.85rem;color:var(--acc)\">← Back to home</a>" +
+          "<a href=\"/\" style=\"font-size:0.85rem;color:var(--acc)\">&larr; Back to home</a>" +
           "</div></div></body></html>");
       }
       wo.web = wo.web || {}; wo.web.useLayout = false;
@@ -1284,7 +1262,7 @@ export default async function getWebpageContext(coreData) {
         dbStatus = "error";
         dbInfo = String(e?.message || e);
       }
-      setHtmlResp(wo, getContextHtml({
+      setHtmlResp(wo, getTimelineHtml({
         menu: wo.web?.menu || [],
         role: wo.webAuth?.role || "",
         activePath: urlPath,
@@ -1339,7 +1317,7 @@ export default async function getWebpageContext(coreData) {
       const channel      = getStr(query.channel) || null;
       const fields       = getStr(query.fields).split(",").map(s => s.trim()).filter(Boolean);
       const searchFields = getStr(query.searchFields).split(",").map(s => s.trim()).filter(Boolean);
-      const result = await dbSearch(pool, { channel, q, page, limit, fields, searchFields: searchFields.length ? searchFields : ["text"] });
+      const result = await dbSearch(pool, { channel, q, page, limit, fields, searchFields: searchFields.length ? searchFields : ["summary"] });
       setJsonResp(wo, 200, result);
       wo.jump = true; await setSendNow(wo); return coreData;
     }
@@ -1401,7 +1379,7 @@ export default async function getWebpageContext(coreData) {
       const body    = wo.http?.json || {};
       const search  = getStr(body.search);
       const channel = getStr(body.channel) || null;
-      const fields  = Array.isArray(body.fields) ? body.fields : ["text"];
+      const fields  = Array.isArray(body.fields) ? body.fields : ["summary"];
       if (!search) { setJsonResp(wo, 400, { error: "search required" }); }
       else {
         const matches = await dbFindReplace(pool, { search, channel, searchFields: fields });
@@ -1427,7 +1405,7 @@ export default async function getWebpageContext(coreData) {
       const search  = getStr(body.search);
       const replace = getStr(body.replace);
       const channel = getStr(body.channel) || null;
-      const fields  = Array.isArray(body.fields) ? body.fields : ["text"];
+      const fields  = Array.isArray(body.fields) ? body.fields : ["summary"];
       const mode    = body.mode === "full" ? "full" : "partial";
       if (!search) { setJsonResp(wo, 400, { error: "search required" }); }
       else { const updated = await dbReplaceAll(pool, { search, replace, channel, searchFields: fields, mode }); setJsonResp(wo, 200, { ok: true, updated }); }
@@ -1440,3 +1418,5 @@ export default async function getWebpageContext(coreData) {
 
   return coreData;
 }
+
+

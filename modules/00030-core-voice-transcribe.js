@@ -1,3 +1,8 @@
+/**************************************************************/
+/* filename: "00030-core-voice-transcribe.js"                       */
+/* Version 1.0                                               */
+/* Purpose: Pipeline module implementation.                 */
+/**************************************************************/
 
 
 
@@ -53,7 +58,7 @@ import {
   getEnsureDiarizePool, ensureDiarizeTables, listSpeakers,
   buildSamplePreamble, concatPreambleWithAudio, resolveSpeakerMapping,
   createSession, createChunk, upsertChunkSpeaker
-} from "../core/voice-diarize.js";
+} from "../shared/voice/voice-diarize.js";
 
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath (process.env.FFMPEG_PATH  || "/usr/bin/ffmpeg");
@@ -195,15 +200,15 @@ function getAudioTranscribeUrl(endpoint) {
     if (/\/audio\/transcriptions$/.test(ep)) return ep;
     return `${ep}/v1/audio/transcriptions`;
   }
-  const base = (process.env.OPENAI_BASE_URL || "").trim().replace(/\/+$/, "");
-  return base ? `${base}/v1/audio/transcriptions` : "https://api.openai.com/v1/audio/transcriptions";
+  return "https://api.openai.com/v1/audio/transcriptions";
 }
 
 
-async function transcribeOneRaw(fp, { model, language, isDiarize, apiKey, url, Fetch, FormData, Blob }) {
+async function transcribeOneRaw(fp, { model, language, isDiarize, apiKey, url, prompt, Fetch, FormData, Blob }) {
   const fd = new FormData();
   fd.set("model", model);
   if (language && language !== "auto") fd.set("language", language);
+  if (prompt && !isDiarize) fd.set("prompt", prompt);
   if (isDiarize) {
     fd.set("response_format",   "diarized_json");
     fd.set("chunking_strategy", "auto");
@@ -217,7 +222,11 @@ async function transcribeOneRaw(fp, { model, language, isDiarize, apiKey, url, F
     headers: { Authorization: `Bearer ${apiKey}` },
     body:    fd
   });
-  if (!res.ok) throw new Error(`Transcribe API HTTP ${res.status}`);
+  if (!res.ok) {
+    const rawError = await res.text().catch(() => "");
+    const detail = String(rawError || "").trim().replace(/\s+/g, " ").slice(0, 500);
+    throw new Error(detail ? `Transcribe API HTTP ${res.status}: ${detail}` : `Transcribe API HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -282,7 +291,7 @@ async function getTranscribeAudio(filePath, { model, language, apiKey, endpoint,
 }
 
 
-async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoint, diarizeChunkMB, opusBitrateKbps, wo }) {
+async function getDiarizeWithSamples(filePath, { model, fallbackModel, language, apiKey, endpoint, diarizeChunkMB, opusBitrateKbps, wo }) {
   const log = getPrefixedLogger(wo, import.meta.url);
 
   let Fetch = globalThis.fetch, FormData = globalThis.FormData, Blob = globalThis.Blob;
@@ -292,7 +301,6 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
   }
 
   const url           = getAudioTranscribeUrl(endpoint);
-  const apiOpts       = { model, language, isDiarize: true, apiKey, url, Fetch, FormData, Blob };
   const channelId     = String(wo.channelID || "");
   const chunkMB       = Number.isFinite(diarizeChunkMB) && diarizeChunkMB > 0 ? diarizeChunkMB : DEFAULT_DIARIZE_CHUNK_MB;
   const bitrate       = Number.isFinite(opusBitrateKbps) && opusBitrateKbps > 0 ? opusBitrateKbps : DEFAULT_OPUS_BITRATE_KBPS;
@@ -311,7 +319,9 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
     log("DB init failed", "error", { moduleName: MODULE_NAME, error: e?.message });
   }
 
-  const withSamples = speakers.filter(s => s.sample_audio_path);
+  const apiOpts       = { model, language, isDiarize: true, apiKey, url, prompt: "", Fetch, FormData, Blob };
+
+  const withSamples = speakers.filter(s => s.sampleAudioPath);
   log(`[diarize-debug] speakers total=${speakers.length} withSamples=${withSamples.length} names=[${withSamples.map(s => s.name).join(",")}]`, "info", { moduleName: MODULE_NAME, channelId });
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vdiar-"));
@@ -339,10 +349,11 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
 
   const chunkDir  = path.join(tmpDir, "chunks");
   fs.mkdirSync(chunkDir, { recursive: true });
-  const rawChunks  = await splitAudioIntoChunks(filePath, chunkDir, diarizeChunkS, 0, false, true, bitrate);
+  const rawChunks  = await splitAudioIntoChunks(filePath, chunkDir, diarizeChunkS, 0, false, false, bitrate);
   const audioParts = rawChunks.map((c, i) => ({ file: c.file, index: i }));
 
   const parts = [];
+  let storedChunkCount = 0;
 
   for (const { file, index } of audioParts) {
     const chunkNum = index + 1;
@@ -368,10 +379,10 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
     let cleanSegsToPersist = segments;
 
     if (preamble && segments.length > 0) {
-      const resolved     = resolveSpeakerMapping(segments, preamble.preambleDurationS, preamble.orderedSpeakerIds);
+      const resolved     = resolveSpeakerMapping(segments, preamble.preambleDurationS, preamble.orderedSpeakerIds, speakers);
       mapping            = resolved.mapping;
       cleanSegsToPersist = resolved.cleanSegments;
-      log(`[diarize-debug] resolved: preambleSegs=${segments.filter(s=>(s.start??0)<preamble.preambleDurationS).length} cleanSegs=${resolved.cleanSegments.length} mapping=${JSON.stringify(mapping)}`, "info", { moduleName: MODULE_NAME });
+      log(`[diarize-debug] resolved: preambleSegs=${segments.filter(s=>(s.start??0)<preamble.preambleDurationS).length} cleanSegs=${resolved.cleanSegments.length} mapping=${JSON.stringify(mapping)} textMatched=${JSON.stringify(resolved.textMatchedMap || {})} zeroOffsetFallback=${resolved.zeroOffsetFallback === true}`, "info", { moduleName: MODULE_NAME });
       for (const [label, spId] of Object.entries(mapping)) {
         const sp = speakers.find(s => s.id === spId);
         nameMap[label] = sp ? sp.name : `Chunk${chunkNum}Speaker${label}`;
@@ -383,6 +394,28 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
           return text ? `${name}: ${text}` : "";
         })
         .filter(Boolean).join("\n");
+      if (!chunkTranscript.trim()) {
+        log("Preamble diarization produced no clean segments, retrying chunk without preamble", "warn", {
+          moduleName: MODULE_NAME,
+          chunkNum,
+          model,
+          fallbackModel: fallbackModel || model
+        });
+        const fallbackData = await transcribeOneRaw(file, {
+          model: fallbackModel || model,
+          language,
+          isDiarize: false,
+          apiKey,
+          url,
+          Fetch,
+          FormData,
+          Blob
+        });
+        chunkTranscript = String(fallbackData?.text || "").trim();
+        mapping = {};
+        nameMap = {};
+        cleanSegsToPersist = [];
+      }
     } else if (segments.length > 0) {
       const seenRaw = [];
       chunkTranscript = segments
@@ -402,6 +435,7 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
     if (pool && sessionId) {
       try {
         const chunkId    = await createChunk(pool, { sessionId, chunkIndex: index, transcript: chunkTranscript });
+        storedChunkCount++;
         const seenLabels = new Set();
         for (const seg of cleanSegsToPersist) {
           const chunkLabel = nameMap[seg.speaker] ?? `Chunk${chunkNum}Speaker${seg.speaker}`;
@@ -411,11 +445,38 @@ async function getDiarizeWithSamples(filePath, { model, language, apiKey, endpoi
             await upsertChunkSpeaker(pool, { chunkId, chunkLabel, speakerId });
           }
         }
-      } catch {}
+      } catch (e) {
+        log("Chunk persistence failed", "error", {
+          moduleName: MODULE_NAME,
+          sessionId,
+          chunkNum,
+          error: e?.message || String(e)
+        });
+      }
     }
 
     if (didConcat) { try { await fs.promises.unlink(transcribeFile); } catch {} }
   }
+
+  if (pool && sessionId && !storedChunkCount && parts.length) {
+    try {
+      await createChunk(pool, { sessionId, chunkIndex: 0, transcript: parts.join("\n\n") });
+      storedChunkCount = 1;
+      log("Stored fallback review chunk", "warn", {
+        moduleName: MODULE_NAME,
+        sessionId,
+        chars: parts.join("\n\n").length
+      });
+    } catch (e) {
+      log("Fallback review chunk persistence failed", "error", {
+        moduleName: MODULE_NAME,
+        sessionId,
+        error: e?.message || String(e)
+      });
+    }
+  }
+
+  wo.voiceDiarizeStoredChunks = storedChunkCount;
 
   try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
   return parts.join("\n\n");
@@ -442,9 +503,9 @@ export default async function getCoreVoiceTranscribe(coreData) {
   const MIN_VOICED_MS = Number.isFinite(wo.minVoicedMs)        ? +wo.minVoicedMs        : Number.isFinite(cfg.minVoicedMs)       ? +cfg.minVoicedMs       : 2000;
   const KEEP_WAV      = typeof wo.keepWav === "boolean"         ? wo.keepWav             : Boolean(cfg.keepWav);
   const API_KEY       = await getSecret(wo, (wo.transcribeApiKey || cfg.transcribeApiKey || process.env.OPENAI_API_KEY || "").trim());
-  const MODEL         = wo.transcribeOnly
-    ? (cfg.transcribeModelDiarize || wo.transcribeModel || "gpt-4o-transcribe-diarize").trim()
-    : (wo.transcribeModel || cfg.transcribeModel || "gpt-4o-mini-transcribe").trim();
+  const STANDARD_MODEL = (wo.transcribeModel || cfg.transcribeModel || "gpt-4o-mini-transcribe").trim();
+  const DIARIZE_MODEL  = (cfg.transcribeModelDiarize || wo.transcribeModel || "gpt-4o-transcribe-diarize").trim();
+  const MODEL         = wo.transcribeOnly ? DIARIZE_MODEL : STANDARD_MODEL;
   const LANGUAGE      = (wo.transcribeLanguage || cfg.transcribeLanguage || "auto").trim();
   const ENDPOINT      = (wo.transcribeEndpoint || cfg.transcribeEndpoint || "").trim();
   const CHUNK_S           = Number.isFinite(wo.transcribeChunkS)   ? +wo.transcribeChunkS   : Number.isFinite(cfg.chunkDurationS)        ? +cfg.chunkDurationS        : DEFAULT_CHUNK_S;
@@ -453,6 +514,7 @@ export default async function getCoreVoiceTranscribe(coreData) {
   const OPUS_BITRATE_KBPS = Number.isFinite(wo.opusBitrateKbps)    ? +wo.opusBitrateKbps    : Number.isFinite(cfg.opusBitrateKbps)        ? +cfg.opusBitrateKbps        : DEFAULT_OPUS_BITRATE_KBPS;
 
   wo.voiceTranscribed = false;
+  wo.transcribeError = "";
 
   const isDiarize = String(MODEL).toLowerCase().includes("diarize");
 
@@ -482,21 +544,43 @@ export default async function getCoreVoiceTranscribe(coreData) {
       return coreData;
     }
 
-    const text = transcribeWithWhisper
-      ? await transcribeWithWhisper(audioFile, MODEL, LANGUAGE, API_KEY)
-      : (isDiarize && wo.transcribeOnly)
-        ? await getDiarizeWithSamples(audioFile, {
-            model: MODEL, language: LANGUAGE, apiKey: API_KEY,
-            endpoint: ENDPOINT, diarizeChunkMB: DIARIZE_CHUNK_MB, opusBitrateKbps: OPUS_BITRATE_KBPS, wo
-          })
-        : await getTranscribeAudio(audioFile, {
-            model:            MODEL,
-            language:         LANGUAGE,
-            apiKey:           API_KEY,
-            endpoint:         ENDPOINT,
-            chunkDurationS:   CHUNK_S,
-            overlapDurationS: OVERLAP_S
-          });
+    let text = "";
+
+    if (transcribeWithWhisper) {
+      text = await transcribeWithWhisper(audioFile, MODEL, LANGUAGE, API_KEY);
+    } else if (isDiarize && wo.transcribeOnly) {
+      try {
+        text = await getDiarizeWithSamples(audioFile, {
+          model: MODEL, fallbackModel: STANDARD_MODEL, language: LANGUAGE, apiKey: API_KEY,
+          endpoint: ENDPOINT, diarizeChunkMB: DIARIZE_CHUNK_MB, opusBitrateKbps: OPUS_BITRATE_KBPS, wo
+        });
+      } catch (e) {
+        wo.transcribeError = e?.message || String(e);
+        log("Diarize transcription failed, retrying standard transcription", "warn", {
+          moduleName: MODULE_NAME,
+          model: MODEL,
+          fallbackModel: STANDARD_MODEL,
+          error: wo.transcribeError
+        });
+        text = await getTranscribeAudio(audioFile, {
+          model:            STANDARD_MODEL,
+          language:         LANGUAGE,
+          apiKey:           API_KEY,
+          endpoint:         ENDPOINT,
+          chunkDurationS:   CHUNK_S,
+          overlapDurationS: OVERLAP_S
+        });
+      }
+    } else {
+      text = await getTranscribeAudio(audioFile, {
+        model:            MODEL,
+        language:         LANGUAGE,
+        apiKey:           API_KEY,
+        endpoint:         ENDPOINT,
+        chunkDurationS:   CHUNK_S,
+        overlapDurationS: OVERLAP_S
+      });
+    }
 
     const cleaned = String(text || "").trim();
     if (!cleaned) {
@@ -510,6 +594,7 @@ export default async function getCoreVoiceTranscribe(coreData) {
 
   } catch (e) {
     log("Transcription error", "error", { moduleName: MODULE_NAME, error: e?.message });
+    wo.transcribeError = e?.message || String(e);
     wo.transcribeSkipped = wo.transcribeSkipped || "error";
     wo.jump = true;
   } finally {
