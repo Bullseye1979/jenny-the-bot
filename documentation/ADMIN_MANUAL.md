@@ -89,6 +89,7 @@
    - 16.12 [Permission Concept](#1612-permission-concept)
    - 16.13 [Creating a New Web Module](#1613-creating-a-new-web-module)
    - 16.14 [Key Manager (`/key-manager`)](#1614-key-manager-key-manager)
+   - 16.14a [Channel Config Manager (`/channels`)](#1614a-channel-config-manager-channels)
    - 16.15 [Microsoft Graph Auth (`/graph-auth`)](#1615-microsoft-graph-auth-graph-auth)
    - 16.16 [Token Refresh Cron (`cron-graph-token-refresh`)](#1616-token-refresh-cron-cron-graph-token-refresh)
    - 16.17 [Spotify Auth (`/spotify-auth`)](#1617-spotify-auth-spotify-auth)
@@ -2425,6 +2426,7 @@ export default async function myModule(coreData) {
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
 | 00066 | `webpage-manifests` | Admin-only manifest JSON editor SPA (port 3126, `/manifests`). Uses a manifest selector and structured JSON editor. Routes: `GET /manifests`, `GET /manifests/api/list`, `GET /manifests/api/get?name=`, `POST /manifests/api/save`. Config key: `webpage-manifests`. |
 | 00067 | `webpage-subagent-manager` | Admin-only subagent manager SPA (port 3127, `/subagents`). Routes: `GET /subagents`, `GET /subagents/api/list`, `GET /subagents/api/get?type=`, `POST /subagents/api/save`, `DELETE /subagents/api/delete?type=`. Saves subagent channel entries into `core.json` and matching blocks into `manifests/getSubAgent.json`. |
+| 00068 | `webpage-channel-config-manager` | Admin-only channel config manager SPA (port 3129, `/channels`). Routes: `GET /channels`, `GET /channels/api/list`, `GET /channels/api/item?index=`, `POST /channels/api/save`, and `POST /channels/api/delete`. Edits entries inside `config["core-channel-config"].channels` in `core.json`. |
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
 | 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user). Skipped when `wo.doNotWriteToContext === true` (e.g. internal wiki/system API calls). |
 | 00073 | *(deleted)* | `webpage-add-context` has been removed. Its logic was inlined into `00048-webpage-chat`. |
@@ -5490,6 +5492,63 @@ The port must also be listed in `config.webpage.ports` so the webpage flow accep
 
 ---
 
+### 16.14a Channel Config Manager (`/channels`)
+
+**Module:** `modules/00068-webpage-channel-config-manager.js`  
+**Port:** 3129 (default, set via `config["webpage-channel-config-manager"].port`)  
+**Base path:** `/channels`  
+**Default roles:** `["admin"]`
+
+This page is the focused admin editor for `config["core-channel-config"].channels`. It is designed for daily channel override work and avoids the overhead of editing the entire `core.json` tree when you only want to adjust one channel definition.
+
+#### Features
+
+- Search the configured channel entries by title, match value, or tool count
+- Open one channel config at a time in a dedicated editor
+- Create a new entry from scratch
+- Duplicate an existing entry as a starting point
+- Delete an entry with confirmation
+- Edit the primary channel match and additional channel matches separately
+- Edit the top-level entry title directly from the focused form
+- Edit the main `overrides` object through a collapsible tree editor with inline support for arrays, nested objects, booleans, and scalar values
+- Edit `flows` through the same collapsible tree editor so nested flow overrides stay compact and scrollable
+- Preserve uncommon top-level entry fields through the `Miscellaneous top-level fields` JSON editor
+- Save validation errors directly in the UI before the file is written
+
+#### Configuration
+
+```json
+"webpage-channel-config-manager": {
+  "flow": ["webpage"],
+  "port": 3129,
+  "basePath": "/channels",
+  "allowedRoles": ["admin"]
+}
+```
+
+Also add `3129` to `config.webpage.ports[]` and `config["webpage-auth"].ports[]`.
+
+#### API endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/channels` | Render the SPA |
+| `GET` | `/channels/style.css` | Serve the shared stylesheet |
+| `GET` | `/channels/api/list` | Return `{items:[{index,title,meta,toolCount}]}` |
+| `GET` | `/channels/api/item?index=<n>` | Return one split entry as `{index,title,channelMatch,overrides,flows,extra}` |
+| `POST` | `/channels/api/save` | Upsert one entry. Body: `{index?, item}` |
+| `POST` | `/channels/api/delete` | Delete one entry by index |
+
+#### Menu integration
+
+Add an admin-only menu item such as:
+
+```json
+{ "text": "Administrator\\Channels", "iconKey": "config", "link": "/channels", "roles": ["admin"] }
+```
+
+---
+
 ### 16.15 Microsoft Graph Auth (`/graph-auth`)
 
 **Module:** `modules/00057-webpage-graph-auth.js`
@@ -6191,6 +6250,10 @@ The subagent system allows the main AI to delegate tasks to isolated sub-process
 4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery then happens via the subagent poll flows to the originating channel. Web delivery may apply a final caller-channel persona pass before returning the answer to the user.
 
 The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically. When the tool call sets `includeCallerContext: true`, the spawned subagent preloads the original caller context source (`callerContextChannelId` plus grouped `callerChannelIds`) using the target subagent channel's own `contextSize` and `compressedContextElements` overrides. Caller persona, caller system prompt, and caller instructions are not injected into the spawned subagent. The subagent answers in its own target-channel role, and only the later delivery layer may restyle that output for the caller channel.
+
+If the subagent task text omits source URLs that are still present in the caller payload, `getSubAgent` automatically appends those missing URLs in a `[SOURCE URLS]` block before spawning. This keeps webpage, browser-extension, and similar URL-driven requests grounded in the original link even when the main AI compresses the task too aggressively.
+
+The manifest description for `getSubAgent` also treats this as a mandatory caller rule: when a user request contains a concrete URL or artifact link, the exact URL must be copied into the `task` string instead of being replaced with vague wording.
 
 ### Context and Statefulness
 

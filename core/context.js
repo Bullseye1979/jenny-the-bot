@@ -451,7 +451,14 @@ export async function setContext(workingObject, record) {
 
 
 export async function rebuildDerivedContextSet(workingObject, options = {}) {
-  const contextChannelId = String(options?.contextChannelId || workingObject?.contextChannelID || workingObject?.channelID || "").trim();
+  const contextChannelId = String(
+    options?.contextChannelId ||
+    options?.contextChannelID ||
+    workingObject?.contextChannelId ||
+    workingObject?.contextChannelID ||
+    workingObject?.channelID ||
+    ""
+  ).trim();
   if (!contextChannelId) return [];
   const pool = await getEnsurePool(workingObject);
   const { periodSize } = getContextConfig(workingObject);

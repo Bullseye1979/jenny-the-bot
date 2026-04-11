@@ -51,7 +51,7 @@
     "botsAllow": [],
     "showReactions": true,
     "allowArtifactGeneration": true,
-    "__NOTE_allowArtifactGeneration": "NOT YET IMPLEMENTED — reserved for future use; has no effect currently",
+    "__NOTE_allowArtifactGeneration": "NOT YET IMPLEMENTED - reserved for future use; has no effect currently",
     "baseUrl": "YOUR_PUBLIC_SERVER_URL",
     "timezone": "Europe/Berlin",
     "response": "",
@@ -534,7 +534,8 @@
         3122,
         3126,
         3127,
-        3128
+        3128,
+        3129
       ]
     },
     "webpage-router": {
@@ -585,7 +586,8 @@
         3122,
         3126,
         3127,
-        3128
+        3128,
+        3129
       ],
       "sessionMaxAgeSec": 43200,
       "sameSite": "Lax",
@@ -649,6 +651,14 @@
           "text": "Administrator\\Subagents",
           "iconKey": "subagents",
           "link": "/subagents",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\Channels",
+          "iconKey": "config",
+          "link": "/channels",
           "roles": [
             "admin"
           ]
@@ -1445,17 +1455,21 @@
       ],
       "maxJobAgeMs": 86400000
     },
-    "subagent-persona": {
-      "__description": "Prepares inherited subagent persona and caller instructions before the AI modules run. This is a subagent-only helper module and can be removed together with the subagent feature set.",
-      "flow": [
-        "api"
-      ]
-    },
     "webpage-subagent-poll": {
       "__description": "Polls the registry for completed async subagent jobs whose callerFlow starts with 'webpage' and delivers results via SSE to the originating webpage client. Requires GET /api/async-results/stream?channelID=<callerChannelId> to be open on the client side. Set enabled:true to activate.",
       "enabled": false,
       "pollIntervalMs": 5000,
       "maxJobAgeMs": 86400000
+    },
+    "webpage-channel-config-manager": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3129,
+      "basePath": "/channels",
+      "allowedRoles": [
+        "admin"
+      ]
     }
   }
 }

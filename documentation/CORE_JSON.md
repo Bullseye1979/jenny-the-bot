@@ -1,8 +1,8 @@
 ﻿# core.json â€” Complete Reference
 
-> **Version:** 1.0 Â· **Date:** 2026-04-05
+> **Version:** 1.0 - **Date:** 2026-04-05
 
-`core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime â€” any change triggers an automatic hot-reload within seconds. No restart is required.
+`core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime - any change triggers an automatic hot-reload within seconds. No restart is required.
 
 The file has two top-level sections:
 
@@ -70,6 +70,7 @@ All key names follow **camelCase** throughout.
    - [webpage-keymanager](#webpage-keymanager)
    - [webpage-manifests](#webpage-manifests)
    - [webpage-subagent-manager](#webpage-subagent-manager)
+   - [webpage-channel-config-manager](#webpage-channel-config-manager)
    - [bard](#bard)
    - [bard-join](#bard-join)
    - [bard-cron](#bard-cron)
@@ -89,7 +90,7 @@ All key names follow **camelCase** throughout.
    - [toolcall](#toolcall)
    - [discord-subagent-poll](#discord-subagent-poll)
    - [Module Flow Subscriptions](#module-flow-subscriptions)
-   - [core-channel-config â€” Channel Overrides](#core-channel-config--channel-overrides)
+   - [core-channel-config - Channel Overrides](#core-channel-config--channel-overrides)
 3. [Complete Annotated Template](#complete-annotated-template)
 
 ---
@@ -519,6 +520,10 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 | `types` | object | `{"research":"subagent-research"}` | Map of type name â†’ virtual channel ID. Each entry enables one subagent type. |
 
 `getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. The spawned subagent uses the target virtual channel's own `systemPrompt`, `persona`, and `instructions`; caller persona and caller instructions are not injected into the spawned subagent. Results are then delivered back to the originating channel by the subagent poll flows, and webpage delivery may apply a final caller-channel persona pass before returning the answer to the user. Resume-specific context instructions come from `toolsconfig.getSubAgent.projectContextPrompt` rather than hardcoded tool text. Caller context stays opt-in per tool call: `includeCallerContext=true` preloads the original caller context source using the target subagent channel's own `contextSize` and `compressedContextElements` overrides.
+
+If the spawned task text does not contain URLs that are still present in the caller payload, `getSubAgent` appends those missing URLs automatically in a `[SOURCE URLS]` block before the spawn request is sent.
+
+The `manifests/getSubAgent.json` description also marks this as a hard requirement for the caller: concrete URLs and artifact links from the user request must be copied verbatim into the `task` string.
 
 Type routing convention: route planning and location lookup tasks belong to the `research` subagent type.
 
@@ -1352,6 +1357,53 @@ Admin UI for managing subagent definitions. Creating, editing, or deleting an en
 
 ---
 
+### webpage-channel-config-manager
+
+Admin UI for managing entries inside `config["core-channel-config"].channels`. The page is optimized for channel overrides rather than the full config tree: search and browse channel entries on the left, then edit one focused entry on the right.
+
+```jsonc
+"webpage-channel-config-manager": {
+  "flow":         ["webpage"],
+  "port":         3129,
+  "basePath":     "/channels",
+  "allowedRoles": ["admin"]
+}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `flow` | `["webpage"]` | Must include `"webpage"` |
+| `port` | `3129` | HTTP port this module listens on |
+| `basePath` | `"/channels"` | URL prefix |
+| `allowedRoles` | `["admin"]` | Roles permitted to access the page |
+| `file` | `core.json` | Optional absolute path to a different config file |
+
+**HTTP routes:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/channels` | Required (admin) | Main UI page |
+| `GET` | `/channels/style.css` | No auth | Shared CSS |
+| `GET` | `/channels/api/list` | Required (admin) | Lists channel-config entries with title, channel match summary, and tool count |
+| `GET` | `/channels/api/item?index=...` | Required (admin) | Loads one full entry split into `title`, `channelMatch`, `overrides`, `flows`, and `extra` |
+| `POST` | `/channels/api/save` | Required (admin) | Saves one entry. Body: `{index?, item}` |
+| `POST` | `/channels/api/delete` | Required (admin) | Deletes one entry by index |
+
+Features:
+
+- Searchable left-hand channel list with the first channel match as the primary identifier
+- Create new entries and duplicate existing ones
+- Dedicated title field mapped to the entry-level `_title`
+- Collapsible tree editor for `overrides`, including arrays like `tools` and nested objects like `toolsconfig`
+- Collapsible tree editor for `flows` and their nested `overrides`
+- JSON validation for miscellaneous top-level keys and complex values
+- Delete confirmation and unsaved-change warning
+
+- Add `3129` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`
+- Add `reverse_proxy /channels* localhost:3129` to your Caddyfile
+
+---
+
 ### webpage-live
 
 Live context monitor SPA (`modules/00059-webpage-live.js`) on port 3123, `/live`. Polls the `context` table and streams new rows as a real-time chat transcript. Channel selection, field toggles (timestamp, channel ID, role), and autoscroll state persist in `localStorage`.
@@ -2009,7 +2061,7 @@ Every module has an entry under `config` that declares which flows it participat
 
 ---
 
-### core-channel-config â€” Channel Overrides
+### core-channel-config - Channel Overrides
 
 The most powerful configuration section. Defines a hierarchy of overrides applied before the AI module runs:
 

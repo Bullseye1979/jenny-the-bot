@@ -40,6 +40,29 @@ import { logSubagent } from "../core/subagent-logger.js";
 
 const MODULE_NAME = "getSubAgent";
 
+function getExtractHttpUrls(text) {
+  const raw = String(text || "");
+  if (!raw) return [];
+  const matches = raw.match(/https?:\/\/[^\s<>"']+/gi) || [];
+  const urls = [];
+  for (const entry of matches) {
+    const value = String(entry || "").trim().replace(/[),.;!?]+$/g, "");
+    if (!value || urls.includes(value)) continue;
+    urls.push(value);
+  }
+  return urls;
+}
+
+function getAppendSourceUrls(task, callerPayload) {
+  const taskText = String(task || "").trim();
+  const taskUrls = getExtractHttpUrls(taskText);
+  const callerUrls = getExtractHttpUrls(callerPayload);
+  const missingUrls = callerUrls.filter((url) => !taskUrls.includes(url));
+  if (!missingUrls.length) return taskText;
+  const sourceBlock = ["[SOURCE URLS]", ...missingUrls.map((url) => `- ${url}`), "[/SOURCE URLS]"].join("\n");
+  return taskText ? `${taskText}\n\n${sourceBlock}` : sourceBlock;
+}
+
 
 function buildOrchestrationBlock(orchestration, turnId) {
   const lines = ["[ORCHESTRATION CONTEXT]"];
@@ -163,10 +186,11 @@ async function getInvoke(args, coreData) {
   const contextSourceChannelId = String(wo.callerContextChannelID || callerChannelId || "").trim();
   const contextSourceChannelIds = callerChannelIds.slice();
 
-  let fullPayload = task;
+  const callerPayloadRaw = String(wo.payload || "").trim();
+  let fullPayload = getAppendSourceUrls(task, callerPayloadRaw);
   if (orchestration !== null && orchestration !== undefined) {
     const block = buildOrchestrationBlock(orchestration, callerTurnId);
-    fullPayload = `${block}\n\n[YOUR TASK]\n${task}\n[/YOUR TASK]`;
+    fullPayload = `${block}\n\n[YOUR TASK]\n${fullPayload}\n[/YOUR TASK]`;
   }
 
   const types      = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
@@ -269,7 +293,7 @@ async function getInvoke(args, coreData) {
     contextSourceChannelIds: includeCallerContext && contextSourceChannelIds.length
       ? contextSourceChannelIds
       : undefined,
-    callerPayload:          String(wo.payload || "").slice(0, 500) || undefined,
+    callerPayload:          callerPayloadRaw ? callerPayloadRaw.slice(0, 4000) : undefined,
     agentDepth:             nextAgentDepth,
     agentType:              typeName,
   });

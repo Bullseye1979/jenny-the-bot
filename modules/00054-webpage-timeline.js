@@ -23,13 +23,18 @@
 
 
 
+/**************************************************************/
+/* filename: "00054-webpage-timeline.js"                     */
+/* Version 1.0                                               */
+/* Purpose: Admin webpage for timeline browsing and editing. */
+/**************************************************************/
+
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
 
-/* Version 1.0 */
 const MODULE_NAME = "webpage-timeline";
 const __filename   = fileURLToPath(import.meta.url);
 const __dirname    = path.dirname(__filename);

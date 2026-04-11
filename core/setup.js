@@ -1,22 +1,18 @@
 /**************************************************************/
-/* filename: "setup.js"                                             */
+/* filename: "setup.js"                                      */
 /* Version 1.0                                               */
-/* Purpose: Core shared runtime helper.                     */
+/* Purpose: Core setup wizard that bootstraps core.json      */
+/*          from the documented example template.            */
 /**************************************************************/
 
-
-
-
-
-
-
-
-
-
 import http from "node:http";
-import fs   from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const CORE_EXAMPLE_PATH = path.resolve(__dirname, "../core.json.example");
 
 function getSetupHtml(error) {
   const errHtml = error
@@ -27,7 +23,7 @@ function getSetupHtml(error) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Jenny Bot — First-Run Setup</title>
+<title>Jenny Bot - First-Run Setup</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:system-ui,sans-serif;background:#0f1117;color:#e2e2e2;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
@@ -73,15 +69,14 @@ function getSetupHtml(error) {
     <input name="botName" placeholder="Jenny" value="Jenny">
     <label>Trigger Word</label>
     <input name="trigger" placeholder="jenny" value="jenny">
-    <p class="hint">The word users must say/type to address the bot in multi-user channels.</p>
+    <p class="hint">The word users must say or type to address the bot in multi-user channels.</p>
 
-    <button type="submit">Create core.json &amp; start bot &#8594;</button>
+    <button type="submit">Create core.json and start bot &#8594;</button>
   </form>
 </div>
 </body>
 </html>`;
 }
-
 
 function parseFormBody(body) {
   const out = {};
@@ -92,85 +87,38 @@ function parseFormBody(body) {
   return out;
 }
 
-
 function buildCoreJson(fields) {
-  const apiKey  = (fields.apiKeyAlias || "OPENAI").trim() || "OPENAI";
+  const apiKey = (fields.apiKeyAlias || "OPENAI").trim() || "OPENAI";
   const botName = (fields.botName || "Jenny").trim() || "Jenny";
   const trigger = (fields.trigger || "jenny").trim().toLowerCase();
-  const dbHost  = (fields.dbHost  || "localhost").trim();
-  const dbPort  = Number(fields.dbPort) || 3306;
-  const dbUser  = (fields.dbUser  || "").trim();
-  const dbPass  = (fields.dbPass  || "").trim();
-  const dbName  = (fields.dbName  || "").trim();
+  const dbHost = (fields.dbHost || "localhost").trim();
+  const dbPort = Number(fields.dbPort) || 3306;
+  const dbUser = (fields.dbUser || "").trim();
+  const dbPass = (fields.dbPass || "").trim();
+  const dbName = (fields.dbName || "").trim();
 
-  return {
-    workingObject: {
-      botName,
-      trigger,
-      systemPrompt:  "You are a helpful assistant.",
-      persona:       botName + " — helpful AI assistant",
-      instructions:  "Answer concisely.",
-      model:         "gpt-4o-mini",
-      endpoint:      "https://api.openai.com/v1/chat/completions",
-      endpointResponses: "https://api.openai.com/v1/responses",
-      apiKey,
-      temperature:   0.2,
-      maxTokens:     2000,
-      contextSize:   40,
-      triggerWordWindow: 3,
-      useAiModule:   "completions",
-      toolChoice:    "auto",
-      tools:         [],
-      includeHistory: true,
-      includeRuntimeContext: true,
-      doNotWriteToContext: false,
-      moderationEnabled:   false,
-      showReactions:       true,
-      fileUrls:            [],
-      logging:             [],
-      timezone:            "Europe/Berlin",
-      baseUrl:             "http://localhost:3000",
-      requestTimeoutMs:    300000,
-      maxLoops:            10,
-      maxToolCalls:        5,
-      contextTokenBudget:  60000,
-      ttsModel:   "tts-1",
-      ttsVoice:   "nova",
-      ttsEndpoint: "https://api.openai.com/v1/audio/speech",
-      ttsApiKey:   apiKey,
-      transcribeModel:    "gpt-4o-mini-transcribe",
-      transcribeLanguage: "",
-      transcribeEndpoint: "https://api.openai.com",
-      transcribeApiKey:   apiKey,
-      apiEnabled: 1,
-      apiSecret:  "",
-      db: {
-        host:     dbHost,
-        port:     dbPort,
-        user:     dbUser,
-        password: dbPass,
-        database: dbName
-      },
-      toolsconfig: {}
-    },
-    config: {
-      "core-channel-config": { channels: [] },
-      "webpage-menu": { items: [] },
-      "webpage-voice": {
-        port: 3119,
-        silenceTimeoutMs: 2500,
-        maxDurationMs: 30000,
-        diarize: true,
-        clearContextChannels: [],
-        channels: []
-      },
-      "core-trigger-gate": {
-        flow: ["discord", "discord-voice", "webpage"]
-      }
-    }
-  };
+  const template = JSON.parse(fs.readFileSync(CORE_EXAMPLE_PATH, "utf8"));
+  const coreJson = JSON.parse(JSON.stringify(template));
+  const workingObject = coreJson.workingObject || {};
+
+  workingObject.botName = botName;
+  workingObject.trigger = trigger;
+  workingObject.apiKey = apiKey;
+  workingObject.ttsApiKey = apiKey;
+  workingObject.transcribeApiKey = apiKey;
+  workingObject.avatarApiKey = apiKey;
+  workingObject.baseUrl = "http://localhost:3000";
+  workingObject.modAdmin = "";
+  workingObject.db = workingObject.db || {};
+  workingObject.db.host = dbHost;
+  workingObject.db.port = dbPort;
+  workingObject.db.user = dbUser;
+  workingObject.db.password = dbPass;
+  workingObject.db.database = dbName;
+
+  coreJson.workingObject = workingObject;
+  return coreJson;
 }
-
 
 export function startSetupWizard(corePath, port) {
   return new Promise((resolve, reject) => {
@@ -185,10 +133,10 @@ export function startSetupWizard(corePath, port) {
         const chunks = [];
         req.on("data", c => chunks.push(c));
         req.on("end", () => {
-          const body   = Buffer.concat(chunks).toString("utf-8");
+          const body = Buffer.concat(chunks).toString("utf-8");
           const fields = parseFormBody(body);
 
-          const missing = ["apiKeyAlias","dbHost","dbUser","dbPass","dbName"].filter(k => !fields[k]?.trim());
+          const missing = ["apiKeyAlias", "dbHost", "dbUser", "dbPass", "dbName"].filter(k => !fields[k]?.trim());
           if (missing.length) {
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
             res.end(getSetupHtml("Missing required fields: " + missing.join(", ")));
@@ -215,13 +163,15 @@ h1{color:#44cc88;margin-bottom:12px}p{color:#aaa;margin-bottom:8px}</style></hea
           }
         });
         req.on("error", err => {
-          res.writeHead(500); res.end();
+          res.writeHead(500);
+          res.end();
           reject(err);
         });
         return;
       }
 
-      res.writeHead(302, { Location: "/setup" }); res.end();
+      res.writeHead(302, { Location: "/setup" });
+      res.end();
     });
 
     server.on("error", reject);

@@ -109,8 +109,8 @@
  * - Real secrets are resolved only at runtime through `getSecret(...)`.
  *
  * Naming convention:
- * - `channelID` follows the existing Discord-style ID convention.
- * - `guildId` and `userId` stay camelCase.
+ * - Internal runtime fields use camelCase.
+ * - `guildId`, `userId`, and `channelId` stay camelCase.
  * - snake_case is allowed only for external contracts such as SQL columns
  *   or third-party API payloads.
  *
@@ -119,8 +119,8 @@
  * @property {string} [flow]
  * @property {string} [payload]
  * @property {string} [timestamp]
- * @property {string} [channelID]
- * @property {boolean} [channelallowed]
+ * @property {string} [channelId]
+ * @property {boolean} [channelAllowed]
  * @property {boolean} [stop]
  * @property {string} [stopReason]
  * @property {boolean} [jump]

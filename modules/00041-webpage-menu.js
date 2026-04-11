@@ -6,8 +6,13 @@
 
 
 
+/**************************************************************/
+/* filename: "00041-webpage-menu.js"                         */
+/* Version 1.0                                               */
+/* Purpose: Shared webpage menu builder for admin pages.     */
+/**************************************************************/
+
 "use strict";
-/* Version 1.0 */
 const MODULE_NAME = "webpage-menu";
 const ICONS = {
   wiki: "\u{1F5FA}\uFE0F",
