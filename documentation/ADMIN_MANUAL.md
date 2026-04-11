@@ -2678,6 +2678,71 @@ Every tool must have a corresponding manifest file at `manifests/<toolName>.json
 3. **Add toolsconfig** in `core.json` under `toolsconfig.<toolName>` for any admin-configurable values.
 4. **Enable** by adding `"<toolName>"` to the `tools` array in the relevant flow's `workingObject` config.
 
+#### Tool file structure
+
+```javascript
+/**************************************************************/
+/* filename: "getMyTool.js"                                   */
+/* Version 1.0                                               */
+/* Purpose: LLM-callable tool implementation.               */
+/**************************************************************/
+
+import { getPrefixedLogger } from "../core/logging.js";
+import { getSecret }         from "../core/secrets.js";
+
+const MODULE_NAME = "getMyTool";
+
+async function getInvoke(args, coreData) {
+  const wo  = coreData?.workingObject || {};
+  const log = getPrefixedLogger(wo, import.meta.url);
+  const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
+
+  const apiKey = await getSecret(wo, String(cfg.apiKey || "").trim());
+  const query  = String(args?.query || "").trim();
+
+  if (!query) return { ok: false, error: "query is required" };
+
+  log(`Calling external API for query: ${query}`);
+
+  return { ok: true, result: "..." };
+}
+
+export default {
+  name:   MODULE_NAME,
+  invoke: getInvoke
+};
+```
+
+**Rules:**
+- `invoke` signature is always `async function(args, coreData)`.
+- Return a plain object. On success include the relevant payload fields. On failure include `{ ok: false, error: "..." }`.
+- Config comes from `wo.toolsconfig?.[MODULE_NAME]`. Never read from `coreData.config`.
+- Secrets are resolved via `getSecret(wo, placeholder)` — never store real keys in `core.json`.
+- Allowed imports: `core/` and `shared/` only. Do not import other tools or modules.
+- All prompts come from `cfg.<promptKey>` (toolsconfig), not hardcoded in the file.
+
+#### Manifest file structure
+
+```json
+{
+  "name": "getMyTool",
+  "description": "What this tool does and when the AI should call it. Always call fresh — never reuse results from conversation history.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "The query string."
+      }
+    },
+    "required": ["query"],
+    "additionalProperties": false
+  }
+}
+```
+
+---
+
 ### Creating a New Module — Checklist
 
 1. **Create `modules/NNNNN-my-module.js`** with a `Version 1.0` header and a default export function.
@@ -2686,6 +2751,51 @@ Every tool must have a corresponding manifest file at `manifests/<toolName>.json
 4. **If the module needs LLM reasoning**, route it through the internal API flow or the existing `core-ai-*` modules rather than calling the provider directly.
 5. **Subscribe the module** by adding `config["my-module"].flow` in `core.json`.
 6. **Document the module** in the module table and in `CORE_JSON.md` if it has config keys or public HTTP routes.
+7. **Always return `coreData`** — even when exiting early.
+
+#### Module file structure
+
+```javascript
+/**************************************************************/
+/* filename: "00099-my-module.js"                             */
+/* Version 1.0                                               */
+/* Purpose: Short description of what this module does.     */
+/**************************************************************/
+
+import { getPrefixedLogger } from "../core/logging.js";
+
+const MODULE_NAME = "my-module";
+
+export default async function getMyModule(coreData) {
+  const wo  = coreData?.workingObject || {};
+  const log = getPrefixedLogger(wo, import.meta.url);
+  const cfg = coreData?.config?.[MODULE_NAME] || {};
+
+  if (wo.flow !== "discord") return coreData;
+
+  const myParam = String(cfg.myParam || "default").trim();
+  log(`Running with myParam="${myParam}"`);
+
+  wo.response = "Hello from my module";
+
+  return coreData;
+}
+```
+
+**Pipeline control:**
+
+| Field | Effect |
+|---|---|
+| `wo.stop = true` | Hard stop — skip all remaining modules **including** the output phase (≥9000). Use for full aborts (e.g. gate modules that deny the request). |
+| `wo.jump = true` | Jump to output phase — skip normal loop modules but still run output modules (≥9000). Use after setting `wo.http.response` in webpage modules. |
+| `wo.stopReason = "..."` | Diagnostic label logged alongside `wo.stop`. Has no effect on execution. |
+
+**Config access:**
+- Module config: `coreData?.config?.[MODULE_NAME]`
+- Global runtime defaults: `coreData?.workingObject` (already merged with channel overrides by `core-channel-config`)
+- Secrets: `await getSecret(wo, placeholder)` from `core/secrets.js`
+
+**Important:** Config isolation is enforced by ESLint (`npm run lint`). A module may only access `config["its-own-key"]`. Cross-module config access causes a lint error.
 
 ---
 
@@ -4087,6 +4197,81 @@ CREATE TABLE IF NOT EXISTS voice_chunk_speakers (
   INDEX idx_vcs_chunk (chunk_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
+
+### Table: bot_secrets
+
+Created automatically on first use by the Key Manager (`/key-manager`) and on bot startup (`core/secrets.js`). Stores all API key aliases used by the bot.
+
+| Column | Type | Description |
+|---|---|---|
+| `name` | VARCHAR(64) NOT NULL PRIMARY KEY | Symbolic placeholder name (e.g. `OPENAI`, `DISCORD`) |
+| `value` | TEXT NOT NULL | The real secret value |
+| `description` | VARCHAR(255) NULL | Optional human-readable label |
+
+```sql
+CREATE TABLE IF NOT EXISTS bot_secrets (
+  name        VARCHAR(64)  NOT NULL,
+  value       TEXT         NOT NULL,
+  description VARCHAR(255) NULL,
+  PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+### Table: spotify_tokens
+
+Created automatically on first access to `/spotify-auth` by module `00061-webpage-spotify-auth.js`. Stores per-user delegated OAuth2 tokens for Spotify.
+
+| Column | Type | Description |
+|---|---|---|
+| `user_id` | VARCHAR(64) PRIMARY KEY | Discord user ID |
+| `sp_user_id` | VARCHAR(128) | Spotify user object ID |
+| `sp_email` | VARCHAR(256) | Spotify account email |
+| `sp_display_name` | VARCHAR(256) | Spotify display name |
+| `access_token` | MEDIUMTEXT NOT NULL | Current OAuth2 access token |
+| `refresh_token` | MEDIUMTEXT | OAuth2 refresh token |
+| `expires_at` | BIGINT NOT NULL | Token expiry as Unix epoch milliseconds |
+| `scope` | TEXT | Granted OAuth2 scopes |
+| `created_at` | BIGINT NOT NULL | Row creation time (Unix epoch ms) |
+| `updated_at` | BIGINT NOT NULL | Last update time (Unix epoch ms) |
+
+```sql
+CREATE TABLE IF NOT EXISTS spotify_tokens (
+  user_id         VARCHAR(64)   NOT NULL,
+  sp_user_id      VARCHAR(128),
+  sp_email        VARCHAR(256),
+  sp_display_name VARCHAR(256),
+  access_token    MEDIUMTEXT    NOT NULL,
+  refresh_token   MEDIUMTEXT,
+  expires_at      BIGINT        NOT NULL,
+  scope           TEXT,
+  created_at      BIGINT        NOT NULL,
+  updated_at      BIGINT        NOT NULL,
+  PRIMARY KEY (user_id)
+) CHARACTER SET utf8mb4;
+```
+
+### Table: spotify_auth_states
+
+Created automatically alongside `spotify_tokens`. Stores CSRF state tokens for the Spotify OAuth2 Authorization Code flow.
+
+| Column | Type | Description |
+|---|---|---|
+| `state_token` | VARCHAR(64) PRIMARY KEY | Random hex state token (TTL = 10 minutes) |
+| `user_id` | VARCHAR(64) NOT NULL | Discord user ID that initiated the flow |
+| `created_at` | BIGINT NOT NULL | Creation time (Unix epoch ms) |
+| `expires_at` | BIGINT NOT NULL | Expiry time (Unix epoch ms) |
+
+```sql
+CREATE TABLE IF NOT EXISTS spotify_auth_states (
+  state_token  VARCHAR(64)  NOT NULL,
+  user_id      VARCHAR(64)  NOT NULL,
+  created_at   BIGINT       NOT NULL,
+  expires_at   BIGINT       NOT NULL,
+  PRIMARY KEY (state_token)
+) CHARACTER SET utf8mb4;
+```
+
+Rows are deleted on use (callback validates + deletes). Expired rows are cleaned up on each auth request.
 
 ---
 

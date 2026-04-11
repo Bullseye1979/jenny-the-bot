@@ -13,9 +13,9 @@ export default async function getCoreAiContextLoader(coreData) {
   if (Array.isArray(wo?._contextSnapshot)) return coreData;
   if (!String(wo?.payload ?? "").trim()) return coreData;
 
-  const channelId = String(wo?.channelID ?? "").trim();
+  const channelId = String(wo?.channelId ?? "").trim();
   if (!channelId) {
-    log("Skipped: no channelID available for context preload");
+    log("Skipped: no channelId available for context preload");
     return coreData;
   }
 

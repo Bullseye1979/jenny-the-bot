@@ -61,7 +61,7 @@ Add a channel entry in `core.json` under the relevant channel overrides:
 }
 ```
 
-To monitor the extension's chat history in the web admin panel, add `{ "label": "Browser Extension", "channelID": "browser-extension", "roles": [] }` to `webpage-chat.chats[]`.
+To monitor the extension's chat history in the web admin panel, add `{ "label": "Browser Extension", "channelId": "browser-extension", "roles": [] }` to `webpage-chat.chats[]`.
 
 ---
 

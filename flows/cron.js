@@ -2,7 +2,7 @@
 /* filename: "cron.js"                                       *
 /* Version 1.0                                               *
 /* Purpose: Global cron scheduler that triggers flows whose  *
-/*          names equal the job id and injects channelID     *
+/*          names equal the job id and injects channelId     *
 /*          into context.                                    *
 /**************************************************************/
 
@@ -71,8 +71,8 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
       getStr(cfg.timezone, "") ||
       getStr(baseCore?.workingObject?.timezone, "") ||
       "Europe/Berlin";
-    const defaultChannelID = getStr(
-      cfg.channelID || cfg.channelId || cfg.channel,
+    const defaultChannelId = getStr(
+      cfg.channelId || cfg.channel,
       "cron"
     );
     const jobsCfg = Array.isArray(cfg.jobs) ? cfg.jobs : [];
@@ -89,7 +89,7 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
           expr,
           timezone: getStr(j.timezone || j.tz, defaultTz),
           flowName: id,
-          channelID: getStr(j.channelID || j.channelId || j.channel, defaultChannelID),
+          channelId: getStr(j.channelId || j.channel, defaultChannelId),
           enabled: true,
           running: prev?.running ?? false,
           nextDueAt: (prev && !exprChanged) ? (prev.nextDueAt ?? 0) : 0
@@ -134,14 +134,14 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
         rc.workingObject.timestamp = new Date().toISOString();
 
         const targetFlow = job.flowName;
-        const channelID = job.channelID;
+        const channelId = job.channelId;
 
         rc.workingObject.flow = targetFlow;
-        rc.workingObject.channelID = channelID;
-        if (!rc.workingObject.id) rc.workingObject.id = channelID;
+        rc.workingObject.channelId = channelId;
+        if (!rc.workingObject.id) rc.workingObject.id = channelId;
 
         log(
-          `trigger cron job "${job.id}" → flow="${targetFlow}", channelID="${channelID}"`,
+          `trigger cron job "${job.id}" → flow="${targetFlow}", channelId="${channelId}"`,
           "info",
           { moduleName: MODULE_NAME }
         );

@@ -453,11 +453,11 @@
       "tickMs": 15000,
       "jobs": [
         {
-          "__description": "Bard label generation — runs every minute, updates mood labels for active sessions. channelID must match the D&D text channel so core-channel-config can apply bard-label-gen flow overrides (model, endpoint, apiKey).",
+          "__description": "Bard label generation — runs every minute, updates mood labels for active sessions. channelId must match the D&D text channel so core-channel-config can apply bard-label-gen flow overrides (model, endpoint, apiKey).",
           "id": "bard-label-gen",
           "cron": "* * * * *",
           "enabled": false,
-          "channelID": "YOUR_DND_TEXT_CHANNEL_ID"
+          "channelId": "YOUR_DND_TEXT_CHANNEL_ID"
         }
       ]
     },
@@ -539,7 +539,7 @@
       ]
     },
     "webpage-router": {
-      "__description": "Maps HTTP port+path to a named flow and sets wo.channelID. Runs before core-channel-config so flow-specific overrides apply to web endpoints.",
+      "__description": "Maps HTTP port+path to a named flow and sets wo.channelId. Runs before core-channel-config so flow-specific overrides apply to web endpoints.",
       "flow": [
         "webpage"
       ],
@@ -847,12 +847,12 @@
       "chats": [
         {
           "label": "General",
-          "channelID": "YOUR_CHANNEL_ID",
+          "channelId": "YOUR_CHANNEL_ID",
           "apiSecret": "API_SECRET"
         },
         {
           "label": "Browser Extension",
-          "channelID": "browser-extension",
+          "channelId": "browser-extension",
           "apiSecret": "API_SECRET"
         }
       ]

@@ -55,7 +55,7 @@ async function getInvoke(args, coreData) {
     const res = await fetchWithTimeout(`${apiUrl}/api`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ channelID: channelId, payload: payloadParts.join("\n\n"), doNotWriteToContext: true })
+      body: JSON.stringify({ channelId, payload: payloadParts.join("\n\n"), doNotWriteToContext: true })
     }, timeoutMs);
 
     const data = await res.json().catch(() => ({}));

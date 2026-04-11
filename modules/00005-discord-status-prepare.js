@@ -67,7 +67,7 @@ export default async function getDiscordStatusPrepareFlow(baseCore) {
   const targetChannel = getRandomChannel(allowedList);
 
   workingObject.id = targetChannel;
-  workingObject.channelID = targetChannel;
+  workingObject.channelId = targetChannel;
 
   workingObject.payload = prompt;
   workingObject.updateStatus = "true";

@@ -1,17 +1,33 @@
 /* options.js — Jenny Bot extension settings page */
 "use strict";
 
-var FIELDS = ["apiUrl", "channelID", "apiSecret", "webBaseUrl"];
+var FIELDS = ["apiUrl", "channelId", "apiSecret", "webBaseUrl"];
+
+function migrateStorage(callback) {
+  chrome.storage.sync.get(["channelID", "channelId"], function(stored) {
+    var oldVal = stored["channelID"];
+    var newVal = stored["channelId"];
+    if (oldVal && !newVal) {
+      var migration = { channelId: oldVal };
+      chrome.storage.sync.set(migration, function() {
+        chrome.storage.sync.remove("channelID", callback);
+      });
+    } else {
+      callback();
+    }
+  });
+}
 
 function init() {
-  chrome.storage.sync.get(FIELDS, function(stored) {
-    FIELDS.forEach(function(key) {
-      var el = document.getElementById(key);
-      if (el) el.value = stored[key] || "";
+  migrateStorage(function() {
+    chrome.storage.sync.get(FIELDS, function(stored) {
+      FIELDS.forEach(function(key) {
+        var el = document.getElementById(key);
+        if (el) el.value = stored[key] || "";
+      });
     });
   });
 
-  /* Update login link when webBaseUrl changes */
   function updateLoginLink() {
     var base = (document.getElementById("webBaseUrl").value || "").trim().replace(/\/$/, "");
     var a = document.getElementById("open-login");
@@ -35,7 +51,6 @@ function init() {
     });
   });
 
-  /* Save on Enter in any field */
   FIELDS.forEach(function(key) {
     var el = document.getElementById(key);
     if (el) {

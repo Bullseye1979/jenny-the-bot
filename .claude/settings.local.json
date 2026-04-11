@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(///strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/repo-codex/**)"
+    ]
+  }
+}

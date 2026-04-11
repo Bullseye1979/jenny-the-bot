@@ -1,11 +1,8 @@
 /* popup.js — Jenny Bot browser extension */
 "use strict";
 
-/* ============================================================
-   Settings (loaded from chrome.storage)
-   ============================================================ */
-var cfg = { apiUrl: "", channelID: "", apiSecret: "", webBaseUrl: "" };
-var webSession = null; /* { userId, username, role } or null */
+var cfg = { apiUrl: "", channelId: "", apiSecret: "", webBaseUrl: "" };
+var webSession = null;
 var messages = [];
 var sending   = false;
 var pollTimer = null;
@@ -13,9 +10,6 @@ var pendingFile = null;
 var jobPollTimer = null, jobPollEmptyCount = 0, jobPollDeadline = 0;
 var asyncSseSource = null;
 
-/* ============================================================
-   Markdown renderer  (no external dependencies, XSS-safe)
-   ============================================================ */
 function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
           .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
@@ -27,43 +21,34 @@ function safeUrl(u) {
 }
 
 function mdInline(s) {
-  /* s is already HTML-escaped — apply markdown on top */
-  /* Extract links into placeholders first to prevent bold/italic patterns
-     from corrupting HTML attributes (e.g. target="_blank"). */
   var ls = [], li = 0;
   function lph(h) { var k = "\x00L" + (li++) + "\x00"; ls.push({ k: k, v: h }); return k; }
-  /* markdown links [text](url) */
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, t, u) {
     var su = safeUrl(u);
     if (!su) return escHtml(t);
     return lph("<a href=\"" + escHtml(su) + "\" data-url=\"" + escHtml(su) + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + t + "</a>");
   });
-  /* auto-link bare URLs */
   s = s.replace(/(https?:\/\/[^\s<>"']+)/g, function(_, u) {
     var su = safeUrl(u);
     if (!su) return _;
     return lph("<a href=\"" + escHtml(su) + "\" data-url=\"" + escHtml(su) + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + escHtml(u) + "</a>");
   });
-  /* bold, italic */
   s = s.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
   s = s.replace(/\*\*([^*]+)\*\*/g,   "<strong>$1</strong>");
   s = s.replace(/\*([^*]+)\*/g,       "<em>$1</em>");
   s = s.replace(/__([^_]+)__/g,       "<strong>$1</strong>");
   s = s.replace(/_([^_]+)_/g,         "<em>$1</em>");
-  /* restore link placeholders */
   for (var i = 0; i < ls.length; i++) s = s.split(ls[i].k).join(ls[i].v);
   return s;
 }
 
 function renderMarkdown(raw) {
   var blocks = [];
-  /* extract fenced code blocks */
   var text = raw.replace(/```([^\n]*)\n([\s\S]*?)```/g, function(_, lang, code) {
     var idx = blocks.length;
     blocks.push("<pre><code>" + escHtml(code.replace(/\n$/, "")) + "</code></pre>");
     return "\x00B" + idx + "\x00";
   });
-  /* extract inline code */
   text = text.replace(/`([^`]+)`/g, function(_, code) {
     var idx = blocks.length;
     blocks.push("<code>" + escHtml(code) + "</code>");
@@ -84,21 +69,16 @@ function renderMarkdown(raw) {
   }
 
   lines.forEach(function(line) {
-    /* headers */
     var hm = line.match(/^(#{1,3})\s+(.*)/);
     if (hm) { flushList(); var hl = hm[1].length; out.push("<h" + hl + ">" + mdInline(escHtml(hm[2])) + "</h" + hl + ">"); return; }
 
-    /* blockquote */
     if (/^>\s?/.test(line)) { flushList(); out.push("<blockquote>" + mdInline(escHtml(line.replace(/^>\s?/,""))) + "</blockquote>"); return; }
 
-    /* hr */
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())) { flushList(); out.push("<hr>"); return; }
 
-    /* unordered list */
     var ulm = line.match(/^[\*\-]\s+(.*)/);
     if (ulm) { if (listTag !== "ul") { flushList(); listTag = "ul"; } listBuf.push(ulm[1]); return; }
 
-    /* ordered list */
     var olm = line.match(/^\d+\.\s+(.*)/);
     if (olm) { if (listTag !== "ol") { flushList(); listTag = "ol"; } listBuf.push(olm[1]); return; }
 
@@ -109,10 +89,7 @@ function renderMarkdown(raw) {
   flushList();
 
   var html = out.join("\n");
-
-  /* restore code blocks */
   html = html.replace(/\x00B(\d+)\x00/g, function(_, i) { return blocks[parseInt(i, 10)]; });
-
   return html;
 }
 
@@ -123,7 +100,6 @@ function injectEmbeds(el) {
     var wrap = document.createElement("div");
     wrap.className = "embed";
 
-    /* YouTube */
     var ytm = u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
     if (ytm) {
       var ifr = document.createElement("iframe");
@@ -133,7 +109,6 @@ function injectEmbeds(el) {
       wrap.appendChild(ifr); a.insertAdjacentElement("afterend", wrap); return;
     }
 
-    /* Vimeo */
     var vim = u.match(/vimeo\.com\/(\d+)/);
     if (vim) {
       var ifr2 = document.createElement("iframe");
@@ -142,14 +117,12 @@ function injectEmbeds(el) {
       wrap.appendChild(ifr2); a.insertAdjacentElement("afterend", wrap); return;
     }
 
-    /* Video file */
     if (/\.(mp4|webm|ogg)(\?|$)/i.test(u)) {
       var vid = document.createElement("video");
       vid.src = u; vid.controls = true;
       wrap.appendChild(vid); a.insertAdjacentElement("afterend", wrap); return;
     }
 
-    /* Image */
     if (/\.(jpe?g|png|gif|webp|svg|avif)(\?|$)/i.test(u)) {
       var img = document.createElement("img");
       img.src = u; img.className = "chat-img"; img.alt = "";
@@ -160,9 +133,6 @@ function injectEmbeds(el) {
   });
 }
 
-/* ============================================================
-   DOM helpers
-   ============================================================ */
 function buildBubble(role, text) {
   var wrap = document.createElement("div");
   wrap.className = "msg " + role;
@@ -189,15 +159,11 @@ function renderEmpty() {
   }
 }
 
-/* ============================================================
-   Toolcall polling
-   ============================================================ */
 function startPoll() {
   stopPoll();
   if (!cfg.apiUrl) return;
-  /* Append channelID so the bot returns the channel-specific toolcall status. */
   var toolcallUrl = cfg.apiUrl.replace(/\/api\/?$/, "/toolcall");
-  if (cfg.channelID) toolcallUrl += "?channelID=" + encodeURIComponent(cfg.channelID);
+  if (cfg.channelId) toolcallUrl += "?channelId=" + encodeURIComponent(cfg.channelId);
   pollTimer = setInterval(function() {
     var headers = {};
     if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
@@ -217,16 +183,16 @@ function stopPoll() {
 
 function startJobPoll() {
   stopJobPoll();
-  if (!cfg.apiUrl || !cfg.channelID) return;
+  if (!cfg.apiUrl || !cfg.channelId) return;
   jobPollEmptyCount = 0;
   jobPollDeadline = Date.now() + 600000;
   var jobsUrl = cfg.apiUrl.replace(/\/api\/?$/, "") + "/api/jobs";
-  var channelID = cfg.channelID;
+  var channelId = cfg.channelId;
   jobPollTimer = setInterval(function() {
     if (Date.now() > jobPollDeadline) { stopJobPoll(); return; }
     var headers = {};
     if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
-    fetch(jobsUrl + "?channelID=" + encodeURIComponent(channelID) + "&consume=true", { headers: headers })
+    fetch(jobsUrl + "?channelId=" + encodeURIComponent(channelId) + "&consume=true", { headers: headers })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var jobs = d && Array.isArray(d.jobs) ? d.jobs : [];
@@ -266,8 +232,8 @@ function stopJobPoll() {
 
 function startAsyncSSE() {
   stopAsyncSSE();
-  if (!cfg.apiUrl || !cfg.channelID) return;
-  var sseUrl = cfg.apiUrl.replace(/\/api\/?$/, "") + "/api/async-results/stream?channelID=" + encodeURIComponent(cfg.channelID);
+  if (!cfg.apiUrl || !cfg.channelId) return;
+  var sseUrl = cfg.apiUrl.replace(/\/api\/?$/, "") + "/api/async-results/stream?channelId=" + encodeURIComponent(cfg.channelId);
   try {
     asyncSseSource = new EventSource(sseUrl);
     asyncSseSource.onmessage = function(e) {
@@ -293,9 +259,6 @@ function stopAsyncSSE() {
   if (asyncSseSource) { try { asyncSseSource.close(); } catch (_) {} asyncSseSource = null; }
 }
 
-/* ============================================================
-   Send message
-   ============================================================ */
 function getUploadUrl() {
   return cfg.apiUrl.replace(/\/api\/?$/, "/upload");
 }
@@ -342,7 +305,7 @@ function clearFilePreview() {
 
 function sendMessage(payload) {
   if (sending || (!payload.trim() && !pendingFile)) return;
-  if (!cfg.apiUrl || !cfg.channelID) {
+  if (!cfg.apiUrl || !cfg.channelId) {
     alert("Please configure the API URL and Channel ID in the extension settings.");
     return;
   }
@@ -355,7 +318,6 @@ function sendMessage(payload) {
   var sendBtn = document.getElementById("send-btn");
   sendBtn.disabled = true;
 
-  /* Build thinking indicator */
   var thinkWrap = document.createElement("div");
   thinkWrap.className = "msg assistant";
   var thinkBub = document.createElement("div");
@@ -366,7 +328,6 @@ function sendMessage(payload) {
   for (var i = 0; i < 3; i++) thinkBub.appendChild(document.createElement("span"));
   thinkWrap.appendChild(thinkBub);
   var msgsEl = document.getElementById("msgs");
-  /* Remove empty placeholder if present */
   var emptyEl = msgsEl.querySelector(".empty");
   if (emptyEl) emptyEl.remove();
   msgsEl.appendChild(thinkWrap);
@@ -387,7 +348,7 @@ function sendMessage(payload) {
     var reqHeaders = { "Content-Type": "application/json" };
     if (cfg.apiSecret) reqHeaders["Authorization"] = "Bearer " + cfg.apiSecret;
 
-    var apiBody = { channelID: cfg.channelID, payload: finalPayload };
+    var apiBody = { channelId: cfg.channelId, payload: finalPayload };
     var uid = webSession && webSession.userId ? webSession.userId : "";
     if (uid) apiBody.userId = uid;
     return fetch(cfg.apiUrl, {
@@ -417,15 +378,7 @@ function sendMessage(payload) {
   });
 }
 
-/* ============================================================
-   Summarize current tab
-   ============================================================ */
 function summarizePage() {
-  /* Query the active tab in the current window directly.
-     From the side-panel context, currentWindow:true refers to the browser
-     window the panel is attached to — no background service-worker roundtrip
-     needed, and immune to service-worker restart (which would wipe the
-     in-memory tab-tracking state and cause a random tab to be selected). */
   chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
     if (chrome.runtime.lastError || !tabs || !tabs.length || !tabs[0].url) {
       appendMsg("assistant", "\u26a0\ufe0f Could not get current tab URL.");
@@ -441,188 +394,190 @@ function summarizePage() {
   });
 }
 
-/* ============================================================
-   Init
-   ============================================================ */
+function migrateStorage(callback) {
+  chrome.storage.sync.get(["channelID", "channelId"], function(stored) {
+    var oldVal = stored["channelID"];
+    var newVal = stored["channelId"];
+    if (oldVal && !newVal) {
+      chrome.storage.sync.set({ channelId: oldVal }, function() {
+        chrome.storage.sync.remove("channelID", callback);
+      });
+    } else {
+      callback();
+    }
+  });
+}
+
 function init() {
-  chrome.storage.sync.get(["apiUrl", "channelID", "apiSecret", "webBaseUrl"], function(stored) {
-    cfg.apiUrl     = stored.apiUrl     || "";
-    cfg.channelID  = stored.channelID  || "";
-    cfg.apiSecret  = stored.apiSecret  || "";
-    cfg.webBaseUrl = (stored.webBaseUrl || "").trim().replace(/\/$/, "");
+  migrateStorage(function() {
+    chrome.storage.sync.get(["apiUrl", "channelId", "apiSecret", "webBaseUrl"], function(stored) {
+      cfg.apiUrl     = stored.apiUrl     || "";
+      cfg.channelId  = stored.channelId  || "";
+      cfg.apiSecret  = stored.apiSecret  || "";
+      cfg.webBaseUrl = (stored.webBaseUrl || "").trim().replace(/\/$/, "");
 
-    if (!cfg.apiUrl || !cfg.channelID) {
-      document.getElementById("config-warn").classList.remove("hidden");
-    }
-
-    renderEmpty();
-    startAsyncSSE();
-    startJobPoll();
-
-    /* ── Auth session check ── */
-    function setAuthBar(sess) {
-      webSession = sess;
-      var bar     = document.getElementById("auth-bar");
-      var userEl  = document.getElementById("auth-user");
-      var loginEl = document.getElementById("auth-login");
-      var logoutEl= document.getElementById("auth-logout");
-      bar.classList.remove("hidden");
-      if (sess) {
-        userEl.textContent  = "\uD83D\uDC64 " + (sess.username || sess.userId);
-        loginEl.classList.add("hidden");
-        logoutEl.classList.remove("hidden");
-      } else {
-        userEl.textContent  = "Not logged in";
-        loginEl.classList.remove("hidden");
-        logoutEl.classList.add("hidden");
+      if (!cfg.apiUrl || !cfg.channelId) {
+        document.getElementById("config-warn").classList.remove("hidden");
       }
-    }
 
-    if (cfg.webBaseUrl) {
-      fetch(cfg.webBaseUrl + "/auth/me", { credentials: "include" })
-        .then(function(r) { return r.json(); })
-        .then(function(d) { setAuthBar(d && d.ok ? { userId: d.userId, username: d.username, role: d.role } : null); })
-        .catch(function()  { setAuthBar(null); });
-    }
+      renderEmpty();
+      startAsyncSSE();
+      startJobPoll();
 
-    document.getElementById("auth-login").addEventListener("click", function(e) {
-      e.preventDefault();
-      if (cfg.webBaseUrl) chrome.tabs.create({ url: cfg.webBaseUrl + "/auth/login?next=%2F" });
-    });
-    document.getElementById("auth-logout").addEventListener("click", function(e) {
-      e.preventDefault();
+      function setAuthBar(sess) {
+        webSession = sess;
+        var bar     = document.getElementById("auth-bar");
+        var userEl  = document.getElementById("auth-user");
+        var loginEl = document.getElementById("auth-login");
+        var logoutEl= document.getElementById("auth-logout");
+        bar.classList.remove("hidden");
+        if (sess) {
+          userEl.textContent  = "\uD83D\uDC64 " + (sess.username || sess.userId);
+          loginEl.classList.add("hidden");
+          logoutEl.classList.remove("hidden");
+        } else {
+          userEl.textContent  = "Not logged in";
+          loginEl.classList.remove("hidden");
+          logoutEl.classList.add("hidden");
+        }
+      }
+
       if (cfg.webBaseUrl) {
-        fetch(cfg.webBaseUrl + "/auth/logout", { credentials: "include" })
-          .then(function() { setAuthBar(null); })
-          .catch(function() { setAuthBar(null); });
+        fetch(cfg.webBaseUrl + "/auth/me", { credentials: "include" })
+          .then(function(r) { return r.json(); })
+          .then(function(d) { setAuthBar(d && d.ok ? { userId: d.userId, username: d.username, role: d.role } : null); })
+          .catch(function()  { setAuthBar(null); });
       }
-    });
 
-    /* Wire up settings link in warning */
-    document.getElementById("open-options").addEventListener("click", function() {
-      chrome.runtime.openOptionsPage();
-    });
-
-    /* Options button */
-    document.getElementById("options-btn").addEventListener("click", function() {
-      chrome.runtime.openOptionsPage();
-    });
-
-    /* Summarize button */
-    document.getElementById("summarize-btn").addEventListener("click", function() {
-      if (sending) return;
-      summarizePage();
-    });
-
-    /* Send on button click */
-    document.getElementById("send-btn").addEventListener("click", function() {
-      var inp = document.getElementById("input");
-      var text = inp.value.trim();
-      if (!text && !pendingFile) return;
-      var displayText = text;
-      if (pendingFile) displayText = (text ? text + "\n" : "") + "[\uD83D\uDCCE " + pendingFile.name + "]";
-      appendMsg("user", displayText || "[\uD83D\uDCCE " + pendingFile.name + "]");
-      inp.value = "";
-      inp.style.height = "";
-      sendMessage(text || "");
-    });
-
-    /* Attach button */
-    document.getElementById("attach-btn").addEventListener("click", function() {
-      document.getElementById("file-input").click();
-    });
-
-    /* File selected */
-    document.getElementById("file-input").addEventListener("change", function() {
-      var f = this.files && this.files[0];
-      if (!f) return;
-      pendingFile = f;
-      document.getElementById("file-name").textContent = f.name;
-      document.getElementById("file-preview").classList.remove("hidden");
-    });
-
-    /* Clear attachment */
-    document.getElementById("file-clear").addEventListener("click", function() {
-      clearFilePreview();
-    });
-
-    /* ── Gallery upload ── */
-    var galleryOpen = false;
-
-    function setGalleryStatus(msg, type) {
-      var el = document.getElementById("gallery-status");
-      el.textContent = msg;
-      el.className   = type || "";
-      el.classList.remove("hidden");
-    }
-
-    function uploadToGallery(file) {
-      if (!cfg.webBaseUrl) {
-        setGalleryStatus("No Web Base URL configured — open Settings.", "err");
-        return;
-      }
-      var ext = (file.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
-      if (!/\.(png|jpe?g|gif|webp|avif)$/.test(ext)) {
-        setGalleryStatus("Only image files are supported.", "err");
-        return;
-      }
-      setGalleryStatus("Uploading\u2026");
-      fetch(cfg.webBaseUrl + "/gallery/api/files", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": file.name },
-        body: file
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d && d.ok) setGalleryStatus("Uploaded: " + d.filename, "ok");
-        else           setGalleryStatus("Upload failed: " + (d && d.error || "unknown"), "err");
-      })
-      .catch(function(e) { setGalleryStatus("Upload failed: " + e.message, "err"); });
-    }
-
-    document.getElementById("gallery-btn").addEventListener("click", function() {
-      galleryOpen = !galleryOpen;
-      var panel = document.getElementById("gallery-panel");
-      panel.classList.toggle("hidden", !galleryOpen);
-      this.classList.toggle("active", galleryOpen);
-      if (galleryOpen) {
-        document.getElementById("gallery-status").classList.add("hidden");
-      }
-    });
-
-    var dropEl = document.getElementById("gallery-drop");
-    dropEl.addEventListener("click", function() {
-      document.getElementById("gallery-file-input").click();
-    });
-    document.getElementById("gallery-file-input").addEventListener("change", function() {
-      var f = this.files && this.files[0];
-      if (f) { uploadToGallery(f); this.value = ""; }
-    });
-    dropEl.addEventListener("dragover", function(e) {
-      e.preventDefault();
-      this.classList.add("dragover");
-    });
-    dropEl.addEventListener("dragleave", function() { this.classList.remove("dragover"); });
-    dropEl.addEventListener("drop", function(e) {
-      e.preventDefault();
-      this.classList.remove("dragover");
-      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (f) uploadToGallery(f);
-    });
-
-    /* Send on Enter (Shift+Enter = newline) */
-    document.getElementById("input").addEventListener("keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
+      document.getElementById("auth-login").addEventListener("click", function(e) {
         e.preventDefault();
-        document.getElementById("send-btn").click();
-      }
-    });
+        if (cfg.webBaseUrl) chrome.tabs.create({ url: cfg.webBaseUrl + "/auth/login?next=%2F" });
+      });
+      document.getElementById("auth-logout").addEventListener("click", function(e) {
+        e.preventDefault();
+        if (cfg.webBaseUrl) {
+          fetch(cfg.webBaseUrl + "/auth/logout", { credentials: "include" })
+            .then(function() { setAuthBar(null); })
+            .catch(function() { setAuthBar(null); });
+        }
+      });
 
-    /* Auto-grow textarea */
-    document.getElementById("input").addEventListener("input", function() {
-      this.style.height = "";
-      this.style.height = Math.min(this.scrollHeight, 100) + "px";
+      document.getElementById("open-options").addEventListener("click", function() {
+        chrome.runtime.openOptionsPage();
+      });
+
+      document.getElementById("options-btn").addEventListener("click", function() {
+        chrome.runtime.openOptionsPage();
+      });
+
+      document.getElementById("summarize-btn").addEventListener("click", function() {
+        if (sending) return;
+        summarizePage();
+      });
+
+      document.getElementById("send-btn").addEventListener("click", function() {
+        var inp = document.getElementById("input");
+        var text = inp.value.trim();
+        if (!text && !pendingFile) return;
+        var displayText = text;
+        if (pendingFile) displayText = (text ? text + "\n" : "") + "[\uD83D\uDCCE " + pendingFile.name + "]";
+        appendMsg("user", displayText || "[\uD83D\uDCCE " + pendingFile.name + "]");
+        inp.value = "";
+        inp.style.height = "";
+        sendMessage(text || "");
+      });
+
+      document.getElementById("attach-btn").addEventListener("click", function() {
+        document.getElementById("file-input").click();
+      });
+
+      document.getElementById("file-input").addEventListener("change", function() {
+        var f = this.files && this.files[0];
+        if (!f) return;
+        pendingFile = f;
+        document.getElementById("file-name").textContent = f.name;
+        document.getElementById("file-preview").classList.remove("hidden");
+      });
+
+      document.getElementById("file-clear").addEventListener("click", function() {
+        clearFilePreview();
+      });
+
+      var galleryOpen = false;
+
+      function setGalleryStatus(msg, type) {
+        var el = document.getElementById("gallery-status");
+        el.textContent = msg;
+        el.className   = type || "";
+        el.classList.remove("hidden");
+      }
+
+      function uploadToGallery(file) {
+        if (!cfg.webBaseUrl) {
+          setGalleryStatus("No Web Base URL configured — open Settings.", "err");
+          return;
+        }
+        var ext = (file.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+        if (!/\.(png|jpe?g|gif|webp|avif)$/.test(ext)) {
+          setGalleryStatus("Only image files are supported.", "err");
+          return;
+        }
+        setGalleryStatus("Uploading\u2026");
+        fetch(cfg.webBaseUrl + "/gallery/api/files", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": file.name },
+          body: file
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d && d.ok) setGalleryStatus("Uploaded: " + d.filename, "ok");
+          else           setGalleryStatus("Upload failed: " + (d && d.error || "unknown"), "err");
+        })
+        .catch(function(e) { setGalleryStatus("Upload failed: " + e.message, "err"); });
+      }
+
+      document.getElementById("gallery-btn").addEventListener("click", function() {
+        galleryOpen = !galleryOpen;
+        var panel = document.getElementById("gallery-panel");
+        panel.classList.toggle("hidden", !galleryOpen);
+        this.classList.toggle("active", galleryOpen);
+        if (galleryOpen) {
+          document.getElementById("gallery-status").classList.add("hidden");
+        }
+      });
+
+      var dropEl = document.getElementById("gallery-drop");
+      dropEl.addEventListener("click", function() {
+        document.getElementById("gallery-file-input").click();
+      });
+      document.getElementById("gallery-file-input").addEventListener("change", function() {
+        var f = this.files && this.files[0];
+        if (f) { uploadToGallery(f); this.value = ""; }
+      });
+      dropEl.addEventListener("dragover", function(e) {
+        e.preventDefault();
+        this.classList.add("dragover");
+      });
+      dropEl.addEventListener("dragleave", function() { this.classList.remove("dragover"); });
+      dropEl.addEventListener("drop", function(e) {
+        e.preventDefault();
+        this.classList.remove("dragover");
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) uploadToGallery(f);
+      });
+
+      document.getElementById("input").addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          document.getElementById("send-btn").click();
+        }
+      });
+
+      document.getElementById("input").addEventListener("input", function() {
+        this.style.height = "";
+        this.style.height = Math.min(this.scrollHeight, 100) + "px";
+      });
     });
   });
 }

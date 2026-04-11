@@ -971,13 +971,15 @@ function loadSessions() {
           '<button class="ic-btn danger" style="font-size:.75rem;padding:2px 6px;margin-left:6px" onclick="deleteSessionRow(' + s.id + ',event)" title="Delete session">\uD83D\uDDD1\uFE0F</button>' +
           '</div>';
       }).join('');
-      if (reviewSessionId) {
-        var hasSelected = sessions.some(function(s) { return Number(s.id) === Number(reviewSessionId); });
-        if (hasSelected) loadChunks(reviewSessionId);
-      }
       fetch('/voice/api/speakers?channelId=' + encodeURIComponent(cid))
         .then(function(r2) { return r2.json(); })
-        .then(function(d2) { reviewSpeakers = d2.speakers || []; });
+        .then(function(d2) {
+          reviewSpeakers = d2.speakers || [];
+          if (reviewSessionId) {
+            var hasSelected = sessions.some(function(s) { return Number(s.id) === Number(reviewSessionId); });
+            if (hasSelected) loadChunks(reviewSessionId);
+          }
+        });
     })
     .catch(function(e) { list.innerHTML = '<p style="color:var(--dan);font-size:.85rem">Load error: ' + escHtml(String(e)) + '</p>'; });
 }

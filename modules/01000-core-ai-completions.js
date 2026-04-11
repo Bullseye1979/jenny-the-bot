@@ -144,7 +144,7 @@ function getKiCfg(wo) {
 
 function getRuntimeContextFromLast(wo, kiCfg, lastRecord) {
   if (!kiCfg.includeRuntimeContext || !kiCfg.includeHistory || !lastRecord) return null;
-  const metadata = { id: String(wo?.channelID ?? ""), flow: String(wo?.flow ?? ""), clientRef: String(wo?.clientRef ?? "") };
+  const metadata = { id: String(wo?.channelId ?? ""), flow: String(wo?.flow ?? ""), clientRef: String(wo?.clientRef ?? "") };
   const last = { ...lastRecord }; if ("content" in last) delete last.content;
   return { metadata, last };
 }
@@ -328,7 +328,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     writeToolcallLog({ ...getToolcallLogBase(wo), tool: String(name || ""), status: "not_found", durationMs: 0 });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
-  const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
+  const _tcCh = String(coreData?.workingObject?.channelId ?? "").trim();
   const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
   const _currentFlow = String(coreData?.workingObject?.flow || "");
   const _statusScope = getToolStatusScope(coreData?.workingObject || {});
@@ -336,7 +336,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   const _statusToken = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
   const _statusChannelId = String(
     coreData?.workingObject?.callerChannelId ||
-    coreData?.workingObject?.channelID ||
+    coreData?.workingObject?.channelId ||
     ""
   ).trim();
   const _statusPayload = {
@@ -436,7 +436,7 @@ async function getSystemContent(wo, kiCfg, moduleCfg) {
       .map(v => String(v || "").trim())
       .filter(v => v.length > 0);
     if (!extraIds.length) return "";
-    const currentId = String(wo?.channelID ?? "").trim();
+    const currentId = String(wo?.channelId ?? "").trim();
     const lines = [
       "Multi-channel context:",
       "- The context includes messages from multiple channels. Each message may carry a `channelId` field that identifies its source channel."

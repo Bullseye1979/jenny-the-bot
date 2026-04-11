@@ -119,7 +119,7 @@ async function getDiarizedText(transcript, cfg, wo) {
       method: "POST",
       headers,
       body: JSON.stringify({
-        channelID: channelId,
+        channelId,
         payload: `${promptPrefix}\n\nTranscript segments:\n${segText}`,
         doNotWriteToContext: true
       })
@@ -196,8 +196,8 @@ export default async function getWebpageVoiceRecord(coreData) {
 
     const words = (finalText.match(/\S+/g) || []).length;
 
-    const prevChannelId = wo.channelID;
-    wo.channelID = channelId;
+    const prevChannelId = wo.channelId;
+    wo.channelId = channelId;
 
     if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(channelId)) {
       await setPurgeContext(wo);
@@ -213,7 +213,7 @@ export default async function getWebpageVoiceRecord(coreData) {
       source:  "voice-transcription"
     });
 
-    wo.channelID = prevChannelId;
+    wo.channelId = prevChannelId;
 
     log("Meeting transcript stored", "info", { moduleName: MODULE_NAME, channelId, words, speakers });
     await sendJson(wo, 200, { ok: true, words, speakers, text: finalText.slice(0, 500) });

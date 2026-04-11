@@ -107,7 +107,7 @@ export default async function getBardCron(coreData) {
   try { reg = await getItem("bard:registry"); } catch { reg = null; }
   const sessionKeys = Array.isArray(reg?.list) ? reg.list : [];
 
-  log(`[label-debug] bard-label-gen fired: woCh="${getStr(wo.channelID)}" sessions=${sessionKeys.length}`, "info", { moduleName: MODULE_NAME });
+  log(`[label-debug] bard-label-gen fired: woCh="${getStr(wo.channelId)}" sessions=${sessionKeys.length}`, "info", { moduleName: MODULE_NAME });
 
   if (!sessionKeys.length) {
     log("no active bard sessions — skipping label generation", "info", { moduleName: MODULE_NAME });
@@ -121,7 +121,7 @@ export default async function getBardCron(coreData) {
   );
   const tagCategories = getLibraryTagCategories(musicDir);
 
-  const woCh = getStr(wo.channelID);
+  const woCh = getStr(wo.channelId);
   let targetSession = null;
   let targetLastRunAt = "";
   let targetNowTs = "";
@@ -142,7 +142,7 @@ export default async function getBardCron(coreData) {
       try { lastRunData = await getItem(lastRunKey); } catch {}
       const lastRunAt = getStr(lastRunData?.ts || "");
 
-      const woForCtx = { ...wo, channelID: textChannelId };
+      const woForCtx = { ...wo, channelId: textChannelId };
       const rows = lastRunAt
         ? await getContextSince(woForCtx, lastRunAt)
         : await getContextLastSeconds(woForCtx, 300);

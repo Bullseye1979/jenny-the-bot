@@ -163,8 +163,8 @@ async function dbDelete(pool, ids, { protectFrozen = true } = {}) {
   return r.affectedRows;
 }
 
-async function dbDeleteChannel(pool, channelID, { protectFrozen = true } = {}) {
-  const chan = getStr(channelID).trim();
+async function dbDeleteChannel(pool, channelId, { protectFrozen = true } = {}) {
+  const chan = getStr(channelId).trim();
   if (!chan) return 0;
   const [r] = await pool.execute(
     `DELETE FROM ${CTX_TABLE} WHERE channel_id = ? ${protectFrozen ? "AND COALESCE(frozen, 0) = 0" : ""}`,
@@ -173,9 +173,9 @@ async function dbDeleteChannel(pool, channelID, { protectFrozen = true } = {}) {
   return r.affectedRows;
 }
 
-async function dbDeleteChannels(pool, channelIDs, { protectFrozen = true } = {}) {
-  const ids = Array.isArray(channelIDs)
-    ? channelIDs.map(v => getStr(v).trim()).filter(Boolean)
+async function dbDeleteChannels(pool, channelIds, { protectFrozen = true } = {}) {
+  const ids = Array.isArray(channelIds)
+    ? channelIds.map(v => getStr(v).trim()).filter(Boolean)
     : [];
   if (!ids.length) return 0;
   const ph = ids.map(() => "?").join(",");
@@ -827,7 +827,7 @@ async function doDeleteChannels() {
     : ('Delete ALL entries in ' + channelIds.length + ' selected channel(s) including frozen?');
   if (!confirm(msg + ' This cannot be undone.')) return;
   try {
-    var data = await api('/api/delete-channels', 'DELETE', { channelIDs: channelIds, protectFrozen: prot });
+    var data = await api('/api/delete-channels', 'DELETE', { channelIds: channelIds, protectFrozen: prot });
     var left = prot ? ' Frozen entries (if any) are kept.' : '';
     setStatus('Channel delete: ' + data.deleted + ' entries removed in ' + channelIds.length + ' channel(s).' + left);
     selectedChannelIds.clear();
@@ -1358,24 +1358,24 @@ export default async function getWebpageTimeline(coreData) {
 
     if (method === "DELETE" && urlPath === basePath + "/api/delete-channel") {
       const body = wo.http?.json || {};
-      const channelID = getStr(body.channelID).trim();
+      const channelId = getStr(body.channelId).trim();
       const protectFrozen = body.protectFrozen !== false;
-      if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); }
+      if (!channelId) { setJsonResp(wo, 400, { error: "channelId required" }); }
       else {
-        const deleted = await dbDeleteChannel(pool, channelID, { protectFrozen });
-        setJsonResp(wo, 200, { ok: true, deleted, channelID, protectFrozen });
+        const deleted = await dbDeleteChannel(pool, channelId, { protectFrozen });
+        setJsonResp(wo, 200, { ok: true, deleted, channelId, protectFrozen });
       }
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
     if (method === "DELETE" && urlPath === basePath + "/api/delete-channels") {
       const body = wo.http?.json || {};
-      const channelIDs = Array.isArray(body.channelIDs) ? body.channelIDs : [];
+      const channelIds = Array.isArray(body.channelIds) ? body.channelIds : [];
       const protectFrozen = body.protectFrozen !== false;
-      if (!channelIDs.length) { setJsonResp(wo, 400, { error: "channelIDs required" }); }
+      if (!channelIds.length) { setJsonResp(wo, 400, { error: "channelIds required" }); }
       else {
-        const deleted = await dbDeleteChannels(pool, channelIDs, { protectFrozen });
-        setJsonResp(wo, 200, { ok: true, deleted, channelIDs, protectFrozen });
+        const deleted = await dbDeleteChannels(pool, channelIds, { protectFrozen });
+        setJsonResp(wo, 200, { ok: true, deleted, channelIds, protectFrozen });
       }
       wo.jump = true; await setSendNow(wo); return coreData;
     }

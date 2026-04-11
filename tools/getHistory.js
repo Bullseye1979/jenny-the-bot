@@ -186,7 +186,7 @@ async function getHistoryInvoke(args, coreData) {
   const overrideChannelId = args?.channelId ? String(args.channelId).trim() : (args?.channelId ? String(args.channelId).trim() : "");
   const primaryChannelId = overrideChannelId
     || String(wo?.callerChannelId || "").trim()
-    || String(wo?.channelID || "").trim();
+    || String(wo?.channelId || "").trim();
   const argChannelIds = Array.isArray(args?.channelIds)
     ? args.channelIds.map(c => String(c || "").trim()).filter(Boolean)
     : (Array.isArray(args?.channelIds)
@@ -206,7 +206,7 @@ async function getHistoryInvoke(args, coreData) {
   for (const cid of extraChannelIds) channelIdSet.add(cid);
   const channelIds = [...channelIdSet];
   if (!channelIds.length) {
-    return { ok: false, error: "channelId missing (wo.channelID / wo.channelIds)" };
+    return { ok: false, error: "channelId missing (wo.channelId / wo.channelIds)" };
   }
   const mainChannelId = primaryChannelId || channelIds[0];
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {

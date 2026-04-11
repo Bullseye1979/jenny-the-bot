@@ -2497,7 +2497,7 @@ export default async function getWebpageInpainting(coreData) {
       const resp = await nodeFetch(apiUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify({ channelID: channelId, payload: editedUrl })
+        body: JSON.stringify({ channelId, payload: editedUrl })
       });
 
       const text = await resp.text().catch(() => "");

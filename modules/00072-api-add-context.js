@@ -52,7 +52,7 @@ export default async function getApiAddContext(coreData) {
     return coreData;
   }
 
-  if (!workingObject.db || !workingObject.flow || !workingObject.channelID || !text) {
+  if (!workingObject.db || !workingObject.flow || !workingObject.channelId || !text) {
     setPushLog(logging, {
       timestamp,
       severity: "error",

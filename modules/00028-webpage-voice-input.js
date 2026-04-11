@@ -121,7 +121,7 @@ export default async function getWebpageVoiceInput(coreData) {
     wo.transcribeAudio  = true;
     wo.synthesizeSpeech = true;
     wo.ttsFormat        = "mp3";
-    wo.channelID        = channelId;
+    wo.channelId        = channelId;
     wo.isWebpageVoice   = true;
     wo.isAlwaysOn       = isAlwaysOn;
     wo.transcribeOnly   = transcribeOnly;

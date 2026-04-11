@@ -136,7 +136,7 @@ async function callEnhancerApi(prompt, cfg, wo) {
     const res = await fetchWithTimeout(apiUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify({ channelID: channelId, payload: prompt, doNotWriteToContext: true })
+      body: JSON.stringify({ channelId, payload: prompt, doNotWriteToContext: true })
     }, timeoutMs);
     if (!res.ok) return null;
     const data = await res.json().catch(() => null);

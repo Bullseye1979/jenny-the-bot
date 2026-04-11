@@ -73,7 +73,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
   if (!text) return coreData;
 
   if (!wo.db || !wo.flow || !wo.channelId) {
-    log("Missing db/flow/channelID — skipping context write", "warn", { moduleName: MODULE_NAME });
+    log("Missing db/flow/channelId — skipping context write", "warn", { moduleName: MODULE_NAME });
     return coreData;
   }
 

@@ -484,7 +484,7 @@ async function callInternalLlm(payload, cfg, timeoutMs) {
   const headers = { "Content-Type": "application/json" };
   if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
 
-  const body = JSON.stringify({ channelID: channelId, payload, doNotWriteToContext: true });
+  const body = JSON.stringify({ channelId, payload, doNotWriteToContext: true });
 
   try {
     const res  = await fetchWithTimeout(apiUrl, { method: "POST", headers, body }, Math.max(5000, timeoutMs || DEFAULT_ALIAS_TIMEOUT_MS));

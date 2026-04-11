@@ -231,7 +231,7 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg, wo) {
     const res = await fetch(`${apiBase}/api`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ channelID: channelId, payload, doNotWriteToContext: true })
+      body: JSON.stringify({ channelId, payload, doNotWriteToContext: true })
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data?.ok) text = String(data.response || "");

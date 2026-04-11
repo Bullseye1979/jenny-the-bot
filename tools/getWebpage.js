@@ -103,7 +103,7 @@ async function callSummaryApi(text, cfg, wo) {
     const res = await fetchWithTimeout(apiUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify({ channelID: channelId, payload: text, doNotWriteToContext: true })
+      body: JSON.stringify({ channelId, payload: text, doNotWriteToContext: true })
     }, timeoutMs);
     if (!res.ok) return null;
     const data = await res.json().catch(() => null);
