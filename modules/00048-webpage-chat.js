@@ -57,11 +57,11 @@ function getIsChatVisibleForUser(wo, chatEntry) {
 }
 
 
-function getChatEntryByChannelID(chats, channelID) {
-  const id = String(channelID || "").trim();
+function getChatEntryByChannelId(chats, channelId) {
+  const id = String(channelId || "").trim();
   if (!id) return null;
   for (const c of chats) {
-    if (String(c?.channelID || "").trim() === id) return c;
+    if (String(c?.channelId || "").trim() === id) return c;
   }
   return null;
 }
@@ -162,8 +162,8 @@ export default async function getWebpageChat(coreData) {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
     const publicChats = chats
       .filter(c => getIsChatVisibleForUser(wo, c))
-      .map(c => ({ label: String(c.label || c.channelID || "Chat"), channelID: String(c.channelID || "") }))
-      .filter(c => c.channelID);
+      .map(c => ({ label: String(c.label || c.channelId || "Chat"), channelId: String(c.channelId || "") }))
+      .filter(c => c.channelId);
     setJsonResp(wo, 200, publicChats);
     wo.jump = true;
     await setSendNow(wo);
@@ -175,12 +175,12 @@ export default async function getWebpageChat(coreData) {
 
     const rawUrl      = String(wo.http?.url ?? "");
     const urlObj      = new URL(rawUrl, "http://localhost");
-    const channelID   = String(urlObj.searchParams.get("channelID")   || "").trim();
+    const channelId    = String(urlObj.searchParams.get("channelId") || "").trim();
     const subchannelId = String(urlObj.searchParams.get("subchannelId") || "").trim();
 
-    if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    if (!channelId) { setJsonResp(wo, 400, { error: "channelId required" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
-    const chatEntry = getChatEntryByChannelID(chats, channelID) || {};
+    const chatEntry = getChatEntryByChannelId(chats, channelId) || {};
     if (!getIsChatVisibleForUser(wo, chatEntry)) { setNotFound(wo); wo.jump = true; await setSendNow(wo); return coreData; }
 
     try {
@@ -196,7 +196,7 @@ export default async function getWebpageChat(coreData) {
             AND JSON_VALID(json) = 1
           ORDER BY ctx_id DESC
           LIMIT 200`,
-        [channelID, ...subArg]
+        [channelId, ...subArg]
       );
       const result = (rows || []).reverse()
         .map(r => {
@@ -259,27 +259,27 @@ export default async function getWebpageChat(coreData) {
       catch (_) { setJsonResp(wo, 400, { error: "Invalid JSON" }); wo.jump = true; await setSendNow(wo); return coreData; }
     }
 
-    const channelID    = String(reqData?.channelID    || "").trim();
+    const channelId    = String(reqData?.channelId || "").trim();
     const payload      = String(reqData?.payload      || "").trim();
     const subchannelId = String(reqData?.subchannelId || "").trim();
 
-    if (!channelID || !payload) {
-      setJsonResp(wo, 400, { error: "channelID and payload required" });
+    if (!channelId || !payload) {
+      setJsonResp(wo, 400, { error: "channelId and payload required" });
       wo.jump = true; await setSendNow(wo); return coreData;
     }
 
-    const chatEntry = getChatEntryByChannelID(chats, channelID) || {};
+    const chatEntry = getChatEntryByChannelId(chats, channelId) || {};
     if (!getIsChatVisibleForUser(wo, chatEntry)) { setNotFound(wo); wo.jump = true; await setSendNow(wo); return coreData; }
 
     try {
-      wo.channelID = channelID;
+      wo.channelId = channelId;
       wo.subchannel = subchannelId || null;
 
       const apiUrl    = String(chatEntry.apiUrl    || cfg.apiUrl    || "http://localhost:3400/api").trim();
       const apiSecret = await getSecret(wo, String(chatEntry.apiSecret || cfg.apiSecret || "").trim());
 
       const reqBody = {
-        channelID,
+        channelId,
         payload,
         userId:      String(wo.userId || wo.webAuth?.userId || "webpage-chat"),
         guildId:     String(wo.webAuth?.guildId || ""),
@@ -320,10 +320,10 @@ export default async function getWebpageChat(coreData) {
 
     const rawUrl    = String(wo.http?.url ?? "");
     const urlObj    = new URL(rawUrl, "http://localhost");
-    const channelID = String(urlObj.searchParams.get("channelID") || "").trim();
-    if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    const channelId = String(urlObj.searchParams.get("channelId") || "").trim();
+    if (!channelId) { setJsonResp(wo, 400, { error: "channelId required" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
-    const chatEntry = getChatEntryByChannelID(chats, channelID) || {};
+    const chatEntry = getChatEntryByChannelId(chats, channelId) || {};
     if (!getIsChatVisibleForUser(wo, chatEntry)) { setNotFound(wo); wo.jump = true; await setSendNow(wo); return coreData; }
 
     try {
@@ -331,7 +331,7 @@ export default async function getWebpageChat(coreData) {
       await getEnsureChatSubchannelsTable(pool);
       const [rows] = await pool.query(
         "SELECT subchannel_id, name, created_at FROM chat_subchannels WHERE channel_id = ? ORDER BY created_at ASC",
-        [channelID]
+        [channelId]
       );
       setJsonResp(wo, 200, rows.map(r => ({ subchannelId: r.subchannel_id, name: r.name, createdAt: r.created_at })));
     } catch (e) {
@@ -352,11 +352,11 @@ export default async function getWebpageChat(coreData) {
       catch (_) { setJsonResp(wo, 400, { error: "Invalid JSON" }); wo.jump = true; await setSendNow(wo); return coreData; }
     }
 
-    const channelID = String(body?.channelID || "").trim();
+    const channelId = String(body?.channelId || "").trim();
     const name      = String(body?.name      || "").trim();
-    if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    if (!channelId) { setJsonResp(wo, 400, { error: "channelId required" }); wo.jump = true; await setSendNow(wo); return coreData; }
 
-    const chatEntry = getChatEntryByChannelID(chats, channelID) || {};
+    const chatEntry = getChatEntryByChannelId(chats, channelId) || {};
     if (!getIsChatVisibleForUser(wo, chatEntry)) { setNotFound(wo); wo.jump = true; await setSendNow(wo); return coreData; }
 
     try {
@@ -365,9 +365,9 @@ export default async function getWebpageChat(coreData) {
       const subchannelId = crypto.randomUUID();
       await pool.execute(
         "INSERT INTO chat_subchannels (subchannel_id, channel_id, name) VALUES (?, ?, ?)",
-        [subchannelId, channelID, name]
+        [subchannelId, channelId, name]
       );
-      setJsonResp(wo, 200, { subchannelId, name, channelID });
+      setJsonResp(wo, 200, { subchannelId, name, channelId });
     } catch (e) {
       setJsonResp(wo, 500, { error: String(e?.message || e) });
     }
@@ -419,10 +419,10 @@ export default async function getWebpageChat(coreData) {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
     const rawUrl    = String(wo.http?.url ?? "");
     const urlObj    = new URL(rawUrl, "http://localhost");
-    const channelID = String(urlObj.searchParams.get("channelID") || "").trim();
-    if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    const channelId = String(urlObj.searchParams.get("channelId") || "").trim();
+    if (!channelId) { setJsonResp(wo, 400, { error: "channelId required" }); wo.jump = true; await setSendNow(wo); return coreData; }
     try {
-      const val  = await getItem("status:tool:" + channelID);
+      const val  = await getItem("status:tool:" + channelId);
       const tool = typeof val === "string" ? val.trim() : (typeof val?.name === "string" ? val.name.trim() : "");
       setJsonResp(wo, 200, { tool });
     } catch {
@@ -437,14 +437,14 @@ export default async function getWebpageChat(coreData) {
     if (!isAllowed) { setJsonResp(wo, 403, { error: "forbidden" }); wo.jump = true; await setSendNow(wo); return coreData; }
     const rawUrl     = String(wo.http?.url ?? "");
     const urlObj     = new URL(rawUrl, "http://localhost");
-    const channelID  = String(urlObj.searchParams.get("channelID") || "").trim();
+    const channelId  = String(urlObj.searchParams.get("channelId") || "").trim();
     const consume    = urlObj.searchParams.get("consume") === "true";
-    if (!channelID) { setJsonResp(wo, 400, { error: "channelID required" }); wo.jump = true; await setSendNow(wo); return coreData; }
+    if (!channelId) { setJsonResp(wo, 400, { error: "channelId required" }); wo.jump = true; await setSendNow(wo); return coreData; }
     try {
-      const chatEntry  = getChatEntryByChannelID(chats, channelID) || {};
+      const chatEntry  = getChatEntryByChannelId(chats, channelId) || {};
       const apiUrl     = String(chatEntry.apiUrl || cfg.apiUrl || "http://localhost:3400/api").trim();
       const apiSecret  = await getSecret(wo, String(chatEntry.apiSecret || cfg.apiSecret || "").trim());
-      const jobsUrl    = apiUrl.replace(/\/api\/?$/, "") + "/api/jobs?channelID=" + encodeURIComponent(channelID) + (consume ? "&consume=true" : "");
+      const jobsUrl    = apiUrl.replace(/\/api\/?$/, "") + "/api/jobs?channelId=" + encodeURIComponent(channelId) + (consume ? "&consume=true" : "");
       const headers    = {};
       if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
       const res2 = await fetch(jobsUrl, { headers });
@@ -478,7 +478,7 @@ export default async function getWebpageChat(coreData) {
         "SELECT channel_id FROM chat_subchannels WHERE subchannel_id = ? LIMIT 1",
         [subchannelId]
       );
-      const channelIDForSub = scRows?.[0]?.channelId ? String(scRows[0].channelId) : null;
+      const channelIdForSub = scRows?.[0]?.channel_id ? String(scRows[0].channel_id) : null;
 
       await pool.execute(
         "DELETE FROM chat_subchannels WHERE subchannel_id = ?",
@@ -486,14 +486,14 @@ export default async function getWebpageChat(coreData) {
       );
 
       let purgeResult = { deleted: 0, promoted: 0 };
-      if (channelIDForSub) {
+      if (channelIdForSub) {
         const [delRes] = await pool.execute(
           "DELETE FROM context WHERE id = ? AND COALESCE(subchannel, '') = ? AND COALESCE(frozen, 0) = 0",
-          [channelIDForSub, subchannelId]
+          [channelIdForSub, subchannelId]
         );
         const [promRes] = await pool.execute(
           "UPDATE context SET subchannel = NULL WHERE id = ? AND COALESCE(subchannel, '') = ? AND COALESCE(frozen, 0) = 1",
-          [channelIDForSub, subchannelId]
+          [channelIdForSub, subchannelId]
         );
         purgeResult = { deleted: delRes.affectedRows ?? 0, promoted: promRes.affectedRows ?? 0 };
       }
@@ -575,15 +575,15 @@ function getChatHtml(opts) {
     "\n" +
     "<script>\n" +
     "var CHAT_BASE=\"" + chatBase + "\";\n" +
-    "var chatChannelID=\"\", chatSubchannelId=\"\", chatMessages=[], chatSending=false, chatSubchannelList=[], chatPendingFile=null;\n" +
+    "var chatChannelId=\"\", chatSubchannelId=\"\", chatMessages=[], chatSending=false, chatSubchannelList=[], chatPendingFile=null;\n" +
     "var toolSseSource=null,asyncSseSource=null;\n" +
     "var jobPollTimer=null,jobPollEmptyCount=0,jobPollDeadline=0;\n" +
     "\n" +
-    "function startJobPoll(channelID){\n" +
+    "function startJobPoll(channelId){\n" +
     "  stopJobPoll();jobPollEmptyCount=0;jobPollDeadline=Date.now()+600000;\n" +
     "  jobPollTimer=setInterval(function(){\n" +
     "    if(Date.now()>jobPollDeadline){stopJobPoll();return;}\n" +
-    "    fetch(CHAT_BASE+\"/api/jobs?channelID=\"+encodeURIComponent(channelID)+\"&consume=true\")\n" +
+    "    fetch(CHAT_BASE+\"/api/jobs?channelId=\"+encodeURIComponent(channelId)+\"&consume=true\")\n" +
     "      .then(function(r){return r.json();})\n" +
     "      .then(function(d){\n" +
     "        var jobs=d&&Array.isArray(d.jobs)?d.jobs:[];\n" +
@@ -608,10 +608,10 @@ function getChatHtml(opts) {
     "}\n" +
     "function stopJobPoll(){if(jobPollTimer){clearInterval(jobPollTimer);jobPollTimer=null;}}\n" +
     "\n" +
-    "function startToolPoll(channelID,lbl){stopToolPoll();if(!window.EventSource){return;}toolSseSource=new EventSource(CHAT_BASE+\"/api/toolstatus/stream?channelID=\"+encodeURIComponent(channelID));toolSseSource.onmessage=function(e){try{var d=JSON.parse(e.data);lbl.textContent=d&&d.tool?d.tool+\" \":\"\";}catch(ex){}};toolSseSource.onerror=function(){stopToolPoll();};}\n" +
+    "function startToolPoll(channelId,lbl){stopToolPoll();if(!window.EventSource){return;}toolSseSource=new EventSource(CHAT_BASE+\"/api/toolstatus/stream?channelId=\"+encodeURIComponent(channelId));toolSseSource.onmessage=function(e){try{var d=JSON.parse(e.data);lbl.textContent=d&&d.tool?d.tool+\" \":\"\";}catch(ex){}};toolSseSource.onerror=function(){stopToolPoll();};}\n" +
     "function stopToolPoll(){if(toolSseSource){toolSseSource.close();toolSseSource=null;}}\n" +
     "\n" +
-    "function startAsyncSSE(channelID){stopAsyncSSE();if(!window.EventSource||!channelID){return;}asyncSseSource=new EventSource(CHAT_BASE+\"/api/async-results/stream?channelID=\"+encodeURIComponent(channelID));asyncSseSource.onmessage=function(e){try{var d=JSON.parse(e.data);if(d&&d.type===\"async_result\"&&d.response){appendMessage(\"assistant\",d.response);var msgsEl=document.getElementById(\"chat-msgs\");if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;if(d.projectId){var lb=document.querySelector(\"#chat-msgs .chat-msg.assistant:last-child .chat-bubble\");if(lb){var ps=document.createElement(\"span\");ps.className=\"project-id\";ps.textContent=\"Project: \"+d.projectId;lb.appendChild(ps);}}toast(\"\\u23F3 Background task completed\");}}catch(ex){}};asyncSseSource.onerror=function(){};}\n" +
+    "function startAsyncSSE(channelId){stopAsyncSSE();if(!window.EventSource||!channelId){return;}asyncSseSource=new EventSource(CHAT_BASE+\"/api/async-results/stream?channelId=\"+encodeURIComponent(channelId));asyncSseSource.onmessage=function(e){try{var d=JSON.parse(e.data);if(d&&d.type===\"async_result\"&&d.response){appendMessage(\"assistant\",d.response);var msgsEl=document.getElementById(\"chat-msgs\");if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;if(d.projectId){var lb=document.querySelector(\"#chat-msgs .chat-msg.assistant:last-child .chat-bubble\");if(lb){var ps=document.createElement(\"span\");ps.className=\"project-id\";ps.textContent=\"Project: \"+d.projectId;lb.appendChild(ps);}}toast(\"\\u23F3 Background task completed\");}}catch(ex){}};asyncSseSource.onerror=function(){};}\n" +
     "function stopAsyncSSE(){if(asyncSseSource){asyncSseSource.close();asyncSseSource=null;}}\n" +
     "\n" +
     "function toast(msg,ms){var t=document.getElementById(\"toast\");t.textContent=msg;t.classList.add(\"on\");setTimeout(function(){t.classList.remove(\"on\");},ms||2400);}\n" +
@@ -623,25 +623,25 @@ function getChatHtml(opts) {
     "      var sel=document.getElementById(\"chat-sel\");\n" +
     "      sel.innerHTML=\"\";\n" +
     "      if(!list||!list.length){var o=document.createElement(\"option\");o.value=\"\";o.textContent=\"No chats configured\";sel.appendChild(o);return;}\n" +
-    "      list.forEach(function(c){var o=document.createElement(\"option\");o.value=c.channelID;o.textContent=c.label||c.channelID;sel.appendChild(o);});\n" +
-    "      if(list[0]&&list[0].channelID){sel.value=list[0].channelID;onChatSel(list[0].channelID);}\n" +
+    "      list.forEach(function(c){var o=document.createElement(\"option\");o.value=c.channelId;o.textContent=c.label||c.channelId;sel.appendChild(o);});\n" +
+    "      if(list[0]&&list[0].channelId){sel.value=list[0].channelId;onChatSel(list[0].channelId);}\n" +
     "    })\n" +
     "    .catch(function(e){toast(\"Failed to load chats: \"+e.message,6000);});\n" +
     "}\n" +
     "\n" +
-    "function onChatSel(channelID){\n" +
-    "  chatChannelID=channelID;\n" +
+    "function onChatSel(channelId){\n" +
+    "  chatChannelId=channelId;\n" +
     "  chatSubchannelId=\"\";\n" +
     "  stopAsyncSSE();\n" +
-    "  if(!channelID){document.getElementById(\"chat-msgs\").innerHTML=\"<div class='chat-loading'>Select a channel.</div>\";hideSubUI();return;}\n" +
-    "  startAsyncSSE(channelID);\n" +
-    "  loadSubchannels(channelID);\n" +
+    "  if(!channelId){document.getElementById(\"chat-msgs\").innerHTML=\"<div class='chat-loading'>Select a channel.</div>\";hideSubUI();return;}\n" +
+    "  startAsyncSSE(channelId);\n" +
+    "  loadSubchannels(channelId);\n" +
     "}\n" +
     "\n" +
     "function hideSubUI(){[\"chat-sub-sel\",\"sub-new-btn\",\"sub-ren-btn\",\"sub-del-btn\"].forEach(function(id){document.getElementById(id).style.display=\"none\";});}\n" +
     "\n" +
-    "function loadSubchannels(channelID, autoSelectId){\n" +
-    "  fetch(CHAT_BASE+\"/api/subchannels?channelID=\"+encodeURIComponent(channelID))\n" +
+    "function loadSubchannels(channelId, autoSelectId){\n" +
+    "  fetch(CHAT_BASE+\"/api/subchannels?channelId=\"+encodeURIComponent(channelId))\n" +
     "    .then(function(r){return r.json();})\n" +
     "    .then(function(list){\n" +
     "      var sel=document.getElementById(\"chat-sub-sel\");\n" +
@@ -654,7 +654,7 @@ function getChatHtml(opts) {
     "      if(autoSelectId){sel.value=autoSelectId;onSubSel(autoSelectId);}\n" +
     "      else{onSubSel(\"\");}\n" +
     "    })\n" +
-    "    .catch(function(){hideSubUI();loadContext(channelID,\"\");});\n" +
+    "    .catch(function(){hideSubUI();loadContext(channelId,\"\");});\n" +
     "}\n" +
     "\n" +
     "function onSubSel(subchannelId){\n" +
@@ -663,17 +663,17 @@ function getChatHtml(opts) {
     "  var delBtn=document.getElementById(\"sub-del-btn\");\n" +
     "  renBtn.style.display=subchannelId?\"\":\"none\";\n" +
     "  delBtn.style.display=subchannelId?\"\":\"none\";\n" +
-    "  loadContext(chatChannelID,subchannelId);\n" +
+    "  loadContext(chatChannelId,subchannelId);\n" +
     "}\n" +
     "\n" +
     "function subCreate(){\n" +
     "  var name=prompt(\"Subchannel name:\");\n" +
     "  if(name===null)return;\n" +
-    "  fetch(CHAT_BASE+\"/api/subchannels\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({channelID:chatChannelID,name:name.trim()})})\n" +
+    "  fetch(CHAT_BASE+\"/api/subchannels\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({channelId:chatChannelId,name:name.trim()})})\n" +
     "    .then(function(r){return r.json();})\n" +
     "    .then(function(d){\n" +
     "      if(d&&d.error){toast(\"Error: \"+d.error,5000);return;}\n" +
-    "      loadSubchannels(chatChannelID, d.subchannelId);\n" +
+    "      loadSubchannels(chatChannelId, d.subchannelId);\n" +
     "      toast(\"Subchannel created\");\n" +
     "    })\n" +
     "    .catch(function(e){toast(\"Error: \"+e.message,5000);});\n" +
@@ -689,7 +689,7 @@ function getChatHtml(opts) {
     "    .then(function(r){return r.json();})\n" +
     "    .then(function(d){\n" +
     "      if(d&&d.error){toast(\"Error: \"+d.error,5000);return;}\n" +
-    "      loadSubchannels(chatChannelID);\n" +
+    "      loadSubchannels(chatChannelId);\n" +
     "      toast(\"Renamed\");\n" +
     "    })\n" +
     "    .catch(function(e){toast(\"Error: \"+e.message,5000);});\n" +
@@ -703,18 +703,18 @@ function getChatHtml(opts) {
     "    .then(function(d){\n" +
     "      if(d&&d.error){toast(\"Error: \"+d.error,5000);return;}\n" +
     "      chatSubchannelId=\"\";\n" +
-    "      loadSubchannels(chatChannelID);\n" +
+    "      loadSubchannels(chatChannelId);\n" +
     "      toast(\"Deleted\");\n" +
     "    })\n" +
     "    .catch(function(e){toast(\"Error: \"+e.message,5000);});\n" +
     "}\n" +
     "\n" +
-    "function reloadContext(){loadContext(chatChannelID,chatSubchannelId);}\n" +
+    "function reloadContext(){loadContext(chatChannelId,chatSubchannelId);}\n" +
     "\n" +
-    "function loadContext(channelID,subchannelId){\n" +
-    "  if(!channelID){document.getElementById(\"chat-msgs\").innerHTML=\"<div class='chat-loading'>Select a channel.</div>\";return;}\n" +
+    "function loadContext(channelId,subchannelId){\n" +
+    "  if(!channelId){document.getElementById(\"chat-msgs\").innerHTML=\"<div class='chat-loading'>Select a channel.</div>\";return;}\n" +
     "  document.getElementById(\"chat-msgs\").innerHTML=\"<div class='chat-loading'>Loading\u2026</div>\";\n" +
-    "  var url=CHAT_BASE+\"/api/context?channelID=\"+encodeURIComponent(channelID);\n" +
+    "  var url=CHAT_BASE+\"/api/context?channelId=\"+encodeURIComponent(channelId);\n" +
     "  if(subchannelId)url+=\"&subchannelId=\"+encodeURIComponent(subchannelId);\n" +
     "  fetch(url).then(function(r){return r.json();})\n" +
     "    .then(function(data){\n" +
@@ -823,7 +823,7 @@ function getChatHtml(opts) {
     "\n" +
     "function sendMessage(){\n" +
     "  if(chatSending)return;\n" +
-    "  if(!chatChannelID){toast(\"Please select a channel first\");return;}\n" +
+    "  if(!chatChannelId){toast(\"Please select a channel first\");return;}\n" +
     "  var inp=document.getElementById(\"chat-input\");\n" +
     "  var text=inp.value.trim();\n" +
     "  var fileToUpload=chatPendingFile;\n" +
@@ -841,13 +841,13 @@ function getChatHtml(opts) {
     "  [1,2,3].forEach(function(){var d=document.createElement(\"span\");d.className=\"dot\";thinkBub.appendChild(d);});\n" +
     "  thinkWrap.appendChild(thinkBub);\n" +
     "  var msgsEl=document.getElementById(\"chat-msgs\");msgsEl.appendChild(thinkWrap);msgsEl.scrollTop=msgsEl.scrollHeight;\n" +
-    "  startToolPoll(chatChannelID,thinkLbl);\n" +
+    "  startToolPoll(chatChannelId,thinkLbl);\n" +
     "  var uploadPromise=fileToUpload\n" +
     "    ?uploadChatFile(fileToUpload).then(function(d){if(!d||!d.ok||!d.url)throw new Error(d&&d.error?d.error:\"upload_failed\");return d.url;})\n" +
     "    :Promise.resolve(null);\n" +
     "  uploadPromise.then(function(uploadedUrl){\n" +
     "    var finalText=uploadedUrl?(uploadedUrl+(text?\"\\n\"+text:\"\")):text;\n" +
-    "    var payload={channelID:chatChannelID,payload:finalText};\n" +
+    "    var payload={channelId:chatChannelId,payload:finalText};\n" +
     "    if(chatSubchannelId)payload.subchannelId=chatSubchannelId;\n" +
     "    return fetch(CHAT_BASE+\"/api/chat\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify(payload)}).then(function(r){return r.json();});\n" +
     "  })\n" +
@@ -857,7 +857,7 @@ function getChatHtml(opts) {
     "    chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
     "    if(d&&d.response!==undefined)appendMessage(\"assistant\",String(d.response||\"\"));\n" +
     "    else if(d&&d.error)toast(\"Error: \"+d.error,6000);\n" +
-    "    startJobPoll(chatChannelID);\n" +
+    "    startJobPoll(chatChannelId);\n" +
     "  })\n" +
     "  .catch(function(e){\n" +
     "    stopToolPoll();\n" +

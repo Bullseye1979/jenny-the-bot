@@ -130,7 +130,7 @@ export default async function getCoreAddId(coreData) {
   const response = typeof wo.response === "string" ? wo.response : "";
   if (!response.trim()) return coreData;
 
-  const idValue = getStr(wo?.callerChannelId || wo?.channelID).trim();
+  const idValue = getStr(wo?.callerChannelId || wo?.channelId).trim();
   if (!idValue) {
     log("Missing wo.channelID → cannot append id param.", "warn");
     return coreData;

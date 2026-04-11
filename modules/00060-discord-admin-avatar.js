@@ -23,7 +23,7 @@ const MODULE_NAME = "discord-admin-avatar";
 
 function getChannelId(wo) {
   const fromAdmin = wo?.admin?.channelId;
-  const fromWO = wo?.channelID;
+  const fromWO = wo?.channelId;
   return String(fromAdmin || fromWO || "");
 }
 

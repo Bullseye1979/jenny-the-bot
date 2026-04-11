@@ -199,7 +199,7 @@ async function setPurgeDmBotMessages(wo, payload, log) {
   if (count === null) return false;
 
   const client = await getResolveClient(wo);
-  const channelId = String(wo?.channelID || "");
+  const channelId = String(wo?.channelId || "");
   if (!client || !channelId) {
     wo.response   = "STOP";
     wo.stop       = true;
@@ -272,7 +272,7 @@ export default async function getDiscordPurge(coreData) {
       throw new Error("Simulated error via /error");
     }
 
-    const channelId = String(wo?.admin?.channelId || wo?.channelID || "");
+  const channelId = String(wo?.admin?.channelId || wo?.channelId || "");
     const channel = await getResolveChannelById(wo, channelId);
     if (!channel) {
       log("slash admin command failed", "error", { moduleName: MODULE_NAME, reason: "could not resolve channel" });

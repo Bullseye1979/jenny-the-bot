@@ -28,10 +28,10 @@ const _connections = new Map();
 
 
 
-export function registerSseConnection(channelID, res) {
-  if (!channelID || !res) return;
-  if (!_connections.has(channelID)) _connections.set(channelID, new Set());
-  _connections.get(channelID).add(res);
+export function registerSseConnection(channelId, res) {
+  if (!channelId || !res) return;
+  if (!_connections.has(channelId)) _connections.set(channelId, new Set());
+  _connections.get(channelId).add(res);
 }
 
 
@@ -40,11 +40,11 @@ export function registerSseConnection(channelID, res) {
 
 
 
-export function unregisterSseConnection(channelID, res) {
-  const set = _connections.get(channelID);
+export function unregisterSseConnection(channelId, res) {
+  const set = _connections.get(channelId);
   if (!set) return;
   set.delete(res);
-  if (set.size === 0) _connections.delete(channelID);
+  if (set.size === 0) _connections.delete(channelId);
 }
 
 
@@ -55,8 +55,8 @@ export function unregisterSseConnection(channelID, res) {
 
 
 
-export function pushAsyncResult(channelID, payload) {
-  const set = _connections.get(channelID);
+export function pushAsyncResult(channelId, payload) {
+  const set = _connections.get(channelId);
   if (!set || set.size === 0) return 0;
 
   const data = `data: ${JSON.stringify(payload)}\n\n`;
@@ -73,7 +73,7 @@ export function pushAsyncResult(channelID, payload) {
   }
 
   for (const res of dead) set.delete(res);
-  if (set.size === 0) _connections.delete(channelID);
+  if (set.size === 0) _connections.delete(channelId);
 
   return sent;
 }
@@ -84,6 +84,6 @@ export function pushAsyncResult(channelID, payload) {
 
 
 
-export function getSseConnectionCount(channelID) {
-  return _connections.get(channelID)?.size ?? 0;
+export function getSseConnectionCount(channelId) {
+  return _connections.get(channelId)?.size ?? 0;
 }

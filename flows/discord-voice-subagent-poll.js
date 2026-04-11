@@ -69,7 +69,7 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   const _rc = createRunCore();
   const _wo = (_rc.workingObject ||= {});
   _wo.flow                = "discord-voice";
-  _wo.channelID           = job.callerChannelId;
+  _wo.channelId           = job.callerChannelId;
   _wo.guildId             = String(job.guildId || "");
   _wo.userId              = String(job.userId || "");
   _wo.authorDisplayname   = String(job.authorDisplayname || "");
@@ -86,7 +86,7 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   clearDeliveredToolStatus(job.callerChannelId);
 
   /* Bypass channel gate — delivery is always allowed (same as discord-voice.js) */
-  _wo.channelallowed = true;
+  _wo.channelAllowed = true;
 
   /* Look up active voice session so TTS modules can play the response */
   if (_wo.guildId) {
@@ -157,8 +157,9 @@ export default async function getDiscordVoiceSubagentPollFlow(baseCore, runFlow,
       try { deleteItem(_key); } catch { }
       logSubagent("info", "discord-voice-poll", "job_deleted", { jobId: _job.jobId });
 
-      if (_job.callerContextChannelID) {
-        const _parentProjectId = String(_job.callerContextChannelID).replace(/^project-/, "");
+      const _parentContextChannelId = String(_job.callerContextChannelId || _job.callerContextChannelID || "").trim();
+      if (_parentContextChannelId) {
+        const _parentProjectId = _parentContextChannelId.replace(/^project-/, "");
         const _result = _job.status === "done"
           ? String(_job.result || "").trim()
           : `Background task failed: ${_job.error || "unknown error"}`;

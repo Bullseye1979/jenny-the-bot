@@ -143,7 +143,7 @@ async function getInvoke(args, coreData) {
   const requestedType = String(args?.type || "").trim();
   let typeName = requestedType || "generic";
 
-  const _invokeCallerChannelId = String(wo.callerChannelId || wo.channelID || "").trim();
+  const _invokeCallerChannelId = String(wo.callerChannelId || wo.channelId || "").trim();
   logSubagent("info", "getSubAgent", "invoke_called", {
     mode,
     typeName,
@@ -152,7 +152,7 @@ async function getInvoke(args, coreData) {
     inputProjectId:      inputProjectId || null,
     callerChannelId:     _invokeCallerChannelId || null,
     callerFlow:          String(wo.callerFlow || wo.flow || "") || null,
-    callerContextChanID: String(wo.contextChannelID || "") || null,
+    callerContextChanId: String(wo.contextChannelId || "") || null,
     agentDepth:          Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0,
     agentType:           String(wo.agentType || "") || null,
     taskLen:             task.length,
@@ -176,14 +176,14 @@ async function getInvoke(args, coreData) {
   const headers = { "Content-Type": "application/json" };
   if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
 
-  const callerChannelId  = String(wo.callerChannelId || wo.channelID || "").trim();
+  const callerChannelId  = String(wo.callerChannelId || wo.channelId || "").trim();
   const callerChannelIds = [
     callerChannelId,
     ...(Array.isArray(wo.callerChannelIds) ? wo.callerChannelIds : []),
     ...(Array.isArray(wo.channelIds) && !wo.callerChannelId ? wo.channelIds : [])
   ].map(c => String(c || "").trim()).filter((value, index, arr) => value && arr.indexOf(value) === index);
   const callerTurnId = String(wo.callerTurnId || wo.turnId || "").trim();
-  const contextSourceChannelId = String(wo.callerContextChannelID || callerChannelId || "").trim();
+  const contextSourceChannelId = String(wo.callerContextChannelId || callerChannelId || "").trim();
   const contextSourceChannelIds = callerChannelIds.slice();
 
   const callerPayloadRaw = String(wo.payload || "").trim();
@@ -255,7 +255,7 @@ async function getInvoke(args, coreData) {
   }
 
   const spawnUrl = _apiBase + String(cfg.asyncSpawnPath || "/api/spawn");
-  const _parentContextChannelID = String(wo.callerContextChannelID || wo.contextChannelID || "").trim();
+  const _parentContextChannelId = String(wo.callerContextChannelId || wo.contextChannelId || "").trim();
 
   logSubagent("info", "getSubAgent", "spawn_sending", {
     typeName,
@@ -265,7 +265,7 @@ async function getInvoke(args, coreData) {
     mode,
     callerChannelId:        callerChannelId || null,
     callerFlow:             String(wo.callerFlow || wo.flow || "") || null,
-    callerContextChannelID: _parentContextChannelID || null,
+    callerContextChannelId: _parentContextChannelId || null,
     agentDepth:             nextAgentDepth,
     includeCallerContext,
   });
@@ -276,7 +276,7 @@ async function getInvoke(args, coreData) {
     : undefined;
 
   const _spawnBody = JSON.stringify({
-    channelID:              channelId,
+    channelId,
     payload:                fullPayload,
     userId:                 String(wo.userId || ""),
     guildId:                String(wo.guildId || ""),
@@ -287,9 +287,9 @@ async function getInvoke(args, coreData) {
     callerChannelIds:       callerChannelIds.length ? callerChannelIds : undefined,
     callerTurnId:           callerTurnId || undefined,
     callerFlow:             String(wo.callerFlow || wo.flow || ""),
-    callerContextChannelID: _parentContextChannelID || undefined,
+    callerContextChannelId: _parentContextChannelId || undefined,
     includeCallerContext:   includeCallerContext || undefined,
-    contextSourceChannelID: includeCallerContext ? (contextSourceChannelId || undefined) : undefined,
+    contextSourceChannelId: includeCallerContext ? (contextSourceChannelId || undefined) : undefined,
     contextSourceChannelIds: includeCallerContext && contextSourceChannelIds.length
       ? contextSourceChannelIds
       : undefined,

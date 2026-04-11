@@ -144,7 +144,7 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
 
       if (method === "GET" && urlPath.endsWith("/api/async-results/stream")) {
         const _arUrlObj   = new URL(req.url, `http://localhost:${port}`);
-        const _arChannel  = String(_arUrlObj.searchParams.get("channelID") || "").trim();
+        const _arChannel  = String(_arUrlObj.searchParams.get("channelID") || _arUrlObj.searchParams.get("channelId") || "").trim();
         if (!_arChannel) return setSendResponse(res, 400, "channelID required");
         res.writeHead(200, {
           "Content-Type":      "text/event-stream; charset=utf-8",
@@ -168,7 +168,7 @@ function getCreateServer(baseCore, runFlow, createRunCore, flowName, port, pubRo
 
       if (method === "GET" && urlPath.endsWith("/api/toolstatus/stream")) {
         const _sseUrlObj = new URL(req.url, `http://localhost:${port}`);
-        const _sseChannel = String(_sseUrlObj.searchParams.get("channelID") || "").trim();
+        const _sseChannel = String(_sseUrlObj.searchParams.get("channelID") || _sseUrlObj.searchParams.get("channelId") || "").trim();
         const _ssePollMs = Math.max(300, Number(baseCore?.config?.["webpage-chat"]?.toolStatusPollMs ?? 500) || 500);
 
         if (!_sseChannel) return setSendResponse(res, 400, "channelID required");

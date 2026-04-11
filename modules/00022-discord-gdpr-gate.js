@@ -149,7 +149,7 @@ export default async function getGdprGate(coreData) {
   const table = getTableName(coreData);
 
   const userId = String(wo?.userId ?? "");
-  const channelId = String(wo?.channelID ?? "");
+  const channelId = String(wo?.channelId ?? "");
   if (!userId || !channelId) {
     log("gdpr gate missing ids -> blocking", "warn", { moduleName: MODULE_NAME, userId, channelId, flow });
     const built = getBuildDisclaimerFromWO(wo, { userId, channelId, flow });

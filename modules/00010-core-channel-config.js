@@ -103,7 +103,7 @@ function applyOverrides(workingObject, overrides) {
   if (!isPlainObject(workingObject)) return 0;
   if (!isPlainObject(overrides)) return 0;
 
-  const { channelallowed: _c, allow: _a, ...rawOverrides } = overrides;
+  const { channelAllowed: _c, allow: _a, ...rawOverrides } = overrides;
 
   let appliedKeys = 0;
 
@@ -138,7 +138,7 @@ function applyOverrides(workingObject, overrides) {
 
 function getEffectiveChannelId(workingObject) {
   const id = normalizeStr(
-    workingObject?.channelID ??
+    workingObject?.channelId ??
     workingObject?.message?.channelId
   );
 
@@ -262,7 +262,7 @@ export function applyChannelConfig(workingObject, config, channelId, flow, userI
   if (!Array.isArray(channels) || !channelId || !flow) return;
   if (!channels.some(ch => matchChannel(ch, channelId))) return;
   applyStrictHierarchy(workingObject, channels, channelId, flow, userId || "");
-  workingObject.channelallowed = true;
+  workingObject.channelAllowed = true;
 }
 
 
@@ -280,21 +280,21 @@ export default async function getChannelConfig(coreData) {
   const effectiveChannelId = getEffectiveChannelId(workingObject);
   const flow = ensureFlow(workingObject, effectiveChannelId, log);
 
-  workingObject.channelallowed = false;
+  workingObject.channelAllowed = false;
 
   if (!effectiveChannelId) {
-    log("Missing channel id — channelallowed=false", "warn", { moduleName: MODULE_NAME });
+    log("Missing channel id — channelAllowed=false", "warn", { moduleName: MODULE_NAME });
     return coreData;
   }
 
   if (!flow) {
-    log("Missing flow context — channelallowed=false", "warn", { moduleName: MODULE_NAME });
+    log("Missing flow context — channelAllowed=false", "warn", { moduleName: MODULE_NAME });
     return coreData;
   }
 
   const anyChannelMatch = channels.some(ch => matchChannel(ch, effectiveChannelId));
   if (!anyChannelMatch) {
-    log("Channel is not listed — channelallowed=false", "warn", {
+    log("Channel is not listed — channelAllowed=false", "warn", {
       moduleName: MODULE_NAME,
       channelId: effectiveChannelId
     });
@@ -309,12 +309,12 @@ export default async function getChannelConfig(coreData) {
     userId
   );
 
-  workingObject.channelallowed = true;
+  workingObject.channelAllowed = true;
 
   const level = warnings.length > 0 ? "warn" : (matchedRules.length > 0 ? "info" : "warn");
 
   log(
-    "Applied strict hierarchy — channelallowed=true",
+      "Applied strict hierarchy — channelAllowed=true",
     level,
     {
       moduleName: MODULE_NAME,

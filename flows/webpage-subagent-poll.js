@@ -4,7 +4,7 @@
 /* Purpose: Polls the registry for completed async subagent jobs whose callerFlow   *
 /*          starts with "webpage" and delivers results via SSE.                     *
 /*          Each connected webpage client subscribes to                             *
-/*            GET /api/async-results/stream?channelID=<callerChannelId>            *
+/*            GET /api/async-results/stream?channelId=<callerChannelId>            *
 /*          The poll flow runs a persona pass through the API flow so               *
 /*          core-channel-config applies the channel config, then pushes the         *
 /*          formatted response as an SSE event to all connected clients.            *
@@ -94,13 +94,13 @@ async function getVoicePayload({ callerFlow, callerChannelId, response, jobId, p
   const _wo = (_rc.workingObject ||= {});
   _wo.flow                = "webpage";
   _wo.overrideFlow        = String(callerFlow || "");
-  _wo.channelID           = String(callerChannelId || "");
+  _wo.channelId           = String(callerChannelId || "");
   _wo.response            = String(response || "");
   _wo.skipAiCompletions   = true;
   _wo.doNotWriteToContext = true;
   _wo.bypassTriggerGate   = true;
   _wo.bypassGdprGate      = true;
-  _wo.channelallowed      = true;
+  _wo.channelAllowed      = true;
   _wo.isWebpageVoice      = true;
   _wo.synthesizeSpeech    = true;
   _wo.ttsFormat           = "mp3";
@@ -179,8 +179,9 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
       try { deleteItem(_key); } catch { }
       logSubagent("info", "webpage-poll", "job_deleted", { jobId: _job.jobId });
 
-      if (_job.callerContextChannelID) {
-        const _parentProjectId = String(_job.callerContextChannelID).replace(/^project-/, "");
+      const _parentContextChannelId = String(_job.callerContextChannelId || _job.callerContextChannelID || "").trim();
+      if (_parentContextChannelId) {
+        const _parentProjectId = _parentContextChannelId.replace(/^project-/, "");
 
         logSubagent("info", "webpage-poll", "branch_parent_chain", { jobId: _job.jobId, parentProjectId: _parentProjectId });
 

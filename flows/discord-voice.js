@@ -125,7 +125,7 @@ function setMergeDynamicWO(src, dst) {
     "clientRef",
     "voiceSessionRef",
     "userId",
-    "channelallowed",
+    "channelAllowed",
     "config"
   ]);
   for (const [k, v] of Object.entries(src || {})) {
@@ -245,12 +245,15 @@ wo.turnId = getNewUlid();
       wo.voiceSessionRef = sessionKey;
 
       if (guildId) wo.guildId = guildId;
-      if (targetId) { wo.id = String(targetId); wo.channelID = wo.id; }
+      if (targetId) {
+        wo.id = String(targetId);
+        wo.channelId = wo.id;
+      }
 
       wo.clientRef = clientRef;
       wo.config = cfg;
       wo.userId = String(userId);
-      wo.channelallowed = true;
+      wo.channelAllowed = true;
       wo.authorDisplayname = speaker;
       wo.voiceIntent = { action: "describe_and_transcribe", userId: String(userId) };
       wo.timestamp = nowIso;
@@ -259,7 +262,7 @@ wo.turnId = getNewUlid();
         moduleName: MODULE_NAME,
         sessionKey,
         userId,
-        postChannelId: wo.channelID || null,
+        postChannelId: wo.channelId || null,
         useVoiceChannel: !!wo.useVoiceChannel,
         textChannelId,
         voiceChannelId,

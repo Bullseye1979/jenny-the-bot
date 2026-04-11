@@ -278,7 +278,7 @@ export default async function getDiscordVoiceCapture(coreData) {
       const prev = (await getItem(captureKey)) || [];
       prev.push({
         ts: Date.now(), sessionKey,
-        guildId: wo.guildId, channelId: wo.channelID,
+        guildId: wo.guildId, channelId: wo.channelId,
         userId, speaker: wo.authorDisplayname || "Unknown",
         segments: segments.length
       });

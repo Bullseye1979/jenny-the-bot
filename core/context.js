@@ -67,12 +67,32 @@ function getSubchannelFilter(workingObject) {
 }
 
 
+function getChannelId(workingObject) {
+  return String(workingObject?.channelId || "").trim();
+}
+
+
+function getContextChannelId(workingObject) {
+  return String(workingObject?.contextChannelId || getChannelId(workingObject)).trim();
+}
+
+
+function getCallerContextChannelId(workingObject) {
+  return String(workingObject?.callerContextChannelId || workingObject?.callerChannelId || getChannelId(workingObject)).trim();
+}
+
+
+function getContextSourceChannelId(workingObject) {
+  return String(workingObject?.contextSourceChannelId || getCallerContextChannelId(workingObject)).trim();
+}
+
+
 function getContextIdList(workingObject, channelIdsOverride) {
   const useCallerContext = workingObject?.includeCallerContext === true;
   const baseId = String(
     (useCallerContext
-      ? (workingObject?.contextSourceChannelID || workingObject?.callerContextChannelID || workingObject?.callerChannelId || workingObject?.channelID)
-      : (workingObject?.contextChannelID || workingObject?.channelID)) || ""
+      ? getContextSourceChannelId(workingObject)
+      : getContextChannelId(workingObject)) || ""
   ).trim();
   const extraIds = Array.isArray(channelIdsOverride)
     ? channelIdsOverride
@@ -405,7 +425,7 @@ function getResolvedTimestamp(workingObject, record) {
 
 export async function setContext(workingObject, record) {
   if (record?.internal_meta === true) return false;
-  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
+  const id = getContextChannelId(workingObject);
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
 
@@ -451,14 +471,7 @@ export async function setContext(workingObject, record) {
 
 
 export async function rebuildDerivedContextSet(workingObject, options = {}) {
-  const contextChannelId = String(
-    options?.contextChannelId ||
-    options?.contextChannelID ||
-    workingObject?.contextChannelId ||
-    workingObject?.contextChannelID ||
-    workingObject?.channelID ||
-    ""
-  ).trim();
+  const contextChannelId = String(options?.contextChannelId || getContextChannelId(workingObject)).trim();
   if (!contextChannelId) return [];
   const pool = await getEnsurePool(workingObject);
   const { periodSize } = getContextConfig(workingObject);
@@ -636,8 +649,8 @@ export async function getContext(workingObject) {
   const useCallerContext = workingObject?.includeCallerContext === true;
   const baseId = String(
     (useCallerContext
-      ? (workingObject?.contextSourceChannelID || workingObject?.callerContextChannelID || workingObject?.callerChannelId || workingObject?.channelID)
-      : (workingObject?.contextChannelID || workingObject?.channelID)) || ""
+      ? getContextSourceChannelId(workingObject)
+      : getContextChannelId(workingObject)) || ""
   );
   if (!baseId) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
@@ -901,7 +914,7 @@ async function setMaybeCreateTimelinePeriod(pool, workingObject, channelId) {
 
 
 export async function setPurgeContext(workingObject) {
-  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
+  const id = getContextChannelId(workingObject);
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
   const { sql: subSql, args: subArgs, subchannel, subchannelFallback } = getSubchannelFilter(workingObject);
@@ -925,9 +938,9 @@ export async function setPurgeContext(workingObject) {
 
 
 export async function setPurgeSubchannel(workingObject, subchannelId) {
-  const id  = String(workingObject?.channelID || "");
+  const id  = getChannelId(workingObject);
   const sub = String(subchannelId || "").trim();
-  if (!id)  throw new Error("[context] missing channelID");
+  if (!id)  throw new Error("[context] missing channelId");
   if (!sub) throw new Error("[context] missing subchannelId");
 
   const pool = await getEnsurePool(workingObject);
@@ -950,7 +963,7 @@ export async function setPurgeSubchannel(workingObject, subchannelId) {
 
 
 export async function setFreezeContext(workingObject) {
-  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
+  const id = getContextChannelId(workingObject);
   if (!id) throw new Error("[context] missing id");
   const pool = await getEnsurePool(workingObject);
   const { sql: subSql, args: subArgs, subchannel } = getSubchannelFilter(workingObject);
@@ -974,7 +987,7 @@ export async function setFreezeContext(workingObject) {
 
 
 export async function getContextLastSeconds(workingObject, seconds = 60) {
-  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
+  const id = getContextChannelId(workingObject);
   if (!id) return [];
   try {
     const pool = await getEnsurePool(workingObject);
@@ -998,7 +1011,7 @@ export async function getContextLastSeconds(workingObject, seconds = 60) {
 
 
 export async function getContextSince(workingObject, since) {
-  const id = String(workingObject?.contextChannelID || workingObject?.channelID || "");
+  const id = getContextChannelId(workingObject);
   if (!id || !since) return [];
   let sinceDate;
   try {
@@ -1187,9 +1200,9 @@ async function getSummarizeContextBatch(workingObject, rows, meta) {
       method: "POST",
       headers,
       body: JSON.stringify({
-        channelID: timelineApiChannel,
+        channelId: timelineApiChannel,
         payload,
-        contextChannelID: String(meta?.channelId || ""),
+        contextChannelId: String(meta?.channelId || ""),
         workingObjectPatch: {
           doNotWriteToContext: true,
           includeHistory: false,

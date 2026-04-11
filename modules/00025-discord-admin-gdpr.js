@@ -138,7 +138,7 @@ export default async function getDiscordAdminGdpr(coreData) {
   if (cmd !== "gdpr") return coreData;
 
   const targetUserId = String(wo?.admin?.userId || "");
-  const channelId = String(wo?.admin?.channelId || wo?.channelID || "");
+  const channelId = String(wo?.admin?.channelId || wo?.channelId || "");
   const sub = String(wo?.admin?.subcommand || "").toLowerCase();
 
   const rawVal = getAdminOptionValue(wo?.admin?.options);

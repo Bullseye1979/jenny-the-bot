@@ -301,7 +301,7 @@ async function getDiarizeWithSamples(filePath, { model, fallbackModel, language,
   }
 
   const url           = getAudioTranscribeUrl(endpoint);
-  const channelId     = String(wo.channelID || "");
+  const channelId     = String(wo.channelId || "");
   const chunkMB       = Number.isFinite(diarizeChunkMB) && diarizeChunkMB > 0 ? diarizeChunkMB : DEFAULT_DIARIZE_CHUNK_MB;
   const bitrate       = Number.isFinite(opusBitrateKbps) && opusBitrateKbps > 0 ? opusBitrateKbps : DEFAULT_OPUS_BITRATE_KBPS;
   const diarizeChunkS = mbToChunkDurationS(chunkMB, bitrate);

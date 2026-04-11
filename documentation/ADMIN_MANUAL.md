@@ -1182,7 +1182,7 @@ Visual config editor served on a dedicated port. Objects render as collapsible c
 
 #### config.webpage-chat
 
-Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-chat` is a pure HTTP handler — it sets up the `workingObject` (channelID, payload, subchannel, contextSize) and returns; the AI pipeline modules (01000–01003) then process the request naturally. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table. Prompt, persona, and instructions come only from channel config and manifests, not from the subchannel table.
+Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-chat` is a pure HTTP handler — it sets up the `workingObject` (`channelId`, `payload`, `subchannel`, `contextSize`) and returns; the AI pipeline modules (01000–01003) then process the request naturally. Subchannels allow scoped conversation threads per channel, stored in the `chat_subchannels` DB table. Prompt, persona, and instructions come only from channel config and manifests, not from the subchannel table.
 
 ```jsonc
 {
@@ -1198,7 +1198,7 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
     "chats": [
       {
         "label":     "General",
-        "channelID": "YOUR_CHANNEL_ID",
+        "channelId": "YOUR_CHANNEL_ID",
         "apiUrl":    "http://localhost:3400/api",
         "apiSecret": "your-secret-here",
         "roles":     []
@@ -1217,9 +1217,9 @@ Serves the **AI chat SPA** (`GET /chat`) on a dedicated port. `00048-webpage-cha
 | `systemPrompt` | Optional system prompt prepended to every AI call (default `""`) |
 | `contextSize` | Recent user turns to include in AI context (default `20`) |
 | `maxTokens` | Max tokens in AI response (default `1024`) |
-| `toolStatusPollMs` | Polling interval in ms for the toolcall status display inside the thinking bubble (default `500`). The frontend polls `GET /chat/api/toolstatus?channelID=<id>` at this rate while waiting for an AI response. |
+| `toolStatusPollMs` | Polling interval in ms for the toolcall status display inside the thinking bubble (default `500`). The frontend polls `GET /chat/api/toolstatus?channelId=<id>` at this rate while waiting for an AI response. |
 | `chats[].label` | Display name in the channel selector |
-| `chats[].channelID` | Channel ID used as context scope |
+| `chats[].channelId` | Channel ID used as context scope |
 | `chats[].apiUrl` | Internal API endpoint for this chat (default `http://localhost:3400/api`). Per-chat override — each entry can point to a different API. |
 | `chats[].apiSecret` | Placeholder name resolved from `bot_secrets` at runtime via `getSecret()`. Sent as `Authorization: Bearer` with every AI request and file upload proxy request. Must match the `apiSecret` in `core-channel-config`. Falls back to top-level `cfg.apiSecret` if omitted. Leave empty if no token gate is active. |
 | `chats[].roles` | Optional role restriction for this chat entry |
@@ -1274,7 +1274,7 @@ Runs scheduled background jobs.
       "id":        "my-job",
       "cron":      "*/1 * * * *",
       "enabled":   true,
-      "channelID": "DISCORD_CHANNEL_ID"
+"channelId": "DISCORD_CHANNEL_ID"
     }
   ]
 }
@@ -1288,7 +1288,7 @@ Runs scheduled background jobs.
 | `jobs[].id` | string | Unique job ID |
 | `jobs[].cron` | string | Cron expression (`* * * * *` or `*/N * * * *`) |
 | `jobs[].enabled` | boolean | Job enabled/disabled |
-| `jobs[].channelID` | string | Target Discord channel ID |
+| `jobs[].channelId` | string | Target Discord channel ID |
 
 ---
 
@@ -1724,7 +1724,7 @@ The same synthesis path is also used for async subagent completions in the webpa
 
 #### config.webpage-router
 
-Maps HTTP endpoints (by port + path prefix) to named flows and sets `wo.channelID` from the request. This runs before `core-channel-config` (module 00010), allowing per-flow `core-channel-config` overrides to apply to web endpoints the same way they apply to Discord channels.
+Maps HTTP endpoints (by port + path prefix) to named flows and sets `wo.channelId` from the request. This runs before `core-channel-config` (module 00010), allowing per-flow `core-channel-config` overrides to apply to web endpoints the same way they apply to Discord channels.
 
 **Use case:** Give `/voice` or `/wiki` requests their own named flow so that `core-channel-config` can apply a `flows[].flowMatch` override for that specific flow (e.g. a different trigger word on the voice page).
 
@@ -1754,7 +1754,7 @@ Maps HTTP endpoints (by port + path prefix) to named flows and sets `wo.channelI
 | `routes[].port` | number | HTTP port to match |
 | `routes[].pathPrefix` | string | URL path prefix to match (e.g. `"/voice"`, `"/wiki"`) |
 | `routes[].flow` | string | Value written to `wo.flow` (used by `core-channel-config` `flowMatch`) |
-| `routes[].channelIdSource` | string | How `wo.channelID` is derived. Strategies: `"query:<param>"` — from URL query string param; `"path:<N>"` — path segment N after the prefix (0-based); any other string — treated as a literal static channel ID |
+| `routes[].channelIdSource` | string | How `wo.channelId` is derived. Strategies: `"query:<param>"` — from URL query string param; `"path:<N>"` — path segment N after the prefix (0-based); any other string — treated as a literal static channel ID |
 | `routes[].removeModules` | array | Optional list of module filename prefixes (e.g. `"00043-webpage-bard"`) to skip for this route. Appended to `wo.flowModuleRemove` before the pipeline runs. |
 
 **`core-channel-config` flow overrides example:**
@@ -1986,7 +1986,7 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 | `flow` | `"discord"` |
 | `turnId` | Monotonic ULID (26 characters) |
 | `payload` | Message content |
-| `channelID` | Channel ID |
+| `channelId` | Channel ID |
 | `userId` | Discord user ID of the author |
 | `authorDisplayname` | Display name of the author |
 | `guildId` | Guild ID |
@@ -2058,17 +2058,17 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 | `GET` | `/health` | None | Returns `{ ok: true, botname }` — used by reverse proxy health checks |
 | `POST` | `/api` | Bearer | Synchronous AI pipeline; returns `{ ok, response, turnId, ... }` |
 | `GET` | `/toolcall` | Bearer | Poll global tool-call status from registry |
-| `GET` | `/toolcall?channelID=<id>` | Bearer | Poll channel-specific tool-call status (browser extension, chat UI) |
-| `GET` | `/context?channelID=<id>` | Bearer | Read recent conversation history for a channel; optional `?limit=N` |
+| `GET` | `/toolcall?channelId=<id>` | Bearer | Poll channel-specific tool-call status (browser extension, chat UI) |
+| `GET` | `/context?channelId=<id>` | Bearer | Read recent conversation history for a channel; optional `?limit=N` |
 | `POST` | `/api/spawn` | Bearer | Spawn async subagent job; returns `{ ok, jobId, projectId }` immediately |
-| `GET` | `/api/jobs?channelID=<id>` | Bearer | List all async jobs whose `callerChannelId` matches the given channel. Webpage voice fallback entries may include `audioBase64` and `audioMime`. |
+| `GET` | `/api/jobs?channelId=<id>` | Bearer | List all async jobs whose `callerChannelId` matches the given channel. Webpage voice fallback entries may include `audioBase64` and `audioMime`. |
 | `POST` | `/upload` | Bearer | Upload a file (raw body, `X-Filename` header); returns `{ ok, filename, url }` |
 
 **POST /api request:**
 ```json
 {
   "payload":              "What is the weather in Berlin?",
-  "channelID":            "optional-channel-id",
+  "channelId":            "optional-channel-id",
   "userId":               "optional-user-id",
   "subchannel":           "optional-subchannel-id",
   "doNotWriteToContext":  true,
@@ -2089,9 +2089,9 @@ Flows are event sources that create a `workingObject` and trigger the module pip
   "ok":             true,
   "flow":           "api",
 "turnId":         "01JXXXXXXXXXXXXXXXXXXXXX",
-  "channelID":      "optional-channel-id",
+  "channelId":      "optional-channel-id",
   "subchannel":     "optional-subchannel-id",
-  "channelallowed": true,
+  "channelAllowed": true,
   "response":       "The weather in Berlin is...",
   "toolCallLog":    [...],
   "subagentLog":    [...],
@@ -2104,7 +2104,7 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 **POST /api/spawn request:**
 ```json
 {
-  "channelID":        "subagent-develop",
+  "channelId":        "subagent-develop",
   "payload":          "Write a Python script that ...",
   "userId":           "",
   "guildId":          "",
@@ -2156,7 +2156,7 @@ Also supports `*/N * * * *` (every N minutes).
 **Purpose:** Registry-triggered flow for async tool-call tracking
 
 **Flow:**
-1. An AI module deposits `{ name, flow }` into the global `status:tool` registry key (channel-specific `status:tool:<channelID>` key stores only the tool name string)
+1. An AI module deposits `{ name, flow }` into the global `status:tool` registry key (channel-specific `status:tool:<channelId>` key stores only the tool name string)
 2. `flows/toolcall.js` polls the key every 400 ms; when hasTool or identity changes it triggers the `toolcall` flow
 3. `discord-status-apply` reads the tool entry, checks the `flow` field against `allowedFlows`, and updates Discord presence only if the originating flow is permitted
 
@@ -2171,14 +2171,14 @@ Also supports `*/N * * * *` (every N minutes).
 
 **Chat** (`modules/00048-webpage-chat.js`, `GET /chat`)
 - Channel dropdown populated from `webpage-chat.chats[]` in `core.json`
-- `00048` is a **pure HTTP handler** — for AI requests it makes an internal `POST` to the API flow and returns `{ response }` as JSON. The AI pipeline (model, tools, persona, context) is fully controlled by `core-channel-config` for the given `channelID`. `apiUrl` and `apiSecret` are read **per chat entry** from `webpage-chat.chats[x].apiUrl` / `.apiSecret` — different chats can use different endpoints and secrets.
+- `00048` is a **pure HTTP handler** — for AI requests it makes an internal `POST` to the API flow and returns `{ response }` as JSON. The AI pipeline (model, tools, persona, context) is fully controlled by `core-channel-config` for the given `channelId`. `apiUrl` and `apiSecret` are read **per chat entry** from `webpage-chat.chats[x].apiUrl` / `.apiSecret` — different chats can use different endpoints and secrets.
 - **Channel config:** per-channel AI settings (model, persona, systemPrompt, tools, etc.) live in `core-channel-config` — the same entries used by Discord and the browser extension.
 - **Subchannels:** create, rename, and delete separate conversation threads from the UI; each subchannel has its own isolated context history stored in the `chat_subchannels` DB table. The subchannel ID is forwarded in the internal API call so the API pipeline can scope context reads and writes to that subchannel.
 - **Context writing:** handled by `00072-api-add-context` (user message) and `01004-core-ai-context-writer` (AI response) on the API side — `00048` does not write to context directly.
 - Last N context entries loaded from MySQL on channel/subchannel select (controlled by `contextSize`)
 - Large scrollable message window (top) + auto-resize input (bottom)
 - Enter = send, Shift+Enter = newline
-- **Thinking indicator with tool name:** the currently active tool is shown next to the animated dots. The chat frontend opens a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelID=<id>` and receives an event only when the active tool changes — no repeated polling overhead. The server checks the registry at `toolStatusPollMs` ms intervals and pushes a `data:` event when the value changes. The stream is opened at chat start and closed when the page unloads.
+- **Thinking indicator with tool name:** the currently active tool is shown next to the animated dots. The chat frontend opens a persistent SSE connection to `GET <basePath>/api/toolstatus/stream?channelId=<id>` and receives an event only when the active tool changes — no repeated polling overhead. The server checks the registry at `toolStatusPollMs` ms intervals and pushes a `data:` event when the value changes. The stream is opened at chat start and closed when the page unloads.
 - **Markdown rendering:** `#`/`##`/`###` headings, bold/italic, fenced and inline code, blockquotes, lists, and `---` HR are fully rendered in chat bubbles
 - **Link parser & media embeds:** URLs become clickable links; YouTube/Vimeo URLs embed an inline player; `.mp4/.webm/.ogg` render a `<video>` player; image URLs render inline (broken images auto-removed)
 
@@ -2291,10 +2291,10 @@ Multiple modules can share a single port. Each module routes by URL path:
 | **Persistent side panel** | Opens as a browser side panel (not a popup) — stays open while you browse other pages or click elsewhere |
 | **Chat UI** | Full chat UI with markdown rendering, link/video embeds and toolcall display |
 | **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
-| **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelID=<id>` every 800 ms (per-channel) |
+| **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelId=<id>` every 800 ms (per-channel) |
 | **Gallery upload** | Upload images to the bot's Gallery via drag-and-drop or click. Requires `webBaseUrl` to be configured and an active login session on the Jenny web interface. |
 | **Auth status bar** | Displays the logged-in username (from the Jenny web session) at the top of the popup. Shows a **Login** link when not authenticated and a **Logout** link when logged in. Requires `webBaseUrl` to be configured. |
-| **Options page** | `apiUrl`, `channelID`, `apiSecret`, `webBaseUrl` stored in `chrome.storage.sync` |
+| **Options page** | `apiUrl`, `channelId`, `apiSecret`, `webBaseUrl` stored in `chrome.storage.sync` |
 
 #### Installation (developer mode)
 
@@ -2332,7 +2332,7 @@ The `browser-extension` channel is pre-configured in `core.json`. Key overrides:
 }
 ```
 
-Add `{ "label": "Browser Extension", "channelID": "browser-extension", "roles": [] }` to `webpage-chat.chats[]` to monitor the extension's chat history in the admin panel.
+Add `{ "label": "Browser Extension", "channelId": "browser-extension", "roles": [] }` to `webpage-chat.chats[]` to monitor the extension's chat history in the admin panel.
 
 ---
 
@@ -2384,10 +2384,10 @@ export default async function myModule(coreData) {
 | No. | File | Purpose |
 |---|---|---|
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
-| 00007 | `webpage-router` | Maps HTTP port + path to a named flow and sets `wo.channelID`. Runs before `core-channel-config` so that flow-specific overrides (e.g. different trigger word for `/voice`) can be applied. Config key: `webpage-router`. Active only in `webpage` flow. |
+| 00007 | `webpage-router` | Maps HTTP port + path to a named flow and sets `wo.channelId`. Runs before `core-channel-config` so that flow-specific overrides (e.g. different trigger word for `/voice`) can be applied. Config key: `webpage-router`. Active only in `webpage` flow. |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
 | 00012 | `subchannel-config` | Lightweight compatibility hook for subchannel-aware runs. When `wo.subchannel` is set, the module leaves prompt fields untouched and lets the rest of the pipeline use the subchannel only as a context scope selector. |
-| 00020 | `core-channel-gate` | Checks whether the bot is allowed to respond in this channel — sets `wo.stop = true` when `wo.channelallowed` is falsy |
+| 00020 | `core-channel-gate` | Checks whether the bot is allowed to respond in this channel — sets `wo.stop = true` when `wo.channelAllowed` is falsy |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
 | 00025 | `discord-admin-gdpr` | Handles admin GDPR management commands |
@@ -2407,7 +2407,7 @@ export default async function myModule(coreData) {
 | 00043 | `webpage-bard` | Bard music library manager SPA (port 3114, `/bard`) — tiered access (allowedRoles = basic listener access, adminRoles = full upload/manage rights, no matching role = 403 deny); bulk auto-tag upload, tag editor, play-preview buttons, live Now Playing card. Reads `bard:registry`, `bard:stream`, `bard:labels` from registry via `getItem` for the `/api/nowplaying` endpoint. |
 | 00044 | `webpage-config-editor` | JSON config editor SPA; serves `GET /config` and `GET|POST /config/api/config` on the configured port within the webpage flow. |
 | 00047 | `webpage-voice` | Webpage voice interface — three-tab SPA (Voice / Speakers / Review). Voice tab: always-on mic + meeting recorder. Speakers tab: register known voices with sample audio for automatic speaker identification. Review tab: inspect diarized sessions, correct speaker assignments, and apply the final transcript to the channel context via `POST /voice/api/session/:id/apply`. On Apply: rebuilds transcript with DB speaker names, sets `authorName` to participant list, optionally purges context, writes via `setContext`, deletes session. |
-| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (channelID, payload, subchannel, contextSize) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled by the API-side modules, not inline here. Subchannel names are stored in `chat_subchannels`; no prompt fields are stored there. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. Admin commands (`/purgedb`, `/freeze`, `/rebuilddb`) are **not** handled inline here — they pass through the api proxy to `localhost:3400/api` where `00055-core-admin-commands` handles them. The proxy request body includes `guildId` so downstream modules can identify the originating guild. |
+| 00048 | `webpage-chat` | AI chat SPA; serves `GET /chat`, `/chat/api/chats`, `/chat/api/context`, `POST /chat/api/chat`, and subchannel CRUD endpoints (`GET/POST/PATCH/DELETE /chat/api/subchannels`). **Pure HTTP handler** — sets up `wo` fields (`channelId`, `payload`, `subchannel`, `contextSize`) from the request and returns. The AI pipeline modules (01000–01003) handle the AI call naturally. Context writing is handled by the API-side modules, not inline here. Subchannel names are stored in `chat_subchannels`; no prompt fields are stored there. When the user's role is not in `allowedRoles`, serves a styled **403 Access Denied** page (with navigation menu and a link to `/`) instead of redirecting — prevents redirect loops on ports without a root handler. Admin commands (`/purgedb`, `/freeze`, `/rebuilddb`) are **not** handled inline here — they pass through the api proxy to `localhost:3400/api` where `00055-core-admin-commands` handles them. The proxy request body includes `guildId` so downstream modules can identify the originating guild. |
 | 00049 | `webpage-inpainting` | Inpainting SPA; serves `GET /inpainting` and API routes on port 3113 |
 | 00050 | `discord-purge` | Discord message deletion commands. `/purge` (slash command, discord-admin flow) deletes Discord channel messages with rate-limit backoff. `!purge [N]` (discord DM flow only) deletes up to N bot messages from the DM channel. These are Discord-specific operations — they delete actual Discord messages, not DB rows. DB-level commands (`purgedb`, `freeze`, `rebuilddb`) are handled by `00055-core-admin-commands`. |
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
@@ -2433,7 +2433,7 @@ export default async function myModule(coreData) {
 | 00074 | `core-trigger-gate` | Flow-agnostic trigger gate. Stops the pipeline when `wo.payload` does not start with the configured trigger word. |
 | 00075 | *(deleted)* | `discord-trigger-gate` has been removed. Flow-agnostic replacement: `00074-core-trigger-gate`. |
 | 00080 | `discord-reaction-start` | Adds a progress reaction emoji to the user's message |
-| 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelID` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. Retrieval planning, compression, and indexing live in `core/context.js`, not in the loader. |
+| 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelId` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. Retrieval planning, compression, and indexing live in `core/context.js`, not in the loader. |
 
 ---
 
@@ -2563,7 +2563,7 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 |---|---|---|
 | 02000 | `moderation-output` | Content filtering; can suppress or replace the response |
 | 03000 | `discord-status-apply` | Applies the generated Discord presence status. Uses `wo.response` from the AI module; falls back to the `status:ai` registry cache, then to `placeholderText`. If the AI returns `[Empty AI response]` or `[Empty response]`, the presence is set to `"..."` instead of showing the literal marker string. Tool-call status (e.g. `"⏳ Generating an image …"`) takes priority over AI-generated text — but only if the originating flow matches `cfg.allowedFlows`. Set `allowedFlows` to `["discord","discord-voice"]` to prevent API/webpage tool calls from appearing in Discord presence. Default is `[]` (all flows shown). |
-| 07000 | `core-add-id` | Appends `id=<callerChannelId>` to eligible artifact links; falls back to `wo.channelID` only when no caller channel is present |
+| 07000 | `core-add-id` | Appends `id=<callerChannelId>` to eligible artifact links; falls back to `wo.channelId` only when no caller channel is present |
 | 08000 | `discord-text-output` | Formats the response as a Discord embed; creates reasoning thread if present |
 | 08050 | `bard-label-output` | Parses `wo.response` from `core-ai-completions` in the `bard-label-gen` flow into a **6-position structured label array** `[location, situation, mood1, mood2, mood3, mood4]`. Applies **category-based position rescue**: scans all 6 AI values and assigns each to the correct slot by checking `wo._bardLocations` / `wo._bardSituations` regardless of where the AI placed them (e.g. `'',dungeon,joy,fun,tense,battle` → `dungeon,battle,joy,fun,tense,''`). Unknown words at positions 0/1 are accepted as fallback. Mood slots are validated against `wo._bardValidTags`; invalid entries are replaced with empty string. Writes `bard:labels:{channelId}` and `bard:lastrun:{channelId}` only on success (prevents context window from advancing on AI failure). |
 | 08100 | `core-voice-tts` | Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Parses `[speaker: <voice>]` tags in `wo.response` to split into voice segments, sanitizes text, calls the OpenAI TTS API for each segment (parallel, concurrency 2). Output format is controlled by `wo.ttsFormat` / `cfg.ttsFormat` (default `"opus"` for Discord, `"mp3"` for webpage). Outputs `wo.ttsSegments = [{voice, text, buffer}]` and `wo.ttsDefaultVoice` |
@@ -3187,7 +3187,7 @@ Also add `3124` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`, a
 ```json
 "cron": {
   "jobs": [
-    { "id": "cron-graph-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelID": "cron-graph-token-refresh" }
+{ "id": "cron-graph-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelId": "cron-graph-token-refresh" }
   ]
 }
 ```
@@ -3430,7 +3430,7 @@ import {
 
 **Timeline summary prompt source:** The active timeline summarizer prompt is configured in `core.json` under `config.context.timelineSummaryPrompt`. It is not hardcoded in `core/context.js`.
 
-**`contextChannelId`:** Both `setContext` and `getContext` use `wo.contextChannelId || wo.channelID` as the storage key. Setting `wo.contextChannelId` redirects all context reads and writes to a different channel ID without changing `wo.channelID`. This is used in scenarios where one virtual channel (e.g. a subagent channel) should read or write history belonging to a different channel.
+**`contextChannelId`:** Both `setContext` and `getContext` use `wo.contextChannelId || wo.channelId` as the storage key. Setting `wo.contextChannelId` redirects all context reads and writes to a different channel ID without changing `wo.channelId`. This is used in scenarios where one virtual channel (e.g. a subagent channel) should read or write history belonging to a different channel.
 
 **`userId` resolution in `setContext`:** The `userId` stored in the DB is resolved automatically using the following priority chain — callers do **not** need to populate it manually:
 1. `record.userId` (if the caller explicitly passes one)
@@ -4400,12 +4400,12 @@ Prompt field convention for subagents:
 - `GET /chat` — renders the chat SPA
 - `GET /chat/style.css` — serves shared CSS
 - `GET /chat/api/chats` — returns list of available chat channels (role-filtered)
-- `GET /chat/api/context?channelID=xxx` — fetches message history for a channel
+- `GET /chat/api/context?channelId=xxx` — fetches message history for a channel
 - `POST /chat/api/chat` — receives a user message; `00048` forwards it to the internal API flow (`POST /api`) and returns `{ response }` directly as JSON
 - `POST /chat/api/upload` — server-side file upload proxy; accepts raw binary body with `Content-Type` and `X-Filename` headers; forwards to `cfg.apiUrl` → `/upload` with optional Bearer token; returns `{ ok, url }` or error JSON
 - Subchannel CRUD: `GET/POST/PATCH/DELETE /chat/api/subchannels`
 
-**Architecture note:** `00048-webpage-chat` is a pure HTTP handler. On `POST /chat/api/chat` it makes an internal `POST http://localhost:3400/api` call with `channelID`, `payload`, `userId`, and `subchannel`. All AI processing (model, tools, persona, context write) happens inside the API pipeline — `00048` does not interact with AI or context directly. Channel config comes from `core-channel-config` (same entries used by Discord and the browser extension).
+**Architecture note:** `00048-webpage-chat` is a pure HTTP handler. On `POST /chat/api/chat` it makes an internal `POST http://localhost:3400/api` call with `channelId`, `payload`, `userId`, and `subchannel`. All AI processing (model, tools, persona, context write) happens inside the API pipeline — `00048` does not interact with AI or context directly. Channel config comes from `core-channel-config` (same entries used by Discord and the browser extension).
 
 **File attachment UI:**
 - 📎 attach button in the chat footer opens a file picker
@@ -4675,7 +4675,7 @@ The wiki module no longer imports AI modules directly. `callPipelineForArticle` 
 Key points:
 - The wiki AI call is fully isolated from the Discord/API flow context
 - All AI parameters come from the `api-channel-config` entry for the wiki's channel
-- `channelID` is set to the wiki's channel ID for timeline and history tool calls
+- `channelId` is set to the wiki's channel ID for timeline and history tool calls
 - Article generation never writes to the conversation context (`doNotWriteToContext: true` in the API payload)
 - After the AI returns the article JSON, `callPipelineForArticle` reads the model from the wiki's own channel overrides (`channel.overrides.model` → `cfg.overrides.model`, same chain used by `callPipelineForImageOnly`) and stores it in `article._model`, which is persisted to `wiki_articles.model` and shown at the bottom of the article page as "Generated by …". This maps directly to `webpage-wiki.overrides.model` (global) or the per-channel `overrides.model` in `webpage-wiki.channels[]`.
 
@@ -4841,7 +4841,7 @@ Add `3118` to `config.webpage.ports[]` and `config.webpage-auth.ports[]`.
 - `GET /timeline/api/record?ctx_id=` — loads one timeline row for editing
 - `PATCH /timeline/api/record` — updates one editable field; body: `{ctx_id, field, value}`
 - `DELETE /timeline/api/delete` — bulk-delete rows; body: `{ids: [id, ...]}`
-- `DELETE /timeline/api/delete-channels` — bulk-delete rows by `channel_id`; body: `{channelIDs: [...]}`
+- `DELETE /timeline/api/delete-channels` — bulk-delete rows by `channel_id`; body: `{channelIds: [...]}`
 
 **Why this matters with purge/freeze:**
 - `setPurgeContext` deletes non-frozen timeline rows for full-channel purges
@@ -4947,7 +4947,7 @@ When `?transcribeOnly=1` is sent and at least one speaker has a sample, `getDiar
 
 | Field | Value | Description |
 |---|---|---|
-| `wo.channelID` | from `?channelId=` | Channel for AI context |
+| `wo.channelId` | from `?channelId=` | Channel for AI context |
 | `wo.audioFile` | path to converted WAV | Input for `core-voice-transcribe` |
 | `wo.transcribeAudio` | `true` | Triggers transcription |
 | `wo.synthesizeSpeech` | `true` | Triggers TTS (always-on only) |
@@ -5053,7 +5053,7 @@ The inpainting module provides a browser-based image editing tool that lets user
 | `?src=<url>` | Pre-load an external image (converted to a proxy URL to bypass CORS) |
 | `?image=<url>` | Alias for `?src=` |
 | `?url=<url>` | Alias for `?src=` |
-| `?id=<channelID>` | Sets the callback channel ID for origin whitelisting |
+| `?id=<channelId>` | Sets the callback channel ID for origin whitelisting |
 
 External images are automatically routed through `/inpainting/proxy?url=<encoded>` to bypass browser CORS restrictions.
 
@@ -5646,7 +5646,7 @@ Add the cron job to `core.json`:
 ```json
 "cron": {
   "jobs": [
-    { "id": "cron-graph-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelID": "cron-graph-token-refresh" }
+{ "id": "cron-graph-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelId": "cron-graph-token-refresh" }
   ]
 }
 ```
@@ -5804,7 +5804,7 @@ Add the cron job to `core.json`:
 ```json
 "cron": {
   "jobs": [
-    { "id": "cron-spotify-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelID": "cron-spotify-token-refresh" }
+{ "id": "cron-spotify-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelId": "cron-spotify-token-refresh" }
   ]
 }
 ```
@@ -6185,7 +6185,7 @@ This means the label-gen AI call:
 - Runs with `temperature: 0.3`, `maxTokens: 80`, no tools, no history
 - Does **not** write to the conversation context (`doNotWriteToContext: true`)
 
-**One guild per cron tick.** If the cron job's `channelID` matches a session's text channel ID, that guild is processed. Otherwise the first session with new context is chosen. For multi-guild setups, configure one cron job per guild with a different `channelID`.
+**One guild per cron tick.** If the cron job's `channelId` matches a session's text channel ID, that guild is processed. Otherwise the first session with new context is chosen. For multi-guild setups, configure one cron job per guild with a different `channelId`.
 
 ### Setup
 
@@ -6249,7 +6249,7 @@ The subagent system allows the main AI to delegate tasks to isolated sub-process
 3. The API flow loads `core-channel-config` for that virtual channel, and the spawned subagent uses the target virtual channel's own `systemPrompt`, `persona`, and `instructions`.
 4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery then happens via the subagent poll flows to the originating channel. Web delivery may apply a final caller-channel persona pass before returning the answer to the user.
 
-The caller's channel ID (`wo.channelID`) and channel ID list (`wo.channelIds`) are forwarded automatically. When the tool call sets `includeCallerContext: true`, the spawned subagent preloads the original caller context source (`callerContextChannelId` plus grouped `callerChannelIds`) using the target subagent channel's own `contextSize` and `compressedContextElements` overrides. Caller persona, caller system prompt, and caller instructions are not injected into the spawned subagent. The subagent answers in its own target-channel role, and only the later delivery layer may restyle that output for the caller channel.
+The caller's channel ID (`wo.channelId`) and channel ID list (`wo.channelIds`) are forwarded automatically. When the tool call sets `includeCallerContext: true`, the spawned subagent preloads the original caller context source (`callerContextChannelId` plus grouped `callerChannelIds`) using the target subagent channel's own `contextSize` and `compressedContextElements` overrides. Caller persona, caller system prompt, and caller instructions are not injected into the spawned subagent. The subagent answers in its own target-channel role, and only the later delivery layer may restyle that output for the caller channel.
 
 If the subagent task text omits source URLs that are still present in the caller payload, `getSubAgent` automatically appends those missing URLs in a `[SOURCE URLS]` block before spawning. This keeps webpage, browser-extension, and similar URL-driven requests grounded in the original link even when the main AI compresses the task too aggressively.
 

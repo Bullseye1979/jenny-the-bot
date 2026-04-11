@@ -30,8 +30,9 @@ export default async function getDiscordAddContext(coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
   const text = typeof wo?.payload === "string" ? wo.payload.trim() : "";
+  const channelId = getString(wo.channelId || "");
   log("Begin append message to context");
-  if (!wo.db || !wo.flow || !wo.channelID || !text) {
+  if (!wo.db || !wo.flow || !channelId || !text) {
     log("Missing required fields: db, flow, id, or payload", "error");
     return coreData;
   }
@@ -44,7 +45,7 @@ export default async function getDiscordAddContext(coreData) {
     turnId: turnId,
     content: getString(text),
     authorName: getString(wo.authorDisplayName || wo.authorDisplayname || ""),
-    channelId: getString(wo.channelID || ""),
+    channelId: channelId,
     messageId: getString(wo.messageId || ""),
     replyToId: getString(wo.replyToId || "") || undefined,
     files: files.length ? files : undefined,

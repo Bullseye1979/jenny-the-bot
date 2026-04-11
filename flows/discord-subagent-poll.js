@@ -58,7 +58,7 @@ async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   const _rc = createRunCore();
   const _wo = (_rc.workingObject ||= {});
   _wo.flow                = _targetFlow;
-  _wo.channelID           = job.callerChannelId;
+  _wo.channelId           = job.callerChannelId;
   _wo.guildId             = String(job.guildId || "");
   _wo.userId              = String(job.userId || "");
   _wo.authorDisplayname   = String(job.authorDisplayname || "");
@@ -139,8 +139,9 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
       try { deleteItem(_key); } catch { }
       logSubagent("info", "discord-poll", "job_deleted", { jobId: _job.jobId });
 
-      if (_job.callerContextChannelID) {
-        const _parentProjectId = String(_job.callerContextChannelID).replace(/^project-/, "");
+      const _parentContextChannelId = String(_job.callerContextChannelId || _job.callerContextChannelID || "").trim();
+      if (_parentContextChannelId) {
+        const _parentProjectId = _parentContextChannelId.replace(/^project-/, "");
         const _result = _job.status === "done"
           ? String(_job.result || "").trim()
           : `Background task failed: ${_job.error || "unknown error"}`;

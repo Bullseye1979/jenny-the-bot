@@ -72,7 +72,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
   const text = typeof wo.payload === "string" ? wo.payload.trim() : "";
   if (!text) return coreData;
 
-  if (!wo.db || !wo.flow || !wo.channelID) {
+  if (!wo.db || !wo.flow || !wo.channelId) {
     log("Missing db/flow/channelID — skipping context write", "warn", { moduleName: MODULE_NAME });
     return coreData;
   }
@@ -92,7 +92,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
           content:    seg.text,
           userId:     seg.label,
           authorName: "",
-          channelId:  String(wo.channelID),
+          channelId:  String(wo.channelId),
           messageId:  String(wo.messageId || ""),
           source:     "voice-transcription"
         });
@@ -106,7 +106,7 @@ export default async function getWebpageVoiceAddContext(coreData) {
         content:    text,
         userId:     "A",
         authorName: "",
-        channelId:  String(wo.channelID),
+        channelId:  String(wo.channelId),
         messageId:  String(wo.messageId || ""),
         source:     "voice-transcription"
       });

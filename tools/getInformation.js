@@ -683,7 +683,7 @@ async function getInformationInvoke(args, coreData) {
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
 
-  const primaryChannelId = String(wo?.callerChannelId || wo?.channelID || "").trim();
+  const primaryChannelId = String(wo?.callerChannelId || wo?.channelId || "").trim();
   const woCallerChannelIds = Array.isArray(wo?.callerChannelIds)
     ? wo.callerChannelIds.map(c => String(c || "").trim()).filter(Boolean)
     : [];
@@ -697,7 +697,7 @@ async function getInformationInvoke(args, coreData) {
   for (const cid of extraChannelIds) channelIdSet.add(cid);
   const channelIds = [...channelIdSet];
 
-  if (!channelIds.length) return { error: "ERROR: channelId missing (wo.channelID / wo.channelIds)" };
+  if (!channelIds.length) return { error: "ERROR: channelId missing (wo.channelId / wo.channelIds)" };
 
   const mainChannelId = primaryChannelId || channelIds[0];
   const groups = getNormalizeGroupsFromArgs(args);

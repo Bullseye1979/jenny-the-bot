@@ -102,7 +102,7 @@ function getToolcallLogBase(wo) {
   return {
     ts: new Date().toISOString(),
     turnId: String(wo.turnId || wo.callerTurnId || ""),
-    channel: String(wo.channelID || ""),
+    channel: String(wo.channelId || ""),
     callerChannel: String(wo.callerChannelId || ""),
     flow: String(wo.flow || "")
   };

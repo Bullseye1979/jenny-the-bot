@@ -429,7 +429,7 @@ function startToolcallPoll() {
     if (!requestPending) { stopToolcallPoll(); toolEl.classList.remove('active'); return; }
     var cid = getSelectedChannelId();
     if (!cid) return;
-    fetch(getApiBase() + '/toolcall?channelID=' + encodeURIComponent(cid))
+    fetch(getApiBase() + '/toolcall?channelId=' + encodeURIComponent(cid))
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(d) {
         if (!d) return;
@@ -449,7 +449,7 @@ function stopToolcallPoll() {
 function startAsyncSSE(channelId) {
   stopAsyncSSE();
   if (!window.EventSource || !channelId) return;
-  var sseUrl = '/voice/api/async-results/stream?channelID=' + encodeURIComponent(channelId);
+  var sseUrl = '/voice/api/async-results/stream?channelId=' + encodeURIComponent(channelId);
   asyncSseSource = new EventSource(sseUrl);
   asyncSseSource.onmessage = function(e) {
     try {
@@ -472,7 +472,7 @@ function startJobPoll(channelId) {
   jobPollEmptyCount = 0; jobPollDeadline = Date.now() + 600000;
   jobPollTimer = setInterval(function() {
     if (Date.now() > jobPollDeadline) { stopJobPoll(); return; }
-    fetch('/voice/api/jobs?channelID=' + encodeURIComponent(channelId) + '&consume=true')
+    fetch('/voice/api/jobs?channelId=' + encodeURIComponent(channelId) + '&consume=true')
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var jobs = d && Array.isArray(d.jobs) ? d.jobs : [];
@@ -1310,12 +1310,12 @@ export default async function getWebpageVoice(coreData) {
 
     try {
       if (method === "GET" && urlPath === ROUTE_API + "/jobs") {
-        const _jChanID  = params.get("channelID") || "";
+        const _jobChannelId = params.get("channelId") || "";
         const _jConsume = params.get("consume") === "true";
-        if (!_jChanID) { sendJson(res, 400, { error: "channelID_required" }); wo.jump = true; wo.jumpReason = "api_handled"; return coreData; }
+        if (!_jobChannelId) { sendJson(res, 400, { error: "channelId_required" }); wo.jump = true; wo.jumpReason = "api_handled"; return coreData; }
         const _jApiBase   = String(cfg.apiUrl || "http://localhost:3400/api").replace(/\/api\/?$/, "");
         const _jApiSecret = await getSecret(wo, String(cfg.apiSecret || "").trim());
-        const _jUrl       = _jApiBase + "/api/jobs?channelID=" + encodeURIComponent(_jChanID) + (_jConsume ? "&consume=true" : "");
+        const _jUrl       = _jApiBase + "/api/jobs?channelId=" + encodeURIComponent(_jobChannelId) + (_jConsume ? "&consume=true" : "");
         const _jHeaders   = {};
         if (_jApiSecret) _jHeaders["Authorization"] = `Bearer ${_jApiSecret}`;
         try {
@@ -1439,12 +1439,12 @@ export default async function getWebpageVoice(coreData) {
 
         const chunks = await listChunksForSession(pool, sessionId);
 
-        const prevChannelId = wo.channelID;
+      const prevChannelId = wo.channelId;
         try {
-          wo.channelID = String(sess.channelId || "").trim();
-          if (!wo.channelID) throw new Error("session_missing_channel_id");
+      wo.channelId = String(sess.channelId || "").trim();
+      if (!wo.channelId) throw new Error("session_missing_channel_id");
 
-          if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(wo.channelID)) {
+      if (Array.isArray(cfg.clearContextChannels) && cfg.clearContextChannels.includes(wo.channelId)) {
             await setPurgeContext(wo);
           }
 
@@ -1476,14 +1476,14 @@ export default async function getWebpageVoice(coreData) {
 
           await deleteSession(pool, sessionId);
 
-          sendJson(res, 200, { ok: true, words, channelId: wo.channelID });
+        sendJson(res, 200, { ok: true, words, channelId: wo.channelId });
           wo.jump = true; wo.jumpReason = "api_handled"; return coreData;
         } catch (e) {
           log("Apply session failed", "error", { moduleName: MODULE_NAME, error: e?.message, sessionId, storedChannelId: sess.channelId || null });
           sendJson(res, 500, { error: "apply_failed", detail: String(e?.message || e) });
           wo.jump = true; wo.jumpReason = "api_error"; return coreData;
         } finally {
-          wo.channelID = prevChannelId;
+      wo.channelId = prevChannelId;
         }
       }
 

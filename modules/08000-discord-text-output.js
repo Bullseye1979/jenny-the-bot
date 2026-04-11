@@ -772,9 +772,9 @@ export default async function getDiscordTextOutput(coreData) {
     return coreData;
   }
 
-  const channelId = String(wo.channelID || "");
+  const channelId = String(wo.channelId || "");
   if (!channelId) {
-    log("Missing wo.channelID – cannot resolve channel.", "warn");
+    log("Missing wo.channelId – cannot resolve channel.", "warn");
     return coreData;
   }
 

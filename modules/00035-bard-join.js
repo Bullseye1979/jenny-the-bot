@@ -82,7 +82,7 @@ function getDetectCommand(wo, cfg) {
 }
 
 function getChannelId(wo) {
-  return String(wo?.admin?.channelId || wo?.channelID || "");
+  return String(wo?.admin?.channelId || wo?.channelId || "");
 }
 
 

@@ -252,7 +252,7 @@ function isBearerValid(req, baseCore) {
   return getBearerToken(req) === secret;
 }
 
-async function getContextSnapshot(baseCore, channelID, limit) {
+async function getContextSnapshot(baseCore, channelId, limit) {
   const n = Number(limit);
   const size = Number.isFinite(n) ? Math.max(1, Math.min(500, Math.floor(n))) : 100;
 
@@ -260,7 +260,7 @@ async function getContextSnapshot(baseCore, channelID, limit) {
 
   const wo = {
     ...woBase,
-    channelID: String(channelID || ""),
+    channelId: String(channelId || ""),
     contextSize: size,
     simplifiedContext: true,
     detailedContext: false,
@@ -317,9 +317,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
       try {
         const _tcUrlObj = new URL(req.url, `http://localhost:${port}`);
-        const _tcChannelID = String(_tcUrlObj.searchParams.get("channelID") || "").trim();
-        const effectiveKey = _tcChannelID
-          ? toolcallRegistryKey + ":" + _tcChannelID
+        const _tcChannelId = String(_tcUrlObj.searchParams.get("channelID") || _tcUrlObj.searchParams.get("channelId") || "").trim();
+        const effectiveKey = _tcChannelId
+          ? toolcallRegistryKey + ":" + _tcChannelId
           : toolcallRegistryKey;
         const snapshot = await getToolcallSnapshot(effectiveKey);
         return getJson(res, 200, { ...snapshot, botname: getBotname(undefined, baseCore) });
@@ -341,15 +341,15 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
       try {
         const _ctxUrlObj = new URL(req.url, `http://localhost:${port}`);
-        const _ctxChannelID = String(_ctxUrlObj.searchParams.get("channelID") || "").trim();
+        const _ctxChannelId = String(_ctxUrlObj.searchParams.get("channelID") || _ctxUrlObj.searchParams.get("channelId") || "").trim();
         const _ctxLimit = String(_ctxUrlObj.searchParams.get("limit") || "").trim();
 
-        if (!_ctxChannelID) {
-          return getJson(res, 400, { ok: false, error: "channelID_required", botname: getBotname(undefined, baseCore) });
+        if (!_ctxChannelId) {
+          return getJson(res, 400, { ok: false, error: "channelId_required", botname: getBotname(undefined, baseCore) });
         }
 
-        const msgs = await getContextSnapshot(baseCore, _ctxChannelID, _ctxLimit);
-        return getJson(res, 200, { ok: true, channelID: _ctxChannelID, count: msgs.length, messages: msgs, botname: getBotname(undefined, baseCore) });
+        const msgs = await getContextSnapshot(baseCore, _ctxChannelId, _ctxLimit);
+        return getJson(res, 200, { ok: true, channelId: _ctxChannelId, count: msgs.length, messages: msgs, botname: getBotname(undefined, baseCore) });
       } catch (e) {
         return getJson(res, 500, {
           ok: false,
@@ -400,15 +400,16 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         return getJson(res, 400, { ok: false, error: "invalid_json" });
       }
 
-      if (!parsedSpawnBody?.channelID || !parsedSpawnBody?.payload) {
-        return getJson(res, 400, { ok: false, error: "channelID_and_payload_required" });
+      const spawnChannelId = String(parsedSpawnBody?.channelId || parsedSpawnBody?.channelID || "").trim();
+      if (!spawnChannelId || !parsedSpawnBody?.payload) {
+        return getJson(res, 400, { ok: false, error: "channelId_and_payload_required" });
       }
 
       const jobId = getUlid();
       const projectId = parsedSpawnBody.projectId ? String(parsedSpawnBody.projectId) : getUlid();
       const _isResume = !!parsedSpawnBody.projectId;
-      const _spawnCallerChannelId = parsedSpawnBody.callerChannelId ? String(parsedSpawnBody.callerChannelId) : String(parsedSpawnBody.channelID);
-      const _spawnCallerContextChannelID = parsedSpawnBody.callerContextChannelID ? String(parsedSpawnBody.callerContextChannelID) : "";
+      const _spawnCallerChannelId = parsedSpawnBody.callerChannelId ? String(parsedSpawnBody.callerChannelId) : spawnChannelId;
+      const _spawnCallerContextChannelId = parsedSpawnBody.callerContextChannelId ? String(parsedSpawnBody.callerContextChannelId) : String(parsedSpawnBody.callerContextChannelID || "");
       const _spawnCallerFlow = parsedSpawnBody.callerFlow ? String(parsedSpawnBody.callerFlow) : "";
       const _spawnToolcallScope = parsedSpawnBody.toolcallScope ? String(parsedSpawnBody.toolcallScope) : "";
       const _spawnCallerTurnId = parsedSpawnBody.callerTurnId ? String(parsedSpawnBody.callerTurnId) : "";
@@ -418,7 +419,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       const _spawnAgentDepth = Math.max(0, Number(parsedSpawnBody.agentDepth) || 0);
       const _spawnAgentType = parsedSpawnBody.agentType ? String(parsedSpawnBody.agentType) : "";
       const _spawnIncludeCallerContext = parsedSpawnBody.includeCallerContext === true;
-      const _spawnContextSourceChannelID = parsedSpawnBody.contextSourceChannelID ? String(parsedSpawnBody.contextSourceChannelID) : "";
+      const _spawnContextSourceChannelId = parsedSpawnBody.contextSourceChannelId ? String(parsedSpawnBody.contextSourceChannelId) : String(parsedSpawnBody.contextSourceChannelID || "");
       const _spawnContextSourceChannelIds = Array.isArray(parsedSpawnBody.contextSourceChannelIds)
         ? parsedSpawnBody.contextSourceChannelIds.map(c => String(c || "").trim()).filter(Boolean)
         : [];
@@ -429,9 +430,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         resume: _isResume,
         agentType:              _spawnAgentType,
         agentDepth:             _spawnAgentDepth,
-        subagentChannelID:      String(parsedSpawnBody.channelID),
+        subagentChannelId:      spawnChannelId,
         callerChannelId:        _spawnCallerChannelId,
-        callerContextChannelID: _spawnCallerContextChannelID || null,
+        callerContextChannelId: _spawnCallerContextChannelId || null,
         callerFlow:             _spawnCallerFlow || null,
         callerTurnId:           _spawnCallerTurnId || null,
         userId:                 _spawnUserId || null,
@@ -447,7 +448,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         jobId,
         projectId,
         callerChannelId: _spawnCallerChannelId,
-        callerContextChannelID: _spawnCallerContextChannelID || null,
+        callerContextChannelId: _spawnCallerContextChannelId || null,
         callerFlow: _spawnCallerFlow,
         callerTurnId: _spawnCallerTurnId,
         userId: _spawnUserId,
@@ -469,9 +470,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       await putItem({
         projectId,
         agentType:              _spawnAgentType,
-        channelId:              String(parsedSpawnBody.channelID),
+        channelId:              spawnChannelId,
         callerChannelId:        _spawnCallerChannelId,
-        callerContextChannelID: _spawnCallerContextChannelID || null,
+        callerContextChannelId: _spawnCallerContextChannelId || null,
         callerFlow:             _spawnCallerFlow || "discord",
         userId:                 _spawnUserId,
         guildId:                _spawnGuildId,
@@ -486,7 +487,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       _spawnWo.flow = "api";
       _spawnWo.turnId = getUlid();
       _spawnWo.aborted = false;
-      _spawnWo.channelID = String(parsedSpawnBody.channelID);
+      _spawnWo.channelId = spawnChannelId;
       _spawnWo.userId = _spawnUserId;
       _spawnWo.guildId = _spawnGuildId;
       _spawnWo.payload = String(parsedSpawnBody.payload);
@@ -495,11 +496,13 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       _spawnWo.timestamp = new Date().toISOString();
       _spawnWo.httpAuthorization = String(req.headers?.authorization || "");
       _spawnWo.callerChannelId = _spawnCallerChannelId;
-      if (_spawnCallerContextChannelID) _spawnWo.callerContextChannelID = _spawnCallerContextChannelID;
+      if (_spawnCallerContextChannelId) {
+        _spawnWo.callerContextChannelId = _spawnCallerContextChannelId;
+      }
       _spawnWo.callerTurnId = _spawnCallerTurnId;
       _spawnWo.agentDepth = _spawnAgentDepth;
       _spawnWo.agentType = _spawnAgentType;
-      _spawnWo.contextChannelID = "project-" + projectId;
+      _spawnWo.contextChannelId = "project-" + projectId;
       _spawnWo.includeCallerContext = _spawnIncludeCallerContext;
       if (_spawnCallerFlow) _spawnWo.callerFlow = _spawnCallerFlow;
       if (_spawnToolcallScope) _spawnWo.toolcallScope = _spawnToolcallScope;
@@ -510,14 +513,16 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       }
 
       if (_spawnIncludeCallerContext) {
-        if (_spawnContextSourceChannelID) _spawnWo.contextSourceChannelID = _spawnContextSourceChannelID;
+        if (_spawnContextSourceChannelId) {
+          _spawnWo.contextSourceChannelId = _spawnContextSourceChannelId;
+        }
         if (_spawnContextSourceChannelIds.length) _spawnWo.contextSourceChannelIds = _spawnContextSourceChannelIds;
       }
 
       const _spawnSubchannel = String(parsedSpawnBody.subchannel || "").trim();
       if (_spawnSubchannel) _spawnWo.subchannel = _spawnSubchannel;
 
-      logSubagent("info", "spawn", "iife_started", { jobId, projectId, agentType: _spawnAgentType, subagentChannelID: String(parsedSpawnBody.channelID) });
+      logSubagent("info", "spawn", "iife_started", { jobId, projectId, agentType: _spawnAgentType, subagentChannelId: spawnChannelId });
 
       (async () => {
         const _spawnStartMs = Date.now();
@@ -556,10 +561,10 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       }
 
       const _jobsUrlObj = new URL(req.url, `http://localhost:${port}`);
-      const _jobsChannelID = String(_jobsUrlObj.searchParams.get("channelID") || "").trim();
+      const _jobsChannelId = String(_jobsUrlObj.searchParams.get("channelID") || _jobsUrlObj.searchParams.get("channelId") || "").trim();
 
-      if (!_jobsChannelID) {
-        return getJson(res, 400, { ok: false, error: "channelID_required" });
+      if (!_jobsChannelId) {
+        return getJson(res, 400, { ok: false, error: "channelId_required" });
       }
 
       try {
@@ -569,7 +574,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         const _toDelete = [];
         for (const _jk of _jobKeys) {
           const _job = getItem(_jk);
-          if (!_job || _job.callerChannelId !== _jobsChannelID) continue;
+          if (!_job || _job.callerChannelId !== _jobsChannelId) continue;
           _jobList.push({
             jobId: _job.jobId,
             projectId: _job.projectId,
@@ -592,7 +597,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
           }
         }
         for (const _dk of _toDelete) { try { deleteItem(_dk); } catch {} }
-        return getJson(res, 200, { ok: true, channelID: _jobsChannelID, jobs: _jobList });
+        return getJson(res, 200, { ok: true, channelId: _jobsChannelId, jobs: _jobList });
       } catch (e) {
         return getJson(res, 500, { ok: false, error: "jobs_failed", reason: e?.message || String(e) });
       }
@@ -600,9 +605,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
     if (req.method === "GET" && (req.url === sseAsyncPath || req.url.startsWith(sseAsyncPath + "?"))) {
       const _sseUrl = new URL(req.url, `http://localhost:${port}`);
-      const _sseChannelID = String(_sseUrl.searchParams.get("channelID") || "").trim();
-      if (!_sseChannelID) {
-        return getJson(res, 400, { ok: false, error: "channelID_required" });
+      const _sseChannelId = String(_sseUrl.searchParams.get("channelID") || _sseUrl.searchParams.get("channelId") || "").trim();
+      if (!_sseChannelId) {
+        return getJson(res, 400, { ok: false, error: "channelId_required" });
       }
       setCorsHeaders(res);
       res.writeHead(200, {
@@ -612,13 +617,13 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         "X-Accel-Buffering": "no",
       });
       res.write(": connected\n\n");
-      registerSseConnection(_sseChannelID, res);
+      registerSseConnection(_sseChannelId, res);
       const _keepalive = setInterval(() => {
         try { res.write(": keepalive\n\n"); } catch { clearInterval(_keepalive); }
       }, 25000);
       res.on("close", () => {
         clearInterval(_keepalive);
-        unregisterSseConnection(_sseChannelID, res);
+        unregisterSseConnection(_sseChannelId, res);
       });
       return;
     }
@@ -642,14 +647,15 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       return getJson(res, 400, { error: "invalid_json", botname: getBotname(workingObject, baseCore) });
     }
 
-    if (!parsedBody?.channelID || !parsedBody?.payload) {
+    const requestChannelId = String(parsedBody?.channelId || parsedBody?.channelID || "").trim();
+    if (!requestChannelId || !parsedBody?.payload) {
       return getJson(res, 400, {
-        error: "channelID_and_payload_required",
+        error: "channelId_and_payload_required",
         botname: getBotname(workingObject, baseCore),
       });
     }
 
-    workingObject.channelID = String(parsedBody.channelID);
+    workingObject.channelId = requestChannelId;
     workingObject.userId = parsedBody.userId ? String(parsedBody.userId) : "";
     workingObject.payload = String(parsedBody.payload);
     workingObject.channelType = "API";
@@ -662,7 +668,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     if (_apiSubchannel) workingObject.subchannel = _apiSubchannel;
 
     if (parsedBody.doNotWriteToContext === true) workingObject.doNotWriteToContext = true;
-    if (parsedBody.contextChannelID) workingObject.contextChannelID = String(parsedBody.contextChannelID);
+    if (parsedBody.contextChannelId || parsedBody.contextChannelID) {
+      workingObject.contextChannelId = String(parsedBody.contextChannelId || parsedBody.contextChannelID);
+    }
     if (parsedBody.systemPromptAddition) workingObject.systemPromptAddition = String(parsedBody.systemPromptAddition);
     if (parsedBody.workingObjectPatch && typeof parsedBody.workingObjectPatch === "object") {
       applyWorkingObjectPatch(workingObject, parsedBody.workingObjectPatch);
@@ -705,10 +713,10 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     return getJson(res, 200, {
       ok: true,
       flow: "api",
-      channelID: workingObject.channelID,
+      channelId: workingObject.channelId,
       ..._subchannel && { subchannel: _subchannel },
       turnId: workingObject.turnId,
-      channelallowed: workingObject.channelallowed,
+      channelAllowed: workingObject.channelAllowed,
       response: text && text !== silenceToken ? text : "",
       toolCallLog:       Array.isArray(workingObject.toolCallLog)  ? workingObject.toolCallLog  : undefined,
       subagentLog:       Array.isArray(workingObject.subagentLog)  ? workingObject.subagentLog  : undefined,

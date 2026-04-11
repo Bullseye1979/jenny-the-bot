@@ -156,7 +156,7 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
 
   const _rc = createRunCore();
   const _wo = (_rc.workingObject ||= {});
-  _wo.channelID             = callerChannelId;
+  _wo.channelId             = callerChannelId;
   _wo.flow                  = "api";
   _wo.channelType           = "API";
   _wo.isDM                  = false;
@@ -188,7 +188,7 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
 
   _wo.payload             = _payload;
   _wo.toolChoice          = "none";
-  _wo.includeHistoryTools = false;
+  _wo.includeHistoryTools = true;
   _wo.doNotWriteToContext = true;
   _wo.__noContinuation    = true;
   _wo.timestamp           = new Date().toISOString();
@@ -221,7 +221,17 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     return "";
   }
 
-  const _response = getMergeArtifactUrlsIntoResponse(rawResult, String(_wo.response || "").trim());
+  const _personaResponse = String(_wo.response || "").trim();
+  const _effectiveResponse = _personaResponse || _rawText;
+  if (!_personaResponse && _rawText) {
+    logSubagent("warn", "poll-delivery", "persona_pass_empty_response_fallback", {
+      jobId,
+      callerChannelId,
+      rawResultLen: _rawText.length,
+    });
+  }
+
+  const _response = getMergeArtifactUrlsIntoResponse(rawResult, _effectiveResponse);
   logSubagent("info", "poll-delivery", "persona_pass_done", {
     jobId,
     durationMs:  Date.now() - _startMs,
@@ -269,22 +279,24 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
     return;
   }
 
+  const _callerContextChannelId = String(_project.callerContextChannelId || _project.callerContextChannelID || "").trim() || null;
+
   logSubagent("info", "poll-chain", "chain_project_found", {
     projectId,
     channelId:              _project.channelId,
     callerChannelId:        _project.callerChannelId || null,
     callerFlow:             _project.callerFlow || null,
-    callerContextChannelID: _project.callerContextChannelID || null,
+    callerContextChannelId: _callerContextChannelId,
     agentType:              _project.agentType || null,
     agentDepth:             _project.agentDepth ?? null,
   });
 
-  const _contextChannelID = "project-" + projectId;
-  const _contextWo = { ...(baseCore?.workingObject || {}), contextChannelID: _contextChannelID };
+  const _contextChannelId = "project-" + projectId;
+  const _contextWo = { ...(baseCore?.workingObject || {}), contextChannelId: _contextChannelId };
 
   try {
     await setWriteSubagentToolExchange(_contextWo, job, rawResult);
-    logSubagent("info", "poll-chain", "chain_context_written", { projectId, contextChannelID: _contextChannelID });
+    logSubagent("info", "poll-chain", "chain_context_written", { projectId, contextChannelId: _contextChannelId });
   } catch (e) {
     log(`Context write failed for ${projectId}: ${e?.message || String(e)}`, "error");
     logSubagent("error", "poll-chain", "chain_context_write_failed", { projectId, error: e?.message || String(e) });
@@ -294,8 +306,8 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
   const _rc = createRunCore();
   const _wo = (_rc.workingObject ||= {});
   _wo.flow              = "api";
-  _wo.channelID         = _project.callerChannelId || _project.channelId;
-  _wo.contextChannelID  = _contextChannelID;
+  _wo.channelId         = _project.callerChannelId || _project.channelId;
+  _wo.contextChannelId  = _contextChannelId;
   if (String(_project.callerFlow || "").trim()) {
     _wo.overrideFlow    = String(_project.callerFlow);
   }
@@ -307,14 +319,14 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
   _wo.agentDepth        = Number(_project.agentDepth || 0);
   _wo.agentType         = _project.agentType || "";
   _wo.toolChoice        = "none";
-  _wo.includeHistoryTools = false;
+  _wo.includeHistoryTools = true;
   _wo.doNotWriteToContext = true;
   _wo.timestamp         = new Date().toISOString();
 
   logSubagent("info", "poll-chain", "chain_api_run_start", {
     projectId,
-    channelID:        _wo.channelID,
-    contextChannelID: _contextChannelID,
+    channelId:        _wo.channelId,
+    contextChannelId: _contextChannelId,
     agentType:        _project.agentType || null,
     agentDepth:       Number(_project.agentDepth || 0),
   });
@@ -343,8 +355,8 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
 
   if (!_response) return;
 
-  if (_project.callerContextChannelID) {
-    const _grandparentProjectId = String(_project.callerContextChannelID).replace(/^project-/, "");
+  if (_callerContextChannelId) {
+    const _grandparentProjectId = _callerContextChannelId.replace(/^project-/, "");
     logSubagent("info", "poll-chain", "chain_recurse", { projectId, grandparentProjectId: _grandparentProjectId });
     await runParentChain(
       _grandparentProjectId,

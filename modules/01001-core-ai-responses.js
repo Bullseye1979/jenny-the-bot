@@ -301,7 +301,7 @@ function getRuntimeContextFromLast(wo, snapshot) {
   const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
   if (last && "content" in last) delete last.content;
   const metadata = {
-    id: String(wo?.channelID ?? ""),
+    id: String(wo?.channelId ?? ""),
     flow: String(wo?.flow ?? ""),
     clientRef: String(wo?.clientRef ?? ""),
     model: String(wo?.model ?? ""),
@@ -404,7 +404,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
     };
   }
 
-  const _tcCh = String(coreData?.workingObject?.channelID ?? "").trim();
+  const _tcCh = String(coreData?.workingObject?.channelId ?? "").trim();
   const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
   const _statusScope = getToolStatusScope(coreData?.workingObject || {});
   if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
@@ -412,7 +412,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
   const _statusToken = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
   const _statusChannelId = String(
     coreData?.workingObject?.callerChannelId ||
-    coreData?.workingObject?.channelID ||
+    coreData?.workingObject?.channelId ||
     ""
   ).trim();
   const _statusPayload = {
