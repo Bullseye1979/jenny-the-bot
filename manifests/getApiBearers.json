@@ -1,0 +1,10 @@
+{
+  "name": "getApiBearers",
+  "description": "Returns a list of available API key names (bearer tokens / credentials) that can be used as the authName parameter when calling getApi with authType \"apiKey\" or \"basic\". Call this tool first whenever you need to make an API call using a stored key or credential, to discover which key names are available. Only the names are returned — actual key values are never exposed.",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false
+  }
+}

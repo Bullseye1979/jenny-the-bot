@@ -57,6 +57,12 @@
    - [getToken](#gettoken)
    - [getBan](#getban)
    - [getGraph](#getgraph)
+   - [getSpotify](#getspotify)
+   - [getApi](#getapi)
+   - [getShell](#getshell)
+   - [getOauthProviders](#getoauthproviders)
+   - [getApiBearers](#getapibearers)
+   - [getMyConnections](#getmyconnections)
 9. [Core Infrastructure](#9-core-infrastructure)
    - 9.1 [registry.js — In-Memory Key-Value Store](#91-registryjs--in-memory-key-value-store)
    - 9.2 [context.js — MySQL Conversation Storage](#92-contextjs--mysql-conversation-storage)
@@ -94,6 +100,11 @@
    - 16.16 [Token Refresh Cron (`cron-graph-token-refresh`)](#1616-token-refresh-cron-cron-graph-token-refresh)
    - 16.17 [Spotify Auth (`/spotify-auth`)](#1617-spotify-auth-spotify-auth)
    - 16.18 [Spotify Token Refresh Cron (`cron-spotify-token-refresh`)](#1618-spotify-token-refresh-cron-cron-spotify-token-refresh)
+   - 16.19 [OAuth Manager (`/oauth`)](#1619-oauth-manager-oauth)
+   - 16.20 [OAuth Token Refresh Cron (`cron-oauth-token-refresh`)](#1620-oauth-token-refresh-cron-cron-oauth-token-refresh)
+   - 16.21 [OAuth Connections (`/connections`)](#1621-oauth-connections-connections)
+   - 16.22 [OAuth Provider Exposure (`/oauth-exposure`)](#1622-oauth-provider-exposure-oauth-exposure)
+   - 16.23 [API Key Exposure (`/bearer-exposure`)](#1623-api-key-exposure-bearer-exposure)
 17. [Bard Music System](#17-bard-music-system)
 18. [Dependencies](#18-dependencies)
 
@@ -2421,6 +2432,9 @@ export default async function myModule(coreData) {
 | 00058 | `cron-graph-token-refresh` | Cron module — refreshes expiring Microsoft Graph tokens. Queries `graph_tokens` for rows with `expires_at` within the configured buffer window and calls the MS token refresh endpoint. Skips on failure (does not delete). Only runs in the `cron-graph-token-refresh` flow (the cron job `id` must match exactly). |
 | 00061 | `webpage-spotify-auth` | Spotify OAuth2 delegated auth page (port 3125, `/spotify-auth`). Logged-in users connect or disconnect their Spotify account. Stores access + refresh tokens in `spotify_tokens` DB table. Required before the `getSpotify` tool can be used. Uses `Authorization: Basic` header for token exchange (Spotify-specific). |
 | 00062 | `cron-spotify-token-refresh` | Cron module — refreshes expiring Spotify tokens. Queries `spotify_tokens` for rows with `expires_at` within the configured buffer window. Uses `Authorization: Basic` header. Stores new refresh token if Spotify issues one. Skips on failure (does not delete). Only runs in the `cron-spotify-token-refresh` flow (the cron job `id` must match exactly). |
+| 00063 | `webpage-oauth-manager` | Admin UI and API for managing `client_credentials` OAuth2 provider registrations (port 3130, `/oauth`). Provides CRUD for `oauth_registrations`, service-token status view, and delete-with-cascade. Used to configure server-to-server providers for `getApi` with `authType: "oauth_cc"`. |
+| 00069 | `webpage-oauth-connections` | User-facing page for managing personal OAuth2 account connections (port 3131, `/connections`). Lists all `auth_code` providers with per-user connect/disconnect/renew UI and callback handler. The **Renew** button appears when a `refresh_token` is stored, allowing manual token refresh without reconnecting. Tokens stored in `oauth_tokens` keyed by Discord user ID. Used with `getApi` `authType: "oauth_user"`. |
+| 00064 | `cron-oauth-token-refresh` | Cron module — refreshes expiring OAuth2 tokens stored in `oauth_tokens` for any registered provider. Queries rows with `expires_at` within buffer window and `refresh_token IS NOT NULL`. Calls the provider's `token_url` with `grant_type=refresh_token`. Only runs in the `cron-oauth-token-refresh` flow. |
 | 00059 | `webpage-live` | Live context monitor SPA (port 3123, `/live`) — selectable channel checkboxes, field toggles (timestamp, channel, role), configurable poll interval, autoscroll toggle. Collapsible settings sidebar (◀/▶). All UI state persists in `localStorage`. Parses `json.authorName` and `json.content` from Discord context entries to display chat transcripts in real time. New messages are inserted into the DOM sorted by `ts` (tiebreaker: `ctx_id`) regardless of arrival order — each message element carries `data-ts` and `data-ctx-id` attributes so out-of-order poll responses (race condition) are placed at the correct position rather than appended at the bottom. |
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
@@ -3479,6 +3493,233 @@ Use the `id` field from search results for playlist operations; use the `uri` fi
 
 ---
 
+### getApi
+
+**File:** `tools/getApi.js`
+**Purpose:** Generic HTTP REST API caller. Makes arbitrary HTTP requests with configurable authentication. Allows the AI to access any REST API — public or protected — without requiring a dedicated tool per provider.
+
+**Authentication types:**
+
+| `authType` | Mechanism | Where credentials are stored |
+|---|---|---|
+| `none` | No auth header | — |
+| `apiKey` | `Authorization: Bearer <key>` | `bot_secrets` table, key = `authName` |
+| `basic` | `Authorization: Basic base64(user:pass)` | `bot_secrets` table, value format `user:pass` |
+| `oauth_cc` | OAuth2 Client Credentials (server-wide), `Authorization: Bearer <token>` | `oauth_registrations` table, token cached in `oauth_tokens` with `user_id = "__service__"` |
+| `oauth_user` | OAuth2 Authorization Code (per-user), `Authorization: Bearer <token>` | `oauth_registrations` table (registration), `oauth_tokens` table (token per `wo.userId`) |
+
+For `oauth_cc`: the tool fetches a new token automatically if none is cached or if the cached token has less than 60 seconds remaining. Tokens are persisted in the `oauth_tokens` table with `user_id = "__service__"`. See [OAuth Manager](#1619-oauth-manager-oauth) for registration.
+
+For `oauth_user`: the tool uses the token for the Discord user who triggered the current request (`wo.userId`). If the token is expired and a `refresh_token` exists, it refreshes automatically. If the token is missing or expired with no refresh path, the call fails with an error telling the user to reconnect at `/connections`. See [OAuth Connections](#1621-oauth-connections-connections) for user flow.
+
+**Discovery rules — how the AI finds the right `authName`:**
+
+| `authType` | Discovery tool | When to call it |
+|---|---|---|
+| `oauth_cc` | `getOauthProviders` | Always, unless the name is already known from context |
+| `apiKey`, `basic` | `getApiBearers` | Always, unless the name is already known from context |
+| `oauth_user` | `getMyConnections` | Always — returns only providers the current user has actually connected |
+| `none` | — | No discovery needed |
+
+**Returns:** `{ ok, status, body }` on success; `{ ok: false, error, status, body }` on HTTP error.
+
+**Response parsing:** `responseType=auto` (default) checks the `Content-Type` header — if it contains `application/json` the body is parsed as JSON, otherwise returned as plain text.
+
+#### toolsconfig.getApi
+
+No `toolsconfig` keys are required. The tool is stateless — all auth is resolved at call time.
+
+```json
+"getApi": {}
+```
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `url` | string | Yes | Full endpoint URL |
+| `method` | string | No | GET / POST / PUT / PATCH / DELETE. Default: `GET` |
+| `authType` | string | No | `none` / `apiKey` / `basic` / `oauth_cc` / `oauth_user`. Default: `none` |
+| `authName` | string | No | Key in `bot_secrets` (apiKey/basic) or provider name in `oauth_registrations` (oauth_cc/oauth_user) |
+| `body` | string | No | JSON body string for POST/PUT/PATCH |
+| `headers` | string | No | Additional headers as JSON object string |
+| `responseType` | string | No | `auto` / `json` / `text`. Default: `auto` |
+
+**Example — public API:**
+```
+getApi(url: "https://api.github.com/repos/owner/repo/issues", method: "GET")
+```
+
+**Example — API key:**
+```
+getApi(url: "https://api.example.com/data", authType: "apiKey", authName: "EXAMPLE_API_KEY")
+```
+Requires a `bot_secrets` row with `name = "EXAMPLE_API_KEY"` and the actual key as `value`.
+
+**Example — OAuth2 client credentials:**
+```
+getApi(url: "https://api.example.com/resource", authType: "oauth_cc", authName: "example-provider")
+```
+Requires an `oauth_registrations` row with `name = "example-provider"` registered via the [OAuth Manager](#1619-oauth-manager-oauth).
+
+**Example — OAuth2 per-user token:**
+```
+getApi(url: "https://api.example.com/me", authType: "oauth_user", authName: "example-provider")
+```
+Requires an `oauth_registrations` row with `name = "example-provider"` (flow = `auth_code`) registered by an admin, and the requesting user must have connected their account at `/connections`.
+
+---
+
+### getShell
+
+**File:** `tools/getShell.js`
+**Purpose:** Executes a shell command on the server as the bot user and returns stdout/stderr. Enables the AI to perform server administration, check system status, list files, run scripts, and query service state.
+
+**Security model:** Commands run as the bot's OS user with its existing filesystem and network permissions — no additional sandboxing is needed or added. `shell: false` is always enforced, which means shell operators (`&&`, `|`, `;`, `$()`) are not interpreted — all arguments must be passed in the `args` array. An optional allowlist restricts which executables are permitted.
+
+**Returns:** `{ ok, exitCode, output, stdout, stderr }`. `ok` is `true` when `exitCode === 0`. On timeout: `{ ok: false, error: "timeout", exitCode: null, output, stdout, stderr }`.
+
+| Field | Description |
+|---|---|
+| `ok` | `true` when exit code is 0 |
+| `exitCode` | Numeric exit code; `null` on timeout or spawn error |
+| `output` | **Primary field** — stdout and stderr combined in a single string. Stderr is prefixed with `[stderr]`. If both are empty: `"(no output)"`. The AI manifest requires this field to be relayed verbatim to the user. |
+| `stdout` | Raw stdout string; `null` if empty |
+| `stderr` | Raw stderr string; `null` if empty |
+
+Output is truncated at `maxOutputBytes` (default 8192 bytes) per stream with a `[output truncated]` suffix. `stdio: ['ignore', 'pipe', 'pipe']` is set explicitly so both streams are always captured regardless of platform defaults.
+
+#### toolsconfig.getShell
+
+```json
+"getShell": {
+  "allowlist": ["ls", "df", "systemctl", "journalctl", "whoami", "python3"],
+  "maxOutputBytes": 16384,
+  "defaultTimeoutMs": 15000
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `allowlist` | string[] | `null` (all allowed) | If set, only listed executable names are permitted |
+| `maxOutputBytes` | number | `8192` | Maximum combined stdout/stderr bytes before truncation |
+| `defaultTimeoutMs` | number | `15000` | Default command timeout in milliseconds |
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `command` | string | Yes | Executable name (no path), e.g. `"ls"`, `"systemctl"`, `"python3"` |
+| `args` | string[] | No | Argument array, e.g. `["-la", "/var/log"]`. Default: `[]` |
+| `cwd` | string | No | Working directory for the command |
+| `timeoutMs` | number | No | Override timeout for this specific call |
+
+**Example channel config (admin-only shell access):**
+```json
+{
+  "channelMatch": ["admin-shell"],
+  "overrides": {
+    "apiEnabled": 1,
+    "apiSecret": "SECRET:admin_shell_secret",
+    "persona": "You are a server admin assistant.",
+    "tools": ["getShell"],
+    "toolsconfig": {
+      "getShell": {
+        "allowlist": ["ls", "df", "free", "systemctl", "journalctl", "ps", "whoami", "uname"]
+      }
+    }
+  }
+}
+```
+
+---
+
+### getOauthProviders
+
+**File:** `tools/getOauthProviders.js`
+**Purpose:** Discovery tool. Returns the list of OAuth2 client_credentials provider names (and metadata) that are currently exposed to the AI. Call this before `getApi` with `authType: "oauth_cc"` to discover available `authName` values.
+
+**Returns:** `{ ok, providers: [{ name, description, scope }] }`. If no providers are exposed, returns an empty array with a note.
+
+**No parameters required.**
+
+**Exposure control:** Which providers appear in the result is controlled by the admin at [/oauth-exposure](#1622-oauth-provider-exposure-oauth-exposure). By default nothing is exposed — the admin must toggle each provider on.
+
+#### toolsconfig.getOauthProviders
+
+No `toolsconfig` keys. The tool is stateless and reads from the `tool_exposure` database table.
+
+```json
+"getOauthProviders": {}
+```
+
+**Typical AI usage flow:**
+1. AI calls `getOauthProviders()` → receives `{ providers: [{ name: "discord", description: "Discord API" }] }`
+2. AI calls `getApi(url: "https://discord.com/api/users/@me", authType: "oauth_cc", authName: "discord")`
+
+---
+
+### getApiBearers
+
+**File:** `tools/getApiBearers.js`
+**Purpose:** Discovery tool. Returns the list of API key names (bearer tokens / credentials) that are currently exposed to the AI. Call this before `getApi` with `authType: "apiKey"` or `"basic"` to discover available `authName` values. Key **values** are never returned — only names and descriptions.
+
+**Returns:** `{ ok, bearers: [{ name, description }] }`. If no keys are exposed, returns an empty array with a note.
+
+**No parameters required.**
+
+**Exposure control:** Which key names appear in the result is controlled by the admin at [/bearer-exposure](#1623-api-key-exposure-bearer-exposure). By default nothing is exposed.
+
+#### toolsconfig.getApiBearers
+
+No `toolsconfig` keys. The tool reads exposed names from the `tool_exposure` table and cross-references with `bot_secrets`.
+
+```json
+"getApiBearers": {}
+```
+
+**Typical AI usage flow:**
+1. AI calls `getApiBearers()` → receives `{ bearers: [{ name: "WEATHER_API", description: "OpenWeather API key" }] }`
+2. AI calls `getApi(url: "https://api.openweathermap.org/data/3.0/...", authType: "apiKey", authName: "WEATHER_API")`
+
+---
+
+### getMyConnections
+
+**File:** `tools/getMyConnections.js`
+**Purpose:** Discovery tool for per-user OAuth2 connections. Returns the list of OAuth2 providers that the **current Discord user** has personally connected at `/connections`. The AI calls this before `getApi` with `authType: "oauth_user"` to find out which provider names are available for this specific user.
+
+**Returns:** `{ ok, connections: [{ name, description, scope, status }] }`.
+
+| `status` value | Meaning |
+|---|---|
+| `active` | Token is valid and can be used immediately |
+| `expired_renewable` | Token is expired but a `refresh_token` exists — `getApi` will refresh it automatically |
+| `expired` | Token is expired and has no refresh path — user must reconnect at `/connections` |
+
+If the user has no connections or no `auth_code` providers are configured, returns an empty array with an explanatory note.
+
+**No parameters required.**
+
+**User context:** Uses `wo.userId` (the Discord user ID of the message sender). Returns an error if called outside a user-triggered conversation.
+
+**No exposure control:** Unlike `getOauthProviders` and `getApiBearers`, this tool does not use the `tool_exposure` table — it always returns the actual connected providers for the current user. The relevant admin control is at `/oauth` (which providers exist) and at the user level (which ones they have connected).
+
+#### toolsconfig.getMyConnections
+
+No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `oauth_tokens`.
+
+```json
+"getMyConnections": {}
+```
+
+**Typical AI usage flow:**
+1. User says "show me my Spotify playlists"
+2. AI calls `getMyConnections()` → receives `{ connections: [{ name: "spotify", description: "Spotify", status: "active" }] }`
+3. AI calls `getApi(url: "https://api.spotify.com/v1/me/playlists", authType: "oauth_user", authName: "spotify")`
+
+---
+
 ## 9. Core Infrastructure
 
 ### 9.1 registry.js — In-Memory Key-Value Store
@@ -4273,6 +4514,108 @@ CREATE TABLE IF NOT EXISTS spotify_auth_states (
 
 Rows are deleted on use (callback validates + deletes). Expired rows are cleaned up on each auth request.
 
+### Table: oauth_registrations
+
+Created automatically on first access to `/oauth` by module `00063-webpage-oauth-manager.js`. Stores OAuth2 provider configurations used by the `getApi` tool.
+
+| Column | Type | Description |
+|---|---|---|
+| `name` | VARCHAR(64) PRIMARY KEY | Unique provider identifier, e.g. `"github"`, `"jira-cloud"` |
+| `flow` | VARCHAR(32) NOT NULL | `"client_credentials"` or `"auth_code"` |
+| `token_url` | TEXT NOT NULL | Token endpoint URL |
+| `auth_url` | TEXT NULL | Authorization endpoint URL (only for `auth_code` flow) |
+| `client_id` | TEXT NOT NULL | OAuth2 client ID |
+| `client_secret` | TEXT NOT NULL | OAuth2 client secret |
+| `scope` | TEXT NULL | Space-separated OAuth2 scopes |
+| `description` | VARCHAR(255) NULL | Human-readable description |
+| `created_at` | BIGINT NOT NULL | Creation time (Unix epoch ms) |
+| `updated_at` | BIGINT NOT NULL | Last update time (Unix epoch ms) |
+
+```sql
+CREATE TABLE IF NOT EXISTS oauth_registrations (
+  name          VARCHAR(64)  NOT NULL,
+  flow          VARCHAR(32)  NOT NULL,
+  token_url     TEXT         NOT NULL,
+  auth_url      TEXT         NULL,
+  client_id     TEXT         NOT NULL,
+  client_secret TEXT         NOT NULL,
+  scope         TEXT         NULL,
+  description   VARCHAR(255) NULL,
+  created_at    BIGINT       NOT NULL,
+  updated_at    BIGINT       NOT NULL,
+  PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: oauth_tokens
+
+Created automatically alongside `oauth_registrations`. Stores cached OAuth2 access tokens per provider and user.
+
+| Column | Type | Description |
+|---|---|---|
+| `provider` | VARCHAR(64) NOT NULL | Provider name (matches `oauth_registrations.name`) |
+| `user_id` | VARCHAR(64) NOT NULL | Discord user ID, or `"__service__"` for client_credentials tokens |
+| `access_token` | MEDIUMTEXT NOT NULL | Current OAuth2 access token |
+| `refresh_token` | MEDIUMTEXT NULL | OAuth2 refresh token (if issued) |
+| `expires_at` | BIGINT NOT NULL | Token expiry as Unix epoch milliseconds |
+| `scope` | TEXT NULL | Scopes granted for this token |
+| `updated_at` | BIGINT NOT NULL | Last update time (Unix epoch ms) |
+
+Primary key: `(provider, user_id)`.
+
+```sql
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  provider      VARCHAR(64)  NOT NULL,
+  user_id       VARCHAR(64)  NOT NULL,
+  access_token  MEDIUMTEXT   NOT NULL,
+  refresh_token MEDIUMTEXT   NULL,
+  expires_at    BIGINT       NOT NULL,
+  scope         TEXT         NULL,
+  updated_at    BIGINT       NOT NULL,
+  PRIMARY KEY (provider, user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: oauth_auth_states
+
+Created automatically alongside `oauth_registrations`. Stores CSRF state tokens for OAuth2 Authorization Code flows.
+
+| Column | Type | Description |
+|---|---|---|
+| `state_token` | VARCHAR(64) PRIMARY KEY | Random CSRF state token (TTL = 10 minutes) |
+| `provider` | VARCHAR(64) NOT NULL | Provider name that initiated the flow |
+| `user_id` | VARCHAR(64) NOT NULL | Discord user ID that initiated the flow |
+| `created_at` | BIGINT NOT NULL | Creation time (Unix epoch ms) |
+| `expires_at` | BIGINT NOT NULL | Expiry time (Unix epoch ms) |
+
+```sql
+CREATE TABLE IF NOT EXISTS oauth_auth_states (
+  state_token   VARCHAR(64)  NOT NULL,
+  provider      VARCHAR(64)  NOT NULL,
+  user_id       VARCHAR(64)  NOT NULL,
+  created_at    BIGINT       NOT NULL,
+  expires_at    BIGINT       NOT NULL,
+  PRIMARY KEY (state_token)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Table: tool_exposure
+
+Created automatically by `shared/tools/tool-exposure.js` on first request to `/oauth-exposure` or `/bearer-exposure`. Controls which OAuth providers and API key names are visible to the AI via `getOauthProviders` and `getApiBearers`.
+
+| Column | Type | Description |
+|---|---|---|
+| `tool_name` | VARCHAR(64) NOT NULL | Tool that reads this entry: `"getOauthProviders"` or `"getApiBearers"` |
+| `item_name` | VARCHAR(64) NOT NULL | Provider name or secret key name being exposed |
+
+```sql
+CREATE TABLE IF NOT EXISTS tool_exposure (
+  tool_name  VARCHAR(64) NOT NULL,
+  item_name  VARCHAR(64) NOT NULL,
+  PRIMARY KEY (tool_name, item_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
 ---
 
 ## 14. Reverse Proxy (Caddy)
@@ -4342,6 +4685,20 @@ Both domains share a single Caddyfile block. Caddy obtains a TLS certificate for
 | `/live`, `/live/*` | 3123 | `webpage-live` |
 | `/graph-auth`, `/graph-auth/*` | 3124 | `webpage-graph-auth` |
 | `/spotify-auth`, `/spotify-auth/*` | 3125 | `webpage-spotify-auth` |
+| `/manifests`, `/manifests/*` | 3126 | `webpage-manifests` |
+| `/subagents`, `/subagents/*` | 3127 | `webpage-subagents` |
+| `/timeline`, `/timeline/*` | 3128 | `webpage-timeline` |
+| `/channels`, `/channels/*` | 3129 | `webpage-channel-config-manager` |
+| `/oauth`, `/oauth/*` | 3130 | `webpage-oauth-manager` |
+| `/connections`, `/connections/*` | 3131 | `webpage-oauth-connections` |
+| `/oauth-exposure`, `/oauth-exposure/*` | 3132 | `webpage-oauth-exposure` |
+| `/bearer-exposure`, `/bearer-exposure/*` | 3133 | `webpage-bearer-exposure` |
+| `/setup`, `/setup/*` | 3400 | Main API (setup wizard) |
+| `/api`, `/api/*` | 3400 | Main API |
+| `/upload`, `/upload/*` | 3400 | Main API |
+| `/toolcall`, `/toolcall/*` | 3400 | Main API |
+| `/health`, `/health/*` | 3400 | Main API |
+| `/documents/*` | 3000 | Static file server |
 | `/` (root) | — | redirects to `/chat` (302) |
 
 **Access control for unknown paths:**
@@ -4357,29 +4714,69 @@ jenny.ralfreschke.de, jenny.xbullseyegaming.de {
 
     @allowed remote_ip 10.99.0.0/24 10.99.1.0/24 192.168.178.0/24 127.0.0.1/8
 
-    @auth       { path /auth /auth/* }
-    @config     { path /config /config/* }
-    @chat       { path /chat /chat/* }
-    @inpainting { path /inpainting /inpainting/* }
-    @bard       { path /bard /bard/* }
-    @dashboard  { path /dashboard /dashboard/* }
-    @docs       { path /docs /docs/* }
-    @wiki       { path /wiki /wiki/* }
-    @context    { path /context /context/* }
-    @voice      { path /voice /voice/* }
-    @graphauth  { path /graph-auth /graph-auth/* }
+    # ── Path matchers ────────────────────────────────────────────────
+    @auth            { path /auth /auth/* }
+    @config          { path /config /config/* }
+    @chat            { path /chat /chat/* }
+    @inpainting      { path /inpainting /inpainting/* }
+    @bard            { path /bard /bard/* }
+    @dashboard       { path /dashboard /dashboard/* }
+    @docs            { path /docs /docs/* }
+    @wiki            { path /wiki /wiki/* }
+    @context         { path /context /context/* }
+    @voice           { path /voice /voice/* }
+    @gallery         { path /gallery /gallery/* }
+    @gdpr            { path /gdpr /gdpr/* }
+    @key-manager     { path /key-manager /key-manager/* }
+    @live            { path /live /live/* }
+    @graph-auth      { path /graph-auth /graph-auth/* }
+    @spotify-auth    { path /spotify-auth /spotify-auth/* }
+    @manifests       { path /manifests /manifests/* }
+    @subagents       { path /subagents /subagents/* }
+    @timeline        { path /timeline /timeline/* }
+    @channels        { path /channels /channels/* }
+    @oauth           { path /oauth /oauth/* }
+    @connections     { path /connections /connections/* }
+    @oauth-exposure  { path /oauth-exposure /oauth-exposure/* }
+    @bearer-exposure { path /bearer-exposure /bearer-exposure/* }
+    @setup           { path /setup /setup/* }
+    @api             { path /api /api/* }
+    @upload          { path /upload /upload/* }
+    @toolcall        { path /toolcall /toolcall/* }
+    @health          { path /health /health/* }
 
-    handle @auth       { reverse_proxy 127.0.0.1:3111 }
-    handle @config     { reverse_proxy 127.0.0.1:3111 }
-    handle @chat       { reverse_proxy 127.0.0.1:3112 }
-    handle @inpainting { reverse_proxy 127.0.0.1:3113 }
-    handle @bard       { reverse_proxy 127.0.0.1:3114 }
-    handle @dashboard  { reverse_proxy 127.0.0.1:3115 }
-    handle @docs       { reverse_proxy 127.0.0.1:3116 }
-    handle @wiki       { reverse_proxy 127.0.0.1:3117 }
-    handle @context    { reverse_proxy 127.0.0.1:3118 }
-    handle @voice      { reverse_proxy 127.0.0.1:3119 }
-    handle @graphauth  { reverse_proxy 127.0.0.1:3124 }
+    # ── Route handlers ───────────────────────────────────────────────
+    handle @auth            { reverse_proxy 127.0.0.1:3111 }
+    handle @config          { reverse_proxy 127.0.0.1:3111 }
+    handle @chat            { reverse_proxy 127.0.0.1:3112 }
+    handle @inpainting      { reverse_proxy 127.0.0.1:3113 }
+    handle @bard            { reverse_proxy 127.0.0.1:3114 }
+    handle @dashboard       { reverse_proxy 127.0.0.1:3115 }
+    handle @docs            { reverse_proxy 127.0.0.1:3116 }
+    handle @wiki            { reverse_proxy 127.0.0.1:3117 }
+    handle @context         { reverse_proxy 127.0.0.1:3118 }
+    handle @voice           { reverse_proxy 127.0.0.1:3119 }
+    handle @gallery         { reverse_proxy 127.0.0.1:3120 }
+    handle @gdpr            { reverse_proxy 127.0.0.1:3121 }
+    handle @key-manager     { reverse_proxy 127.0.0.1:3122 }
+    handle @live            { reverse_proxy 127.0.0.1:3123 }
+    handle @graph-auth      { reverse_proxy 127.0.0.1:3124 }
+    handle @spotify-auth    { reverse_proxy 127.0.0.1:3125 }
+    handle @manifests       { reverse_proxy 127.0.0.1:3126 }
+    handle @subagents       { reverse_proxy 127.0.0.1:3127 }
+    handle @timeline        { reverse_proxy 127.0.0.1:3128 }
+    handle @channels        { reverse_proxy 127.0.0.1:3129 }
+    handle @oauth           { reverse_proxy 127.0.0.1:3130 }
+    handle @connections     { reverse_proxy 127.0.0.1:3131 }
+    handle @oauth-exposure  { reverse_proxy 127.0.0.1:3132 }
+    handle @bearer-exposure { reverse_proxy 127.0.0.1:3133 }
+    handle @setup           { reverse_proxy 127.0.0.1:3400 }
+    handle @api             { reverse_proxy 127.0.0.1:3400 }
+    handle @upload          { reverse_proxy 127.0.0.1:3400 }
+    handle @toolcall        { reverse_proxy 127.0.0.1:3400 }
+    handle @health          { reverse_proxy 127.0.0.1:3400 }
+
+    handle /documents/*     { reverse_proxy 127.0.0.1:3000 }
 
     redir / /chat 302
 
@@ -4412,24 +4809,33 @@ If `redirectUri` is set to a specific URL, only that domain is used for all OAut
 
 **Full port mapping:**
 
-| Port | Service |
-|---|---|
-| 3400 | Main API + health endpoint (`ralfreschke.de/api`, `/health`, `/toolcall`) |
-| 3111 | Config Editor (`/config`) + Auth (`/auth`) |
-| 3112 | Chat SPA (`/chat`) |
-| 3113 | Inpainting SPA (`/inpainting`) + document serving |
-| 3114 | Bard UI (`/bard`, `/bard-admin`) |
-| 3115 | Live Dashboard (`/dashboard`) |
-| 3116 | Documentation (`/docs`) |
-| 3117 | AI Wiki (`/wiki`) |
-| 3118 | Context Editor (`/context`) |
-| 3119 | Webpage Voice Interface (`/voice`) |
-| 3120 | Gallery (`/gallery`) |
-| 3121 | GDPR Data Export (`/gdpr`) |
-| 3122 | Key Manager (`/key-manager`) |
-| 3123 | Live Context Monitor (`/live`) |
-| 3124 | Microsoft Graph Auth (`/graph-auth`) |
-| 3125 | Spotify Auth (`/spotify-auth`) |
+| Port | Path | Module / Service |
+|---|---|---|
+| 3000 | `/documents/*` | Static file server |
+| 3111 | `/auth`, `/config` | `webpage-auth` + `webpage-config-editor` |
+| 3112 | `/chat` | Chat SPA (`webpage-chat`) |
+| 3113 | `/inpainting` | Inpainting SPA (`webpage-inpainting`) |
+| 3114 | `/bard` | Bard UI (`webpage-bard`) |
+| 3115 | `/dashboard` | Live Dashboard (`webpage-dashboard`) |
+| 3116 | `/docs` | Documentation viewer (`webpage-documentation`) |
+| 3117 | `/wiki` | AI Wiki (`webpage-wiki`) |
+| 3118 | `/context` | Context Editor (`webpage-context`) |
+| 3119 | `/voice` | Voice Interface (`webpage-voice`) |
+| 3120 | `/gallery` | Gallery (`webpage-gallery`) |
+| 3121 | `/gdpr` | GDPR Data Export (`webpage-gdpr`) |
+| 3122 | `/key-manager` | Key Manager (`webpage-keymanager`) |
+| 3123 | `/live` | Live Context Monitor (`webpage-live`) |
+| 3124 | `/graph-auth` | Microsoft Graph Auth (`webpage-graph-auth`) |
+| 3125 | `/spotify-auth` | Spotify Auth (`webpage-spotify-auth`) |
+| 3126 | `/manifests` | Manifest viewer (`webpage-manifests`) |
+| 3127 | `/subagents` | Subagent manager (`webpage-subagents`) |
+| 3128 | `/timeline` | Timeline (`webpage-timeline`) |
+| 3129 | `/channels` | Channel Config Manager (`webpage-channel-config-manager`) |
+| 3130 | `/oauth` | OAuth Manager — client_credentials + auth_code admin (`webpage-oauth-manager`) |
+| 3131 | `/connections` | User OAuth connections (`webpage-oauth-connections`) |
+| 3132 | `/oauth-exposure` | OAuth Provider Exposure control (`webpage-oauth-exposure`) |
+| 3133 | `/bearer-exposure` | API Key Exposure control (`webpage-bearer-exposure`) |
+| 3400 | `/api`, `/upload`, `/toolcall`, `/health`, `/setup` | Main API server |
 
 ---
 
@@ -6001,6 +6407,267 @@ And add the module subscription:
   "flow": ["cron-spotify-token-refresh"]
 }
 ```
+
+---
+
+### 16.19 OAuth Manager (`/oauth`)
+
+**Module:** `modules/00063-webpage-oauth-manager.js`
+**Flow:** `webpage`
+
+Admin UI for managing server-to-server OAuth2 provider registrations (`client_credentials` flow). These are bot-wide service tokens used by `getApi` with `authType: "oauth_cc"`. For user-specific connections (`auth_code` flow), see [OAuth Connections](#1621-oauth-connections-connections).
+
+#### What it does
+
+- **Provider list:** Shows all registered `client_credentials` OAuth2 providers (name, token URL, scope, description) in a table.
+- **Add/Edit form:** Create or update a provider registration. The client secret field is write-only on edit (leave blank to keep the existing secret).
+- **Delete:** Removes the registration and all associated cached tokens from `oauth_tokens`.
+- **Service token status panel:** Shows which providers currently have a cached `__service__` token and when it expires. Refreshes every 30 seconds.
+
+#### Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/oauth` | Admin page HTML |
+| `GET` | `/oauth/api/registrations` | List `client_credentials` registrations (client_secret omitted) |
+| `POST` | `/oauth/api/registrations` | Create or update a registration |
+| `DELETE` | `/oauth/api/registrations/:name` | Delete registration and its tokens |
+| `GET` | `/oauth/api/token-status` | List all cached token rows (provider, user_id, expires_at) |
+
+#### core.json config
+
+```json
+"webpage-oauth-manager": {
+  "flow": ["webpage"],
+  "port": 3130,
+  "basePath": "/oauth",
+  "roles": ["admin"]
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `basePath` | string | `"/oauth"` | URL prefix for all OAuth manager routes |
+| `roles` | string[] | `[]` (all allowed) | Discord roles allowed to access this page |
+
+#### How to add a new OAuth provider (client_credentials)
+
+1. Open `/oauth` in the admin panel.
+2. Click **+ Add Provider**.
+3. Fill in:
+   - **Name:** unique identifier used as `authName` in `getApi` calls (e.g. `"github"`)
+   - **Token URL:** the provider's token endpoint
+   - **Client ID / Client Secret:** app credentials from the provider's developer console
+   - **Scope:** space-separated scopes (optional, provider-dependent)
+4. Click **Save**.
+5. Use in `getApi`: `authType: "oauth_cc", authName: "github"`.
+
+The first `getApi` call will fetch and cache the token. Subsequent calls use the cached token until it expires (with a 60-second early-refresh window).
+
+#### How to add a user connection provider (auth_code)
+
+The `/oauth` admin page has a second section — **User Connection Providers (auth_code)** — below the service token section.
+
+1. Open `/oauth` in the admin panel.
+2. Scroll to **User Connection Providers** and click **+ Add Provider**.
+3. Fill in:
+   - **Name:** unique identifier used as `authName` in `getApi` calls (e.g. `"discord"`)
+   - **Authorization URL:** the provider's OAuth2 authorization endpoint (where users are redirected to log in)
+   - **Token URL:** the provider's token endpoint
+   - **Client ID / Client Secret:** app credentials from the provider's developer console
+   - **Scope:** space-separated scopes (optional, provider-dependent)
+4. Click **Save**.
+5. Register `https://jenny.ralfreschke.de/connections/<name>/callback` as a redirect URI in the provider's developer console.
+6. Users visit `/connections`, click **Connect** next to the provider, and authorize.
+
+| API Route | Description |
+|---|---|
+| `GET /oauth/api/user-providers` | List auth_code registrations (client_secret omitted) |
+| `POST /oauth/api/user-providers` | Create or update an auth_code registration |
+| `DELETE /oauth/api/user-providers/:name` | Delete registration and all user tokens |
+
+---
+
+### 16.20 OAuth Token Refresh Cron (`cron-oauth-token-refresh`)
+
+**Module:** `modules/00064-cron-oauth-token-refresh.js`
+**Flow:** `cron-oauth-token-refresh`
+
+Automatically refreshes OAuth2 tokens before they expire. Works for any provider registered in `oauth_registrations` that issues a `refresh_token`. Handles both service tokens (`user_id = "__service__"` from `client_credentials` flow) and user tokens (Discord user IDs from `auth_code` flow).
+
+**Behavior:**
+- Queries `oauth_tokens WHERE expires_at < (NOW + bufferMs) AND refresh_token IS NOT NULL`
+- For each row: looks up the `oauth_registrations` entry for `provider`
+- POSTs `grant_type=refresh_token` to the provider's `token_url` with `Authorization: Basic base64(clientId:clientSecret)`
+- On success: updates `access_token`, `refresh_token` (if the provider issues a new one), `expires_at`, `updated_at`
+- On failure: logs the error and skips — does **not** delete the row
+
+#### core.json config
+
+```json
+"cron-oauth-token-refresh": {
+  "refreshBufferMinutes": 10
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `refreshBufferMinutes` | number | `10` | Refresh tokens expiring within this many minutes |
+
+Add the cron job to `core.json`:
+
+```json
+"cron": {
+  "jobs": [
+    { "id": "cron-oauth-token-refresh", "cron": "*/5 * * * *", "enabled": true, "channelId": "cron-oauth-token-refresh" }
+  ]
+}
+```
+
+And add the module subscription:
+
+```json
+"cron-oauth-token-refresh": {
+  "flow": ["cron-oauth-token-refresh"]
+}
+```
+
+---
+
+### 16.21 OAuth Connections (`/connections`)
+
+**Module:** `modules/00069-webpage-oauth-connections.js`
+**Flow:** `webpage`
+**Port:** 3131
+
+User-facing page for managing personal OAuth2 account connections (authorization code flow). Each user connects their own account independently — the token is scoped to their Discord user ID. Once connected, `getApi` with `authType: "oauth_user"` uses their token automatically.
+
+#### What it does
+
+- **Connection overview:** Shows all registered `auth_code` OAuth2 providers with the current user's connection status (connected / not connected, token expiry).
+- **Connect:** Initiates the OAuth2 authorization code flow — redirects the user to the provider's `auth_url`, captures the code on callback, exchanges it for a token, and stores it in `oauth_tokens` keyed by `(provider, discordUserId)`.
+- **Disconnect:** Deletes the user's token row from `oauth_tokens` for that provider.
+- **Renew:** Manually triggers a token refresh using the stored `refresh_token`. The **Renew** button is shown on the provider card only when the user is connected and a `refresh_token` is available. If the `refresh_token` is missing (provider does not issue one, or was not stored), the button is not shown and the user must disconnect and reconnect to get a fresh token.
+
+#### Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/connections` | Overview page — all auth_code providers + per-user status |
+| `GET` | `/connections/:provider/login` | Initiate auth code flow (redirect to provider auth_url) |
+| `GET` | `/connections/:provider/callback` | OAuth2 callback — exchange code, store token, redirect to `/connections` |
+| `GET` | `/connections/:provider/disconnect` | Delete user's token for provider, redirect to `/connections` |
+| `GET` | `/connections/:provider/renew` | Refresh access token using stored refresh_token, redirect to `/connections` |
+
+#### core.json config
+
+```json
+"webpage-oauth-connections": {
+  "flow": ["webpage"],
+  "port": 3131,
+  "roles": ["member", "admin"]
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `port` | number | `3131` | Port this module listens on |
+| `roles` | string[] | `[]` (all allowed) | Discord roles allowed to access this page |
+| `redirectUriBase` | string | auto (from request Host) | Base URL for callback redirect URIs, e.g. `"https://jenny.ralfreschke.de/connections"`. If omitted, constructed as `https://{Host}/connections`. |
+
+#### How to set up a user-connectable provider
+
+1. Open `/oauth` in the admin panel, scroll to **User Connection Providers** and click **+ Add Provider**. See [OAuth Manager — How to add a user connection provider](#how-to-add-a-user-connection-provider-authcode) for details.
+2. Register the callback URL `https://jenny.ralfreschke.de/connections/myprovider/callback` in the OAuth provider's developer console.
+3. Users visit `/connections`, click **Connect** next to the provider, and authorize the app.
+4. The AI can now call `getApi(url: "...", authType: "oauth_user", authName: "myprovider")` to make requests on behalf of that user.
+
+#### Security notes
+
+- CSRF state tokens are 48 hex characters, stored in `oauth_auth_states`, valid for 10 minutes.
+- State is validated on callback: wrong provider or expired state → error page, no token stored.
+- Users can only disconnect their own token (scoped by `wo.webAuth.userId`).
+- The page requires login — unauthenticated requests receive a "Login Required" page.
+
+---
+
+### 16.22 OAuth Provider Exposure (`/oauth-exposure`)
+
+**Module:** `modules/00070-webpage-oauth-exposure.js`
+**Flow:** `webpage`
+**Port:** 3132
+
+Admin UI for controlling which OAuth2 `client_credentials` providers are visible to the AI via the `getOauthProviders` tool. Only exposed providers are returned by that tool — by default nothing is exposed.
+
+#### What it does
+
+Displays a table of all registered `client_credentials` providers (from `oauth_registrations`). Each row has an **Expose / Hide** toggle button. The state is persisted in the `tool_exposure` database table under `tool_name = "getOauthProviders"`.
+
+#### Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/oauth-exposure` | Admin page HTML |
+| `GET` | `/oauth-exposure/api/providers` | List all client_credentials providers + currently exposed set |
+| `POST` | `/oauth-exposure/api/providers` | Toggle a provider: `{ name, expose: true/false }` |
+
+#### core.json config
+
+```json
+"webpage-oauth-exposure": {
+  "flow": ["webpage"],
+  "port": 3132,
+  "roles": ["admin"]
+}
+```
+
+Add port 3132 to `config.webpage.ports[]` and `config.webpage-auth.ports[]`. Add the Caddy block: `@oauth-exposure { path /oauth-exposure /oauth-exposure/* }` → `reverse_proxy 127.0.0.1:3132`.
+
+#### Database
+
+Uses the shared `tool_exposure` table (created by `shared/tools/tool-exposure.js` on first request — no manual migration required):
+
+```sql
+CREATE TABLE IF NOT EXISTS tool_exposure (
+  tool_name  VARCHAR(64) NOT NULL,
+  item_name  VARCHAR(64) NOT NULL,
+  PRIMARY KEY (tool_name, item_name)
+)
+```
+
+---
+
+### 16.23 API Key Exposure (`/bearer-exposure`)
+
+**Module:** `modules/00071-webpage-bearer-exposure.js`
+**Flow:** `webpage`
+**Port:** 3133
+
+Admin UI for controlling which API key names from `bot_secrets` are visible to the AI via the `getApiBearers` tool. Key values are never exposed — only the name (and description) are returned to the AI. By default nothing is exposed.
+
+#### What it does
+
+Displays a table of all stored secrets from `bot_secrets`. Each row has an **Expose / Hide** toggle. The state is persisted in the `tool_exposure` database table under `tool_name = "getApiBearers"`. The module has **no dependency on the OAuth tables** — it only uses `listSecrets` and the `tool_exposure` table, so it operates independently even if no OAuth providers are configured.
+
+#### Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/bearer-exposure` | Admin page HTML |
+| `GET` | `/bearer-exposure/api/keys` | List all bot_secrets names + currently exposed set |
+| `POST` | `/bearer-exposure/api/keys` | Toggle a key: `{ name, expose: true/false }` |
+
+#### core.json config
+
+```json
+"webpage-bearer-exposure": {
+  "flow": ["webpage"],
+  "port": 3133,
+  "roles": ["admin"]
+}
+```
+
+Add port 3133 to `config.webpage.ports[]` and `config.webpage-auth.ports[]`. Add the Caddy block: `@bearer-exposure { path /bearer-exposure /bearer-exposure/* }` → `reverse_proxy 127.0.0.1:3133`.
 
 ---
 

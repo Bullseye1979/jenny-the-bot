@@ -1,0 +1,18 @@
+{
+  "name": "getApi",
+  "description": "Use this tool whenever you need to fetch data from or send data to any external web service, REST API, or HTTP endpoint. Use it for: looking up information from APIs, calling webhooks, reading data from web services, posting data to remote services.\nAuthentication options: none (public APIs), apiKey (Bearer token), basic (HTTP Basic), oauth_cc (OAuth2 client credentials — server-wide token), oauth_user (OAuth2 per-user token — uses the token the current user connected at /connections).\nDISCOVERY RULES — only when you do not already know the authName:\n- For authType \"oauth_cc\": call getOauthProviders first to discover available provider names.\n- For authType \"apiKey\" or \"basic\": call getApiBearers first to discover available key names.\n- For authType \"oauth_user\": call getMyConnections first to see which providers the current user has connected. Use the returned name as authName.\nDo not guess or invent authName values for oauth_cc, apiKey, or basic.\nReturns the parsed response body. Use this instead of asking the user to call the API themselves.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url":          { "type": "string", "description": "Full endpoint URL including query parameters if needed." },
+      "method":       { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"], "description": "HTTP method. Default: GET." },
+      "authType":     { "type": "string", "enum": ["none", "apiKey", "basic", "oauth_cc", "oauth_user"], "description": "Authentication type. none=no auth, apiKey=Bearer token from key manager, basic=HTTP Basic from key manager (stored as user:pass), oauth_cc=OAuth2 client credentials (server-wide token), oauth_user=OAuth2 per-user token (user must have connected at /connections). Default: none." },
+      "authName":     { "type": "string", "description": "Secret placeholder name (for apiKey/basic) or OAuth registration name (for oauth_cc/oauth_user). Required when authType is not none." },
+      "body":         { "type": "string", "description": "Request body as a JSON string. Used with POST, PUT, PATCH." },
+      "headers":      { "type": "string", "description": "Additional HTTP headers as a JSON object string, e.g. \"{\\\"X-Custom\\\": \\\"value\\\"}\"." },
+      "responseType": { "type": "string", "enum": ["auto", "json", "text"], "description": "How to parse the response. auto=detect from content-type, json=always parse as JSON, text=always return as string. Default: auto." }
+    },
+    "required": ["url"],
+    "additionalProperties": false
+  }
+}

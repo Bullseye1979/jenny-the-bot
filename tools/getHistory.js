@@ -11,36 +11,10 @@
 
 
 
-import mysql from "mysql2/promise";
+import { getEnsurePool }      from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getHistory";
-const POOLS = new Map();
-
-
-async function getPool(wo) {
-  const key = JSON.stringify({ h: wo?.db?.host, u: wo?.db?.user, d: wo?.db?.database });
-  if (POOLS.has(key)) {
-    return POOLS.get(key);
-  }
-  const pool = mysql.createPool({
-    host: wo?.db?.host,
-    user: wo?.db?.user,
-    password: wo?.db?.password,
-    database: wo?.db?.database,
-    waitForConnections: true,
-    connectionLimit: 5,
-    charset: "utf8mb4",
-    dateStrings: true
-  });
-  pool.on?.("connection", (conn) => {
-    try {
-      conn.query?.("SET time_zone = '+00:00'");
-    } catch (e) {}
-  });
-  POOLS.set(key, pool);
-  return pool;
-}
 
 
 function getPadString(n) { return String(n).padStart(2, "0"); }
@@ -246,7 +220,7 @@ async function getHistoryInvoke(args, coreData) {
   const includeToolRows = cfgTool.includeToolRows !== false;
   const includeJson = cfgTool.includeJson === true;
   const dumpMaxChars = Number.isFinite(Number(cfgTool?.dumpMaxChars)) ? Number(cfgTool.dumpMaxChars) : 60000;
-  const pool = await getPool(wo);
+  const pool = await getEnsurePool(wo);
   let rows = await getPreloadUpToCap(pool, channelIds, {
     startTs,
     endTs,

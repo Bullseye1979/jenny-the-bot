@@ -495,9 +495,7 @@ async function setSaveB64(b64, mime, baseUrl, wo) {
 
 
 async function getFetch() {
-  if (typeof globalThis.fetch === "function") return globalThis.fetch;
-  const mod = await import("node-fetch");
-  return mod.default;
+  return fetchWithTimeout;
 }
 
 

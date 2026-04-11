@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import fetch from "node-fetch";
+import { fetchWithTimeout as fetch } from "../core/fetch.js";
 import discordJs from "discord.js";
 const { EmbedBuilder } = discordJs;
 import { getItem } from "../core/registry.js";

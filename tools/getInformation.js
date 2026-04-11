@@ -10,12 +10,11 @@
 
 
 
-import mysql from "mysql2/promise";
-import { fetchWithTimeout } from "../core/fetch.js";
+import { getEnsurePool }      from "../core/context.js";
+import { fetchWithTimeout }  from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getInformation";
-const POOLS = new Map();
 
 const DEFAULT_ROWS_PER_CLUSTER   = 400;
 const DEFAULT_PAD_ROWS           = 20;
@@ -43,22 +42,6 @@ const CONTENT_EXPR = `
 const ESCAPE_CLAUSE = "ESCAPE '\\\\'";
 
 
-async function getPool(wo) {
-  const key = JSON.stringify({ h: wo?.db?.host, u: wo?.db?.user, d: wo?.db?.database });
-  if (POOLS.has(key)) return POOLS.get(key);
-  const pool = mysql.createPool({
-    host: wo?.db?.host,
-    user: wo?.db?.user,
-    password: wo?.db?.password,
-    database: wo?.db?.database,
-    waitForConnections: true,
-    connectionLimit: 5,
-    charset: "utf8mb4",
-    dateStrings: true
-  });
-  POOLS.set(key, pool);
-  return pool;
-}
 
 
 
@@ -730,7 +713,7 @@ async function getInformationInvoke(args, coreData) {
   };
 
   try {
-    const db = await getPool(wo);
+    const db = await getEnsurePool(wo);
 
     const pass1 = await getRunSearchPass(db, channelIds, groups, passOpts);
 

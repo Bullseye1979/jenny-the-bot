@@ -14,9 +14,9 @@ import { putItem, getItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
-import { readFileSync, appendFileSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { dirname, join }                           from "node:path";
+import { fileURLToPath }                           from "node:url";
 
 const _manifestDir = join(dirname(fileURLToPath(import.meta.url)), "../manifests");
 const _logDir      = join(dirname(fileURLToPath(import.meta.url)), "../logs");

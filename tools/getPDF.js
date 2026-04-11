@@ -20,8 +20,8 @@
 
 
 
-import path from "path";
-import fs from "fs/promises";
+import path from "node:path";
+import fs   from "node:fs/promises";
 import puppeteer from "puppeteer";
 import { ensureUserDir, getUniqueFilename, getUserId, getPublicBaseUrl } from "../core/file.js";
 import { getPrefixedLogger } from "../core/logging.js";

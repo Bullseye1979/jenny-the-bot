@@ -1,0 +1,10 @@
+{
+  "name": "getMyConnections",
+  "description": "Returns the list of OAuth2 providers that the current user has personally connected at /connections. Use this before calling getApi with authType \"oauth_user\" to discover which provider names (authName values) are available for this user. Only providers where the user has an active or refreshable token are returned. Each entry includes the provider name, description, scope, and status (active / expired_renewable / expired).",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false
+  }
+}

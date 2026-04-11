@@ -1,0 +1,15 @@
+{
+  "name": "getShell",
+  "description": "Executes a shell command on the server as the bot user and returns the full output.\nUse this tool to run server commands, check system status, list files, or perform administrative tasks.\nThe bot user's permissions apply — no root access, no sudo.\nAlways use args as an array; never pass shell operators (&&, |, ;) — they are ignored because shell mode is disabled.\nFor long commands, set timeoutMs explicitly.\nReturns: { ok, exitCode, output, stdout, stderr }. The field 'output' contains the complete command output (stdout and stderr combined) and MUST always be included verbatim in your response to the user. Do not summarize it.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command":   { "type": "string",  "description": "Executable name without path, e.g. \"ls\", \"systemctl\", \"python3\", \"df\"." },
+      "args":      { "type": "array",   "items": { "type": "string" }, "description": "Arguments as an array, e.g. [\"-la\", \"/var/log\"]. Default: []." },
+      "cwd":       { "type": "string",  "description": "Working directory for the command. Optional." },
+      "timeoutMs": { "type": "number",  "description": "Timeout in milliseconds. Default: 15000. Increase for slow commands." }
+    },
+    "required": ["command"],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "getOauthProviders",
+  "description": "Returns a list of available OAuth2 provider names (and optional description/scope) that can be used as the authName parameter when calling getApi with authType \"oauth_cc\" (client credentials). Call this tool first whenever you need to make an OAuth2-authenticated API call, to discover which providers are configured and available.",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false
+  }
+}

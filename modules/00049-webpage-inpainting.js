@@ -15,10 +15,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
-import { getMenuHtml } from "../shared/webpage/interface.js";
-import { saveFile } from "../core/file.js";
+import { getMenuHtml }        from "../shared/webpage/interface.js";
+import { saveFile }           from "../core/file.js";
+import { fetchWithTimeout }   from "../core/fetch.js";
 import { setSendNow, setJsonResp, getUserRoleLabels } from "../shared/webpage/utils.js";
-import { getSecret } from "../core/secrets.js";
+import { getSecret }          from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-inpainting";
 
@@ -2490,7 +2491,7 @@ export default async function getWebpageInpainting(coreData) {
     const bearerToken = String(chCfg.bearerToken || "").trim();
 
     try {
-      const { default: nodeFetch } = await import("node-fetch");
+      const nodeFetch = fetchWithTimeout;
       const headers = { "Content-Type": "application/json" };
       if (bearerToken) headers["Authorization"] = "Bearer " + bearerToken;
 
@@ -2552,7 +2553,7 @@ export default async function getWebpageInpainting(coreData) {
     const ecfg = engine.config || {};
 
     try {
-      const { default: nodeFetch } = await import("node-fetch");
+      const nodeFetch = fetchWithTimeout;
       let filename;
 
       if (type === "openai") {

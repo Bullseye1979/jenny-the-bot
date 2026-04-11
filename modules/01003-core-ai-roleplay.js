@@ -21,9 +21,9 @@ import { getContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
-import { readFileSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { readFileSync }  from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const _manifestDir = join(dirname(fileURLToPath(import.meta.url)), "../manifests");
 
