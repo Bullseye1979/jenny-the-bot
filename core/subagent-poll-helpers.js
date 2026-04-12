@@ -108,6 +108,21 @@ function getMergeArtifactUrlsIntoResponse(rawResult, response) {
   return `${finalText}\n${missingUrls.join("\n")}`.trim();
 }
 
+function getLooksLikeProgressOnlyResponse(text) {
+  const value = String(text || "").trim().toLowerCase();
+  if (!value) return false;
+  return (
+    value.includes("working on it") ||
+    value.includes("underway") ||
+    value.includes("has commenced") ||
+    value.includes("will notify you once") ||
+    value.includes("i will notify you once") ||
+    value.includes("i will update you once") ||
+    value.includes("result will be delivered once") ||
+    value.includes("task is complete")
+  );
+}
+
 async function setWriteSubagentToolExchange(contextWo, job, rawResult) {
   const toolCallId = getSubagentCallId(job?.jobId);
   const toolName = SUBAGENT_RESULT_TOOL_NAME;
@@ -320,6 +335,12 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
   _wo.agentType         = _project.agentType || "";
   _wo.toolChoice        = "none";
   _wo.includeHistoryTools = true;
+  _wo.includeCallerContext = false;
+  _wo.channelIds        = [];
+  _wo.contextChannelIds = [];
+  _wo.callerChannelIds  = [];
+  _wo.contextSourceChannelIds = [];
+  _wo.contextSourceChannelId = "";
   _wo.doNotWriteToContext = true;
   _wo.timestamp         = new Date().toISOString();
 
@@ -346,14 +367,18 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
   }
 
   const _response = String(_wo.response || "").trim();
+  const _effectiveResponse = getLooksLikeProgressOnlyResponse(_response) && String(rawResult || "").trim()
+    ? String(rawResult || "").trim()
+    : _response;
   logSubagent("info", "poll-chain", "chain_api_run_complete", {
     projectId,
     durationMs:  Date.now() - _chainStartMs,
-    responseLen: _response.length,
-    hasResponse: !!_response,
+    responseLen: _effectiveResponse.length,
+    hasResponse: !!_effectiveResponse,
+    usedRawResultFallback: _effectiveResponse !== _response,
   });
 
-  if (!_response) return;
+  if (!_effectiveResponse) return;
 
   if (_callerContextChannelId) {
     const _grandparentProjectId = _callerContextChannelId.replace(/^project-/, "");
@@ -363,11 +388,11 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
       {
         ...job,
         projectId,
-        result: _response,
+        result: _effectiveResponse,
         status: "done",
         agentType: job?.agentType || _project.agentType || "subagent-parent"
       },
-      _response,
+      _effectiveResponse,
       baseCore,
       createRunCore,
       runFlow,
@@ -377,7 +402,7 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
     return;
   }
 
-  await deliverFn(_project.callerFlow, _project.callerChannelId, _response, projectId);
+  await deliverFn(_project.callerFlow, _project.callerChannelId, _effectiveResponse, projectId);
 }
 
 

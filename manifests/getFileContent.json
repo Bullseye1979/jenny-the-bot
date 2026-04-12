@@ -1,6 +1,6 @@
 {
   "name": "getFileContent",
-  "description": "Fetch the raw text content of a previously generated file by its URL. Use this to read source files before making targeted edits — read the file, apply the change, then write it back with getFile (overwrite: true). Binary files (images, PDFs, ZIPs) are rejected. Maximum file size: 512 KB.",
+  "description": "Fetch the raw text content of a previously generated file by its URL. Use this only for files that were previously created through getFile and are available as getFile URLs. Do not use this as a general local filesystem reader; for explicit local paths, use getShell instead. Typical flow: read a prior getFile URL, apply the change, then write it back with getFile (overwrite: true). Binary files (images, PDFs, ZIPs) are rejected. Maximum file size: 512 KB.",
   "parameters": {
     "type": "object",
     "properties": {

@@ -42,6 +42,27 @@ function clearDeliveredToolStatus(channelId) {
   } catch {}
 }
 
+function getHasChildJobs(projectId, currentJobId) {
+  const pid = String(projectId || "").trim();
+  if (!pid) return false;
+
+  const parentContextChannelId = "project-" + pid;
+  let keys = [];
+  try { keys = listKeys("job:"); } catch { return false; }
+
+  for (const key of keys) {
+    let job = null;
+    try { job = getItem(key); } catch { continue; }
+    if (!job) continue;
+    if (String(job.jobId || "").trim() === String(currentJobId || "").trim()) continue;
+
+    const callerContextChannelId = String(job.callerContextChannelId || job.callerContextChannelID || "").trim();
+    if (callerContextChannelId === parentContextChannelId) return true;
+  }
+
+  return false;
+}
+
 
 async function deliverViaFlow(job, response, createRunCore, runFlow, log) {
   const _callerFlow = String(job.callerFlow || "discord");
@@ -165,6 +186,16 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
             logSubagent("error", "discord-poll", "parent_chain_exception", { jobId: _job.jobId, error: e?.message || String(e) });
           }
         })();
+        continue;
+      }
+
+      const _hasChildJobs = getHasChildJobs(_job.projectId, _job.jobId);
+      if (_hasChildJobs) {
+        logSubagent("info", "discord-poll", "skip_direct_delivery_has_child_jobs", {
+          jobId: _job.jobId,
+          projectId: _job.projectId || null,
+          agentType: _job.agentType || null,
+        });
         continue;
       }
 

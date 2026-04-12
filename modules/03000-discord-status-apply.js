@@ -42,10 +42,15 @@ async function getToolStatusFromRegistry() {
   }
   try {
     const tool = await getItem(REGISTRY_TOOL_KEY);
-    const name = typeof tool === "string" ? tool : (tool?.name || "");
+    const scopedKey = typeof tool === "object" && tool
+      ? String(tool.statusKey || tool.channelId || (String(tool.flow || "").trim() === "discord" ? "discord" : "")).trim()
+      : "";
+    const scopedTool = scopedKey ? await getItem(REGISTRY_TOOL_KEY + ":" + scopedKey) : null;
+    const effectiveTool = scopedTool || tool;
+    const name = typeof effectiveTool === "string" ? effectiveTool : (effectiveTool?.name || "");
     const toolName = String(name || "").trim();
-    const toolFlow = typeof tool === "object" && tool ? String(tool.flow || "") : "";
-    const toolScope = typeof tool === "object" && tool ? String(tool.scope || "") : "";
+    const toolFlow = typeof effectiveTool === "object" && effectiveTool ? String(effectiveTool.flow || "") : "";
+    const toolScope = typeof effectiveTool === "object" && effectiveTool ? String(effectiveTool.scope || "") : "";
     return { hasTool: !!toolName, toolName, toolFlow, toolScope };
   } catch {
     return { hasTool: false, toolName: "", toolFlow: "", toolScope: "" };

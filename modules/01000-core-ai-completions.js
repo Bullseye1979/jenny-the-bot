@@ -119,6 +119,13 @@ function getToolStatusScope(wo) {
 }
 
 
+function getToolStatusKey(wo) {
+  const explicit = String(wo?.toolStatusChannelOverride || "").trim();
+  if (explicit) return explicit;
+  return String(wo?.callerChannelId || wo?.channelId || "").trim();
+}
+
+
 function getKiCfg(wo) {
   const includeHistory = getBool(wo?.includeHistory, true);
   const includeHistoryTools = getBool(wo?.includeHistoryTools, false);
@@ -328,23 +335,18 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     writeToolcallLog({ ...getToolcallLogBase(wo), tool: String(name || ""), status: "not_found", durationMs: 0 });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify(msg) };
   }
-  const _tcCh = String(coreData?.workingObject?.channelId ?? "").trim();
-  const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
   const _currentFlow = String(coreData?.workingObject?.flow || "");
   const _statusScope = getToolStatusScope(coreData?.workingObject || {});
   const _hasGlobalStatus = _currentFlow !== "api" || !!_statusScope;
   const _statusToken = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
-  const _statusChannelId = String(
-    coreData?.workingObject?.callerChannelId ||
-    coreData?.workingObject?.channelId ||
-    ""
-  ).trim();
+  const _statusKey = getToolStatusKey(coreData?.workingObject || {});
   const _statusPayload = {
     name,
     flow: _currentFlow,
     scope: _statusScope,
     token: _statusToken,
-    channelId: _statusChannelId
+    channelId: _statusKey,
+    statusKey: _statusKey
   };
   if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
   const _myGen = ++wo._statusToolGen;
@@ -352,8 +354,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     if (_hasGlobalStatus) {
       try { await putItem(_statusPayload, "status:tool"); } catch {}
     }
-    if (_tcCh) try { await putItem({ name, token: _statusToken }, "status:tool:" + _tcCh); } catch {}
-    if (_callerCh && _callerCh !== _tcCh) try { await putItem({ name, token: _statusToken }, "status:tool:" + _callerCh); } catch {}
+    if (_statusKey) try { await putItem(_statusPayload, "status:tool:" + _statusKey); } catch {}
     const result = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
     const resultMeta = getToolResultMeta(result);
@@ -392,16 +393,10 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
           if (current?.token === _statusToken) deleteItem("status:tool");
         } catch {}
       }
-      if (_tcCh) {
+      if (_statusKey) {
         try {
-          const current = getItem("status:tool:" + _tcCh);
-          if (current?.token === _statusToken) deleteItem("status:tool:" + _tcCh);
-        } catch {}
-      }
-      if (_callerCh && _callerCh !== _tcCh) {
-        try {
-          const current = getItem("status:tool:" + _callerCh);
-          if (current?.token === _statusToken) deleteItem("status:tool:" + _callerCh);
+          const current = getItem("status:tool:" + _statusKey);
+          if (current?.token === _statusToken) deleteItem("status:tool:" + _statusKey);
         } catch {}
       }
     }, Math.max(0, delayMs));

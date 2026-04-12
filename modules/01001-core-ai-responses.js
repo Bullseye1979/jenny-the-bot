@@ -68,6 +68,13 @@ function getToolStatusScope(wo) {
 }
 
 
+function getToolStatusKey(wo) {
+  const explicit = String(wo?.toolStatusChannelOverride || "").trim();
+  if (explicit) return explicit;
+  return String(wo?.callerChannelId || wo?.channelId || "").trim();
+}
+
+
 function getParseArtifactsBlock(text) {
   const s = String(text || "");
   const marker = "\nARTIFACTS:\n";
@@ -404,28 +411,22 @@ async function setExecGenericTool(toolModules, call, coreData) {
     };
   }
 
-  const _tcCh = String(coreData?.workingObject?.channelId ?? "").trim();
-  const _callerCh = String(coreData?.workingObject?.callerChannelId ?? "").trim();
   const _statusScope = getToolStatusScope(coreData?.workingObject || {});
   if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
   const _myGen = ++wo._statusToolGen;
   const _statusToken = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
-  const _statusChannelId = String(
-    coreData?.workingObject?.callerChannelId ||
-    coreData?.workingObject?.channelId ||
-    ""
-  ).trim();
+  const _statusKey = getToolStatusKey(coreData?.workingObject || {});
   const _statusPayload = {
     name,
     flow: String(coreData?.workingObject?.flow || ""),
     scope: _statusScope,
     token: _statusToken,
-    channelId: _statusChannelId
+    channelId: _statusKey,
+    statusKey: _statusKey
   };
   try {
     try { await putItem(_statusPayload, "status:tool"); } catch {}
-    if (_tcCh) try { await putItem({ name, token: _statusToken }, "status:tool:" + _tcCh); } catch {}
-    if (_callerCh && _callerCh !== _tcCh) try { await putItem({ name, token: _statusToken }, "status:tool:" + _callerCh); } catch {}
+    if (_statusKey) try { await putItem(_statusPayload, "status:tool:" + _statusKey); } catch {}
     const res = await tool.invoke(args, coreData);
     const mapped = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
@@ -447,16 +448,10 @@ async function setExecGenericTool(toolModules, call, coreData) {
         const current = getItem("status:tool");
         if (current?.token === _statusToken) deleteItem("status:tool");
       } catch {}
-      if (_tcCh) {
+      if (_statusKey) {
         try {
-          const current = getItem("status:tool:" + _tcCh);
-          if (current?.token === _statusToken) deleteItem("status:tool:" + _tcCh);
-        } catch {}
-      }
-      if (_callerCh && _callerCh !== _tcCh) {
-        try {
-          const current = getItem("status:tool:" + _callerCh);
-          if (current?.token === _statusToken) deleteItem("status:tool:" + _callerCh);
+          const current = getItem("status:tool:" + _statusKey);
+          if (current?.token === _statusToken) deleteItem("status:tool:" + _statusKey);
         } catch {}
       }
     }, Math.max(0, delayMs));

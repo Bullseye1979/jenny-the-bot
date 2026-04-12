@@ -215,6 +215,7 @@ wo.turnId = getNewUlid();
     wo.clientRef = clientRegistryId;
     wo.timestamp = new Date(message.createdTimestamp || Date.now()).toISOString();
     wo.channelId = message.channelId;
+    wo.toolStatusChannelOverride = "discord";
     wo.userId = message.author?.id || "";
     wo.authorDisplayname = (message.member && (message.member.displayName || message.member.nickname)) || message.author?.username || "";
     wo.guildId = message.guildId || "";

@@ -249,6 +249,7 @@ wo.turnId = getNewUlid();
         wo.id = String(targetId);
         wo.channelId = wo.id;
       }
+      wo.toolStatusChannelOverride = "discord";
 
       wo.clientRef = clientRef;
       wo.config = cfg;

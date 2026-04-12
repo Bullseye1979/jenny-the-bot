@@ -97,12 +97,19 @@ function getContextIdList(workingObject, channelIdsOverride) {
   const extraIds = Array.isArray(channelIdsOverride)
     ? channelIdsOverride
     : (
-      Array.isArray(workingObject?.contextSourceChannelIds) ? workingObject.contextSourceChannelIds
-      : (Array.isArray(workingObject?.callerChannelIds) ? workingObject.callerChannelIds
-      : (Array.isArray(workingObject?.contextChannelIds) ? workingObject.contextChannelIds
-      : (Array.isArray(workingObject?.channelIds) ? workingObject.channelIds : [])
-      )
-      )
+      useCallerContext
+        ? (
+          Array.isArray(workingObject?.contextSourceChannelIds) ? workingObject.contextSourceChannelIds
+          : (Array.isArray(workingObject?.callerChannelIds) ? workingObject.callerChannelIds
+          : (Array.isArray(workingObject?.contextChannelIds) ? workingObject.contextChannelIds
+          : (Array.isArray(workingObject?.channelIds) ? workingObject.channelIds : [])
+          )
+          )
+        )
+        : (
+          Array.isArray(workingObject?.contextChannelIds) ? workingObject.contextChannelIds
+          : (Array.isArray(workingObject?.channelIds) ? workingObject.channelIds : [])
+        )
     );
   return [
     baseId,
@@ -666,18 +673,7 @@ export async function getContext(workingObject) {
 
   const metaFramesMode = getMetaFramesMode(workingObject);
 
-  const allIds = getContextIdList(
-    workingObject,
-    Array.isArray(workingObject?.contextSourceChannelIds)
-      ? workingObject.contextSourceChannelIds
-      : (Array.isArray(workingObject?.callerChannelIds)
-      ? workingObject.callerChannelIds
-      : (Array.isArray(workingObject?.contextChannelIds)
-      ? workingObject.contextChannelIds
-      : undefined
-      )
-      )
-  );
+  const allIds = getContextIdList(workingObject);
 
   const multiChannel = allIds.length > 1;
 
