@@ -1,6 +1,6 @@
 {
   "name": "getSubAgent",
-  "description": "Spawns an isolated AI subagent to handle a complex or multi-step task. Always fire-and-forget and returns immediately with jobId plus internal project metadata in the tool response. The result is delivered back to this channel when the subagent completes.\n\nMODE:\n- mode='normal' (default): starts a NEW project/job. Any provided projectId is ignored.\n- mode='resume': resumes an EXISTING project via projectId and reuses its stored context. The caller still chooses the target subagent type for the follow-up task.\n\nRESUME DECISION ORDER: Before considering any direct tool or fresh subagent call, first check whether the user's new request is a follow-up to the result of a previous getSubAgent call. If yes, use mode='resume' first.\n\nDIRECT TOOLS FIRST applies only when there is NO matching prior project to continue. Use available tools directly for simple single-step tasks only if the request is not a continuation of an existing project result.\n\nNEVER write code inline in your response; any coding task must go through getSubAgent(type: 'develop').\n\nAFTER SPAWNING: When getSubAgent returns with status=started, acknowledge this to the user in your current persona. Do NOT expose projectId values in normal user-facing text. Treat projectId as internal metadata unless the user explicitly asks for it.\n\nSUBAGENT ROLE SOURCE: The spawned subagent uses the target subagent channel's own systemPrompt, persona, and instructions. Caller persona and caller instructions are not injected into the spawned subagent.\n\nTASK COMPLETENESS RULE: The task must be fully self-contained. If the user request references any concrete URL, file URL, artifact URL, image URL, video URL, ZIP URL, or webpage URL, you MUST copy the exact URL into the task field. Never replace a real URL with vague wording such as 'the provided URL', 'that link', or 'the video above'. Subagents cannot recover omitted URLs reliably.\n\nRESUME BIAS: Be trigger-happy about resume. If the user's new request is a follow-up to a result that came from a previous subagent project, prefer mode='resume' immediately instead of switching to a direct tool or starting a fresh unrelated subagent.\n\nPROJECT ID SOURCE: The required projectId is in the previous getSubAgent tool response metadata. Scan recent tool results first. Do not wait for the user to repeat the projectId explicitly if it is already present in the prior tool response.\n\nRESULT LINKING RULE: Treat the assistant message that presented the previous subagent result as belonging to that same project, even if the projectId was only visible in the hidden tool response metadata. If the user follows up on that result, it is a resume candidate.\n\nWHEN TO RESUME: Resume whenever the user wants to continue, extend, modify, inspect, reuse, or ask a next-step question about a result that originated from a prior project. This includes short follow-ups like 'ok, now give me a street view image', 'show alternatives', 'change the route', 'export it', 'make an image from that', or similar requests tied to the previous project result.\n\nROUTE EXAMPLES: If a subagent produced a route, then requests like 'insert Meckenbeuren as a stop', 'change the destination', 'show a street view image', 'find parking there', or 'avoid highways' are all follow-ups to the SAME project and should normally resume that route project instead of starting a new context.\n\nTYPE CHOICE ON RESUME: Reuse the original specialist type unless the follow-up clearly needs a different specialist. If the earlier project was route/location/web research, follow-up questions about that result should usually resume with type='research'.\n\nCONTEXT SCAN BEFORE EVERY CALL: Before writing the task field, scan the recent conversation for any artifact URLs, file URLs, image URLs, ZIP URLs, and prior getSubAgent tool responses with project metadata. Pass all relevant ones into the task. Subagents cannot see the full conversation history and will regenerate or fail if you omit required source links.\n\nONE CALL PER DELIVERABLE: Each subagent call produces one output. Do not split a single deliverable across multiple calls.\n\nNESTED CALLS: If you are already running inside a project context (systemPromptAddition mentions a project ID), only call getSubAgent for genuinely independent sub-tasks that require a different tool palette. Never use getSubAgent to summarize, analyze, or continue work that is already visible in your loaded context; do that directly. If a subagent call is rejected, blocked, or refused, do not repeat the same blocked getSubAgent call again.\n\nSEQUENTIAL DEPENDENCIES: If subagent B needs the result of subagent A, call A first, wait for its result, then pass it explicitly in B's task.\n\nAvailable types (for mode='normal'):\n- 'history': Deep historical memory and chronology specialist for older events, people, places, and developments from prior session context.\n- 'research': Web research, webpage fetch, YouTube, route searches, route planning, and location lookups. Searching for routes or places is part of the research type and should be handled here. Summarizing YouTube videos or finding videos from specific creators or with specific content is also handled with this subagent.\n- 'generate': PDF and document assembly.\n- 'media': Image generation, animation, video, and token creation. Pass all sequential steps in ONE task.\n- 'atlassian': Jira and Confluence.\n- 'microsoft': Microsoft 365 / Graph API.\n- 'develop': Any code writing, fixing, or modification task.\n- 'patch': One targeted change to one file URL, typically only from within a 'develop' subagent.\n- 'orchestrate': Independent parts requiring different tool sets simultaneously.\n- 'test': Dummy subagent for testing the pipeline without API costs.\n- 'generic': General-purpose subagent for tasks that do not fit a more specific specialist.",
+  "description": "Spawns an isolated AI subagent to handle a complex or multi-step task. Always fire-and-forget and returns immediately with jobId plus internal project metadata in the tool response. The result is delivered back to this channel when the subagent completes.\n\nMODE:\n- mode='normal' (default): starts a NEW project/job. Any provided projectId is ignored.\n- mode='resume': resumes an EXISTING project via projectId and reuses its stored context. The caller still chooses the target subagent type for the follow-up task.\n\nRESUME DECISION ORDER: Before considering any direct tool or fresh subagent call, first check whether the user's new request is a follow-up to the result of a previous getSubAgent call. If yes, use mode='resume' first.\n\nDIRECT TOOLS FIRST applies only when there is NO matching prior project to continue. Use available tools directly for simple single-step tasks only if the request is not a continuation of an existing project result.\n\nTYPE SELECTION: Choose the configured type that best matches the task. Treat the subagent channel configuration, including its persona, systemPrompt, and instructions, as the source of truth for role behavior. Do not rely on old taxonomy names or stale caller-side assumptions.\n\nAFTER SPAWNING: When getSubAgent returns with status=started, acknowledge this to the user in your current persona. Do NOT expose projectId values in normal user-facing text. Treat projectId as internal metadata unless the user explicitly asks for it.\n\nSUBAGENT ROLE SOURCE: The spawned subagent uses the target subagent channel's own systemPrompt, persona, and instructions. Caller persona and caller instructions are not injected into the spawned subagent.\n\nTASK COMPLETENESS RULE: The task must be fully self-contained. If the user request references any concrete URL, file URL, artifact URL, image URL, video URL, ZIP URL, or webpage URL, you MUST copy the exact URL into the task field. Never replace a real URL with vague wording such as 'the provided URL', 'that link', or 'the video above'. Subagents cannot recover omitted URLs reliably.\n\nRESUME BIAS: Be trigger-happy about resume. If the user's new request is a follow-up to a result that came from a previous subagent project, prefer mode='resume' immediately instead of switching to a direct tool or starting a fresh unrelated subagent.\n\nPROJECT ID SOURCE: The required projectId is in the previous getSubAgent tool response metadata. Scan recent tool results first. Do not wait for the user to repeat the projectId explicitly if it is already present in the prior tool response.\n\nRESULT LINKING RULE: Treat the assistant message that presented the previous subagent result as belonging to that same project, even if the projectId was only visible in the hidden tool response metadata. If the user follows up on that result, it is a resume candidate.\n\nWHEN TO RESUME: Resume whenever the user wants to continue, extend, modify, inspect, reuse, or ask a next-step question about a result that originated from a prior project. This includes short follow-ups like 'ok, now give me a street view image', 'show alternatives', 'change the route', 'export it', 'make an image from that', or similar requests tied to the previous project result.\n\nROUTE EXAMPLES: If a subagent produced a route, then requests like 'insert Meckenbeuren as a stop', 'change the destination', 'show a street view image', 'find parking there', or 'avoid highways' are all follow-ups to the SAME project and should normally resume that route project instead of starting a new context.\n\nTYPE CHOICE ON RESUME: Reuse the original type unless the follow-up clearly needs a different configured role. For example, follow-up questions on a prior research result should usually resume with the same research-oriented type unless a new execution domain is clearly needed.\n\nCONTEXT SCAN BEFORE EVERY CALL: Before writing the task field, scan the recent conversation for any artifact URLs, file URLs, image URLs, ZIP URLs, and prior getSubAgent tool responses with project metadata. Pass all relevant ones into the task. Subagents cannot see the full conversation history and will regenerate or fail if you omit required source links.\n\nONE CALL PER DELIVERABLE: Each subagent call produces one output. Do not split a single deliverable across multiple calls.\n\nNESTED CALLS: If you are already running inside a project context (systemPromptAddition mentions a project ID), only call getSubAgent for genuinely independent sub-tasks that require a different tool palette. Never use getSubAgent to summarize, analyze, or continue work that is already visible in your loaded context; do that directly. If a subagent call is rejected, blocked, or refused, do not repeat the same blocked getSubAgent call again.\n\nSEQUENTIAL DEPENDENCIES: If subagent B needs the result of subagent A, call A first, wait for its result, then pass it explicitly in B's task.\n\nAvailable types (for mode='normal'):\n- 'orchestrator-development': Plans, delegates, verifies, and synthesizes development work.\n- 'orchestrator-research': Plans, delegates, verifies, and synthesizes research work.\n- 'orchestrator-actions': Plans, delegates, verifies, and synthesizes action-oriented external system work.\n- 'orchestrator-context': Plans, delegates, verifies, and synthesizes chronology and context reconstruction work.\n- 'orchestrator-generic': Fallback orchestrator for mixed or ambiguous work.\n- 'specialist-file-edit': Targeted file changes within a narrow execution scope.\n- 'specialist-image-video': Image and video generation, transformation, and analysis.\n- 'specialist-content-search': Web, webpage, YouTube, route, and location research.\n- 'specialist-context-research': Internal chronology and context reconstruction from project evidence.\n- 'specialist-generic': General-purpose execution specialist.\n- 'specialist-document-generate': PDF and document assembly.\n- 'specialist-atlassian': Jira and Confluence execution.\n- 'specialist-microsoft': Microsoft 365 and Graph execution.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -20,17 +20,19 @@
         "type": "string",
         "description": "Subagent type/tool palette. Required in both modes and selected by the caller based on the task.",
         "enum": [
-          "history",
-          "research",
-          "generate",
-          "media",
-          "atlassian",
-          "microsoft",
-          "develop",
-          "patch",
-          "orchestrate",
-          "test",
-          "generic"
+          "orchestrator-development",
+          "orchestrator-research",
+          "orchestrator-actions",
+          "orchestrator-context",
+          "orchestrator-generic",
+          "specialist-file-edit",
+          "specialist-image-video",
+          "specialist-content-search",
+          "specialist-context-research",
+          "specialist-generic",
+          "specialist-document-generate",
+          "specialist-atlassian",
+          "specialist-microsoft"
         ]
       },
       "orchestration": {
@@ -92,72 +94,84 @@
     "additionalProperties": false
   },
   "xSubagents": {
-    "history": {
-      "type": "history",
-      "channelId": "subagent-history",
-      "title": "History",
-      "manifestDescription": "Deep historical memory and chronology specialist. Use when older events, people, places, or developments from prior session context are required and the visible main context is not enough."
+    "orchestrator-development": {
+      "type": "orchestrator-development",
+      "channelId": "subagent-orchestrator-development",
+      "title": "Orchestrator Development",
+      "manifestDescription": "Plans, delegates, verifies, and synthesizes development work."
     },
-    "research": {
-      "type": "research",
-      "channelId": "subagent-research",
-      "title": "Research",
-      "manifestDescription": "Web research, webpage fetch, YouTube, route searches, route planning, and location lookups. Searching for routes or places is part of the research type and should be handled here. Summarizing youtube videos or finding videos from specific creators or with specific content is also handled with this subagent. Return the answer itself, not the internal retrieval narration."
+    "orchestrator-research": {
+      "type": "orchestrator-research",
+      "channelId": "subagent-orchestrator-research",
+      "title": "Orchestrator Research",
+      "manifestDescription": "Plans, delegates, verifies, and synthesizes research work."
     },
-    "generate": {
-      "type": "generate",
-      "channelId": "subagent-generate",
-      "title": "Generate",
+    "orchestrator-actions": {
+      "type": "orchestrator-actions",
+      "channelId": "subagent-orchestrator-actions",
+      "title": "Orchestrator Actions",
+      "manifestDescription": "Plans, delegates, verifies, and synthesizes action-oriented external system work."
+    },
+    "orchestrator-context": {
+      "type": "orchestrator-context",
+      "channelId": "subagent-orchestrator-context",
+      "title": "Orchestrator Context",
+      "manifestDescription": "Plans, delegates, verifies, and synthesizes chronology and context reconstruction work."
+    },
+    "orchestrator-generic": {
+      "type": "orchestrator-generic",
+      "channelId": "subagent-orchestrator-generic",
+      "title": "Orchestrator Generic",
+      "manifestDescription": "Fallback orchestrator for mixed or ambiguous work."
+    },
+    "specialist-file-edit": {
+      "type": "specialist-file-edit",
+      "channelId": "subagent-specialist-file-edit",
+      "title": "Specialist File Edit",
+      "manifestDescription": "Targeted file changes within a narrow execution scope."
+    },
+    "specialist-image-video": {
+      "type": "specialist-image-video",
+      "channelId": "subagent-specialist-image-video",
+      "title": "Specialist Image Video",
+      "manifestDescription": "Image and video generation, transformation, and analysis."
+    },
+    "specialist-content-search": {
+      "type": "specialist-content-search",
+      "channelId": "subagent-specialist-content-search",
+      "title": "Specialist Content Search",
+      "manifestDescription": "Web, webpage, YouTube, route, and location research."
+    },
+    "specialist-context-research": {
+      "type": "specialist-context-research",
+      "channelId": "subagent-specialist-context-research",
+      "title": "Specialist Context Research",
+      "manifestDescription": "Internal chronology and context reconstruction from project evidence."
+    },
+    "specialist-generic": {
+      "type": "specialist-generic",
+      "channelId": "subagent-specialist-generic",
+      "title": "Specialist Generic",
+      "manifestDescription": "General-purpose execution specialist."
+    },
+    "specialist-document-generate": {
+      "type": "specialist-document-generate",
+      "channelId": "subagent-specialist-document-generate",
+      "title": "Specialist Document Generate",
       "manifestDescription": "PDF and document assembly."
     },
-    "media": {
-      "type": "media",
-      "channelId": "subagent-media",
-      "title": "Media",
-      "manifestDescription": "Image generation, animation, video, and token creation. Pass all sequential steps in ONE task."
+    "specialist-atlassian": {
+      "type": "specialist-atlassian",
+      "channelId": "subagent-specialist-atlassian",
+      "title": "Specialist Atlassian",
+      "manifestDescription": "Jira and Confluence execution."
     },
-    "atlassian": {
-      "type": "atlassian",
-      "channelId": "subagent-atlassian",
-      "title": "Atlassian",
-      "manifestDescription": "Jira and Confluence."
-    },
-    "microsoft": {
-      "type": "microsoft",
-      "channelId": "subagent-microsoft",
-      "title": "Microsoft",
-      "manifestDescription": "Microsoft 365 / Graph API."
-    },
-    "develop": {
-      "type": "develop",
-      "channelId": "subagent-develop",
-      "title": "Develop",
-      "manifestDescription": "Any code writing, fixing, or modification task."
-    },
-    "patch": {
-      "type": "patch",
-      "channelId": "subagent-patch",
-      "title": "Patch",
-      "manifestDescription": "One targeted change to one file URL, typically only from within a 'develop' subagent."
-    },
-    "orchestrate": {
-      "type": "orchestrate",
-      "channelId": "subagent-orchestrate",
-      "title": "Orchestrate",
-      "manifestDescription": "Independent parts requiring different tool sets simultaneously."
-    },
-    "test": {
-      "type": "test",
-      "channelId": "subagent-test",
-      "title": "Test",
-      "manifestDescription": "Dummy subagent for testing the pipeline without API costs."
-    },
-    "generic": {
-      "type": "generic",
-      "channelId": "subagent-generic",
-      "title": "Generic",
-      "manifestDescription": "General-purpose subagent for tasks that do not fit a more specific specialist."
+    "specialist-microsoft": {
+      "type": "specialist-microsoft",
+      "channelId": "subagent-specialist-microsoft",
+      "title": "Specialist Microsoft",
+      "manifestDescription": "Microsoft 365 and Graph execution."
     }
   },
-  "xBaseDescription": "Spawns an isolated AI subagent to handle a complex or multi-step task. Always fire-and-forget and returns immediately with jobId plus internal project metadata in the tool response. The result is delivered back to this channel when the subagent completes.\n\nMODE:\n- mode='normal' (default): starts a NEW project/job. Any provided projectId is ignored.\n- mode='resume': resumes an EXISTING project via projectId and reuses its stored context. The caller still chooses the target subagent type for the follow-up task.\n\nRESUME DECISION ORDER: Before considering any direct tool or fresh subagent call, first check whether the user's new request is a follow-up to the result of a previous getSubAgent call. If yes, use mode='resume' first.\n\nDIRECT TOOLS FIRST applies only when there is NO matching prior project to continue. Use available tools directly for simple single-step tasks only if the request is not a continuation of an existing project result.\n\nNEVER write code inline in your response; any coding task must go through getSubAgent(type: 'develop').\n\nAFTER SPAWNING: When getSubAgent returns with status=started, acknowledge this to the user in your current persona. Do NOT expose projectId values in normal user-facing text. Treat projectId as internal metadata unless the user explicitly asks for it.\n\nSUBAGENT ROLE SOURCE: The spawned subagent uses the target subagent channel's own systemPrompt, persona, and instructions. Caller persona and caller instructions are not injected into the spawned subagent.\n\nTASK COMPLETENESS RULE: The task must be fully self-contained. If the user request references any concrete URL, file URL, artifact URL, image URL, video URL, ZIP URL, or webpage URL, you MUST copy the exact URL into the task field. Never replace a real URL with vague wording such as 'the provided URL', 'that link', or 'the video above'. Subagents cannot recover omitted URLs reliably.\n\nRESUME BIAS: Be trigger-happy about resume. If the user's new request is a follow-up to a result that came from a previous subagent project, prefer mode='resume' immediately instead of switching to a direct tool or starting a fresh unrelated subagent.\n\nPROJECT ID SOURCE: The required projectId is in the previous getSubAgent tool response metadata. Scan recent tool results first. Do not wait for the user to repeat the projectId explicitly if it is already present in the prior tool response.\n\nRESULT LINKING RULE: Treat the assistant message that presented the previous subagent result as belonging to that same project, even if the projectId was only visible in the hidden tool response metadata. If the user follows up on that result, it is a resume candidate.\n\nWHEN TO RESUME: Resume whenever the user wants to continue, extend, modify, inspect, reuse, or ask a next-step question about a result that originated from a prior project. This includes short follow-ups like 'ok, now give me a street view image', 'show alternatives', 'change the route', 'export it', 'make an image from that', or similar requests tied to the previous project result.\n\nROUTE EXAMPLES: If a subagent produced a route, then requests like 'insert Meckenbeuren as a stop', 'change the destination', 'show a street view image', 'find parking there', or 'avoid highways' are all follow-ups to the SAME project and should normally resume that route project instead of starting a new context.\n\nTYPE CHOICE ON RESUME: Reuse the original specialist type unless the follow-up clearly needs a different specialist. If the earlier project was route/location/web research, follow-up questions about that result should usually resume with type='research'.\n\nCONTEXT SCAN BEFORE EVERY CALL: Before writing the task field, scan the recent conversation for any artifact URLs, file URLs, image URLs, ZIP URLs, and prior getSubAgent tool responses with project metadata. Pass all relevant ones into the task. Subagents cannot see the full conversation history and will regenerate or fail if you omit required source links.\n\nONE CALL PER DELIVERABLE: Each subagent call produces one output. Do not split a single deliverable across multiple calls.\n\nNESTED CALLS: If you are already running inside a project context (systemPromptAddition mentions a project ID), only call getSubAgent for genuinely independent sub-tasks that require a different tool palette. Never use getSubAgent to summarize, analyze, or continue work that is already visible in your loaded context; do that directly. If a subagent call is rejected, blocked, or refused, do not repeat the same blocked getSubAgent call again.\n\nSEQUENTIAL DEPENDENCIES: If subagent B needs the result of subagent A, call A first, wait for its result, then pass it explicitly in B's task.\n\nAvailable types (for mode='normal'):\n- 'history': Deep historical memory and chronology specialist for older events, people, places, and developments from prior session context.\n- 'research': Web research, webpage fetch, YouTube, route searches, route planning, and location lookups. Searching for routes or places is part of the research type and should be handled here. Summarizing YouTube videos or finding videos from specific creators or with specific content is also handled with this subagent.\n- 'generate': PDF and document assembly.\n- 'media': Image generation, animation, video, and token creation. Pass all sequential steps in ONE task.\n- 'atlassian': Jira and Confluence.\n- 'microsoft': Microsoft 365 / Graph API.\n- 'develop': Any code writing, fixing, or modification task.\n- 'patch': One targeted change to one file URL, typically only from within a 'develop' subagent.\n- 'orchestrate': Independent parts requiring different tool sets simultaneously.\n- 'test': Dummy subagent for testing the pipeline without API costs.\n- 'generic': General-purpose subagent for tasks that do not fit a more specific specialist."
+  "xBaseDescription": "Spawns an isolated AI subagent to handle a complex or multi-step task. Always fire-and-forget and returns immediately with jobId plus internal project metadata in the tool response. The result is delivered back to this channel when the subagent completes.\n\nMODE:\n- mode='normal' (default): starts a NEW project/job. Any provided projectId is ignored.\n- mode='resume': resumes an EXISTING project via projectId and reuses its stored context. The caller still chooses the target subagent type for the follow-up task.\n\nRESUME DECISION ORDER: Before considering any direct tool or fresh subagent call, first check whether the user's new request is a follow-up to the result of a previous getSubAgent call. If yes, use mode='resume' first.\n\nDIRECT TOOLS FIRST applies only when there is NO matching prior project to continue. Use available tools directly for simple single-step tasks only if the request is not a continuation of an existing project result.\n\nTYPE SELECTION: Choose the configured type that best matches the task. Treat the subagent channel configuration, including its persona, systemPrompt, and instructions, as the source of truth for role behavior. Do not rely on old taxonomy names or stale caller-side assumptions.\n\nAFTER SPAWNING: When getSubAgent returns with status=started, acknowledge this to the user in your current persona. Do NOT expose projectId values in normal user-facing text. Treat projectId as internal metadata unless the user explicitly asks for it.\n\nSUBAGENT ROLE SOURCE: The spawned subagent uses the target subagent channel's own systemPrompt, persona, and instructions. Caller persona and caller instructions are not injected into the spawned subagent.\n\nTASK COMPLETENESS RULE: The task must be fully self-contained. If the user request references any concrete URL, file URL, artifact URL, image URL, video URL, ZIP URL, or webpage URL, you MUST copy the exact URL into the task field. Never replace a real URL with vague wording such as 'the provided URL', 'that link', or 'the video above'. Subagents cannot recover omitted URLs reliably.\n\nRESUME BIAS: Be trigger-happy about resume. If the user's new request is a follow-up to a result that came from a previous subagent project, prefer mode='resume' immediately instead of switching to a direct tool or starting a fresh unrelated subagent.\n\nPROJECT ID SOURCE: The required projectId is in the previous getSubAgent tool response metadata. Scan recent tool results first. Do not wait for the user to repeat the projectId explicitly if it is already present in the prior tool response.\n\nRESULT LINKING RULE: Treat the assistant message that presented the previous subagent result as belonging to that same project, even if the projectId was only visible in the hidden tool response metadata. If the user follows up on that result, it is a resume candidate.\n\nWHEN TO RESUME: Resume whenever the user wants to continue, extend, modify, inspect, reuse, or ask a next-step question about a result that originated from a prior project. This includes short follow-ups like 'ok, now give me a street view image', 'show alternatives', 'change the route', 'export it', 'make an image from that', or similar requests tied to the previous project result.\n\nROUTE EXAMPLES: If a subagent produced a route, then requests like 'insert Meckenbeuren as a stop', 'change the destination', 'show a street view image', 'find parking there', or 'avoid highways' are all follow-ups to the SAME project and should normally resume that route project instead of starting a new context.\n\nTYPE CHOICE ON RESUME: Reuse the original type unless the follow-up clearly needs a different configured role. For example, follow-up questions on a prior research result should usually resume with the same research-oriented type unless a new execution domain is clearly needed.\n\nCONTEXT SCAN BEFORE EVERY CALL: Before writing the task field, scan the recent conversation for any artifact URLs, file URLs, image URLs, ZIP URLs, and prior getSubAgent tool responses with project metadata. Pass all relevant ones into the task. Subagents cannot see the full conversation history and will regenerate or fail if you omit required source links.\n\nONE CALL PER DELIVERABLE: Each subagent call produces one output. Do not split a single deliverable across multiple calls.\n\nNESTED CALLS: If you are already running inside a project context (systemPromptAddition mentions a project ID), only call getSubAgent for genuinely independent sub-tasks that require a different tool palette. Never use getSubAgent to summarize, analyze, or continue work that is already visible in your loaded context; do that directly. If a subagent call is rejected, blocked, or refused, do not repeat the same blocked getSubAgent call again.\n\nSEQUENTIAL DEPENDENCIES: If subagent B needs the result of subagent A, call A first, wait for its result, then pass it explicitly in B's task.\n\nAvailable types (for mode='normal'):\n- 'orchestrator-development': Plans, delegates, verifies, and synthesizes development work.\n- 'orchestrator-research': Plans, delegates, verifies, and synthesizes research work.\n- 'orchestrator-actions': Plans, delegates, verifies, and synthesizes action-oriented external system work.\n- 'orchestrator-context': Plans, delegates, verifies, and synthesizes chronology and context reconstruction work.\n- 'orchestrator-generic': Fallback orchestrator for mixed or ambiguous work.\n- 'specialist-file-edit': Targeted file changes within a narrow execution scope.\n- 'specialist-image-video': Image and video generation, transformation, and analysis.\n- 'specialist-content-search': Web, webpage, YouTube, route, and location research.\n- 'specialist-context-research': Internal chronology and context reconstruction from project evidence.\n- 'specialist-generic': General-purpose execution specialist.\n- 'specialist-document-generate': PDF and document assembly.\n- 'specialist-atlassian': Jira and Confluence execution.\n- 'specialist-microsoft': Microsoft 365 and Graph execution."
 }

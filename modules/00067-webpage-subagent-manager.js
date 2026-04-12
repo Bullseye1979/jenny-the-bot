@@ -152,15 +152,15 @@ ${menuHtml ? "  " + menuHtml : ""}
         <div class="sam-form" style="margin-top:12px">
           <div class="sam-row">
             <label for="type-key">Type key</label>
-            <input id="type-key" type="text" placeholder="history">
+            <input id="type-key" type="text" placeholder="orchestrator-generic">
           </div>
           <div class="sam-row">
             <label for="channel-id">Channel ID</label>
-            <input id="channel-id" type="text" placeholder="subagent-history">
+            <input id="channel-id" type="text" placeholder="subagent-orchestrator-generic">
           </div>
           <div class="sam-row">
             <label for="core-title">Core title</label>
-            <input id="core-title" type="text" placeholder="Subagent: History">
+            <input id="core-title" type="text" placeholder="Subagent: Orchestrator Generic">
           </div>
           <div class="sam-row">
             <label>Manifest block</label>
