@@ -16,11 +16,36 @@
 
 
 
-import { getItem }              from "./registry.js";
+import { getItem, putItem, deleteItem } from "./registry.js";
 import { setContext, getContext } from "./context.js";
 import { logSubagent }           from "./subagent-logger.js";
 
 const SUBAGENT_RESULT_TOOL_NAME = "getSubAgentResult";
+
+// Per-project promise queue: serialises ALL runParentChain work (context write + AI run)
+// for the same projectId. Each specialist chains onto the previous one, so:
+//   - Context writes never interleave → no corrupt tool_call_id pairs
+//   - The AI only runs after all earlier context writes are committed
+//   - The last specialist in the queue always sees the full accumulated context
+const _chainQueues       = new Map(); // projectId → { promise }
+const _deliveredProjects = new Set(); // projectIds that already delivered a final answer
+
+function _enqueueChain(projectId, fn) {
+  const entry = _chainQueues.get(projectId) || { promise: Promise.resolve() };
+  const next = entry.promise
+    .then(() => fn())
+    .catch(() => {})
+    .finally(() => {
+      if (_chainQueues.get(projectId)?.promise === next) {
+        _chainQueues.delete(projectId);
+        // NOTE: _deliveredProjects and _receivedCounts are intentionally NOT cleared here.
+        // Project IDs are unique ULIDs — once delivered, all further callbacks must no-op.
+      }
+    });
+  entry.promise = next;
+  _chainQueues.set(projectId, entry);
+  return next;
+}
 
 function getSubagentCallId(jobId) {
   const raw = String(jobId || "").trim() || "unknown";
@@ -119,7 +144,29 @@ function getLooksLikeProgressOnlyResponse(text) {
     value.includes("i will notify you once") ||
     value.includes("i will update you once") ||
     value.includes("result will be delivered once") ||
-    value.includes("task is complete")
+    value.includes("task is complete") ||
+    value.includes("is being prepared") ||
+    value.includes("being prepared") ||
+    value.includes("i shall synthesize") ||
+    value.includes("i will synthesize") ||
+    value.includes("once it is complete") ||
+    value.includes("once all specialist") ||
+    value.includes("specialists have completed") ||
+    value.includes("waiting for") ||
+    value.includes("still awaiting") ||
+    value.includes("still processing") ||
+    value.includes("compiling the results") ||
+    value.includes("compiling the") ||
+    value.includes("gathering the results") ||
+    value.includes("all results are in") ||
+    value.includes("diligently working") ||
+    value.includes("comprehensive summary") ||
+    value.includes("[empty ai response]") ||
+    value.includes("specialist has been dispatched") ||
+    value.includes("has been dispatched") ||
+    value.includes("please hold on") ||
+    value.includes("hold on while") ||
+    value.includes("[assistant]")
   );
 }
 
@@ -279,7 +326,12 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
 
 
 
-export async function runParentChain(projectId, job, rawResult, baseCore, createRunCore, runFlow, deliverFn, log) {
+export function runParentChain(projectId, job, rawResult, baseCore, createRunCore, runFlow, deliverFn, log) {
+  // Enqueue work for this project — serialises context writes and AI runs.
+  return _enqueueChain(projectId, () => _runParentChainWork(projectId, job, rawResult, baseCore, createRunCore, runFlow, deliverFn, log));
+}
+
+async function _runParentChainWork(projectId, job, rawResult, baseCore, createRunCore, runFlow, deliverFn, log) {
   logSubagent("info", "poll-chain", "chain_start", {
     projectId,
     jobId: job?.jobId || null,
@@ -318,67 +370,113 @@ export async function runParentChain(projectId, job, rawResult, baseCore, create
     return;
   }
 
+  // Guard: if a previous queue run already delivered for this project, skip everything.
+  if (_deliveredProjects.has(projectId)) {
+    logSubagent("info", "poll-chain", "chain_already_delivered", {
+      projectId, jobId: job?.jobId || null,
+    });
+    return;
+  }
+
+  // Decrement specialist counter. Only trigger synthesis when it reaches 0.
+  const _counterKey = "specialist-counter:" + projectId;
+  let _shouldSynthesize = false;
+
+  try {
+    const _counter = getItem(_counterKey);
+    if (_counter) {
+      const _newCount = Math.max(0, Number(_counter.count || 1) - 1);
+      if (_newCount <= 0) {
+        deleteItem(_counterKey);
+        _shouldSynthesize = true;
+        logSubagent("info", "poll-chain", "chain_counter_zero", { projectId });
+      } else {
+        putItem({ ..._counter, count: _newCount, updatedAt: new Date().toISOString() }, _counterKey);
+        logSubagent("info", "poll-chain", "chain_counter_decremented", { projectId, remaining: _newCount });
+      }
+    } else {
+      // No counter — specialist spawned before this feature. Synthesize as fallback.
+      _shouldSynthesize = true;
+      logSubagent("warn", "poll-chain", "chain_counter_missing", { projectId });
+    }
+  } catch (e) {
+    _shouldSynthesize = true;
+    logSubagent("warn", "poll-chain", "chain_counter_error", { projectId, error: e?.message || String(e) });
+  }
+
+  if (!_shouldSynthesize) return;
+
+  // Counter hit 0 — all currently-running specialists have reported back.
+  // Run the orchestrator AI now. It decides:
+  //   A) Call submitFinalAnswer → done, deliver.
+  //   B) Spawn more specialists via getSubAgent → counter rises again,
+  //      process repeats when those specialists finish.
   const _rc = createRunCore();
   const _wo = (_rc.workingObject ||= {});
   _wo.flow              = "api";
-  _wo.channelId         = _project.callerChannelId || _project.channelId;
+  _wo.channelId         = _project.channelId;
   _wo.contextChannelId  = _contextChannelId;
   if (String(_project.callerFlow || "").trim()) {
     _wo.overrideFlow    = String(_project.callerFlow);
   }
-  _wo.payload           = "A new background subagent tool result was added to context. Continue from this tool output and respond accordingly.";
+  _wo.payload           = "All currently-running specialists have completed. Their results are now in context. You must now do ONE of the following:\n(A) If the task is complete or cannot be improved further: call submitFinalAnswer with the full synthesised answer.\n(B) If more information is needed: spawn additional specialists via getSubAgent. Their results will trigger another evaluation round automatically.\nDo not return plain text — it will be discarded.";
   _wo.callerChannelId   = _project.callerChannelId;
   _wo.userId            = _project.userId || "";
   _wo.guildId           = _project.guildId || "";
   _wo.authorDisplayname = _project.authorDisplayname || "";
   _wo.agentDepth        = Number(_project.agentDepth || 0);
   _wo.agentType         = _project.agentType || "";
-  _wo.toolChoice        = "none";
   _wo.includeHistoryTools = true;
   _wo.includeCallerContext = false;
   _wo.channelIds        = [];
   _wo.contextChannelIds = [];
-  _wo.callerChannelIds  = [];
+  _wo.callerChannelIds  = Array.isArray(_project.callerChannelIds) ? _project.callerChannelIds.slice() : [];
   _wo.contextSourceChannelIds = [];
-  _wo.contextSourceChannelId = "";
+  _wo.contextSourceChannelId  = "";
   _wo.doNotWriteToContext = true;
   _wo.timestamp         = new Date().toISOString();
 
-  logSubagent("info", "poll-chain", "chain_api_run_start", {
+  logSubagent("info", "poll-chain", "chain_synthesis_start", {
     projectId,
     channelId:        _wo.channelId,
     contextChannelId: _contextChannelId,
-    agentType:        _project.agentType || null,
-    agentDepth:       Number(_project.agentDepth || 0),
   });
 
   const _chainStartMs = Date.now();
+  let _effectiveResponse = "";
 
   try {
     await runFlow("api", _rc);
   } catch (e) {
-    log(`Parent run failed for ${projectId}: ${e?.message || String(e)}`, "error");
-    logSubagent("error", "poll-chain", "chain_api_run_failed", {
+    log(`Synthesis run failed for ${projectId}: ${e?.message || String(e)}`, "error");
+    logSubagent("error", "poll-chain", "chain_synthesis_failed", {
+      projectId, error: e?.message || String(e), durationMs: Date.now() - _chainStartMs,
+    });
+    return;
+  }
+
+  const _finalAnswer   = String(_wo.__finalAnswer || "").trim();
+  _effectiveResponse   = _finalAnswer;
+
+  logSubagent("info", "poll-chain", "chain_synthesis_done", {
+    projectId,
+    durationMs:      Date.now() - _chainStartMs,
+    responseLen:     _effectiveResponse.length,
+    responsePreview: _effectiveResponse.slice(0, 120),
+  });
+
+  if (!_effectiveResponse) {
+    // Orchestrator spawned more specialists (counter was incremented) — they will
+    // trigger another round when they finish. Nothing to deliver yet.
+    logSubagent("info", "poll-chain", "chain_synthesis_deferred", {
       projectId,
-      error:      e?.message || String(e),
       durationMs: Date.now() - _chainStartMs,
     });
     return;
   }
 
-  const _response = String(_wo.response || "").trim();
-  const _effectiveResponse = getLooksLikeProgressOnlyResponse(_response) && String(rawResult || "").trim()
-    ? String(rawResult || "").trim()
-    : _response;
-  logSubagent("info", "poll-chain", "chain_api_run_complete", {
-    projectId,
-    durationMs:  Date.now() - _chainStartMs,
-    responseLen: _effectiveResponse.length,
-    hasResponse: !!_effectiveResponse,
-    usedRawResultFallback: _effectiveResponse !== _response,
-  });
-
-  if (!_effectiveResponse) return;
+  // Mark as delivered so any further queue entries (late specialists) are no-ops.
+  _deliveredProjects.add(projectId);
 
   if (_callerContextChannelId) {
     const _grandparentProjectId = _callerContextChannelId.replace(/^project-/, "");

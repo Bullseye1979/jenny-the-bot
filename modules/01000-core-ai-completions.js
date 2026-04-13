@@ -526,8 +526,42 @@ export default async function getCoreAi(coreData) {
       }, kiCfg.requestTimeoutMs);
       const raw = await res.text();
       if (!res.ok) {
-        wo.response = "[Empty AI response]";
-        log(`HTTP ${res.status} ${res.statusText}`, "warn");
+        let _errBody = "";
+        try { _errBody = raw.slice(0, 800); } catch {}
+        log(`HTTP ${res.status} ${res.statusText}: ${_errBody}`, "warn");
+        if (totalToolCalls > 0 && !wo.__partialFallbackTried) {
+          wo.__partialFallbackTried = true;
+          log(`Attempting partial-result fallback after ${totalToolCalls} tool call(s)`, "info");
+          try {
+            const _sysMsg = messages.find(m => m.role === "system");
+            const _userMsg = messages.find(m => m.role === "user");
+            const _toolData = messages.filter(m => m.role === "tool").map(m => (m.content || "").slice(0, 2000)).join("\n---\n").slice(0, 6000);
+            const _fallbackMsgs = [
+              { role: "system", content: (_sysMsg?.content || "").slice(0, 800) },
+              { role: "user", content: "Original task: " + (_userMsg?.content || "").slice(0, 300) + "\n\nGathered data so far:\n\n" + _toolData + "\n\nBriefly summarize the above findings. Start with [PARTIAL RESULT] — the task could not be completed in full." }
+            ];
+            const _fbRes = await fetchWithTimeout(wo.endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
+              body: JSON.stringify({ model: wo.model, messages: _fallbackMsgs, temperature: kiCfg.temperature, max_tokens: 800 })
+            }, kiCfg.requestTimeoutMs);
+            const _fbRaw = await _fbRes.text();
+            if (_fbRes.ok) {
+              const _fbText = (getTryParseJSON(_fbRaw, null)?.choices?.[0]?.message?.content || "").trim();
+              if (_fbText) {
+                accumulatedText = _fbText;
+                log(`Partial fallback succeeded: ${_fbText.length} chars`, "info");
+              } else {
+                log("Partial fallback returned empty", "warn");
+              }
+            } else {
+              log(`Partial fallback HTTP ${_fbRes.status}: ${_fbRaw.slice(0, 400)}`, "warn");
+            }
+          } catch (_fbErr) {
+            log(`Partial fallback error: ${_fbErr?.message || String(_fbErr)}`, "warn");
+          }
+        }
+        wo.response = accumulatedText.trim() || "[Empty AI response]";
         return coreData;
       }
       const data = getTryParseJSON(raw, null);

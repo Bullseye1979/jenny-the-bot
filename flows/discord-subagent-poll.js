@@ -14,7 +14,7 @@
 import { getItem, putItem, deleteItem, listKeys } from "../core/registry.js";
 import { getPrefixedLogger }   from "../core/logging.js";
 import { logSubagent }         from "../core/subagent-logger.js";
-import { runParentChain } from "../core/subagent-poll-helpers.js";
+import { runPersonaPass, runParentChain } from "../core/subagent-poll-helpers.js";
 
 const MODULE_NAME  = "discord-subagent-poll";
 const HANDLED_FLOWS = ["discord"];
@@ -209,13 +209,32 @@ export default async function getDiscordSubagentPollFlow(baseCore, runFlow, crea
         callerChannelId: _job.callerChannelId,
       });
 
+      const _capturedJob = _job;
       (async () => {
         try {
-          if (_rawResult) {
-            await deliverViaFlow(_job, _rawResult, createRunCore, runFlow, log);
+          const _response = await runPersonaPass(
+            {
+              callerChannelId:   _capturedJob.callerChannelId,
+              callerFlow:        _capturedJob.callerFlow,
+              userId:            _capturedJob.userId,
+              guildId:           _capturedJob.guildId,
+              authorDisplayname: _capturedJob.authorDisplayname,
+              agentType:         _capturedJob.agentType,
+              jobId:             _capturedJob.jobId,
+              projectId:         _capturedJob.projectId,
+            },
+            _rawResult,
+            createRunCore,
+            runFlow,
+            log
+          );
+          if (_response) {
+            await deliverViaFlow(_capturedJob, _response, createRunCore, runFlow, log);
+          } else if (_rawResult) {
+            await deliverViaFlow(_capturedJob, _rawResult, createRunCore, runFlow, log);
           }
         } catch (e) {
-          logSubagent("error", "discord-poll", "delivery_failed", { jobId: _job.jobId, error: e?.message || String(e) });
+          logSubagent("error", "discord-poll", "delivery_failed", { jobId: _capturedJob.jobId, error: e?.message || String(e) });
         }
       })();
     }

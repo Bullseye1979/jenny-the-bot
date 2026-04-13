@@ -17,6 +17,23 @@ import { getPrefixedLogger } from "../core/logging.js";
 const MODULE_NAME = "getHistory";
 
 
+const ROW_CONTENT_MAX = 500;
+
+function getExtractContent(r) {
+  // Try to extract real message content from the json field first
+  if (r.json) {
+    try {
+      const j = typeof r.json === "string" ? JSON.parse(r.json) : r.json;
+      const c = j?.content ?? j?.message?.content ?? j?.data?.content ?? j?.delta?.content ?? j?.text ?? null;
+      if (typeof c === "string" && c.trim()) return c.trim().slice(0, ROW_CONTENT_MAX);
+    } catch {}
+  }
+  // Fallback to text index column (already capped at 500 chars in DB)
+  if (typeof r.text === "string" && r.text.trim()) return r.text.trim().slice(0, ROW_CONTENT_MAX);
+  return null;
+}
+
+
 function getPadString(n) { return String(n).padStart(2, "0"); }
 
 
@@ -49,8 +66,9 @@ function getParsedHumanDate(input, isEnd = false) {
 
 function getISO(ts) {
   if (!ts) return "";
-  const d = new Date(ts.replace(" ", "T"));
-  if (Number.isNaN(d.getTime())) return ts;
+  if (ts instanceof Date) return ts.toISOString();
+  const d = new Date(String(ts).replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return String(ts);
   return d.toISOString();
 }
 
@@ -157,28 +175,19 @@ async function getHistoryInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const cfgTool = wo?.toolsconfig?.getHistory || {};
-  const overrideChannelId = args?.channelId ? String(args.channelId).trim() : (args?.channelId ? String(args.channelId).trim() : "");
-  const primaryChannelId = overrideChannelId
-    || String(wo?.callerChannelId || "").trim()
-    || String(wo?.channelId || "").trim();
-  const argChannelIds = Array.isArray(args?.channelIds)
-    ? args.channelIds.map(c => String(c || "").trim()).filter(Boolean)
-    : (Array.isArray(args?.channelIds)
-      ? args.channelIds.map(c => String(c || "").trim()).filter(Boolean)
-      : []);
-  const woCallerChannelIds = Array.isArray(wo?.callerChannelIds)
-    ? wo.callerChannelIds.map(c => String(c || "").trim()).filter(Boolean)
-    : [];
-  const woChannelIds = Array.isArray(wo?.channelIds)
-    ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
-    : [];
-  const extraChannelIds = argChannelIds.length ? argChannelIds
-    : woCallerChannelIds.length ? woCallerChannelIds
-    : woChannelIds;
+
+  // Always use the full mix of all available channels from context
   const channelIdSet = new Set();
+  const primaryChannelId = String(wo?.callerChannelId || wo?.channelId || "").trim();
   if (primaryChannelId) channelIdSet.add(primaryChannelId);
-  for (const cid of extraChannelIds) channelIdSet.add(cid);
+  for (const cid of (Array.isArray(wo?.callerChannelIds) ? wo.callerChannelIds : [])) {
+    const s = String(cid || "").trim(); if (s) channelIdSet.add(s);
+  }
+  for (const cid of (Array.isArray(wo?.channelIds) ? wo.channelIds : [])) {
+    const s = String(cid || "").trim(); if (s) channelIdSet.add(s);
+  }
   const channelIds = [...channelIdSet];
+  log(`getHistory channel resolution: channelId=${wo?.channelId || "?"} callerChannelId=${wo?.callerChannelId || "?"} callerChannelIds=${JSON.stringify(wo?.callerChannelIds || [])} channelIds=${JSON.stringify(wo?.channelIds || [])} → querying=${JSON.stringify(channelIds)}`, "info");
   if (!channelIds.length) {
     return { ok: false, error: "channelId missing (wo.channelId / wo.channelIds)" };
   }
@@ -217,9 +226,9 @@ async function getHistoryInvoke(args, coreData) {
   const startCtxId = startCtxIdRaw != null ? Number(startCtxIdRaw) : null;
   const maxRows = Math.max(1, Number.isFinite(Number(cfgTool?.maxRows)) ? Number(cfgTool.maxRows) : 5000);
   const pageSize = Math.max(1, Number.isFinite(Number(cfgTool?.pagesize)) ? Number(cfgTool.pagesize) : 1000);
-  const includeToolRows = cfgTool.includeToolRows !== false;
+  const includeToolRows = cfgTool.includeToolRows === true;
   const includeJson = cfgTool.includeJson === true;
-  const dumpMaxChars = Number.isFinite(Number(cfgTool?.dumpMaxChars)) ? Number(cfgTool.dumpMaxChars) : 60000;
+  const dumpMaxChars = Number.isFinite(Number(cfgTool?.dumpMaxChars)) ? Number(cfgTool.dumpMaxChars) : 40000;
   const pool = await getEnsurePool(wo);
   let rows = await getPreloadUpToCap(pool, channelIds, {
     startTs,
@@ -232,6 +241,7 @@ async function getHistoryInvoke(args, coreData) {
   });
   const preloadedCount = rows.length;
   const cappedByCap = preloadedCount >= maxRows;
+  log(`getHistory DB result: channels=${JSON.stringify(channelIds)} start=${startTs} end=${endTs} rows=${preloadedCount} capped=${cappedByCap}`, "info");
   if (!rows.length) {
     return {
       ok: true,
@@ -253,24 +263,28 @@ async function getHistoryInvoke(args, coreData) {
   const actualStartIso = getISO(rows[0].ts);
   const lastRow = rows[rows.length - 1];
   const actualEndIso = getISO(lastRow.ts);
-  const outRows = rows.map((r) => {
+  const outRows = [];
+  for (const r of rows) {
+    const content = getExtractContent(r);
+    // Skip assistant rows that have no text content (pure tool_call stubs)
+    const roleLc = String(r.role || "").toLowerCase();
+    if (roleLc === "assistant" && !content) continue;
     const row = {
       ctx_id: r.ctx_id,
-      ts: r.ts,
-      id: r.id,
+      ts: getISO(r.ts),
       channelId: r.id,
-      text: r.text,
-      role: r.role ?? null
+      role: r.role ?? null,
+      text: content ?? ""
     };
     if (includeJson) row.json = r.json;
-    return row;
-  });
+    outRows.push(row);
+  }
   outRows.push({
     ctx_id: lastRow.ctx_id,
-    ts: lastRow.ts,
+    ts: getISO(lastRow.ts),
     id: mainChannelId,
     channelId: mainChannelId,
-    text: `[effective_end_ts]\n${lastRow.ts}`,
+    text: `[effective_end_ts]\n${getISO(lastRow.ts)}`,
     role: null
   });
   rows = null;
@@ -281,7 +295,7 @@ async function getHistoryInvoke(args, coreData) {
     let charCount = 0;
     const kept = [];
     for (const row of outRows) {
-      const rowLen = (row.text ? row.text.length : 0) + (row.json ? row.json.length : 0) + 80;
+      const rowLen = (row.text ? row.text.length : 0) + 80;
       if (charCount + rowLen > dumpMaxChars && kept.length > 0) {
         cappedByChars = true;
         break;

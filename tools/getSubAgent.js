@@ -35,7 +35,7 @@
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
-import { getItem, listKeys } from "../core/registry.js";
+import { getItem, putItem, deleteItem, listKeys } from "../core/registry.js";
 import { logSubagent } from "../core/subagent-logger.js";
 
 const MODULE_NAME = "getSubAgent";
@@ -119,6 +119,26 @@ function buildOrchestrationBlock(orchestration, turnId) {
     if (locks.length) {
       lines.push("toolLocks (MUST NOT call these tools):");
       for (const [tool, reason] of locks) lines.push(`  ${tool}: ${reason}`);
+    }
+  }
+
+  const timeframe = o.timeframe && typeof o.timeframe === "object" ? o.timeframe : null;
+  if (timeframe) {
+    const tfStart = typeof timeframe.start === "string" && timeframe.start.trim() ? timeframe.start.trim() : null;
+    const tfEnd   = typeof timeframe.end   === "string" && timeframe.end.trim()   ? timeframe.end.trim()   : null;
+    if (tfStart || tfEnd) {
+      lines.push("timeframe (STRICT — only retrieve records within this window):");
+      if (tfStart) lines.push(`  start: ${tfStart}`);
+      if (tfEnd)   lines.push(`  end:   ${tfEnd}`);
+    }
+  }
+
+  const datasetInfo = o.datasetInfo && typeof o.datasetInfo === "object" ? o.datasetInfo : null;
+  if (datasetInfo) {
+    const diEntries = Object.entries(datasetInfo).filter(([, v]) => v != null && String(v).trim());
+    if (diEntries.length) {
+      lines.push("datasetInfo:");
+      for (const [k, v] of diEntries) lines.push(`  ${k}: ${v}`);
     }
   }
 
@@ -217,7 +237,10 @@ async function getInvoke(args, coreData) {
 
   if (mode !== "resume" && agentDepth >= maxSpawnDepth) {
     logSubagent("warn", "getSubAgent", "depth_limit_reached", { agentDepth, maxSpawnDepth, typeName });
-    return { ok: false, error: `Spawn depth limit reached (depth=${agentDepth}, max=${maxSpawnDepth}). This agent may not spawn further subagents.` };
+    return {
+      ok: false,
+      error: `Spawn depth limit reached (depth=${agentDepth}, max=${maxSpawnDepth}). You cannot spawn further subagents. Use a different tool directly if possible, or return the best answer from the information you have already gathered. If you have partial findings, present them and note that the investigation was limited by recursion depth.`
+    };
   }
   if (mode !== "resume" && agentType && agentType === typeName) {
     logSubagent("warn", "getSubAgent", "same_type_blocked", {
@@ -226,8 +249,10 @@ async function getInvoke(args, coreData) {
       projectId: projectId || null,
       callerTurnId: callerTurnId || null
     });
-
-    return { ok: false, error: `A subagent of type "${typeName}" may not spawn another subagent of the same type.` };
+    return {
+      ok: false,
+      error: `A subagent of type "${typeName}" may not spawn another "${typeName}" subagent. Try a different specialist type, call the required tool directly instead, or return your current findings as a partial result.`
+    };
   }
 
   const channelId = explicitChannel || String(types[typeName] || types["generic"] || "").trim();
@@ -316,6 +341,36 @@ async function getInvoke(args, coreData) {
       jobId:     _spawnData.jobId,
       projectId: _spawnData.projectId,
     });
+
+    // Increment specialist counter for the orchestrator project that spawned this specialist.
+    // The poll-helper decrements this on each specialist completion; when it reaches 0,
+    // synthesis is triggered automatically.
+    if (mode !== "resume") {
+      const _callerCtxChannelId = String(wo.contextChannelId || "").trim();
+      if (_callerCtxChannelId.startsWith("project-")) {
+        const _callerProjId = _callerCtxChannelId.replace(/^project-/, "");
+        const _counterKey   = "specialist-counter:" + _callerProjId;
+        try {
+          const _prev = getItem(_counterKey);
+          const _newCount = Number(_prev?.count || 0) + 1;
+          putItem({
+            count:           _newCount,
+            callerProjectId: _callerProjId,
+            updatedAt:       new Date().toISOString(),
+          }, _counterKey);
+          logSubagent("info", "getSubAgent", "specialist_counter_incremented", {
+            callerProjectId: _callerProjId,
+            count:           _newCount,
+            spawnedJobId:    _spawnData.jobId,
+          });
+        } catch (e) {
+          logSubagent("warn", "getSubAgent", "specialist_counter_failed", {
+            callerProjectId: _callerCtxChannelId,
+            error: e?.message || String(e),
+          });
+        }
+      }
+    }
 
     return {
       ok:        true,

@@ -666,18 +666,16 @@ async function getInformationInvoke(args, coreData) {
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
 
-  const primaryChannelId = String(wo?.callerChannelId || wo?.channelId || "").trim();
-  const woCallerChannelIds = Array.isArray(wo?.callerChannelIds)
-    ? wo.callerChannelIds.map(c => String(c || "").trim()).filter(Boolean)
-    : [];
-  const woChannelIds = Array.isArray(wo?.channelIds)
-    ? wo.channelIds.map(c => String(c || "").trim()).filter(Boolean)
-    : [];
-  const extraChannelIds = woCallerChannelIds.length ? woCallerChannelIds : woChannelIds;
-
+  // Always use the full mix of all available channels from context
   const channelIdSet = new Set();
+  const primaryChannelId = String(wo?.callerChannelId || wo?.channelId || "").trim();
   if (primaryChannelId) channelIdSet.add(primaryChannelId);
-  for (const cid of extraChannelIds) channelIdSet.add(cid);
+  for (const cid of (Array.isArray(wo?.callerChannelIds) ? wo.callerChannelIds : [])) {
+    const s = String(cid || "").trim(); if (s) channelIdSet.add(s);
+  }
+  for (const cid of (Array.isArray(wo?.channelIds) ? wo.channelIds : [])) {
+    const s = String(cid || "").trim(); if (s) channelIdSet.add(s);
+  }
   const channelIds = [...channelIdSet];
 
   if (!channelIds.length) return { error: "ERROR: channelId missing (wo.channelId / wo.channelIds)" };

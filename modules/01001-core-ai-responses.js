@@ -1198,8 +1198,10 @@ export default async function getCoreAi(coreData) {
       if (!res.ok) {
         const retryable = (res.status >= 500 && res.status <= 599) || res.status === 429;
         if (retryable && attempts < maxAttempts) { log(`Retrying due to HTTP ${res.status}`, "warn"); continue; }
-        wo.response = "[Empty AI response]";
         log(`HTTP ${res.status} ${res.statusText}`, "warn");
+        const _partial = accumulatedText.trim();
+        wo.response = _partial ? `[PARTIAL RESULT — interrupted at HTTP ${res.status}]\n\n${_partial}` : "[Empty AI response]";
+        if (_partial) log(`Returning partial result: ${_partial.length} chars`, "info");
         return coreData;
       }
 

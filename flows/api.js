@@ -467,11 +467,16 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       await putItem(_spawnJobEntry, "job:" + jobId);
       logSubagent("info", "spawn", "job_registered", { jobId, projectId, agentType: _spawnAgentType });
 
+      const _spawnCallerChannelIds = Array.isArray(parsedSpawnBody.callerChannelIds)
+        ? parsedSpawnBody.callerChannelIds.map(c => String(c)).filter(Boolean)
+        : [];
+
       await putItem({
         projectId,
         agentType:              _spawnAgentType,
         channelId:              spawnChannelId,
         callerChannelId:        _spawnCallerChannelId,
+        callerChannelIds:       _spawnCallerChannelIds,
         callerContextChannelId: _spawnCallerContextChannelId || null,
         callerFlow:             _spawnCallerFlow || "discord",
         userId:                 _spawnUserId,
@@ -524,6 +529,16 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
       logSubagent("info", "spawn", "iife_started", { jobId, projectId, agentType: _spawnAgentType, subagentChannelId: spawnChannelId });
 
+      logSubagent("info", "spawn", "subagent_input", {
+        jobId,
+        projectId,
+        agentType:        _spawnAgentType,
+        subagentChannelId: spawnChannelId,
+        callerChannelId:  _spawnCallerChannelId || null,
+        callerChannelIds: _spawnCallerChannelIds,
+        payloadPreview:   String(parsedSpawnBody.payload || "").slice(0, 300),
+      });
+
       (async () => {
         const _spawnStartMs = Date.now();
         try {
@@ -537,7 +552,12 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
             agentType:      _spawnAgentType,
             durationMs:     _spawnDurationMs,
             resultLen:      _spawnResult.length,
+            resultPreview:  _spawnResult.slice(0, 400),
             hasPrimaryImage: !!_spawnWo.primaryImageUrl,
+            woChannelId:    _spawnWo.channelId || null,
+            woCallerChannelId: _spawnWo.callerChannelId || null,
+            woCallerChannelIds: Array.isArray(_spawnWo.callerChannelIds) ? _spawnWo.callerChannelIds : [],
+            woChannelIds:   Array.isArray(_spawnWo.channelIds) ? _spawnWo.channelIds : [],
           });
         } catch (e) {
           const _spawnDurationMs = Date.now() - _spawnStartMs;

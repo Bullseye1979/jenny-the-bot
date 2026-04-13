@@ -39,6 +39,7 @@ All key names follow **camelCase** throughout.
      - [getWebpage](#getwebpage)
      - [getYoutube](#getyoutube)
      - [getHistory](#gethistory)
+     - [getInformation](#getinformation)
      - [getTimeline](#gettimeline)
      - [getConfluence](#getconfluence)
      - [getJira](#getjira)
@@ -394,13 +395,58 @@ YouTube search and transcript fetcher.
 
 #### getHistory
 
-Hierarchical history zoom retrieval. Each call goes exactly one level deeper and returns either child blocks or raw rows at the bottom.
+Date-range history retrieval directly from the database. Returns raw rows ordered chronologically within the requested time window.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `maxRows` | number | `300` | Maximum number of raw rows returned when the selected block is already at the bottom level |
-| `includeToolRows` | boolean | `false` | Include tool-call rows when returning bottom-level raw history |
-| `includeJson` | boolean | `false` | Include the raw stored JSON payload when returning bottom-level raw history |
+| `maxRows` | number | `300` | Maximum number of raw rows returned per call |
+| `includeToolRows` | boolean | `false` | Include tool-call rows in results |
+| `includeJson` | boolean | `false` | Include the raw stored JSON payload in results |
+
+**Tool call parameters** (set by the AI when calling the tool at runtime, not in `toolsconfig`):
+
+| Parameter | Type | Description |
+|---|---|---|
+| `start` | string | **Required.** Start timestamp (YYYY-MM-DD, DD.MM.YYYY, or ISO 8601). |
+| `end` | string | Optional end timestamp. Defaults to now. |
+| `channelId` | string | Override the primary channel to query. Defaults to the caller channel from the working context. |
+| `channelIds` | array | Additional channel IDs merged into the query. |
+| `strictChannelId` | boolean | When `true`, query **only** the channels explicitly provided in `channelId`/`channelIds`. All context-injected channels from the workingObject (`callerChannelIds`, `channelIds`) are ignored. Use this when a subagent must retrieve records for a specific assigned channel and must not bleed into linked channels. Default: `false`. |
+| `startCtxId` | number | Continue pagination from after this `ctx_id`. |
+| `prompt` | string | Additional instructions to steer the summary. |
+
+**Channel scope behaviour** (applies to both normal and strict modes):
+- Default: primary = `channelId` arg → `wo.callerChannelId` → `wo.channelId`; extra = `channelIds` arg → `wo.callerChannelIds` → `wo.channelIds`.
+- `strictChannelId=true`: only the explicitly provided `channelId`/`channelIds` are queried; workingObject channel lists are ignored.
+
+#### getInformation
+
+Keyword-based search across the conversation log database. Returns matching row clusters grouped by timeline period (type `detail`) or summary-only periods (type `period`) and unplaced matches (type `unplaced`). Use `start_ts`/`end_ts` from returned entries to drive follow-up `getHistory` calls.
+
+No `toolsconfig` keys are required for basic use. Optional advanced keys:
+
+| Key | Type | Description |
+|---|---|---|
+| `clusterRows` | number | Rows per cluster block (default 400) |
+| `padRows` | number | Context rows added before/after each cluster (default 20) |
+| `maxOutputLines` | number | Maximum lines returned across all clusters (default 800) |
+| `minCoverage` | number | Minimum keyword-group coverage score required (default 1) |
+| `includeAliasSearch` | boolean | Enable LLM-assisted alias expansion for better recall |
+| `aliasLlmChannelId` | string | Internal channel used for alias inference LLM calls |
+
+**Tool call parameters** (set by the AI at runtime):
+
+| Parameter | Type | Description |
+|---|---|---|
+| `keywordGroups` | array | Preferred: concept groups with `base`, `variants`, and `parts` for partial matching |
+| `keywords` | array | Fallback: free-form search phrases |
+| `channelId` | string | Override the primary channel to search. Defaults to `wo.callerChannelId` or `wo.channelId`. |
+| `channelIds` | array | Additional channel IDs to include in the search. |
+| `strictChannelId` | boolean | When `true`, search **only** the channels in `channelId`/`channelIds`. Context-injected channels (`wo.callerChannelIds`, `wo.channelIds`) are ignored. Use this in subagents that must search a specific assigned channel without bleeding into linked channels. Default: `false`. |
+
+**Channel scope behaviour:**
+- Default: primary = `channelId` arg → `wo.callerChannelId` → `wo.channelId`; extra = `channelIds` arg → `wo.callerChannelIds` → `wo.channelIds`.
+- `strictChannelId=true`: only the explicitly provided `channelId`/`channelIds` are searched; workingObject channel lists are ignored.
 
 #### getTimeline
 
@@ -507,25 +553,81 @@ Returns the current UTC time as an ISO 8601 string. No admin configuration requi
 
 #### getSubAgent
 
-Spawns an isolated AI subagent via the internal API flow. Each subagent type maps to a virtual channel configured with its own tool palette, model, and prompt split.
+Spawns an isolated AI subagent via the internal API flow. Each subagent type maps to a virtual channel configured with its own tool palette, model, and prompt.
 
-| Key | Type | Example | Description |
+| Key | Type | Default | Description |
 |---|---|---|---|
-| `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server |
-| `apiSecret` | string | `"API_SECRET"` | Placeholder name for the bearer token â€” resolved from `bot_secrets` at runtime |
-| `asyncSpawnPath` | string | `"/api/spawn"` | Path used for spawning jobs (`POST /api/spawn`). Defaults to `"/api/spawn"`. |
-| `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request (ms). The subagent itself then runs independently. |
-| `maxSpawnDepth` | number | `2` | Maximum nesting depth for subagent spawning. A subagent at depth â‰¥ `maxSpawnDepth` may not spawn further subagents. |
-| `projectContextPrompt` | string | `"Context: You are operating within project context ..."` | Prompt template injected for resume calls. Use `${projectId}` as the placeholder for the resumed project ID. |
-| `types` | object | `{"research":"subagent-research"}` | Map of type name â†’ virtual channel ID. Each entry enables one subagent type. |
+| `apiUrl` | string | `”http://localhost:3400”` | Base URL of the internal API server |
+| `apiSecret` | string | `”API_SECRET”` | Placeholder name for the bearer token (resolved from `bot_secrets` at runtime) |
+| `asyncSpawnPath` | string | `”/api/spawn”` | Path used for spawning jobs |
+| `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request (ms). The subagent runs independently after that. |
+| `maxSpawnDepth` | number | `3` | Maximum nesting depth. Depth 0 = user channel, 1 = orchestrator, 2 = specialist, 3 = nested specialist. A subagent at depth >= `maxSpawnDepth` cannot spawn further subagents. **Set to at least 3** when using orchestrators that spawn specialists. |
+| `projectContextPrompt` | string | `””` | Prompt template for resume calls. Use `${projectId}` as placeholder. |
+| `types` | object | see below | **Required.** Map of type name to virtual channel ID. Missing entries cause silent fallback to `generic`. |
 
-`getSubAgent` always posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: "started" }`. The spawned subagent uses the target virtual channel's own `systemPrompt`, `persona`, and `instructions`; caller persona and caller instructions are not injected into the spawned subagent. Results are then delivered back to the originating channel by the subagent poll flows, and webpage delivery may apply a final caller-channel persona pass before returning the answer to the user. Resume-specific context instructions come from `toolsconfig.getSubAgent.projectContextPrompt` rather than hardcoded tool text. Caller context stays opt-in per tool call: `includeCallerContext=true` preloads the original caller context source using the target subagent channel's own `contextSize` and `compressedContextElements` overrides.
+**Standard `types` mapping** (copy from `core.json.example`):
 
-If the spawned task text does not contain URLs that are still present in the caller payload, `getSubAgent` appends those missing URLs automatically in a `[SOURCE URLS]` block before the spawn request is sent.
+```jsonc
+“types”: {
+  “orchestrator-development”:   “subagent-orchestrator-development”,
+  “orchestrator-research”:      “subagent-orchestrator-research”,
+  “orchestrator-actions”:       “subagent-orchestrator-actions”,
+  “orchestrator-context”:       “subagent-orchestrator-context”,
+  “orchestrator-generic”:       “subagent-orchestrator-generic”,
+  “specialist-coding”:          “subagent-specialist-coding”,
+  “specialist-file-edit”:       “subagent-specialist-file-edit”,
+  “specialist-image-video”:     “subagent-specialist-image-video”,
+  “specialist-content-search”:  “subagent-specialist-content-search”,
+  “specialist-context-research”:”subagent-specialist-context-research”,
+  “specialist-generic”:         “subagent-specialist-generic”,
+  “specialist-document-generate”:”subagent-specialist-document-generate”,
+  “specialist-atlassian”:       “subagent-specialist-atlassian”,
+  “specialist-microsoft”:       “subagent-specialist-microsoft”,
+  “specialist-code-check”:      “subagent-specialist-code-check”,
+  “specialist-security-check”:  “subagent-specialist-security-check”,
+  “generic”: “subagent-generic”  // fallback — always keep this entry
+}
+```
 
-The `manifests/getSubAgent.json` description also marks this as a hard requirement for the caller: concrete URLs and artifact links from the user request must be copied verbatim into the `task` string.
+**Orchestrator / Specialist overview:**
 
-Type routing convention: route planning and location lookup tasks belong to the `research` subagent type.
+| Type | Role |
+|---|---|
+| `orchestrator-development` | Phases: dependency install (getShell) → code-check → security-check → coding → file-edit → synthesis |
+| `orchestrator-research` | Delegates web research to content-search specialists |
+| `orchestrator-actions` | Coordinates external system actions (Atlassian, Microsoft, APIs) |
+| `orchestrator-context` | Partitions a channel’s timeline into equal time windows, spawns parallel context-research specialists, synthesizes results |
+| `orchestrator-generic` | Fallback multi-step orchestrator |
+| `specialist-coding` | Writes complete code. **Continue logic:** never truncates to fit a token budget — the system requests the remainder in follow-up calls |
+| `specialist-file-edit` | Handles **exactly one file** per call; returns an error if the task references multiple files |
+| `specialist-code-check` | Reads source files; returns a structured PASSED / WARNINGS / FAILED quality report |
+| `specialist-security-check` | Reads code and dependencies; uses `getTavily` to search for CVEs and exploits; returns a severity-ranked security report |
+| `specialist-context-research` | Reconstructs events within a strictly assigned time window. Uses `channelId` + `strictChannelId=true` on `getInformation`/`getHistory` to stay within its partition |
+| `specialist-content-search` | Web search, webpage fetch, YouTube, location |
+| `specialist-image-video` | Image generation, animation, video, media analysis |
+| `specialist-document-generate` | PDF and document assembly |
+| `specialist-atlassian` | Jira and Confluence |
+| `specialist-microsoft` | Microsoft 365 / Graph API |
+| `specialist-generic` | General-purpose fallback specialist |
+
+**Orchestration context** (passed via the `orchestration` parameter):
+
+| Field | Description |
+|---|---|
+| `globalGoal` | Shared objective for all parallel specialists |
+| `yourTask` | This specialist’s specific assignment |
+| `yourRole` | Role label |
+| `doOnly` / `doNot` | Action whitelist / blacklist |
+| `existingArtifacts` | Already-produced artifacts |
+| `assignedToOthers` | Work already delegated elsewhere |
+| `toolLocks` | Tools this specialist must not call |
+| `timeframe.start` / `timeframe.end` | ISO 8601 window boundaries (context specialists) |
+| `datasetInfo.channelId` | Main channel ID — authoritative context source (context specialists) |
+| `datasetInfo.totalRecords` / `.partitionIndex` / `.partitionTotal` | Dataset metadata for partitioned jobs |
+
+**Context injection:** By default a spawned subagent only loads its own (empty) project context. Set `includeCallerContext=true` when calling `getSubAgent` to pre-load the original caller channel’s context into the subagent, compressed to the subagent channel’s own `contextSize`. This is required for `specialist-context-research` subagents that need to run `getInformation` against the original channel.
+
+`getSubAgent` posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: “started” }`. Results are delivered back to the originating channel by the subagent poll flows. If the task text is missing URLs that appear in the caller payload, they are appended automatically in a `[SOURCE URLS]` block.
 
 #### getBan
 

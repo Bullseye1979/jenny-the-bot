@@ -369,10 +369,12 @@ export default async function getCoreAi(coreData) {
     );
 
     if (!pass1.ok) {
-      wo.response = "[Empty AI response]";
       log(pass1.error === "timeout"
         ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
         : `AI request failed: ${String(pass1?.status || "")} ${String(pass1?.statusText || "")} ${String(pass1?.error || "")} ${String(pass1?.raw || "").slice(0, 300)}`, "warn");
+      const _partial = textOut.trim();
+      wo.response = _partial ? `[PARTIAL RESULT — interrupted]\n\n${_partial}` : "[Empty AI response]";
+      if (_partial) log(`Returning partial result: ${_partial.length} chars`, "info");
       return coreData;
     }
 

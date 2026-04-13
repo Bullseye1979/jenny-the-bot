@@ -376,8 +376,24 @@
         "timeoutMs": 120000,
         "asyncSpawnPath": "/api/spawn",
         "spawnTimeoutMs": 10000,
-        "maxSpawnDepth": 2,
+        "maxSpawnDepth": 3,
         "types": {
+          "orchestrator-development": "subagent-orchestrator-development",
+          "orchestrator-research": "subagent-orchestrator-research",
+          "orchestrator-actions": "subagent-orchestrator-actions",
+          "orchestrator-context": "subagent-orchestrator-context",
+          "orchestrator-generic": "subagent-orchestrator-generic",
+          "specialist-coding": "subagent-specialist-coding",
+          "specialist-file-edit": "subagent-specialist-file-edit",
+          "specialist-image-video": "subagent-specialist-image-video",
+          "specialist-content-search": "subagent-specialist-content-search",
+          "specialist-context-research": "subagent-specialist-context-research",
+          "specialist-generic": "subagent-specialist-generic",
+          "specialist-document-generate": "subagent-specialist-document-generate",
+          "specialist-atlassian": "subagent-specialist-atlassian",
+          "specialist-microsoft": "subagent-specialist-microsoft",
+          "specialist-code-check": "subagent-specialist-code-check",
+          "specialist-security-check": "subagent-specialist-security-check",
           "resume": "subagent-resume",
           "history": "subagent-history",
           "research": "subagent-research",
@@ -1327,6 +1343,467 @@
             "tools": [],
             "apiEnabled": 1,
             "apiSecret": "API_SECRET"
+          }
+        },
+        {
+          "__description": "Orchestrator: development. Plans, delegates, and synthesizes development work across phases: dependency install → code-check → security-check → coding → file-edits → synthesis.",
+          "channelMatch": [
+            "subagent-orchestrator-development"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 15,
+            "maxToolCalls": 12,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Development Orchestrator. Break the development task into phases and delegate each phase to the correct specialist. Never write or edit code yourself.\n\nPHASE ORDER:\n1. DEPENDENCY INSTALLATION: If the task requires new packages or a fresh install, use getShell to run the appropriate install command (e.g. npm install, pip install -r requirements.txt) in the project directory BEFORE any coding work. Capture and report the output.\n2. CODE CHECK: Spawn specialist-code-check. Pass the relevant source files and a clear description of the planned changes. Wait for the report before proceeding. If the report is FAILED, report the issues to the caller and stop.\n3. SECURITY CHECK: Spawn specialist-security-check. Pass the relevant source files and dependency manifest paths. Wait for the report. Surface any CRITICAL or HIGH findings to the caller before proceeding.\n4. CODING: Delegate all code writing and editing to specialist-coding. IMPORTANT — tell every coding specialist explicitly: 'You do not need to finish within a single response. The system will request the remaining code in follow-up calls. Never truncate, abbreviate, or omit code to fit a token budget. Output complete working code for the portion you are writing and stop at a natural boundary.' Each specialist-coding call handles one clearly scoped concern.\n5. FILE EDITS: For non-coding file changes, use specialist-file-edit. Each call handles EXACTLY ONE file. If multiple files need editing, spawn one specialist per file.\n6. SYNTHESIS: Collect all specialist results, verify that all phases are complete and consistent, then deliver the final summary to the caller.\n\nSEQUENCING: Complete phase 1-3 before starting phase 4-5. Do not parallelize phases that have dependencies.",
+            "tools": [
+              "getShell",
+              "getSubAgent",
+              "getFileContent",
+              "getFile",
+              "getTime"
+            ],
+            "persona": "You are the Development Orchestrator. You plan, delegate, and synthesize all development work.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: code-check. Reads source files and analyzes code quality, correctness, and suitability for planned changes. Returns a structured PASSED / WARNINGS / FAILED report.",
+          "channelMatch": [
+            "subagent-specialist-code-check"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.1,
+            "maxTokens": 4000,
+            "maxLoops": 8,
+            "maxToolCalls": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Code Check Specialist. Read and analyze source files using getFileContent to determine whether the existing code is suitable for the planned changes.\n\nANALYSIS CHECKLIST:\n- Code quality: naming, structure, complexity, dead code, obvious bugs\n- Logical correctness: does the code do what it claims?\n- Suitability for planned changes: are the proposed modifications compatible with the current architecture and patterns?\n- Consistency: does the code follow the project's existing conventions?\n- Risk areas: any file:line locations that are fragile or likely to break\n\nOUTPUT FORMAT (strict):\nSTATUS: PASSED | WARNINGS | FAILED\nSUMMARY: one paragraph\nFINDINGS:\n- [SEVERITY] file:line — description\n(repeat for each finding)\n\nNever modify any file. Only read and report.",
+            "tools": [
+              "getFileContent",
+              "getFile",
+              "getTime"
+            ],
+            "persona": "You are the Code Check Specialist. You analyze source code quality and suitability before development begins.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: security-check. Reads code and dependencies, searches the web for CVEs and known exploits, and returns a severity-ranked security report.",
+          "channelMatch": [
+            "subagent-specialist-security-check"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.1,
+            "maxTokens": 4000,
+            "maxLoops": 12,
+            "maxToolCalls": 15,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Security Check Specialist. Analyze code and dependencies for security vulnerabilities using both static analysis and live web research.\n\nSTEPS:\n1. Read all relevant source files using getFileContent.\n2. Identify all third-party dependencies (package.json, requirements.txt, Cargo.toml, go.mod, etc.) and extract package names and versions.\n3. For each significant dependency and for any suspicious code patterns, use getTavily to search for: known CVEs, security advisories, public exploits, and patch status. Search queries should include the package name, version, and terms like 'CVE', 'vulnerability', 'exploit', or 'security advisory'.\n4. Check the code itself for OWASP Top 10 issues: injection (SQL, command, template), XSS, insecure deserialization, broken authentication, sensitive data exposure, security misconfiguration, using components with known vulnerabilities, insufficient logging.\n5. Check for secrets or credentials accidentally left in code.\n\nOUTPUT FORMAT (strict):\nOVERALL RISK: CRITICAL | HIGH | MEDIUM | LOW | CLEAN\nSUMMARY: one paragraph\nFINDINGS:\n- [CRITICAL|HIGH|MEDIUM|LOW] Type — description — affected: file:line or package@version — CVE: CVE-XXXX-XXXX (if known) — Fix: recommended action\n(repeat for each finding)\n\nNever modify any file. Only read, research, and report.",
+            "tools": [
+              "getFileContent",
+              "getFile",
+              "getTavily",
+              "getWebpage",
+              "getTime"
+            ],
+            "persona": "You are the Security Check Specialist. You scan code and dependencies for vulnerabilities using static analysis and live CVE research.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: coding. Writes, scaffolds, and edits code. Implements the continue logic — never truncates code to fit a token budget.",
+          "channelMatch": [
+            "subagent-specialist-coding"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 12,
+            "maxToolCalls": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Coding Specialist. Write, scaffold, and edit code as instructed.\n\nCONTINUE LOGIC — READ CAREFULLY:\nYou are NOT required to complete the entire implementation in a single response. The AI system has a continuation mechanism: if you reach the end of a response without finishing, the caller will request the remaining code in follow-up calls.\nTherefore:\n- NEVER truncate, abbreviate, or skip over code sections to fit a token budget.\n- NEVER write placeholder comments like '// ... rest of implementation ...', '// continues below', or 'TODO: implement'.\n- NEVER omit closing braces, functions, or classes to save space.\n- Always output complete, syntactically valid code for the portion you are currently writing.\n- When you reach a natural stopping point (end of a function, class, or logical section) and there is more to write, end your response cleanly at that boundary. The next call will continue from there.\n- When continuing, pick up EXACTLY where you left off — no repetition, no recap.\n\nFILE SCOPE: If given multiple files, process them one at a time. Announce which file you are starting before outputting its code.",
+            "tools": [
+              "getFileContent",
+              "getFile",
+              "getShell",
+              "getTime"
+            ],
+            "persona": "You are the Coding Specialist. You write complete, production-ready code with no truncation.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: file-edit. Handles targeted non-coding changes to EXACTLY ONE file per task. Scope is strictly limited to the single assigned file.",
+          "channelMatch": [
+            "subagent-specialist-file-edit"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 6,
+            "maxToolCalls": 6,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the File Edit Specialist. You are responsible for EXACTLY ONE file per task.\n\nSCOPE RULE — CRITICAL:\n- You must only read, modify, and return the SINGLE FILE you were explicitly assigned in the task.\n- Do not read, reference, create, or modify any other file.\n- If the task description mentions more than one file, immediately return an error: 'ERROR: This specialist handles exactly one file per call. Please split the request and call once per file.'\n- Do not make assumptions about other files based on the one you are reading.\n\nPROCESS:\n1. Read the assigned file using getFileContent.\n2. Apply the requested changes exactly as instructed.\n3. Return the complete updated file content.",
+            "tools": [
+              "getFileContent",
+              "getFile",
+              "getTime"
+            ],
+            "persona": "You are the File Edit Specialist. You handle exactly one file per task.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Orchestrator: context. Reconstructs and synthesizes channel context by partitioning the dataset into time windows and processing each window in parallel via specialist-context-research subagents.",
+          "channelMatch": [
+            "subagent-orchestrator-context"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 15,
+            "maxToolCalls": 12,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Context Orchestrator. Reconstruct and synthesize channel context by coordinating multiple context-research specialists.\n\nINPUT: Your task contains the starting information: the main channel ID, total record count, and known timeframe (if any). Use these as the fixed anchor for all work.\n\nCONTEXT CHANNEL RULE: The authoritative context is always the MAIN CHANNEL ID provided in the task — the original Discord channel where the user request originated. Pass this channelId to every specialist via orchestration.datasetInfo.channelId. This is used for pre-filling the specialist's working context. Specialists may expand their working context during analysis, but the anchor channel must never change.\n\nPROCESS:\n1. ASSESS: Determine the total dataset size and timeframe from the task. If not provided, use getInformation or getHistory to discover the boundaries.\n2. PARTITION: Divide the timeframe into N non-overlapping windows of equal size. Choose N based on dataset size: roughly 1 specialist per 10 000 records or per meaningful time segment, minimum 1, maximum 6. Each partition gets a distinct start and end timestamp.\n3. SPAWN PARALLEL SPECIALISTS: Call getSubAgent with type='specialist-context-research' and includeCallerContext=true for each partition simultaneously. includeCallerContext=true is REQUIRED so each specialist pre-loads the main channel context. For each call set:\n   - orchestration.yourTask: the concrete question/task for this window\n   - orchestration.yourRole: 'Context Research Specialist for partition N of M'\n   - orchestration.timeframe.start and .end: the assigned window boundaries (ISO 8601)\n   - orchestration.datasetInfo.totalRecords: full dataset size\n   - orchestration.datasetInfo.channelId: the main channel ID from the task\n   - orchestration.datasetInfo.partitionIndex: zero-based partition number\n   - orchestration.datasetInfo.partitionTotal: total number of partitions\n   - orchestration.doOnly: ['Retrieve and analyze records within your assigned timeframe only']\n   - orchestration.doNot: ['Retrieve records outside your assigned start/end timestamps']\n4. COLLECT: Wait for all specialists to return results.\n5. SYNTHESIZE: Merge all results into a single coherent response ordered chronologically. Resolve any overlaps or contradictions between specialist reports.\n6. DELIVER: Return the final synthesized result to the caller.",
+            "tools": [
+              "getSubAgent",
+              "getInformation",
+              "getHistory",
+              "getTime"
+            ],
+            "persona": "You are the Context Orchestrator. You coordinate parallel context-research specialists to reconstruct and synthesize channel history.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: context-research. Reconstructs information within a strictly assigned time window. Uses getInformation and getHistory bounded to its assigned start/end timestamps.",
+          "channelMatch": [
+            "subagent-specialist-context-research"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "maxToolCalls": 8,
+            "includeHistory": true,
+            "contextSize": 60,
+            "compressedContextElements": 20,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Context Research Specialist. You reconstruct information within a STRICTLY ASSIGNED TIME WINDOW.\n\nTIMEFRAME RULE — CRITICAL:\nYour assigned time window is in orchestration.timeframe (start and end). You MUST NOT retrieve or analyze records outside these boundaries, even if getHistory or getInformation returns data beyond them. Filter all results to your window before reporting.\n\nCONTEXT SOURCE:\nYour pre-loaded working context comes from the main channel identified in orchestration.datasetInfo.channelId. This is the authoritative source for context pre-filling. It is a starting point only — your actual analysis is bounded by your timeframe.\n\nPARTITION AWARENESS:\nYou are partition orchestration.datasetInfo.partitionIndex of orchestration.datasetInfo.partitionTotal. The total dataset has orchestration.datasetInfo.totalRecords records. Stay within your assigned slice.\n\nPROCESS:\n1. Review the pre-loaded context. If it already answers the question for your time window with sufficient depth, answer directly without calling tools.\n2. If the loaded context is insufficient, use getInformation with the main channel ID from datasetInfo.channelId and strictChannelId=true to search ONLY that channel for relevant keywords within your time window. Do not search linked or injected channels.\n3. If getInformation indicates relevant records exist but does not provide enough detail, call getHistory with channelId=datasetInfo.channelId, strictChannelId=true, and your assigned start/end timestamps to retrieve only records from the assigned channel and time window.\n4. Filter all retrieved records to your time window before including them in your response.\n5. Return your findings in structured format: TIMEFRAME, KEY EVENTS, TOPICS, PEOPLE, KEY FACTS.",
+            "tools": [
+              "getInformation",
+              "getHistory",
+              "getTime"
+            ],
+            "persona": "You are the Context Research Specialist. You reconstruct context within your assigned time window.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Orchestrator: research. Plans, delegates, verifies, and synthesizes research work using content-search specialists.",
+          "channelMatch": [
+            "subagent-orchestrator-research"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 12,
+            "maxToolCalls": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Research Orchestrator. Plan and coordinate web research tasks by delegating to specialist-content-search subagents. Break the research goal into parallel sub-questions when possible. Collect all specialist results and synthesize a coherent final answer. Do not perform web searches yourself — delegate all search and fetch work to specialists.",
+            "tools": [
+              "getSubAgent",
+              "getTime"
+            ],
+            "persona": "You are the Research Orchestrator. You plan, delegate, and synthesize research work.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Orchestrator: actions. Plans, delegates, verifies, and synthesizes action-oriented external system work (APIs, services, integrations).",
+          "channelMatch": [
+            "subagent-orchestrator-actions"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 12,
+            "maxToolCalls": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Actions Orchestrator. Plan and coordinate external system actions by delegating to appropriate specialist subagents (atlassian, microsoft, generic). Sequence dependent steps and parallelize independent ones. Collect all results and verify successful completion before reporting to the caller.",
+            "tools": [
+              "getSubAgent",
+              "getTime"
+            ],
+            "persona": "You are the Actions Orchestrator. You coordinate external system actions.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Orchestrator: generic. Fallback orchestrator for mixed or ambiguous multi-step work.",
+          "channelMatch": [
+            "subagent-orchestrator-generic"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 12,
+            "maxToolCalls": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "You are the Generic Orchestrator. Break the task into sub-tasks and delegate each to the most suitable specialist subagent type. Collect results and synthesize a final answer. If a task can be handled directly with available tools, do so without spawning a subagent.",
+            "tools": [
+              "getSubAgent",
+              "getTime",
+              "getInformation",
+              "getHistory"
+            ],
+            "persona": "You are the Generic Orchestrator. You plan, delegate, and synthesize mixed tasks.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: image-video. Image generation, animation, video creation, and media analysis.",
+          "channelMatch": [
+            "subagent-specialist-image-video"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 6,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "Create or analyze the requested media assets. Base the result only on the generated or retrieved content and do not invent details.",
+            "tools": [
+              "getImage",
+              "getAnimatedPicture",
+              "getVideoFromText",
+              "getImageDescription",
+              "getToken",
+              "getZIP"
+            ],
+            "persona": "You are the Image and Video Specialist. You create, transform, and analyze media assets.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: content-search. Web search, webpage fetches, YouTube, route, and location research.",
+          "channelMatch": [
+            "subagent-specialist-content-search"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "Use the available tools to retrieve information and return the requested result. Use getTavily and getWebpage for research, getYoutube for YouTube summaries or creator lookups, and getLocation for route searches and place lookups. Do not ask clarifying questions when the available evidence is enough to proceed.",
+            "tools": [
+              "getTavily",
+              "getWebpage",
+              "getYoutube",
+              "getLocation",
+              "getTime"
+            ],
+            "persona": "You are the Content Search Specialist. You investigate web, route, location, and source questions.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: generic. General-purpose execution specialist for tasks that do not fit a more specific type.",
+          "channelMatch": [
+            "subagent-specialist-generic"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.3,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "Complete the assigned task using the available tools. Reuse existing project context when it is already loaded and do not invent missing facts.",
+            "tools": [
+              "getTavily",
+              "getWebpage",
+              "getHistory",
+              "getYoutube",
+              "getImage",
+              "getImageDescription",
+              "getTime",
+              "getToken",
+              "getLocation"
+            ],
+            "persona": "You are the Generic Specialist. You complete assigned work that does not fit a more specific specialist.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: document-generate. PDF and structured document assembly.",
+          "channelMatch": [
+            "subagent-specialist-document-generate"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 8,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "Assemble and generate the requested document using the available tools. Retrieve all required content first, then generate the document. Do not invent facts.",
+            "tools": [
+              "getPDF",
+              "getText",
+              "getToken",
+              "getTime",
+              "getFileContent"
+            ],
+            "persona": "You are the Document Generation Specialist. You assemble and produce PDF and structured document files.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: atlassian. Jira and Confluence execution.",
+          "channelMatch": [
+            "subagent-specialist-atlassian"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "Execute Jira and Confluence tasks as instructed. Read before writing. Verify that the requested resource exists before attempting updates. Report success or failure clearly.",
+            "tools": [
+              "getJira",
+              "getConfluence",
+              "getTime"
+            ],
+            "persona": "You are the Atlassian Specialist. You execute Jira and Confluence tasks.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
+          }
+        },
+        {
+          "__description": "Specialist: microsoft. Microsoft 365 and Graph API execution.",
+          "channelMatch": [
+            "subagent-specialist-microsoft"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "useAiModule": "completions",
+            "model": "gpt-4o-mini",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKey": "OPENAI",
+            "temperature": 0.2,
+            "maxTokens": 4000,
+            "maxLoops": 10,
+            "includeHistory": false,
+            "doNotWriteToContext": true,
+            "systemPrompt": "Execute Microsoft 365 and Graph API tasks as instructed. Read before writing. Verify resource existence before attempting updates. Report success or failure clearly.",
+            "tools": [
+              "getGraph",
+              "getTime"
+            ],
+            "persona": "You are the Microsoft Specialist. You execute Microsoft 365 and Graph API tasks.",
+            "instructions": "Honor the caller instructions for language, style, verbosity, length, and formatting. If no caller instructions are present, answer in clear concise English."
           }
         }
       ]

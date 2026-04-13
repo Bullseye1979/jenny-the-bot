@@ -1,6 +1,6 @@
 {
   "name": "getHistory",
-  "description": "ALWAYS USE THIS TOOL to retrieve historical chat records and past events when a timeframe is known. Fetches directly from the database — never infer historical data from conversation context. If a previous call returned no data, try different start/end parameters or a broader range.\nrequirements:\n- for targeted retrieval: a known timeframe (start/end timestamps); if unknown, use a timeline overview tool first to identify relevant periods",
+  "description": "ALWAYS USE THIS TOOL to retrieve historical chat records and past events when a timeframe is known. Fetches directly from the database — never infer historical data from conversation context. If a previous call returned no data, try different start/end parameters or a broader range.\nThe search automatically covers ALL channels in the current context (primary channel plus all linked channels from channelIds config). Results include a channelId field on each row — group rows by channelId when multiple channels are involved.\nrequirements:\n- for targeted retrieval: a known timeframe (start/end timestamps); if unknown, use a timeline overview tool first to identify relevant periods",
   "parameters": {
     "type": "object",
     "properties": {
@@ -19,17 +19,6 @@
       "startCtxId": {
         "type": "number",
         "description": "OPTIONAL: continue pagination from after this ctx_id (applies across all channels). Legacy aliases: start_ctx_id, start_ctx."
-      },
-      "channelId": {
-        "type": "string",
-        "description": "OPTIONAL: override the channel to query. Use the caller's channel ID when running as a subagent. Legacy alias: channel_id."
-      },
-      "channelIds": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        },
-        "description": "OPTIONAL: additional channel IDs to include in the query (merged with channelId). Legacy alias: channel_ids."
       }
     },
     "required": [
