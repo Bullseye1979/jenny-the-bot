@@ -1,6 +1,6 @@
 {
   "name": "getFile",
-  "description": "Save text or binary content to a persistent file and return a public URL. Supports subdirectory paths in the filename to maintain project structure, e.g. 'src/components/Button.js' — directories are created automatically. Use this to persist any generated artifact: source code, reports, markdown, JSON, or binary. Returns the relative path and public URL for later reference or bundling.\nrequirements:\n- for binary content: set encoding to 'base64' and pass base64-encoded content\n- for overwriting: set overwrite: true and provide an explicit filename",
+  "description": "Save text or binary content to a persistent file and return a public URL. Supports subdirectory paths in the filename to maintain project structure, e.g. 'src/components/Button.js' — directories are created automatically. Use this to persist any generated artifact: source code, reports, markdown, JSON, or binary. Returns the relative path and public URL for later reference or bundling.\nMULTI-WORKER: Multiple agents may write DIFFERENT files in parallel safely. Writing to the SAME filename (overwrite: true) from multiple agents simultaneously causes data loss — coordinate via the orchestrator so only one agent writes a given file path at a time.\nrequirements:\n- for binary content: set encoding to 'base64' and pass base64-encoded content\n- for overwriting: set overwrite: true and provide an explicit filename",
   "parameters": {
     "type": "object",
     "properties": {

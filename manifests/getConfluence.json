@@ -1,6 +1,6 @@
 {
   "name": "getConfluence",
-  "description": "ALWAYS USE THIS TOOL for all Confluence operations. Never infer Confluence page content from conversation history — always fetch it fresh with op='read'. Supports create, append, read, list, delete, move, and raw API operations. Images and files must be referenced via public http/https URLs — local file paths are not supported. Markdown input is automatically converted to Confluence storage format.",
+  "description": "ALWAYS USE THIS TOOL for all Confluence operations. Never infer Confluence page content from conversation history — always fetch it fresh with op='read'. Supports create, append, read, list, delete, move, and raw API operations. Images and files must be referenced via public http/https URLs — local file paths are not supported. Markdown input is automatically converted to Confluence storage format.\nMULTI-WORKER: Multiple agents may append to DIFFERENT pages in parallel safely. Writing to the SAME page from multiple agents simultaneously causes version conflicts — serialize writes to the same page (one agent at a time).",
   "parameters": {
     "type": "object",
     "additionalProperties": false,

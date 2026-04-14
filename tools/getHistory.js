@@ -54,7 +54,7 @@ function getParsedHumanDate(input, isEnd = false) {
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
   const d = new Date(raw);
   if (!Number.isNaN(d.getTime())) {
-    return `${d.getFullYear()}-${getPadString(d.getMonth() + 1)}-${getPadString(d.getDate())} ${getPadString(d.getHours())}:${getPadString(d.getMinutes())}:${getPadString(d.getSeconds())}`;
+    return `${d.getUTCFullYear()}-${getPadString(d.getUTCMonth() + 1)}-${getPadString(d.getUTCDate())} ${getPadString(d.getUTCHours())}:${getPadString(d.getUTCMinutes())}:${getPadString(d.getUTCSeconds())}`;
   }
   const stripped = raw.replace("T", " ").replace("Z", "").split(".")[0];
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(stripped)) return stripped;

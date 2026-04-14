@@ -1,16 +1,16 @@
 {
   "name": "getHistory",
-  "description": "ALWAYS USE THIS TOOL to retrieve historical chat records and past events when a timeframe is known. Fetches directly from the database — never infer historical data from conversation context. If a previous call returned no data, try different start/end parameters or a broader range.\nThe search automatically covers ALL channels in the current context (primary channel plus all linked channels from channelIds config). Results include a channelId field on each row — group rows by channelId when multiple channels are involved.\nrequirements:\n- for targeted retrieval: a known timeframe (start/end timestamps); if unknown, use a timeline overview tool first to identify relevant periods",
+  "description": "ALWAYS USE THIS TOOL to retrieve historical chat records and past events when a timeframe is known. Fetches directly from the database — never infer historical data from conversation context. If a previous call returned no data, try different start/end parameters or a broader range.\nThe search automatically covers ALL channels in the current context (primary channel plus all linked channels from channelIds config). Results include a channelId field on each row — group rows by channelId when multiple channels are involved.\nTIMEZONE: All timestamps are stored and queried in UTC. The runtime info block contains current_time_iso (UTC) and timezone_hint (user's local timezone). Always convert local times to UTC before passing start/end — for example, if the user is in CEST (UTC+2) and a session ran 20:00–22:00 CEST, pass start='HH:MM:SS in UTC' (18:00–20:00 UTC). Never pass local-time values directly.\nrequirements:\n- for targeted retrieval: a known timeframe (start/end timestamps in UTC); if unknown, use a timeline overview tool first to identify relevant periods",
   "parameters": {
     "type": "object",
     "properties": {
       "start": {
         "type": "string",
-        "description": "REQUIRED: start timestamp (YYYY-MM-DD, DD.MM.YYYY, or ISO 8601). If date-only, time defaults to 00:00:00."
+        "description": "REQUIRED: start timestamp in UTC (YYYY-MM-DD, DD.MM.YYYY, or ISO 8601 with timezone offset). If date-only, time defaults to 00:00:00 UTC. Convert local times to UTC before passing — e.g. 20:00 CEST = 18:00 UTC."
       },
       "end": {
         "type": "string",
-        "description": "OPTIONAL: end timestamp. If omitted, retrieval is open-ended from start until now. If date-only, end is exclusive at next day 00:00:00."
+        "description": "OPTIONAL: end timestamp in UTC. If omitted, retrieval is open-ended from start until now (UTC). If date-only, end is exclusive at next day 00:00:00 UTC."
       },
       "prompt": {
         "type": "string",
