@@ -566,7 +566,7 @@ export default async function getWebpageLive(coreData) {
       if (afterId === 0) {
         const [r] = await pool.execute(
           `SELECT * FROM (
-             SELECT ctx_id, ts, id, role, text, \`json\`
+             SELECT ctx_id, DATE_FORMAT(ts, '%Y-%m-%d %H:%i:%s') AS ts, id, role, text, \`json\`
                FROM ${CTX_TABLE}
               WHERE id IN (${ph})
                 AND role IN ('user','assistant')
@@ -578,7 +578,7 @@ export default async function getWebpageLive(coreData) {
         rows = r;
       } else {
         const [r] = await pool.execute(
-          `SELECT ctx_id, ts, id, role, text, \`json\`
+          `SELECT ctx_id, DATE_FORMAT(ts, '%Y-%m-%d %H:%i:%s') AS ts, id, role, text, \`json\`
              FROM ${CTX_TABLE}
             WHERE ctx_id > ?
               AND id IN (${ph})
