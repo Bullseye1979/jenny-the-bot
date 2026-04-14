@@ -1117,8 +1117,20 @@ export default async function getCoreAi(coreData) {
       return lines.join("\n");
     })();
 
+    const agentInfo = (() => {
+      const type  = typeof wo2?.agentType === "string" ? wo2.agentType.trim() : "";
+      const depth = Number.isFinite(Number(wo2?.agentDepth)) ? Number(wo2.agentDepth) : 0;
+      if (!type) return "Agent context:\n- agent_type: main-channel\n- agent_depth: 0";
+      return [
+        "Agent context:",
+        `- agent_type: ${type}`,
+        `- agent_depth: ${depth}`
+      ].join("\n");
+    })();
+
     const parts = [];
     if (base) parts.push(base);
+    if (agentInfo) parts.push(agentInfo);
     parts.push(runtimeInfo);
     parts.push(policy);
     if (multiChannelNote) parts.push(multiChannelNote);

@@ -187,8 +187,25 @@ export default async function getWebpageSubagentPollFlow(baseCore, runFlow, crea
 
         (async () => {
           try {
-            const _deliverFn = (cFlow, cChannelId, resp, projId) =>
-              deliverToOutput(cFlow, cChannelId, resp, _job.jobId, projId, _job.agentType, log, createRunCore, runFlow);
+            const _deliverFn = async (cFlow, cChannelId, resp, projId) => {
+              const _personaResp = await runPersonaPass(
+                {
+                  callerChannelId:   cChannelId,
+                  callerFlow:        cFlow,
+                  userId:            _job.userId,
+                  guildId:           _job.guildId,
+                  authorDisplayname: _job.authorDisplayname,
+                  agentType:         _job.agentType,
+                  jobId:             _job.jobId,
+                  projectId:         projId || _job.projectId,
+                },
+                resp,
+                createRunCore,
+                runFlow,
+                log
+              );
+              return deliverToOutput(cFlow, cChannelId, _personaResp || resp, _job.jobId, projId, _job.agentType, log, createRunCore, runFlow);
+            };
             await runParentChain(_parentProjectId, _job, _result, baseCore, createRunCore, runFlow, _deliverFn, log);
           } catch (e) {
             logSubagent("error", "webpage-poll", "parent_chain_exception", { jobId: _job.jobId, error: e?.message || String(e) });

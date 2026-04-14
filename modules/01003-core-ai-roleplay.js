@@ -247,7 +247,18 @@ function getSystemContentTextRun(wo, earliestTimestamps) {
     "- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window."
   ].join("\n");
 
-  return [base, runtimeInfo].filter(Boolean).join("\n\n");
+  const agentInfo = (() => {
+    const type  = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
+    const depth = Number.isFinite(Number(wo?.agentDepth)) ? Number(wo.agentDepth) : 0;
+    if (!type) return "Agent context:\n- agent_type: main-channel\n- agent_depth: 0";
+    return [
+      "Agent context:",
+      `- agent_type: ${type}`,
+      `- agent_depth: ${depth}`
+    ].join("\n");
+  })();
+
+  return [base, agentInfo, runtimeInfo].filter(Boolean).join("\n\n");
 }
 
 

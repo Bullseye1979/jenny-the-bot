@@ -447,9 +447,21 @@ async function getSystemContent(wo, kiCfg, moduleCfg) {
   })();
   const systemPromptAddition = typeof wo?.systemPromptAddition === "string" ? wo.systemPromptAddition.trim() : "";
 
+  const agentInfo = (() => {
+    const type  = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
+    const depth = Number.isFinite(Number(wo?.agentDepth)) ? Number(wo.agentDepth) : 0;
+    if (!type) return "Agent context:\n- agent_type: main-channel\n- agent_depth: 0";
+    return [
+      "Agent context:",
+      `- agent_type: ${type}`,
+      `- agent_depth: ${depth}`
+    ].join("\n");
+  })();
+
   const parts = [];
   if (base) parts.push(base);
   if (systemPromptAddition) parts.push(systemPromptAddition);
+  if (agentInfo) parts.push(agentInfo);
   parts.push(runtimeInfo);
   parts.push(commonPolicy);
   if (multiChannelNote) parts.push(multiChannelNote);

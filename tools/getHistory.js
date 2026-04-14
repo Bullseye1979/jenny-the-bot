@@ -258,8 +258,8 @@ async function getHistoryInvoke(args, coreData) {
     };
   }
   const actualStartIso = getISO(rows[0].ts);
-  const lastRow = rows[rows.length - 1];
-  const actualEndIso = getISO(lastRow.ts);
+  const dbLastRow = rows[rows.length - 1];
+  const dbEndIso = getISO(dbLastRow.ts);
   const outRows = [];
   for (const r of rows) {
     const content = getExtractContent(r);
@@ -275,14 +275,6 @@ async function getHistoryInvoke(args, coreData) {
     if (includeJson) row.json = r.json;
     outRows.push(row);
   }
-  outRows.push({
-    ctx_id: lastRow.ctx_id,
-    ts: getISO(lastRow.ts),
-    id: mainChannelId,
-    channelId: mainChannelId,
-    text: `[effective_end_ts]\n${getISO(lastRow.ts)}`,
-    role: null
-  });
   rows = null;
 
   let cappedByChars = false;
@@ -302,6 +294,10 @@ async function getHistoryInvoke(args, coreData) {
     charsTrimmedRows = kept;
   }
 
+  const returnedLastRow = charsTrimmedRows[charsTrimmedRows.length - 1];
+  const returnedEndIso = returnedLastRow ? getISO(returnedLastRow.ts) : dbEndIso;
+  const hasMore = cappedByCap || cappedByChars;
+
   return {
     ok: true,
     mode: "dump",
@@ -310,15 +306,16 @@ async function getHistoryInvoke(args, coreData) {
     requested_start: startTs,
     requested_end: endTs,
     actual_start: actualStartIso,
-    actual_end: actualEndIso,
+    actual_end: returnedEndIso,
+    db_end: hasMore ? dbEndIso : undefined,
     rows: charsTrimmedRows,
     count: charsTrimmedRows.length,
     max_rows: maxRows,
     preloaded_count: preloadedCount,
     capped_by_preload: cappedByCap,
     capped_by_chars: cappedByChars,
-    has_more: cappedByCap || cappedByChars,
-    next_start_ctx_id: (cappedByCap || cappedByChars) ? charsTrimmedRows[charsTrimmedRows.length - 1]?.ctx_id ?? null : null
+    has_more: hasMore,
+    next_start_ctx_id: hasMore ? (returnedLastRow?.ctx_id ?? null) : null
   };
 }
 

@@ -169,6 +169,22 @@ export default async function getDiscordVoiceSubagentPollFlow(baseCore, runFlow,
         (async () => {
           try {
             const _deliverFn = async (cFlow, cChannelId, resp, projId) => {
+              const _personaResp = await runPersonaPass(
+                {
+                  callerChannelId:   cChannelId,
+                  callerFlow:        cFlow,
+                  userId:            _job.userId,
+                  guildId:           _job.guildId,
+                  authorDisplayname: _job.authorDisplayname,
+                  agentType:         _job.agentType,
+                  jobId:             _job.jobId,
+                  projectId:         projId || _job.projectId,
+                },
+                resp,
+                createRunCore,
+                runFlow,
+                log
+              );
               const _syntheticJob = {
                 ..._job,
                 callerFlow: cFlow,
@@ -176,7 +192,7 @@ export default async function getDiscordVoiceSubagentPollFlow(baseCore, runFlow,
                 projectId: projId || _job.projectId,
                 jobId: _job.jobId
               };
-              await deliverViaFlow(_syntheticJob, resp, createRunCore, runFlow, log);
+              await deliverViaFlow(_syntheticJob, _personaResp || resp, createRunCore, runFlow, log);
             };
             await runParentChain(_parentProjectId, _job, _result, baseCore, createRunCore, runFlow, _deliverFn, log);
           } catch (e) {

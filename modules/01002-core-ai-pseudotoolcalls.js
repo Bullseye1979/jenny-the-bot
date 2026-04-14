@@ -630,8 +630,20 @@ function getSystemContentBase(wo, moduleCfg, earliestTimestamps) {
     return lines.join(“\n”);
   })();
 
+  const agentInfo = (() => {
+    const type  = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
+    const depth = Number.isFinite(Number(wo?.agentDepth)) ? Number(wo.agentDepth) : 0;
+    if (!type) return "Agent context:\n- agent_type: main-channel\n- agent_depth: 0";
+    return [
+      "Agent context:",
+      `- agent_type: ${type}`,
+      `- agent_depth: ${depth}`
+    ].join("\n");
+  })();
+
   const parts = [];
   if (base) parts.push(base);
+  if (agentInfo) parts.push(agentInfo);
   parts.push(runtimeInfo);
   parts.push(policy);
   parts.push(toolContract);

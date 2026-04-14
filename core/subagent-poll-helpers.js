@@ -232,7 +232,7 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
     rawResultPreview: _rawText.slice(0, 120),
   });
 
-  const _payload = "A background subagent tool result is now available in context. Continue naturally and present it to the user in your current persona.";
+  const _payload = "A background subagent task has completed. Its result is now available in the conversation context above. Review the full conversation history: if the user requested any follow-up actions (such as writing to Confluence, creating Jira tickets, generating a summary, sending a message, etc.), execute them now using the available tools. Once all pending actions are complete, present the final outcome to the user in your current persona.";
 
   logSubagent("info", "poll-delivery", "persona_pass_start", {
     jobId,
@@ -242,10 +242,8 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
   });
 
   _wo.payload             = _payload;
-  _wo.toolChoice          = "none";
   _wo.includeHistoryTools = true;
   _wo.doNotWriteToContext = true;
-  _wo.__noContinuation    = true;
   _wo.timestamp           = new Date().toISOString();
 
   try {
