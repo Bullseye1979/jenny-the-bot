@@ -1,5 +1,5 @@
 /**************************************************************/
-/* filename: "submitFinalAnswer.js"                          */
+/* filename: "getFinalAnswer.js"                             */
 /* Version 1.0                                               */
 /* Purpose: LLM-callable tool implementation.               */
 /*                                                           */
@@ -13,7 +13,7 @@
 import { getPrefixedLogger } from "../core/logging.js";
 import { logSubagent }       from "../core/subagent-logger.js";
 
-const MODULE_NAME = "submitFinalAnswer";
+const MODULE_NAME = "getFinalAnswer";
 
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
@@ -31,7 +31,6 @@ async function getInvoke(args, coreData) {
     responsePreview: response.slice(0, 120),
   });
 
-  // Signal to runParentChain that this orchestrator run produced a deliverable answer.
   wo.__finalAnswer = response;
 
   log(`Final answer registered (${response.length} chars)`);

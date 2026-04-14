@@ -22,13 +22,8 @@ import { logSubagent }           from "./subagent-logger.js";
 
 const SUBAGENT_RESULT_TOOL_NAME = "getSubAgentResult";
 
-// Per-project promise queue: serialises ALL runParentChain work (context write + AI run)
-// for the same projectId. Each specialist chains onto the previous one, so:
-//   - Context writes never interleave → no corrupt tool_call_id pairs
-//   - The AI only runs after all earlier context writes are committed
-//   - The last specialist in the queue always sees the full accumulated context
-const _chainQueues       = new Map(); // projectId → { promise }
-const _deliveredProjects = new Set(); // projectIds that already delivered a final answer
+const _chainQueues       = new Map();
+const _deliveredProjects = new Set();
 
 function _enqueueChain(projectId, fn) {
   const entry = _chainQueues.get(projectId) || { promise: Promise.resolve() };
@@ -38,8 +33,6 @@ function _enqueueChain(projectId, fn) {
     .finally(() => {
       if (_chainQueues.get(projectId)?.promise === next) {
         _chainQueues.delete(projectId);
-        // NOTE: _deliveredProjects and _receivedCounts are intentionally NOT cleared here.
-        // Project IDs are unique ULIDs — once delivered, all further callbacks must no-op.
       }
     });
   entry.promise = next;
@@ -327,7 +320,6 @@ export async function runPersonaPass(ctx, rawResult, createRunCore, runFlow, log
 
 
 export function runParentChain(projectId, job, rawResult, baseCore, createRunCore, runFlow, deliverFn, log) {
-  // Enqueue work for this project — serialises context writes and AI runs.
   return _enqueueChain(projectId, () => _runParentChainWork(projectId, job, rawResult, baseCore, createRunCore, runFlow, deliverFn, log));
 }
 
@@ -370,7 +362,6 @@ async function _runParentChainWork(projectId, job, rawResult, baseCore, createRu
     return;
   }
 
-  // Guard: if a previous queue run already delivered for this project, skip everything.
   if (_deliveredProjects.has(projectId)) {
     logSubagent("info", "poll-chain", "chain_already_delivered", {
       projectId, jobId: job?.jobId || null,
@@ -378,7 +369,6 @@ async function _runParentChainWork(projectId, job, rawResult, baseCore, createRu
     return;
   }
 
-  // Decrement specialist counter. Only trigger synthesis when it reaches 0.
   const _counterKey = "specialist-counter:" + projectId;
   let _shouldSynthesize = false;
 
@@ -395,7 +385,6 @@ async function _runParentChainWork(projectId, job, rawResult, baseCore, createRu
         logSubagent("info", "poll-chain", "chain_counter_decremented", { projectId, remaining: _newCount });
       }
     } else {
-      // No counter — specialist spawned before this feature. Synthesize as fallback.
       _shouldSynthesize = true;
       logSubagent("warn", "poll-chain", "chain_counter_missing", { projectId });
     }
@@ -406,11 +395,6 @@ async function _runParentChainWork(projectId, job, rawResult, baseCore, createRu
 
   if (!_shouldSynthesize) return;
 
-  // Counter hit 0 — all currently-running specialists have reported back.
-  // Run the orchestrator AI now. It decides:
-  //   A) Call submitFinalAnswer → done, deliver.
-  //   B) Spawn more specialists via getSubAgent → counter rises again,
-  //      process repeats when those specialists finish.
   const _rc = createRunCore();
   const _wo = (_rc.workingObject ||= {});
   _wo.flow              = "api";
@@ -419,7 +403,7 @@ async function _runParentChainWork(projectId, job, rawResult, baseCore, createRu
   if (String(_project.callerFlow || "").trim()) {
     _wo.overrideFlow    = String(_project.callerFlow);
   }
-  _wo.payload           = "All currently-running specialists have completed. Their results are now in context. You must now do ONE of the following:\n(A) If the task is complete or cannot be improved further: call submitFinalAnswer with the full synthesised answer.\n(B) If more information is needed: spawn additional specialists via getSubAgent. Their results will trigger another evaluation round automatically.\nDo not return plain text — it will be discarded.";
+  _wo.payload           = "All currently-running specialists have completed. Their results are now in context. You must now do ONE of the following:\n(A) If the task is complete or cannot be improved further: call getFinalAnswer with the full synthesised answer.\n(B) If more information is needed: spawn additional specialists via getSubAgent. Their results will trigger another evaluation round automatically.\nDo not return plain text — it will be discarded.";
   _wo.callerChannelId   = _project.callerChannelId;
   _wo.userId            = _project.userId || "";
   _wo.guildId           = _project.guildId || "";
@@ -466,8 +450,6 @@ async function _runParentChainWork(projectId, job, rawResult, baseCore, createRu
   });
 
   if (!_effectiveResponse) {
-    // Orchestrator spawned more specialists (counter was incremented) — they will
-    // trigger another round when they finish. Nothing to deliver yet.
     logSubagent("info", "poll-chain", "chain_synthesis_deferred", {
       projectId,
       durationMs: Date.now() - _chainStartMs,
@@ -475,7 +457,6 @@ async function _runParentChainWork(projectId, job, rawResult, baseCore, createRu
     return;
   }
 
-  // Mark as delivered so any further queue entries (late specialists) are no-ops.
   _deliveredProjects.add(projectId);
 
   if (_callerContextChannelId) {

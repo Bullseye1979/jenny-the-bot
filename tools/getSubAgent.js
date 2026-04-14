@@ -342,9 +342,6 @@ async function getInvoke(args, coreData) {
       projectId: _spawnData.projectId,
     });
 
-    // Increment specialist counter for the orchestrator project that spawned this specialist.
-    // The poll-helper decrements this on each specialist completion; when it reaches 0,
-    // synthesis is triggered automatically.
     if (mode !== "resume") {
       const _callerCtxChannelId = String(wo.contextChannelId || "").trim();
       if (_callerCtxChannelId.startsWith("project-")) {

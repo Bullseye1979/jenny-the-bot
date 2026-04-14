@@ -9,12 +9,17 @@ documents/
 pub/
 logs/
 tmp/
-.tmp/
 .DS_Store
-# safety
-logs/
 *.log
+*.bak
 
-# Bard assets — music files and library.xml are instance-specific
-assets/bard/*
+# Dot directories (instance-specific config, IDE, OS)
+.codex/
+.claude/
+.*/
+
+# Assets — instance-specific files
+assets/
+
+# Bard library example kept for reference
 !assets/bard/library.xml.example

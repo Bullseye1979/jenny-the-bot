@@ -1,5 +1,5 @@
 {
-  "name": "submitFinalAnswer",
+  "name": "getFinalAnswer",
   "description": "Submit the final synthesised answer for delivery to the user. Call this ONCE when you have collected all the information you need and are ready to deliver a complete response. Do NOT call this tool while specialists are still running or results are still missing. The response parameter must contain the full answer — not a progress message.",
   "parameters": {
     "type": "object",

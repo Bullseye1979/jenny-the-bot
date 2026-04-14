@@ -176,8 +176,8 @@ h1{color:#44cc88;margin-bottom:12px}p{color:#aaa;margin-bottom:8px}</style></hea
 
     server.on("error", reject);
     server.listen(port, () => {
-      console.log(`\n\x1b[33m[setup] core.json not found.\x1b[0m`);
-      console.log(`\x1b[33m[setup] Open http://localhost:${port}/setup to configure the bot.\x1b[0m\n`);
+      process.stdout.write(`\n\x1b[33m[setup] core.json not found.\x1b[0m\n`);
+      process.stdout.write(`\x1b[33m[setup] Open http://localhost:${port}/setup to configure the bot.\x1b[0m\n\n`);
     });
   });
 }
