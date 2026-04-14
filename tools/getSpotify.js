@@ -14,6 +14,7 @@
 
 
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr, getNum, getObj } from "../core/utils.js";
 
 const MODULE_NAME    = "getSpotify";
 const SPOTIFY_BASE   = "https://api.spotify.com/v1";
@@ -26,13 +27,7 @@ let _dbPool = null;
 
 
 
-function getStr(v, f = "") {
-  return typeof v === "string" && v.length ? v : f;
-}
 
-function getNum(v, f = 0) {
-  return Number.isFinite(Number(v)) ? Number(v) : f;
-}
 
 function getBool(v, f = false) {
   return typeof v === "boolean" ? v : f;
@@ -42,9 +37,6 @@ function getArr(v, f = []) {
   return Array.isArray(v) ? v : f;
 }
 
-function getObj(v, f = {}) {
-  return v && typeof v === "object" && !Array.isArray(v) ? v : f;
-}
 
 
 

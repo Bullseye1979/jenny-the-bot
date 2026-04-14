@@ -32,6 +32,7 @@ import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js"
 import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
 import { getSecret } from "../core/secrets.js";
 import { getItem } from "../core/registry.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "webpage-bard";
 const __filename = fileURLToPath(import.meta.url);
@@ -69,8 +70,6 @@ async function setSendAudioStream(wo, filePath, rangeHeader) {
   }
   return true;
 }
-
-function getStr(v) { return v == null ? "" : String(v); }
 
 function getBody(wo) {
   if (Buffer.isBuffer(wo.http?.rawBodyBytes)) return wo.http.rawBodyBytes.toString("utf8");

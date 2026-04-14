@@ -11,6 +11,7 @@
 
 
 import { getPrefixedLogger } from "../core/logging.js";
+import { getIsHttpUrl } from "../core/utils.js";
 
 const MODULE_NAME = "discord-add-files";
 
@@ -19,11 +20,6 @@ function getToString(v) {
   if (typeof v === "string") return v;
   if (v == null) return "";
   try { return String(v); } catch { return ""; }
-}
-
-
-function getIsHttpUrl(s) {
-  return typeof s === "string" && /^https?:\/\//.test(s);
 }
 
 

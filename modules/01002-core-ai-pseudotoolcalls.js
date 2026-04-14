@@ -14,7 +14,8 @@
 
 
 
-import { getContext } from "../core/context.js";
+import { getContext, getContextEarliestTimestamps } from "../core/context.js";
+import { getStr, getNum } from "../core/utils.js";
 import { putItem, getItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
@@ -42,13 +43,7 @@ function getJsonSafe(v) { try { return typeof v === "string" ? v : JSON.stringif
 function getPreview(str, max = 400) { const s = String(str ?? ""); return s.length > max ? s.slice(0, max) + " …[truncated]" : s; }
 
 
-function getNum(value, def) { return Number.isFinite(value) ? Number(value) : def; }
-
-
 function getBool(value, def) { return typeof value === "boolean" ? value : def; }
-
-
-function getStr(value, def) { return (typeof value === "string" && value.length) ? value : def; }
 
 
 function getToolStatusScope(wo) {
@@ -589,43 +584,50 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
 }
 
 
-function getSystemContentBase(wo, moduleCfg) {
+function getSystemContentBase(wo, moduleCfg, earliestTimestamps) {
   const now = new Date();
-  const tz = getStr(wo?.timezone, "Europe/Berlin");
+  const tz = getStr(wo?.timezone, “Europe/Berlin”);
   const nowIso = now.toISOString();
   const base = [
-    typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
-    typeof wo.persona === "string" ? wo.persona.trim() : "",
-    typeof wo.instructions === "string" ? wo.instructions.trim() : ""
-  ].filter(Boolean).join("\n\n");
+    typeof wo.systemPrompt === “string” ? wo.systemPrompt.trim() : “”,
+    typeof wo.persona === “string” ? wo.persona.trim() : “”,
+    typeof wo.instructions === “string” ? wo.instructions.trim() : “”
+  ].filter(Boolean).join(“\n\n”);
+
+  const earliestLines = (Array.isArray(earliestTimestamps) ? earliestTimestamps : []).map(
+    ({ channelId, earliestTs }) => `- context_earliest_record (channel “${channelId}”): ${earliestTs}`
+  );
 
   const runtimeInfo = [
-    "Runtime info:",
+    “Runtime info:”,
     `- current_time_iso: ${nowIso}`,
     `- timezone_hint: ${tz}`,
-    "- When the user says “today”, “tomorrow”, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
-    "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
-  ].join("\n");
+    ...earliestLines,
+    ...(earliestLines.length
+      ? [“- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window. History tools can retrieve records all the way back to this date.”]
+      : []),
+    “- When the user says \u201ctoday\u201d, \u201ctomorrow\u201d, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.”,
+    “- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user.”
+  ].join(“\n”);
 
-  const policy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "");
-  const toolContract = getStr(wo?.toolContractPrompt, "") || getStr(moduleCfg?.toolContractPrompt, "");
+  const policy = getStr(wo?.policyPrompt, “”) || getStr(moduleCfg?.policyPrompt, “”);
+  const toolContract = getStr(wo?.toolContractPrompt, “”) || getStr(moduleCfg?.toolContractPrompt, “”);
 
   const multiChannelNote = (() => {
     const raw = Array.isArray(wo?.contextIDs) ? wo.contextIDs : [];
     const extraIds = raw
-      .map(v => String(v || "").trim())
+      .map(v => String(v || “”).trim())
       .filter(v => v.length > 0);
-    if (!extraIds.length) return "";
-
-  const currentId = String(wo?.channelId ?? "").trim();
+    if (!extraIds.length) return “”;
+    const currentId = String(wo?.channelId ?? “”).trim();
     const lines = [
-      "Multi-channel context:",
-      "- The context includes messages from multiple channels. Each message may carry a `channelId` field that identifies its source channel."
+      “Multi-channel context:”,
+      “- The context includes messages from multiple channels. Each message may carry a `channelId` field that identifies its source channel.”
     ];
     if (currentId) {
-      lines.push(`- Treat "${currentId}" as your primary (effective) channelId for this conversation.`);
+      lines.push(`- Treat “${currentId}” as your primary (effective) channelId for this conversation.`);
     }
-    return lines.join("\n");
+    return lines.join(“\n”);
   })();
 
   const parts = [];
@@ -654,7 +656,8 @@ function getParseArtifactsBlock(text) {
 
 
 async function getSystemContent(wo, specs, moduleCfg) {
-  const parts = getSystemContentBase(wo, moduleCfg);
+  const earliestTimestamps = await getContextEarliestTimestamps(wo).catch(() => []);
+  const parts = getSystemContentBase(wo, moduleCfg, earliestTimestamps);
   const catalog = getRenderPseudoCatalog(specs || []);
   if (catalog) parts.push(catalog);
   return parts.filter(Boolean).join("\n\n");

@@ -13,6 +13,7 @@
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr, getNum } from "../core/utils.js";
 
 const MODULE_NAME = "getYoutube";
 let YT_LIB = null;
@@ -28,12 +29,6 @@ async function getYoutubeLib() {
   }
   return YT_LIB;
 }
-
-
-function getStr(v, f = "") { return typeof v === "string" && v.length ? v : f; }
-
-
-function getNum(v, f = 0) { return Number.isFinite(v) ? Number(v) : f; }
 
 
 function getClamp(n, min, max) { const x = Number.isFinite(n) ? n : min; return Math.max(min, Math.min(max, x)); }

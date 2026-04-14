@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { getMenuHtml, getDb, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { setSendNow, setJsonResp, getIsAllowedRoles } from "../shared/webpage/utils.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "webpage-context";
 const __filename   = fileURLToPath(import.meta.url);
@@ -44,7 +45,6 @@ const SHARED_CSS   = path.join(__dirname, "..", "shared", "webpage", "style.css"
 
 
 
-function getStr(v) { return typeof v === "string" ? v : v == null ? "" : String(v); }
 function getInt(v, def = 0) { const n = parseInt(v, 10); return isNaN(n) ? def : n; }
 
 function getBasePath(cfg) {

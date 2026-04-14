@@ -17,6 +17,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { ensureUserDir, getUserId } from "../core/file.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getIsHttpUrl } from "../core/utils.js";
 
 
 function setEnsureDir(absPath) {
@@ -58,13 +59,6 @@ function getBool(v) {
     if (s === "false" || s === "0" || s === "no" || s === "n" || s === "off") return false;
   }
   return false;
-}
-
-
-function getIsHttpUrl(s) {
-  if (typeof s !== "string") return false;
-  if (!/^https?:\/\//i.test(s)) return false;
-  return true;
 }
 
 

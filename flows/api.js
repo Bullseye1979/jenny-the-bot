@@ -12,16 +12,12 @@ import { getContext } from "../core/context.js";
 import { saveFile } from "../core/file.js";
 import { logSubagent } from "../core/subagent-logger.js";
 import { registerSseConnection, unregisterSseConnection } from "../core/async-sse.js";
+import { getStr } from "../core/utils.js";
 
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 let lastTimeMs = 0;
 let lastRandomBytes = new Uint8Array(10).fill(0);
-
-
-function getStr(value) {
-  return value == null ? "" : String(value);
-}
 
 
 function getBotname(workingObject, baseCore) {

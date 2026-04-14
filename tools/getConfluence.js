@@ -14,15 +14,14 @@
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr, getNum } from "../core/utils.js";
 
 const MODULE_NAME = "getConfluence";
 const SPACE_ID_CACHE = new Map();
 
 
-function getStr(v, f){ return (typeof v === "string" && v.length) ? v : f; }
 
 
-function getNum(v, f){ return Number.isFinite(v) ? Number(v) : f; }
 
 
 function getBool(v, f){ return typeof v === "boolean" ? v : f; }

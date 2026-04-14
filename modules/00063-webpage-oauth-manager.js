@@ -411,7 +411,6 @@ export default async function webpageOauthManager(coreData) {
     return coreData;
   }
 
-  // ── client_credentials routes ──────────────────────────────
 
   if (method === "GET" && urlPath === base + "/api/registrations") {
     const rows = await listOAuthRegistrations(pool);
@@ -469,7 +468,6 @@ export default async function webpageOauthManager(coreData) {
     return coreData;
   }
 
-  // ── auth_code routes ───────────────────────────────────────
 
   if (method === "GET" && urlPath === base + "/api/user-providers") {
     const rows = await listOAuthRegistrations(pool);
@@ -520,7 +518,6 @@ export default async function webpageOauthManager(coreData) {
     return coreData;
   }
 
-  // ── HTML page ──────────────────────────────────────────────
 
   if (method === "GET" && (urlPath === base || urlPath === base + "/")) {
     wo.http.response = {

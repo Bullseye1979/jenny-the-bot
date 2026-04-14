@@ -8,12 +8,9 @@ import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js"
 import { getIsAllowedRoles, setJsonResp, setSendNow } from "../shared/webpage/utils.js";
 import { listManifestNames, readManifest, writeManifest } from "../shared/webpage/subagent-manager.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "webpage-manifests";
-
-function getStr(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
 
 function getBasePath(cfg) {
   const value = getStr(cfg.basePath ?? "/manifests").trim();

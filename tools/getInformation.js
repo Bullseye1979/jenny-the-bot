@@ -666,7 +666,6 @@ async function getInformationInvoke(args, coreData) {
   const startedAt = Date.now();
   const wo = coreData?.workingObject || {};
 
-  // Always use the full mix of all available channels from context
   const channelIdSet = new Set();
   const primaryChannelId = String(wo?.callerChannelId || wo?.channelId || "").trim();
   if (primaryChannelId) channelIdSet.add(primaryChannelId);

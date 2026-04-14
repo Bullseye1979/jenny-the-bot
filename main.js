@@ -460,7 +460,7 @@ function getInitCurrentBase() {
 
 if (!fs.existsSync(CORE_PATH)) {
   await startSetupWizard(CORE_PATH, 3400);
-  console.log("\n\x1b[32m[main] core.json created — please restart the bot.\x1b[0m\n");
+  process.stdout.write("\n\x1b[32m[main] core.json created — please restart the bot.\x1b[0m\n\n");
   process.exit(0);
 }
 
@@ -745,7 +745,7 @@ const mainscreen =
   (art ? art + "\n" : "") +
   `${C.bold}${C.cyan}Starting core...${C.reset}\n` +
   `${C.gray}(waiting for flows to start)${C.reset}\n`;
-console.log(mainscreen);
+process.stdout.write(mainscreen);
 
 const runFlow = getRunFlow;
 const createRunCore = getCreateRunCore;

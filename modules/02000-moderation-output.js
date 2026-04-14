@@ -9,11 +9,9 @@
 
 
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "moderation-output";
-
-
-function getStr(v, d = "") { return (typeof v === "string" && v.length) ? v : d; }
 
 
 function getBool(v, d = false) { return (typeof v === "boolean") ? v : d; }

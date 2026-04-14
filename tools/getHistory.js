@@ -20,7 +20,6 @@ const MODULE_NAME = "getHistory";
 const ROW_CONTENT_MAX = 500;
 
 function getExtractContent(r) {
-  // Try to extract real message content from the json field first
   if (r.json) {
     try {
       const j = typeof r.json === "string" ? JSON.parse(r.json) : r.json;
@@ -28,7 +27,6 @@ function getExtractContent(r) {
       if (typeof c === "string" && c.trim()) return c.trim().slice(0, ROW_CONTENT_MAX);
     } catch {}
   }
-  // Fallback to text index column (already capped at 500 chars in DB)
   if (typeof r.text === "string" && r.text.trim()) return r.text.trim().slice(0, ROW_CONTENT_MAX);
   return null;
 }
@@ -176,7 +174,6 @@ async function getHistoryInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const cfgTool = wo?.toolsconfig?.getHistory || {};
 
-  // Always use the full mix of all available channels from context
   const channelIdSet = new Set();
   const primaryChannelId = String(wo?.callerChannelId || wo?.channelId || "").trim();
   if (primaryChannelId) channelIdSet.add(primaryChannelId);
@@ -266,7 +263,6 @@ async function getHistoryInvoke(args, coreData) {
   const outRows = [];
   for (const r of rows) {
     const content = getExtractContent(r);
-    // Skip assistant rows that have no text content (pure tool_call stubs)
     const roleLc = String(r.role || "").toLowerCase();
     if (roleLc === "assistant" && !content) continue;
     const row = {

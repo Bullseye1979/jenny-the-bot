@@ -11,16 +11,15 @@
 
 
 import { getSecret } from "../core/secrets.js";
+import { getStr, getNum } from "../core/utils.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getJira";
 
 
-function getStr(v, f){ return (typeof v==="string" && v.length)? v : f; }
 
 
-function getNum(v, f){ return Number.isFinite(v)? Number(v) : f; }
 
 
 function getDebug(label, obj){}

@@ -9,7 +9,8 @@
 
 
 
-import { getContext } from "../core/context.js";
+import { getContext, getContextEarliestTimestamps } from "../core/context.js";
+import { getStr, getNum } from "../core/utils.js";
 import { putItem, getItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
@@ -54,13 +55,7 @@ function getJsonSafe(v) { try { return typeof v === "string" ? v : JSON.stringif
 function getPreview(str, max = 400) { const s = String(str ?? ""); return s.length > max ? s.slice(0, max) + " …[truncated]" : s; }
 
 
-function getNum(value, def) { return Number.isFinite(value) ? Number(value) : def; }
-
-
 function getBool(value, def) { return typeof value === "boolean" ? value : def; }
-
-
-function getStr(value, def) { return (typeof value === "string" && value.length) ? value : def; }
 
 
 function getParseArtifactsBlock(text) {
@@ -415,10 +410,19 @@ async function getSystemContent(wo, kiCfg, moduleCfg) {
     typeof wo._deliveryInstructions === "string" ? wo._deliveryInstructions.trim() : ""
   ].filter(Boolean).join("\n\n");
 
+  const earliestTimestamps = await getContextEarliestTimestamps(wo).catch(() => []);
+  const earliestLines = earliestTimestamps.map(
+    ({ channelId, earliestTs }) => `- context_earliest_record (channel "${channelId}"): ${earliestTs}`
+  );
+
   const runtimeInfo = [
     "Runtime info:",
     `- current_time_iso: ${nowIso}`,
     `- timezone_hint: ${tz}`,
+    ...earliestLines,
+    ...(earliestLines.length
+      ? ["- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window. History tools can retrieve records all the way back to this date."]
+      : []),
     "- When the user says \u201ctoday\u201d, \u201ctomorrow\u201d, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
     "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
   ].join("\n");

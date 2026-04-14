@@ -8,12 +8,9 @@ import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js"
 import { getIsAllowedRoles, setJsonResp, setSendNow } from "../shared/webpage/utils.js";
 import { deleteSubagent, getSubagentManagerData, listSubagents, saveSubagent } from "../shared/webpage/subagent-manager.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "webpage-subagent-manager";
-
-function getStr(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
 
 function getBasePath(cfg) {
   const value = getStr(cfg.basePath ?? "/subagents").trim();

@@ -19,8 +19,6 @@ function ensureDir() {
   _dirReady = true;
 }
 
-process.stdout.write(`[subagent-logger] LOG_FILE resolved to: ${LOG_FILE}\n`);
-
 export function logSubagent(level, source, event, fields = {}) {
   try {
     ensureDir();

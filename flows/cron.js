@@ -7,19 +7,9 @@
 /**************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr, getNum } from "../core/utils.js";
 
 const MODULE_NAME = "cron";
-
-
-function getNum(v, d) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-}
-
-
-function getStr(v, d) {
-  return typeof v === "string" && v.length ? v : d;
-}
 
 
 function getBool(v, d) {

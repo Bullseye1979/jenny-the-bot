@@ -8,6 +8,7 @@
 
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
+import { getStr, getNum } from "../core/utils.js";
 
 const MODULE_NAME = "toolcall";
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -70,17 +71,6 @@ function getNewUlid() {
     __ulid_lastRand = rand;
   }
   return getUlidEncodeTime(now) + getUlidEncodeRandom80ToBase32(rand);
-}
-
-
-function getNum(v, d) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-}
-
-
-function getStr(v, d) {
-  return typeof v === "string" && v.length ? v : d;
 }
 
 

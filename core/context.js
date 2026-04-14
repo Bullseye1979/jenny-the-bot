@@ -982,6 +982,38 @@ export async function setFreezeContext(workingObject) {
 }
 
 
+/**
+ * Returns the earliest database timestamp per channel for all channel IDs
+ * active in the current working object context. Allows AI modules to inform
+ * the model how far back the database actually holds records, independently
+ * of how many context elements are currently loaded.
+ * @param {object} workingObject
+ * @returns {Promise<Array<{channelId: string, earliestTs: string}>>}
+ */
+export async function getContextEarliestTimestamps(workingObject) {
+  const allIds = getContextIdList(workingObject);
+  if (!allIds.length) return [];
+  try {
+    const pool = await getEnsurePool(workingObject);
+    const results = [];
+    for (const channelId of allIds) {
+      const [rows] = await pool.execute(
+        "SELECT MIN(ts) AS earliest FROM context WHERE id = ?",
+        [channelId]
+      );
+      const earliest = rows?.[0]?.earliest;
+      const ts = earliest instanceof Date
+        ? earliest.toISOString()
+        : (typeof earliest === "string" && earliest.trim() ? earliest.trim() : null);
+      if (ts) results.push({ channelId, earliestTs: ts });
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+
 export async function getContextLastSeconds(workingObject, seconds = 60) {
   const id = getContextChannelId(workingObject);
   if (!id) return [];

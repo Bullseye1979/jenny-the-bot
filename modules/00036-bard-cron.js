@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { getItem, putItem } from "../core/registry.js";
 import { getContextLastSeconds, getContextSince } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "bard-cron";
 const __filename = fileURLToPath(import.meta.url);
@@ -26,11 +27,6 @@ const __dirname  = path.dirname(__filename);
 
 function getNowIso() {
   try { return new Date().toISOString(); } catch { return ""; }
-}
-
-
-function getStr(v) {
-  return v == null ? "" : String(v);
 }
 
 

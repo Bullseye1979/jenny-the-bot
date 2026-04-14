@@ -10,6 +10,7 @@
 
 import * as registry from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr, getNum } from "../core/utils.js";
 
 const MODULE_NAME = "discord-status-apply";
 const REGISTRY_TOOL_KEY = "status:tool";
@@ -18,17 +19,6 @@ const CLIENT_REF = "discord:client";
 
 const getItem = registry.getItem;
 const setItem = typeof registry.setItem === "function" ? registry.setItem : null;
-
-
-function getStr(v, d) {
-  return typeof v === "string" && v.length ? v : d;
-}
-
-
-function getNum(v, d) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-}
 
 
 function getBool(v, d) {

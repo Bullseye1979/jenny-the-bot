@@ -11,10 +11,9 @@
 
 import { getItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "getBan";
-
-function getStr(v, d = "") { return (typeof v === "string" && v.length) ? v : d; }
 function getNowIso() { return new Date().toISOString(); }
 function getPreview(s, max = 400) {
   const t = String(s ?? "");

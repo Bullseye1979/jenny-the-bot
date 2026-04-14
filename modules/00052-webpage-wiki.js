@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { getMenuHtml, getDb, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { setSendNow, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
 import { getSecret } from "../core/secrets.js";
+import { getStr } from "../core/utils.js";
 
 let sharp = null;
 try { sharp = (await import("sharp")).default; } catch {  }
@@ -83,9 +84,6 @@ async function ensureThumb(imageUrl, width) {
   const thumbDir = path.join(path.dirname(absPath), "thumbnails", String(width));
   await getThumb(absPath, thumbDir, path.basename(absPath), width);
 }
-
-
-function getStr(v) { return v == null ? "" : String(v); }
 
 
 async function sendJson(wo, status, data) {

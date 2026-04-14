@@ -13,18 +13,9 @@
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr, getNum } from "../core/utils.js";
 
 const MODULE_NAME = "getTavily";
-
-
-function getStr(value, fallback) {
-  return typeof value === "string" && value.length ? value : fallback;
-}
-
-
-function getNum(value, fallback) {
-  return Number.isFinite(value) ? Number(value) : fallback;
-}
 
 
 function getClamp(n, min, max) {

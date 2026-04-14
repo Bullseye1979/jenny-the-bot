@@ -17,14 +17,9 @@
 
 import { getPrefixedLogger } from "../core/logging.js";
 import { rebuildDerivedContextSet, setPurgeContext, setFreezeContext } from "../core/context.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "core-admin-commands";
-
-function getStr(value) {
-  if (typeof value === "string") return value;
-  if (value == null) return "";
-  try { return String(value); } catch { return ""; }
-}
 
 function setStop(workingObject, responseText, responseValue = "STOP") {
   workingObject.stop       = true;

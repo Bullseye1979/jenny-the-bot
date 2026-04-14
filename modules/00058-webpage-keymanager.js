@@ -24,13 +24,9 @@
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { getIsAllowedRoles, setSendNow } from "../shared/webpage/utils.js";
 import { getSecret, listSecrets, setSecret, deleteSecret, setEnsureSecretsTable } from "../core/secrets.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "webpage-keymanager";
-
-
-function getStr(v, fb = "") {
-  return (v != null && typeof v === "string") ? v : fb;
-}
 
 
 function getBasePath(cfg) {

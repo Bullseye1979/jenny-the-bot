@@ -17,7 +17,8 @@
 
 
 
-import { getContext } from "../core/context.js";
+import { getContext, getContextEarliestTimestamps } from "../core/context.js";
+import { getStr, getNum } from "../core/utils.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
@@ -37,12 +38,6 @@ function getAssistantAuthorName(wo) {
 
 
 function getBool(value, def) { return typeof value === "boolean" ? value : def; }
-
-
-function getNum(value, def) { return Number.isFinite(value) ? Number(value) : def; }
-
-
-function getStr(value, def) { return (typeof value === "string" && value.trim().length) ? value.trim() : def; }
 
 
 function getTryParseJSON(text, fallback = null) { try { return JSON.parse(text); } catch { return fallback; } }
@@ -229,12 +224,30 @@ function getExtractUrlFromToolResult(toolResultContent) {
 }
 
 
-function getSystemContentTextRun(wo) {
-  return [
+function getSystemContentTextRun(wo, earliestTimestamps) {
+  const base = [
     typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
     typeof wo.persona === "string" ? wo.persona.trim() : "",
     typeof wo.instructions === "string" ? wo.instructions.trim() : ""
   ].filter(Boolean).join("\n\n");
+
+  const stamps = Array.isArray(earliestTimestamps) ? earliestTimestamps : [];
+  if (!stamps.length) return base;
+
+  const nowIso = new Date().toISOString();
+  const tz = typeof wo?.timezone === "string" && wo.timezone.trim() ? wo.timezone.trim() : "Europe/Berlin";
+  const earliestLines = stamps.map(
+    ({ channelId, earliestTs }) => `- context_earliest_record (channel "${channelId}"): ${earliestTs}`
+  );
+  const runtimeInfo = [
+    "Runtime info:",
+    `- current_time_iso: ${nowIso}`,
+    `- timezone_hint: ${tz}`,
+    ...earliestLines,
+    "- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window."
+  ].join("\n");
+
+  return [base, runtimeInfo].filter(Boolean).join("\n\n");
 }
 
 
@@ -344,8 +357,9 @@ export default async function getCoreAi(coreData) {
     try { snapshot = await getContext(wo); } catch {}
   }
 
+  const _earliestTimestamps = await getContextEarliestTimestamps(wo).catch(() => []);
   const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory, kiCfg.includeHistorySystemMessages);
-  const system1 = getSystemContentTextRun(wo);
+  const system1 = getSystemContentTextRun(wo, _earliestTimestamps);
 
   
   const pass1Messages = [

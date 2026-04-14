@@ -36,26 +36,20 @@ export default {
     const filename = context.filename ?? context.getFilename?.() ?? "";
     const basename = path.basename(filename, ".js");
 
-    // Only enforce on numbered module files (e.g. 00050-discord-admin-commands)
     if (!/^\d+-.+/.test(basename)) return {};
 
-    // Derive own config key: strip leading digits and dash
-    // "00050-discord-admin-commands" → "discord-admin-commands"
     const moduleKey = basename.replace(/^\d+-/, "");
 
     return {
       MemberExpression(node) {
-        // Only interested in computed bracket access: obj["key"]
         if (!node.computed) return;
         if (node.property.type !== "Literal") return;
         if (typeof node.property.value !== "string") return;
 
         const accessedKey = node.property.value;
 
-        // Check that the object of this access resolves to ".config"
         if (!isConfigAccess(node.object)) return;
 
-        // Own key is always allowed
         if (accessedKey === moduleKey) return;
 
         context.report({
@@ -83,7 +77,6 @@ function isConfigAccess(node) {
     if (node.property.type === "Identifier" && node.property.name === "config") return true;
   }
 
-  // Optional chaining wraps the inner expression in ChainExpression
   if (node.type === "ChainExpression") {
     return isConfigAccess(node.expression);
   }

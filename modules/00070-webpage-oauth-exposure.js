@@ -152,7 +152,6 @@ export default async function webpageOauthExposure(coreData) {
     return coreData;
   }
 
-  // GET /oauth-exposure/api/providers
   if (method === "GET" && urlPath === BASE_PATH + "/api/providers") {
     const allRegs = await listOAuthRegistrations(pool);
     const providers = allRegs
@@ -165,7 +164,6 @@ export default async function webpageOauthExposure(coreData) {
     return coreData;
   }
 
-  // POST /oauth-exposure/api/providers
   if (method === "POST" && urlPath === BASE_PATH + "/api/providers") {
     const data   = wo?.http?.json || {};
     const name   = String(data.name || "").trim();
@@ -182,7 +180,6 @@ export default async function webpageOauthExposure(coreData) {
     return coreData;
   }
 
-  // GET /oauth-exposure or /oauth-exposure/
   if (method === "GET" && (urlPath === BASE_PATH || urlPath === BASE_PATH + "/")) {
     wo.http.response = {
       status:  200,

@@ -147,7 +147,6 @@ export default async function webpageBearerExposure(coreData) {
     return coreData;
   }
 
-  // GET /bearer-exposure/api/keys
   if (method === "GET" && urlPath === BASE_PATH + "/api/keys") {
     let allSecrets;
     try {
@@ -166,7 +165,6 @@ export default async function webpageBearerExposure(coreData) {
     return coreData;
   }
 
-  // POST /bearer-exposure/api/keys
   if (method === "POST" && urlPath === BASE_PATH + "/api/keys") {
     const data   = wo?.http?.json || {};
     const name   = String(data.name || "").trim();
@@ -183,7 +181,6 @@ export default async function webpageBearerExposure(coreData) {
     return coreData;
   }
 
-  // GET /bearer-exposure or /bearer-exposure/
   if (method === "GET" && (urlPath === BASE_PATH || urlPath === BASE_PATH + "/")) {
     wo.http.response = {
       status:  200,

@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
 import { setSendNow, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "webpage-dashboard";
 const __filename = fileURLToPath(import.meta.url);
@@ -25,10 +26,6 @@ const EVENTS_DIR  = path.join(LOGS_ROOT, "events");
 const PIPELINE_DIR = path.join(LOGS_ROOT, "pipeline");
 const EVENTS_RE   = /^events-(\d+)\.log$/;
 const PIPELINE_RE = /^pipeline-(\d+)\.log$/;
-
-
-function getStr(v) { return v == null ? "" : String(v); }
-
 
 
 function getBasePath(cfg) {

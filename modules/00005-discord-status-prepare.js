@@ -10,13 +10,9 @@
 
 
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "discord-status-prepare";
-
-
-function getStr(v, d) {
-  return typeof v === "string" && v.length ? v : d;
-}
 
 
 function getCleanAllowedChannels(cfg) {

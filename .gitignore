@@ -18,8 +18,8 @@ tmp/
 .claude/
 .*/
 
-# Assets — instance-specific files
-assets/
-
-# Bard library example kept for reference
+# Assets — instance-specific files (use git add -f for any example files inside)
+assets/**
+!assets/bard/
+assets/bard/**
 !assets/bard/library.xml.example

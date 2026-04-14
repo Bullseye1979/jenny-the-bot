@@ -15,6 +15,7 @@
 
 
 import { fetchWithTimeout } from "../core/fetch.js";
+import { getStr, getNum, getObj } from "../core/utils.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getGraph";
@@ -51,17 +52,11 @@ async function getDbPool(coreData) {
 
 
 
-function getStr(v, f = "") {
-  return typeof v === "string" && v.length ? v : f;
-}
 
 
 
 
 
-function getNum(v, f = 0) {
-  return Number.isFinite(v) ? Number(v) : f;
-}
 
 
 
@@ -83,9 +78,6 @@ function getArr(v, f = []) {
 
 
 
-function getObj(v, f = {}) {
-  return v && typeof v === "object" && !Array.isArray(v) ? v : f;
-}
 
 
 

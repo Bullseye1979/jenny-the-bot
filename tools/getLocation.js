@@ -14,18 +14,9 @@ import { saveFile } from "../core/file.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
+import { getStr, getNum } from "../core/utils.js";
 
 const MODULE_NAME = "getLocation";
-
-
-function getStr(value, fallback) {
-  return typeof value === "string" && value.length ? value : fallback;
-}
-
-
-function getNum(value, fallback) {
-  return Number.isFinite(value) ? Number(value) : fallback;
-}
 
 
 function getClamp(n, min, max) {

@@ -15,7 +15,8 @@
 
 
 
-import { getContext } from "../core/context.js";
+import { getContext, getContextEarliestTimestamps } from "../core/context.js";
+import { getStr, getNum } from "../core/utils.js";
 import { putItem, getItem, deleteItem } from "../core/registry.js";
 import { saveFile } from "../core/file.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -43,10 +44,6 @@ function getAssistantAuthorName(wo) {
 function getToString(v) { return typeof v === "string" ? v : (v == null ? "" : String(v)); }
 
 
-function getStr(v, d) { return (typeof v === "string" && v.length) ? v : d; }
-
-
-function getNum(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; }
 
 
 function getJSON(t, f = null) { try { return JSON.parse(t); } catch { return f; } }
@@ -1077,6 +1074,8 @@ export default async function getCoreAi(coreData) {
   }
 
 
+  const _earliestTimestamps = await getContextEarliestTimestamps(wo).catch(() => []);
+
   function getSystemContent(wo2) {
     const nowIso = new Date().toISOString();
     const tz = getStr(wo2?.timezone, "Europe/Berlin");
@@ -1086,10 +1085,18 @@ export default async function getCoreAi(coreData) {
       typeof wo2.instructions === "string" ? wo2.instructions.trim() : ""
     ].filter(Boolean).join("\n\n");
 
+    const earliestLines = _earliestTimestamps.map(
+      ({ channelId, earliestTs }) => `- context_earliest_record (channel "${channelId}"): ${earliestTs}`
+    );
+
     const runtimeInfo = [
       "Runtime info:",
       `- current_time_iso: ${nowIso}`,
       `- timezone_hint: ${tz}`,
+      ...earliestLines,
+      ...(earliestLines.length
+        ? ["- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window. History tools can retrieve records all the way back to this date."]
+        : []),
       "- When the user uses relative time terms (e.g., today, tomorrow), interpret them relative to current_time_iso unless another explicit reference time is provided.",
       "- If you generate calendar-like text, prefer explicit dates (YYYY-MM-DD) when helpful."
     ].join("\n");
