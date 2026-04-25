@@ -475,7 +475,9 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
   if (imgPrompt) {
     try {
       article.image_url = await wikiGenImage(imgPrompt, imgCfg, wo);
-    } catch {  }
+    } catch (e) {
+      console.error(`[${MODULE_NAME}] wikiGenImage failed: ${e?.message || String(e)}`);
+    }
   }
 
   return article;
@@ -764,20 +766,20 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
   const related    = safeParseJson(article.related, []);
 
   const tocItems = sections
-    .filter(s => s.heading)
-    .map((s, i) => {
-      const anchor = `section-${i}`;
-      return `<li><a href="#${anchor}">${escHtml(s.heading)}</a></li>`;
-    }).join("");
+    .map((s, i) => ({ h: s.heading || s.title || s.name || "", i }))
+    .filter(({ h }) => h)
+    .map(({ h, i }) => `<li><a href="#section-${i}">${escHtml(h)}</a></li>`)
+    .join("");
 
   const tocHtml = tocItems
     ? `<div class="wiki-toc"><div class="wiki-toc-title">Contents</div><ol>${tocItems}</ol></div>`
     : "";
 
   const sectionsHtml = sections.map((s, i) => {
+    const heading = s.heading || s.title || s.name || "";
     const tag = `h${Math.min(Math.max(Number(s.level) || 2, 2), 4)}`;
     return `<div class="wiki-section" id="section-${i}">
-  <${tag}>${escHtml(s.heading)}</${tag}>
+  ${heading ? `<${tag}>${escHtml(heading)}</${tag}>` : ""}
   ${s.content ? s.content.split("\n").map(p => p.trim() ? `<p>${escHtml(p)}</p>` : "").join("") : ""}
 </div>`;
   }).join("");
