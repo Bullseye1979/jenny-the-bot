@@ -5518,7 +5518,7 @@ The AI **must** output a single raw JSON object (no markdown fences, no surround
 | `intro` | string | yes | Introductory text (rendered as plain paragraphs) |
 | `sections` | array | yes | Body sections. Each has `heading` (string), `level` (2–4), and `content` (string, markdown supported) |
 | `infobox.imageAlt` | string | — | Alt text / short image description |
-| `infobox.imageUrl` | string\|null | yes | URL returned by `getImage` (`files[0].url`). **Must be set**; `null` only if `getImage` fails |
+| `infobox.imageUrl` | string\|null | yes | URL returned by `getImage` (top-level `url` field). **Must be set**; `null` only if `getImage` fails |
 | `infobox.fields` | array | — | Key–value pairs displayed in the sidebar infobox |
 | `categories` | array | — | Category tags (strings) |
 | `relatedTerms` | array | — | Related article slugs or search terms shown as links |
