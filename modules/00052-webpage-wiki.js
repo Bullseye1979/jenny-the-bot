@@ -397,19 +397,47 @@ async function wikiGenImage(prompt, imgCfg, wo) {
 
 
 
+const WIKI_PATCH_KEYS = [
+  "useAiModule", "model", "endpoint", "endpointResponses", "apiKey",
+  "temperature", "maxTokens", "maxLoops", "requestTimeoutMs", "contextSize",
+  "tools", "toolsBlacklist", "systemPrompt", "persona", "instructions",
+  "includeHistory", "includeHistoryTools", "fallbackOverrides"
+];
+
+const WIKI_JSON_SCHEMA_PROMPT =
+  "IMPORTANT: Respond ONLY with a single valid JSON object — no prose, no markdown fences, no commentary before or after.\n" +
+  'Schema: {"title":"string","intro":"paragraph text","sections":[{"heading":"string","level":2,"content":"paragraph text"}],' +
+  '"infobox":{"imageAlt":"short image description for generation","fields":[{"label":"string","value":"string"}]},' +
+  '"categories":["string"],"relatedTerms":["string"]}';
+
+
 async function callPipelineForArticle(query, channel, coreData, promptAddition) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
 
-  
 
 
 
   const apiUrl    = getStr(cfg.apiUrl || "http://localhost:3400/api");
   const apiSecret = await getSecret(wo, getStr(wo.apiSecret || ""));
 
+  const globalOvr = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
+  const chanOvr   = (channel.overrides && typeof channel.overrides === "object") ? channel.overrides : {};
+  const mergedOvr = { ...globalOvr, ...chanOvr };
+  const workingObjectPatch = {};
+  for (const k of WIKI_PATCH_KEYS) {
+    if (k in mergedOvr) workingObjectPatch[k] = mergedOvr[k];
+  }
+
   const payload = `Topic: ${query}` + (promptAddition ? `\n\nAdditional context: ${promptAddition}` : "");
-      const reqBody = { channelId: channel.channelId, payload, userId: "wiki", doNotWriteToContext: true };
+  const reqBody = {
+    channelId: channel.channelId,
+    payload,
+    userId: "wiki",
+    doNotWriteToContext: true,
+    workingObjectPatch,
+    systemPromptAddition: WIKI_JSON_SCHEMA_PROMPT
+  };
 
   const headers = { "Content-Type": "application/json" };
   if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
