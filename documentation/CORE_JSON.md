@@ -39,7 +39,6 @@ All key names follow **camelCase** throughout.
      - [getWebpage](#getwebpage)
      - [getYoutube](#getyoutube)
      - [getHistory](#gethistory)
-     - [getInformation](#getinformation)
      - [getTimeline](#gettimeline)
      - [getConfluence](#getconfluence)
      - [getJira](#getjira)
@@ -49,7 +48,12 @@ All key names follow **camelCase** throughout.
      - [getLocation](#getlocation)
      - [getTime](#gettime)
      - [getSubAgent](#getsubagent)
+     - [getOrchestrator](#getorchestrator)
+     - [getSpecialists](#getspecialists)
      - [getBan](#getban)
+     - [getApi](#getapi)
+     - [getApiBearers](#getapibearers)
+     - [getMyConnections](#getmyconnections)
 2. [config](#config)
    - [discord](#discord)
    - [api](#api)
@@ -122,6 +126,8 @@ All key names follow **camelCase** throughout.
 | `maxToolCalls` | number | `7` | Maximum individual tool invocations per turn |
 | `toolChoice` | string | `"auto"` | Tool selection mode: `"auto"` Â· `"none"` Â· `"required"` |
 | `tools` | array | `["getGoogle","getImage",...]` | Names of tools the LLM may call this turn |
+| `toolsBlacklist` | array | `["getImageSD"]` | Tool names to remove from `tools` before the AI request is sent. Applied after the `tools` list is resolved; the original `tools` array is never modified. Typical use: block tools that require infrastructure not available in the current deployment mode (e.g. local SD server, expensive agent tools). When `fallbackOverrides` is active, `toolsBlacklist` from the override object **completely replaces** the base blacklist (no merge). |
+| `fallbackOverrides` | object | see below | Object of workingObject fields applied automatically when the primary endpoint is unreachable (TCP probe fails). Any key valid in `workingObject` can be overridden here. Commonly used to switch to a public API (e.g. OpenAI) when a local model server goes offline. Set at minimum: `endpoint`, `apiKey`, `model`, `useAiModule`, `toolsBlacklist`. The probe caches results for 5 s. |
 | `includeHistory` | boolean | `true` | Include previous conversation history in the context window |
 | `includeHistoryTools` | boolean | `false` | Include tool-call rows when loading history |
 | `includeRuntimeContext` | boolean | `true` | Inject runtime metadata (timestamp, user, channel) into the system prompt |
@@ -133,7 +139,9 @@ All key names follow **camelCase** throughout.
 | `trigger` | string | `"jenny"` | Trigger word that activates the bot (empty = always active) |
 | `doNotWriteToContext` | boolean | `false` | Skip writing this turn to MySQL (useful for status flows) |
 | `contextChannelId` | string | `""` | Override the channel ID used when reading/writing context. When set, context is stored under this ID instead of `channelId`. Useful when one channel (e.g. a subagent channel) should share history with another. |
-| `skipAiCompletions` | boolean | `false` | When `true`, the `core-ai-completions` module exits immediately without running the AI. Use this in flows where the AI call is handled by a different module or must be suppressed entirely for that pipeline pass. |
+| `skipAiCompletions` | boolean | `false` | When `true`, all `core-ai-*` modules (01000–01003) exit immediately without running the AI. Use this in flows where the AI call is handled by a different module or must be suppressed entirely for that pipeline pass. |
+| `agentType` | string | `"orchestrator"` | Set in channel config overrides for agentic channels. Embedded in the system prompt by AI modules to adjust model behavior. Typical values: `"orchestrator"`, `"specialist"`. Leave empty for primary user channels. |
+| `agentDepth` | number | `1` | Nesting depth for agentic contexts. `0` = primary user channel, `1` = orchestrator, `2` = specialist. Embedded in the system prompt alongside `agentType`. |
 | `showReactions` | boolean | `true` | Add emoji reactions to Discord messages during processing |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone for time-aware modules and tools |
 | `baseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving generated files (images, PDFs, etc.) |
@@ -147,6 +155,26 @@ All key names follow **camelCase** throughout.
 | `reasoningSummary` | string | `""` | Accumulated chain-of-thought reasoning (written by AI modules) |
 | `payload` | string | `""` | The user's input message for this turn |
 
+**`fallbackOverrides` example** (primary = local model, fallback = OpenAI):
+
+```jsonc
+"endpoint":   "http://localhost:11434/v1/chat/completions",
+"apiKey":     "LOCAL",
+"model":      "gemma4",
+"useAiModule": "pseudotoolcalls",
+"toolsBlacklist": ["getImageSD"],
+"fallbackOverrides": {
+  "endpoint":        "https://api.openai.com/v1/chat/completions",
+  "endpointResponses": "https://api.openai.com/v1/responses",
+  "apiKey":          "OPENAI",
+  "model":           "gpt-4o-mini",
+  "useAiModule":     "completions",
+  "toolsBlacklist":  ["getImage", "getOrchestrator", "getSpecialists"]
+}
+```
+
+> **Note:** `toolsBlacklist` in `fallbackOverrides` fully replaces the base blacklist — it does not merge. List every tool you want blocked in fallback mode explicitly.
+
 Secret alias policy: committed config may contain symbolic placeholders such as `OPENAI`, `API_SECRET`, and `DISCORD_CLIENT_SECRET`. Real API keys and bearer tokens must not be stored in `core.json`. `db.password` is the bootstrap exception because the bot must reach MySQL before it can resolve DB-backed secrets.
 
 ---
@@ -159,8 +187,10 @@ Secret alias policy: committed config may contain symbolic placeholders such as 
 | `ttsModel` | string | `"gpt-4o-mini-tts"` | Text-to-speech model |
 | `ttsVoice` | string | `"nova"` | TTS voice name |
 | `ttsEndpoint` | string | `"https://api.openai.com/v1/audio/speech"` | TTS API endpoint |
-| `ttsApiKey` | string | `"OPENAI"` | Placeholder name for the TTS API key â€” resolved from `bot_secrets` at runtime |
-| `transcribeApiKey` | string | `"OPENAI"` | Placeholder name for the transcription API key â€” resolved from `bot_secrets` at runtime |
+| `ttsApiKey` | string | `”OPENAI”` | Placeholder name for the TTS API key — resolved from `bot_secrets` at runtime |
+| `ttsFormat` | string | `”opus”` | Audio output format for TTS. `”opus”` for Discord (default), `”mp3”` for webpage voice. Overridable per-module in `config[“core-voice-tts”]`. |
+| `ttsFetchTimeoutMs` | number | `30000` | Timeout in milliseconds for each individual TTS API request. |
+| `transcribeApiKey` | string | `”OPENAI”` | Placeholder name for the transcription API key — resolved from `bot_secrets` at runtime |
 | `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Transcription model identifier |
 | `transcribeLanguage` | string | `""` | Force a specific transcription language (ISO 639-1, or empty for auto) |
 | `transcribeEndpoint` | string | `"https://api.openai.com"` | Base URL for the transcription API |
@@ -419,35 +449,6 @@ Date-range history retrieval directly from the database. Returns raw rows ordere
 - Default: primary = `channelId` arg → `wo.callerChannelId` → `wo.channelId`; extra = `channelIds` arg → `wo.callerChannelIds` → `wo.channelIds`.
 - `strictChannelId=true`: only the explicitly provided `channelId`/`channelIds` are queried; workingObject channel lists are ignored.
 
-#### getInformation
-
-Keyword-based search across the conversation log database. Returns matching row clusters grouped by timeline period (type `detail`) or summary-only periods (type `period`) and unplaced matches (type `unplaced`). Use `start_ts`/`end_ts` from returned entries to drive follow-up `getHistory` calls.
-
-No `toolsconfig` keys are required for basic use. Optional advanced keys:
-
-| Key | Type | Description |
-|---|---|---|
-| `clusterRows` | number | Rows per cluster block (default 400) |
-| `padRows` | number | Context rows added before/after each cluster (default 20) |
-| `maxOutputLines` | number | Maximum lines returned across all clusters (default 800) |
-| `minCoverage` | number | Minimum keyword-group coverage score required (default 1) |
-| `includeAliasSearch` | boolean | Enable LLM-assisted alias expansion for better recall |
-| `aliasLlmChannelId` | string | Internal channel used for alias inference LLM calls |
-
-**Tool call parameters** (set by the AI at runtime):
-
-| Parameter | Type | Description |
-|---|---|---|
-| `keywordGroups` | array | Preferred: concept groups with `base`, `variants`, and `parts` for partial matching |
-| `keywords` | array | Fallback: free-form search phrases |
-| `channelId` | string | Override the primary channel to search. Defaults to `wo.callerChannelId` or `wo.channelId`. |
-| `channelIds` | array | Additional channel IDs to include in the search. |
-| `strictChannelId` | boolean | When `true`, search **only** the channels in `channelId`/`channelIds`. Context-injected channels (`wo.callerChannelIds`, `wo.channelIds`) are ignored. Use this in subagents that must search a specific assigned channel without bleeding into linked channels. Default: `false`. |
-
-**Channel scope behaviour:**
-- Default: primary = `channelId` arg → `wo.callerChannelId` → `wo.channelId`; extra = `channelIds` arg → `wo.callerChannelIds` → `wo.channelIds`.
-- `strictChannelId=true`: only the explicitly provided `channelId`/`channelIds` are searched; workingObject channel lists are ignored.
-
 #### getTimeline
 
 Chronological timeline retrieval from derived context segments and nodes.
@@ -602,7 +603,7 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 | `specialist-file-edit` | Handles **exactly one file** per call; returns an error if the task references multiple files |
 | `specialist-code-check` | Reads source files; returns a structured PASSED / WARNINGS / FAILED quality report |
 | `specialist-security-check` | Reads code and dependencies; uses `getTavily` to search for CVEs and exploits; returns a severity-ranked security report |
-| `specialist-context-research` | Reconstructs events within a strictly assigned time window. Uses `channelId` + `strictChannelId=true` on `getInformation`/`getHistory` to stay within its partition |
+| `specialist-context-research` | Reconstructs events within a strictly assigned time window. Uses `channelId` + `strictChannelId=true` on `getHistory` to stay within its partition |
 | `specialist-content-search` | Web search, webpage fetch, YouTube, location |
 | `specialist-image-video` | Image generation, animation, video, media analysis |
 | `specialist-document-generate` | PDF and document assembly |
@@ -625,9 +626,34 @@ Spawns an isolated AI subagent via the internal API flow. Each subagent type map
 | `datasetInfo.channelId` | Main channel ID — authoritative context source (context specialists) |
 | `datasetInfo.totalRecords` / `.partitionIndex` / `.partitionTotal` | Dataset metadata for partitioned jobs |
 
-**Context injection:** By default a spawned subagent only loads its own (empty) project context. Set `includeCallerContext=true` when calling `getSubAgent` to pre-load the original caller channel’s context into the subagent, compressed to the subagent channel’s own `contextSize`. This is required for `specialist-context-research` subagents that need to run `getInformation` against the original channel.
+**Context injection:** By default a spawned subagent only loads its own (empty) project context. Set `includeCallerContext=true` when calling `getSubAgent` to pre-load the original caller channel’s context into the subagent, compressed to the subagent channel’s own `contextSize`. This is required for `specialist-context-research` subagents that need to run `getHistory` against the original channel.
 
 `getSubAgent` posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: “started” }`. Results are delivered back to the originating channel by the subagent poll flows. If the task text is missing URLs that appear in the caller payload, they are appended automatically in a `[SOURCE URLS]` block.
+
+#### getOrchestrator
+
+Synchronous orchestrator tool. Blocks until the orchestrator finishes. The orchestrator runs on a dynamically generated channel ID (`<baseChannelId>-<randomHex>`).
+
+| Key | Type | Example | Description |
+|---|---|---|---|
+| `types` | object | `{ “generic”: “subagent-orchestrator-generic” }` | **Required.** Maps type names to base channel IDs |
+| `defaultType` | string | `”generic”` | Type used when the AI omits the `type` argument |
+| `apiUrl` | string | `”http://localhost:3400”` | Internal API base URL |
+| `apiSecret` | string | `”API_SECRET”` | Bearer token placeholder (resolved from `bot_secrets`) |
+| `timeoutMs` | number | `604800000` | Maximum wait time in milliseconds (default: 7 days) |
+
+#### getSpecialists
+
+Parallel specialist dispatcher. Runs multiple specialist workers concurrently in sequential batches.
+
+| Key | Type | Example | Description |
+|---|---|---|---|
+| `types` | object | `{ “specialist-generic”: “subagent-specialist-generic” }` | **Required.** Maps specialist type names to base channel IDs |
+| `defaultType` | string | `””` | Fallback type when a specialist entry omits `type` |
+| `apiUrl` | string | `”http://localhost:3400”` | Internal API base URL |
+| `apiSecret` | string | `”API_SECRET”` | Bearer token placeholder (resolved from `bot_secrets`) |
+| `timeoutMs` | number | `604800000` | Maximum wait time per specialist (milliseconds) |
+| `maxConcurrent` | number | `3` | Concurrent specialists per batch |
 
 #### getBan
 
@@ -636,6 +662,32 @@ Sends a ban request DM to the configured admin user.
 | Key | Type | Example | Description |
 |---|---|---|---|
 | `adminUserId` | string | `"406901027665870848"` | Discord user ID to send ban DMs to. Falls back to `workingObject.modAdmin` if omitted. |
+
+#### getApi
+
+HTTP client tool for calling any external REST API. Supports unauthenticated requests as well as API keys, HTTP Basic, and OAuth2 (client credentials or per-user authorization code). See `ADMIN_MANUAL §5.6 getApi` for full parameters and authentication flow.
+
+No `toolsconfig` keys required for basic use. The tool reads authentication at runtime from `bot_secrets` (for `apiKey`/`basic`) or `oauth_registrations`/`oauth_tokens` (for `oauth_cc`/`oauth_user`). No static configuration in `toolsconfig` is needed unless you need to restrict which auth names are exposed (that is handled via `/bearer-exposure` and `/oauth-exposure` in the admin UI).
+
+**Discovery flow:**
+
+| When the AI needs | It calls first |
+|---|---|
+| `apiKey` or `basic` | `getApiBearers` → discovers available secret names |
+| `oauth_cc` | `getOauthProviders` → discovers registered server-side providers |
+| `oauth_user` | `getMyConnections` → discovers providers the current user has connected |
+
+#### getApiBearers
+
+Discovery companion for `getApi`. Returns the list of API key / HTTP Basic secret names currently exposed to the AI (names only — values are never returned). Enable via the `/bearer-exposure` admin UI.
+
+No `toolsconfig` keys. Add `"getApiBearers"` to `tools` alongside `"getApi"` whenever `apiKey` or `basic` auth will be used.
+
+#### getMyConnections
+
+Discovery companion for `getApi` with per-user OAuth2 (`oauth_user`). Returns the list of OAuth2 providers that **the current Discord user** has personally connected at `/connections`, including connection status (`active`, `expired_renewable`, `expired`). No toolsconfig keys.
+
+Add `"getMyConnections"` to `tools` alongside `"getApi"` whenever per-user OAuth flows are enabled for this channel.
 
 ---
 
@@ -914,7 +966,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
       "overrides": {                              // optional â€” channel-specific overrides; win over global
         "maxTokens":    6000,
         "contextSize":  200,
-        "instructions": "Use the visible history blocks as the overview of older chronology and use getHistory(blockId) to zoom exactly one level deeper when deeper evidence is needed."
+        "instructions": "To research older history: call getHistory(start, end) with appropriate time ranges to retrieve the actual messages."
       }
     }
   ]
@@ -956,7 +1008,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 | `channels[].overrides` | object | `{}` | Per-channel override block â€” same keys as global `overrides`; channel values take precedence |
 
 - Channel not in `channels[]` â†’ HTTP 404
-- AI uses **only visible history blocks and tool results** as facts â€” older history appears as block summaries with IDs, and `getHistory(blockId)` zooms exactly one level deeper when needed
+- AI uses **only visible context and tool results** as facts — to research older history, call `getHistory(start, end)` with appropriate time ranges
 - Search always shows the results overview â€” even a single match never auto-redirects to the article
 - The "Generate new article" button passes `force: true` to `/api/generate`, bypassing the existing-article check and always creating a new article
 - Non-creator users see search results but no generate button/spinner
@@ -1880,7 +1932,7 @@ Source-agnostic TTS renderer. Runs in `discord-voice` and `webpage` flows. Parse
   "ttsEndpoint":       "",
   "ttsApiKey":         "",
   "ttsFormat":         "opus",
-  "TTSFetchTimeoutMs": 30000
+  "ttsFetchTimeoutMs": 30000
 }
 ```
 
@@ -1892,7 +1944,7 @@ Source-agnostic TTS renderer. Runs in `discord-voice` and `webpage` flows. Parse
 | `ttsEndpoint` | string | `""` | TTS API endpoint. Falls back to `workingObject.ttsEndpoint` |
 | `ttsApiKey` | string | `""` | API key for TTS. Falls back to `workingObject.ttsApiKey` then `workingObject.apiKey` |
 | `ttsFormat` | string | `"opus"` | Audio format. Use `"mp3"` for the webpage voice interface; `"opus"` for Discord playback |
-| `TTSFetchTimeoutMs` | number | `30000` | HTTP timeout for TTS API calls (ms) |
+| `ttsFetchTimeoutMs` | number | `30000` | HTTP timeout for TTS API calls (ms) |
 
 ---
 
@@ -1956,7 +2008,7 @@ Browser-based voice interface with two modes: **always-on continuous listening**
 
 **Always-on (`POST /voice/audio`):** Audio is converted to 16kHz mono WAV via ffmpeg, handed to `core-voice-transcribe` â†’ AI pipeline â†’ `core-voice-tts` â†’ `webpage-voice-output`. Returns MP3 audio with `X-Transcript` and `X-Response` headers.
 
-**Meeting recorder (`POST /voice/record`):** Transcribes the full recording using `recordModel` with optional speaker diarization. Optionally clears the channel context before storing the transcript. Returns `{ ok, words, speakers }`.
+**Meeting recorder (`POST /voice/record`):** Transcribes the full recording using `transcribeModel` with optional speaker diarization. Optionally clears the channel context before storing the transcript. Returns `{ ok, words, speakers }`.
 
 **Async subagent replies:** When the voice channel triggers a background subagent, the completed result is first re-processed through the API flow using the original caller channel ID, then synthesized through the webpage voice flow. This keeps spoken style, caller-specific link patching (`id=<callerChannelId>`), and browser TTS output aligned with the original channel instead of the subagent channel. The SPA also renders returned URLs as clickable links.
 
@@ -1967,7 +2019,7 @@ Browser-based voice interface with two modes: **always-on continuous listening**
   "basePath":               "/voice",
   "silenceTimeoutMs":       2500,
   "maxDurationMs":          30000,
-  "recordModel":            "gpt-4o-transcribe",
+  "transcribeModel":            "gpt-4o-transcribe",
   "diarize":                true,
   "clearContextChannels":   [],
   "allowedRoles":           [],
@@ -1984,7 +2036,7 @@ Browser-based voice interface with two modes: **always-on continuous listening**
 | `basePath` | string | `"/voice"` | URL prefix for this module |
 | `silenceTimeoutMs` | number | `2500` | Silence duration (ms) before the always-on mic auto-sends audio |
 | `maxDurationMs` | number | `30000` | Hard cap on a single always-on audio segment (ms) |
-| `recordModel` | string | `"gpt-4o-transcribe"` | Transcription model for meeting recordings |
+| `transcribeModel` | string | `"gpt-4o-transcribe"` | Transcription model for meeting recordings |
 | `diarize` | boolean | `true` | Request speaker diarization for meeting recordings |
 | `clearContextChannels` | array | `[]` | Channel IDs whose non-frozen context rows are purged (via `setPurgeContext`) before storing a transcript. Frozen rows are never deleted. |
 | `allowedRoles` | array | `[]` | Roles that may access `/voice`. Empty = public |
@@ -1998,7 +2050,7 @@ Dedicated endpoint for full meeting uploads (`POST /voice/record`). Handles tran
 "webpage-voice-record": {
   "flow": ["webpage"],
   "port": 3119,
-  "recordModel": "gpt-4o-transcribe",
+  "transcribeModel": "gpt-4o-transcribe",
   "diarize": true,
   "diarizationChannelId": "voice-diarize",
   "apiUrl": "http://localhost:3400",
@@ -2013,7 +2065,7 @@ Dedicated endpoint for full meeting uploads (`POST /voice/record`). Handles tran
 |---|---|---|
 | `flow` | array | Must include `"webpage"` |
 | `port` | number | HTTP port (must match webpage flow port) |
-| `recordModel` | string | Transcription model for uploaded meeting recordings |
+| `transcribeModel` | string | Transcription model for uploaded meeting recordings |
 | `diarize` | boolean | Enables/disables diarization pass |
 | `diarizationChannelId` | string | Internal API channel used for diarization inference |
 | `apiUrl` | string | Internal API base URL for diarization |
@@ -2489,7 +2541,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "core-ai-responses":       { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "core-ai-completions":     { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "core-ai-pseudotoolcalls": { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
-    "core-ai-roleplay":        { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
+    "core-ai-roleplay":        { "flow": ["discord","discord-voice","api","discord-status","webpage"], "imagePromptRules": "" },
     "discord-add-context":     { "flow": ["discord","discord-voice"] },
     "discord-text-output":     { "flow": ["all"] },
     "core-output":             { "flow": ["all"] },
@@ -2511,7 +2563,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "core-channel-config":     { "flow": ["discord","discord-voice","discord-admin","discord-status","api","webpage"] },
     "discord-voice-capture":   { "flow": ["discord-voice"], "pollMs": 1000, "silenceMs": 1500, "maxCaptureMs": 25000, "minWavBytes": 24000, "frameMs": 20, "startDebounceMs": 600, "keepWav": false, "maxSegmentsPerRun": 32 },
     "core-voice-transcribe":   { "flow": ["discord-voice","webpage"], "minVoicedMs": 1000, "snrDbThreshold": 3.8, "keepWav": false, "transcribeModel": "gpt-4o-mini-transcribe" },
-    "core-voice-tts":          { "flow": ["discord-voice","webpage"], "ttsModel": "gpt-4o-mini-tts", "ttsVoice": "alloy", "ttsFormat": "opus", "TTSFetchTimeoutMs": 30000 },
+    "core-voice-tts":          { "flow": ["discord-voice","webpage"], "ttsModel": "gpt-4o-mini-tts", "ttsVoice": "alloy", "ttsFormat": "opus", "ttsFetchTimeoutMs": 30000 },
     "discord-voice-tts-play":  { "flow": ["discord-voice"] },
     "webpage-output":          { "flow": ["webpage"] },
     "webpage-router": {
@@ -2527,7 +2579,7 @@ Below is a minimal but functional `core.json` template with every section includ
       "basePath":               "/voice",
       "silenceTimeoutMs":       2500,
       "maxDurationMs":          30000,
-      "recordModel":            "gpt-4o-transcribe",
+      "transcribeModel":            "gpt-4o-transcribe",
       "diarize":                true,
       "clearContextChannels":   [],
       "allowedRoles":           [],

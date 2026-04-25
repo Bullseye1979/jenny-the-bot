@@ -22,8 +22,6 @@ const MODULE_NAME = "getJira";
 
 
 
-function getDebug(label, obj){}
-
 
 function getAuthHeader(email, token){
   const b64 = Buffer.from(`${email}:${token}`).toString("base64");
@@ -92,7 +90,6 @@ async function getFetchJson(url, opts={}, timeoutMs=60000){
   const data = isJson ? (text? JSON.parse(text) : null) : text;
   if (!res.ok){
     const preview = typeof data==="string" ? data.slice(0,800) : JSON.stringify(data||null).slice(0,800);
-    getDebug("HTTP Error Body", { status: res.status, preview });
   }
   return { ok: res.ok, status: res.status, headers: res.headers, data };
 }
@@ -271,7 +268,6 @@ function getNormalizedSearchShape(reqIn, defaultProjectKey){
   jql = getSanitizedJqlPlaceholders(jql, defaultProjectKey);
   if (!jql) jql = "ORDER BY created DESC";
   jql = getEnsuredProjectRestriction(jql, defaultProjectKey, allowCross);
-  getDebug("Effective JQL", { jql });
 
   if (method === "GET"){
     const query = { ...q, jql };
@@ -667,7 +663,6 @@ async function getInvoke(args, coreData){
   const token = await getSecret(wo, getStr(cfg?.token,""));
   const defaultProjectKey = getStr(cfg?.projectKey, "");
   if (!baseUrl || !email || !token){
-    getDebug("Config Error", { hasBaseUrl: !!baseUrl, hasEmail: !!email, hasToken: !!token });
     return { ok:false, error:"JIRA_CONFIG — missing Jira baseUrl/email/token in server configuration" };
   }
   const op = String(args?.op || (args?.json?.op)||"").toUpperCase();
@@ -681,7 +676,6 @@ async function getInvoke(args, coreData){
     reqIn.__op = op;
   }
   if (!reqIn || typeof reqIn!=="object" || !reqIn.method){
-    getDebug("Bad Tool Args", reqIn);
     return { ok:false, error:"BAD_TOOL_ARGS", hint:"requires {json:{method:'GET|POST|PUT|DELETE|PATCH', path:'/rest/api/...'}}" };
   }
   let req = { ...reqIn };

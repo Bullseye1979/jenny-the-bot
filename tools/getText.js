@@ -15,9 +15,6 @@ import { saveFile } from "../core/file.js";
 const MODULE_NAME = "getText";
 
 
-function getLogDebug(label, obj){}
-
-
 function getNormalizedFilename(s, fallback = ""){
   const base = String(s || "")
     .toLowerCase()
@@ -71,7 +68,7 @@ function getParsedArgs(args){
 }
 
 
-async function setWrittenTextFile(text, baseName, ext, cfg, wo){
+async function setWrittenTextFile(text, baseName, ext, wo){
   const saved = await saveFile(wo, Buffer.from(text, "utf8"), { name: baseName, ext: "." + ext });
   return { filePath: saved.absPath, fileName: saved.filename, publicUrl: saved.url };
 }
@@ -80,7 +77,6 @@ async function setWrittenTextFile(text, baseName, ext, cfg, wo){
 async function getInvoke(args, coreData){
   try {
     const wo = coreData?.workingObject || {};
-    const cfg = wo?.toolsconfig?.getText || {};
 
     const { text, filename } = getParsedArgs(args);
     if (!text) {
@@ -94,7 +90,7 @@ async function getInvoke(args, coreData){
 
     const ext = getDetectedExt(text, filename);
 
-    const { filePath, fileName, publicUrl } = await setWrittenTextFile(text, baseName, ext, cfg, wo);
+    const { filePath, fileName, publicUrl } = await setWrittenTextFile(text, baseName, ext, wo);
 
     return {
       ok: true,
@@ -104,7 +100,6 @@ async function getInvoke(args, coreData){
       bytes: Buffer.byteLength(text, "utf8")
     };
   } catch (err) {
-    getLogDebug("GET_TEXT_ERROR", err?.stack || String(err));
     return { ok: false, error: "GET_TEXT_UNEXPECTED — Could not save text." };
   }
 }

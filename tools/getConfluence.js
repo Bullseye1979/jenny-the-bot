@@ -27,8 +27,6 @@ const SPACE_ID_CACHE = new Map();
 function getBool(v, f){ return typeof v === "boolean" ? v : f; }
 
 
-function getDebug(label, obj){}
-
 
 function getAuthHeader(email, token){
   const b64 = Buffer.from(`${email}:${token}`).toString("base64");

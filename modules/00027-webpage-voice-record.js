@@ -68,9 +68,9 @@ function getConvertToWav(inputFile, outputFile) {
 
 
 async function getTranscript(wavFile, cfg, wo) {
-  const model    = String(cfg.transcribeModel || cfg.recordModel || "gpt-4o-transcribe");
+  const model    = String(cfg.transcribeModel || "gpt-4o-transcribe");
   const endpoint = String(cfg.transcribeEndpoint || wo.transcribeEndpoint || "https://api.openai.com");
-  const apiKey   = await getSecret(wo, String(cfg.transcribeApiKey || wo.transcribeApiKey || wo.apiKey || ""));
+  const apiKey   = await getSecret(wo, String(cfg.transcribeApiKey || wo.transcribeApiKey || ""));
   const url      = endpoint.replace(/\/$/, "") + "/v1/audio/transcriptions";
 
   const audioBuffer = fs.readFileSync(wavFile);
@@ -104,7 +104,7 @@ async function getDiarizedText(transcript, cfg, wo) {
 
   const apiBase = String(cfg.apiUrl || "http://localhost:3400").replace(/\/+$/, "");
   const channelId = String(cfg.diarizationChannelId || "").trim();
-  const apiSecretKey = String(cfg.apiSecret || wo.apiSecret || "").trim();
+  const apiSecretKey = String(cfg.apiSecret || "").trim();
   const apiSecret = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
 
   const promptPrefix = typeof cfg.diarizationSystemPrompt === "string" ? cfg.diarizationSystemPrompt.trim() : "";

@@ -172,6 +172,7 @@ async function getInvoke(args, coreData) {
     cfg_scale,
     sampler: sampler_name,
     model: model || null,
+    url: okFiles[0]?.url || null,
     files: okFiles.map(f => ({ filename: f.filename, path: f.path, url: f.url })),
     failed: saved.filter(x => !x.ok).map(x => ({ error: x.error }))
   };

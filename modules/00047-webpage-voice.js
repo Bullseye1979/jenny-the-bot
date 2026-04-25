@@ -1306,7 +1306,7 @@ export default async function getWebpageVoice(coreData) {
     const params  = new URLSearchParams(qIdx >= 0 ? url.slice(qIdx + 1) : "");
 
     const SAMPLE_MODEL    = String(cfg.sampleModel      || DEFAULT_SAMPLE_MODEL);
-    const TRANSCRIBE_KEY  = await getSecret(wo, (cfg.transcribeApiKey || process.env.OPENAI_API_KEY || "").trim());
+    const TRANSCRIBE_KEY  = await getSecret(wo, (cfg.transcribeApiKey || wo.transcribeApiKey || "").trim());
     const TRANSCRIBE_EP   = String(cfg.transcribeEndpoint || "");
     const TRANSCRIBE_LANG = String(cfg.transcribeLanguage || "auto");
 

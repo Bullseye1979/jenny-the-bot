@@ -1,6 +1,7 @@
 {
   "name": "getImageSD",
   "description": "Generate images from a text prompt using Stable Diffusion and return local paths/URLs. Always generate fresh — never reuse image URLs from previous calls.",
+  "policyHint": "When a scene, character, location, or item comes up in conversation and no image has been shown for it yet in the current exchange, call this tool to generate a fitting illustration.",
   "parameters": {
     "type": "object",
     "properties": {

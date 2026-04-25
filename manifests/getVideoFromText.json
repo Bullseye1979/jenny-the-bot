@@ -1,6 +1,7 @@
 {
   "name": "getVideoFromText",
   "description": "Generate a brand-new short video from a text description using Replicate (Google Veo 3). Always generate fresh — never reuse video URLs from previous calls. Use this ONLY for generating video from text with no source image.",
+  "policyHint": "When the user asks to generate a video from a text description and no source image is involved, use this tool immediately.",
   "parameters": {
     "type": "object",
     "properties": {

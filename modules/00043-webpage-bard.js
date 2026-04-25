@@ -195,19 +195,9 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg, wo) {
   const sitList  = tagCats.situations.length ? tagCats.situations.join(", ") : "combat, exploration, rest, dialogue, travel";
   const moodList = tagCats.moods.length      ? tagCats.moods.join(", ")      : "dark, tense, calm, epic, eerie, intense, cozy, warm, dramatic, mysterious";
 
-  const systemPrompt = (typeof atCfg.systemPrompt === "string" && atCfg.systemPrompt.trim())
-    ? atCfg.systemPrompt
-    : "You are a music tagging assistant for a tabletop RPG ambient music library. " +
-      "Return only a JSON array with exactly six strings: [location, situation, mood1, mood2, mood3, mood4]. " +
-      "Use lowercase single-word tags where possible.";
-  const userPromptTemplate = (typeof atCfg.userPrompt === "string" && atCfg.userPrompt.trim())
-    ? atCfg.userPrompt
-    : "Track title: \"{title}\"\n\n" +
-      "Known locations: {locList}\n" +
-      "Known situations: {sitList}\n" +
-      "Known moods: {moodList}\n\n" +
-      "Web search results for this track:\n{tavilySnippet}\n\n" +
-      "Return exactly six tags as JSON array: [location, situation, mood1, mood2, mood3, mood4].";
+  const systemPrompt = typeof atCfg.systemPrompt === "string" ? atCfg.systemPrompt.trim() : "";
+  const userPromptTemplate = typeof atCfg.userPrompt === "string" ? atCfg.userPrompt.trim() : "";
+  if (!systemPrompt || !userPromptTemplate) return ["", "", "ambient", "ambient", "ambient", "ambient"];
 
   const payload = `${systemPrompt}\n\n` + userPromptTemplate
     .replace("{title}", title)
@@ -217,8 +207,8 @@ async function callLlmForTags(title, tavilySnippet, tagCats, atCfg, wo) {
     .replace("{tavilySnippet}", tavilySnippet || "No search results available.");
 
   const apiBase = String(atCfg.apiUrl || "http://localhost:3400").replace(/\/+$/, "");
-  const channelId = String(atCfg.channelId || atCfg.llmChannelId || "").trim();
-  const apiSecretKey = String(atCfg.apiSecret || wo.apiSecret || "").trim();
+  const channelId = String(atCfg.channelId || "").trim();
+  const apiSecretKey = String(atCfg.apiSecret || "").trim();
   const apiSecret = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
   if (!channelId) return ["", "", "ambient", "ambient", "ambient", "ambient"];
 

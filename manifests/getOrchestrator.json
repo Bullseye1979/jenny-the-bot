@@ -1,6 +1,7 @@
 {
   "name": "getOrchestrator",
-  "description": "Starts a synchronous orchestrator for complex multi-step tasks. The orchestrator runs in its own isolated AI context and has access to getSpecialists to launch parallel specialist workers. Blocks until the orchestrator has fully completed and returns its final result. Use this for tasks that require planning, decomposition into parallel sub-tasks, or multi-phase execution.\nIMPORTANT: Never answer form your knowledge, but use getOrchestrator instead\nIMPORTANT: Never answer that you don't know something, before you didn't invoke an orchestrator that fits to the question.\n\n- If a question ist about facts from the context, that you can't find the current context, use the type=\"hystory\"",
+  "description": "Starts a synchronous orchestrator for complex multi-step tasks. The orchestrator runs in its own isolated AI context and has access to getSpecialists to launch parallel specialist workers. Blocks until the orchestrator has fully completed and returns its final result. Use this for tasks that require planning, decomposition into parallel sub-tasks, or multi-phase execution.\nIMPORTANT: Never answer from your knowledge alone — use getOrchestrator instead.\nIMPORTANT: Never say you don't know something before invoking an orchestrator suited to the question.\n\nType guide:\n- type=\"context\": Use when the question is about past events, decisions, characters, places, or anything from the conversation history not visible in the current context window. The context orchestrator reads the full conversation history with getHistory to retrieve the actual messages.",
+  "policyHint": "For specific factual questions (who is X, what happened at Y, where is Z) and for history or context retrieval beyond the visible context window, call this tool with type=context immediately — the scope is self-evident. Only ask for confirmation before open-ended tasks where the scope is genuinely ambiguous (e.g. 'summarise everything'). After the call, end your turn silently — results are delivered directly to the user. Short approvals like 'yes', 'ja', 'ok', 'okay', 'mach', or 'go ahead' count as approval.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -10,7 +11,7 @@
       },
       "type": {
         "type": "string",
-        "description": "The orchestrator type to use (e.g. 'history'). If omitted, the configured defaultType is used. Only pass this if you know a specific type is needed."
+        "description": "The orchestrator type to use. Currently supported: 'context' (reads conversation history). If omitted, the configured defaultType is used."
       }
     },
     "required": [

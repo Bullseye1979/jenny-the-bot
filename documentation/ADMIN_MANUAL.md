@@ -435,9 +435,11 @@ The live dashboard displays:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `tools` | array | `[...]` | List of enabled tool names, e.g. `["getGoogle","getImage"]` |
+| `toolsBlacklist` | array | `["getImageSD"]` | Tool names subtracted from `tools` before the AI request is sent. Does not modify the `tools` array itself. When `fallbackOverrides` is active its `toolsBlacklist` **replaces** (not merges with) the base blacklist. Supported in `core-ai-completions`, `core-ai-responses`, and `core-ai-pseudotoolcalls`. |
 | `toolChoice` | string | `"auto"` | Tool selection mode: `"auto"` \| `"none"` \| `"required"` |
 | `maxLoops` | number | `15` | Max AI loop iterations per turn (each tool-call round = one iteration) |
 | `maxToolCalls` | number | `7` | Max total tool calls across all iterations. Once reached, tools are disabled for the remainder of the turn so the AI produces a final answer. Enforced in `core-ai-completions` (01000) and `core-ai-responses` (01001). |
+| `fallbackOverrides` | object | — | Fields applied automatically when the primary endpoint fails a TCP probe. Any `workingObject` key is valid. Typically overrides `endpoint`, `apiKey`, `model`, `useAiModule`, `toolsBlacklist`. The probe result is cached for 5 s. Add `getOrchestrator` and `getSpecialists` to the fallback `toolsBlacklist` to prevent expensive multi-agent runs on paid public APIs. |
 
 #### Conversation History
 
@@ -470,6 +472,13 @@ The live dashboard displays:
 | `reasoningSummary` | string | Accumulated reasoning (set by the AI module) |
 | `fileUrls` | array | Attachment URLs from Discord messages |
 | `logging` | array | Log entries for the current turn |
+| `messageId` | string | Discord message ID of the triggering message (set by discord flow) |
+| `agentType` | string | Set to `"orchestrator"` or `"specialist"` when the pipeline runs in an agentic context. Absent (or empty) in primary user channels. The AI modules use this to adjust the system prompt. |
+| `agentDepth` | number | Nesting depth of the current agent invocation. `0` = primary channel, `1` = orchestrator, `2` = specialist, etc. |
+| `skipAiCompletions` | boolean | When `true`, all `core-ai-*` modules exit immediately without calling the LLM. Use when a preceding module has already populated `wo.response` (e.g. a delivery module for async subagent results). |
+| `allowArtifactGeneration` | boolean | Enables artifact link generation in the output (e.g. PDF, document download links). |
+| `aborted` | boolean | Set to `true` by tools or modules to signal that the pipeline should stop processing. Checked by `getOrchestrator` and `getSpecialists` before dispatching. |
+| `jumpReason` | string | Human-readable reason logged when `wo.jump` is set (pipeline skip triggered). |
 
 #### GDPR
 
@@ -512,6 +521,8 @@ The live dashboard displays:
 | `ttsVoice` | string | `"nova"` | TTS voice name |
 | `ttsEndpoint` | string | OpenAI URL | TTS API endpoint |
 | `ttsApiKey` | string | — | API key for TTS (if different from `apiKey`) |
+| `ttsFormat` | string | `"opus"` | Audio output format for TTS. `"opus"` for Discord (default), `"mp3"` for webpage voice. Overridable per-module in `config["core-voice-tts"]`. |
+| `ttsFetchTimeoutMs` | number | `30000` | Timeout in milliseconds for each TTS API request. |
 | `transcribeModel` | string | `"gpt-4o-mini-transcribe"` | Global fallback transcription model. Prefer setting `transcribeModel` in `config["core-voice-transcribe"]` for explicit control. |
 | `transcribeLanguage` | string | `""` | Force language (ISO 639-1; empty = auto-detect). |
 | `transcribeEndpoint` | string | `""` | Transcription API base URL. |
@@ -1110,6 +1121,71 @@ No additional config keys are required. The tool reads the authenticated user's 
 
 ---
 
+#### toolsconfig.getOrchestrator
+
+Synchronous orchestrator tool. The calling AI blocks until the orchestrator finishes and returns its result. The orchestrator runs as a normal API pipeline (flow `api`) on a dynamically generated unique channel ID derived from the configured base channel. It has full access to all tools including `getSpecialists`.
+
+```json
+"getOrchestrator": {
+  "types": {
+    "generic": "subagent-orchestrator-generic"
+  },
+  "defaultType": "generic",
+  "apiUrl":      "http://localhost:3400",
+  "apiSecret":   "API_SECRET",
+  "timeoutMs":   604800000
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `types` | object | `{}` | **Required.** Maps orchestrator type names to base channel IDs. Each call appends a random hex suffix to ensure uniqueness. |
+| `defaultType` | string | `"generic"` | Fallback type when the AI omits the `type` argument. |
+| `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server to dispatch the orchestrator to. |
+| `apiSecret` | string | `""` | Placeholder name for the bearer token (resolved from `bot_secrets` at runtime). |
+| `timeoutMs` | number | `604800000` | Maximum wait time for the orchestrator to complete (milliseconds). Default is 7 days — set lower for interactive use cases. |
+
+**How it works:** The tool posts a payload to `apiUrl/api` with the generated channel ID, user ID, guild ID, `callerChannelId`, and `callerChannelIds`. The orchestrator channel must be configured as a valid API channel in `core.json`. The `callerChannelId` allows the orchestrator to send results back to the originating channel. The tool returns `{ ok, rows: [responseText] }`.
+
+**`wo.aborted` check:** If `wo.aborted === true` when the tool is called, it returns immediately without dispatching.
+
+---
+
+#### toolsconfig.getSpecialists
+
+Parallel specialist dispatcher. Runs multiple specialist AI workers concurrently in configurable batch sizes and waits for all to complete. Designed to be called **from within an orchestrator** — not from a primary user channel. Each specialist receives its own unique channel ID derived from the base channel configured for its type.
+
+```json
+"getSpecialists": {
+  "types": {
+    "specialist-generic": "subagent-specialist-generic",
+    "specialist-coding":  "subagent-specialist-coding"
+  },
+  "defaultType":    "specialist-generic",
+  "apiUrl":         "http://localhost:3400",
+  "apiSecret":      "API_SECRET",
+  "timeoutMs":      604800000,
+  "maxConcurrent":  3
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `types` | object | `{}` | **Required.** Maps specialist type names to base channel IDs. |
+| `defaultType` | string | `""` | Fallback type for specialist entries that omit `type`. |
+| `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server. |
+| `apiSecret` | string | `""` | Placeholder name for the bearer token. |
+| `timeoutMs` | number | `604800000` | Maximum wait time per specialist (milliseconds). |
+| `maxConcurrent` | number | `3` | Maximum number of specialist calls running at the same time. Specialists are processed in sequential batches of this size. |
+
+**Input format:** The AI passes a `specialists` array where each entry is `{ type, jobID, prompt }`. The `jobID` is an integer that the orchestrator assigns and uses to correlate results. The tool returns an array of result objects `{ jobID, type, ok, response?, error? }`.
+
+**Batch execution:** Specialists are split into sequential batches of `maxConcurrent`. Within each batch all calls run concurrently via `Promise.all`. The tool waits for the entire batch before starting the next.
+
+**Return value:** `{ ok, count, complete, failed, rows: [...results], error? }`. `ok` is `true` only if all specialists succeeded.
+
+---
+
 ### 5.7 config — Flow Wiring and Module Configuration
 
 The `config` block controls which modules are active in which flows.
@@ -1564,7 +1640,7 @@ Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Spl
   "ttsEndpoint":       "",
   "ttsApiKey":         "",
   "ttsFormat":         "opus",
-  "TTSFetchTimeoutMs": 30000
+  "ttsFetchTimeoutMs": 30000
 }
 ```
 
@@ -1575,7 +1651,7 @@ Source-agnostic TTS renderer. Active in `discord-voice` and `webpage` flows. Spl
 | `ttsEndpoint` | string | `""` | TTS API endpoint. Falls back to `workingObject.ttsEndpoint` |
 | `ttsApiKey` | string | `""` | API key for TTS. Falls back to `workingObject.ttsApiKey` then `workingObject.apiKey` |
 | `ttsFormat` | string | `"opus"` | Audio format. Use `"mp3"` for webpage voice; `"opus"` for Discord playback |
-| `TTSFetchTimeoutMs` | number | `30000` | HTTP timeout for TTS API calls (ms) |
+| `ttsFetchTimeoutMs` | number | `30000` | HTTP timeout for TTS API calls (ms) |
 
 ---
 
@@ -2569,6 +2645,58 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 
 **Logging:** Every AI turn logs `finish_reason`, `content_length`, and `tool_calls` count at `info` level. A `Continue triggered` entry is logged when continuation fires.
 
+#### core-ai-pseudotoolcalls (01002) — Detailed flow
+
+Designed for local models that do not support native function calling. The module parses `[tool:NAME]{...json...}` inline syntax emitted by the model and executes the matching tool.
+
+**Activation:** `wo.useAiModule === "pseudotoolcalls"` or `"core-ai-pseudotoolcalls"`.
+
+**Tool-call format in model output:**
+```
+[tool:getGoogle]{"query": "current weather Berlin"}[/tool]
+```
+Multiple calls can appear in a single response. The module extracts all occurrences, executes each tool, inserts the results as assistant continuations, and loops.
+
+**Loop limits:**
+
+| Parameter (workingObject) | Default | Description |
+|---|---|---|
+| `MaxToolCallsTotal` | `3` | Maximum tool calls across all turns |
+| `MaxToolCallsPerTurn` | `1` | Maximum tool calls in a single model response |
+
+**Agentic context awareness:** When `wo.agentType` is set, the module appends the agent type and depth to the system prompt. This allows the model to adapt its behavior when running as an orchestrator or specialist.
+
+**`skipAiCompletions` flag:** If `wo.skipAiCompletions === true`, the module exits immediately without any LLM call.
+
+#### core-ai-roleplay (01003) — Detailed flow
+
+Two-pass generation for roleplay and narrative scenarios. Pass 1 generates the main text response with tool support. Pass 2 generates a single-line Stable Diffusion image prompt that reflects the scene in the response.
+
+**Activation:** `wo.useAiModule === "roleplay"` or `"core-ai-roleplay"`.
+
+**Pass 1 — Text generation:**
+1. Builds system prompt from persona + optional agentic context (`agentType`, `agentDepth`)
+2. Calls `POST /chat/completions` with tool support
+3. Loops on tool calls and continue heuristic (same as completions module)
+4. Sets `wo.response` to the accumulated text
+
+**Pass 2 — Image prompt generation:**
+1. Builds a secondary system prompt using `imagePromptRules` from `config["core-ai-roleplay"]`
+2. Calls the model with limited tokens (`ImagePromptMaxTokens`, default 260) and low temperature (`ImagePromptTemperature`, default 0.35)
+3. Passes the result to `getImageSD` (if configured) to generate an image
+4. If pass 2 fails or returns empty, a fallback single-line prompt is generated from the response text
+
+**Image prompt config (workingObject):**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `imagePromptRules` | `""` | Multiline string with SD prompt generation rules. **Must be configured** in `config["core-ai-roleplay"]` in `core.json` — the module produces no image if this is empty. |
+| `ImagePromptMaxTokens` | `260` | Max tokens for the image prompt generation call |
+| `ImagePromptTemperature` | `0.35` | Temperature for the image prompt call |
+| `imagePersonaHint` | `""` | Visual description of the main character, prepended to the image prompt system |
+
+**`skipAiCompletions` flag:** If `wo.skipAiCompletions === true`, both passes are skipped.
+
 ---
 
 ### 7.3 Output & Post-Processing (02xxx–08xxx)
@@ -2741,6 +2869,7 @@ export default {
 {
   "name": "getMyTool",
   "description": "What this tool does and when the AI should call it. Always call fresh — never reuse results from conversation history.",
+  "policyHint": "Optional. Plain-text instruction injected into the system prompt's channel awareness block whenever this tool is present in the channel's tool list. Use this to express tool-specific behavioral rules the primary assistant must follow (e.g. confirmation requirements). Leave out if no policy is needed.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -2754,6 +2883,13 @@ export default {
   }
 }
 ```
+
+| Manifest field | Required | Description |
+|---|---|---|
+| `name` | Yes | Must match the tool file's `MODULE_NAME` and the filename |
+| `description` | Yes | Shown to the AI as the tool's purpose and call conditions |
+| `policyHint` | No | Behavioral rule injected into the system prompt when this tool is active |
+| `parameters` | Yes | JSON Schema object describing the tool's arguments |
 
 ---
 
@@ -2858,6 +2994,8 @@ All hardcoded AI prompts — in both tools and modules — have been moved to `c
 | `webpage-voice-record` | `diarizationSystemPrompt` | Speaker diarization system prompt |
 
 Per-channel overrides for `policyPrompt`, `toolContractPrompt`, and `continuationPrompt` can also be set directly on `workingObject` (channel config `overrides` block) and take precedence over the module-level defaults.
+
+Tool-specific policy hints are declared in the tool's manifest file as a `policyHint` string field. When a tool is present in the channel's tool list, its `policyHint` is automatically appended to the system prompt's channel awareness block. This keeps tool-specific guidance co-located with the tool definition and requires no module changes when tools are added or removed.
 
 ---
 
@@ -3121,22 +3259,40 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 ### getHistory
 
 **File:** `tools/getHistory.js`
-**Purpose:** Zoom exactly one level deeper into the hierarchical history context
+**Purpose:** Retrieve raw message rows from the conversation log for a given UTC time range. Returns results ordered chronologically. Supports pagination via `startCtxId`.
 
-**Parameters:**
+**LLM parameters:**
 
-| Parameter | Type | Description |
-|---|---|---|
-| `blockId` | integer | Required history block ID from the visible context or a previous `getHistory` result |
-| `channelId` | string | Optional primary channel override |
-| `channelIds` | array | Optional linked channel IDs searched for the same block |
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `start` | string | Yes | Start of the time range in UTC. Accepts ISO 8601, `YYYY-MM-DD`, or `DD.MM.YYYY`. If date-only, time defaults to `00:00:00 UTC`. |
+| `end` | string | No | End of the time range in UTC. Same formats as `start`. If date-only, the end is exclusive at the next day's `00:00:00 UTC`. Defaults to now when omitted. |
+| `prompt` | string | No | Additional focus instructions appended to the result (e.g. `"focus on decisions"`). |
+| `startCtxId` | number | No | Pagination cursor — pass `next_start_ctx_id` from a previous response to fetch the next page. Aliases: `start_ctx_id`, `start_ctx`. |
 
-**Behavior:**
+**Response fields:**
 
-- Each call goes exactly one level deeper
-- If the selected block still has child blocks, those child blocks are returned
-- If the selected block is one level above the bottom, raw rows are returned
-- The tool never skips levels
+| Field | Description |
+|---|---|
+| `rows` | Array of message rows, each with `ctx_id`, `ts` (ISO UTC), `channelId`, `role`, `text` |
+| `count` | Number of rows returned |
+| `has_more` | `true` when results were truncated by row or character cap |
+| `next_start_ctx_id` | Cursor for the next page (only present when `has_more=true`) |
+| `actual_start` / `actual_end` | ISO timestamps of the first and last returned row |
+
+**Channel scope:** Automatically covers all channels in the working context (`callerChannelId`, `callerChannelIds`, `channelIds`). No per-call channel override — scope is set at the channel-config level.
+
+**Timezone:** All timestamps stored and queried in UTC. The runtime info block in the system prompt provides `current_time_iso` and `timezone_hint` — always convert local times to UTC before passing.
+
+**toolsconfig keys** (`toolsconfig.getHistory`):
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `maxRows` | number | `5000` | Maximum rows loaded from DB per call (hard cap, applied before char budget) |
+| `pagesize` | number | `1000` | Internal DB page size for chunked loading |
+| `dumpMaxChars` | number | `40000` | Character budget for returned row text. Rows are dropped from the end once the budget is reached, and `has_more` is set. |
+| `includeToolRows` | boolean | `false` | Include rows with `role = "tool"` in results |
+| `includeJson` | boolean | `false` | Include the raw stored JSON payload in each row |
 
 ---
 
@@ -7088,6 +7244,107 @@ This means the label-gen AI call:
 
 ---
 
+## Agentic System (Synchronous Orchestrator & Specialists)
+
+### Overview
+
+The agentic system provides **synchronous** multi-agent coordination via two LLM-callable tools: `getOrchestrator` and `getSpecialists`. Unlike the async `getSubAgent` tool (which returns immediately and delivers results later), these tools **block the calling AI** until all agent work is complete and then return the results directly into the ongoing tool loop. This enables true multi-step reasoning: the orchestrator can plan, delegate to specialists, receive their outputs, synthesize, and respond — all within a single user-facing interaction.
+
+```
+User request
+    └─ Main AI (calls getOrchestrator)
+           └─ Orchestrator pipeline (full module pipeline on virtual channel)
+                  └─ getSpecialists([{type, jobID, prompt}, ...])
+                         ├─ Specialist A (parallel)
+                         ├─ Specialist B (parallel)
+                         └─ Specialist C (parallel)
+                  ← all specialist results returned
+           ← synthesized orchestrator result returned
+    ← final answer to user
+```
+
+### Key Differences from Async Subagents
+
+| Aspect | Synchronous (Orchestrator/Specialists) | Async (getSubAgent) |
+|---|---|---|
+| **Blocking** | Yes — caller waits for completion | No — returns jobId immediately |
+| **Delivery** | Result returned in tool loop | Result delivered as Discord message later |
+| **Use case** | Complex reasoning that needs intermediate results | Long-running tasks that can run in background |
+| **Status** | Tool status visible in Discord during execution | Acknowledged with "Working on it..." message |
+
+### How It Works
+
+**`getOrchestrator`:**
+1. The AI calls `getOrchestrator(type, prompt)`.
+2. The tool looks up the base channel ID from `toolsconfig.getOrchestrator.types[type]`.
+3. A unique channel ID is generated: `<baseChannelId>-<6-byte-hex>`.
+4. The tool posts `{ channelId, payload: prompt, userId, guildId, callerChannelId, callerChannelIds }` to `apiUrl/api`.
+5. The tool waits (up to `timeoutMs`) for the API response.
+6. Returns `{ ok: true, rows: [responseText] }`.
+
+The orchestrator channel runs a full module pipeline. Its system prompt, persona, and tools are configured in `config["core-channel-config"]` (same as any other virtual channel). The `callerChannelId` is forwarded so the orchestrator knows where to report tool status and so `getSpecialists` can propagate it further.
+
+**`getSpecialists`:**
+1. The orchestrator AI calls `getSpecialists(specialists: [{type, jobID, prompt}])`.
+2. The tool resolves each specialist's channel ID from `toolsconfig.getSpecialists.types[type]`.
+3. Specialists are dispatched in batches of `maxConcurrent` via `Promise.all`.
+4. Each specialist gets its own unique channel ID and receives `callerChannelId` from the orchestrator.
+5. The tool waits for all specialists to complete, then returns an array of `{ jobID, type, ok, response?, error? }`.
+
+### workingObject Fields in Agentic Contexts
+
+When a pipeline runs as an orchestrator or specialist, the following `workingObject` fields are set:
+
+| Field | Set by | Value |
+|---|---|---|
+| `agentType` | `getOrchestrator` / `getSpecialists` dispatch | `"orchestrator"` or `"specialist"` (set in the channel config overrides) |
+| `agentDepth` | Channel config override | `1` for orchestrators, `2` for specialists, `3` for nested specialists |
+| `callerChannelId` | API flow via request body | The originating user channel ID |
+| `callerChannelIds` | API flow via request body | Full channel ID chain (enables `getHistory` to query the correct source) |
+| `aborted` | `flows/api.js` socket close | `true` if client disconnected; orchestrator/specialists exit immediately |
+
+The AI modules (`core-ai-completions`, `core-ai-pseudotoolcalls`, `core-ai-roleplay`) embed `agentType` and `agentDepth` into the system prompt, allowing the model to adapt its behavior (e.g. never ask clarifying questions, format output for consumption by the caller AI, not by a human).
+
+### Configuring Orchestrator and Specialist Channels
+
+Each orchestrator and specialist type is a virtual channel configured in `config["core-channel-config"]`. Example:
+
+```json
+{
+  "channelMatch": ["subagent-orchestrator-generic-"],
+  "matchMode": "prefix",
+  "overrides": {
+    "botName": "Jenny",
+    "agentType": "orchestrator",
+    "agentDepth": 1,
+    "persona": "You are a planning orchestrator...",
+    "systemPrompt": "...",
+    "useAiModule": "completions",
+    "model": "gpt-4o",
+    "apiKey": "OPENAI",
+    "doNotWriteToContext": true,
+    "includeHistory": false,
+    "maxLoops": 20,
+    "maxToolCalls": 15,
+    "tools": ["getSpecialists", "getTavily"],
+    "apiEnabled": 1,
+    "apiSecret": "API_SECRET"
+  }
+}
+```
+
+Use `matchMode: "prefix"` so both the base channel ID and the dynamically suffixed IDs (`-<hex>`) match the same config block.
+
+### Adding a New Orchestrator or Specialist Type
+
+1. Add the type to `toolsconfig.getOrchestrator.types` or `toolsconfig.getSpecialists.types` in `core.json`.
+2. Add a `core-channel-config` block with `matchMode: "prefix"` matching the base channel name.
+3. Set `agentType` and `agentDepth` in the overrides.
+4. List the tools the agent should have access to.
+5. Update the `manifests/getOrchestrator.json` or `manifests/getSpecialists.json` enum with the new type name.
+
+---
+
 ## Subagent System
 
 ### Overview
@@ -7115,7 +7372,7 @@ Subagent calls use `doNotWriteToContext: true` — no context DB entries are wri
 
 | Type | Virtual Channel | Tools | Use when |
 |------|----------------|-------|----------|
-| `history` | `subagent-history` | getInformation, getHistory, getTime, getSubAgent | Questions about persons, places, events, chronology, or deeper older history from prior session context |
+| `history` | `subagent-history` | getHistory, getTime, getSubAgent | Questions about persons, places, events, chronology, or deeper older history from prior session context |
 | `research` | `subagent-research` | getYoutube, getWebpage, getLocation, getTavily, getTime, getSubAgent | General knowledge, current events, web research, YouTube, route planning, and location lookups |
 | `generate` | `subagent-generate` | getPDF, getText, getFile, getZIP, getSubAgent | PDF or text document generation |
 | `media` | `subagent-media` | getImage, getAnimatedPicture, getVideoFromText, getImageDescription, getToken, getZIP | Image, video, token generation, and media analysis |
@@ -7159,7 +7416,7 @@ Main AI
        └─ getSubAgent(type: generate, orchestration: {...})  ← STEP 2: receives image URL
 ```
 
-The caller's channel ID set is forwarded at every level so `getHistory` and `getInformation` can query the correct source channel regardless of nesting depth. Tool call status is also mirrored to the caller's Discord channel ID so the status display works correctly, and the final poll delivery clears any remaining tool status for that caller channel.
+The caller's channel ID set is forwarded at every level so `getHistory` can query the correct source channel regardless of nesting depth. Tool call status is also mirrored to the caller's Discord channel ID so the status display works correctly, and the final poll delivery clears any remaining tool status for that caller channel.
 
 ### Creating a New Subagent — Checklist
 
@@ -7267,17 +7524,9 @@ The develop subagent will read `game.js`, identify the bug, write the corrected 
 
 Each snippet in `snippets[]` has: `channel_id`, `rn`, `ts`, `sender`, `content`.
 
-### Deep-Context Pattern (Visible blocks → getHistory zoom)
+### Deep-Context Pattern (getHistory)
 
-When the AI needs older surrounding context, it uses a zoom chain:
-
-1. Read the visible hierarchical history blocks already present in the context.
-2. Pick the most relevant `blockId`.
-3. Call `getHistory(blockId)` to zoom exactly one level deeper.
-4. Repeat only while the deeper level is still needed.
-5. Raw rows appear only at the bottom level.
-
-This keeps the context bounded while still allowing deterministic deep-history navigation. This pattern is implemented in the history-oriented subagent instructions.
+When the AI needs to retrieve historical content that is not in the current context window, it calls `getHistory` with appropriate `start`/`end` time ranges to retrieve the actual message rows from that period. The history-oriented subagent implements this pattern internally, reading as much of the conversation history as needed to answer the question.
 
 ### Tools Called Directly (No Subagent)
 

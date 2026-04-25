@@ -144,9 +144,9 @@ export default async function getCoreVoiceTTS(coreData) {
   const model           = (wo.ttsModel    || cfg.ttsModel    || "gpt-4o-mini-tts").trim();
   const defaultVoiceRaw = (wo.ttsVoice    || cfg.ttsVoice    || "alloy").trim();
   const endpoint        = (wo.ttsEndpoint || cfg.ttsEndpoint || "https://api.openai.com/v1/audio/speech").trim();
-  const apiKey          = await getSecret(wo, (wo.ttsApiKey   || cfg.ttsApiKey   || process.env.OPENAI_API_KEY || "").trim());
+  const apiKey          = await getSecret(wo, (cfg.ttsApiKey || wo.ttsApiKey || "").trim());
   const format          = (wo.ttsFormat   || cfg.ttsFormat   || "opus").trim();
-  const fetchTimeoutMs  = Number(wo.TTSFetchTimeoutMs  || cfg.TTSFetchTimeoutMs  || 30000);
+  const fetchTimeoutMs  = Number(cfg.ttsFetchTimeoutMs || wo.ttsFetchTimeoutMs || 30000);
 
   const defaultVoice = getNormalizedVoiceKey(defaultVoiceRaw) || "alloy";
 

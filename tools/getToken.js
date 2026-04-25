@@ -19,6 +19,8 @@ import { ensureUserDir, getUserId } from "../core/file.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getIsHttpUrl } from "../core/utils.js";
 
+const MODULE_NAME = "getToken";
+
 
 function setEnsureDir(absPath) {
   if (!fs.existsSync(absPath)) fs.mkdirSync(absPath, { recursive: true });
@@ -105,7 +107,6 @@ function getRun(cmd, args, cwd) {
 
 
 function getStrictCfg(wo) {
-  const MODULE_NAME = "getToken";
   const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
   const publicBaseUrl = typeof cfg.publicBaseUrl === "string" ? cfg.publicBaseUrl : null;
   const magickPath = String(cfg.magickPath || "convert");
@@ -346,7 +347,6 @@ async function setTokenizeAnimated(cfg, inAbs, outAbs, size, ringColor, ringPx, 
 
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
-  const MODULE_NAME = "getToken";
   const wo = coreData?.workingObject || {};
   const cfg = getStrictCfg(wo);
 
@@ -545,14 +545,7 @@ async function getInvoke(args, coreData) {
   return { ok: false, error: "Unsupported media type." };
 }
 
-const MODULE_NAME = "getToken";
-
-
-function getExport() {
-  return {
-    name: MODULE_NAME,
-    invoke: getInvoke
-  };
-}
-
-export default getExport();
+export default {
+  name: MODULE_NAME,
+  invoke: getInvoke
+};

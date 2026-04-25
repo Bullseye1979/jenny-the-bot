@@ -208,8 +208,6 @@ function setLogBig(label, data, { toFile = false } = {}) {
 }
 
 
-function setLogConsole(_label, _data) {}
-
 
 function getIdemp(wo) { if (!wo.__idemp) wo.__idemp = { tools: new Set(), images: new Set() }; return wo.__idemp; }
 
@@ -346,8 +344,8 @@ function getChannelAwarenessBlock(wo) {
     lines.push("- You are running as an orchestrator or specialist. Return your result directly — do not ask the user for permission or confirmation.");
   } else {
     lines.push("- You are the primary assistant speaking directly with the user.");
-    lines.push("- When starting a getOrchestrator run for complex multi-step tasks, ask the user for confirmation first if the scope is unclear.");
-    lines.push("- If the most recent user message already clearly approves proceeding, do NOT ask again. Start the orchestrator now.");
+    const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
+    getManifestPolicyHints(toolNames).forEach(h => lines.push(`- ${h}`));
   }
 
   return lines.join("\n");
@@ -364,6 +362,19 @@ function getManifestDef(name, logFn) {
   } catch {}
   if (logFn) logFn(`Tool "${name}" has no manifest in manifests/ — it will not be advertised to the AI.`, "warn");
   return null;
+}
+
+
+function getManifestPolicyHints(toolNames) {
+  const hints = [];
+  for (const name of toolNames) {
+    try {
+      const raw = fs.readFileSync(path.join(_manifestDir, `${name}.json`), "utf8");
+      const m = JSON.parse(raw);
+      if (typeof m?.policyHint === "string" && m.policyHint.trim()) hints.push(m.policyHint.trim());
+    } catch {}
+  }
+  return hints;
 }
 
 
@@ -1123,7 +1134,8 @@ export default async function getCoreAi(coreData) {
     const base = [
       typeof wo2.systemPrompt === "string" ? wo2.systemPrompt.trim() : "",
       typeof wo2.persona === "string" ? wo2.persona.trim() : "",
-      typeof wo2.instructions === "string" ? wo2.instructions.trim() : ""
+      typeof wo2.instructions === "string" ? wo2.instructions.trim() : "",
+      typeof wo2._deliveryInstructions === "string" ? wo2._deliveryInstructions.trim() : ""
     ].filter(Boolean).join("\n\n");
 
     const earliestLines = _earliestTimestamps.map(
@@ -1169,12 +1181,15 @@ export default async function getCoreAi(coreData) {
       ].join("\n");
     })();
 
+    const systemPromptAddition = typeof wo2?.systemPromptAddition === "string" ? wo2.systemPromptAddition.trim() : "";
+
     const parts = [];
     if (base) parts.push(base);
     if (agentInfo) parts.push(agentInfo);
     parts.push(getChannelAwarenessBlock(wo2));
     parts.push(runtimeInfo);
     parts.push(policy);
+    if (systemPromptAddition) parts.push(systemPromptAddition);
     if (multiChannelNote) parts.push(multiChannelNote);
     return parts.filter(Boolean).join("\n\n");
   }
@@ -1191,10 +1206,9 @@ export default async function getCoreAi(coreData) {
 
   let messages = [{ role: "system", content: sys }, ...fromDb, ...(userPayloadRaw ? [{ role: "user", content: userContent }] : [])];
 
-  setLogConsole("request-messages-initial", { count: messages.length, messages });
-  if (runtimeCtx) setLogConsole("runtime-context", runtimeCtx);
-
-  const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
+  const _toolsRaw = Array.isArray(wo?.tools) ? wo.tools : [];
+  const _toolsBlacklist = Array.isArray(wo?.toolsBlacklist) ? wo.toolsBlacklist : [];
+  const toolNames = _toolsBlacklist.length ? _toolsRaw.filter(t => !_toolsBlacklist.includes(t)) : _toolsRaw;
   const genericTools = await getToolsByName(toolNames, wo);
   const toolDefs = getNormalizedToolDefs(genericTools.map(t => t.definition).filter(Boolean));
 
@@ -1228,7 +1242,6 @@ export default async function getCoreAi(coreData) {
     attempts++;
 
     try {
-      setLogConsole(`iteration-${iter + 1}-messages-before-request`, { count: messages.length, messages });
 
       const toolsMode = getToolsDisabledMode(totalToolCalls, maxToolCalls, wo);
       const toolsForResponses = getToolsForCurrentStep(toolDefs, responseToolsNormalized, toolsMode);
@@ -1447,6 +1460,8 @@ export default async function getCoreAi(coreData) {
   if (!finalText && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
     hitMaxLoops = true;
   }
+
+  wo.toolCallLog = toolCallLog;
 
   if (reasoningEnabled) {
     const reasoningJoined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();

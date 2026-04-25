@@ -502,9 +502,9 @@ export default async function getCoreVoiceTranscribe(coreData) {
   const SNR_DB_MIN    = Number.isFinite(wo.snrDbThreshold)     ? +wo.snrDbThreshold     : Number.isFinite(cfg.snrDbThreshold)    ? +cfg.snrDbThreshold    : 3.5;
   const MIN_VOICED_MS = Number.isFinite(wo.minVoicedMs)        ? +wo.minVoicedMs        : Number.isFinite(cfg.minVoicedMs)       ? +cfg.minVoicedMs       : 2000;
   const KEEP_WAV      = typeof wo.keepWav === "boolean"         ? wo.keepWav             : Boolean(cfg.keepWav);
-  const API_KEY       = await getSecret(wo, (wo.transcribeApiKey || cfg.transcribeApiKey || process.env.OPENAI_API_KEY || "").trim());
-  const STANDARD_MODEL = (wo.transcribeModel || cfg.transcribeModel || "gpt-4o-mini-transcribe").trim();
-  const DIARIZE_MODEL  = (cfg.transcribeModelDiarize || wo.transcribeModel || "gpt-4o-transcribe-diarize").trim();
+  const API_KEY        = await getSecret(wo, (cfg.transcribeApiKey || wo.transcribeApiKey || "").trim());
+  const STANDARD_MODEL = (cfg.transcribeModel || wo.transcribeModel || "gpt-4o-mini-transcribe").trim();
+  const DIARIZE_MODEL  = (cfg.transcribeModelDiarize || "gpt-4o-transcribe-diarize").trim();
   const MODEL         = wo.transcribeOnly ? DIARIZE_MODEL : STANDARD_MODEL;
   const LANGUAGE      = (wo.transcribeLanguage || cfg.transcribeLanguage || "auto").trim();
   const ENDPOINT      = (wo.transcribeEndpoint || cfg.transcribeEndpoint || "").trim();

@@ -1,6 +1,7 @@
 {
   "name": "getYoutube",
   "description": "Fetch and process YouTube video transcripts, or search YouTube. For mode='transcript': fetches the transcript and either dumps it (short) or summarizes/answers questions (long). For mode='search': searches YouTube via the Data API. Always fetch fresh — never reuse transcript content from previous calls. If a previous call returned an error, retry. Returns structured JSON only.",
+  "policyHint": "When the user asks about a YouTube video, wants a transcript, or asks to search YouTube, use this tool. Do not answer YouTube questions from memory.",
   "parameters": {
     "type": "object",
     "additionalProperties": false,

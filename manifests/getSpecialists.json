@@ -1,6 +1,7 @@
 {
   "name": "getSpecialists",
   "description": "Runs multiple specialist AI workers in parallel. Each specialist operates in its own isolated AI context with a dedicated tool set. All specialists run concurrently — results are returned only after all have completed. Use this from within an orchestrator context to decompose a task into parallel work packages.",
+  "policyHint": "When running as an orchestrator and the task can be decomposed into independent parallel work packages, dispatch them using this tool.",
   "parameters": {
     "type": "object",
     "properties": {

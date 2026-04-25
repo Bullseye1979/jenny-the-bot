@@ -241,7 +241,7 @@ async function getInvoke(args, coreData) {
   }
   const saved = await getPersistImages(images, wo);
   const okFiles = saved.filter(x => x.ok);
-  return { ok: okFiles.length > 0, endpoint: imagesEndpoint, model, size: finalSize, n, prompt: promptRaw, enhancedPrompt, strictPrompt, aspect: aspect || undefined, files: okFiles.map(f => ({ filename: f.filename, path: f.path, url: f.url })), failed: saved.filter(x => !x.ok).map(x => ({ error: x.error })) };
+  return { ok: okFiles.length > 0, endpoint: imagesEndpoint, model, size: finalSize, n, prompt: promptRaw, enhancedPrompt, strictPrompt, aspect: aspect || undefined, url: okFiles[0]?.url || null, files: okFiles.map(f => ({ filename: f.filename, path: f.path, url: f.url })), failed: saved.filter(x => !x.ok).map(x => ({ error: x.error })) };
 }
 
 

@@ -16,7 +16,7 @@ const MODULE_NAME = "webpage-subagent-manager";
 const AVAILABLE_TOOLS = [
   "getTavily", "getWebpage", "getYoutube", "getGoogle", "getImage", "getImageSD",
   "getAnimatedPicture", "getVideoFromText", "getImageDescription",
-  "getHistory", "getInformation", "getTime", "getLocation",
+  "getHistory", "getTime", "getLocation",
   "getFile", "getFileContent", "getText", "getZIP", "getPDF", "getShell",
   "getApi", "getApiBearers", "getConfluence", "getJira", "getGraph", "getSpotify",
   "getOrchestrator", "getSpecialists", "getToken", "getBan", "getMyConnections"

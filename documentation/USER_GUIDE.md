@@ -26,7 +26,8 @@ This guide explains everything you need to know to use Jenny as a regular user.
 13. [Bard Music System](#bard-music-system)
 14. [Web Interface](#web-interface)
 14a. [Gallery](#gallery)
-14b. [GDPR Data Export](#gdpr-data-export)
+14b. [Connecting External Accounts](#connecting-external-accounts)
+14c. [GDPR Data Export](#gdpr-data-export)
 15. [AI Wiki](#ai-wiki)
 16. [Slash Commands Reference](#slash-commands-reference)
 17. [Tips & Tricks](#tips--tricks)
@@ -497,6 +498,7 @@ Jenny provides several browser-based tools. Your server admin decides which are 
 |---|---|
 | `/chat` | AI chat in the browser — select a channel, optionally create or switch subchannels for separate conversation threads |
 | `/voice` | Browser-based voice interface — talk to Jenny from any device with a mic |
+| `/connections` | Connect external accounts (Microsoft, Spotify, etc.) for use by Jenny's tools |
 | `/inpainting` | Image editor for AI inpainting (see [Editing Images](#editing-images-inpainting)) |
 | `/gallery` | Your personal image gallery — browse, download, open in inpainting, or delete images you have generated |
 | `/gdpr` | GDPR data export — download an Excel file with all personal data stored for your account |
@@ -538,6 +540,34 @@ You can also upload images to your gallery from the **browser extension** (if in
 For this to work, you must set **Web Base URL** in the extension's options page and be logged into the Jenny web interface. The extension reuses your existing session cookie — no extra login step is required once you are already logged in.
 
 > **Note:** The gallery is personal — each user sees only their own images.
+
+---
+
+## Connecting External Accounts
+
+The Connections page (`/connections`) lets you link third-party accounts — such as Microsoft 365 or Spotify — to your Jenny profile. Once connected, Jenny can act on your behalf when you ask her to do things like play music, read your calendar, or access SharePoint.
+
+### How to connect an account
+
+1. Navigate to `/connections` and log in if prompted.
+2. You will see a list of available services your server admin has configured.
+3. Click **Connect** next to the service you want to link.
+4. You will be redirected to the service's own login page (e.g. Microsoft or Spotify).
+5. Log in and grant the requested permissions.
+6. You are redirected back to `/connections` and the service now shows as **Connected**.
+
+### Revoking a connection
+
+Click **Disconnect** next to any connected service to revoke Jenny's access. Your tokens are deleted immediately. The service itself is not notified — if you also want to remove permissions there, do so in that service's own account settings.
+
+### What Jenny can do with your connected accounts
+
+| Service | What Jenny can do |
+|---|---|
+| **Spotify** | Play, pause, skip, search tracks and playlists, control playback device (requires Spotify Premium) |
+| **Microsoft 365** | Read and send email, access calendar, read SharePoint files and lists, create Teams messages |
+
+> **Privacy:** Only you can see and manage your own connections. Admins cannot view your individual tokens.
 
 ---
 
@@ -736,4 +766,4 @@ Ask your server admin to run `/purgedb` to clear Jenny's conversation database f
 
 ---
 
-*User guide updated 2026-03-20.*
+*User guide — version 1.0.*

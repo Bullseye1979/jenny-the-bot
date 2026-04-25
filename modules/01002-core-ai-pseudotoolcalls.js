@@ -21,15 +21,65 @@ import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { applyAiFallbackOverrides } from "../core/ai-fallback.js";
-import { readFileSync }  from "node:fs";
+import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const _manifestDir = join(dirname(fileURLToPath(import.meta.url)), "../manifests");
+const _logDir      = join(dirname(fileURLToPath(import.meta.url)), "../logs");
+const _toolcallLog = join(_logDir, "toolcalls.log");
+
+try { mkdirSync(_logDir, { recursive: true }); } catch {}
 
 const MODULE_NAME = "core-ai-pseudotoolcalls";
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
+
+
+function writeToolcallLog(entry) {
+  try {
+    appendFileSync(_toolcallLog, JSON.stringify(entry) + "\n", "utf8");
+  } catch {}
+}
+
+
+function getToolcallLogBase(wo) {
+  return {
+    ts: new Date().toISOString(),
+    turnId: String(wo.turnId || wo.callerTurnId || ""),
+    channel: String(wo.channelId || ""),
+    callerChannel: String(wo.callerChannelId || ""),
+    flow: String(wo.flow || "")
+  };
+}
+
+
+function getToolPaginationMeta(toolName, result) {
+  const v = typeof result === "string" ? (() => { try { return JSON.parse(result); } catch { return result; } })() : result;
+  if (!v || typeof v !== "object") return {};
+  const num = (x) => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
+  const len = (x) => (typeof x === "string" ? x.length : Array.isArray(x) ? x.length : undefined);
+  const out = (o) => Object.fromEntries(Object.entries(o).filter(([, val]) => val !== undefined));
+  const stdPage = out({ rows: num(v.count), hasMore: v.has_more === true ? true : undefined, nextCtxId: v.next_start_ctx_id ?? undefined });
+  switch (toolName) {
+    case "getHistory": case "getGoogle": case "getTavily": case "getWebpage": case "getJira": case "getConfluence":
+      return stdPage;
+    case "getSpecialists": {
+      const r = Array.isArray(v.rows) ? v.rows : [];
+      return { specialistCount: num(v.count) ?? r.length, complete: num(v.complete) ?? r.filter(x => x.ok).length, failed: num(v.failed) ?? r.filter(x => !x.ok).length };
+    }
+    case "getOrchestrator":
+      return out({ rows: num(v.count), responseLen: Array.isArray(v.rows) && v.rows[0] ? len(v.rows[0]) : undefined });
+    case "getShell":
+      return out({ exitCode: v.exitCode ?? undefined, outputBytes: len(Array.isArray(v.rows) ? v.rows[0] : undefined) });
+    case "getApi": case "getGraph":
+      return out({ status: num(v.status) });
+    case "getFile": case "getFileContent": case "getText":
+      return out({ bytes: num(v.bytes) });
+    default:
+      return {};
+  }
+}
 
 
 function getAssistantAuthorName(wo) {
@@ -115,10 +165,9 @@ function getKiCfg(wo) {
   const includeHistory = getBool(wo?.includeHistory, true);
   const includeHistorySystemMessages = getBool(wo?.includeHistorySystemMessages, false);
   const includeRuntimeContext = getBool(wo?.includeRuntimeContext, false);
-  const toolsList = Array.isArray(wo?.tools) ? wo.tools : [];
-  if (Array.isArray(wo?.tools) && !Array.isArray(wo?.tools)) {
-    log('Config key "tools" is ignored. Use "tools" (capital T).', "warn");
-  }
+  const _toolsRaw = Array.isArray(wo?.tools) ? wo.tools : [];
+  const _toolsBlacklist = Array.isArray(wo?.toolsBlacklist) ? wo.toolsBlacklist : [];
+  const toolsList = _toolsBlacklist.length ? _toolsRaw.filter(t => !_toolsBlacklist.includes(t)) : _toolsRaw;
 
   return {
     includeHistory,
@@ -168,9 +217,8 @@ function getChannelAwarenessBlock(wo) {
     lines.push("- Report your result or any blockers back to the caller.");
   } else {
     lines.push("- You are the primary assistant speaking directly with the user.");
-    lines.push("- Ask before starting an orchestrator for major tasks if the user has not already approved.");
-    lines.push("- If the most recent user message already clearly approves proceeding, do NOT ask again. Start the orchestrator now.");
-    lines.push("- Short approvals like 'yes', 'ja', 'ok', 'okay', 'mach', or 'go ahead' count as approval when they directly answer your previous permission question.");
+    const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
+    getManifestPolicyHints(toolNames).forEach(h => lines.push(`- ${h}`));
   }
 
   return lines.join("\n");
@@ -203,6 +251,19 @@ function getManifestDef(name, logFn) {
   } catch {}
   if (logFn) logFn(`Tool "${name}" has no manifest in manifests/ — it will not be advertised to the AI.`, "warn");
   return null;
+}
+
+
+function getManifestPolicyHints(toolNames) {
+  const hints = [];
+  for (const name of toolNames) {
+    try {
+      const raw = readFileSync(join(_manifestDir, `${name}.json`), "utf8");
+      const m = JSON.parse(raw);
+      if (typeof m?.policyHint === "string" && m.policyHint.trim()) hints.push(m.policyHint.trim());
+    } catch {}
+  }
+  return hints;
 }
 
 
@@ -517,7 +578,7 @@ function getExtractUrlsFromAny(obj) {
     if (Array.isArray(v)) { for (const x of v) scan(x, depth + 1); return; }
     if (typeof v !== "object") return;
 
-    const directKeys = ["url", "imageUrl", "image_url", "href", "link", "image", "output", "result"];
+    const directKeys = ["url", "imageUrl", "image_url", "href", "link", "image", "output", "result", "files"];
     for (const k of directKeys) {
       if (Object.prototype.hasOwnProperty.call(v, k)) scan(v[k], depth + 1);
     }
@@ -628,7 +689,8 @@ function getSystemContentBase(wo, moduleCfg, earliestTimestamps) {
   const base = [
     typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
     typeof wo.persona === "string" ? wo.persona.trim() : "",
-    typeof wo.instructions === "string" ? wo.instructions.trim() : ""
+    typeof wo.instructions === "string" ? wo.instructions.trim() : "",
+    typeof wo._deliveryInstructions === "string" ? wo._deliveryInstructions.trim() : ""
   ].filter(Boolean).join("\n\n");
 
   const earliestLines = (Array.isArray(earliestTimestamps) ? earliestTimestamps : []).map(
@@ -678,6 +740,8 @@ function getSystemContentBase(wo, moduleCfg, earliestTimestamps) {
     ].join("\n");
   })();
 
+  const systemPromptAddition = typeof wo?.systemPromptAddition === "string" ? wo.systemPromptAddition.trim() : "";
+
   const parts = [];
   if (base) parts.push(base);
   if (agentInfo) parts.push(agentInfo);
@@ -685,6 +749,7 @@ function getSystemContentBase(wo, moduleCfg, earliestTimestamps) {
   parts.push(runtimeInfo);
   parts.push(policy);
   parts.push(toolContract);
+  if (systemPromptAddition) parts.push(systemPromptAddition);
   if (multiChannelNote) parts.push(multiChannelNote);
   return parts;
 }
@@ -900,6 +965,7 @@ export default async function getCoreAi(coreData) {
         let _tc02Status = "success";
         try { const _tc02R = JSON.parse(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}")); if (_tc02R?.ok === false) _tc02Status = "failed"; } catch {}
         toolCallLog.push({ tool: extracted.name, status: _tc02Status, durationMs: _tc02DurationMs, task: "" });
+        writeToolcallLog({ ...getToolcallLogBase(wo), tool: extracted.name, status: _tc02Status, durationMs: _tc02DurationMs, ...getToolPaginationMeta(extracted.name, toolMsg.content) });
 
         wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
 
@@ -926,7 +992,9 @@ export default async function getCoreAi(coreData) {
       const cutOff = !wo.__noContinuation && (finish === "length" || getLooksCutOff(cleanAssistantText));
       if (cutOff) {
         
-        const continuationPromptText = getStr(wo?.continuationPrompt, "") || getStr(moduleCfg?.continuationPrompt, "");
+        const continuationPromptText = getStr(wo?.continuationPrompt, "")
+          || getStr(moduleCfg?.continuationPrompt, "")
+          || "Continue exactly where you stopped. Do not restart, do not summarize, do not repeat the previous text. Output only the missing continuation.";
         const cont = { role: "user", content: continuationPromptText };
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));

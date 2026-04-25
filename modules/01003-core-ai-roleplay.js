@@ -149,6 +149,19 @@ function getManifestDef(name, logFn) {
 }
 
 
+function getManifestPolicyHints(toolNames) {
+  const hints = [];
+  for (const name of toolNames) {
+    try {
+      const raw = readFileSync(join(_manifestDir, `${name}.json`), "utf8");
+      const m = JSON.parse(raw);
+      if (typeof m?.policyHint === "string" && m.policyHint.trim()) hints.push(m.policyHint.trim());
+    } catch {}
+  }
+  return hints;
+}
+
+
 async function getToolByName(name, wo) {
   const log = getPrefixedLogger(wo, import.meta.url);
   try {
@@ -216,7 +229,7 @@ function getExtractUrlFromToolResult(toolResultContent) {
 
     const directKeys = [
       "url", "imageUrl", "image_url", "href", "link", "image", "output", "result",
-      "data", "file", "path", "uri", "src"
+      "data", "file", "files", "path", "uri", "src"
     ];
 
     for (const k of directKeys) {
@@ -252,37 +265,36 @@ function getChannelAwarenessBlock(wo) {
     lines.push("- Report your result or any blockers back to the caller.");
   } else {
     lines.push("- You are the primary assistant speaking directly with the user.");
-    lines.push("- Ask before starting an orchestrator for major tasks if the user has not already approved.");
-    lines.push("- If the most recent user message already clearly approves proceeding, do NOT ask again. Start the orchestrator now.");
-    lines.push("- Short approvals like 'yes', 'ja', 'ok', 'okay', 'mach', or 'go ahead' count as approval when they directly answer your previous permission question.");
+    const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
+    getManifestPolicyHints(toolNames).forEach(h => lines.push(`- ${h}`));
   }
 
   return lines.join("\n");
 }
 
 
-function getSystemContentTextRun(wo, earliestTimestamps) {
+function getSystemContentTextRun(wo, moduleCfg, earliestTimestamps) {
   const base = [
     typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
     typeof wo.persona === "string" ? wo.persona.trim() : "",
-    typeof wo.instructions === "string" ? wo.instructions.trim() : ""
+    typeof wo.instructions === "string" ? wo.instructions.trim() : "",
+    typeof wo._deliveryInstructions === "string" ? wo._deliveryInstructions.trim() : ""
   ].filter(Boolean).join("\n\n");
 
   const stamps = Array.isArray(earliestTimestamps) ? earliestTimestamps : [];
-  if (!stamps.length) return base;
 
   const nowIso = new Date().toISOString();
   const tz = typeof wo?.timezone === "string" && wo.timezone.trim() ? wo.timezone.trim() : "Europe/Berlin";
   const earliestLines = stamps.map(
     ({ channelId, earliestTs }) => `- context_earliest_record (channel "${channelId}"): ${earliestTs}`
   );
-  const runtimeInfo = [
+  const runtimeInfo = stamps.length ? [
     "Runtime info:",
     `- current_time_iso: ${nowIso}`,
     `- timezone_hint: ${tz}`,
     ...earliestLines,
     "- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window."
-  ].join("\n");
+  ].join("\n") : "";
 
   const agentInfo = (() => {
     const type  = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
@@ -295,7 +307,10 @@ function getSystemContentTextRun(wo, earliestTimestamps) {
     ].join("\n");
   })();
 
-  return [base, agentInfo, getChannelAwarenessBlock(wo), runtimeInfo].filter(Boolean).join("\n\n");
+  const policy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "");
+  const systemPromptAddition = typeof wo?.systemPromptAddition === "string" ? wo.systemPromptAddition.trim() : "";
+
+  return [base, agentInfo, getChannelAwarenessBlock(wo), runtimeInfo, policy, systemPromptAddition].filter(Boolean).join("\n\n");
 }
 
 
@@ -309,22 +324,7 @@ function getSystemContentImagePromptRun(personaText, imagePersonaHint, imageProm
     hint ? `- Fixed look hint: ${hint}` : ""
   ].filter(Boolean).join("\n");
 
-  const customRules = String(imagePromptRules ?? "").trim();
-  const rules = customRules || [
-    "You create a Stable Diffusion image prompt from the ROLEPLAY CONTEXT.",
-    "Rules:",
-    "- Output ONLY a comma-separated list of descriptive tags. NO sentences. NO prose. NO quotes. NO markdown. NO extra lines.",
-    "- Follow this exact tag order:",
-    "  1. Main character: physical features (age, hair color/style, eye color, build), clothing/accessories, facial expression, body pose/action",
-    "  2. Other characters present (if any): same detail level",
-    "  3. Scene: specific location, furniture/props, background details",
-    "  4. Camera framing: one of (close-up | medium shot | wide shot | over-the-shoulder shot)",
-    "  5. Lighting: one specific descriptor (e.g. dramatic window light, harsh fluorescent, warm candlelight, dim office lamp)",
-    "  6. Quality tags — ALWAYS end with exactly: masterpiece, best quality, highly detailed, sharp focus",
-    "- Depict the MOST RECENT concrete action/event from the context. Not a mood or atmosphere shot.",
-    "- Keep total output under 60 words.",
-    "- Do NOT include any URLs, narrative text, or explanations."
-  ].join("\n");
+  const rules = String(imagePromptRules ?? "").trim();
 
   return [anchor, rules].filter(Boolean).join("\n\n");
 }
@@ -406,6 +406,7 @@ export default async function getCoreAi(coreData) {
   }
 
   const kiCfg = getKiCfg(wo);
+  const moduleCfg = coreData.config?.[MODULE_NAME] || {};
   const userPromptRaw = String(wo.payload ?? "");
   if (!userPromptRaw.trim()) {
     log("Skipped: empty payload", "info");
@@ -421,7 +422,7 @@ export default async function getCoreAi(coreData) {
 
   const _earliestTimestamps = await getContextEarliestTimestamps(wo).catch(() => []);
   const history = getPromptFromSnapshot(snapshot, kiCfg.includeHistory, kiCfg.includeHistorySystemMessages);
-  const system1 = getSystemContentTextRun(wo, _earliestTimestamps);
+  const system1 = getSystemContentTextRun(wo, moduleCfg, _earliestTimestamps);
 
   
   const pass1Messages = [
@@ -543,6 +544,13 @@ export default async function getCoreAi(coreData) {
   wo._contextPersistQueue.push(getWithTurnId(assistantPass1, wo));
 
   wo.reasoningSummary = undefined;
+
+  if (Array.isArray(wo._pendingSubtaskLogs) && wo._pendingSubtaskLogs.length) {
+    const _logBlock = wo._pendingSubtaskLogs.join("\n\n");
+    wo.reasoningSummary = _logBlock;
+    wo._pendingSubtaskLogs = [];
+  }
+
   wo.response = finalText || (hitMaxLoops ? ("[Max Loops Hit]\n\n" + getLimitNotice()) : "I could not generate a visible answer in this turn. Please ask again and I will answer directly.");
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;

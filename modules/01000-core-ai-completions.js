@@ -134,7 +134,9 @@ function getKiCfg(wo) {
   const includeHistoryTools = getBool(wo?.includeHistoryTools, false);
   const includeHistorySystemMessages = getBool(wo?.includeHistorySystemMessages, false);
   const includeRuntimeContext = getBool(wo?.includeRuntimeContext, false);
-  const toolsList = Array.isArray(wo?.tools) ? wo.tools : [];
+  const _toolsRaw = Array.isArray(wo?.tools) ? wo.tools : [];
+  const _toolsBlacklist = Array.isArray(wo?.toolsBlacklist) ? wo.toolsBlacklist : [];
+  const toolsList = _toolsBlacklist.length ? _toolsRaw.filter(t => !_toolsBlacklist.includes(t)) : _toolsRaw;
   return {
     includeHistory,
     includeHistoryTools,
@@ -181,8 +183,8 @@ function getChannelAwarenessBlock(wo) {
     lines.push("- You are running as an orchestrator or specialist. Return your result directly — do not ask the user for permission or confirmation.");
   } else {
     lines.push("- You are the primary assistant speaking directly with the user.");
-    lines.push("- When starting a getOrchestrator run for complex multi-step tasks, ask the user for confirmation first if the scope is unclear.");
-    lines.push("- If the most recent user message already clearly approves proceeding, do NOT ask again. Start the orchestrator now.");
+    const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
+    getManifestPolicyHints(toolNames).forEach(h => lines.push(`- ${h}`));
   }
 
   return lines.join("\n");
@@ -255,6 +257,19 @@ function getManifestDef(name, logFn) {
   } catch {}
   if (logFn) logFn(`Tool "${name}" has no manifest in manifests/ — it will not be advertised to the AI.`, "warn");
   return null;
+}
+
+
+function getManifestPolicyHints(toolNames) {
+  const hints = [];
+  for (const name of toolNames) {
+    try {
+      const raw = readFileSync(join(_manifestDir, `${name}.json`), "utf8");
+      const m = JSON.parse(raw);
+      if (typeof m?.policyHint === "string" && m.policyHint.trim()) hints.push(m.policyHint.trim());
+    } catch {}
+  }
+  return hints;
 }
 
 
@@ -345,9 +360,6 @@ function getToolPaginationMeta(toolName, result) {
     case "getOrchestrator":
       return out({ rows: num(v.count), responseLen: Array.isArray(v.rows) && v.rows[0] ? len(v.rows[0]) : undefined });
 
-    case "getInformation":
-      return out({ totalHits: num(v.totalHits), coverage: num(v.coverage) });
-
     case "getShell":
       return out({ exitCode: v.exitCode ?? undefined, outputBytes: len(Array.isArray(v.rows) ? v.rows[0] : undefined) });
 
@@ -391,6 +403,17 @@ function getLimitNotice(kind) {
     return "Loop limit reached. This is the partial result so far. Start a new AI run if you want me to continue from here.";
   }
   return "";
+}
+
+
+function setEnsureFinalSynthesisPrompt(messages, wo) {
+  if (wo?.__didToolBudgetNotice === true) return false;
+  wo.__didToolBudgetNotice = true;
+  messages.push({
+    role: "user",
+    content: "Tool-call budget exhausted. Provide the best possible final answer using only the existing conversation and prior tool outputs. Do not request or call any tools."
+  });
+  return true;
 }
 
 
@@ -615,6 +638,7 @@ export default async function getCoreAi(coreData) {
   let accumulatedText = "";
   let hitMaxLoops = false;
   let hitMaxToolCalls = false;
+  let emptyOutputConsec = 0;
   for (let i = 0; i < kiCfg.maxLoops; i++) {
     if (wo.aborted) {
       log("Pipeline aborted — client disconnected.", "warn");
@@ -699,8 +723,10 @@ export default async function getCoreAi(coreData) {
       if (toolCalls && toolCalls.length && toolModules.length) {
         if (totalToolCalls >= kiCfg.maxToolCalls) {
           hitMaxToolCalls = true;
-          log(`maxToolCalls limit reached (${totalToolCalls}/${kiCfg.maxToolCalls}) — stopping tool execution`, "warn");
-          break;
+          log(`maxToolCalls limit reached (${totalToolCalls}/${kiCfg.maxToolCalls}) — requesting synthesis`, "warn");
+          wo.__forceNoTools = true;
+          setEnsureFinalSynthesisPrompt(messages, wo);
+          continue;
         }
         wo._fullAssistantText = accumulatedText;
         for (const tc of toolCalls) {
@@ -720,6 +746,7 @@ export default async function getCoreAi(coreData) {
           try {
             const parsedToolMsg = JSON.parse(toolMsg.content || "{}");
             if (parsedToolMsg?.ok === false || (typeof parsedToolMsg?.error === "string" && parsedToolMsg.error.trim())) _tcStatus = "failed";
+            if (typeof parsedToolMsg?.url === "string" && parsedToolMsg.url) wo.primaryImageUrl = parsedToolMsg.url;
           } catch {}
           toolCallLog.push({ tool: tcName, task: tcTask, status: _tcStatus, durationMs: _tcMs });
           totalToolCalls++;
@@ -729,6 +756,15 @@ export default async function getCoreAi(coreData) {
       }
       const cutOff = !wo.__noContinuation && (finish === "length" || getLooksCutOff(chunkText));
       if (cutOff) {
+        if (finish === "length" && !chunkText) {
+          emptyOutputConsec++;
+          if (emptyOutputConsec >= 2) {
+            log(`Empty output loop guard triggered (${emptyOutputConsec} consecutive empty length-truncated responses) — breaking`, "warn");
+            break;
+          }
+        } else {
+          emptyOutputConsec = 0;
+        }
         const cont = {
           role: "user",
           content: "Continue exactly where you stopped. Do not restart, do not summarize, do not repeat the previous text. Output only the missing continuation."
@@ -739,6 +775,7 @@ export default async function getCoreAi(coreData) {
         wo.__forceNoTools = true;
         continue;
       }
+      emptyOutputConsec = 0;
       break;
   } catch (err) {
     const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";

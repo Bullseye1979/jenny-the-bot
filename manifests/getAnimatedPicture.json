@@ -1,6 +1,7 @@
 {
   "name": "getAnimatedPicture",
   "description": "Animate an existing image into a short video. Returns a VIDEO file URL (not an image). Always execute a fresh generation — never reuse video URLs from previous calls. The returned video URL is the required input for creating animated tokens.\nrequirements:\n- source image: a publicly accessible static image URL (http/https)",
+  "policyHint": "When the user asks to animate an existing image or create a short video clip from an existing image, use this tool immediately.",
   "parameters": {
     "type": "object",
     "properties": {

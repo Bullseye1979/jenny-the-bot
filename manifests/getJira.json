@@ -1,6 +1,7 @@
 {
   "name": "getJira",
   "description": "ALWAYS USE THIS TOOL to access Jira. Always execute a fresh Jira operation — never reuse issue data from previous calls. If a previous call failed, retry with corrected parameters. Supports high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE) and raw API requests. Enforces configured project key and credentials. JQL is normalized automatically. LIST returns {key, summary, status}.\nMULTI-WORKER: Multiple agents may operate on DIFFERENT issues in parallel safely. Concurrent UPDATE/STATUS calls on the SAME issue cause conflicts — serialize writes to the same issue.",
+  "policyHint": "For any Jira operation — listing, creating, updating, or checking issues — use this tool immediately without asking for confirmation.",
   "parameters": {
     "type": "object",
     "additionalProperties": false,

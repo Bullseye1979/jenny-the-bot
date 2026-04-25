@@ -37,6 +37,16 @@
       "getBan",
       "getOrchestrator"
     ],
+    "toolsBlacklist": ["getImageSD"],
+    "fallbackOverrides": {
+      "__description": "Applied automatically when the primary (local) endpoint is unreachable (TCP probe fails). Switches to a public API for the duration of that request. toolsBlacklist here fully replaces the normal toolsBlacklist.",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "endpointResponses": "https://api.openai.com/v1/responses",
+      "apiKey": "OPENAI",
+      "model": "gpt-4o-mini",
+      "useAiModule": "completions",
+      "toolsBlacklist": ["getImage", "getOrchestrator", "getSpecialists"]
+    },
     "includeHistory": true,
     "includeHistoryTools": false,
     "includeRuntimeContext": true,
@@ -767,7 +777,8 @@
         "discord",
         "discord-voice",
         "api"
-      ]
+      ],
+      "imagePromptRules": "You create a Stable Diffusion image prompt from the ROLEPLAY CONTEXT.\nRules:\n- Output ONLY a comma-separated list of descriptive tags. NO sentences. NO prose. NO quotes. NO markdown. NO extra lines.\n- Follow this exact tag order:\n  1. Main character: physical features (age, hair color/style, eye color, build), clothing/accessories, facial expression, body pose/action\n  2. Other characters present (if any): same detail level\n  3. Scene: specific location, furniture/props, background details\n  4. Camera framing: one of (close-up | medium shot | wide shot | over-the-shoulder shot)\n  5. Lighting: one specific descriptor (e.g. dramatic window light, harsh fluorescent, warm candlelight, dim office lamp)\n  6. Quality tags — ALWAYS end with exactly: masterpiece, best quality, highly detailed, sharp focus\n- Depict the MOST RECENT concrete action/event from the context. Not a mood or atmosphere shot.\n- Keep total output under 60 words.\n- Do NOT include any URLs, narrative text, or explanations."
     },
     "subagents-prepare": {
       "flow": [
@@ -1015,7 +1026,20 @@
       ],
       "port": 3114,
       "allowedRoles": [],
-      "label": "🎵 Bard"
+      "label": "🎵 Bard",
+      "musicDir": "assets/bard",
+      "autoTag": {
+        "__description": "Automatic music tagging via Tavily search + LLM. Disabled when channelId is missing.",
+        "enabled": false,
+        "tavilyApiKey": "SECRET:tavily_api_key",
+        "tavilyMaxResults": 5,
+        "tavilyTimeoutMs": 15000,
+        "apiUrl": "http://localhost:3400",
+        "channelId": "",
+        "apiSecret": "",
+        "systemPrompt": "You are a music tagging assistant for a tabletop RPG ambient music library. Return only a JSON array with exactly six strings: [location, situation, mood1, mood2, mood3, mood4]. Use lowercase single-word tags where possible.",
+        "userPrompt": "Track title: \"{title}\"\n\nKnown locations: {locList}\nKnown situations: {sitList}\nKnown moods: {moodList}\n\nWeb search results for this track:\n{tavilySnippet}\n\nReturn exactly six tags as JSON array: [location, situation, mood1, mood2, mood3, mood4]."
+      }
     },
     "webpage-bard-stream": {
       "__description": "Browser audio player for the live Bard stream. Requires port 3116 in webpage.ports.",
@@ -1403,6 +1427,181 @@
       "allowedRoles": [
         "admin"
       ]
+    },
+    "discord-status-prepare": {
+      "__description": "Sends periodic status/avatar update prompts into the AI pipeline for the bot's own Discord presence.",
+      "flow": [
+        "discord-status"
+      ],
+      "allowedChannels": [],
+      "prompt": ""
+    },
+    "discord-voice-capture": {
+      "__description": "Records and segments Discord voice audio before transcription.",
+      "flow": [
+        "discord-voice"
+      ],
+      "silenceMs": 2000,
+      "maxCaptureMs": 25000,
+      "minWavBytes": 24000,
+      "frameMs": 20,
+      "keepWav": false,
+      "maxSegmentsPerRun": 32
+    },
+    "bard-join": {
+      "__description": "Handles Bard music bot join/leave slash commands.",
+      "flow": [
+        "discord-admin"
+      ]
+    },
+    "webpage-voice-input": {
+      "__description": "Accepts audio upload from the browser voice interface and stores it for transcription.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3119
+    },
+    "webpage-inpaint": {
+      "__description": "Redirects image URLs to the external inpainting host. Set enabled:false to disable.",
+      "flow": [
+        "webpage"
+      ],
+      "enabled": true,
+      "inpaintHost": ""
+    },
+    "webpage-inpainting": {
+      "__description": "Full-featured inpainting SPA with Stable Diffusion and OpenAI image edit support.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/inpainting",
+      "allowedRoles": []
+    },
+    "webpage-dashboard": {
+      "__description": "Admin dashboard showing pipeline execution traces and system status.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/dashboard",
+      "allowedRoles": [
+        "admin"
+      ],
+      "refreshSeconds": 5
+    },
+    "webpage-context": {
+      "__description": "Context database browser — search and inspect stored conversation context.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/context",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    "webpage-documentation": {
+      "__description": "Markdown documentation viewer served from the documentation/ folder.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/docs",
+      "allowedRoles": []
+    },
+    "webpage-gallery": {
+      "__description": "Image gallery for all generated files stored in pub/.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/gallery",
+      "allowedRoles": []
+    },
+    "webpage-gdpr": {
+      "__description": "GDPR consent and data management interface.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/gdpr",
+      "gdprTable": "gdpr"
+    },
+    "webpage-live": {
+      "__description": "Real-time context and message monitor with SSE push updates.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/live",
+      "allowedRoles": [
+        "admin"
+      ],
+      "pollIntervalMs": 2000,
+      "messageLimit": 500
+    },
+    "webpage-oauth-manager": {
+      "__description": "OAuth provider registration UI (client-credentials and auth-code flows).",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/oauth",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    "webpage-oauth-connections": {
+      "__description": "Per-user OAuth account connection UI (/connections). Required for auth_code OAuth flows.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/connections",
+      "redirectUriBase": "https://YOUR_DOMAIN"
+    },
+    "webpage-oauth-exposure": {
+      "__description": "Shows and revokes OAuth tokens that have been exposed to the getApi tool.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/oauth-exposure",
+      "roles": [
+        "admin"
+      ]
+    },
+    "webpage-bearer-exposure": {
+      "__description": "Shows and revokes bearer tokens that have been exposed to the getApiBearers tool.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3120,
+      "basePath": "/bearer-exposure",
+      "roles": [
+        "admin"
+      ]
+    },
+    "cron-oauth-token-refresh": {
+      "__description": "Automatically refreshes expiring OAuth tokens stored in the oauth_tokens table.",
+      "flow": [
+        "cron"
+      ],
+      "refreshBufferMinutes": 10
+    },
+    "core-voice-tts": {
+      "__description": "Text-to-speech synthesis for voice responses. Inherits tts* keys from workingObject if not set here.",
+      "flow": [
+        "discord-voice",
+        "webpage"
+      ],
+      "ttsModel": "gpt-4o-mini-tts",
+      "ttsVoice": "nova",
+      "ttsEndpoint": "https://api.openai.com/v1/audio/speech",
+      "ttsApiKey": "OPENAI",
+      "ttsFormat": "opus",
+      "ttsFetchTimeoutMs": 30000
     },
     "discord-subagent-poll": {
       "__description": "Polls the registry for completed async subagent jobs and delivers results to the originating Discord channel. Set enabled:true to activate. pollIntervalMs: how often to check (ms). callerFlowPattern: flow name prefixes that trigger delivery. maxJobAgeMs: running jobs older than this are expired as errors.",

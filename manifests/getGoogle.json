@@ -1,6 +1,7 @@
 {
   "name": "getGoogle",
   "description": "Search the web using Google for current news, events, facts, or real-time information. Always execute a fresh search — never reuse results from conversation history. If a previous search returned no useful results, refine the query and search again. A query is required.",
+  "policyHint": "For current or factual web search questions, use this tool before answering from memory. Do not answer current-event or factual questions without searching first.",
   "parameters": {
     "type": "object",
     "properties": {

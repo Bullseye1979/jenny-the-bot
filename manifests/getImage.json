@@ -1,6 +1,7 @@
 {
   "name": "getImage",
   "description": "Generate exactly ONE image from a text prompt. Do NOT call this more than once for a single request — use n>1 if multiple variants are needed. Prompts are automatically enhanced for quality unless strictPrompt=true. Never change the configured model unless explicitly instructed.",
+  "policyHint": "When a scene, character, location, or item comes up in conversation and no image has been shown for it yet in the current exchange, call this tool to generate a fitting illustration.",
   "parameters": {
     "type": "object",
     "properties": {

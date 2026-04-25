@@ -1,29 +1,28 @@
 {
   "name": "getHistory",
-  "description": "ALWAYS USE THIS TOOL to retrieve historical chat records and past events when a timeframe is known. Fetches directly from the database — never infer historical data from conversation context. If a previous call returned no data, try different start/end parameters or a broader range.\nThe search automatically covers ALL channels in the current context (primary channel plus all linked channels from channelIds config). Results include a channelId field on each row — group rows by channelId when multiple channels are involved.\nTIMEZONE: All timestamps are stored and queried in UTC. The runtime info block contains current_time_iso (UTC) and timezone_hint (user's local timezone). Always convert local times to UTC before passing start/end — for example, if the user is in CEST (UTC+2) and a session ran 20:00–22:00 CEST, pass start='HH:MM:SS in UTC' (18:00–20:00 UTC). Never pass local-time values directly.\nrequirements:\n- for targeted retrieval: a known timeframe (start/end timestamps in UTC); if unknown, use a timeline overview tool first to identify relevant periods",
+  "description": "Retrieves actual message rows from the conversation log for a given time range. Always use this tool to read historical messages — never infer past events from the current context window.\n\nTIMEFRAMES: Accepts any ISO 8601 UTC timestamp as start/end. If another tool returned a time window with start and end fields, pass them directly — they are ready-to-use without conversion.\n\nTIMEZONE: All timestamps are stored and queried in UTC. The system prompt contains current_time_iso (UTC) and timezone_hint. Always convert local times to UTC before passing start/end — e.g. 20:00 CEST (UTC+2) = 18:00 UTC.\n\nPAGINATION: If the result contains has_more=true, call again with startCtxId set to next_start_ctx_id from the previous response to fetch the next page.\n\nCHANNEL SCOPE: Covers all channels in the current context automatically. Results include a channelId field on each row.",
+  "policyHint": "For questions about past events, decisions, or conversation history not visible in the current context window, call this tool with appropriate time ranges. Never infer past events from memory — always retrieve them.",
   "parameters": {
     "type": "object",
     "properties": {
       "start": {
         "type": "string",
-        "description": "REQUIRED: start timestamp in UTC (YYYY-MM-DD, DD.MM.YYYY, or ISO 8601 with timezone offset). If date-only, time defaults to 00:00:00 UTC. Convert local times to UTC before passing — e.g. 20:00 CEST = 18:00 UTC."
+        "description": "REQUIRED. Start of the time range in UTC. Accepts ISO 8601 (e.g. 2025-10-25T14:02:00.000Z), YYYY-MM-DD, or DD.MM.YYYY."
       },
       "end": {
         "type": "string",
-        "description": "OPTIONAL: end timestamp in UTC. If omitted, retrieval is open-ended from start until now (UTC). If date-only, end is exclusive at next day 00:00:00 UTC."
+        "description": "OPTIONAL. End of the time range in UTC. Same format as start. If omitted, retrieves from start until now. Values from getInformation windows are already in the correct format."
       },
       "prompt": {
         "type": "string",
-        "description": "OPTIONAL: additional instructions to steer the AI summary (e.g. 'focus on combat events')."
+        "description": "OPTIONAL. Additional focus instructions for summarisation (e.g. 'focus on decisions made')."
       },
       "startCtxId": {
         "type": "number",
-        "description": "OPTIONAL: continue pagination from after this ctx_id (applies across all channels). Legacy aliases: start_ctx_id, start_ctx."
+        "description": "OPTIONAL. Pagination cursor — pass next_start_ctx_id from a previous response to fetch the next page. Aliases: start_ctx_id, start_ctx."
       }
     },
-    "required": [
-      "start"
-    ],
+    "required": ["start"],
     "additionalProperties": false
   }
 }

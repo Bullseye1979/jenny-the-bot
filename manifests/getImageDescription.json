@@ -1,6 +1,7 @@
 {
   "name": "getImageDescription",
   "description": "Analyze and describe an image through the internal API flow. Always execute a fresh analysis for each request and provide a public HTTP/HTTPS image URL. The optional 'prompt' focuses the analysis on specific aspects.",
+  "policyHint": "When the user provides an image URL and asks what is in it, or when image analysis is needed to complete a task, use this tool immediately.",
   "parameters": {
     "type": "object",
     "properties": {
