@@ -156,22 +156,36 @@ async function getInvoke(args, coreData) {
     const q = getStr(obj.query, userPrompt);
     if (!q) return { ok: false, error: "YT_SEARCH_NO_QUERY", took_ms: Date.now() - started };
     const res = await getSearchVideos({ googleApiKey, query: q, maxResults: obj.maxResults ?? obj.max_results ?? searchMaxResults, relevanceLanguage, regionCode, safeSearch: obj.safeSearch || obj.safe_search || "none" });
-    return { ok: !!res.ok, mode: "search", query: q, results: res.results || [], error: res.error, took_ms: Date.now() - started };
+    const rows = res.results || [];
+    return { ok: !!res.ok, count: rows.length, has_more: false, next_start_ctx_id: null, rows, mode: "search", query: q, ...(res.error && { error: res.error }), took_ms: Date.now() - started };
   }
   if (!videoId) return { ok: false, error: "YT_BAD_ID — provide videoUrl or 11-char ID", took_ms: Date.now() - started };
   const [tRes, mRes] = await Promise.all([getFetchTranscript(videoId, transcriptLangs), getFetchVideoMeta(googleApiKey, videoId, regionCode)]);
-  if (!tRes.ok || !tRes.items.length) {
-    return { ok: false, error: tRes.error || "YT_NO_TRANSCRIPT", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta: mRes?.meta || null, took_ms: Date.now() - started };
-  }
-  let linear = "";
-  for (const entry of tRes.items) { linear += `[${getFmtTime(entry.start)}] ${entry.text}\n`; if (linear.length > 250000) break; }
   const meta = mRes?.meta ? mRes.meta : (googleApiKey ? null : { warning: "No googleApiKey configured – metadata omitted." });
-  if (wantMetaOnly) {
-    return { ok: true, mode: "meta", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, took_ms: Date.now() - started };
+  if (!tRes.ok || !tRes.items.length) {
+    return { ok: false, error: tRes.error || "YT_NO_TRANSCRIPT", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, took_ms: Date.now() - started };
   }
-  const truncated = linear.length > dumpThresholdChars;
-  const text = truncated ? linear.slice(0, dumpThresholdChars) : linear;
-  return { ok: true, mode: "dump", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, lang: tRes.lang || null, text, chars: text.length, truncated, took_ms: Date.now() - started };
+  if (wantMetaOnly) {
+    return { ok: true, count: 0, has_more: false, next_start_ctx_id: null, rows: [], mode: "meta", video_id: videoId, video_url: `https://www.youtube.com/watch?v=${videoId}`, meta, took_ms: Date.now() - started };
+  }
+  const maxItems    = getClamp(getNum(cfg.maxItems, 200), 10, 5000);
+  const startOffset = Math.max(0, getNum(obj.start_ctx_id, 0));
+  const pageItems   = tRes.items.slice(startOffset, startOffset + maxItems);
+  const hasMore     = (startOffset + maxItems) < tRes.items.length;
+  return {
+    ok:               true,
+    count:            pageItems.length,
+    has_more:         hasMore,
+    next_start_ctx_id: hasMore ? startOffset + maxItems : null,
+    rows:             pageItems,
+    mode:             "transcript",
+    video_id:         videoId,
+    video_url:        `https://www.youtube.com/watch?v=${videoId}`,
+    meta,
+    lang:             tRes.lang || null,
+    total_items:      tRes.items.length,
+    took_ms:          Date.now() - started,
+  };
 }
 
 export default {

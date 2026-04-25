@@ -4,11 +4,31 @@
 /* Purpose: Pipeline module implementation.                 */
 /**************************************************************/
 import fs from "node:fs";
+import { readdir, readFile, writeFile } from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript } from "../shared/webpage/interface.js";
 import { getIsAllowedRoles, setJsonResp, setSendNow } from "../shared/webpage/utils.js";
-import { listManifestNames, readManifest, writeManifest } from "../shared/webpage/subagent-manager.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getStr } from "../core/utils.js";
+
+const _manifestDir = join(dirname(fileURLToPath(import.meta.url)), "../manifests");
+
+async function listManifestNames() {
+  const files = await readdir(_manifestDir);
+  return files.filter(f => f.endsWith(".json")).map(f => f.slice(0, -5)).sort();
+}
+
+async function readManifest(name) {
+  if (!name || !/^[a-zA-Z0-9_\-.]+$/.test(name)) throw new Error("Invalid manifest name");
+  const raw = await readFile(join(_manifestDir, name + ".json"), "utf-8");
+  return JSON.parse(raw);
+}
+
+async function writeManifest(name, data) {
+  if (!name || !/^[a-zA-Z0-9_\-.]+$/.test(name)) throw new Error("Invalid manifest name");
+  await writeFile(join(_manifestDir, name + ".json"), JSON.stringify(data, null, 2), "utf-8");
+}
 
 const MODULE_NAME = "webpage-manifests";
 
@@ -103,7 +123,7 @@ ${menuHtml ? "  " + menuHtml : ""}
     <span id="status-lbl" style="font-size:12px;color:var(--muted)"></span>
     <button id="save-btn" disabled onclick="saveManifest()">Saved</button>
   </div>
-  <div class="cfg-note">Structured manifest editor with selector. The Subagent Manager updates <code>getSubAgent</code> blocks directly.</div>
+  <div class="cfg-note">Structured manifest editor. Select a manifest from the list and edit its fields directly.</div>
   <div id="cfg-tree" style="margin-top:10px"></div>
 </div>
 <div id="toast" class="toast"></div>

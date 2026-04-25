@@ -791,6 +791,16 @@ async function getInvoke(args, coreData){
         status: st ? { id: st.id, name: st.name, statusCategory: st?.statusCategory?.name || null } : null
       };
     }).filter(x => x.key && typeof x.summary === "string");
+    const out2 = {
+      ok: !!res?.ok,
+      count: dataOut.length,
+      has_more: false,
+      next_start_ctx_id: null,
+      rows: dataOut,
+      status: res?.status || 0,
+      took_ms: Date.now() - startedAt
+    };
+    return out2;
   } else if (opUsed === "CREATE"){
     dataOut = { key: dataOut?.key, id: dataOut?.id, self: dataOut?.self };
   } else if (opUsed === "STATUS"){

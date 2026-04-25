@@ -150,7 +150,7 @@ export default async function getWebpageChat(coreData) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getChatHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, chatBase: basePath, webAuth: wo.webAuth, toolStatusPollMs: Number(cfg.toolStatusPollMs ?? 500) || 500 })
+      body:    getChatHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, chatBase: basePath, webAuth: wo.webAuth, toolStatusPollMs: Number(cfg.toolStatusPollMs ?? 500) || 500, lastAssistantIntervalMs: Number(cfg.lastAssistantIntervalMs ?? 2000) || 2000 })
     };
     wo.web.useLayout = false;
     wo.jump = true;
@@ -518,6 +518,7 @@ function getChatHtml(opts) {
   const activePath    = String(opts?.activePath || chatBase);
   const role          = String(opts?.role || "").trim();
   const pollMs        = Number(opts?.toolStatusPollMs ?? 500) || 500;
+  const lastAssistantMs = Number(opts?.lastAssistantIntervalMs ?? 2000) || 2000;
   const menuHtml      = getMenuHtml(opts?.menu || [], activePath, role, null, null, opts?.webAuth);
 
   return (
@@ -575,44 +576,32 @@ function getChatHtml(opts) {
     "\n" +
     "<script>\n" +
     "var CHAT_BASE=\"" + chatBase + "\";\n" +
+    "var LAST_ASSISTANT_INTERVAL_MS=" + lastAssistantMs + ";\n" +
     "var chatChannelId=\"\", chatSubchannelId=\"\", chatMessages=[], chatSending=false, chatSubchannelList=[], chatPendingFile=null;\n" +
-    "var toolSseSource=null,asyncSseSource=null;\n" +
-    "var jobPollTimer=null,jobPollEmptyCount=0,jobPollDeadline=0;\n" +
+    "var toolSseSource=null;\n" +
+    "var lastAssistantTs=null,lastAssistantTimer=null;\n" +
     "\n" +
-    "function startJobPoll(channelId){\n" +
-    "  stopJobPoll();jobPollEmptyCount=0;jobPollDeadline=Date.now()+600000;\n" +
-    "  jobPollTimer=setInterval(function(){\n" +
-    "    if(Date.now()>jobPollDeadline){stopJobPoll();return;}\n" +
-    "    fetch(CHAT_BASE+\"/api/jobs?channelId=\"+encodeURIComponent(channelId)+\"&consume=true\")\n" +
+    "function startLastAssistantPoll(channelId){\n" +
+    "  stopLastAssistantPoll();\n" +
+    "  lastAssistantTimer=setInterval(function(){\n" +
+    "    fetch(CHAT_BASE+\"/context/last-assistant?channelId=\"+encodeURIComponent(channelId))\n" +
     "      .then(function(r){return r.json();})\n" +
-    "      .then(function(d){\n" +
-    "        var jobs=d&&Array.isArray(d.jobs)?d.jobs:[];\n" +
-    "        var hasRunning=jobs.some(function(j){return j.status===\"running\";});\n" +
-    "        var hasDone=false;\n" +
-    "        jobs.forEach(function(j){\n" +
-    "          if(j.status===\"done\"&&j.result){\n" +
-    "            if(j.originalRequest)appendMessage(\"user\",j.originalRequest);\n" +
-    "            appendMessage(\"assistant\",j.result);\n" +
-    "            if(j.projectId){var _lb=document.querySelector(\"#chat-msgs .chat-msg.assistant:last-child .chat-bubble\");if(_lb){var _ps=document.createElement(\"span\");_ps.className=\"project-id\";_ps.textContent=\"Project: \"+j.projectId;_lb.appendChild(_ps);}}\n" +
-    "            hasDone=true;\n" +
-    "          } else if(j.status===\"error\"){\n" +
-    "            if(j.originalRequest)appendMessage(\"user\",j.originalRequest);\n" +
-    "            appendMessage(\"assistant\",\"\u26a0\ufe0f Background task failed: \"+(j.error||\"unknown\"));\n" +
-    "            if(j.projectId){var _lb2=document.querySelector(\"#chat-msgs .chat-msg.assistant:last-child .chat-bubble\");if(_lb2){var _ps2=document.createElement(\"span\");_ps2.className=\"project-id\";_ps2.textContent=\"Project: \"+j.projectId;_lb2.appendChild(_ps2);}}\n" +
-    "            hasDone=true;\n" +
-    "          }\n" +
-    "        });\n" +
-    "        if(hasRunning||hasDone){jobPollEmptyCount=0;}else{jobPollEmptyCount++;if(jobPollEmptyCount>=6)stopJobPoll();}\n" +
+    "      .then(function(msg){\n" +
+    "        if(!msg||!msg.ts)return;\n" +
+    "        if(lastAssistantTs===null){lastAssistantTs=msg.ts;return;}\n" +
+    "        if(msg.ts!==lastAssistantTs){\n" +
+    "          lastAssistantTs=msg.ts;\n" +
+    "          appendMessage(\"assistant\",String(msg.raw||\"\"));\n" +
+    "          var msgsEl=document.getElementById(\"chat-msgs\");\n" +
+    "          if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;\n" +
+    "        }\n" +
     "      }).catch(function(){});\n" +
-    "  },5000);\n" +
+    "  },LAST_ASSISTANT_INTERVAL_MS);\n" +
     "}\n" +
-    "function stopJobPoll(){if(jobPollTimer){clearInterval(jobPollTimer);jobPollTimer=null;}}\n" +
+    "function stopLastAssistantPoll(){if(lastAssistantTimer){clearInterval(lastAssistantTimer);lastAssistantTimer=null;}lastAssistantTs=null;}\n" +
     "\n" +
     "function startToolPoll(channelId,lbl){stopToolPoll();if(!window.EventSource){return;}toolSseSource=new EventSource(CHAT_BASE+\"/api/toolstatus/stream?channelId=\"+encodeURIComponent(channelId));toolSseSource.onmessage=function(e){try{var d=JSON.parse(e.data);lbl.textContent=d&&d.tool?d.tool+\" \":\"\";}catch(ex){}};toolSseSource.onerror=function(){stopToolPoll();};}\n" +
     "function stopToolPoll(){if(toolSseSource){toolSseSource.close();toolSseSource=null;}}\n" +
-    "\n" +
-    "function startAsyncSSE(channelId){stopAsyncSSE();if(!window.EventSource||!channelId){return;}asyncSseSource=new EventSource(CHAT_BASE+\"/api/async-results/stream?channelId=\"+encodeURIComponent(channelId));asyncSseSource.onmessage=function(e){try{var d=JSON.parse(e.data);if(d&&d.type===\"async_result\"&&d.response){appendMessage(\"assistant\",d.response);var msgsEl=document.getElementById(\"chat-msgs\");if(msgsEl)msgsEl.scrollTop=msgsEl.scrollHeight;if(d.projectId){var lb=document.querySelector(\"#chat-msgs .chat-msg.assistant:last-child .chat-bubble\");if(lb){var ps=document.createElement(\"span\");ps.className=\"project-id\";ps.textContent=\"Project: \"+d.projectId;lb.appendChild(ps);}}toast(\"\\u23F3 Background task completed\");}}catch(ex){}};asyncSseSource.onerror=function(){};}\n" +
-    "function stopAsyncSSE(){if(asyncSseSource){asyncSseSource.close();asyncSseSource=null;}}\n" +
     "\n" +
     "function toast(msg,ms){var t=document.getElementById(\"toast\");t.textContent=msg;t.classList.add(\"on\");setTimeout(function(){t.classList.remove(\"on\");},ms||2400);}\n" +
     "\n" +
@@ -632,9 +621,9 @@ function getChatHtml(opts) {
     "function onChatSel(channelId){\n" +
     "  chatChannelId=channelId;\n" +
     "  chatSubchannelId=\"\";\n" +
-    "  stopAsyncSSE();\n" +
+    "  stopLastAssistantPoll();\n" +
     "  if(!channelId){document.getElementById(\"chat-msgs\").innerHTML=\"<div class='chat-loading'>Select a channel.</div>\";hideSubUI();return;}\n" +
-    "  startAsyncSSE(channelId);\n" +
+    "  startLastAssistantPoll(channelId);\n" +
     "  loadSubchannels(channelId);\n" +
     "}\n" +
     "\n" +
@@ -857,7 +846,7 @@ function getChatHtml(opts) {
     "    chatSending=false;btn.disabled=false;btn.textContent=\"\u27A4\";\n" +
     "    if(d&&d.response!==undefined)appendMessage(\"assistant\",String(d.response||\"\"));\n" +
     "    else if(d&&d.error)toast(\"Error: \"+d.error,6000);\n" +
-    "    startJobPoll(chatChannelId);\n" +
+    "    startLastAssistantPoll(chatChannelId);\n" +
     "  })\n" +
     "  .catch(function(e){\n" +
     "    stopToolPoll();\n" +

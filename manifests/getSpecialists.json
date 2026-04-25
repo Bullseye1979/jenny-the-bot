@@ -1,0 +1,34 @@
+{
+  "name": "getSpecialists",
+  "description": "Runs multiple specialist AI workers in parallel. Each specialist operates in its own isolated AI context with a dedicated tool set. All specialists run concurrently — results are returned only after all have completed. Use this from within an orchestrator context to decompose a task into parallel work packages.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "specialists": {
+        "type": "array",
+        "description": "Array of specialist job definitions to run in parallel. Each entry defines one specialist run.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "The specialist type.",
+              "enum": ["coding", "file-edit", "image-video", "content-search", "context-research", "document-generate", "atlassian", "microsoft"]
+            },
+            "jobID": {
+              "type": "integer",
+              "description": "Sequential job number starting from 1. Used to match results back to jobs."
+            },
+            "prompt": {
+              "type": "string",
+              "description": "The specific task prompt for this specialist. Be precise — the specialist has no context from the orchestrator conversation."
+            }
+          },
+          "required": ["type", "jobID", "prompt"]
+        },
+        "minItems": 1
+      }
+    },
+    "required": ["specialists"]
+  }
+}

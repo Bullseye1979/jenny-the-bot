@@ -22,6 +22,7 @@ import { saveFile } from "../core/file.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
+import { applyAiFallbackOverrides } from "../core/ai-fallback.js";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -42,6 +43,14 @@ function getAssistantAuthorName(wo) {
 
 
 function getToString(v) { return typeof v === "string" ? v : (v == null ? "" : String(v)); }
+
+
+function getAuthHeaders(apiKey = "", baseHeaders = {}) {
+  const headers = { ...baseHeaders };
+  const secret = String(apiKey || "").trim();
+  if (secret) headers.Authorization = `Bearer ${secret}`;
+  return headers;
+}
 
 
 
@@ -323,6 +332,28 @@ function getAppendRuntimeContextToUserContent(baseText, ctx) {
 }
 
 
+function getChannelAwarenessBlock(wo) {
+  const agentType = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
+  const mode = agentType ? "orchestrator-or-specialist" : "primary-user-channel";
+
+  const lines = [
+    "Channel awareness:",
+    `- channel_awareness_mode: ${mode}`,
+  ];
+
+  if (agentType) {
+    lines.push(`- agent_type: ${agentType}`);
+    lines.push("- You are running as an orchestrator or specialist. Return your result directly — do not ask the user for permission or confirmation.");
+  } else {
+    lines.push("- You are the primary assistant speaking directly with the user.");
+    lines.push("- When starting a getOrchestrator run for complex multi-step tasks, ask the user for confirmation first if the scope is unclear.");
+    lines.push("- If the most recent user message already clearly approves proceeding, do NOT ask again. Start the orchestrator now.");
+  }
+
+  return lines.join("\n");
+}
+
+
 function getManifestDef(name, logFn) {
   try {
     const raw = fs.readFileSync(path.join(_manifestDir, `${name}.json`), "utf8");
@@ -524,7 +555,8 @@ async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, e
   }
 
   const f = await getFetch();
-  const res = await f(url, { method: "GET", headers: { "Authorization": `Bearer ${apiKey}`, "User-Agent": "core-ai-responses/1.0" } });
+  const headers = getAuthHeaders(apiKey, { "User-Agent": "core-ai-responses/1.0" });
+  const res = await f(url, { method: "GET", headers });
   if (!res.ok) throw new Error(`File download failed: ${res.status} ${res.statusText}`);
 
   const mime = res.headers.get("content-type") || "image/png";
@@ -996,9 +1028,15 @@ function setAppendReasoningBlock(reasoningParts, iter, rs, toolCalls) {
 
 
 function getToolsDisabledMode(totalToolCalls, maxToolCalls, wo) {
-  if (wo?.__forceNoTools === true) return true;
-  if (Number.isFinite(maxToolCalls) && maxToolCalls >= 0 && totalToolCalls >= maxToolCalls) return true;
-  return false;
+  if (wo?.__forceNoTools === true) return "final_only";
+  if (Number.isFinite(maxToolCalls) && maxToolCalls >= 0 && totalToolCalls >= maxToolCalls) return "final_only";
+  return "normal";
+}
+
+function getToolsForCurrentStep(toolDefs, responseToolsNormalized, toolsMode) {
+  const base = getToolsForResponses(toolDefs, responseToolsNormalized, false);
+  if (toolsMode === "final_only" || toolsMode === "disabled") return [];
+  return base;
 }
 
 function getLimitNotice(kind) {
@@ -1024,8 +1062,10 @@ function setEnsureFinalSynthesisPrompt(messages, wo) {
 
 
 export default async function getCoreAi(coreData) {
-  const wo = coreData?.workingObject ?? {};
+  let wo = coreData?.workingObject ?? {};
   const log = getPrefixedLogger(wo, import.meta.url);
+  wo = await applyAiFallbackOverrides(wo, { log, moduleName: MODULE_NAME, endpoint: wo?.endpointResponses || wo?.endpoint });
+  coreData.workingObject = wo;
 
   const gate = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
   if (gate && gate !== "responses") {
@@ -1039,7 +1079,8 @@ export default async function getCoreAi(coreData) {
   }
 
   const endpoint = getStr(wo?.endpointResponses, "");
-  const apiKey = await getSecret(wo, getStr(wo?.apiKey, ""));
+  const apiKeyName = getStr(wo?.apiKey, "");
+  const apiKey = apiKeyName ? await getSecret(wo, apiKeyName) : "";
   const model = getStr(wo?.model, "");
   const baseUrl = getStr(wo?.baseUrl, "");
   const endpointFilesContentTemplate = getStr(wo?.EndpointFilesContent, "");
@@ -1052,9 +1093,9 @@ export default async function getCoreAi(coreData) {
   const reasoningEffort = getReasoningEffort(wo);
   const reasoningEnabled = (typeof reasoningEffort === "string" && reasoningEffort.length > 0);
 
-  if (!endpoint || !apiKey || !model) {
+  if (!endpoint || !model) {
     wo.response = "[Empty AI response]";
-    log(`Missing required: ${!endpoint ? "endpointResponses " : ""}${!apiKey ? "apiKey " : ""}${!model ? "model" : ""}`.trim(), "error");
+    log(`Missing required: ${!endpoint ? "endpointResponses " : ""}${!model ? "model" : ""}`.trim(), "error");
     return coreData;
   }
 
@@ -1131,6 +1172,7 @@ export default async function getCoreAi(coreData) {
     const parts = [];
     if (base) parts.push(base);
     if (agentInfo) parts.push(agentInfo);
+    parts.push(getChannelAwarenessBlock(wo2));
     parts.push(runtimeInfo);
     parts.push(policy);
     if (multiChannelNote) parts.push(multiChannelNote);
@@ -1164,7 +1206,6 @@ export default async function getCoreAi(coreData) {
   let allHostedLinks = [];
 
   const reasoningParts = [];
-  const subagentLog = [];
   const toolCallLog = [];
 
   let totalToolCalls = 0;
@@ -1189,8 +1230,22 @@ export default async function getCoreAi(coreData) {
     try {
       setLogConsole(`iteration-${iter + 1}-messages-before-request`, { count: messages.length, messages });
 
-      const toolsDisabled = getToolsDisabledMode(totalToolCalls, maxToolCalls, wo);
-      const toolsForResponses = getToolsForResponses(toolDefs, responseToolsNormalized, toolsDisabled);
+      const toolsMode = getToolsDisabledMode(totalToolCalls, maxToolCalls, wo);
+      const toolsForResponses = getToolsForCurrentStep(toolDefs, responseToolsNormalized, toolsMode);
+      const toolsDisabled = !Array.isArray(toolsForResponses) || toolsForResponses.length === 0;
+      const requestToolNames = Array.isArray(toolsForResponses)
+        ? toolsForResponses.map((tool) => String(tool?.name || tool?.function?.name || tool?.type || "").trim()).filter(Boolean)
+        : [];
+      log("AI request tool snapshot", "info", {
+        channelId: String(wo?.channelId || ""),
+        callerChannelId: String(wo?.callerChannelId || ""),
+        useAiModule: String(wo?.useAiModule || ""),
+        toolsDisabled,
+        toolMode: toolsMode,
+        configuredTools: Array.isArray(wo?.tools) ? wo.tools : [],
+        requestToolNames,
+        toolChoice: toolsDisabled ? "none" : toolChoiceInitial
+      });
 
       const body = {
         model,
@@ -1204,7 +1259,8 @@ export default async function getCoreAi(coreData) {
 
       setLogBig("responses-request-body", { endpoint, model, tool_choice: body.tool_choice, tools: body.tools, input: body.input, instructions: body.instructions, reasoning: body.reasoning }, { toFile: debugOn });
 
-      const res = await fetchWithTimeout(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` }, body: JSON.stringify(body) }, timeoutMs);
+    const headers = getAuthHeaders(apiKey, { "Content-Type": "application/json" });
+    const res = await fetchWithTimeout(endpoint, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
 
       const rawText = await res.text();
       const hdr = {}; try { res.headers?.forEach?.((v, k) => { hdr[k] = v; }); } catch {}
@@ -1318,15 +1374,6 @@ export default async function getCoreAi(coreData) {
             let _tcStatus = "success";
             try { const _tcR = JSON.parse(getToString(result?.content || "{}")); if (_tcR?.ok === false) _tcStatus = "failed"; } catch {}
             toolCallLog.push({ tool: tc?.name || "?", status: _tcStatus, durationMs: _tcDurationMs, task: "" });
-            if (tc?.name === "getSubAgent") {
-              try {
-                const r = JSON.parse(getToString(result?.content || "{}"));
-                const inner = r?.data ?? r;
-                subagentLog.push({ type: inner.type || "generic", channelId: inner.channelId || "?", ok: !!inner.ok, error: inner.error || null });
-              } catch (e) {
-                log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
-              }
-            }
 
             const outputStr = getToString(result?.content ?? "");
             messages.push({ type: "function_call_output", call_id, output: outputStr });
@@ -1389,28 +1436,21 @@ export default async function getCoreAi(coreData) {
       break;
     } catch (err) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
-      if (isAbort && attempts < maxAttempts) { log(`Retrying due to timeout after ${timeoutMs}ms`, "warn"); continue; }
-      wo.response = "[Empty AI response]";
+    if (isAbort && attempts < maxAttempts) { log(`Retrying due to timeout after ${timeoutMs}ms`, "warn"); continue; }
+    wo.response = "[Empty AI response]";
       log(isAbort ? `AI request timed out after ${timeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       setLogBig("responses-error", { message: err?.message || String(err), stack: err?.stack }, { toFile: debugOn });
       return coreData;
     }
   }
 
-  if (!finalText && !subagentLog.length && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
+  if (!finalText && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
     hitMaxLoops = true;
   }
 
   if (reasoningEnabled) {
     const reasoningJoined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
-    const subagentBlock = subagentLog.length
-      ? "=== Subagents ===\n" + subagentLog.map((s, i) =>
-          `--- Subagent ${i + 1} (${s.type} → ${s.channelId}) ---\n` +
-          (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
-        ).join("\n\n")
-      : "";
-    const directTools = toolCallLog.filter(e => (typeof e === "object" ? e.tool : e) !== "getSubAgent");
-    const toolsBlock = directTools.length ? "Tools called:\n" + directTools.map(e => {
+    const toolsBlock = toolCallLog.length ? "Tools called:\n" + toolCallLog.map(e => {
       if (typeof e === "object") {
         const icon = e.status === "success" ? "✅" : (e.status === "failed" ? "❌" : "⚠️");
         const ms = e.durationMs >= 1000 ? `${(e.durationMs / 1000).toFixed(1)}s` : `${e.durationMs}ms`;
@@ -1419,9 +1459,9 @@ export default async function getCoreAi(coreData) {
       }
       return `- ${e}`;
     }).join("\n") : "";
-    const noActivity = !reasoningJoined && !subagentBlock && !toolsBlock;
+    const noActivity = !reasoningJoined && !toolsBlock;
     const fallback = noActivity ? "Answered from context — no tool calls." : "";
-    const combined = [reasoningJoined, subagentBlock, toolsBlock, fallback].filter(Boolean).join("\n\n");
+    const combined = [reasoningJoined, toolsBlock, fallback].filter(Boolean).join("\n\n");
     wo.reasoningSummary = combined.length ? combined : "Answered from context — no tool calls.";
   } else {
     wo.reasoningSummary = undefined;
@@ -1443,8 +1483,6 @@ export default async function getCoreAi(coreData) {
     } else {
       wo.response = finalText;
     }
-  } else if (subagentLog.length) {
-    wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
   } else if (hitMaxToolCalls) {
     const partial = (accumulatedText || "").trim();
     wo.response = partial ? (partial + "\n\n" + getLimitNotice("tool")) : ("[Max Tool Calls Hit]\n\n" + getLimitNotice("tool"));

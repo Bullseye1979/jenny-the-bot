@@ -20,6 +20,7 @@ import { putItem, getItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
+import { applyAiFallbackOverrides } from "../core/ai-fallback.js";
 import { readFileSync }  from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,6 +65,16 @@ function getToolStatusKey(wo) {
 
 
 function getTryParseJSON(text, fallback = {}) { try { return JSON.parse(text); } catch { return fallback; } }
+
+
+async function getRequestHeaders(wo) {
+  const headers = { "Content-Type": "application/json" };
+  const keyName = typeof wo?.apiKey === "string" ? wo.apiKey.trim() : "";
+  if (!keyName) return headers;
+  const secret = String(await getSecret(wo, keyName) || "").trim();
+  if (secret) headers.Authorization = `Bearer ${secret}`;
+  return headers;
+}
 
 
 function getLooksCutOff(text) {
@@ -137,6 +148,32 @@ function getAppendedContextBlockToUserContent(baseText, contextObj) {
   if (!contextObj || typeof contextObj !== "object") return baseText ?? "";
   const jsonBlock = "```json\n" + JSON.stringify(contextObj) + "\n```";
   return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
+}
+
+
+function getChannelAwarenessBlock(wo) {
+  const agentType = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
+  const agentDepth = Number.isFinite(Number(wo?.agentDepth)) ? Number(wo.agentDepth) : 0;
+  const mode = agentType ? "orchestrator-or-specialist" : "primary-user-channel";
+
+  const lines = [
+    "Channel awareness:",
+    `- channel_awareness_mode: ${mode}`
+  ];
+
+  if (agentType) {
+    lines.push(`- agent_type: ${agentType}`);
+    lines.push(`- agent_depth: ${agentDepth}`);
+    lines.push("- You are running as an orchestrator or specialist. Delegate directly without asking the user for permission.");
+    lines.push("- Report your result or any blockers back to the caller.");
+  } else {
+    lines.push("- You are the primary assistant speaking directly with the user.");
+    lines.push("- Ask before starting an orchestrator for major tasks if the user has not already approved.");
+    lines.push("- If the most recent user message already clearly approves proceeding, do NOT ask again. Start the orchestrator now.");
+    lines.push("- Short approvals like 'yes', 'ja', 'ok', 'okay', 'mach', or 'go ahead' count as approval when they directly answer your previous permission question.");
+  }
+
+  return lines.join("\n");
 }
 
 
@@ -586,48 +623,48 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
 
 function getSystemContentBase(wo, moduleCfg, earliestTimestamps) {
   const now = new Date();
-  const tz = getStr(wo?.timezone, “Europe/Berlin”);
+  const tz = getStr(wo?.timezone, "Europe/Berlin");
   const nowIso = now.toISOString();
   const base = [
-    typeof wo.systemPrompt === “string” ? wo.systemPrompt.trim() : “”,
-    typeof wo.persona === “string” ? wo.persona.trim() : “”,
-    typeof wo.instructions === “string” ? wo.instructions.trim() : “”
-  ].filter(Boolean).join(“\n\n”);
+    typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
+    typeof wo.persona === "string" ? wo.persona.trim() : "",
+    typeof wo.instructions === "string" ? wo.instructions.trim() : ""
+  ].filter(Boolean).join("\n\n");
 
   const earliestLines = (Array.isArray(earliestTimestamps) ? earliestTimestamps : []).map(
-    ({ channelId, earliestTs }) => `- context_earliest_record (channel “${channelId}”): ${earliestTs}`
+    ({ channelId, earliestTs }) => `- context_earliest_record (channel "${channelId}"): ${earliestTs}`
   );
 
   const runtimeInfo = [
-    “Runtime info:”,
+    "Runtime info:",
     `- current_time_iso: ${nowIso}`,
     `- timezone_hint: ${tz}`,
     ...earliestLines,
     ...(earliestLines.length
-      ? [“- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window. History tools can retrieve records all the way back to this date.”]
+      ? ["- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window. History tools can retrieve records all the way back to this date."]
       : []),
-    “- When the user says \u201ctoday\u201d, \u201ctomorrow\u201d, or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.”,
-    “- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user.”
-  ].join(“\n”);
+    "- When the user says \"today\", \"tomorrow\", or uses relative terms, interpret them relative to current_time_iso unless the user gives another explicit reference time.",
+    "- If you generate calendar-ish text, prefer explicit dates (YYYY-MM-DD) when it helps the user."
+  ].join("\n");
 
-  const policy = getStr(wo?.policyPrompt, “”) || getStr(moduleCfg?.policyPrompt, “”);
-  const toolContract = getStr(wo?.toolContractPrompt, “”) || getStr(moduleCfg?.toolContractPrompt, “”);
+  const policy = getStr(wo?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "");
+  const toolContract = getStr(wo?.toolContractPrompt, "") || getStr(moduleCfg?.toolContractPrompt, "");
 
   const multiChannelNote = (() => {
     const raw = Array.isArray(wo?.contextIDs) ? wo.contextIDs : [];
     const extraIds = raw
-      .map(v => String(v || “”).trim())
+      .map(v => String(v || "").trim())
       .filter(v => v.length > 0);
-    if (!extraIds.length) return “”;
-    const currentId = String(wo?.channelId ?? “”).trim();
+    if (!extraIds.length) return "";
+    const currentId = String(wo?.channelId ?? "").trim();
     const lines = [
-      “Multi-channel context:”,
-      “- The context includes messages from multiple channels. Each message may carry a `channelId` field that identifies its source channel.”
+      "Multi-channel context:",
+      "- The context includes messages from multiple channels. Each message may carry a `channelId` field that identifies its source channel."
     ];
     if (currentId) {
-      lines.push(`- Treat “${currentId}” as your primary (effective) channelId for this conversation.`);
+      lines.push(`- Treat "${currentId}" as your primary (effective) channelId for this conversation.`);
     }
-    return lines.join(“\n”);
+    return lines.join("\n");
   })();
 
   const agentInfo = (() => {
@@ -644,6 +681,7 @@ function getSystemContentBase(wo, moduleCfg, earliestTimestamps) {
   const parts = [];
   if (base) parts.push(base);
   if (agentInfo) parts.push(agentInfo);
+  parts.push(getChannelAwarenessBlock(wo));
   parts.push(runtimeInfo);
   parts.push(policy);
   parts.push(toolContract);
@@ -677,8 +715,10 @@ async function getSystemContent(wo, specs, moduleCfg) {
 
 
 export default async function getCoreAi(coreData) {
-  const wo = coreData.workingObject;
+  let wo = coreData.workingObject;
   const log = getPrefixedLogger(wo, import.meta.url);
+  wo = await applyAiFallbackOverrides(wo, { log, moduleName: MODULE_NAME, endpoint: wo?.endpoint });
+  coreData.workingObject = wo;
 
   if (!getShouldRunForThisModule(wo)) {
     log(`Skipped: useAiModule="${String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim()}" != "pseudotoolcalls"`, "info");
@@ -729,7 +769,6 @@ export default async function getCoreAi(coreData) {
   ];
 
   if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
-  const subagentLog = [];
   const toolCallLog = [];
   let finalText = "";
   let accumulatedText = "";
@@ -744,6 +783,16 @@ export default async function getCoreAi(coreData) {
       return coreData;
     }
     try {
+      const requestToolNames = Array.isArray(kiCfg.toolsList) ? kiCfg.toolsList.slice() : [];
+      log("AI request tool snapshot", "info", {
+        channelId: String(wo?.channelId || ""),
+        callerChannelId: String(wo?.callerChannelId || ""),
+        useAiModule: String(wo?.useAiModule || ""),
+        toolsDisabled: false,
+        configuredTools: Array.isArray(wo?.tools) ? wo.tools : [],
+        requestToolNames,
+        toolChoice: "pseudo-inline"
+      });
       const body = {
         model: wo.model,
         messages,
@@ -751,18 +800,20 @@ export default async function getCoreAi(coreData) {
         max_tokens: kiCfg.maxTokens
       };
 
+      const headers = await getRequestHeaders(wo);
       const res = await fetchWithTimeout(wo.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
+        headers,
         body: JSON.stringify(body)
       }, kiCfg.requestTimeoutMs);
 
       const raw = await res.text();
       if (!res.ok) {
         log(`HTTP ${res.status} ${res.statusText} ${typeof raw === "string" ? raw.slice(0, 400) : ""}`, "warn");
-        if (toolCallsUsedTotal > 0 && !wo.__partialFallbackTried) {
-          wo.__partialFallbackTried = true;
-          log(`Attempting partial-result fallback after ${toolCallsUsedTotal} tool call(s)`, "info");
+        if (toolCallsUsedTotal > 0) {
+          log(`Suppressing partial-result fallback after ${toolCallsUsedTotal} tool call(s)`, "info");
+          wo.response = accumulatedText.trim() || "Die Anfrage konnte technisch nicht sauber zu Ende gefuehrt werden. Es liegt noch kein verlaessliches Endergebnis vor.";
+          return coreData;
           try {
             const _sysMsg = messages.find(m => m.role === "system");
             const _userMsg = messages.find(m => m.role === "user");
@@ -771,9 +822,10 @@ export default async function getCoreAi(coreData) {
               { role: "system", content: (_sysMsg?.content || "").slice(0, 800) },
               { role: "user", content: "Original task: " + (_userMsg?.content || "").slice(0, 300) + "\n\nGathered data so far:\n\n" + _toolData + "\n\nBriefly summarize the above findings. Start with [PARTIAL RESULT] — the task could not be completed in full." }
             ];
+            const _fbHeaders = await getRequestHeaders(wo);
             const _fbRes = await fetchWithTimeout(wo.endpoint, {
               method: "POST",
-              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
+              headers: _fbHeaders,
               body: JSON.stringify({ model: wo.model, messages: _fallbackMsgs, temperature: kiCfg.temperature, max_tokens: 800 })
             }, kiCfg.requestTimeoutMs);
             const _fbRaw = await _fbRes.text();
@@ -850,14 +902,6 @@ export default async function getCoreAi(coreData) {
         toolCallLog.push({ tool: extracted.name, status: _tc02Status, durationMs: _tc02DurationMs, task: "" });
 
         wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
-        if (extracted.name === "getSubAgent") {
-          try {
-            const r = JSON.parse(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}"));
-            subagentLog.push({ type: r.type || "generic", channelId: r.channelId || "?", ok: !!r.ok, error: r.error || null });
-          } catch (e) {
-            log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
-          }
-        }
 
         const toolResultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? null);
         const urls = getExtractUrlsFromToolContent(toolResultText);
@@ -900,22 +944,15 @@ export default async function getCoreAi(coreData) {
       return coreData;
     }
   }
-  if (!finalText && !subagentLog.length && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
+  if (!finalText && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
     hitMaxLoops = true;
   }
 
   const reasoningEnabled = wo?.reasoning != null && wo?.reasoning !== false && wo?.reasoning !== 0;
   if (reasoningEnabled) {
     const parts = [];
-    if (subagentLog.length) {
-      parts.push(subagentLog.map((s, i) =>
-        `--- Subagent ${i + 1} (${s.type} → ${s.channelId}) ---\n` +
-        (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
-      ).join("\n\n"));
-    }
-    const directTools = toolCallLog.filter(e => (typeof e === "object" ? e.tool : e) !== "getSubAgent");
-    if (directTools.length) {
-      parts.push("Tools called:\n" + directTools.map(e => {
+    if (toolCallLog.length) {
+      parts.push("Tools called:\n" + toolCallLog.map(e => {
         if (typeof e === "object") {
           const icon = e.status === "success" ? "✅" : (e.status === "failed" ? "❌" : "⚠️");
           const ms = e.durationMs >= 1000 ? `${(e.durationMs / 1000).toFixed(1)}s` : `${e.durationMs}ms`;
@@ -947,8 +984,6 @@ export default async function getCoreAi(coreData) {
     } else {
       wo.response = finalText;
     }
-  } else if (subagentLog.length) {
-    wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
   } else if (hitMaxToolCalls) {
     const partial = (accumulatedText || "").trim();
     wo.response = partial ? (partial + "\n\n" + getLimitNotice("tool")) : ("[Max Tool Calls Hit]\n\n" + getLimitNotice("tool"));

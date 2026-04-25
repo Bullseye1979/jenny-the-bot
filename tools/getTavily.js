@@ -101,18 +101,20 @@ async function getInvoke(args, coreData) {
     return { ok: false, error: e?.message || String(e) };
   }
 
-  const results = getNormalizeResults(data?.results);
-  if (!results.length) {
-    return { ok: false, error: "No relevant search results found", query, total: 0, results: [] };
+  const rows = getNormalizeResults(data?.results);
+  if (!rows.length) {
+    return { ok: false, error: "No relevant search results found", query, count: 0, has_more: false, next_start_ctx_id: null, rows: [] };
   }
 
   return {
     ok: true,
+    count: rows.length,
+    has_more: false,
+    next_start_ctx_id: null,
+    rows,
     query,
-    total: results.length,
     ...(data?.answer && { answer: data.answer }),
-    responseTime: data?.response_time ?? null,
-    results
+    responseTime: data?.response_time ?? null
   };
 }
 

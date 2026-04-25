@@ -33,6 +33,7 @@ function normalizeStrList(v) {
 }
 
 
+
 function includesCI(list, value) {
   const v = normalizeStr(value);
   if (!v) return false;
@@ -41,7 +42,12 @@ function includesCI(list, value) {
   for (let i = 0; i < list.length; i++) {
     const li = normalizeStr(list[i]);
     if (!li) continue;
-    if (li.toUpperCase() === vu) return true;
+    const liu = li.toUpperCase();
+    if (liu.endsWith("*")) {
+      if (vu.startsWith(liu.slice(0, -1))) return true;
+    } else if (liu === vu) {
+      return true;
+    }
   }
   return false;
 }

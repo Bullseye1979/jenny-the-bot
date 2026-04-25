@@ -22,6 +22,7 @@ import { getStr, getNum } from "../core/utils.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
+import { applyAiFallbackOverrides } from "../core/ai-fallback.js";
 import { readFileSync }  from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +42,16 @@ function getBool(value, def) { return typeof value === "boolean" ? value : def; 
 
 
 function getTryParseJSON(text, fallback = null) { try { return JSON.parse(text); } catch { return fallback; } }
+
+
+async function getRequestHeaders(wo) {
+  const headers = { "Content-Type": "application/json" };
+  const keyName = typeof wo?.apiKey === "string" ? wo.apiKey.trim() : "";
+  if (!keyName) return headers;
+  const secret = String(await getSecret(wo, keyName) || "").trim();
+  if (secret) headers.Authorization = `Bearer ${secret}`;
+  return headers;
+}
 
 
 function getLooksCutOff(text) {
@@ -224,6 +235,32 @@ function getExtractUrlFromToolResult(toolResultContent) {
 }
 
 
+function getChannelAwarenessBlock(wo) {
+  const agentType = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
+  const agentDepth = Number.isFinite(Number(wo?.agentDepth)) ? Number(wo.agentDepth) : 0;
+  const mode = agentType ? "orchestrator-or-specialist" : "primary-user-channel";
+
+  const lines = [
+    "Channel awareness:",
+    `- channel_awareness_mode: ${mode}`
+  ];
+
+  if (agentType) {
+    lines.push(`- agent_type: ${agentType}`);
+    lines.push(`- agent_depth: ${agentDepth}`);
+    lines.push("- You are running as an orchestrator or specialist. Delegate directly without asking the user for permission.");
+    lines.push("- Report your result or any blockers back to the caller.");
+  } else {
+    lines.push("- You are the primary assistant speaking directly with the user.");
+    lines.push("- Ask before starting an orchestrator for major tasks if the user has not already approved.");
+    lines.push("- If the most recent user message already clearly approves proceeding, do NOT ask again. Start the orchestrator now.");
+    lines.push("- Short approvals like 'yes', 'ja', 'ok', 'okay', 'mach', or 'go ahead' count as approval when they directly answer your previous permission question.");
+  }
+
+  return lines.join("\n");
+}
+
+
 function getSystemContentTextRun(wo, earliestTimestamps) {
   const base = [
     typeof wo.systemPrompt === "string" ? wo.systemPrompt.trim() : "",
@@ -258,7 +295,7 @@ function getSystemContentTextRun(wo, earliestTimestamps) {
     ].join("\n");
   })();
 
-  return [base, agentInfo, runtimeInfo].filter(Boolean).join("\n\n");
+  return [base, agentInfo, getChannelAwarenessBlock(wo), runtimeInfo].filter(Boolean).join("\n\n");
 }
 
 
@@ -295,9 +332,21 @@ function getSystemContentImagePromptRun(personaText, imagePersonaHint, imageProm
 
 async function getCallChat(wo, body, timeoutMs) {
   try {
+    const requestToolNames = Array.isArray(wo?.tools) ? wo.tools : [];
+    const log = getPrefixedLogger(wo, import.meta.url);
+    log("AI request tool snapshot", "info", {
+      channelId: String(wo?.channelId || ""),
+      callerChannelId: String(wo?.callerChannelId || ""),
+      useAiModule: String(wo?.useAiModule || ""),
+      toolsDisabled: true,
+      configuredTools: requestToolNames,
+      requestToolNames: [],
+      toolChoice: "none"
+    });
+    const headers = await getRequestHeaders(wo);
     const res = await fetchWithTimeout(wo.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
+      headers,
       body: JSON.stringify(body)
     }, timeoutMs);
 
@@ -341,8 +390,10 @@ function getParseArtifactsBlock(text) {
 
 
 export default async function getCoreAi(coreData) {
-  const wo = coreData.workingObject;
+  let wo = coreData.workingObject;
   const log = getPrefixedLogger(wo, import.meta.url);
+  wo = await applyAiFallbackOverrides(wo, { log, moduleName: MODULE_NAME, endpoint: wo?.endpoint });
+  coreData.workingObject = wo;
 
   if (!getShouldRunForThisModule(wo)) {
     log(`Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" not handled by ${MODULE_NAME}`, "info");

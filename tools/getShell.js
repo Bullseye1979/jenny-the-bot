@@ -62,15 +62,15 @@ async function getInvoke(args, coreData) {
       const output = parts.join("\n") || "(no output)";
 
       if (timedOut) {
-        resolve({ ok: false, error: "timeout", exitCode: null, output, stdout: stdout || null, stderr: stderr || null });
+        resolve({ ok: false, error: "timeout", count: 1, has_more: false, next_start_ctx_id: null, rows: [output], exitCode: null, stdout: stdout || null, stderr: stderr || null });
         return;
       }
-      resolve({ ok: code === 0, exitCode: code, output, stdout: stdout || null, stderr: stderr || null });
+      resolve({ ok: code === 0, count: 1, has_more: false, next_start_ctx_id: null, rows: [output], exitCode: code, stdout: stdout || null, stderr: stderr || null });
     });
 
     proc.on("error", (err) => {
       clearTimeout(timer);
-      resolve({ ok: false, error: err.message, exitCode: null, stdout: null, stderr: null });
+      resolve({ ok: false, error: err.message, count: 0, has_more: false, next_start_ctx_id: null, rows: [], exitCode: null, stdout: null, stderr: null });
     });
   });
 }

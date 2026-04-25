@@ -1,16 +1,9 @@
 /**************************************************************/
 /* filename: "getWebpage.js"                                        */
-/* Version 1.0                                               */
+/* Version 2.0                                               */
 /* Purpose: LLM-callable tool implementation.               */
 /**************************************************************/
 
-
-
-
-
-
-
-import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getStr, getNum } from "../core/utils.js";
 
@@ -39,8 +32,7 @@ async function getHttpGet(url, headers = {}, timeoutMs = 20000) {
 
 
 function getStripBlocks(html) {
-  const h = String(html || "");
-  return h
+  return String(html || "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -73,55 +65,20 @@ function getHtmlToText(html) {
 }
 
 
-function getWordCount(text) {
-  const s = String(text || "").trim();
-  if (!s) return 0;
-  return s.split(/\s+/g).length;
-}
-
-
-
-async function callSummaryApi(text, cfg, wo) {
-  const channelId = String(cfg.summaryChannelId || "").trim();
-  if (!channelId) return null;
-  const apiUrl = String(cfg.summaryApiUrl || "http://localhost:3400").replace(/\/+$/, "") + "/api";
-  const secretKey = String(cfg.summaryApiSecret || "").trim();
-  const secret = secretKey ? await getSecret(wo, secretKey) : "";
-  const headers = { "Content-Type": "application/json" };
-  if (secret) headers["Authorization"] = `Bearer ${secret}`;
-  const timeoutMs = Math.max(5000, Number.isFinite(Number(cfg.summaryTimeoutMs)) ? Number(cfg.summaryTimeoutMs) : 45000);
-  try {
-    const res = await fetchWithTimeout(apiUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ channelId, payload: text, doNotWriteToContext: true })
-    }, timeoutMs);
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => null);
-    const summary = String(data?.response || "").trim();
-    return summary || null;
-  } catch {
-    return null;
-  }
-}
-
-
 async function getInvoke(args, coreData) {
-  const wo = coreData?.workingObject || {};
+  const wo      = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getWebpage || {};
 
-  const url = getStr(args?.url, "").trim();
-  const userPrompt = getStr(args?.userPrompt, "").trim();
-  const prompt = getStr(args?.prompt, "");
-
-  if (!url) return { ok: false, error: "Missing url" };
-  if (!userPrompt) return { ok: false, error: "Missing userPrompt" };
-
-  const timeoutMs = getNum(toolCfg.timeoutMs, 30000);
-  const ua = getStr(
+  const url         = getStr(args?.url, "").trim();
+  const startOffset = Math.max(0, getNum(args?.start_ctx_id, 0));
+  const maxChars    = getClamp(getNum(toolCfg.maxChars, 15000), 1000, 200000);
+  const timeoutMs   = getNum(toolCfg.timeoutMs, 30000);
+  const ua          = getStr(
     toolCfg.userAgent,
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
   );
+
+  if (!url) return { ok: false, error: "Missing url" };
 
   const { ok, status, text: html, ct } = await getHttpGet(
     url,
@@ -130,68 +87,31 @@ async function getInvoke(args, coreData) {
   );
   if (!ok) return { ok: false, error: `HTTP ${status || 0} while fetching URL`, url };
 
-  const title = getExtractTitle(html);
-  let pageText = ct.includes("html") ? getHtmlToText(html) : String(html || "");
+  const title    = getExtractTitle(html);
+  let   pageText = ct.includes("html") ? getHtmlToText(html) : String(html || "");
 
-  const hardMaxChars = getClamp(getNum(toolCfg.maxInputChars, 240000), 1000, 800000);
-  if (pageText.length > hardMaxChars) pageText = pageText.slice(0, hardMaxChars);
+  const hardMax = getClamp(getNum(toolCfg.maxInputChars, 800000), 1000, 5000000);
+  if (pageText.length > hardMax) pageText = pageText.slice(0, hardMax);
 
   if (!pageText || pageText.length < 30) {
     return { ok: false, error: "No meaningful text extracted from page", url, title };
   }
 
-  const wordThreshold = Math.max(1, getNum(toolCfg.wordThreshold, 1200));
-  const wordCount = getWordCount(pageText);
-
-  if (wordCount <= wordThreshold) {
-    return {
-      ok: true,
-      mode: "dump",
-      url,
-      title,
-      contentType: ct,
-      words: wordCount,
-      characters: pageText.length,
-      text: pageText
-    };
-  }
-
-  const summaryInput = [
-    userPrompt ? `User request: "${userPrompt}"` : "",
-    title ? `Title: ${title}` : "",
-    url ? `URL: ${url}` : "",
-    prompt ? `Additional context: ${prompt}` : "",
-    pageText
-  ].filter(Boolean).join("\n\n");
-
-  const summary = await callSummaryApi(summaryInput, toolCfg, wo);
-
-  if (summary == null) {
-    return {
-      ok: true,
-      mode: "dump",
-      url,
-      title,
-      contentType: ct,
-      words: wordCount,
-      characters: pageText.length,
-      text: pageText
-    };
-  }
+  const chunk       = pageText.slice(startOffset, startOffset + maxChars);
+  const hasMore     = (startOffset + maxChars) < pageText.length;
+  const nextCtxId   = hasMore ? startOffset + chunk.length : null;
 
   return {
-    ok: true,
-    mode: "summary",
+    ok:               true,
+    count:            1,
+    has_more:         hasMore,
+    next_start_ctx_id: nextCtxId,
+    rows:             [chunk],
     url,
     title,
-    contentType: ct,
-    words: wordCount,
-    characters: pageText.length,
-    answer: summary
+    content_type:     ct,
+    total_characters: pageText.length,
   };
 }
 
-export default {
-  name: MODULE_NAME,
-  invoke: getInvoke
-};
+export default { name: MODULE_NAME, invoke: getInvoke };

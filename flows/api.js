@@ -7,12 +7,15 @@
 
 import http from "node:http";
 import path from "node:path";
-import { getItem, putItem, listKeys, deleteItem } from "../core/registry.js";
+import { setGlobalDispatcher, Agent } from "undici";
+import { getItem } from "../core/registry.js";
 import { getContext } from "../core/context.js";
 import { saveFile } from "../core/file.js";
-import { logSubagent } from "../core/subagent-logger.js";
-import { registerSseConnection, unregisterSseConnection } from "../core/async-sse.js";
 import { getStr } from "../core/utils.js";
+
+// undici defaults headersTimeout and bodyTimeout to 300 s — raise to unlimited
+// so long-running orchestrator/specialist HTTP calls are not killed mid-flight.
+setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -291,9 +294,6 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const toolcallRegistryKey = getToolcallRegistryKey(baseCore, cfg);
 
   const contextPath = String(cfg.contextPath || "/context");
-  const spawnPath   = String(cfg.spawnPath     || "/api/spawn");
-  const jobsPath    = String(cfg.jobsPath      || "/api/jobs");
-  const sseAsyncPath = String(cfg.sseAsyncPath || "/api/async-results/stream");
 
   const server = http.createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
@@ -388,260 +388,32 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       }
     }
 
-    if (req.method === "POST" && req.url === spawnPath) {
-      let parsedSpawnBody;
-      try {
-        parsedSpawnBody = JSON.parse(await getReadBody(req));
-      } catch {
-        return getJson(res, 400, { ok: false, error: "invalid_json" });
-      }
+    const lastAssistantPath = String(cfg.lastAssistantPath || "/context/last-assistant");
 
-      const spawnChannelId = String(parsedSpawnBody?.channelId || parsedSpawnBody?.channelID || "").trim();
-      if (!spawnChannelId || !parsedSpawnBody?.payload) {
-        return getJson(res, 400, { ok: false, error: "channelId_and_payload_required" });
-      }
-
-      const jobId = getUlid();
-      const projectId = parsedSpawnBody.projectId ? String(parsedSpawnBody.projectId) : getUlid();
-      const _isResume = !!parsedSpawnBody.projectId;
-      const _spawnCallerChannelId = parsedSpawnBody.callerChannelId ? String(parsedSpawnBody.callerChannelId) : spawnChannelId;
-      const _spawnCallerContextChannelId = parsedSpawnBody.callerContextChannelId ? String(parsedSpawnBody.callerContextChannelId) : String(parsedSpawnBody.callerContextChannelID || "");
-      const _spawnCallerFlow = parsedSpawnBody.callerFlow ? String(parsedSpawnBody.callerFlow) : "";
-      const _spawnToolcallScope = parsedSpawnBody.toolcallScope ? String(parsedSpawnBody.toolcallScope) : "";
-      const _spawnCallerTurnId = parsedSpawnBody.callerTurnId ? String(parsedSpawnBody.callerTurnId) : "";
-      const _spawnUserId = parsedSpawnBody.userId ? String(parsedSpawnBody.userId) : "";
-      const _spawnGuildId = parsedSpawnBody.guildId ? String(parsedSpawnBody.guildId) : "";
-      const _spawnAuthorDisplayname = parsedSpawnBody.authorDisplayname ? String(parsedSpawnBody.authorDisplayname) : "";
-      const _spawnAgentDepth = Math.max(0, Number(parsedSpawnBody.agentDepth) || 0);
-      const _spawnAgentType = parsedSpawnBody.agentType ? String(parsedSpawnBody.agentType) : "";
-      const _spawnIncludeCallerContext = parsedSpawnBody.includeCallerContext === true;
-      const _spawnContextSourceChannelId = parsedSpawnBody.contextSourceChannelId ? String(parsedSpawnBody.contextSourceChannelId) : String(parsedSpawnBody.contextSourceChannelID || "");
-      const _spawnContextSourceChannelIds = Array.isArray(parsedSpawnBody.contextSourceChannelIds)
-        ? parsedSpawnBody.contextSourceChannelIds.map(c => String(c || "").trim()).filter(Boolean)
-        : [];
-
-      logSubagent("info", "spawn", "spawn_received", {
-        jobId,
-        projectId,
-        resume: _isResume,
-        agentType:              _spawnAgentType,
-        agentDepth:             _spawnAgentDepth,
-        subagentChannelId:      spawnChannelId,
-        callerChannelId:        _spawnCallerChannelId,
-        callerContextChannelId: _spawnCallerContextChannelId || null,
-        callerFlow:             _spawnCallerFlow || null,
-        callerTurnId:           _spawnCallerTurnId || null,
-        userId:                 _spawnUserId || null,
-        guildId:                _spawnGuildId || null,
-        payloadLen:             String(parsedSpawnBody.payload || "").length,
-        includeCallerContext:   _spawnIncludeCallerContext,
-      });
-
-      const _spawnPayload = String(parsedSpawnBody.payload || "").trim();
-      const _spawnCallerPayload = parsedSpawnBody.callerPayload ? String(parsedSpawnBody.callerPayload) : null;
-      const _spawnJobEntry = {
-        status: "running",
-        jobId,
-        projectId,
-        callerChannelId: _spawnCallerChannelId,
-        callerContextChannelId: _spawnCallerContextChannelId || null,
-        callerFlow: _spawnCallerFlow,
-        callerTurnId: _spawnCallerTurnId,
-        userId: _spawnUserId,
-        guildId: _spawnGuildId,
-        agentDepth: _spawnAgentDepth,
-        agentType: _spawnAgentType,
-        payload: _spawnPayload,
-        callerPayload: _spawnCallerPayload,
-        authorDisplayname: _spawnAuthorDisplayname,
-        startedAt: new Date().toISOString(),
-        finishedAt: null,
-        result: null,
-        error: null,
-      };
-
-      await putItem(_spawnJobEntry, "job:" + jobId);
-      logSubagent("info", "spawn", "job_registered", { jobId, projectId, agentType: _spawnAgentType });
-
-      const _spawnCallerChannelIds = Array.isArray(parsedSpawnBody.callerChannelIds)
-        ? parsedSpawnBody.callerChannelIds.map(c => String(c)).filter(Boolean)
-        : [];
-
-      await putItem({
-        projectId,
-        agentType:              _spawnAgentType,
-        channelId:              spawnChannelId,
-        callerChannelId:        _spawnCallerChannelId,
-        callerChannelIds:       _spawnCallerChannelIds,
-        callerContextChannelId: _spawnCallerContextChannelId || null,
-        callerFlow:             _spawnCallerFlow || "discord",
-        userId:                 _spawnUserId,
-        guildId:                _spawnGuildId,
-        authorDisplayname:      _spawnAuthorDisplayname,
-        agentDepth:             _spawnAgentDepth,
-        createdAt:              new Date().toISOString(),
-      }, "project:" + projectId);
-
-      const _spawnCore = createRunCore();
-      const _spawnWo = (_spawnCore.workingObject ||= {});
-
-      _spawnWo.flow = "api";
-      _spawnWo.turnId = getUlid();
-      _spawnWo.aborted = false;
-      _spawnWo.channelId = spawnChannelId;
-      _spawnWo.userId = _spawnUserId;
-      _spawnWo.guildId = _spawnGuildId;
-      _spawnWo.payload = String(parsedSpawnBody.payload);
-      _spawnWo.channelType = "API";
-      _spawnWo.isDM = false;
-      _spawnWo.timestamp = new Date().toISOString();
-      _spawnWo.httpAuthorization = String(req.headers?.authorization || "");
-      _spawnWo.callerChannelId = _spawnCallerChannelId;
-      if (_spawnCallerContextChannelId) {
-        _spawnWo.callerContextChannelId = _spawnCallerContextChannelId;
-      }
-      _spawnWo.callerTurnId = _spawnCallerTurnId;
-      _spawnWo.agentDepth = _spawnAgentDepth;
-      _spawnWo.agentType = _spawnAgentType;
-      _spawnWo.contextChannelId = "project-" + projectId;
-      _spawnWo.includeCallerContext = _spawnIncludeCallerContext;
-      if (_spawnCallerFlow) _spawnWo.callerFlow = _spawnCallerFlow;
-      if (_spawnToolcallScope) _spawnWo.toolcallScope = _spawnToolcallScope;
-      if (parsedSpawnBody.systemPromptAddition) _spawnWo.systemPromptAddition = String(parsedSpawnBody.systemPromptAddition);
-
-      if (Array.isArray(parsedSpawnBody.callerChannelIds)) {
-        _spawnWo.callerChannelIds = parsedSpawnBody.callerChannelIds.map(c => String(c)).filter(Boolean);
-      }
-
-      if (_spawnIncludeCallerContext) {
-        if (_spawnContextSourceChannelId) {
-          _spawnWo.contextSourceChannelId = _spawnContextSourceChannelId;
-        }
-        if (_spawnContextSourceChannelIds.length) _spawnWo.contextSourceChannelIds = _spawnContextSourceChannelIds;
-      }
-
-      const _spawnSubchannel = String(parsedSpawnBody.subchannel || "").trim();
-      if (_spawnSubchannel) _spawnWo.subchannel = _spawnSubchannel;
-
-      logSubagent("info", "spawn", "iife_started", { jobId, projectId, agentType: _spawnAgentType, subagentChannelId: spawnChannelId });
-
-      logSubagent("info", "spawn", "subagent_input", {
-        jobId,
-        projectId,
-        agentType:        _spawnAgentType,
-        subagentChannelId: spawnChannelId,
-        callerChannelId:  _spawnCallerChannelId || null,
-        callerChannelIds: _spawnCallerChannelIds,
-        payloadPreview:   String(parsedSpawnBody.payload || "").slice(0, 300),
-      });
-
-      (async () => {
-        const _spawnStartMs = Date.now();
-        try {
-          await runFlow("api", _spawnCore);
-          const _spawnResult = String(_spawnWo.response || "").trim();
-          const _spawnDurationMs = Date.now() - _spawnStartMs;
-          await putItem({ ..._spawnJobEntry, status: "done", result: _spawnResult, primaryImageUrl: _spawnWo.primaryImageUrl || null, finishedAt: new Date().toISOString() }, "job:" + jobId);
-          logSubagent("info", "spawn", "job_done", {
-            jobId,
-            projectId,
-            agentType:      _spawnAgentType,
-            durationMs:     _spawnDurationMs,
-            resultLen:      _spawnResult.length,
-            resultPreview:  _spawnResult.slice(0, 400),
-            hasPrimaryImage: !!_spawnWo.primaryImageUrl,
-            woChannelId:    _spawnWo.channelId || null,
-            woCallerChannelId: _spawnWo.callerChannelId || null,
-            woCallerChannelIds: Array.isArray(_spawnWo.callerChannelIds) ? _spawnWo.callerChannelIds : [],
-            woChannelIds:   Array.isArray(_spawnWo.channelIds) ? _spawnWo.channelIds : [],
-          });
-        } catch (e) {
-          const _spawnDurationMs = Date.now() - _spawnStartMs;
-          await putItem({ ..._spawnJobEntry, status: "error", error: e?.message || String(e), finishedAt: new Date().toISOString() }, "job:" + jobId);
-          logSubagent("error", "spawn", "job_failed", {
-            jobId,
-            projectId,
-            agentType:  _spawnAgentType,
-            durationMs: _spawnDurationMs,
-            error:      e?.message || String(e),
-          });
-        }
-      })();
-
-      return getJson(res, 200, { ok: true, jobId, projectId });
-    }
-
-    if (req.method === "GET" && (req.url === jobsPath || req.url.startsWith(jobsPath + "?"))) {
+    if (req.method === "GET" && (req.url === lastAssistantPath || req.url.startsWith(lastAssistantPath + "?"))) {
       if (!isBearerValid(req, baseCore)) {
         return getJson(res, 401, { ok: false, error: "unauthorized" });
       }
-
-      const _jobsUrlObj = new URL(req.url, `http://localhost:${port}`);
-      const _jobsChannelId = String(_jobsUrlObj.searchParams.get("channelID") || _jobsUrlObj.searchParams.get("channelId") || "").trim();
-
-      if (!_jobsChannelId) {
-        return getJson(res, 400, { ok: false, error: "channelId_required" });
-      }
-
       try {
-        const _jobsConsume = _jobsUrlObj.searchParams.get("consume") === "true";
-        const _jobKeys = listKeys("job:");
-        const _jobList = [];
-        const _toDelete = [];
-        for (const _jk of _jobKeys) {
-          const _job = getItem(_jk);
-          if (!_job || _job.callerChannelId !== _jobsChannelId) continue;
-          _jobList.push({
-            jobId: _job.jobId,
-            projectId: _job.projectId,
-            status: _job.status,
-            callerFlow: _job.callerFlow,
-            agentType: _job.agentType,
-            startedAt: _job.startedAt,
-            finishedAt: _job.finishedAt,
-            result: _job.personaResult || _job.result,
-            audioBase64: _job.personaAudioBase64 || null,
-            audioMime: _job.personaAudioMime || null,
-            primaryImageUrl: _job.primaryImageUrl || null,
-            originalRequest: _job.payload || null,
-            authorDisplayname: _job.authorDisplayname || null,
-            userId: _job.userId || null,
-            error: _job.error,
-          });
-          if (_jobsConsume && (_job.status === "done" || _job.status === "error")) {
-            _toDelete.push(_jk);
-          }
+        const _laUrl = new URL(req.url, `http://localhost:${port}`);
+        const _laChannelId = String(_laUrl.searchParams.get("channelID") || _laUrl.searchParams.get("channelId") || "").trim();
+        if (!_laChannelId) {
+          return getJson(res, 400, { ok: false, error: "channelId_required" });
         }
-        for (const _dk of _toDelete) { try { deleteItem(_dk); } catch {} }
-        return getJson(res, 200, { ok: true, channelId: _jobsChannelId, jobs: _jobList });
+        const _laMsgs = await getContextSnapshot(baseCore, _laChannelId, 50);
+        let _laLast = null;
+        for (let i = _laMsgs.length - 1; i >= 0; i--) {
+          if (_laMsgs[i].role === "assistant") { _laLast = _laMsgs[i]; break; }
+        }
+        return getJson(res, 200, {
+          ok:        true,
+          channelId: _laChannelId,
+          message:   _laLast || null,
+          botname:   getBotname(undefined, baseCore),
+        });
       } catch (e) {
-        return getJson(res, 500, { ok: false, error: "jobs_failed", reason: e?.message || String(e) });
+        return getJson(res, 500, { ok: false, error: "last_assistant_failed", reason: e?.message || String(e) });
       }
-    }
-
-    if (req.method === "GET" && (req.url === sseAsyncPath || req.url.startsWith(sseAsyncPath + "?"))) {
-      const _sseUrl = new URL(req.url, `http://localhost:${port}`);
-      const _sseChannelId = String(_sseUrl.searchParams.get("channelID") || _sseUrl.searchParams.get("channelId") || "").trim();
-      if (!_sseChannelId) {
-        return getJson(res, 400, { ok: false, error: "channelId_required" });
-      }
-      setCorsHeaders(res);
-      res.writeHead(200, {
-        "Content-Type":  "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection":    "keep-alive",
-        "X-Accel-Buffering": "no",
-      });
-      res.write(": connected\n\n");
-      registerSseConnection(_sseChannelId, res);
-      const _keepalive = setInterval(() => {
-        try { res.write(": keepalive\n\n"); } catch { clearInterval(_keepalive); }
-      }, 25000);
-      res.on("close", () => {
-        clearInterval(_keepalive);
-        unregisterSseConnection(_sseChannelId, res);
-      });
-      return;
     }
 
     if (req.method !== "POST" || req.url !== apiPath) {
@@ -735,11 +507,12 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       channelAllowed: workingObject.channelAllowed,
       response: text && text !== silenceToken ? text : "",
       toolCallLog:       Array.isArray(workingObject.toolCallLog)  ? workingObject.toolCallLog  : undefined,
-      subagentLog:       Array.isArray(workingObject.subagentLog)  ? workingObject.subagentLog  : undefined,
       primaryImageUrl:   typeof workingObject.primaryImageUrl === "string" && workingObject.primaryImageUrl ? workingObject.primaryImageUrl : undefined,
       botname: getBotname(workingObject, baseCore),
     });
   });
 
+  server.requestTimeout = 0;
+  server.headersTimeout  = 0;
   server.listen(port, host);
 }

@@ -848,11 +848,14 @@ async function getInvoke(args, coreData){
       url = (collected.length < limit && nextLink) ? getMakeAbsNextUrl(baseUrl, nextLink) : null;
     }
 
+    const rows = collected.map(r => getAttachAbsoluteLinksToResult(r, baseUrl));
     return {
       ok: true,
+      count: rows.length,
+      has_more: false,
+      next_start_ctx_id: null,
+      rows,
       status: 200,
-      url: null,
-      data: { results: collected.map(r => getAttachAbsoluteLinksToResult(r, baseUrl)), count: collected.length },
       enforced: { spaceKey, spaceId: enforced },
       took_ms: Date.now() - startedAt
     };
@@ -1056,11 +1059,20 @@ async function getInvoke(args, coreData){
 
     let data = res.data;
     if (data && Array.isArray(data.results)) {
-      data = {
-        ...data,
-        results: data.results
-          .filter(r => String(r.spaceId || "") === String(eff.spaceId))
-          .map(r => getAttachAbsoluteLinksToResult(r, baseUrl))
+      const rows = data.results
+        .filter(r => String(r.spaceId || "") === String(eff.spaceId))
+        .map(r => getAttachAbsoluteLinksToResult(r, baseUrl));
+      const nextLink = data?._links?.next ? getMakeAbsNextUrl(baseUrl, data._links.next) : null;
+      return {
+        ok: true,
+        count: rows.length,
+        has_more: !!nextLink,
+        next_start_ctx_id: nextLink,
+        rows,
+        status: res.status,
+        url,
+        took_ms: Date.now() - startedAt,
+        enforced: { spaceKey, spaceId: eff.spaceId, parentId }
       };
     } else if (data && data.id) {
       data = getAttachAbsoluteLinksToResult(data, baseUrl);
@@ -1068,9 +1080,12 @@ async function getInvoke(args, coreData){
 
     return {
       ok: true,
+      count: data ? 1 : 0,
+      has_more: false,
+      next_start_ctx_id: null,
+      rows: data ? [data] : [],
       status: res.status,
       url,
-      data,
       took_ms: Date.now() - startedAt,
       rawSent: body ? body : null,
       enforced: { spaceKey, spaceId: eff.spaceId, parentId }

@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Read(///strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/repo-codex/**)"
+      "Read(///strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/repo-codex/**)",
+      "Bash(find \"\\\\\\\\strato.samba.ralfreschke.de\\\\root\\\\home\\\\discordbot\\\\jenny-the-bot\\\\repo-codex\" -type f -name \"*.json\" -o -name \"*.js\" -o -name \"*.md\")",
+      "Read(//mnt/strato/home/discordbot/jenny-the-bot/**)",
+      "Read(//strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/repo-codex\" 2>/dev/null || find . -maxdepth 2 -type f 2>/dev/**)"
     ]
   }
 }

@@ -857,9 +857,16 @@ export async function getContext(workingObject) {
       if (String(msg?.role || "").toLowerCase() !== "assistant") continue;
       messages.splice(i, 1);
     }
+    const channelIdLc = String(wo?.channelId || "").trim().toLowerCase();
+    const agentTypeLc = String(wo?.agentType || "").trim().toLowerCase();
+    const isContextOrchestrator =
+      channelIdLc === "subagent-orchestrator-context" ||
+      agentTypeLc === "orchestrator-context";
     messages.unshift({
       role: "system",
-      content: "Timeline blocks are compressed normal context from the conversation database. Treat them like regular context messages that summarize older parts of the conversation. Use them as normal source material for facts, chronology, people, places, and developments. Do not treat visible timeline blocks as missing context."
+      content: isContextOrchestrator
+        ? "Timeline blocks are compressed planning aids from the conversation database. Use them only to understand rough chronology and to derive candidate time windows. Do not use visible timeline blocks as final answer evidence when tool-based historical retrieval or specialist research is available."
+        : "Timeline blocks are compressed normal context from the conversation database. Treat them like regular context messages that summarize older parts of the conversation. Use them as normal source material for facts, chronology, people, places, and developments. Do not treat visible timeline blocks as missing context."
     });
   }
 

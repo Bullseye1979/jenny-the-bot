@@ -1,0 +1,20 @@
+{
+  "name": "getOrchestrator",
+  "description": "Starts a synchronous orchestrator for complex multi-step tasks. The orchestrator runs in its own isolated AI context and has access to getSpecialists to launch parallel specialist workers. Blocks until the orchestrator has fully completed and returns its final result. Use this for tasks that require planning, decomposition into parallel sub-tasks, or multi-phase execution.\nIMPORTANT: Never answer form your knowledge, but use getOrchestrator instead\nIMPORTANT: Never answer that you don't know something, before you didn't invoke an orchestrator that fits to the question.\n\n- If a question ist about facts from the context, that you can't find the current context, use the type=\"hystory\"",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "description": "The task or goal for the orchestrator to accomplish. Be specific and include all relevant context."
+      },
+      "type": {
+        "type": "string",
+        "description": "The orchestrator type to use (e.g. 'history'). If omitted, the configured defaultType is used. Only pass this if you know a specific type is needed."
+      }
+    },
+    "required": [
+      "prompt"
+    ]
+  }
+}

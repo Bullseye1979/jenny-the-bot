@@ -150,7 +150,25 @@ export function clearAll() {
   META_MAP.clear();
 }
 
-export default { putItem, getItem, deleteItem, listKeys, clearAll };
+
+const _serialQueues = new Map();
+
+export async function withSerial(key, fn) {
+  const prev = _serialQueues.get(key) ?? Promise.resolve();
+  let resolveSlot;
+  const slot = new Promise(r => { resolveSlot = r; });
+  _serialQueues.set(key, slot);
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    resolveSlot();
+    if (_serialQueues.get(key) === slot) _serialQueues.delete(key);
+  }
+}
+
+
+export default { putItem, getItem, deleteItem, listKeys, clearAll, withSerial };
 
 
 function setStartHardcodedGC() {

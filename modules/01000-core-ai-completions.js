@@ -15,6 +15,7 @@ import { putItem, getItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
+import { applyAiFallbackOverrides } from "../core/ai-fallback.js";
 import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join }                           from "node:path";
 import { fileURLToPath }                           from "node:url";
@@ -81,6 +82,13 @@ function getLooksCutOff(text) {
   if (/[.!?)\]"'`}]$/.test(s)) return false;
   if (/https?:\/\/\S+$/.test(s)) return false;
   return true;
+}
+
+function getToolDefsForCurrentStep(toolDefs, wo, totalToolCalls, maxToolCalls) {
+  const defs = Array.isArray(toolDefs) ? toolDefs : [];
+  if (wo?.__forceNoTools === true) return { toolDefs: [], mode: "final_only" };
+  if (Number.isFinite(maxToolCalls) && totalToolCalls >= maxToolCalls) return { toolDefs: [], mode: "final_only" };
+  return { toolDefs: defs, mode: "normal" };
 }
 
 
@@ -156,6 +164,28 @@ function getAppendedContextBlockToUserContent(baseText, contextObj) {
   if (!contextObj || typeof contextObj !== "object") return baseText ?? "";
   const jsonBlock = "```json\n" + JSON.stringify(contextObj) + "\n```";
   return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
+}
+
+
+function getChannelAwarenessBlock(wo) {
+  const agentType = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
+  const mode = agentType ? "orchestrator-or-specialist" : "primary-user-channel";
+
+  const lines = [
+    "Channel awareness:",
+    `- channel_awareness_mode: ${mode}`,
+  ];
+
+  if (agentType) {
+    lines.push(`- agent_type: ${agentType}`);
+    lines.push("- You are running as an orchestrator or specialist. Return your result directly — do not ask the user for permission or confirmation.");
+  } else {
+    lines.push("- You are the primary assistant speaking directly with the user.");
+    lines.push("- When starting a getOrchestrator run for complex multi-step tasks, ask the user for confirmation first if the scope is unclear.");
+    lines.push("- If the most recent user message already clearly approves proceeding, do NOT ask again. Start the orchestrator now.");
+  }
+
+  return lines.join("\n");
 }
 
 
@@ -285,6 +315,60 @@ function getToolTask(tc) {
 }
 
 
+function getToolPaginationMeta(toolName, result) {
+  const v = typeof result === "string" ? getTryParseJSON(result, result) : result;
+  if (!v || typeof v !== "object") return {};
+
+  const num = (x) => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
+  const len = (x) => (typeof x === "string" ? x.length : Array.isArray(x) ? x.length : undefined);
+  const out = (o) => Object.fromEntries(Object.entries(o).filter(([, val]) => val !== undefined));
+
+  const stdPage = out({ rows: num(v.count), hasMore: v.has_more === true ? true : undefined, nextCtxId: v.next_start_ctx_id ?? undefined });
+
+  switch (toolName) {
+    case "getHistory":
+    case "getGoogle":
+    case "getTavily":
+    case "getWebpage":
+    case "getJira":
+    case "getConfluence":
+      return stdPage;
+
+    case "getYoutube":
+      return out({ rows: num(v.count), hasMore: v.has_more === true ? true : undefined, nextCtxId: v.next_start_ctx_id ?? undefined, mode: v.mode || undefined });
+
+    case "getSpecialists": {
+      const r = Array.isArray(v.rows) ? v.rows : [];
+      return { specialistCount: num(v.count) ?? r.length, complete: num(v.complete) ?? r.filter(x => x.ok).length, failed: num(v.failed) ?? r.filter(x => !x.ok).length };
+    }
+
+    case "getOrchestrator":
+      return out({ rows: num(v.count), responseLen: Array.isArray(v.rows) && v.rows[0] ? len(v.rows[0]) : undefined });
+
+    case "getInformation":
+      return out({ totalHits: num(v.totalHits), coverage: num(v.coverage) });
+
+    case "getShell":
+      return out({ exitCode: v.exitCode ?? undefined, outputBytes: len(Array.isArray(v.rows) ? v.rows[0] : undefined) });
+
+    case "getApi":
+    case "getGraph":
+      return out({ status: num(v.status) });
+
+    case "getFile":
+    case "getFileContent":
+    case "getText":
+      return out({ bytes: num(v.bytes) });
+
+    case "getZIP":
+      return out({ bytes: num(v.bytes), files: Array.isArray(v.files) ? v.files.length : undefined });
+
+    default:
+      return {};
+  }
+}
+
+
 function getToolResultMeta(result) {
   const value = typeof result === "string" ? getTryParseJSON(result, result) : result;
   if (value && typeof value === "object") {
@@ -367,7 +451,8 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       tool: name,
       status: resultMeta.ok ? "success" : "returned_error",
       durationMs,
-      ...(resultMeta.error ? { error: resultMeta.error } : {})
+      ...(resultMeta.error ? { error: resultMeta.error } : {}),
+      ...getToolPaginationMeta(name, result),
     });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
@@ -462,16 +547,28 @@ async function getSystemContent(wo, kiCfg, moduleCfg) {
   if (base) parts.push(base);
   if (systemPromptAddition) parts.push(systemPromptAddition);
   if (agentInfo) parts.push(agentInfo);
+  parts.push(getChannelAwarenessBlock(wo));
   parts.push(runtimeInfo);
   parts.push(commonPolicy);
   if (multiChannelNote) parts.push(multiChannelNote);
   return parts.filter(Boolean).join("\n\n");
 }
 
+async function getRequestHeaders(wo) {
+  const headers = { "Content-Type": "application/json" };
+  const keyName = typeof wo?.apiKey === "string" ? wo.apiKey.trim() : "";
+  if (!keyName) return headers;
+  const secret = String(await getSecret(wo, keyName) || "").trim();
+  if (secret) headers.Authorization = `Bearer ${secret}`;
+  return headers;
+}
+
 
 export default async function getCoreAi(coreData) {
-  const wo = coreData.workingObject;
+  let wo = coreData.workingObject;
   const log = getPrefixedLogger(wo, import.meta.url);
+  wo = await applyAiFallbackOverrides(wo, { log, moduleName: MODULE_NAME, endpoint: wo?.endpoint });
+  coreData.workingObject = wo;
   if (!getShouldRunForThisModule(wo)) {
     log(`Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" != "completions"`, "info");
     return coreData;
@@ -513,7 +610,6 @@ export default async function getCoreAi(coreData) {
   const toolModules = sendRealTools ? await getToolsByName(kiCfg.toolsList, wo) : [];
   const toolDefs = sendRealTools ? getToolDefs(toolModules) : [];
   if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
-  const subagentLog = [];
   const toolCallLog = [];
   let totalToolCalls = 0;
   let accumulatedText = "";
@@ -526,18 +622,34 @@ export default async function getCoreAi(coreData) {
       return coreData;
     }
     try {
-      const toolsDisabled = wo.__forceNoTools === true || totalToolCalls >= kiCfg.maxToolCalls;
+      const toolStep = getToolDefsForCurrentStep(toolDefs, wo, totalToolCalls, kiCfg.maxToolCalls);
+      const activeToolDefs = Array.isArray(toolStep.toolDefs) ? toolStep.toolDefs : [];
+      const toolsDisabled = activeToolDefs.length === 0;
+      const requestToolNames = (!toolsDisabled && activeToolDefs.length)
+        ? activeToolDefs.map((tool) => String(tool?.function?.name || tool?.name || "").trim()).filter(Boolean)
+        : [];
+      log("AI request tool snapshot", "info", {
+        channelId: String(wo?.channelId || ""),
+        callerChannelId: String(wo?.callerChannelId || ""),
+        useAiModule: String(wo?.useAiModule || ""),
+        toolsDisabled,
+        toolMode: toolStep.mode,
+        configuredTools: Array.isArray(wo?.tools) ? wo.tools : [],
+        requestToolNames,
+        toolChoice: (!toolsDisabled && activeToolDefs.length) ? kiCfg.toolChoice : "none"
+      });
       const body = {
         model: wo.model,
         messages,
         temperature: kiCfg.temperature,
         max_tokens: kiCfg.maxTokens,
-        tools: (!toolsDisabled && toolDefs.length) ? toolDefs : undefined,
-        tool_choice: (!toolsDisabled && toolDefs.length) ? kiCfg.toolChoice : undefined
+        tools: (!toolsDisabled && activeToolDefs.length) ? activeToolDefs : undefined,
+        tool_choice: (!toolsDisabled && activeToolDefs.length) ? kiCfg.toolChoice : undefined
       };
+      const headers = await getRequestHeaders(wo);
       const res = await fetchWithTimeout(wo.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
+        headers,
         body: JSON.stringify(body)
       }, kiCfg.requestTimeoutMs);
       const raw = await res.text();
@@ -545,39 +657,10 @@ export default async function getCoreAi(coreData) {
         let _errBody = "";
         try { _errBody = raw.slice(0, 800); } catch {}
         log(`HTTP ${res.status} ${res.statusText}: ${_errBody}`, "warn");
-        if (totalToolCalls > 0 && !wo.__partialFallbackTried) {
-          wo.__partialFallbackTried = true;
-          log(`Attempting partial-result fallback after ${totalToolCalls} tool call(s)`, "info");
-          try {
-            const _sysMsg = messages.find(m => m.role === "system");
-            const _userMsg = messages.find(m => m.role === "user");
-            const _toolData = messages.filter(m => m.role === "tool").map(m => (m.content || "").slice(0, 2000)).join("\n---\n").slice(0, 6000);
-            const _fallbackMsgs = [
-              { role: "system", content: (_sysMsg?.content || "").slice(0, 800) },
-              { role: "user", content: "Original task: " + (_userMsg?.content || "").slice(0, 300) + "\n\nGathered data so far:\n\n" + _toolData + "\n\nBriefly summarize the above findings. Start with [PARTIAL RESULT] — the task could not be completed in full." }
-            ];
-            const _fbRes = await fetchWithTimeout(wo.endpoint, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSecret(wo, wo.apiKey)}` },
-              body: JSON.stringify({ model: wo.model, messages: _fallbackMsgs, temperature: kiCfg.temperature, max_tokens: 800 })
-            }, kiCfg.requestTimeoutMs);
-            const _fbRaw = await _fbRes.text();
-            if (_fbRes.ok) {
-              const _fbText = (getTryParseJSON(_fbRaw, null)?.choices?.[0]?.message?.content || "").trim();
-              if (_fbText) {
-                accumulatedText = _fbText;
-                log(`Partial fallback succeeded: ${_fbText.length} chars`, "info");
-              } else {
-                log("Partial fallback returned empty", "warn");
-              }
-            } else {
-              log(`Partial fallback HTTP ${_fbRes.status}: ${_fbRaw.slice(0, 400)}`, "warn");
-            }
-          } catch (_fbErr) {
-            log(`Partial fallback error: ${_fbErr?.message || String(_fbErr)}`, "warn");
-          }
+        if (totalToolCalls > 0) {
+          log(`Suppressing partial-result fallback after ${totalToolCalls} tool call(s)`, "info");
         }
-        wo.response = accumulatedText.trim() || "[Empty AI response]";
+        wo.response = accumulatedText.trim() || "Die Anfrage konnte technisch nicht sauber zu Ende gefuehrt werden. Es liegt noch kein verlaessliches Endergebnis vor.";
         return coreData;
       }
       const data = getTryParseJSON(raw, null);
@@ -640,14 +723,6 @@ export default async function getCoreAi(coreData) {
           } catch {}
           toolCallLog.push({ tool: tcName, task: tcTask, status: _tcStatus, durationMs: _tcMs });
           totalToolCalls++;
-          if (tcName === "getSubAgent") {
-            try {
-              const r = JSON.parse(toolMsg.content || "{}");
-              subagentLog.push({ type: r.type || "generic", channelId: r.channelId || "?", ok: !!r.ok, error: r.error || null });
-            } catch (e) {
-              log(`getSubAgent result parse error: ${e?.message || String(e)}`, "warn");
-            }
-          }
         }
         wo._fullAssistantText = undefined;
         continue;
@@ -665,30 +740,23 @@ export default async function getCoreAi(coreData) {
         continue;
       }
       break;
-    } catch (err) {
-      const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
-      wo.response = "[Empty AI response]";
+  } catch (err) {
+    const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
+    wo.response = "[Empty AI response]";
       log(isAbort
         ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).`
         : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       return coreData;
     }
   }
-  if (!accumulatedText.trim() && !subagentLog.length && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
+  if (!accumulatedText.trim() && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
     hitMaxLoops = true;
   }
   const reasoningEnabled = wo?.reasoning != null && wo?.reasoning !== false && wo?.reasoning !== 0;
   if (reasoningEnabled) {
     const parts = [];
-    if (subagentLog.length) {
-      parts.push(subagentLog.map((s, i) =>
-        `--- Subagent ${i + 1} (${s.type} → ${s.channelId}) ---\n` +
-        (s.ok ? "✓ Completed successfully" : `✗ Error: ${s.error}`)
-      ).join("\n\n"));
-    }
-    const directTools = toolCallLog.filter(e => e.tool !== "getSubAgent");
-    if (directTools.length) {
-      parts.push("Tools called:\n" + directTools.map(e => `- ${e.tool}${e.task ? ` (${e.task})` : ""}: ${e.status}`).join("\n"));
+    if (toolCallLog.length) {
+      parts.push("Tools called:\n" + toolCallLog.map(e => `- ${e.tool}${e.task ? ` (${e.task})` : ""}: ${e.status}`).join("\n"));
     }
     if (!parts.length) {
       parts.push("Answered from context — no tool calls.");
@@ -697,8 +765,7 @@ export default async function getCoreAi(coreData) {
   } else {
     wo.reasoningSummary = undefined;
   }
-  wo.toolCallLog  = toolCallLog;
-  wo.subagentLog  = subagentLog;
+  wo.toolCallLog = toolCallLog;
   const _finalText = (accumulatedText || "").trim();
   if (_finalText) {
     if (hitMaxToolCalls) {
@@ -708,8 +775,6 @@ export default async function getCoreAi(coreData) {
     } else {
       wo.response = _finalText;
     }
-  } else if (subagentLog.length) {
-    wo.response = "The sub-agent has been started and is working. I will share the result as soon as it arrives.";
   } else if (hitMaxToolCalls) {
     wo.response = "[Max Tool Calls Hit]\n\n" + getLimitNotice("tool");
   } else if (hitMaxLoops) {

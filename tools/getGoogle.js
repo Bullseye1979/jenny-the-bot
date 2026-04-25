@@ -94,20 +94,22 @@ async function getInvoke(args, coreData) {
     return { ok: false, error: e?.message || String(e) };
   }
 
-  const items = getNormalizeItems(data?.items);
-  if (!items.length) {
-    return { ok: false, error: "No relevant search results found", query, total: 0, items: [] };
+  const rows = getNormalizeItems(data?.items);
+  if (!rows.length) {
+    return { ok: false, error: "No relevant search results found", query, count: 0, has_more: false, next_start_ctx_id: null, rows: [] };
   }
 
   return {
     ok: true,
+    count: rows.length,
+    has_more: false,
+    next_start_ctx_id: null,
+    rows,
     query,
-    total: items.length,
     searchInformation: {
       formattedSearchTime: getStr(data?.searchInformation?.formattedSearchTime, ""),
       formattedTotalResults: getStr(data?.searchInformation?.formattedTotalResults, "")
-    },
-    items
+    }
   };
 }
 
