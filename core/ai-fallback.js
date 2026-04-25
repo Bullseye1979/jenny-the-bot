@@ -86,10 +86,10 @@ export async function applyAiFallbackOverrides(workingObject, { log, moduleName 
     return wo;
   }
 
-  const targetEndpoint =
-    getNonEmptyString(endpoint) ||
-    getNonEmptyString(wo.endpoint) ||
-    getNonEmptyString(wo.endpointResponses);
+  const useModule = getNonEmptyString(wo?.useAiModule).toLowerCase();
+  const targetEndpoint = useModule === "responses"
+    ? (getNonEmptyString(wo.endpointResponses) || getNonEmptyString(wo.endpoint) || getNonEmptyString(endpoint))
+    : (getNonEmptyString(wo.endpoint) || getNonEmptyString(wo.endpointResponses) || getNonEmptyString(endpoint));
   if (!targetEndpoint) {
     wo.__aiFallbackResolved = true;
     wo.__aiFallbackApplied = false;
