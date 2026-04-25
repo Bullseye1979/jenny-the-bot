@@ -405,9 +405,11 @@ const WIKI_PATCH_KEYS = [
 ];
 
 const WIKI_JSON_SCHEMA_PROMPT =
-  "IMPORTANT: Respond ONLY with a single valid JSON object — no prose, no markdown fences, no commentary before or after.\n" +
+  "When all research is complete, call getImageSD (preferred) or getImage to generate an article image, then capture the returned URL.\n" +
+  "Output your final answer as a single valid JSON object — no prose, no markdown fences, no commentary before or after.\n" +
   'Schema: {"title":"string","intro":"paragraph text","sections":[{"heading":"string","level":2,"content":"paragraph text"}],' +
   '"infobox":{"imageAlt":"short image description for generation","fields":[{"label":"string","value":"string"}]},' +
+  '"image_url":"url returned by getImageSD or getImage, or empty string if none",' +
   '"categories":["string"],"relatedTerms":["string"]}';
 
 
@@ -470,13 +472,14 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     if (modelName) article._model = modelName;
   }
 
-  const imgCfg    = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
-  const imgPrompt = getStr(article.infobox?.imageAlt || article.title || query);
-  if (imgPrompt) {
-    try {
-      article.image_url = await wikiGenImage(imgPrompt, imgCfg, wo);
-    } catch (e) {
-      console.error(`[${MODULE_NAME}] wikiGenImage failed: ${e?.message || String(e)}`);
+  if (!article.image_url) {
+    const imgPrompt = getStr(article.infobox?.imageAlt || article.title || query);
+    if (imgPrompt) {
+      try {
+        article.image_url = await callPipelineForImageOnly(article, channel, coreData, null, imgPrompt);
+      } catch (e) {
+        console.error(`[${MODULE_NAME}] image pipeline failed: ${e?.message || String(e)}`);
+      }
     }
   }
 
@@ -488,19 +491,48 @@ async function callPipelineForImageOnly(article, channel, coreData, promptAdditi
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
 
+  const apiUrl    = getStr(cfg.apiUrl || "http://localhost:3400/api");
+  const apiSecret = await getSecret(wo, getStr(wo.apiSecret || ""));
+
   const globalOverrides = (cfg.overrides && typeof cfg.overrides === "object") ? cfg.overrides : {};
   const chanOverrides   = (channel.overrides && typeof channel.overrides === "object") ? channel.overrides : {};
   const overrides       = { ...globalOverrides, ...chanOverrides };
 
-  const infobox     = safeParseJson(article.infobox, {});
-  const basePrompt  = getStr(article.image_prompt || infobox.imageAlt || article.title);
+  const infobox    = safeParseJson(article.infobox, {});
+  const basePrompt = getStr(article.image_prompt || infobox.imageAlt || article.title);
   const imagePrompt = getStr(promptOverride) || (basePrompt + (promptAddition ? `\n${promptAddition}` : ""));
 
   if (!imagePrompt.trim()) throw new Error("No image prompt available for this article");
 
-  const imgCfgBase = (cfg.imageGen && typeof cfg.imageGen === "object") ? cfg.imageGen : {};
-  const imgCfg = overrides.apiKey ? { ...imgCfgBase, apiKey: overrides.apiKey } : imgCfgBase;
-  return wikiGenImage(imagePrompt, imgCfg, wo);
+  const workingObjectPatch = {};
+  for (const k of WIKI_PATCH_KEYS) {
+    if (k in overrides) workingObjectPatch[k] = overrides[k];
+  }
+
+  const headers = { "Content-Type": "application/json" };
+  if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
+
+  const res = await fetch(apiUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      channelId: channel.channelId,
+      payload: `Generate an image using getImageSD or getImage. Visual description: ${imagePrompt}`,
+      userId: "wiki",
+      doNotWriteToContext: true,
+      workingObjectPatch
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Image pipeline error ${res.status}: ${data?.error || res.statusText}`);
+
+  const url = getStr(data?.primaryImageUrl || "");
+  if (url) return url;
+
+  const urlMatch = getStr(data?.response || "").match(/https?:\/\/\S+/);
+  if (urlMatch) return urlMatch[0];
+
+  throw new Error("Image pipeline returned no URL: " + JSON.stringify(data).slice(0, 200));
 }
 
 
