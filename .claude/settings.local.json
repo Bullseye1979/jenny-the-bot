@@ -9,7 +9,13 @@
       "Bash(sed -i 's/TTSFetchTimeoutMs/ttsFetchTimeoutMs/g' documentation/CORE_JSON.md)",
       "Read(///strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/repo-codex/manifests/**)",
       "Bash(rm \"//strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/repo-codex/tools/getInformation.js\")",
-      "Bash(rm \"//strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/repo-codex/manifests/getInformation.json\")"
+      "Bash(rm \"//strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/repo-codex/manifests/getInformation.json\")",
+      "WebSearch",
+      "WebFetch(domain:spec.modelcontextprotocol.io)",
+      "WebFetch(domain:support.anthropic.com)",
+      "WebFetch(domain:support.claude.com)",
+      "WebFetch(domain:ts.sdk.modelcontextprotocol.io)",
+      "WebFetch(domain:mcp-auth.dev)"
     ]
   }
 }

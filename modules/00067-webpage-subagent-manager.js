@@ -150,8 +150,12 @@ function buildPageHtml(opts) {
     getThemeHeadScript() + "\n" +
     "<link rel=\"stylesheet\" href=\"" + basePath + "/style.css\">\n" +
     "<style>\n" +
-    ".sam-wrap{margin-top:var(--hh);height:calc(100dvh - var(--hh));display:grid;grid-template-columns:280px 1fr;overflow:hidden}\n" +
-    ".sam-sidebar{border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden}\n" +
+    ".sam-wrap{margin-top:var(--hh);height:calc(100dvh - var(--hh));display:grid;grid-template-columns:280px 1fr;overflow:hidden;position:relative}\n" +
+    ".sam-sidebar{border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;transition:opacity .15s}\n" +
+    ".sam-wrap.collapsed{grid-template-columns:0 1fr}\n" +
+    ".sam-wrap.collapsed .sam-sidebar{pointer-events:none;opacity:0}\n" +
+    ".sam-sb-toggle{position:fixed;top:calc(var(--hh) + 10px);left:280px;z-index:20;background:var(--bg2);border:1px solid var(--bdr);border-left:none;border-radius:0 6px 6px 0;padding:7px 5px;cursor:pointer;font-size:14px;color:var(--muted);transition:left .15s;line-height:1}\n" +
+    ".sam-wrap.collapsed~.sam-sb-toggle{left:0;border-left:1px solid var(--bdr);border-radius:6px}\n" +
     ".sam-tabs{display:flex;border-bottom:1px solid var(--bdr)}\n" +
     ".sam-tab{flex:1;padding:10px 0;font-size:13px;font-weight:600;cursor:pointer;text-align:center;border:none;background:none;color:var(--muted)}\n" +
     ".sam-tab.active{color:var(--accent);border-bottom:2px solid var(--accent)}\n" +
@@ -182,6 +186,19 @@ function buildPageHtml(opts) {
     ".sam-empty{padding:24px 16px;color:var(--muted);font-size:13px;text-align:center}\n" +
     ".sam-title-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}\n" +
     ".sam-title-row h2{margin:0;font-size:16px}\n" +
+    ".sam-sb-backdrop{display:none}\n" +
+    "@media(max-width:680px){\n" +
+    ".sam-wrap{grid-template-columns:1fr}\n" +
+    ".sam-sidebar{position:fixed;top:var(--hh);left:0;bottom:0;width:280px;z-index:50;background:var(--bg2);transform:translateX(-100%);transition:transform .2s;opacity:1!important;pointer-events:auto!important}\n" +
+    ".sam-wrap.sidebar-open .sam-sidebar{transform:translateX(0)}\n" +
+    ".sam-sb-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:49}\n" +
+    ".sam-wrap.sidebar-open .sam-sb-backdrop{display:block}\n" +
+    ".sam-sb-toggle{left:8px!important;border:1px solid var(--bdr)!important;border-radius:6px!important}\n" +
+    ".sam-wrap.collapsed~.sam-sb-toggle{left:8px!important}\n" +
+    ".sam-row{grid-template-columns:1fr}\n" +
+    ".sam-row label{padding-top:0}\n" +
+    ".sam-main{padding:12px 12px 40px}\n" +
+    "}\n" +
     "</style>\n" +
     "</head>\n" +
     "<body>\n" +
@@ -189,7 +206,8 @@ function buildPageHtml(opts) {
     "  <h1>Subagent Manager</h1>\n" +
     (menuHtml ? "  " + menuHtml + "\n" : "") +
     "</header>\n" +
-    "<div class=\"sam-wrap\">\n" +
+    "<div class=\"sam-wrap\" id=\"sam-wrap\">\n" +
+    "  <div class=\"sam-sb-backdrop\" onclick=\"toggleSidebar()\"></div>\n" +
     "  <div class=\"sam-sidebar\">\n" +
     "    <div class=\"sam-tabs\">\n" +
     "      <button class=\"sam-tab active\" onclick=\"switchTab('orchestrator')\">Orchestrators</button>\n" +
@@ -205,6 +223,7 @@ function buildPageHtml(opts) {
     "    <div class=\"sam-empty\">Select an item or create a new one.</div>\n" +
     "  </div>\n" +
     "</div>\n" +
+    "<button class=\"sam-sb-toggle\" id=\"sam-sb-toggle\" onclick=\"toggleSidebar()\" title=\"Sidebar ein-/ausblenden\">&#8249;</button>\n" +
     "<div id=\"toast\" class=\"toast\"></div>\n" +
     "<script>\n" +
     "var BASE = " + baseJson + ";\n" +
@@ -250,7 +269,14 @@ function buildPageHtml(opts) {
     "  renderList(document.getElementById('filter-inp').value);\n" +
     "  fetch(BASE+'/api/get?role='+currentTab+'&slug='+encodeURIComponent(slug))\n" +
     "    .then(function(r){ return r.json(); })\n" +
-    "    .then(function(data){ if (!data.ok) { toast('Load error: '+(data.error||'?'),5000); return; } renderForm(data); })\n" +
+    "    .then(function(data){\n" +
+    "      if (!data.ok) { toast('Load error: '+(data.error||'?'),5000); return; }\n" +
+    "      renderForm(data);\n" +
+    "      if (window.innerWidth <= 680) {\n" +
+    "        document.getElementById('sam-wrap').classList.remove('sidebar-open');\n" +
+    "        document.getElementById('sam-sb-toggle').innerHTML = '&#8249;';\n" +
+    "      }\n" +
+    "    })\n" +
     "    .catch(function(e){ toast('Error: '+e.message,5000); });\n" +
     "}\n" +
     "\n" +
@@ -349,6 +375,18 @@ function buildPageHtml(opts) {
     "}\n" +
     "\n" +
     "loadAll();\n" +
+    "\n" +
+    "function toggleSidebar() {\n" +
+    "  var wrap = document.getElementById('sam-wrap');\n" +
+    "  var btn = document.getElementById('sam-sb-toggle');\n" +
+    "  if (window.innerWidth <= 680) {\n" +
+    "    var open = wrap.classList.toggle('sidebar-open');\n" +
+    "    btn.innerHTML = open ? '&#8250;' : '&#8249;';\n" +
+    "  } else {\n" +
+    "    var collapsed = wrap.classList.toggle('collapsed');\n" +
+    "    btn.innerHTML = collapsed ? '&#8250;' : '&#8249;';\n" +
+    "  }\n" +
+    "}\n" +
     "<\/script>\n" +
     "</body>\n" +
     "</html>\n";

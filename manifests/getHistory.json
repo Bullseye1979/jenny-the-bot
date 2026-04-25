@@ -11,7 +11,7 @@
       },
       "end": {
         "type": "string",
-        "description": "OPTIONAL. End of the time range in UTC. Same format as start. If omitted, retrieves from start until now. Values from getInformation windows are already in the correct format."
+        "description": "OPTIONAL. End of the time range in UTC. Same format as start. If omitted, retrieves from start until now."
       },
       "prompt": {
         "type": "string",
