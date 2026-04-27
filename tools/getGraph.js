@@ -5,15 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getStr, getNum, getObj } from "../core/utils.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -26,9 +17,6 @@ const DISCOVERY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const discoveryCache = new Map();
 let   _dbPool        = null;
-
-
-
 
 
 async function getDbPool(coreData) {
@@ -49,25 +37,9 @@ async function getDbPool(coreData) {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function getBool(v, f = false) {
   return typeof v === "boolean" ? v : f;
 }
-
-
-
 
 
 function getArr(v, f = []) {
@@ -75,21 +47,10 @@ function getArr(v, f = []) {
 }
 
 
-
-
-
-
-
-
-
-
 function getClamp(n, min, max) {
   const x = Number.isFinite(n) ? Number(n) : min;
   return Math.max(min, Math.min(max, x));
 }
-
-
-
 
 
 function getJoinUrl(baseUrl, path) {
@@ -99,9 +60,6 @@ function getJoinUrl(baseUrl, path) {
   if (p.startsWith("http://") || p.startsWith("https://")) return p;
   return `${root}/${p.replace(/^\/+/, "")}`;
 }
-
-
-
 
 
 function getBuildUrl(baseUrl, path, query) {
@@ -122,15 +80,9 @@ function getBuildUrl(baseUrl, path, query) {
 }
 
 
-
-
-
 function getHeaders(baseHeaders, extraHeaders) {
   return { ...getObj(baseHeaders, {}), ...getObj(extraHeaders, {}) };
 }
-
-
-
 
 
 function getGraphRelativeUrl(path, query = {}) {
@@ -139,24 +91,15 @@ function getGraphRelativeUrl(path, query = {}) {
 }
 
 
-
-
-
 function getDecodeBase64ToBytes(input) {
   return Buffer.from(String(input || "").replace(/\s+/g, ""), "base64");
 }
-
-
-
 
 
 function getIsProbablyTextContentType(contentType) {
   const v = getStr(contentType, "").toLowerCase();
   return v.startsWith("text/") || v.includes("json") || v.includes("xml") || v.includes("javascript") || v.includes("csv");
 }
-
-
-
 
 
 async function getFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -168,17 +111,11 @@ async function getFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
 }
 
 
-
-
-
 async function getFetchBinary(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const res = await fetchWithTimeout(url, { ...options }, timeoutMs);
   const bytes = Buffer.from(await res.arrayBuffer());
   return { ok: res.ok, status: res.status, statusText: res.statusText, headers: Object.fromEntries(res.headers.entries()), bytes };
 }
-
-
-
 
 
 function getNormalizeToolConfig(rawToolCfg) {
@@ -203,9 +140,6 @@ function getNormalizeToolConfig(rawToolCfg) {
     forcedDestinationFolderId: getStr(toolCfg.forcedDestinationFolderId, "")
   };
 }
-
-
-
 
 
 async function getDelegatedToken(coreData) {
@@ -239,9 +173,6 @@ async function getDelegatedToken(coreData) {
 }
 
 
-
-
-
 function getApplyConfiguredIds(args, toolCfg) {
   const nextArgs = JSON.parse(JSON.stringify(getObj(args, {})));
 
@@ -272,9 +203,6 @@ function getApplyConfiguredIds(args, toolCfg) {
 
   return nextArgs;
 }
-
-
-
 
 
 function getResolveUserId(args, toolCfg) {
@@ -340,10 +268,6 @@ function getResolveSharePointSiteBase(args, toolCfg) {
 }
 
 
-
-
-
-
 function getResolveDriveItemPath(args, toolCfg) {
   const userId = getResolveUserId(args, toolCfg);
   const driveId = getResolveDriveId(args, toolCfg);
@@ -373,10 +297,6 @@ function getResolveDriveItemPath(args, toolCfg) {
 }
 
 
-
-
-
-
 function getResolveUploadRootPath(args, toolCfg) {
   const userId = getResolveUserId(args, toolCfg);
   const driveId = getResolveDriveId(args, toolCfg);
@@ -390,9 +310,6 @@ function getResolveUploadRootPath(args, toolCfg) {
   }
   return `${getResolveUserBase(args, toolCfg)}/drive`;
 }
-
-
-
 
 
 function getResolveFolderPath(args, toolCfg) {
@@ -409,9 +326,6 @@ function getResolveFolderPath(args, toolCfg) {
 }
 
 
-
-
-
 function getBuildSearchRequest(args, toolCfg) {
   const queryText = getStr(args.query, "").trim();
   if (!queryText) return null;
@@ -422,15 +336,9 @@ function getBuildSearchRequest(args, toolCfg) {
 }
 
 
-
-
-
 function getNormalizeMessageBodyPreference(args) {
   return getStr(args.bodyType, "text").toLowerCase() === "html" ? "html" : "text";
 }
-
-
-
 
 
 function getExtractBatchResponses(batchRes) {
@@ -441,9 +349,6 @@ function getExtractBatchResponses(batchRes) {
     body: item.body ?? null
   }));
 }
-
-
-
 
 
 async function getGraphRequest(toolCfg, req = {}) {
@@ -466,9 +371,6 @@ async function getGraphRequest(toolCfg, req = {}) {
 }
 
 
-
-
-
 async function getGraphBinaryRequest(toolCfg, req = {}) {
   const timeoutMs = getNum(req.timeoutMs, getNum(toolCfg.timeoutMs, DEFAULT_TIMEOUT_MS));
   const token = getStr(req.accessToken, "") || getStr(toolCfg._token, "");
@@ -482,17 +384,11 @@ async function getGraphBinaryRequest(toolCfg, req = {}) {
 }
 
 
-
-
-
 async function getRunBatch(toolCfg, version, requests) {
   const baseUrl = getResolveBaseUrl(toolCfg, version);
   const res = await getGraphRequest(toolCfg, { baseUrl, path: "/$batch", method: "POST", body: { requests } });
   return { ok: res.ok, status: res.status, statusText: res.statusText, data: res.data, responses: getExtractBatchResponses(res) };
 }
-
-
-
 
 
 function getCachedDiscovery(key) {
@@ -505,12 +401,6 @@ function getCachedDiscovery(key) {
 function setCachedDiscovery(key, value) {
   discoveryCache.set(key, { value, ts: Date.now() });
 }
-
-
-
-
-
-
 
 
 async function getAutoDiscoverIds(toolCfg) {
@@ -575,9 +465,6 @@ async function getAutoDiscoverIds(toolCfg) {
 }
 
 
-
-
-
 async function getOperationResolveDefaultTargets(toolCfg, args) {
   const version = getResolveApiVersion(args, toolCfg);
   const baseUrl = getResolveBaseUrl(toolCfg, version);
@@ -615,9 +502,6 @@ async function getOperationResolveDefaultTargets(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationFulltextSearch(toolCfg, args) {
   const body = getBuildSearchRequest(args, toolCfg);
   if (!body) return { operation: "fulltextSearch", ok: false, error: "Missing search query" };
@@ -628,9 +512,6 @@ async function getOperationFulltextSearch(toolCfg, args) {
 
   return { operation: "fulltextSearch", ok: res.ok, status: res.status, statusText: res.statusText, query: args.query, entityTypes: getSearchEntityTypes(args, toolCfg), result: res.data };
 }
-
-
-
 
 
 async function getOperationSearchFiles(toolCfg, args) {
@@ -670,9 +551,6 @@ async function getOperationSearchFiles(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationShowFile(toolCfg, args) {
   const path = getResolveDriveItemPath(args, toolCfg);
   if (!path) return { operation: "showFile", ok: false, error: "Could not resolve file target. Configure defaultUserId, defaultDriveId, defaultSiteId, or defaultSharePointHostname." };
@@ -686,9 +564,6 @@ async function getOperationShowFile(toolCfg, args) {
 
   return { operation: "showFile", ok: res.ok, status: res.status, statusText: res.statusText, item: res.data };
 }
-
-
-
 
 
 async function getOperationListFiles(toolCfg, args) {
@@ -705,9 +580,6 @@ async function getOperationListFiles(toolCfg, args) {
     result: res.data
   };
 }
-
-
-
 
 
 async function getOperationDownloadFile(toolCfg, args) {
@@ -736,9 +608,6 @@ async function getOperationDownloadFile(toolCfg, args) {
 
   return { operation: "downloadFile", ok: res.ok, status: res.status, statusText: res.statusText, contentType, contentDisposition, contentEncoding, contentLength: res.bytes.length, content };
 }
-
-
-
 
 
 async function getOperationUploadFile(toolCfg, args) {
@@ -770,9 +639,6 @@ async function getOperationUploadFile(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationCreateUploadSession(toolCfg, args) {
   const fileName = getStr(args.fileName, "");
   if (!fileName) return { operation: "createUploadSession", ok: false, error: "Missing fileName" };
@@ -793,9 +659,6 @@ async function getOperationCreateUploadSession(toolCfg, args) {
 
   return { operation: "createUploadSession", ok: res.ok, status: res.status, statusText: res.statusText, result: res.data };
 }
-
-
-
 
 
 async function getOperationSearchEmails(toolCfg, args) {
@@ -825,9 +688,6 @@ async function getOperationSearchEmails(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationShowEmails(toolCfg, args) {
   const messageIds = getArr(args.messageIds, []).map(v => getStr(v, "")).filter(Boolean);
   if (!messageIds.length) return { operation: "showEmails", ok: false, error: "Missing messageIds" };
@@ -850,9 +710,6 @@ async function getOperationShowEmails(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationListMailFolders(toolCfg, args) {
   const version = getResolveApiVersion(args, toolCfg);
   const baseUrl = getResolveBaseUrl(toolCfg, version);
@@ -868,9 +725,6 @@ async function getOperationListMailFolders(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationSearchMailFolders(toolCfg, args) {
   const query = getStr(args.query, "").trim().toLowerCase();
   if (!query) return { operation: "searchMailFolders", ok: false, error: "Missing mail folder search query" };
@@ -881,9 +735,6 @@ async function getOperationSearchMailFolders(toolCfg, args) {
   const folders = getArr(list?.result?.value, []).filter(item => getStr(item.displayName, "").toLowerCase().includes(query));
   return { operation: "searchMailFolders", ok: true, status: 200, statusText: "OK", query, result: folders };
 }
-
-
-
 
 
 async function getOperationDeleteFiles(toolCfg, args) {
@@ -918,9 +769,6 @@ async function getOperationDeleteFiles(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationDeleteMails(toolCfg, args) {
   const messageIds = getArr(args.messageIds, []).map(v => getStr(v, "")).filter(Boolean);
   if (!messageIds.length) return { operation: "deleteMails", ok: false, error: "Missing messageIds" };
@@ -946,9 +794,6 @@ async function getOperationDeleteMails(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationRenameFiles(toolCfg, args) {
   const version = getResolveApiVersion(args, toolCfg);
   const items = getArr(args.items, []);
@@ -968,9 +813,6 @@ async function getOperationRenameFiles(toolCfg, args) {
   const allOk = results.every(v => v.ok);
   return { operation: "renameFiles", ok: allOk, status: allOk ? 200 : 207, statusText: allOk ? "OK" : "MULTI_STATUS", results };
 }
-
-
-
 
 
 async function getOperationMoveEmails(toolCfg, args) {
@@ -1007,9 +849,6 @@ async function getOperationMoveEmails(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationSearchUsers(toolCfg, args) {
   const query = getStr(args.query, "").trim();
   if (!query) return { operation: "searchUsers", ok: false, error: "Missing user search query" };
@@ -1032,9 +871,6 @@ async function getOperationSearchUsers(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationShowUser(toolCfg, args) {
   const userId = getResolveUserId(args, toolCfg);
   if (!userId) return { operation: "showUser", ok: false, error: "Missing userId" };
@@ -1050,9 +886,6 @@ async function getOperationShowUser(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationCreateUser(toolCfg, args) {
   const user = getObj(args.user, {});
   if (!Object.keys(user).length) return { operation: "createUser", ok: false, error: "Missing user payload" };
@@ -1063,9 +896,6 @@ async function getOperationCreateUser(toolCfg, args) {
 
   return { operation: "createUser", ok: res.ok, status: res.status, statusText: res.statusText, result: res.data };
 }
-
-
-
 
 
 async function getOperationUpdateUser(toolCfg, args) {
@@ -1083,9 +913,6 @@ async function getOperationUpdateUser(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationDeleteUser(toolCfg, args) {
   const userId = getResolveUserId(args, toolCfg);
   if (!userId) return { operation: "deleteUser", ok: false, error: "Missing userId" };
@@ -1096,9 +923,6 @@ async function getOperationDeleteUser(toolCfg, args) {
 
   return { operation: "deleteUser", ok: res.ok, status: res.status, statusText: res.statusText };
 }
-
-
-
 
 
 async function getOperationSendMail(toolCfg, args) {
@@ -1150,9 +974,6 @@ async function getOperationSendMail(toolCfg, args) {
 }
 
 
-
-
-
 async function getOperationGraphRequest(toolCfg, args) {
   const request = getObj(args.request, {});
   const path = getStr(request.path, "");
@@ -1171,9 +992,6 @@ async function getOperationGraphRequest(toolCfg, args) {
 
   return { operation: "graphRequest", ok: res.ok, status: res.status, statusText: res.statusText, result: res.data };
 }
-
-
-
 
 
 async function getInvoke(args, coreData) {
@@ -1220,9 +1038,6 @@ async function getInvoke(args, coreData) {
     return { ok: false, error: e?.message || String(e) };
   }
 }
-
-
-
 
 
 export default {

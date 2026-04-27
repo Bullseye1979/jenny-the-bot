@@ -2571,7 +2571,6 @@ export default async function myModule(coreData) {
 | 00005 | `discord-status-prepare` | Reads Discord context; prepares AI-generated status update |
 | 00007 | `webpage-router` | Maps HTTP port + path to a named flow and sets `wo.channelId`. Runs before `core-channel-config` so that flow-specific overrides (e.g. different trigger word for `/voice`) can be applied. Config key: `webpage-router`. Active only in `webpage` flow. |
 | 00010 | `core-channel-config` | Applies hierarchical channel/flow/user overrides (deep-merge) |
-| 00012 | `subchannel-config` | Lightweight compatibility hook for subchannel-aware runs. When `wo.subchannel` is set, the module leaves prompt fields untouched and lets the rest of the pipeline use the subchannel only as a context scope selector. |
 | 00020 | `core-channel-gate` | Checks whether the bot is allowed to respond in this channel — sets `wo.stop = true` when `wo.channelAllowed` is falsy |
 | 00021 | `api-token-gate` | Two-stage API gate: (1) blocks the channel entirely when `apiEnabled=0`; (2) verifies the Bearer token when `apiSecret` is set |
 | 00022 | `discord-gdpr-gate` | Enforces GDPR consent; sends disclaimer DM on first contact |
@@ -2759,8 +2758,8 @@ Multiple calls can appear in a single response. The module extracts all occurren
 
 | Parameter (workingObject) | Default | Description |
 |---|---|---|
-| `MaxToolCallsTotal` | `3` | Maximum tool calls across all turns |
-| `MaxToolCallsPerTurn` | `1` | Maximum tool calls in a single model response |
+| `maxToolCallsTotal` | `3` | Maximum tool calls across all turns |
+| `maxToolCallsPerTurn` | `1` | Maximum tool calls in a single model response |
 
 **Agentic context awareness:** When `wo.agentType` is set, the module appends the agent type and depth to the system prompt. This allows the model to adapt its behavior when running as an orchestrator or specialist.
 
@@ -2780,7 +2779,7 @@ Two-pass generation for roleplay and narrative scenarios. Pass 1 generates the m
 
 **Pass 2 — Image prompt generation:**
 1. Builds a secondary system prompt using `imagePromptRules` from `config["core-ai-roleplay"]`
-2. Calls the model with limited tokens (`ImagePromptMaxTokens`, default 260) and low temperature (`ImagePromptTemperature`, default 0.35)
+2. Calls the model with limited tokens (`imagePromptMaxTokens`, default 260) and low temperature (`imagePromptTemperature`, default 0.35)
 3. Passes the result to `getImageSD` (if configured) to generate an image
 4. If pass 2 fails or returns empty, a fallback single-line prompt is generated from the response text
 
@@ -2789,8 +2788,8 @@ Two-pass generation for roleplay and narrative scenarios. Pass 1 generates the m
 | Parameter | Default | Description |
 |---|---|---|
 | `imagePromptRules` | `""` | Multiline string with SD prompt generation rules. **Must be configured** in `config["core-ai-roleplay"]` in `core.json` — the module produces no image if this is empty. |
-| `ImagePromptMaxTokens` | `260` | Max tokens for the image prompt generation call |
-| `ImagePromptTemperature` | `0.35` | Temperature for the image prompt call |
+| `imagePromptMaxTokens` | `260` | Max tokens for the image prompt generation call |
+| `imagePromptTemperature` | `0.35` | Temperature for the image prompt call |
 | `imagePersonaHint` | `""` | Visual description of the main character, prepended to the image prompt system |
 
 **`skipAiCompletions` flag:** If `wo.skipAiCompletions === true`, both passes are skipped.
@@ -6929,7 +6928,7 @@ Add port 3133 to `config.webpage.ports[]` and `config.webpage-auth.ports[]`. Add
 
 ### Overview
 
-The bard music system automatically plays mood-appropriate background music for tabletop RPG sessions. It runs as a **headless scheduler** — no second Discord bot is required. A cron job analyzes the chat context at every run using an LLM, generates 6 structured labels (`location, situation, mood1–4`), and stores them in the registry. `flows/bard.js` polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active labels. Audio is served to the browser via the web player at `/bard` or `/bard-stream`.
+The bard music system automatically plays mood-appropriate background music for tabletop RPG sessions. It runs as a **headless scheduler** — no second Discord bot is required. A cron job analyzes the chat context at every run using an LLM, generates 6 structured labels (`location, situation, mood1–4`), and stores them in the registry. `flows/bard.js` polls the registry every 5 seconds (configurable via `pollIntervalMs`) and switches music when the current track no longer matches the active labels. Audio is served to the browser via the web player at `/bard`.
 
 ### Architecture
 
@@ -7525,7 +7524,7 @@ The caller's channel ID set is forwarded at every level so `getHistory` can quer
 5. **Decide whether caller context should ever be preloaded**. Default remains off; callers opt in via `includeCallerContext: true`.
 6. **Document the new type** in this subagent section and in `CORE_JSON.md`.
 
-**Subagent spawn timeout:** `toolsconfig.getSubAgent.spawnTimeoutMs` controls only the initial HTTP spawn request. The job then continues asynchronously and is delivered by `discord-subagent-poll`.
+**Subagent spawn timeout:** `toolsconfig.getSubAgent.spawnTimeoutMs` controls only the initial HTTP spawn request. The job then continues asynchronously in the background.
 
 ### Orchestration Context (Multi-Subagent Coordination)
 
@@ -7660,7 +7659,7 @@ EventEmitter.defaultMaxListeners = 30;
 1. The AI calls `getSubAgent(type, task)` (and optionally `mode: "resume"` with `projectId` to continue an existing project).
 2. `getSubAgent` posts to `/api/spawn` (configured via `toolsconfig.getSubAgent.asyncSpawnPath`).
 3. The API flow stores a `"job:<jobId>"` entry in the registry with `status: "running"`, then starts the pipeline as a fire-and-forget async IIFE.
-4. The `discord-subagent-poll` flow polls the registry every `pollIntervalMs` ms, finds completed/failed jobs, removes them, and runs a `discord` pipeline pass with `wo.deliverSubagentJob` set.
+4. When the subagent finishes, the result is stored and delivered to the original Discord channel.
 5. The Discord output module sends the result as a message in the original channel.
 
 **`getSubAgent` return value (async mode):**
@@ -7684,17 +7683,6 @@ EventEmitter.defaultMaxListeners = 30;
 |-----|---------|-------------|
 | `asyncSpawnPath` | `"/api/spawn"` | Path appended to `apiUrl` for async spawning |
 | `spawnTimeoutMs` | `10000` | HTTP timeout for the spawn request (ms). The subagent runs beyond this. |
-
-**`discord-subagent-poll` config** (`config["discord-subagent-poll"]`):
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `enabled` | `false` | Must be set to `true` to activate the poller |
-| `pollIntervalMs` | `5000` | How often to scan the registry (ms) |
-| `callerFlowPattern` | `["discord","discord-voice"]` | Only deliver jobs whose `callerFlow` starts with one of these prefixes |
-| `maxJobAgeMs` | `86400000` | Jobs still `"running"` after this many ms are expired as errors |
-
-**Activation:** Set `config["discord-subagent-poll"].enabled = true` in `core.json`. The flow auto-starts on bot startup.
 
 ---
 

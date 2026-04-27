@@ -5,24 +5,11 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
-
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME    = "bard-join";
 const DEFAULT_PREFIX = ["!", "/"];
-
-
 
 
 async function getBardRegistry() {
@@ -51,8 +38,6 @@ async function setRemoveBardSessionKey(sessionKey) {
   reg.list = (reg.list || []).filter(k => k !== sessionKey);
   try { await putItem(reg, key); } catch {}
 }
-
-
 
 
 function getDetectCommand(wo, cfg) {
@@ -84,8 +69,6 @@ function getDetectCommand(wo, cfg) {
 function getChannelId(wo) {
   return String(wo?.admin?.channelId || wo?.channelId || "");
 }
-
-
 
 
 export default async function getBardJoin(coreData) {

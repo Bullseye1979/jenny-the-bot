@@ -5,11 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
 import { saveFile } from "../core/file.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -23,7 +18,6 @@ function getClamp(n, min, max) {
   const x = Number.isFinite(n) ? n : min;
   return Math.max(min, Math.min(max, x));
 }
-
 
 
 function getPickExtFromContentType(ct) {

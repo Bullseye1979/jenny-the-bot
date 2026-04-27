@@ -5,13 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -244,9 +237,6 @@ function getServeFileWithRange(req, res, absPath, stat, cacheControl = "no-store
 
 
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
-
-
-
 
 
 async function getThumb(srcPath, thumbsDir, filename, width) {

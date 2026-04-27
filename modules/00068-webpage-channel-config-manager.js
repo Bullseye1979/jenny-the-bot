@@ -17,6 +17,7 @@ import { getIsAllowedRoles, setJsonResp, setSendNow } from "../shared/webpage/ut
 import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "webpage-channel-config-manager";
+const CHANNEL_CONFIG_KEY = "core-channel-config";
 
 function getBasePath(cfg) {
   const value = getStr(cfg.basePath ?? "/channels").trim();
@@ -66,13 +67,13 @@ function getChannelsRoot(configJson) {
   if (!configJson.config || typeof configJson.config !== "object") {
     configJson.config = {};
   }
-  if (!configJson.config["core-channel-config"] || typeof configJson.config["core-channel-config"] !== "object") {
-    configJson.config["core-channel-config"] = {};
+  if (!configJson.config[CHANNEL_CONFIG_KEY] || typeof configJson.config[CHANNEL_CONFIG_KEY] !== "object") {
+    configJson.config[CHANNEL_CONFIG_KEY] = {};
   }
-  if (!Array.isArray(configJson.config["core-channel-config"].channels)) {
-    configJson.config["core-channel-config"].channels = [];
+  if (!Array.isArray(configJson.config[CHANNEL_CONFIG_KEY].channels)) {
+    configJson.config[CHANNEL_CONFIG_KEY].channels = [];
   }
-  return configJson.config["core-channel-config"].channels;
+  return configJson.config[CHANNEL_CONFIG_KEY].channels;
 }
 
 function getChannelTitle(entry, index) {

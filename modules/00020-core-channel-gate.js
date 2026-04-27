@@ -5,10 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-channel-gate";

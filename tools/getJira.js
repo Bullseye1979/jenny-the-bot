@@ -5,22 +5,12 @@
 /**************************************************************/
 
 
-
-
-
-
-
 import { getSecret } from "../core/secrets.js";
 import { getStr, getNum } from "../core/utils.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getJira";
-
-
-
-
-
 
 
 function getAuthHeader(email, token){

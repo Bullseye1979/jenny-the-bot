@@ -5,12 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
 import { getEnsurePool } from "./context.js";
 
 const DEFAULT_TABLE = "bot_secrets";
@@ -45,13 +39,6 @@ async function getSecretsMap(wo) {
 }
 
 
-
-
-
-
-
-
-
 export async function getSecret(wo, placeholder) {
   if (!placeholder || typeof placeholder !== "string") return placeholder ?? "";
   try {
@@ -64,10 +51,6 @@ export async function getSecret(wo, placeholder) {
 }
 
 
-
-
-
-
 function clearSecretsCache(table) {
   if (table) {
     _cache.delete(table);
@@ -75,10 +58,6 @@ function clearSecretsCache(table) {
     _cache.clear();
   }
 }
-
-
-
-
 
 
 export async function listSecrets(wo) {
@@ -89,9 +68,6 @@ export async function listSecrets(wo) {
   );
   return rows;
 }
-
-
-
 
 
 export async function setSecret(wo, name, value, description = null) {
@@ -106,9 +82,6 @@ export async function setSecret(wo, name, value, description = null) {
 }
 
 
-
-
-
 export async function deleteSecret(wo, name) {
   const pool = await getEnsurePool(wo);
   const table = String(wo?.secretsTable || DEFAULT_TABLE);
@@ -119,9 +92,6 @@ export async function deleteSecret(wo, name) {
   clearSecretsCache(table);
   return Number(res?.affectedRows || 0);
 }
-
-
-
 
 
 export async function setEnsureSecretsTable(wo) {

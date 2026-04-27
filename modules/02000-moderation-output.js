@@ -5,9 +5,6 @@
 /**************************************************************/
 
 
-
-
-
 import { getPrefixedLogger } from "../core/logging.js";
 import { getStr } from "../core/utils.js";
 
@@ -31,7 +28,7 @@ function getEscapedRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 function getCfg(wo) {
   return {
-    enabled: getBool(wo?.ModerationEnabled ?? true, true),
+    enabled: getBool(wo?.moderationEnabled ?? true, true),
     clientRef: getStr(wo?.clientRef, ""),
     adminId: getStr(wo?.modAdmin, ""),
     trigSilence: getStr(wo?.modSilence, "")
@@ -78,7 +75,7 @@ export default async function getModerationOutput(coreData) {
       wo.stop       = true;
       wo.stopReason = "moderation_silence";
       const decision = { action: "drop", tag: "silence", reason: "trigger_match" };
-      wo.Moderation = decision;
+      wo.moderation = decision;
 
       log("Silence trigger matched → STOP (jump to output)", "info", {
         trigger: cfg.trigSilence, preview: getPreview(original)
@@ -89,7 +86,7 @@ export default async function getModerationOutput(coreData) {
     }
 
     const decision = { action: "post", tag: null, reason: "no_trigger" };
-    wo.Moderation = decision;
+    wo.moderation = decision;
 
     log("No trigger matched → pass-through", "info", { preview: getPreview(original) });
     setDecisionLog(wo, { level: "info", decision, extra: { stop: false, preview: getPreview(original) } });
@@ -99,7 +96,7 @@ export default async function getModerationOutput(coreData) {
   } catch (err) {
     const reason = err?.message || String(err);
     const decision = { action: "post", tag: null, reason: "error_passthrough" };
-    wo.Moderation = decision;
+    wo.moderation = decision;
 
     log("Moderation error → pass-through", "error", { moduleName: MODULE_NAME, reason });
     setDecisionLog(wo, { level: "error", message: "Moderation error", decision, extra: { stop: false, error: reason } });

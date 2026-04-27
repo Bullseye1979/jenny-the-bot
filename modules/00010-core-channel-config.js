@@ -5,10 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "core-channel-config";
@@ -31,7 +27,6 @@ function normalizeStrList(v) {
   if (!Array.isArray(v)) return [];
   return v.map(x => normalizeStr(x)).filter(Boolean);
 }
-
 
 
 function includesCI(list, value) {

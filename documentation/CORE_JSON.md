@@ -93,7 +93,6 @@ All key names follow **camelCase** throughout.
    - [webpage-voice](#webpage-voice)
    - [webpage-voice-output](#webpage-voice-output)
    - [toolcall](#toolcall)
-   - [discord-subagent-poll](#discord-subagent-poll)
    - [Module Flow Subscriptions](#module-flow-subscriptions)
    - [core-channel-config - Channel Overrides](#core-channel-config--channel-overrides)
 3. [Complete Annotated Template](#complete-annotated-template)
@@ -2160,40 +2159,6 @@ Set `config.mcp.stdio: true` in `core.json` and the server starts automatically 
 
 ---
 
-### discord-subagent-poll
-
-Polls the registry for completed async subagent jobs and delivers results back to the originating Discord channel. This flow is started at bot startup as a background interval â€” it is not wired to any flow array.
-
-```jsonc
-"discord-subagent-poll": {
-  "enabled":           false,
-  "pollIntervalMs":    5000,
-  "callerFlowPattern": ["discord", "discord-voice"],
-  "maxJobAgeMs":       86400000
-}
-```
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | boolean | `false` | Set to `true` to activate the poller. When `false` the flow file loads but immediately returns. |
-| `pollIntervalMs` | number | `5000` | How often to scan the registry for finished jobs (ms). Minimum 1000. |
-| `callerFlowPattern` | array | `["discord","discord-voice"]` | Only deliver jobs whose `callerFlow` starts with one of these prefixes. Jobs from other flows (e.g. `api`) are left in the registry until they expire. |
-| `maxJobAgeMs` | number | `86400000` | Jobs still `"running"` after this many ms are marked as `"error"` (timed out). Minimum 60000. |
-
-**How async delivery works:**
-1. The main AI calls `getSubAgent(type, task)`.
-2. `getSubAgent` posts to `/api/spawn` and returns `{ jobId, projectId, status: "started" }` immediately.
-3. The API flow runs the subagent pipeline in the background and stores the result under `"job:<jobId>"` in the registry.
-4. The `discord-subagent-poll` interval fires, finds the completed job, removes it from the registry, and runs the `discord` pipeline with `wo.deliverSubagentJob = <job>` set â€” which causes the result to be sent to the original Discord channel.
-
-### webpage-subagent-poll
-
-Polls the registry for completed async subagent jobs for webpage-originated callers. It runs a persona pass on the original caller channel before delivery, so channel-specific formatting and `core-add-id` always use the caller channel ID rather than the subagent channel ID.
-
-For `webpage-voice*` callers the same delivery pass also runs a follow-up webpage voice synthesis step and pushes `audioBase64` plus `audioMime` over SSE. If no SSE client is connected, the poller stores the persona-processed text and optional audio on the job entry so `/api/jobs?consume=true` can still deliver the same caller-channel-correct payload.
-
----
-
 ### Module Flow Subscriptions
 
 Every module has an entry under `config` that declares which flows it participates in. The key is the exact module name (filename prefix stripped).
@@ -2227,8 +2192,8 @@ Every module has an entry under `config` that declares which flows it participat
 | `core-output` | `all` |
 | `moderation-output` | `discord` |
 | `discord-gdpr-gate` | `discord`, `discord-voice`, `discord-admin`, `webpage` |
-| `discord-channel-gate` | `discord`, `discord-voice`, `discord-admin`, `api` |
-| `discord-trigger-gate` | `discord`, `discord-voice`, `webpage` |
+| `core-channel-gate` | `discord`, `discord-voice`, `discord-admin`, `api` |
+| `core-trigger-gate` | `discord`, `discord-voice`, `webpage` |
 | `discord-status-prepare` | `discord-status` |
 | `discord-status-apply` | `discord-status`, `toolcall` |
 | `core-channel-config` | `discord`, `discord-voice`, `discord-admin`, `discord-status`, `api`, `webpage` |
@@ -2588,8 +2553,8 @@ Below is a minimal but functional `core.json` template with every section includ
     "core-output":             { "flow": ["all"] },
     "moderation-output":       { "flow": ["discord"] },
     "discord-gdpr-gate":       { "flow": ["discord","discord-voice","discord-admin","webpage"], "table": "gdpr" },
-    "discord-channel-gate":    { "flow": ["discord","discord-voice","discord-admin","api"] },
-    "discord-trigger-gate":    { "flow": ["discord","discord-voice","webpage"] },
+    "core-channel-gate":       { "flow": ["discord","discord-voice","discord-admin","api"] },
+    "core-trigger-gate":       { "flow": ["discord","discord-voice","webpage"] },
     "core-admin-commands":     { "flow": ["api"] },
     "discord-status-prepare":  { "flow": ["discord-status"], "allowedChannels": ["<STATUS_CHANNEL_ID>"] },
     "discord-status-apply":    { "flow": ["discord-status","toolcall"], "allowedFlows": ["discord","discord-voice"], "status": "online" },

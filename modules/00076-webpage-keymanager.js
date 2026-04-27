@@ -5,22 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { getIsAllowedRoles, setSendNow } from "../shared/webpage/utils.js";
 import { getSecret, listSecrets, setSecret, deleteSecret, setEnsureSecretsTable } from "../core/secrets.js";

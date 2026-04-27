@@ -5,17 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
-
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME        = "core-trigger-gate";

@@ -62,7 +62,7 @@ export default async function getWebpageRouter(coreData) {
   const wo  = coreData?.workingObject || (coreData.workingObject = {});
   const log = getPrefixedLogger(wo, import.meta.url);
 
-  const cfg    = coreData?.config?.["webpage-router"] || {};
+  const cfg    = coreData?.config?.[MODULE_NAME] || {};
   const routes = Array.isArray(cfg.routes) ? cfg.routes : [];
 
   if (!routes.length) return coreData;

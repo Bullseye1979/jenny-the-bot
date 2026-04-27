@@ -5,16 +5,10 @@
 /**************************************************************/
 
 
-
-
-
-
-
 import { getPrefixedLogger } from "../core/logging.js";
 import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "core-add-id";
-
 
 
 function getIsLikelyImageUrl(url) {

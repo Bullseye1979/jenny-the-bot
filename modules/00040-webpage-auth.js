@@ -5,13 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
 "use strict";
 
 import crypto from "node:crypto";
@@ -22,7 +15,6 @@ import { getSecret } from "../core/secrets.js";
 const MODULE_NAME = "webpage-auth";
 const COOKIE_STATE = "jenny_oauth_state";
 const COOKIE_SESS = "jenny_session";
-
 
 
 function setRedirect(wo, url, cookies = []) {
@@ -485,7 +477,6 @@ export default async function getWebpageAuth(coreData) {
   
   if (reqPort !== loginPort) {
     
-
 
 
     const next = String(wo.http?.query?.next || "/");

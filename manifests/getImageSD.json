@@ -1,7 +1,7 @@
 {
   "name": "getImageSD",
-  "description": "Generate images from a text prompt using Stable Diffusion and return local paths/URLs. Always generate fresh — never reuse image URLs from previous calls.",
-  "policyHint": "When a scene, character, location, or item comes up in conversation and no image has been shown for it yet in the current exchange, call this tool to generate a fitting illustration.",
+  "description": "Generate images from a text prompt using Stable Diffusion and return local paths/URLs. Always generate fresh — never reuse image URLs from previous calls. After a successful call, include the returned `url` value in your final answer as a Discord-supported masked link in the form `[short image description](url)`, for example `[Mann mit Hut](https://...)`. Prefer this masked-link format over a bare http(s) URL. Do not omit the URL.",
+  "policyHint": "When a scene, character, location, or item comes up in conversation and no image has been shown for it yet in the current exchange, call this tool to generate a fitting illustration. If the tool returns ok=true and a url, include that exact url in the final answer behind a concise descriptive Discord masked link like `[Mann mit Hut](url)`, not as a bare standalone http(s) URL unless masking is impossible.",
   "parameters": {
     "type": "object",
     "properties": {

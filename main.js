@@ -378,6 +378,7 @@ function setWriteDashboardToRegistry() {
   const mem = process.memoryUsage?.();
   const nowPerf = performance.now();
   const flows = list.slice().sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0)).map(state => ({
+    id: state.runId || "",
     runId: state.runId || "",
     flowName: state.flowName || "",
     runIndex: state.runIndex || 1,
@@ -391,7 +392,22 @@ function setWriteDashboardToRegistry() {
     lastModule: state.lastModule || "",
     lastError: state.lastError || "",
     elapsedMs: nowPerf - (state.startedAt || nowPerf),
-    finishedAt: state.finishedAt || null
+    finishedAt: state.finishedAt || null,
+    startedAt: state.startedAtEpoch || null,
+    channelId: state.workingObject?.channelId || state.workingObject?.message?.channelId || "",
+    subchannel: state.workingObject?.subchannel || "",
+    callerChannelId: state.workingObject?.callerChannelId || "",
+    callerChannelIds: Array.isArray(state.workingObject?.callerChannelIds) ? state.workingObject.callerChannelIds : [],
+    callerFlow: state.workingObject?.callerFlow || "",
+    callerTurnId: state.workingObject?.callerTurnId || "",
+    turnId: state.workingObject?.turnId || "",
+    agentType: state.workingObject?.agentType || "",
+    agentDepth: Number.isFinite(Number(state.workingObject?.agentDepth)) ? Number(state.workingObject.agentDepth) : 0,
+    userId: state.workingObject?.userId || "",
+    guildId: state.workingObject?.guildId || "",
+    tools: Array.isArray(state.workingObject?.tools) ? state.workingObject.tools : [],
+    activeTool: state.workingObject?._dashboardActiveTool || null,
+    toolCallLog: Array.isArray(state.workingObject?.toolCallLog) ? state.workingObject.toolCallLog : []
   }));
   const data = {
     ts: new Date().toISOString(),
@@ -405,6 +421,10 @@ function setWriteDashboardToRegistry() {
   };
   putItem(data, "dashboard:state");
 }
+
+setInterval(() => {
+  try { setWriteDashboardToRegistry(); } catch {}
+}, 1000);
 
 
 function setRenderThrottled(_ignored, force = false) {
@@ -630,6 +650,8 @@ async function getRunFlow(flowName, coreDataForRun) {
     runId: `${flowName}#${globalRunId}`,
     runIndex,
     startedAt: performance.now(),
+    startedAtEpoch: Date.now(),
+    workingObject: coreData?.workingObject || {},
     ok: 0,
     fail: 0,
     skip: 0,

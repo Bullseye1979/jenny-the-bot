@@ -5,9 +5,6 @@
 /**************************************************************/
 
 
-
-
-
 import * as registry from "../core/registry.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getStr, getNum } from "../core/utils.js";
@@ -26,17 +23,19 @@ function getBool(v, d) {
 }
 
 
-async function getToolStatusFromRegistry() {
+async function getToolStatusFromRegistry(preferredStatusKey = "") {
   if (typeof getItem !== "function") {
     return { hasTool: false, toolName: "", toolFlow: "", toolScope: "" };
   }
   try {
+    const preferredKey = String(preferredStatusKey || "").trim();
+    const preferredTool = preferredKey ? await getItem(REGISTRY_TOOL_KEY + ":" + preferredKey) : null;
     const tool = await getItem(REGISTRY_TOOL_KEY);
     const scopedKey = typeof tool === "object" && tool
       ? String(tool.statusKey || tool.channelId || (String(tool.flow || "").trim() === "discord" ? "discord" : "")).trim()
       : "";
     const scopedTool = scopedKey ? await getItem(REGISTRY_TOOL_KEY + ":" + scopedKey) : null;
-    const effectiveTool = scopedTool || tool;
+    const effectiveTool = preferredTool || scopedTool || tool;
     const name = typeof effectiveTool === "string" ? effectiveTool : (effectiveTool?.name || "");
     const toolName = String(name || "").trim();
     const toolFlow = typeof effectiveTool === "object" && effectiveTool ? String(effectiveTool.flow || "") : "";
@@ -119,13 +118,14 @@ export default async function getDiscordStatusApplyFlow(baseCore) {
   const status = getStr(cfg.status, "online");
   const mapping = cfg.mapping || {};
   const minUpdateGapMs = getNum(cfg.minUpdateGapMs, 30000);
+  const preferredStatusKey = getStr(cfg.toolStatusKey, "discord");
 
   if (!updateStatusFlag && now - lastUpdateAt < minUpdateGapMs) {
     log(`skip presence update (minUpdateGapMs=${minUpdateGapMs} not reached)`, "debug", { moduleName: MODULE_NAME });
     return;
   }
 
-  const { hasTool, toolName, toolFlow, toolScope } = await getToolStatusFromRegistry();
+  const { hasTool, toolName, toolFlow, toolScope } = await getToolStatusFromRegistry(preferredStatusKey);
   const effectiveToolScope = String(toolScope || toolFlow || "");
   const allowedScopes = Array.isArray(cfg.allowedScopes) ? cfg.allowedScopes : [];
   const allowedFlows = Array.isArray(cfg.allowedFlows) ? cfg.allowedFlows : [];

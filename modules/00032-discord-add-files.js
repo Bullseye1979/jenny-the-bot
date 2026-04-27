@@ -5,11 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
 import { getPrefixedLogger } from "../core/logging.js";
 import { getIsHttpUrl } from "../core/utils.js";
 
@@ -62,22 +57,17 @@ function getFilesBlock(urls) {
 
 
 function getBasePayload(wo) {
-  const p = typeof wo?.payload === "string" ? wo.payload : "";
-  const P = (!p && typeof wo?.Payload === "string") ? wo.Payload : "";
-  return p || P || "";
+  return typeof wo?.payload === "string" ? wo.payload : "";
 }
 
 
 function setPayload(wo, text) {
   wo.payload = text;
-  if (Object.prototype.hasOwnProperty.call(wo, "Payload") || typeof wo.Payload === "string") {
-    wo.Payload = text;
-  }
 }
 
 
 function getShouldSkipForSource(wo) {
-  const src = String(wo?.source ?? wo?.Source ?? "").trim().toLowerCase();
+  const src = String(wo?.source ?? wo?.source ?? "").trim().toLowerCase();
   if (!src) return false;
   if (src === "discord") return false;
   return true;
@@ -92,7 +82,7 @@ export default async function getCore(coreData) {
     return coreData;
   }
   if (getShouldSkipForSource(wo)) {
-    log(`Skipped: source="${String(wo?.source ?? wo?.Source ?? "")}" is not 'discord'.`);
+    log(`Skipped: source="${String(wo?.source ?? wo?.source ?? "")}" is not 'discord'.`);
     return coreData;
   }
   const urls = getNormalizedFileUrls(wo);

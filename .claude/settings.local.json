@@ -17,7 +17,13 @@
       "WebFetch(domain:ts.sdk.modelcontextprotocol.io)",
       "WebFetch(domain:mcp-auth.dev)",
       "Bash(grep -v \"//.*config\\\\[\")",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(grep -n \"^\\\\s*//[^/]\" modules/*.js tools/*.js)",
+      "Bash(ls -la \"\\\\\\\\strato.samba.ralfreschke.de\\\\root\\\\home\\\\discordbot\\\\jenny-the-bot\\\\repo-codex\")",
+      "Bash(ls -1 \"\\\\\\\\strato.samba.ralfreschke.de\\\\root\\\\home\\\\discordbot\\\\jenny-the-bot\\\\repo-codex\\\\manifests\")",
+      "Bash(python3 -c ' *)",
+      "Bash(node -e ' *)",
+      "Read(///strato.samba.ralfreschke.de/root/home/discordbot/jenny-the-bot/**)"
     ]
   }
 }

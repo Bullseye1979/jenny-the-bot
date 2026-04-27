@@ -5,13 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
 import path from "node:path";
 import { setSendNow } from "../shared/webpage/utils.js";
 
@@ -81,7 +74,7 @@ export default async function getWebpageInpaint(coreData) {
 
   if (!isImage || wantRaw || bypass) return coreData;
 
-  const host = http.host || "xbullseyegaming.de";
+  const host = http.host || String(cfg.fallbackHost || "");
   const absoluteUrl = `https://${host}${urlPath}`;
 
   const idValue =

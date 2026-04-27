@@ -5,22 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "webpage-voice-output";

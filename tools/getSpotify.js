@@ -5,14 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
 import { getPrefixedLogger } from "../core/logging.js";
 import { getStr, getNum, getObj } from "../core/utils.js";
 
@@ -24,11 +16,6 @@ const DEFAULT_TIMEOUT_MS = 15000;
 let _dbPool = null;
 
 
-
-
-
-
-
 function getBool(v, f = false) {
   return typeof v === "boolean" ? v : f;
 }
@@ -36,11 +23,6 @@ function getBool(v, f = false) {
 function getArr(v, f = []) {
   return Array.isArray(v) ? v : f;
 }
-
-
-
-
-
 
 
 async function getDbPool(coreData) {
@@ -59,10 +41,6 @@ async function getDbPool(coreData) {
   });
   return _dbPool;
 }
-
-
-
-
 
 
 async function getDelegatedToken(coreData) {
@@ -94,11 +72,6 @@ async function getDelegatedToken(coreData) {
   }
   throw new Error("No Spotify account connected for this user. Please authenticate at /spotify-auth");
 }
-
-
-
-
-
 
 
 async function makeRequest(token, { method = "GET", path, query = {}, body } = {}) {
@@ -176,15 +149,6 @@ async function makeRequest(token, { method = "GET", path, query = {}, body } = {
 }
 
 
-
-
-
-
-
-
-
-
-
 async function getOperationSearch(token, args) {
   const query  = getStr(args.query, "");
   if (!query) return { ok: false, error: "Missing required argument: query" };
@@ -209,10 +173,6 @@ async function getOperationSearch(token, args) {
 }
 
 
-
-
-
-
 async function getOperationGetPlayback(token) {
   const res = await makeRequest(token, { method: "GET", path: "/me/player" });
   if (!res.ok) return { ok: false, error: res.error };
@@ -230,16 +190,6 @@ async function getOperationGetPlayback(token) {
     context:   d.context ? { uri: d.context.uri, type: d.context.type } : null,
   };
 }
-
-
-
-
-
-
-
-
-
-
 
 
 async function getOperationPlay(token, args) {
@@ -265,11 +215,6 @@ async function getOperationPlay(token, args) {
 }
 
 
-
-
-
-
-
 async function getOperationPause(token, args) {
   const deviceId = getStr(args.deviceId, "");
   const query    = deviceId ? { device_id: deviceId } : {};
@@ -277,10 +222,6 @@ async function getOperationPause(token, args) {
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, operation: "pause" };
 }
-
-
-
-
 
 
 async function getOperationListDevices(token) {
@@ -299,12 +240,6 @@ async function getOperationListDevices(token) {
 }
 
 
-
-
-
-
-
-
 async function getOperationTransferPlayback(token, args) {
   const deviceId = getStr(args.deviceId, "");
   if (!deviceId) return { ok: false, error: "Missing required argument: deviceId" };
@@ -313,12 +248,6 @@ async function getOperationTransferPlayback(token, args) {
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, operation: "transferPlayback", deviceId, play };
 }
-
-
-
-
-
-
 
 
 async function getOperationGetPlaylists(token, args) {
@@ -337,13 +266,6 @@ async function getOperationGetPlaylists(token, args) {
   }));
   return { ok: true, operation: "getPlaylists", total: res.data?.total, playlists };
 }
-
-
-
-
-
-
-
 
 
 async function getOperationCreatePlaylist(token, coreData, args) {
@@ -374,13 +296,6 @@ async function getOperationCreatePlaylist(token, coreData, args) {
 }
 
 
-
-
-
-
-
-
-
 async function getOperationAddToPlaylist(token, args) {
   const playlistId = getStr(args.playlistId, "");
   const uris       = getArr(args.uris, []);
@@ -394,13 +309,6 @@ async function getOperationAddToPlaylist(token, args) {
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, operation: "addToPlaylist", playlistId, added: uris.length, snapshotId: res.data?.snapshot_id };
 }
-
-
-
-
-
-
-
 
 
 async function getOperationRemoveFromPlaylist(token, args) {
@@ -417,15 +325,6 @@ async function getOperationRemoveFromPlaylist(token, args) {
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, operation: "removeFromPlaylist", playlistId, removed: uris.length, snapshotId: res.data?.snapshot_id };
 }
-
-
-
-
-
-
-
-
-
 
 
 async function getOperationPlayByName(token, args) {
@@ -483,12 +382,6 @@ async function getOperationPlayByName(token, args) {
 }
 
 
-
-
-
-
-
-
 async function getOperationSetVolume(token, args) {
   const volumePercent = Math.round(Math.min(100, Math.max(0, getNum(args.volumePercent, -1))));
   if (volumePercent < 0) return { ok: false, error: "Missing required argument: volumePercent (0–100)" };
@@ -499,10 +392,6 @@ async function getOperationSetVolume(token, args) {
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, operation: "setVolume", volumePercent };
 }
-
-
-
-
 
 
 async function getInvokeInternal(args, coreData) {

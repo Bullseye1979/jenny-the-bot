@@ -1,3 +1,11 @@
+/**************************************************************/
+/* filename: "ai-fallback.js"                                */
+/* Version 1.0                                               */
+/* Purpose: Core shared runtime helper. Probes the primary   */
+/*          AI endpoint and applies fallbackOverrides when   */
+/*          it is unreachable.                               */
+/**************************************************************/
+
 import net from "node:net";
 
 const PROBE_CACHE_TTL_MS = 5000;

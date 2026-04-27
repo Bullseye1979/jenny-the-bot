@@ -426,6 +426,9 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     if (parsedBody.agentType)   workingObject.agentType   = String(parsedBody.agentType);
     if (parsedBody.callerFlow)  workingObject.callerFlow  = String(parsedBody.callerFlow);
     if (parsedBody.toolcallScope) workingObject.toolcallScope = String(parsedBody.toolcallScope);
+    if (parsedBody.toolStatusScope) workingObject.toolStatusScope = String(parsedBody.toolStatusScope);
+    if (parsedBody.statusScope) workingObject.statusScope = String(parsedBody.statusScope);
+    if (parsedBody.toolStatusChannelOverride) workingObject.toolStatusChannelOverride = String(parsedBody.toolStatusChannelOverride);
 
     try {
       await runFlow("api", runCore);

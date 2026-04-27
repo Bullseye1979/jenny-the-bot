@@ -5,15 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
 import discordJs from "discord.js";
 const { EmbedBuilder, PermissionFlagsBits, WebhookClient } = discordJs;
 import { getItem } from "../core/registry.js";
@@ -622,7 +613,7 @@ function getBuildReasoningEmbed({ chunk, partIndex, partCount, botName, model, u
 
 
 function getReasoningThreadName(wo, askerDisplay) {
-  const base = String(wo?.ReasoningThreadName || "").trim();
+  const base = String(wo?.reasoningThreadName || "").trim();
   if (base) return base.slice(0, 100);
   const who = String(askerDisplay || "").trim();
   const name = who ? `Reasoning - ${who}` : "Reasoning";

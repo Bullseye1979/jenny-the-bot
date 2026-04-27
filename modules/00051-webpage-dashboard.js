@@ -5,11 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,7 +27,6 @@ function getBasePath(cfg) {
   const bp = getStr(cfg.basePath ?? "/dashboard").trim();
   return bp && bp.startsWith("/") ? bp.replace(/\/+$/, "") : "/dashboard";
 }
-
 
 
 function getFmtElapsed(ms) {
@@ -59,6 +53,208 @@ function getFlowBadge(f) {
   return "&#x25B6;&nbsp;running";
 }
 
+function getShortId(value, n = 10) {
+  const s = getStr(value).trim();
+  if (!s) return "";
+  return s.length > n ? s.slice(0, n) : s;
+}
+
+
+function getFlowTitle(f) {
+  const agent = getStr(f.agentType).trim();
+  if (agent) return agent;
+  const ch = getStr(f.channelId).trim();
+  return ch || getStr(f.flowName).trim() || "flow";
+}
+
+
+function getNodeKey(f) {
+  const parts = [
+    getStr(f?.runId).trim(),
+    getStr(f?.turnId).trim(),
+    getStr(f?.channelId).trim(),
+    getStr(f?.flowName).trim(),
+    getStr(f?.runIndex).trim()
+  ].filter(Boolean);
+  return parts.join("|") || "node";
+}
+
+
+function getGroupKey(f) {
+  return [
+    getStr(f.callerChannelId || f.channelId).trim(),
+    getStr(f.callerFlow || f.flowName).trim(),
+    getStr(f.flowName).trim()
+  ].join("|");
+}
+
+
+function getIsDashboardRuntimeFlow(f) {
+  return getStr(f?.flowName).trim() === "toolcall";
+}
+
+
+function buildFlowTree(flows) {
+  const nodes = flows.map((f, i) => ({
+    f,
+    i,
+    children: [],
+    parent: null,
+    groupKey: getGroupKey(f),
+    siblingCount: 1
+  }));
+  const byTurn = new Map();
+  const byChannel = new Map();
+  for (const node of nodes) {
+    const turnId = getStr(node.f.turnId).trim();
+    const channelId = getStr(node.f.channelId).trim();
+    if (turnId && !byTurn.has(turnId)) byTurn.set(turnId, node);
+    if (channelId && !byChannel.has(channelId)) byChannel.set(channelId, node);
+  }
+  for (const node of nodes) {
+    const callerTurnId = getStr(node.f.callerTurnId).trim();
+    const callerChannelId = getStr(node.f.callerChannelId).trim();
+    const parent = (callerTurnId && byTurn.get(callerTurnId)) || (callerChannelId && byChannel.get(callerChannelId)) || null;
+    if (parent && parent !== node) {
+      node.parent = parent;
+      parent.children.push(node);
+    }
+  }
+  const groups = new Map();
+  for (const node of nodes) {
+    const key = node.groupKey;
+    groups.set(key, (groups.get(key) || 0) + 1);
+  }
+  for (const node of nodes) node.siblingCount = groups.get(node.groupKey) || 1;
+  return nodes.filter(node => !node.parent);
+}
+
+
+function getCalledTools(f) {
+  const activeName = getStr(f.activeTool?.name || f.activeTool?.tool).trim();
+  const calls = Array.isArray(f.toolCallLog) ? f.toolCallLog : [];
+  const out = calls
+    .map((c, i) => ({
+      name: getStr(c?.tool || c?.name).trim(),
+      status: getStr(c?.status).trim(),
+      durationMs: Number(c?.durationMs),
+      task: getStr(c?.task).trim(),
+      active: false,
+      index: i + 1
+    }))
+    .filter(c => c.name);
+  if (activeName) {
+    const last = out[out.length - 1];
+    if (!last || last.name !== activeName || last.status) {
+      out.push({
+        name: activeName,
+        status: "running",
+        durationMs: 0,
+        task: "",
+        active: true,
+        index: out.length + 1
+      });
+    } else {
+      last.active = true;
+      last.status = last.status || "running";
+    }
+  }
+  return out.slice(-8);
+}
+
+
+function getCallStatusCls(call) {
+  if (call.active || call.status === "running") return "st-run";
+  if (call.status === "failed" || call.status === "error" || call.status === "returned_error") return "st-err";
+  return "st-done";
+}
+
+
+function renderToolCallCard(call) {
+  const cls = getCallStatusCls(call);
+  const duration = Number.isFinite(call.durationMs) && call.durationMs > 0 ? getFmtElapsed(call.durationMs) : "";
+  const badge = call.active || call.status === "running"
+    ? "&#x25B6;&nbsp;tool"
+    : (cls === "st-err" ? "&#x2716;&nbsp;tool" : "&#x2714;&nbsp;tool");
+  const detail = [
+    call.status ? `<span><span class="dlbl">status:</span> ${escHtml(call.status)}</span>` : "",
+    duration ? `<span><span class="dlbl">time:</span> ${escHtml(duration)}</span>` : "",
+    call.task ? `<span><span class="dlbl">task:</span> ${escHtml(call.task)}</span>` : ""
+  ].filter(Boolean).join("");
+  return `<div class="dnode dcallnode">
+<div class="dflow dcall ${cls}" data-flow="toolcall">
+  <div class="drow1">
+    <div class="dname">${escHtml(call.name)}<span class="didx">call #${escHtml(String(call.index || 1))}</span></div>
+    <span class="dbadge">${badge}</span>
+  </div>${detail ? `
+  <div class="ddetail">${detail}</div>` : ""}
+</div>
+</div>`;
+}
+
+
+function renderFlowCard(node, depth = 0) {
+  const f = node.f || {};
+  const total   = f.total || 0;
+  const done    = (f.ok || 0) + (f.fail || 0) + (f.skip || 0);
+  const pct     = total > 0 ? Math.round((done / total) * 100) : (f.phase === "done" ? 100 : 0);
+  const cls     = getFlowStatusCls(f);
+  const badge   = getFlowBadge(f);
+  const elapsed = getFmtElapsed(f.elapsedMs || 0);
+  const activeTool = getStr(f.activeTool?.name || f.activeTool?.tool).trim();
+  const calledTools = getCalledTools(f);
+  const depthLabel = Number.isFinite(Number(f.agentDepth)) ? Number(f.agentDepth) : 0;
+  const childCount = node.children.length;
+  const parallelInfo = node.siblingCount > 1 ? `${node.siblingCount} parallel` : "";
+
+  const meta = [
+    f.channelId ? `<span><span class="dlbl">channel:</span> ${escHtml(f.channelId)}</span>` : "",
+    f.callerChannelId ? `<span><span class="dlbl">parent:</span> ${escHtml(f.callerChannelId)}</span>` : "",
+    f.callerFlow ? `<span><span class="dlbl">caller:</span> ${escHtml(f.callerFlow)}</span>` : "",
+    f.agentType ? `<span><span class="dlbl">agent:</span> ${escHtml(f.agentType)}</span>` : "",
+    `<span><span class="dlbl">depth:</span> ${escHtml(String(depthLabel))}</span>`,
+    activeTool ? `<span><span class="dlbl">tool:</span> <strong>${escHtml(activeTool)}</strong></span>` : "",
+    parallelInfo ? `<span><span class="dlbl">runs:</span> ${escHtml(parallelInfo)}</span>` : "",
+    childCount ? `<span><span class="dlbl">children:</span> ${escHtml(String(childCount))}</span>` : ""
+  ].filter(Boolean).join("");
+
+  const detail = [
+    f.current ? `<span><span class="dlbl">cur:</span> ${escHtml(f.current)}</span>` : "",
+    f.lastModule ? `<span><span class="dlbl">last:</span> ${escHtml(f.lastModule)}</span>` : "",
+    f.turnId ? `<span><span class="dlbl">turn:</span> ${escHtml(getShortId(f.turnId, 12))}</span>` : "",
+    f.callerTurnId ? `<span><span class="dlbl">parent turn:</span> ${escHtml(getShortId(f.callerTurnId, 12))}</span>` : "",
+    f.lastError ? `<span class="derr">${escHtml(f.lastError)}</span>` : ""
+  ].filter(Boolean).join("");
+
+  const callCards = calledTools.map(call => renderToolCallCard(call)).join("\n");
+  const childCards = node.children.map(child => renderFlowCard(child, depth + 1)).join("\n");
+  const children = callCards || childCards
+    ? `<div class="dchildren">${[callCards, childCards].filter(Boolean).join("\n")}</div>`
+    : "";
+  const card = `<div class="dflow ${cls}" data-flow="${escHtml(f.flowName)}">
+  <div class="drow1">
+    <span class="dtwist" aria-hidden="true"></span>
+    <div class="dname">${escHtml(getFlowTitle(f))}<span class="didx">${escHtml(f.flowName || "")} #${f.runIndex || 1}</span></div>
+    <span class="dbadge">${badge}</span>
+    <span class="dsteps">${f.ok || 0}/${total}</span>
+    <span class="dtime">${elapsed}</span>
+  </div>
+  <div class="dprog">
+    <div class="dbar"><div class="dfill" style="width:${pct}%"></div></div>
+    <span class="dpct">${pct}%</span>
+  </div>
+  <div class="dmeta">${meta}</div>${detail ? `
+  <div class="ddetail">${detail}</div>` : ""}
+</div>`;
+
+  if (!children) return `<div class="dnode">${card}</div>`;
+
+  return `<details class="dnode dbranch" data-node-key="${escHtml(getNodeKey(f))}">
+<summary>${card}</summary>
+${children}
+</details>`;
+}
+
 
 function buildDashboardHtml(data, menu, role, basePath, refreshSec, webAuth) {
   const ts      = data?.ts ? new Date(data.ts).toLocaleString() : "—";
@@ -67,34 +263,15 @@ function buildDashboardHtml(data, menu, role, basePath, refreshSec, webAuth) {
   const flows   = Array.isArray(data?.flows) ? data.flows : [];
   const menuHtml = getMenuHtml(menu, basePath, role, null, null, webAuth);
 
-  const flowCards = flows.length
-    ? flows.map(f => {
-        const total   = f.total || 0;
-        const done    = (f.ok || 0) + (f.fail || 0) + (f.skip || 0);
-        const pct     = total > 0 ? Math.round((done / total) * 100) : (f.phase === "done" ? 100 : 0);
-        const cls     = getFlowStatusCls(f);
-        const badge   = getFlowBadge(f);
-        const elapsed = getFmtElapsed(f.elapsedMs || 0);
+  const visibleFlows = flows.filter(f => !getIsDashboardRuntimeFlow(f));
+  const hiddenRuntimeCount = flows.length - visibleFlows.length;
+  const treeRoots = buildFlowTree(visibleFlows);
+  const runningCount = visibleFlows.filter(f => f.phase !== "done" && !f.finishedAt).length;
+  const agentCount = visibleFlows.filter(f => getStr(f.agentType).trim()).length;
+  const activeToolCount = visibleFlows.filter(f => getStr(f.activeTool?.name || f.activeTool?.tool).trim()).length;
 
-        const cur     = f.current    ? `<span class="dlbl">cur:</span> ${escHtml(f.current)}`    : "";
-        const lastMod = f.lastModule ? `<span class="dlbl">last:</span> ${escHtml(f.lastModule)}` : "";
-        const errTxt  = f.lastError  ? `<span class="derr">${escHtml(f.lastError)}</span>`        : "";
-        const detail  = [cur, lastMod, errTxt].filter(Boolean).join("&nbsp;&nbsp;");
-
-        return `<div class="dflow ${cls}" data-flow="${escHtml(f.flowName)}">
-  <div class="drow1">
-    <div class="dname">${escHtml(f.flowName)}<span class="didx">#${f.runIndex || 1}</span></div>
-    <span class="dbadge">${badge}</span>
-    <span class="dsteps">${f.ok || 0}/${total}</span>
-    <span class="dtime">${elapsed}</span>
-  </div>
-  <div class="dprog">
-    <div class="dbar"><div class="dfill" style="width:${pct}%"></div></div>
-    <span class="dpct">${pct}%</span>
-  </div>${detail ? `
-  <div class="ddetail">${detail}</div>` : ""}
-</div>`;
-      }).join("\n")
+  const flowCards = visibleFlows.length
+    ? treeRoots.map(node => renderFlowCard(node, 0)).join("\n")
     : `<div class="dempty">No flows recorded yet.</div>`;
 
   return `<!DOCTYPE html>
@@ -121,18 +298,35 @@ ${getThemeHeadScript()}
   white-space:nowrap;flex:1;min-width:120px;
 }
 .dstat strong{display:block;font-size:15px;color:var(--txt);font-weight:700;margin-top:1px}
-.dflows{display:flex;flex-direction:column;gap:6px}
+.dflows{display:flex;flex-direction:column;gap:8px}
+.dnode{position:relative;margin-left:0}
+.dchildren>.dnode{margin-left:18px}
+.dbranch>summary{display:block;list-style:none;cursor:pointer}
+.dbranch>summary::-webkit-details-marker{display:none}
+.dnode:before{
+  content:"";position:absolute;left:-10px;top:0;bottom:0;
+  border-left:1px solid var(--bdr);display:block;
+}
+.dflows>.dnode:before{display:none}
+.dchildren{display:flex;flex-direction:column;gap:8px;margin-top:8px}
 .dflow{
   background:var(--card);border:1px solid var(--bdr);border-left-width:4px;
   border-radius:var(--r);padding:10px 12px;
   display:flex;flex-direction:column;gap:6px;
 }
 .drow1{display:flex;align-items:center;gap:8px;min-width:0}
+.dtwist{
+  width:12px;height:12px;display:inline-flex;align-items:center;justify-content:center;
+  color:var(--muted);font-size:12px;line-height:1;flex-shrink:0;
+}
+.dtwist:before{content:"";display:block;width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid currentColor;transition:transform .15s}
+.dbranch[open]>summary .dtwist:before{transform:rotate(90deg)}
+.dnode:not(.dbranch) .dtwist{visibility:hidden}
 .dname{
   font-weight:700;font-size:13px;flex:1;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.didx{font-size:10px;color:var(--muted);font-weight:normal;margin-left:3px}
+.didx{font-size:10px;color:var(--muted);font-weight:normal;margin-left:6px}
 .dbadge{
   font-size:11px;font-weight:700;padding:2px 8px;
   border-radius:4px;white-space:nowrap;flex-shrink:0;
@@ -142,9 +336,12 @@ ${getThemeHeadScript()}
 .dbar{flex:1;height:6px;background:var(--bdr);border-radius:3px;overflow:hidden;min-width:0}
 .dfill{height:100%;border-radius:3px;transition:width .4s}
 .dpct{font-size:11px;color:var(--muted);width:30px;text-align:right;flex-shrink:0}
-.ddetail{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dmeta,.ddetail{display:flex;gap:8px 12px;flex-wrap:wrap;font-size:11px;color:var(--muted);min-width:0}
+.dmeta span,.ddetail span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .dlbl{color:#94a3b8}
 .derr{color:var(--dan);font-weight:600}
+.dcall{border-left-style:dashed;background:color-mix(in srgb,var(--card) 86%,var(--bg) 14%)}
+.dcall .dname{font-weight:650}
 .dempty{
   background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);
   padding:32px 20px;text-align:center;color:var(--muted);font-size:13px;
@@ -179,10 +376,33 @@ try{var __dh=JSON.parse(localStorage.getItem('dash-hidden-flows')||'["webpage"]'
 <script>
 (function(){
   var KEY = 'dash-hidden-flows';
+  var TREE_KEY = 'dash-tree-open';
 
   function loadHidden() {
     try { return JSON.parse(localStorage.getItem(KEY) || '["webpage"]'); }
     catch { return ['webpage']; }
+  }
+  function loadOpen() {
+    try { return JSON.parse(localStorage.getItem(TREE_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function saveOpen(opened) {
+    try { localStorage.setItem(TREE_KEY, JSON.stringify(opened)); } catch {}
+  }
+  function applyTreeState() {
+    var opened = loadOpen();
+    Array.prototype.slice.call(document.querySelectorAll('details.dbranch[data-node-key]')).forEach(function(node) {
+      var key = node.getAttribute('data-node-key') || '';
+      if (!key) return;
+      if (opened.indexOf(key) !== -1) node.setAttribute('open', '');
+      node.addEventListener('toggle', function() {
+        var latest = loadOpen();
+        var idx = latest.indexOf(key);
+        if (node.open && idx === -1) latest.push(key);
+        if (!node.open && idx !== -1) latest.splice(idx, 1);
+        saveOpen(latest.slice(-500));
+      });
+    });
   }
   function applyClasses(hidden) {
     ['webpage'].forEach(function(f) {
@@ -204,6 +424,7 @@ try{var __dh=JSON.parse(localStorage.getItem('dash-hidden-flows')||'["webpage"]'
       cb.checked = hidden.indexOf('webpage') !== -1;
       cb.addEventListener('change', function() { toggle('webpage', cb.checked); });
     }
+    applyTreeState();
   });
 })();
 </script>
@@ -218,7 +439,11 @@ try{var __dh=JSON.parse(localStorage.getItem('dash-hidden-flows')||'["webpage"]'
     <div class="dstat">Updated<strong>${escHtml(ts)}</strong></div>
     <div class="dstat">RSS<strong>${memRss}</strong></div>
     <div class="dstat">Heap<strong>${memHeap}</strong></div>
-    <div class="dstat">Flows<strong>${escHtml(String(flows.length))}</strong></div>
+    <div class="dstat">Flows<strong>${escHtml(String(visibleFlows.length))}</strong></div>
+    <div class="dstat">Running<strong>${escHtml(String(runningCount))}</strong></div>
+    <div class="dstat">Agents<strong>${escHtml(String(agentCount))}</strong></div>
+    <div class="dstat">Active Tools<strong>${escHtml(String(activeToolCount))}</strong></div>
+    <div class="dstat">Hidden Runtime<strong>${escHtml(String(hiddenRuntimeCount))}</strong></div>
   </div>
   <div class="dcontrols">
     <label class="dtoggle"><input type="checkbox" id="dcb-webpage"> Hide HTTP flows (webpage)</label>

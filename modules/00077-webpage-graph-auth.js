@@ -5,15 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
 "use strict";
 
 import crypto                                     from "node:crypto";
@@ -369,7 +360,6 @@ async function handleDisconnect(wo, db, userId) {
   await db.query("DELETE FROM graph_tokens WHERE user_id = ?", [userId]);
   setRedirect(wo, "/graph-auth");
 }
-
 
 
 function getCleanPath(wo) {

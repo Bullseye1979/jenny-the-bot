@@ -5,27 +5,7 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const _connections = new Map();
-
-
-
-
-
-
 
 
 export function registerSseConnection(channelId, res) {
@@ -35,24 +15,12 @@ export function registerSseConnection(channelId, res) {
 }
 
 
-
-
-
-
-
 export function unregisterSseConnection(channelId, res) {
   const set = _connections.get(channelId);
   if (!set) return;
   set.delete(res);
   if (set.size === 0) _connections.delete(channelId);
 }
-
-
-
-
-
-
-
 
 
 export function pushAsyncResult(channelId, payload) {
@@ -77,11 +45,6 @@ export function pushAsyncResult(channelId, payload) {
 
   return sent;
 }
-
-
-
-
-
 
 
 export function getSseConnectionCount(channelId) {

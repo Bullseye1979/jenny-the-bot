@@ -228,27 +228,46 @@
  * @property {string} [jumpReason]
  * @property {string} [systemPromptAddition]
  * @property {boolean} [includeCallerContext]
- * @property {string} [toolcallScope]
- * @property {string} [toolStatusScope]
- * @property {string} [statusScope]
  * @property {boolean} [bypassTriggerGate]
  * @property {boolean} [bypassGdprGate]
  * @property {string} [gdprDisclaimer]
+ * @property {string} [gdprOperatorName] Optional operator name injected into the GDPR disclaimer template.
+ * @property {string} [gdprContact] Optional contact info injected into the GDPR disclaimer template.
+ * @property {string} [gdprRetention] Optional retention period injected into the GDPR disclaimer template.
  * @property {string} [agentRolePrompt] System prompt fragment for orchestrator/specialist agents (completions/responses modules).
  * @property {string} [agentDelegateRolePrompt] System prompt fragment for orchestrator/specialist agents (pseudotoolcalls/roleplay modules).
  * @property {string} [primaryRolePrompt] System prompt fragment for primary user-facing assistant mode.
  * @property {string[]} [toolsBlacklist] Tool names excluded from the active tool list.
  * @property {Object} [fallbackOverrides] Applied when the primary endpoint is unreachable.
+ * @property {number} [endpointProbeTimeoutMs] TCP probe timeout for fallback detection in ms.
  * @property {string} [callerTurnId] Turn ID of the calling agent.
  * @property {string} [primaryImageUrl] URL of the primary generated image in the response.
  * @property {Array} [toolCallLog] Log of tool calls made during this turn.
  * @property {boolean} [detailedContext] Whether to include detailed context in the prompt.
  * @property {boolean} [simplifiedContext] Whether to use simplified context format.
  * @property {string} [contextMetaFrames] Context meta frame inclusion mode.
- * @property {boolean} [_backgroundTaskActive] Internal: set to true when a tool signals a background task start.
- * @property {string} [_backgroundTaskTool] Internal: name of the tool that started the background task.
- * @property {string} [_backgroundTaskStatus] Internal: status string from the background task signal.
- * @property {string} [_backgroundTaskStatusMessage] Internal: user-facing message from the background task.
+ * @property {string} [toolcallScope] Scope key used to route tool-status registry writes and reads.
+ * @property {string} [toolStatusChannelOverride] Overrides the channel ID used as tool-status scope.
+ * @property {number} [statusToolStaleMs] Milliseconds after which a tool-status registry entry is considered stale.
+ * @property {number} [maxAttempts] Maximum AI completion attempts before giving up (responses module).
+ * @property {number} [maxToolCallsTotal] Total tool-call cap for the pseudotoolcalls module.
+ * @property {number} [maxToolCallsPerTurn] Per-turn tool-call cap for the pseudotoolcalls module.
+ * @property {number} [imagePromptMaxTokens] Max tokens for image-prompt generation in the roleplay module.
+ * @property {number} [imagePromptTemperature] Temperature for image-prompt generation in the roleplay module.
+ * @property {string} [imagePersonaHint] Short persona hint appended to image prompts in the roleplay module.
+ * @property {number} [imageContextTurns] Number of context turns passed to image-prompt generation.
+ * @property {string} [endpointFilesContent] Endpoint used by the responses module to upload file content.
+ * @property {boolean} [debugPayload] When true, logs the raw AI payload for debugging.
+ * @property {string} [reasoningThreadName] Discord thread name for reasoning-mode responses.
+ * @property {boolean} [moderation] Set by the moderation module to indicate the decision made.
+ * @property {boolean} [skipLLM] When true, skips AI completion (set by moderation or admin modules).
+ * @property {Object[]} [_contextSnapshot] Internal: pre-loaded context rows for this turn.
+ * @property {Object[]} [_contextPersistQueue] Internal: queued context turns to persist after AI run.
+ * @property {string} [voiceDiarizeSessionId] Active voice diarization session ID.
+ * @property {boolean} [__aiFallbackResolved] Internal: marks that fallback detection has run for this turn.
+ * @property {boolean} [__aiFallbackApplied] Internal: true when fallbackOverrides were applied.
+ * @property {string} [__aiProbeReason] Internal: reason string from the endpoint TCP probe.
+ * @property {string} [__aiPrimaryEndpoint] Internal: primary endpoint that was found unreachable.
  */
 
 export {};

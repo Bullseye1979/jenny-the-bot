@@ -5,11 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
 import mysql from "mysql2/promise";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
@@ -37,11 +32,8 @@ function getSimpleTemplate(str, vars) {
 
 
 function getDisclaimerText(wo) {
-  const t1 = typeof wo?.gdprDisclaimer === "string" ? wo.gdprDisclaimer : "";
-  if (t1 && t1.trim()) return t1.trim();
-  const t2 = typeof wo?.GDPRDisclaimer === "string" ? wo.GDPRDisclaimer : "";
-  if (t2 && t2.trim()) return t2.trim();
-  return "";
+  const t = typeof wo?.gdprDisclaimer === "string" ? wo.gdprDisclaimer : "";
+  return t.trim();
 }
 
 
@@ -49,9 +41,9 @@ function getBuildDisclaimerFromWO(wo, { userId, channelId, flow }) {
   const txt = getDisclaimerText(wo);
   if (!txt) return null;
 
-  const operatorName = String(wo?.GdprOperatorName ?? wo?.GDPROperatorName ?? "");
-  const operatorContact = String(wo?.GdprContact ?? wo?.GDPRContact ?? "");
-  const retention = String(wo?.GdprRetention ?? wo?.GDPRRetention ?? "");
+  const operatorName = String(wo?.gdprOperatorName ?? "");
+  const operatorContact = String(wo?.gdprContact ?? "");
+  const retention = String(wo?.gdprRetention ?? "");
 
   const vars = { userId, channelId, flow, operatorName, operatorContact, retention };
   const desc = getSimpleTemplate(txt, vars);

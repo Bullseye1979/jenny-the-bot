@@ -5,11 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
 import { getSecret } from "../core/secrets.js";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -132,7 +127,6 @@ async function getSearchVideos({ googleApiKey, query, maxResults, relevanceLangu
   });
   return { ok: true, results };
 }
-
 
 
 async function getInvoke(args, coreData) {

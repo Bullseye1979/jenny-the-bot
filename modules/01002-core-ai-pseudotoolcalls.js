@@ -5,15 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
 import { getContext, getContextEarliestTimestamps } from "../core/context.js";
 import { getStr, getNum } from "../core/utils.js";
 import { putItem, getItem, deleteItem } from "../core/registry.js";
@@ -99,7 +90,7 @@ function getBool(value, def) { return typeof value === "boolean" ? value : def; 
 
 function getToolStatusScope(wo) {
   const explicit =
-    String(wo?.toolcallScope ?? wo?.toolStatusScope ?? wo?.statusScope ?? "").trim();
+    String(wo?.toolcallScope ?? "").trim();
   if (explicit) return explicit;
   const callerFlow = String(wo?.callerFlow || "").trim();
   if (callerFlow) return callerFlow;
@@ -111,6 +102,38 @@ function getToolStatusKey(wo) {
   const explicit = String(wo?.toolStatusChannelOverride || "").trim();
   if (explicit) return explicit;
   return String(wo?.callerChannelId || wo?.channelId || "").trim();
+}
+
+
+function setRememberActiveToolStatus(wo, payload, hasGlobalStatus = true) {
+  if (!wo || !payload?.token) return;
+  const staleMs = Number.isFinite(wo?.statusToolStaleMs) ? Number(wo.statusToolStaleMs) : 600000;
+  wo._activeToolStatus = {
+    token: payload.token,
+    statusKey: String(payload.statusKey || ""),
+    hasGlobalStatus: hasGlobalStatus !== false
+  };
+  if (wo._activeToolStatusTimer) {
+    try { clearTimeout(wo._activeToolStatusTimer); } catch {}
+  }
+  const timer = setTimeout(() => {
+    try {
+      const current = getItem("status:tool");
+      if (hasGlobalStatus !== false && current?.token === payload.token) deleteItem("status:tool");
+    } catch {}
+    if (payload.statusKey) {
+      try {
+        const current = getItem("status:tool:" + payload.statusKey);
+        if (current?.token === payload.token) deleteItem("status:tool:" + payload.statusKey);
+      } catch {}
+    }
+  }, Math.max(1000, staleMs));
+  Object.defineProperty(wo, "_activeToolStatusTimer", {
+    value: timer,
+    configurable: true,
+    writable: true,
+    enumerable: false
+  });
 }
 
 
@@ -179,8 +202,8 @@ function getKiCfg(wo) {
     maxLoops: getNum(wo?.maxLoops, 20),
     requestTimeoutMs: getNum(wo?.requestTimeoutMs, 120000),
 
-    maxToolCallsTotal: getNum(wo?.MaxToolCallsTotal, 3),
-    maxToolCallsPerTurn: getNum(wo?.MaxToolCallsPerTurn, 1)
+    maxToolCallsTotal: getNum(wo?.maxToolCallsTotal, 3),
+    maxToolCallsPerTurn: getNum(wo?.maxToolCallsPerTurn, 1)
   };
 }
 
@@ -647,9 +670,11 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
     scope: _statusScope,
     token: _statusToken,
     channelId: _statusKey,
-    statusKey: _statusKey
+    statusKey: _statusKey,
+    toolCallId: toolCall?.id || ""
   };
   try {
+    wo._dashboardActiveTool = _statusPayload;
     try { await putItem(_statusPayload, "status:tool"); } catch {}
     if (_statusKey) try { await putItem(_statusPayload, "status:tool:" + _statusKey); } catch {}
     const result = await tool.invoke(normalizedArgs, coreData);
@@ -664,20 +689,9 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
     log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, durationMs: durationMs, error: String(e?.message || e) });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ ok: false, error: e?.message || String(e) }) };
   } finally {
-    const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs) ? Number(coreData?.workingObject?.StatusToolClearDelayMs) : 800;
-    setTimeout(() => {
-      if (wo._statusToolGen !== _myGen) return;
-      try {
-        const current = getItem("status:tool");
-        if (current?.token === _statusToken) deleteItem("status:tool");
-      } catch {}
-      if (_statusKey) {
-        try {
-          const current = getItem("status:tool:" + _statusKey);
-          if (current?.token === _statusToken) deleteItem("status:tool:" + _statusKey);
-        } catch {}
-      }
-    }, Math.max(0, delayMs));
+    if (wo._statusToolGen === _myGen) {
+      setRememberActiveToolStatus(wo, _statusPayload, true);
+    }
   }
 }
 
@@ -965,6 +979,7 @@ export default async function getCoreAi(coreData) {
         let _tc02Status = "success";
         try { const _tc02R = JSON.parse(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}")); if (_tc02R?.ok === false) _tc02Status = "failed"; } catch {}
         toolCallLog.push({ tool: extracted.name, status: _tc02Status, durationMs: _tc02DurationMs, task: "" });
+        wo.toolCallLog = toolCallLog.slice();
         writeToolcallLog({ ...getToolcallLogBase(wo), tool: extracted.name, status: _tc02Status, durationMs: _tc02DurationMs, ...getToolPaginationMeta(extracted.name, toolMsg.content) });
 
         wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
@@ -1061,6 +1076,7 @@ export default async function getCoreAi(coreData) {
   } else {
     wo.response = "[Empty AI response]";
   }
+  wo.toolCallLog = toolCallLog.slice();
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");

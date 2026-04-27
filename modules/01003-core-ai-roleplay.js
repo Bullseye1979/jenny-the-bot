@@ -5,18 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 import { getContext, getContextEarliestTimestamps } from "../core/context.js";
 import { getStr, getNum } from "../core/utils.js";
 import { getPrefixedLogger } from "../core/logging.js";
@@ -83,10 +71,10 @@ function getKiCfg(wo) {
     maxTokens: getNum(wo?.maxTokens, 1200),
     requestTimeoutMs: getNum(wo?.requestTimeoutMs, 120000),
     toolsList: Array.isArray(wo?.tools) ? wo.tools : [],
-    imagePromptMaxTokens: getNum(wo?.ImagePromptMaxTokens, 260),
-    imagePromptTemperature: getNum(wo?.ImagePromptTemperature, 0.35),
-    imagePersonaHint: getStr(wo?.ImagePersonaHint, ""),
-    imageContextTurns: Math.max(0, getNum(wo?.ImageContextTurns, 8)),
+    imagePromptMaxTokens: getNum(wo?.imagePromptMaxTokens, 260),
+    imagePromptTemperature: getNum(wo?.imagePromptTemperature, 0.35),
+    imagePersonaHint: getStr(wo?.imagePersonaHint, ""),
+    imageContextTurns: Math.max(0, getNum(wo?.imageContextTurns, 8)),
     maxLoops: Math.max(1, getNum(wo?.maxLoops, 5)),
     imagePromptRules: getStr(wo?.imagePromptRules, "")
   };

@@ -12,6 +12,7 @@ import { getStr } from "../core/utils.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "webpage-subagent-manager";
+const CHANNEL_CONFIG_KEY = "core-channel-config";
 
 const AVAILABLE_TOOLS = [
   "getTavily", "getWebpage", "getYoutube", "getGoogle", "getImage", "getImageSD",
@@ -46,7 +47,7 @@ function getToolsconfigKey(role) {
 
 function getSubagentChannels(configJson, role) {
   const prefix = "subagent-" + role + "-";
-  const channels = configJson?.config?.["core-channel-config"]?.channels || [];
+  const channels = configJson?.config?.[CHANNEL_CONFIG_KEY]?.channels || [];
   return channels
     .map((ch, i) => ({ ch, i }))
     .filter(({ ch }) => {
@@ -71,7 +72,7 @@ function apiList(configJson) {
 
 function apiGet(configJson, role, slug) {
   const prefix = "subagent-" + role + "-" + slug + "-*";
-  const channels = configJson?.config?.["core-channel-config"]?.channels || [];
+  const channels = configJson?.config?.[CHANNEL_CONFIG_KEY]?.channels || [];
   const ch = channels.find((c) => {
     const m = Array.isArray(c.channelMatch) ? c.channelMatch[0] : String(c.channelMatch || "");
     return m === prefix;
@@ -93,7 +94,7 @@ function apiGet(configJson, role, slug) {
 
 function apiSave(configJson, { role, slug, title, tools, systemPrompt, instructions, model }) {
   if (!role || !slug || !/^[a-z0-9-]+$/.test(slug)) return { ok: false, error: "Invalid role or slug" };
-  const channels = configJson.config["core-channel-config"].channels;
+  const channels = configJson.config[CHANNEL_CONFIG_KEY].channels;
   const matchStr = "subagent-" + role + "-" + slug + "-*";
   const overrides = { tools: Array.isArray(tools) ? tools : [] };
   if (systemPrompt) overrides.systemPrompt = systemPrompt;
@@ -122,9 +123,9 @@ function apiSave(configJson, { role, slug, title, tools, systemPrompt, instructi
 function apiDelete(configJson, { role, slug }) {
   if (!role || !slug) return { ok: false, error: "role and slug required" };
   const matchStr = "subagent-" + role + "-" + slug + "-*";
-  const channels = configJson.config["core-channel-config"].channels;
+  const channels = configJson.config[CHANNEL_CONFIG_KEY].channels;
   const before = channels.length;
-  configJson.config["core-channel-config"].channels = channels.filter((c) => {
+  configJson.config[CHANNEL_CONFIG_KEY].channels = channels.filter((c) => {
     const m = Array.isArray(c.channelMatch) ? c.channelMatch[0] : String(c.channelMatch || "");
     return m !== matchStr;
   });
@@ -132,7 +133,7 @@ function apiDelete(configJson, { role, slug }) {
   if (configJson.workingObject.toolsconfig?.[tcKey]?.types) {
     delete configJson.workingObject.toolsconfig[tcKey].types[slug];
   }
-  return { ok: true, removed: before - configJson.config["core-channel-config"].channels.length };
+  return { ok: true, removed: before - configJson.config[CHANNEL_CONFIG_KEY].channels.length };
 }
 
 function buildPageHtml(opts) {
@@ -337,7 +338,7 @@ function buildPageHtml(opts) {
     "\n" +
     "function saveForm(role, isNew) {\n" +
     "  var slug = (document.getElementById('f-slug').value||'').trim();\n" +
-    "  if (!slug || !/^[a-z0-9-]+$/.test(slug)) { toast('Slug: nur Kleinbuchstaben, Ziffern, Bindestriche',5000); return; }\n" +
+    "  if (!slug || !/^[a-z0-9-]+$/.test(slug)) { toast('Slug: lowercase letters, digits and hyphens only',5000); return; }\n" +
     "  var body = { role:role, slug:slug,\n" +
     "    title:(document.getElementById('f-title').value||'').trim(),\n" +
     "    model:(document.getElementById('f-model').value||'').trim(),\n" +

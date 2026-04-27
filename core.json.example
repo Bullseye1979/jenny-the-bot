@@ -37,7 +37,9 @@
       "getBan",
       "getOrchestrator"
     ],
-    "toolsBlacklist": ["getImageSD"],
+    "toolsBlacklist": [
+      "getImageSD"
+    ],
     "fallbackOverrides": {
       "__description": "Applied automatically when the primary (local) endpoint is unreachable (TCP probe fails). Switches to a public API for the duration of that request. toolsBlacklist here fully replaces the normal toolsBlacklist.",
       "endpoint": "https://api.openai.com/v1/chat/completions",
@@ -45,7 +47,11 @@
       "apiKey": "OPENAI",
       "model": "gpt-4o-mini",
       "useAiModule": "completions",
-      "toolsBlacklist": ["getImage", "getOrchestrator", "getSpecialists"]
+      "toolsBlacklist": [
+        "getImage",
+        "getOrchestrator",
+        "getSpecialists"
+      ]
     },
     "includeHistory": true,
     "includeHistoryTools": false,
@@ -357,11 +363,6 @@
         "includeToolRows": false,
         "includeJson": false
       },
-      "getTimeline": {
-        "__description": "Chronological timeline from derived context segments and nodes.",
-        "maxEntries": 120,
-        "compact": true
-      },
       "getYoutube": {
         "__description": "YouTube transcript fetcher — returns raw transcript dump. LLM processing is done by the calling subagent.",
         "googleApiKey": "GOOGLE",
@@ -532,13 +533,14 @@
         3113,
         3114,
         3115,
-        3116,
         3117,
         3118,
         3119,
         3120,
         3121,
         3122,
+        3124,
+        3125,
         3126,
         3127,
         3128,
@@ -584,13 +586,14 @@
         3113,
         3114,
         3115,
-        3116,
         3117,
         3118,
         3119,
         3120,
         3121,
         3122,
+        3124,
+        3125,
         3126,
         3127,
         3128,
@@ -734,18 +737,6 @@
         "getConfluence": "⏳ Working with Confluence …"
       }
     },
-    "discord-voice-transcribe": {
-      "flow": [
-        "discord-voice"
-      ],
-      "pollMs": 1000,
-      "silenceMs": 1500,
-      "maxCaptureMs": 25000,
-      "minVoicedMs": 1000,
-      "snrDbThreshold": 3.8,
-      "frameMs": 20,
-      "startDebounceMs": 600
-    },
     "core-ai-completions": {
       "flow": [
         "discord-status",
@@ -769,6 +760,16 @@
         "discord",
         "discord-voice",
         "api"
+      ]
+    },
+    "core-tool-status-clear": {
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "webpage",
+        "bard-label-gen"
       ]
     },
     "core-ai-roleplay": {
@@ -810,14 +811,6 @@
     "webpage-output": {
       "flow": [
         "webpage"
-      ]
-    },
-    "discord-channel-gate": {
-      "flow": [
-        "discord",
-        "discord-voice",
-        "discord-admin",
-        "api"
       ]
     },
     "api-token-gate": {
@@ -901,12 +894,6 @@
           "maxAgeDays": 7,
           "overrides": {}
         }
-      ]
-    },
-    "discord-trigger-gate": {
-      "flow": [
-        "discord",
-        "discord-voice"
       ]
     },
     "discord-reaction-start": {
@@ -1021,15 +1008,6 @@
         "userPrompt": "Track title: \"{title}\"\n\nKnown locations: {locList}\nKnown situations: {sitList}\nKnown moods: {moodList}\n\nWeb search results for this track:\n{tavilySnippet}\n\nReturn exactly six tags as JSON array: [location, situation, mood1, mood2, mood3, mood4]."
       }
     },
-    "webpage-bard-stream": {
-      "__description": "Browser audio player for the live Bard stream. Requires port 3116 in webpage.ports.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3116,
-      "allowedRoles": [],
-      "label": "🎶 Bard Stream"
-    },
     "webpage-voice": {
       "__description": "Browser voice interface (always-on mic + meeting recorder). Requires port 3119 in webpage.ports. Add reverse_proxy /voice* localhost:3119 to your Caddyfile.",
       "flow": [
@@ -1075,18 +1053,16 @@
       "clearContextChannels": []
     },
     "core-voice-transcribe": {
-      "__description": "Source-agnostic transcription module. Active in discord-voice and webpage flows. transcribeModelDiarize is used automatically when wo.transcribeOnly=true (meeting recorder). overlapDurationS controls the overlap between chunks used for cross-chunk speaker stitching.",
       "flow": [
-        "discord-voice",
-        "webpage"
+        "discord-voice"
       ],
-      "transcribeModel": "gpt-4o-mini-transcribe",
-      "transcribeModelDiarize": "gpt-4o-transcribe-diarize",
-      "chunkDurationS": 300,
-      "overlapDurationS": 60,
-      "transcribeLanguage": "",
-      "transcribeEndpoint": "",
-      "transcribeApiKey": ""
+      "pollMs": 1000,
+      "silenceMs": 1500,
+      "maxCaptureMs": 25000,
+      "minVoicedMs": 1000,
+      "snrDbThreshold": 3.8,
+      "frameMs": 20,
+      "startDebounceMs": 600
     },
     "core-channel-config": {
       "__description": "Optional per-channel overrides — leave channels array empty to disable, or add entries as shown below",
@@ -1153,12 +1129,23 @@
             "systemPrompt": "Use fetched page content as the source of truth.",
             "instructions": "Answer in full sentences. Answer only in English. When given a URL, use getWebpage or getYoutube to fetch and summarize the content. Check at least one source. Write how you came to your conclusion. Do not give out unverified information.",
             "contextSize": 70,
-            "channelIds": []
+            "channelIds": [],
+            "tools": [
+              "getTavily",
+              "getWebpage",
+              "getImage",
+              "getImageSD"
+            ],
+            "toolsBlacklist": [
+              "getImage"
+            ]
           }
         },
         {
           "__description": "Orchestrator: development — runs software development orchestration tasks.",
-          "channelMatch": ["orchestrator-development"],
+          "channelMatch": [
+            "orchestrator-development"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1166,7 +1153,13 @@
             "includeHistory": false,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a development orchestrator. Plan and execute complex software development tasks by delegating to specialist workers. Use getSpecialists to run parallel work packages.",
-            "tools": ["getSpecialists", "getTime", "getFile", "getFileContent", "getShell"],
+            "tools": [
+              "getSpecialists",
+              "getTime",
+              "getFile",
+              "getFileContent",
+              "getShell"
+            ],
             "persona": "Development Orchestrator",
             "instructions": "Break down tasks into parallel work packages and delegate to specialists. Synthesize results into a final answer.",
             "maxLoops": 15,
@@ -1175,7 +1168,9 @@
         },
         {
           "__description": "Orchestrator: research — runs research and information gathering orchestration tasks.",
-          "channelMatch": ["orchestrator-research"],
+          "channelMatch": [
+            "orchestrator-research"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1183,7 +1178,12 @@
             "includeHistory": false,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a research orchestrator. Plan and execute complex research tasks by delegating to specialist workers. Use getSpecialists to run parallel research jobs.",
-            "tools": ["getSpecialists", "getTime", "getTavily", "getGoogle"],
+            "tools": [
+              "getSpecialists",
+              "getTime",
+              "getTavily",
+              "getGoogle"
+            ],
             "persona": "Research Orchestrator",
             "instructions": "Break down research tasks into parallel work packages and delegate to specialists. Synthesize results into a final answer.",
             "maxLoops": 15,
@@ -1192,7 +1192,9 @@
         },
         {
           "__description": "Orchestrator: generic — general-purpose orchestration channel.",
-          "channelMatch": ["orchestrator-generic"],
+          "channelMatch": [
+            "orchestrator-generic"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1200,7 +1202,10 @@
             "includeHistory": false,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a general-purpose orchestrator. Plan and execute complex tasks by delegating to specialist workers. Use getSpecialists to run parallel work packages.",
-            "tools": ["getSpecialists", "getTime"],
+            "tools": [
+              "getSpecialists",
+              "getTime"
+            ],
             "persona": "Generic Orchestrator",
             "instructions": "Break down tasks into parallel work packages and delegate to specialists. Synthesize results into a final answer.",
             "maxLoops": 15,
@@ -1209,7 +1214,9 @@
         },
         {
           "__description": "Specialist: coding — executes coding and file editing tasks.",
-          "channelMatch": ["specialist-coding"],
+          "channelMatch": [
+            "specialist-coding"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1217,7 +1224,12 @@
             "includeHistory": false,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a coding specialist. Execute the assigned coding task precisely and return a clear result.",
-            "tools": ["getFile", "getFileContent", "getShell", "getTime"],
+            "tools": [
+              "getFile",
+              "getFileContent",
+              "getShell",
+              "getTime"
+            ],
             "persona": "Coding Specialist",
             "instructions": "Execute the assigned task. Return your result directly — no preamble.",
             "maxLoops": 10,
@@ -1226,7 +1238,9 @@
         },
         {
           "__description": "Specialist: research — executes web research tasks.",
-          "channelMatch": ["specialist-research"],
+          "channelMatch": [
+            "specialist-research"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1234,7 +1248,13 @@
             "includeHistory": false,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a research specialist. Execute the assigned research task precisely and return a clear result.",
-            "tools": ["getTavily", "getWebpage", "getGoogle", "getYoutube", "getTime"],
+            "tools": [
+              "getTavily",
+              "getWebpage",
+              "getGoogle",
+              "getYoutube",
+              "getTime"
+            ],
             "persona": "Research Specialist",
             "instructions": "Execute the assigned research task. Return your findings directly — no preamble.",
             "maxLoops": 10,
@@ -1243,7 +1263,9 @@
         },
         {
           "__description": "Specialist: content — executes content creation and document generation tasks.",
-          "channelMatch": ["specialist-content"],
+          "channelMatch": [
+            "specialist-content"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1251,7 +1273,9 @@
             "includeHistory": false,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a content specialist. Create high-quality content as instructed and return the result.",
-            "tools": ["getTime"],
+            "tools": [
+              "getTime"
+            ],
             "persona": "Content Specialist",
             "instructions": "Create the requested content. Return the result directly — no preamble.",
             "maxLoops": 8,
@@ -1260,7 +1284,9 @@
         },
         {
           "__description": "Specialist: media — executes image and video generation tasks.",
-          "channelMatch": ["specialist-media"],
+          "channelMatch": [
+            "specialist-media"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1268,7 +1294,13 @@
             "includeHistory": false,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a media generation specialist. Execute the assigned image or video generation task and return the result.",
-            "tools": ["getImage", "getImageSD", "getAnimatedPicture", "getVideoFromText", "getTime"],
+            "tools": [
+              "getImage",
+              "getImageSD",
+              "getAnimatedPicture",
+              "getVideoFromText",
+              "getTime"
+            ],
             "persona": "Media Specialist",
             "instructions": "Generate the requested media. Return the result directly — no preamble.",
             "maxLoops": 5,
@@ -1277,7 +1309,9 @@
         },
         {
           "__description": "Specialist: generic — general-purpose specialist channel.",
-          "channelMatch": ["specialist-generic"],
+          "channelMatch": [
+            "specialist-generic"
+          ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
@@ -1285,7 +1319,11 @@
             "includeHistory": false,
             "doNotWriteToContext": true,
             "systemPrompt": "You are a general-purpose specialist. Execute the assigned task precisely and return a clear result.",
-            "tools": ["getTime", "getTavily", "getWebpage"],
+            "tools": [
+              "getTime",
+              "getTavily",
+              "getWebpage"
+            ],
             "persona": "Generic Specialist",
             "instructions": "Execute the assigned task. Return your result directly — no preamble.",
             "maxLoops": 10,
@@ -1339,44 +1377,6 @@
         "clientSecret": "SECRET:spotify_client_secret"
       },
       "refreshBufferMinutes": 10
-    },
-    "webpage-chatgpt-auth": {
-      "__description": "ChatGPT / OpenAI OAuth2 per-user token management. Users connect at /chatgpt-auth. Requires port 3126 in webpage.ports and webpage-auth.ports.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3126,
-      "auth": {
-        "authUrl": "https://auth.openai.com/authorize",
-        "tokenUrl": "https://auth.openai.com/oauth/token",
-        "clientId": "YOUR_OPENAI_OAUTH_CLIENT_ID",
-        "clientSecret": "YOUR_OPENAI_OAUTH_CLIENT_SECRET",
-        "redirectUri": "https://YOUR_DOMAIN/chatgpt-auth/callback",
-        "scope": "openid offline_access model.request"
-      }
-    },
-    "cron-chatgpt-token-refresh": {
-      "__description": "Refreshes expiring ChatGPT OAuth tokens from chatgpt_tokens table. Add a cron job entry with flow 'cron-chatgpt-token-refresh'.",
-      "flow": [
-        "cron"
-      ],
-      "auth": {
-        "tokenUrl": "https://auth.openai.com/oauth/token",
-        "clientId": "YOUR_OPENAI_OAUTH_CLIENT_ID",
-        "clientSecret": "YOUR_OPENAI_OAUTH_CLIENT_SECRET"
-      },
-      "refreshBufferMinutes": 10
-    },
-    "core-ai-chatgpt": {
-      "__description": "AI completions using per-user ChatGPT OAuth tokens. Activated when useAiModule='chatGPT' on a channel. Falls back to authPageUrl if the user has no connected token.",
-      "flow": [
-        "discord",
-        "discord-voice",
-        "api"
-      ],
-      "endpoint": "https://api.openai.com/v1/chat/completions",
-      "model": "gpt-4o",
-      "authPageUrl": "/chatgpt-auth"
     },
     "webpage-manifests": {
       "flow": [
@@ -1583,22 +1583,6 @@
       "ttsFormat": "opus",
       "ttsFetchTimeoutMs": 30000
     },
-    "discord-subagent-poll": {
-      "__description": "Polls the registry for completed async subagent jobs and delivers results to the originating Discord channel. Set enabled:true to activate. pollIntervalMs: how often to check (ms). callerFlowPattern: flow name prefixes that trigger delivery. maxJobAgeMs: running jobs older than this are expired as errors.",
-      "enabled": false,
-      "pollIntervalMs": 5000,
-      "callerFlowPattern": [
-        "discord",
-        "discord-voice"
-      ],
-      "maxJobAgeMs": 86400000
-    },
-    "webpage-subagent-poll": {
-      "__description": "Polls the registry for completed async subagent jobs whose callerFlow starts with 'webpage' and delivers results via SSE to the originating webpage client. Requires GET /api/async-results/stream?channelID=<callerChannelId> to be open on the client side. Set enabled:true to activate.",
-      "enabled": false,
-      "pollIntervalMs": 5000,
-      "maxJobAgeMs": 86400000
-    },
     "webpage-channel-config-manager": {
       "flow": [
         "webpage"
@@ -1618,6 +1602,59 @@
         "port": 3100,
         "path": "/mcp"
       }
+    },
+    "core-channel-gate": {
+      "flow": [
+        "discord",
+        "discord-voice",
+        "discord-admin",
+        "api"
+      ]
+    },
+    "core-trigger-gate": {
+      "flow": [
+        "discord",
+        "discord-voice"
+      ]
+    },
+    "core-ai-context-loader": {
+      "__description": "Preloads context snapshot before AI completions. Runs on all AI flows.",
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "bard-label-gen"
+      ]
+    },
+    "core-ai-context-writer": {
+      "__description": "Persists queued context turns after AI completions.",
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "bard-label-gen"
+      ]
+    },
+    "discord-purge": {
+      "__description": "Handles !purge (DM) and /purge (slash command) to bulk-delete messages.",
+      "flow": [
+        "discord",
+        "discord-admin"
+      ]
+    },
+    "discord-voice-tts-play": {
+      "__description": "Plays TTS audio segments into the active Discord voice channel.",
+      "flow": [
+        "discord-voice"
+      ]
+    },
+    "webpage-voice-transcribe-gate": {
+      "__description": "Validates voice transcription payloads on the webpage flow before processing.",
+      "flow": [
+        "webpage"
+      ]
     }
   }
 }

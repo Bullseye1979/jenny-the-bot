@@ -5,16 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
 import { getContext, getContextEarliestTimestamps } from "../core/context.js";
 import { getStr, getNum } from "../core/utils.js";
 import { putItem, getItem, deleteItem } from "../core/registry.js";
@@ -53,8 +43,6 @@ function getAuthHeaders(apiKey = "", baseHeaders = {}) {
 }
 
 
-
-
 function getJSON(t, f = null) { try { return JSON.parse(t); } catch { return f; } }
 
 
@@ -66,7 +54,7 @@ function getPreview(s, n = 400) { const t = getToString(s); return t.length > n 
 
 function getToolStatusScope(wo) {
   const explicit =
-    String(wo?.toolcallScope ?? wo?.toolStatusScope ?? wo?.statusScope ?? "").trim();
+    String(wo?.toolcallScope ?? "").trim();
   if (explicit) return explicit;
   const callerFlow = String(wo?.callerFlow || "").trim();
   if (callerFlow) return callerFlow;
@@ -78,6 +66,38 @@ function getToolStatusKey(wo) {
   const explicit = String(wo?.toolStatusChannelOverride || "").trim();
   if (explicit) return explicit;
   return String(wo?.callerChannelId || wo?.channelId || "").trim();
+}
+
+
+function setRememberActiveToolStatus(wo, payload, hasGlobalStatus = true) {
+  if (!wo || !payload?.token) return;
+  const staleMs = Number.isFinite(wo?.statusToolStaleMs) ? Number(wo.statusToolStaleMs) : 600000;
+  wo._activeToolStatus = {
+    token: payload.token,
+    statusKey: String(payload.statusKey || ""),
+    hasGlobalStatus: hasGlobalStatus !== false
+  };
+  if (wo._activeToolStatusTimer) {
+    try { clearTimeout(wo._activeToolStatusTimer); } catch {}
+  }
+  const timer = setTimeout(() => {
+    try {
+      const current = getItem("status:tool");
+      if (hasGlobalStatus !== false && current?.token === payload.token) deleteItem("status:tool");
+    } catch {}
+    if (payload.statusKey) {
+      try {
+        const current = getItem("status:tool:" + payload.statusKey);
+        if (current?.token === payload.token) deleteItem("status:tool:" + payload.statusKey);
+      } catch {}
+    }
+  }, Math.max(1000, staleMs));
+  Object.defineProperty(wo, "_activeToolStatusTimer", {
+    value: timer,
+    configurable: true,
+    writable: true,
+    enumerable: false
+  });
 }
 
 
@@ -109,7 +129,6 @@ function setEnsureDir(dirPath) {
 
 
 function setEnsureDebugDir() { setEnsureDir(DEBUG_DIR); }
-
 
 
 function getSafeJSONStringify(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj); } }
@@ -206,7 +225,6 @@ function setLogBig(label, data, { toFile = false } = {}) {
     fs.writeFileSync(file, red, "utf8");
   } catch {}
 }
-
 
 
 function getIdemp(wo) { if (!wo.__idemp) wo.__idemp = { tools: new Set(), images: new Set() }; return wo.__idemp; }
@@ -461,7 +479,8 @@ async function setExecGenericTool(toolModules, call, coreData) {
     scope: _statusScope,
     token: _statusToken,
     channelId: _statusKey,
-    statusKey: _statusKey
+    statusKey: _statusKey,
+    toolCallId: callId || ""
   };
   try {
     try { await putItem(_statusPayload, "status:tool"); } catch {}
@@ -480,20 +499,9 @@ async function setExecGenericTool(toolModules, call, coreData) {
 
     return { ok: false, name, call_id: callId, content: JSON.stringify(mappedErr) };
   } finally {
-    const delayMs = Number.isFinite(coreData?.workingObject?.StatusToolClearDelayMs) ? Number(coreData.workingObject.StatusToolClearDelayMs) : 800;
-    setTimeout(() => {
-      if (wo._statusToolGen !== _myGen) return;
-      try {
-        const current = getItem("status:tool");
-        if (current?.token === _statusToken) deleteItem("status:tool");
-      } catch {}
-      if (_statusKey) {
-        try {
-          const current = getItem("status:tool:" + _statusKey);
-          if (current?.token === _statusToken) deleteItem("status:tool:" + _statusKey);
-        } catch {}
-      }
-    }, Math.max(0, delayMs));
+    if (wo._statusToolGen === _myGen) {
+      setRememberActiveToolStatus(wo, _statusPayload, true);
+    }
   }
 }
 
@@ -1094,12 +1102,12 @@ export default async function getCoreAi(coreData) {
   const apiKey = apiKeyName ? await getSecret(wo, apiKeyName) : "";
   const model = getStr(wo?.model, "");
   const baseUrl = getStr(wo?.baseUrl, "");
-  const endpointFilesContentTemplate = getStr(wo?.EndpointFilesContent, "");
+  const endpointFilesContentTemplate = getStr(wo?.endpointFilesContent, "");
   const maxTokens = getNum(wo?.maxTokens, 2000);
   const maxLoops = getNum(wo?.maxLoops, 16);
   const maxToolCalls = getNum(wo?.maxToolCalls, 8);
   const timeoutMs = getNum(wo?.requestTimeoutMs, 120000);
-  const debugOn = Boolean(wo?.DebugPayload ?? process.env.AI_DEBUG);
+  const debugOn = Boolean(wo?.debugPayload ?? process.env.AI_DEBUG);
 
   const reasoningEffort = getReasoningEffort(wo);
   const reasoningEnabled = (typeof reasoningEffort === "string" && reasoningEffort.length > 0);
@@ -1224,11 +1232,10 @@ export default async function getCoreAi(coreData) {
 
   let totalToolCalls = 0;
   let attempts = 0;
-  const maxAttempts = Math.max(1, getNum(wo?.MaxAttempts, Math.min(3, maxLoops)));
+  const maxAttempts = Math.max(1, getNum(wo?.maxAttempts, Math.min(3, maxLoops)));
   let hitMaxLoops = false;
   let hitMaxToolCalls = false;
   
-
 
 
   let emptyOutputConsec = 0;

@@ -72,6 +72,9 @@ async function getInvoke(args, coreData) {
     const channelId        = `${baseChannelId}-${randomBytes(6).toString("hex")}`;
     const callerChannelId  = String(wo.callerChannelId || wo.channelId || "");
     const callerChannelIds = Array.isArray(wo.channelIds) ? wo.channelIds.filter(Boolean) : [];
+    const parentDepth      = Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0;
+    const statusKey        = String(wo.toolStatusChannelOverride || "").trim();
+    const statusScope      = String(wo.toolcallScope || wo.callerFlow || wo.flow || "").trim();
     const body = JSON.stringify({
       channelId,
       payload: prompt,
@@ -79,6 +82,12 @@ async function getInvoke(args, coreData) {
       guildId:          String(wo.guildId || ""),
       callerChannelId,
       callerChannelIds,
+      callerTurnId:     String(wo.turnId || wo.callerTurnId || ""),
+      callerFlow:       String(wo.flow || ""),
+      agentDepth:       parentDepth + 1,
+      agentType:        type,
+      toolcallScope:    statusScope,
+      ...(statusKey ? { toolStatusChannelOverride: statusKey } : {}),
     });
 
     try {

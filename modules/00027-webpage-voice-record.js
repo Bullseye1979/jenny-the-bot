@@ -5,26 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import fs   from "node:fs";
 import os   from "node:os";
 import path from "node:path";
@@ -41,7 +21,6 @@ const ROUTE_RECORD = "/voice/record";
 
 const ffmpeg = ffmpegImport;
 ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || "/usr/bin/ffmpeg");
-
 
 
 async function sendJson(wo, status, data) {

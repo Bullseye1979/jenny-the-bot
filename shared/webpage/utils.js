@@ -5,16 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
-
-
-
-
-
 export async function setSendNow(wo) {
   const res = wo?.http?.res;
   if (!res || res.writableEnded || res.headersSent) return;
@@ -31,9 +21,6 @@ export async function setSendNow(wo) {
 }
 
 
-
-
-
 export function setJsonResp(wo, status, data) {
   wo.http.response = {
     status,
@@ -41,10 +28,6 @@ export function setJsonResp(wo, status, data) {
     body: JSON.stringify(data),
   };
 }
-
-
-
-
 
 
 export function getUserRoleLabels(wo) {
@@ -65,10 +48,6 @@ export function getUserRoleLabels(wo) {
   }
   return out;
 }
-
-
-
-
 
 
 export function getIsAllowedRoles(wo, allowedRoles) {

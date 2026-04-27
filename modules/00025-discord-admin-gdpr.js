@@ -5,11 +5,6 @@
 /**************************************************************/
 
 
-
-
-
-
-
 import mysql from "mysql2/promise";
 import { getPrefixedLogger } from "../core/logging.js";
 
