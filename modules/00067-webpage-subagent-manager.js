@@ -1,6 +1,6 @@
 /**************************************************************/
 /* filename: "00067-webpage-subagent-manager.js"             */
-/* Version 1.1                                               */
+/* Version 1.0                                               */
 /* Purpose: Pipeline module implementation.                  */
 /**************************************************************/
 
@@ -223,7 +223,7 @@ function buildPageHtml(opts) {
     "    <div class=\"sam-empty\">Select an item or create a new one.</div>\n" +
     "  </div>\n" +
     "</div>\n" +
-    "<button class=\"sam-sb-toggle\" id=\"sam-sb-toggle\" onclick=\"toggleSidebar()\" title=\"Sidebar ein-/ausblenden\">&#8249;</button>\n" +
+    "<button class=\"sam-sb-toggle\" id=\"sam-sb-toggle\" onclick=\"toggleSidebar()\" title=\"Toggle sidebar\">&#8249;</button>\n" +
     "<div id=\"toast\" class=\"toast\"></div>\n" +
     "<script>\n" +
     "var BASE = " + baseJson + ";\n" +

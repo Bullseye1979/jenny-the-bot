@@ -11,16 +11,9 @@ import { setGlobalDispatcher, Agent } from "undici";
 import { getItem } from "../core/registry.js";
 import { getContext } from "../core/context.js";
 import { saveFile } from "../core/file.js";
-import { getStr } from "../core/utils.js";
+import { getStr, getNewUlid } from "../core/utils.js";
 
-// undici defaults headersTimeout and bodyTimeout to 300 s — raise to unlimited
-// so long-running orchestrator/specialist HTTP calls are not killed mid-flight.
 setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
-
-const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-let lastTimeMs = 0;
-let lastRandomBytes = new Uint8Array(10).fill(0);
 
 
 function getBotname(workingObject, baseCore) {
@@ -37,7 +30,7 @@ function getBotname(workingObject, baseCore) {
 }
 
 function getToolcallRegistryKey(baseCore, apiCfg) {
-  const toolcallCfg = baseCore?.config?.toolcall || baseCore?.config?.toolCall || baseCore?.config?.["toolcall"] || {};
+  const toolcallCfg = baseCore?.config?.toolcall || {};
   const fromToolcall = getStr(toolcallCfg.registryKey).trim();
   if (fromToolcall) return fromToolcall;
 
@@ -45,50 +38,6 @@ function getToolcallRegistryKey(baseCore, apiCfg) {
   if (fromApi) return fromApi;
 
   return "status:tool";
-}
-
-function getUlid() {
-  const nowMs = Date.now();
-
-  let randomBytes = new Uint8Array(10).map(() => Math.floor(Math.random() * 256));
-
-  if (nowMs === lastTimeMs) {
-    for (let i = 9; i >= 0; i--) {
-      if (lastRandomBytes[i] === 255) {
-        lastRandomBytes[i] = 0;
-        continue;
-      }
-      lastRandomBytes[i]++;
-      break;
-    }
-    randomBytes = lastRandomBytes;
-  } else {
-    lastTimeMs = nowMs;
-    lastRandomBytes = randomBytes;
-  }
-
-  let timeBig = BigInt(nowMs);
-  let out = "";
-
-  for (let i = 0; i < 10; i++) {
-    out = CROCK[Number(timeBig % 32n)] + out;
-    timeBig /= 32n;
-  }
-
-  let acc = 0;
-  let bits = 0;
-
-  for (const b of randomBytes) {
-    acc = (acc << 8) | b;
-    bits += 8;
-
-    while (bits >= 5) {
-      out += CROCK[(acc >> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-
-  return out.slice(0, 26);
 }
 
 function setCorsHeaders(res) {
@@ -424,7 +373,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     const workingObject = (runCore.workingObject ||= {});
 
     workingObject.flow = "api";
-    workingObject.turnId = getUlid();
+    workingObject.turnId = getNewUlid();
     workingObject.aborted = false;
     req.socket?.on("close", () => { if (!res.writableEnded) workingObject.aborted = true; });
 

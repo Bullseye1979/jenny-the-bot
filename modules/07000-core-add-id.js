@@ -11,13 +11,9 @@
 
 
 import { getPrefixedLogger } from "../core/logging.js";
+import { getStr } from "../core/utils.js";
 
 const MODULE_NAME = "core-add-id";
-
-
-function getStr(v) {
-  return v == null ? "" : String(v);
-}
 
 
 
@@ -48,7 +44,7 @@ function getNormalizeHost(input) {
 function getAllowedHosts(config) {
   const c = config || {};
   const block = c[MODULE_NAME] || null;
-  const v = block?.servers ?? block?.Servers ?? block?.server ?? block?.Server;
+  const v = block?.servers;
 
   let list = [];
   if (Array.isArray(v)) list = v;
@@ -123,8 +119,6 @@ function getRewriteAllImageLinks(text, idValue, allowedHosts) {
 
 export default async function getCoreAddId(coreData) {
   const wo = coreData?.workingObject || {};
-  const config = coreData?.config || {};
-
   const log = getPrefixedLogger(wo, import.meta.url);
 
   const response = typeof wo.response === "string" ? wo.response : "";
@@ -136,7 +130,7 @@ export default async function getCoreAddId(coreData) {
     return coreData;
   }
 
-  const allowedHosts = getAllowedHosts(config);
+  const allowedHosts = getAllowedHosts(coreData?.config);
   if (!allowedHosts.length) {
     log(`No servers found in config["${MODULE_NAME}"].servers.`, "warn");
     return coreData;

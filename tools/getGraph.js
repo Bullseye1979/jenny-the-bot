@@ -209,18 +209,33 @@ function getNormalizeToolConfig(rawToolCfg) {
 
 
 async function getDelegatedToken(coreData) {
-  const wo     = getObj(coreData?.workingObject, {});
-  const userId = String(wo?.userId || "").trim();
-  if (!userId) throw new Error("No userId in working object — cannot resolve Graph token");
+  const wo        = getObj(coreData?.workingObject, {});
+  const userId    = String(wo?.userId    || "").trim();
+  const channelId = String(wo?.channelId || "").trim();
   const db = await getDbPool(coreData);
-  const [rows] = await db.query(
-    "SELECT access_token, expires_at FROM graph_tokens WHERE user_id = ?",
-    [userId]
-  );
-  const row = rows?.[0];
-  if (!row) throw new Error(`No Microsoft account connected for this user. Please authenticate at /graph-auth`);
-  if (Date.now() > Number(row.expires_at)) throw new Error(`Microsoft token expired. Please re-authenticate at /graph-auth`);
-  return String(row.access_token);
+  if (userId) {
+    const [rows] = await db.query(
+      "SELECT access_token, expires_at FROM graph_tokens WHERE user_id = ?",
+      [userId]
+    );
+    const row = rows?.[0];
+    if (row) {
+      if (Date.now() > Number(row.expires_at)) throw new Error("Microsoft token expired. Please re-authenticate at /graph-auth");
+      return String(row.access_token);
+    }
+  }
+  if (channelId) {
+    const [rows] = await db.query(
+      "SELECT access_token, expires_at FROM graph_tokens WHERE delegate_channels IS NOT NULL AND JSON_CONTAINS(delegate_channels, JSON_QUOTE(?)) LIMIT 1",
+      [channelId]
+    );
+    const row = rows?.[0];
+    if (row) {
+      if (Date.now() > Number(row.expires_at)) throw new Error("Microsoft delegated token expired. Token owner must re-authenticate at /graph-auth");
+      return String(row.access_token);
+    }
+  }
+  throw new Error("No Microsoft account connected for this user. Please authenticate at /graph-auth");
 }
 
 

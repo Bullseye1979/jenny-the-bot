@@ -180,9 +180,9 @@ function getChannelAwarenessBlock(wo) {
 
   if (agentType) {
     lines.push(`- agent_type: ${agentType}`);
-    lines.push("- You are running as an orchestrator or specialist. Return your result directly — do not ask the user for permission or confirmation.");
+    if (wo?.agentRolePrompt) lines.push(`- ${wo.agentRolePrompt}`);
   } else {
-    lines.push("- You are the primary assistant speaking directly with the user.");
+    if (wo?.primaryRolePrompt) lines.push(`- ${wo.primaryRolePrompt}`);
     const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
     getManifestPolicyHints(toolNames).forEach(h => lines.push(`- ${h}`));
   }

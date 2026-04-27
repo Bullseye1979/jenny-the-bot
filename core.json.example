@@ -60,8 +60,9 @@
     "apiEnabled": 1,
     "botsAllow": [],
     "showReactions": true,
-    "allowArtifactGeneration": true,
-    "__NOTE_allowArtifactGeneration": "NOT YET IMPLEMENTED - reserved for future use; has no effect currently",
+    "agentRolePrompt": "You are running as an orchestrator or specialist. Return your result directly — do not ask the user for permission or confirmation.",
+    "agentDelegateRolePrompt": "You are running as an orchestrator or specialist. Delegate directly without asking the user for permission.\nReport your result or any blockers back to the caller.",
+    "primaryRolePrompt": "You are the primary assistant speaking directly with the user.",
     "baseUrl": "YOUR_PUBLIC_SERVER_URL",
     "timezone": "Europe/Berlin",
     "response": "",
@@ -730,8 +731,7 @@
         "getToken": "⏳ Generating a token …",
         "getLocation": "⏳ Looking up a location …",
         "getJira": "⏳ Working with Jira …",
-        "getConfluence": "⏳ Working with Confluence …",
-        "getSubAgent": "⏳ Consulting subagent …"
+        "getConfluence": "⏳ Working with Confluence …"
       }
     },
     "discord-voice-transcribe": {
@@ -779,26 +779,6 @@
         "api"
       ],
       "imagePromptRules": "You create a Stable Diffusion image prompt from the ROLEPLAY CONTEXT.\nRules:\n- Output ONLY a comma-separated list of descriptive tags. NO sentences. NO prose. NO quotes. NO markdown. NO extra lines.\n- Follow this exact tag order:\n  1. Main character: physical features (age, hair color/style, eye color, build), clothing/accessories, facial expression, body pose/action\n  2. Other characters present (if any): same detail level\n  3. Scene: specific location, furniture/props, background details\n  4. Camera framing: one of (close-up | medium shot | wide shot | over-the-shoulder shot)\n  5. Lighting: one specific descriptor (e.g. dramatic window light, harsh fluorescent, warm candlelight, dim office lamp)\n  6. Quality tags — ALWAYS end with exactly: masterpiece, best quality, highly detailed, sharp focus\n- Depict the MOST RECENT concrete action/event from the context. Not a mood or atmosphere shot.\n- Keep total output under 60 words.\n- Do NOT include any URLs, narrative text, or explanations."
-    },
-    "subagents-prepare": {
-      "flow": [
-        "discord",
-        "discord-voice",
-        "webpage",
-        "webpage-voice",
-        "api"
-      ]
-    },
-    "subagents-done": {
-      "flow": [
-        "discord",
-        "discord-voice"
-      ]
-    },
-    "discord-voice-tts": {
-      "flow": [
-        "discord-voice"
-      ]
     },
     "discord-add-context": {
       "flow": [
@@ -1628,6 +1608,16 @@
       "allowedRoles": [
         "admin"
       ]
+    },
+    "mcp": {
+      "__description": "MCP (Model Context Protocol) server. Exposes all tool manifests as MCP tools. Enable stdio for Claude Desktop / Cursor. Enable http for network-accessible clients.",
+      "apiSecret": "JENNY_MCP_TOKEN",
+      "stdio": false,
+      "http": {
+        "enabled": false,
+        "port": 3100,
+        "path": "/mcp"
+      }
     }
   }
 }

@@ -1,3 +1,13 @@
 sandbox_mode = "workspace-write"
-
 approval_policy = "never"
+
+[env]
+JENNY_MCP_TOKEN = "Ovo8Gop2"
+
+[mcp_servers.jenny-the-bot]
+bearer_token_env_var = "JENNY_MCP_TOKEN"
+enabled = true
+url = "https://jenny.ralfreschke.de/mcp"
+
+[mcp_servers.jenny-the-bot.http_headers]
+X-Channel-Id = "mcp"

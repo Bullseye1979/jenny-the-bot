@@ -68,7 +68,7 @@ export async function getSecret(wo, placeholder) {
 
 
 
-export function clearSecretsCache(table) {
+function clearSecretsCache(table) {
   if (table) {
     _cache.delete(table);
   } else {

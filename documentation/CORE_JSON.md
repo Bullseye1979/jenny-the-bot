@@ -143,6 +143,9 @@ All key names follow **camelCase** throughout.
 | `agentType` | string | `"orchestrator"` | Set in channel config overrides for agentic channels. Embedded in the system prompt by AI modules to adjust model behavior. Typical values: `"orchestrator"`, `"specialist"`. Leave empty for primary user channels. |
 | `agentDepth` | number | `1` | Nesting depth for agentic contexts. `0` = primary user channel, `1` = orchestrator, `2` = specialist. Embedded in the system prompt alongside `agentType`. |
 | `showReactions` | boolean | `true` | Add emoji reactions to Discord messages during processing |
+| `agentRolePrompt` | string | `"You are running as an orchestrator..."` | System prompt fragment injected by `core-ai-completions` and `core-ai-responses` when the channel is in agent mode (`agentType` is set). |
+| `agentDelegateRolePrompt` | string | `"You are running as an orchestrator..."` | System prompt fragment injected by `core-ai-pseudotoolcalls` and `core-ai-roleplay` when in agent mode. Supports `\n` for multi-line. |
+| `primaryRolePrompt` | string | `"You are the primary assistant..."` | System prompt fragment injected by all AI modules when the channel is in primary user mode (no `agentType`). |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone for time-aware modules and tools |
 | `baseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving generated files (images, PDFs, etc.) |
 | `modAdmin` | string | `"406901027665870848"` | Discord user ID with elevated bot admin rights |
@@ -1063,7 +1066,7 @@ Context DB editor SPA served as a **webpage-flow module** (`modules/00053`) on p
 
 ### webpage-timeline
 
-Timeline DB editor SPA served as a **webpage-flow module** (`modules/00054`) on port 3128. It provides a browser-based interface to browse, search, edit, and bulk-delete timeline summary rows stored in `timeline_periods`.
+Timeline DB editor SPA served as a **webpage-flow module** (`modules/00075`) on port 3128. It provides a browser-based interface to browse, search, edit, and bulk-delete timeline summary rows stored in `timeline_periods`.
 
 ```jsonc
 "webpage-timeline": {
@@ -2116,6 +2119,44 @@ Sends TTS audio back to the webpage voice caller. Must run in the output phase (
 | `pollMs` | How frequently the toolcall flow polls the registry (ms) |
 | `initialDelayMs` | Delay before the first poll |
 | `registryKey` | Registry key where tool-call status updates are stored |
+
+---
+
+### mcp
+
+The MCP (Model Context Protocol) server exposes all tool manifests from `manifests/` as MCP tools. Compatible with Claude Desktop, Cursor, VS Code, and any MCP-compliant client.
+
+```jsonc
+"mcp": {
+  "stdio": false,
+  "http": {
+    "enabled": false,
+    "port":    3100,
+    "path":    "/mcp"
+  }
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `stdio` | boolean | `false` | Start the stdio MCP transport. Enable for Claude Desktop / Cursor integration. |
+| `http.enabled` | boolean | `false` | Start an HTTP+SSE MCP transport for network-accessible clients. |
+| `http.port` | number | `3100` | Port for the HTTP transport. |
+| `http.path` | string | `"/mcp"` | URL path prefix for MCP requests. |
+
+**Usage — Claude Desktop (`~/.config/claude/claude_desktop_config.json`):**
+```json
+{
+  "mcpServers": {
+    "jenny": {
+      "command": "node",
+      "args": ["/path/to/repo-codex/main.js"],
+      "env": {}
+    }
+  }
+}
+```
+Set `config.mcp.stdio: true` in `core.json` and the server starts automatically with the bot.
 
 ---
 

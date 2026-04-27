@@ -58,3 +58,39 @@ export function getIsHttpUrl(value) {
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
+
+
+const _CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+let _ulidLastTime = 0;
+let _ulidLastRand = new Uint8Array(10).fill(0);
+
+/**
+ * Generates a monotonically increasing ULID string.
+ * @returns {string}
+ */
+export function getNewUlid() {
+  const now = Date.now();
+  let rand;
+  if (now === _ulidLastTime) {
+    for (let i = 9; i >= 0; i--) {
+      if (_ulidLastRand[i] < 255) { _ulidLastRand[i]++; break; }
+      _ulidLastRand[i] = 0;
+    }
+    rand = _ulidLastRand;
+  } else {
+    _ulidLastTime = now;
+    rand = new Uint8Array(10);
+    for (let i = 0; i < 10; i++) rand[i] = Math.floor(Math.random() * 256);
+    _ulidLastRand = rand;
+  }
+  let t = BigInt(now);
+  let ts = "";
+  for (let i = 0; i < 10; i++) { ts = _CROCK[Number(t % 32n)] + ts; t /= 32n; }
+  let acc = 0, bits = 0, i = 0;
+  const rs = [];
+  while (i < rand.length || bits > 0) {
+    if (bits < 5 && i < rand.length) { acc = (acc << 8) | rand[i++]; bits += 8; }
+    else { rs.push(_CROCK[(acc >> (bits - 5)) & 31]); bits -= 5; }
+  }
+  return ts + rs.slice(0, 16).join("");
+}

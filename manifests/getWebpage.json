@@ -1,7 +1,7 @@
 {
   "name": "getWebpage",
-  "description": "Fetch a webpage and extract its readable text. Returns raw text for short pages or an AI summary for long pages. Always fetch fresh — never use page content from previous calls. If a previous fetch failed, retry with the same URL. The optional 'prompt' parameter biases the summary without overriding facts.",
-  "policyHint": "When the user provides a specific URL or when search results need deeper reading from a source, fetch the page directly. Do not summarize page content from memory.",
+  "description": "Fetch a webpage and extract its readable text in pages. The first call returns the first chunk; if has_more=true, call again with start_ctx_id=next_start_ctx_id to get the next chunk — repeat until has_more=false. The optional 'prompt' parameter biases the summary without overriding facts.",
+  "policyHint": "When the user provides a specific URL or when search results need deeper reading from a source, fetch the page directly. If has_more=true in the response, always call again with start_ctx_id=next_start_ctx_id to retrieve remaining page content before answering.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -16,6 +16,10 @@
       "userPrompt": {
         "type": "string",
         "description": "User question or instruction to execute against the page text (required — this is the main task)."
+      },
+      "start_ctx_id": {
+        "type": "number",
+        "description": "Pagination offset (character position). Omit or set to 0 for the first page. Use the next_start_ctx_id value from the previous response to fetch the next chunk."
       }
     },
     "required": [

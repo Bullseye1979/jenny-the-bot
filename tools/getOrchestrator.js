@@ -1,6 +1,6 @@
 /**************************************************************/
 /* filename: "getOrchestrator.js"                            */
-/* Version 2.0                                               */
+/* Version 1.0                                               */
 /* Purpose: LLM-callable tool implementation.               */
 /*                                                           */
 /* Runs a synchronous orchestrator for complex multi-step    */

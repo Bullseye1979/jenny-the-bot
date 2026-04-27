@@ -213,10 +213,10 @@ function getChannelAwarenessBlock(wo) {
   if (agentType) {
     lines.push(`- agent_type: ${agentType}`);
     lines.push(`- agent_depth: ${agentDepth}`);
-    lines.push("- You are running as an orchestrator or specialist. Delegate directly without asking the user for permission.");
-    lines.push("- Report your result or any blockers back to the caller.");
+    const delegatePrompt = wo?.agentDelegateRolePrompt ?? "";
+    if (delegatePrompt) delegatePrompt.split("\n").forEach(l => lines.push(`- ${l}`));
   } else {
-    lines.push("- You are the primary assistant speaking directly with the user.");
+    if (wo?.primaryRolePrompt) lines.push(`- ${wo.primaryRolePrompt}`);
     const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
     getManifestPolicyHints(toolNames).forEach(h => lines.push(`- ${h}`));
   }

@@ -6,14 +6,7 @@
 /*          the LLM via getOauthProviders / getApiBearers.   */
 /**************************************************************/
 
-import { getEnsureOAuthPool } from "../oauth/oauth-manager.js";
-
 const TABLE = "tool_exposure";
-
-
-export async function getExposurePool(wo) {
-  return getEnsureOAuthPool(wo);
-}
 
 
 export async function ensureExposureTable(pool) {
@@ -52,9 +45,3 @@ export async function removeExposed(pool, toolName, itemName) {
 }
 
 
-export async function listAllExposed(pool) {
-  const [rows] = await pool.query(
-    `SELECT tool_name, item_name FROM \`${TABLE}\` ORDER BY tool_name, item_name ASC`
-  );
-  return rows || [];
-}

@@ -137,6 +137,7 @@ async function ensureTable(db) {
       PRIMARY KEY (state_token)
     ) CHARACTER SET utf8mb4
   `);
+  await db.query(`ALTER TABLE spotify_tokens ADD COLUMN IF NOT EXISTS delegate_channels TEXT DEFAULT NULL`);
   dbReady = true;
 }
 
@@ -220,8 +221,10 @@ async function handleStatus(wo, db, userId, menuHtml) {
 
   let body;
   if (row) {
-    const name  = escHtml(row.sp_display_name || "");
-    const email = escHtml(row.sp_email        || "");
+    const name     = escHtml(row.sp_display_name || "");
+    const email    = escHtml(row.sp_email        || "");
+    let channels = "";
+    try { channels = escHtml((JSON.parse(row.delegate_channels || "[]")).join(", ")); } catch { channels = ""; }
     body =
       `<h2>Spotify Account</h2>` +
       `<div class="info">` +
@@ -229,6 +232,12 @@ async function handleStatus(wo, db, userId, menuHtml) {
       (email ? `<p class="muted">${email}</p>`  : "") +
       `<p class="muted">Connected</p>` +
       `</div>` +
+      `<form id="_spdf" style="margin:16px 0 12px">` +
+      `<label style="display:block;font-size:.85rem;margin-bottom:6px;color:var(--muted)">Delegate to channels <span style="font-weight:400">(comma-separated IDs)</span></label>` +
+      `<input id="_spdc" value="${channels}" placeholder="mcp, 123456789" style="width:100%;padding:7px 10px;border-radius:5px;border:1px solid var(--bdr,#e2e8f0);font-size:.9rem;box-sizing:border-box;background:var(--bg2,#f8fafc);color:var(--txt)">` +
+      `<button type="submit" style="margin-top:8px;padding:7px 16px;border-radius:5px;border:none;background:var(--accent,#5865f2);color:#fff;font-weight:600;cursor:pointer;font-size:.85rem">Save</button>` +
+      `</form>` +
+      `<script>document.getElementById('_spdf').onsubmit=async function(e){e.preventDefault();const ch=document.getElementById('_spdc').value.split(',').map(s=>s.trim()).filter(Boolean);const r=await fetch('/spotify-auth/delegate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channels:ch})});if(r.ok)location.reload();};</script>` +
       `<a class="btn btn-danger" href="/spotify-auth/disconnect">Disconnect</a>`;
   } else {
     body =
@@ -238,6 +247,16 @@ async function handleStatus(wo, db, userId, menuHtml) {
   }
 
   wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: getPageHtml("Spotify Account", body, menuHtml) };
+}
+
+
+async function handleDelegate(wo, db, userId) {
+  const channels = [].concat(wo.http?.json?.channels || []).map(s => String(s).trim()).filter(Boolean);
+  await db.query(
+    "UPDATE spotify_tokens SET delegate_channels = ? WHERE user_id = ?",
+    [channels.length ? JSON.stringify(channels) : null, userId]
+  );
+  wo.http.response = { status: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true }) };
 }
 
 
@@ -402,6 +421,8 @@ export default async function webpageSpotifyAuth(coreData) {
       await handleCallback(wo, cfg, db, userId, wo.http.query || {}, menuHtml);
     } else if (cleanPath === "/spotify-auth/disconnect") {
       await handleDisconnect(wo, db, userId);
+    } else if (cleanPath === "/spotify-auth/delegate") {
+      await handleDelegate(wo, db, userId);
     }
   } catch (e) {
     log(`[${MODULE_NAME}] Handler error on ${cleanPath}: ${e?.message || e}`, "error");

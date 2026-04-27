@@ -8,70 +8,9 @@
 
 import { getPrefixedLogger } from "../core/logging.js";
 import { getItem } from "../core/registry.js";
-import { getStr, getNum } from "../core/utils.js";
+import { getStr, getNum, getNewUlid } from "../core/utils.js";
 
 const MODULE_NAME = "toolcall";
-const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-let __ulid_lastTime = 0;
-let __ulid_lastRand = new Uint8Array(10).fill(0);
-
-
-function getUlidEncodeTime(ms) {
-  let x = BigInt(ms);
-  const out = Array(10);
-  for (let i = 9; i >= 0; i--) {
-    out[i] = CROCK[Number(x % 32n)];
-    x = x / 32n;
-  }
-  return out.join("");
-}
-
-
-function getUlidEncodeRandom80ToBase32(rand) {
-  const out = [];
-  let acc = 0;
-  let bits = 0;
-  let i = 0;
-  while (i < rand.length || bits > 0) {
-    if (bits < 5 && i < rand.length) {
-      acc = (acc << 8) | rand[i++];
-      bits += 8;
-    } else {
-      const v = (acc >> (bits - 5)) & 31;
-      bits -= 5;
-      out.push(CROCK[v]);
-    }
-  }
-  return out.slice(0, 16).join("");
-}
-
-
-function getUlidRandom80() {
-  const arr = new Uint8Array(10);
-  for (let i = 0; i < 10; i++) arr[i] = Math.floor(Math.random() * 256);
-  return arr;
-}
-
-
-function getNewUlid() {
-  const now = Date.now();
-  let rand = getUlidRandom80();
-  if (now === __ulid_lastTime) {
-    for (let i = 9; i >= 0; i--) {
-      if (__ulid_lastRand[i] === 255) {
-        __ulid_lastRand[i] = 0;
-        continue;
-      }
-      __ulid_lastRand[i]++;
-      break;
-    }
-    rand = __ulid_lastRand;
-  } else {
-    __ulid_lastTime = now;
-    __ulid_lastRand = rand;
-  }
-  return getUlidEncodeTime(now) + getUlidEncodeRandom80ToBase32(rand);
-}
 
 
 function getHasToolValue(val) {
@@ -102,10 +41,8 @@ function getToolIdentity(val) {
 
 
 function getConfigFlowName(baseCore) {
-  const a = baseCore?.config?.[MODULE_NAME]?.flowName;
-  const b = baseCore?.config?.toolcall?.flowName;
-  const s = typeof a === "string" ? a.trim() : typeof b === "string" ? b.trim() : "";
-  return s || MODULE_NAME;
+  const s = baseCore?.config?.[MODULE_NAME]?.flowName;
+  return (typeof s === "string" && s.trim()) ? s.trim() : MODULE_NAME;
 }
 
 
@@ -138,7 +75,7 @@ wo.turnId = getNewUlid();
 
 export default async function getToolcallFlow(baseCore, runFlow, createRunCore) {
   const log = getPrefixedLogger(baseCore?.workingObject || {}, import.meta.url);
-  const cfg = baseCore?.config?.[MODULE_NAME] || baseCore?.config?.toolcall || {};
+  const cfg = baseCore?.config?.[MODULE_NAME] || {};
   const pollMs = Math.max(100, getNum(cfg.pollMs, 400));
   const registryKey = getStr(cfg.registryKey, "status:tool");
   const initialDelayMs = getNum(cfg.initialDelayMs, 500);

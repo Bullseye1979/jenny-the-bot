@@ -52,15 +52,17 @@ export async function ensureOAuthTables(pool) {
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
   await pool.query(`CREATE TABLE IF NOT EXISTS oauth_tokens (
-    provider      VARCHAR(64)  NOT NULL,
-    user_id       VARCHAR(64)  NOT NULL,
-    access_token  MEDIUMTEXT   NOT NULL,
-    refresh_token MEDIUMTEXT   NULL,
-    expires_at    BIGINT       NOT NULL,
-    scope         TEXT         NULL,
-    updated_at    BIGINT       NOT NULL,
+    provider          VARCHAR(64)  NOT NULL,
+    user_id           VARCHAR(64)  NOT NULL,
+    access_token      MEDIUMTEXT   NOT NULL,
+    refresh_token     MEDIUMTEXT   NULL,
+    expires_at        BIGINT       NOT NULL,
+    scope             TEXT         NULL,
+    updated_at        BIGINT       NOT NULL,
+    delegate_channels TEXT         NULL,
     PRIMARY KEY (provider, user_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  await pool.query(`ALTER TABLE oauth_tokens ADD COLUMN IF NOT EXISTS delegate_channels TEXT DEFAULT NULL`);
 
   await pool.query(`CREATE TABLE IF NOT EXISTS oauth_auth_states (
     state_token   VARCHAR(64)  NOT NULL,
@@ -156,6 +158,14 @@ export async function upsertOAuthToken(pool, provider, userId, tokenData) {
       tokenData.scope ? String(tokenData.scope) : null,
       Date.now()
     ]
+  );
+}
+
+
+export async function updateOAuthTokenDelegation(pool, provider, userId, channels) {
+  await pool.query(
+    "UPDATE oauth_tokens SET delegate_channels = ? WHERE provider = ? AND user_id = ?",
+    [channels?.length ? JSON.stringify(channels) : null, String(provider), String(userId)]
   );
 }
 

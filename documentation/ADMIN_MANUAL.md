@@ -1070,7 +1070,7 @@ Animated GIF generator from images or video.
 
 #### toolsconfig.getGraph
 
-Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user management. Uses **delegated OAuth2** tokens stored per Discord user in the `graph_tokens` database table. No app-level credentials are needed here; credentials are managed by `webpage-graph-auth` (module 00057) and `cron-graph-token-refresh` (module 00058).
+Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user management. Uses **delegated OAuth2** tokens stored per Discord user in the `graph_tokens` database table. No app-level credentials are needed here; credentials are managed by `webpage-graph-auth` (module 00077) and `cron-graph-token-refresh` (module 00058).
 
 ```json
 "getGraph": {
@@ -2055,6 +2055,44 @@ Channel override
 
 **All `workingObject` parameters can be used in overrides**, including `toolsconfig`.
 
+#### Delegating OAuth permissions to a channel
+
+Some tools (`getGraph`, `getSpotify`) use per-user OAuth2 tokens. By default, the tool fetches the token for the Discord user who sent the message. You can override this per channel so that a specific user's token is always used — useful for automated pipelines and orchestrator channels where there is no interactive user.
+
+**Pattern — delegate a fixed user's Graph token to a channel:**
+
+```json
+{
+  "channelMatch": ["orchestrator-development"],
+  "overrides": {
+    "tools": ["getFile", "getFileContent", "getShell", "getGraph"],
+    "toolsconfig": {
+      "getGraph": {
+        "delegateUserId": "YOUR_DISCORD_USER_ID"
+      }
+    }
+  }
+}
+```
+
+Setting `toolsconfig.getGraph.delegateUserId` makes `getGraph` use that user's stored token instead of looking up the calling user. The delegated user must have already connected their Microsoft account at `/graph-auth`.
+
+The same pattern applies to `getSpotify` via `toolsconfig.getSpotify.delegateUserId`.
+
+**Pattern — grant API access to a channel with a specific bearer token:**
+
+```json
+{
+  "channelMatch": ["orchestrator-generic"],
+  "overrides": {
+    "apiEnabled": 1,
+    "apiSecret": "MY_CHANNEL_SECRET"
+  }
+}
+```
+
+This allows HTTP `POST /api` calls that include `Authorization: Bearer <resolved MY_CHANNEL_SECRET>` to reach the `orchestrator-generic` channel. The secret name `MY_CHANNEL_SECRET` must exist in the `bot_secrets` table.
+
 ---
 
 ## 6. Flows
@@ -2328,7 +2366,7 @@ New web tools can be added by dropping a single file into `modules/`. No flow ch
 modules/NNNNN-webpage-myapp.js
 ```
 
-Use a number between `00076` and `00099` to run before AI processing, or higher if needed. The range `00042`–`00075` is occupied by existing webpage, bard, admin, and gate modules.
+Use a number between `00078` and `00099` to run before AI processing, or higher if needed. The range `00042`–`00077` is occupied by existing webpage, bard, admin, and gate modules.
 
 **Step 2 — Module skeleton**
 
@@ -2423,6 +2461,66 @@ Add `{ "label": "Browser Extension", "channelId": "browser-extension", "roles": 
 
 ---
 
+### 6.x MCP Server {#mcp-server}
+
+**File:** `flows/mcp.js`
+**Purpose:** Exposes all tool manifests as MCP (Model Context Protocol) tools. Auto-loaded by `main.js` alongside all other flows. Disabled by default; enable via `config.mcp`.
+
+**Transports:**
+
+| Transport | Use case | Config key |
+|---|---|---|
+| stdio | Claude Desktop, Cursor, VS Code | `config.mcp.stdio: true` |
+| HTTP/SSE | Network-accessible MCP clients | `config.mcp.http.enabled: true` |
+
+**Configuration (`core.json`):**
+
+```jsonc
+"config": {
+  "mcp": {
+    "stdio": false,
+    "http": {
+      "enabled": false,
+      "port": 3100,
+      "path": "/mcp"
+    }
+  }
+}
+```
+
+**How it works:**
+
+1. At startup, `flows/mcp.js` reads all manifests from `manifests/` via `shared/mcp/mcp-utils.js`.
+2. Each manifest is registered as an MCP tool (`name`, `description`, `inputSchema`).
+3. When an MCP client calls a tool, the server dynamically imports `tools/<name>.js` and calls `invoke(args, coreData)`.
+4. `coreData` contains a minimal `workingObject` derived from `config.workingObject` defaults with `flow: "mcp"`.
+
+**Claude Desktop setup (`~/.config/claude/claude_desktop_config.json`):**
+
+```json
+{
+  "mcpServers": {
+    "jenny": {
+      "command": "node",
+      "args": ["/absolute/path/to/repo-codex/main.js"],
+      "env": {}
+    }
+  }
+}
+```
+
+Set `config.mcp.stdio: true`, restart Jenny and Claude Desktop. All tools from `manifests/` appear automatically.
+
+**Testing with MCP Inspector:**
+
+```bash
+npx @modelcontextprotocol/inspector node /path/to/repo-codex/main.js
+```
+
+Opens a browser UI listing all tools and allowing test calls.
+
+---
+
 ## 7. Module Pipeline
 
 Modules execute in **strict numeric order**. Naming convention: `NNNNN-PREFIX-NAME.js`
@@ -2500,11 +2598,9 @@ export default async function myModule(coreData) {
 | 00051 | `webpage-dashboard` | Live bot telemetry dashboard (port 3115, `/dashboard`) |
 | 00052 | `webpage-wiki` | AI-driven Fandom-style wiki (port 3117, `/wiki`) |
 | 00053 | `webpage-context` | Context DB editor SPA (port 3118, `/context`) — channel browser with collapsible sidebar (state persisted in `localStorage`), field selector, search, search & replace, bulk delete |
-| 00054 | `webpage-timeline` | Timeline DB editor SPA (port 3128, `/timeline`) — browse, search, edit, and bulk-delete timeline summary rows |
 | 00054 | `webpage-documentation` | Documentation viewer (port 3116, `/docs`) — collapsible file-navigation sidebar (state persisted in `localStorage`) |
 | 00055 | `core-admin-commands` | DB-level admin commands for all flows. `discord-admin`: reads `wo.admin.command` (`purgedb`/`freeze`/`rebuilddb`), target channel from `wo.admin.channelId`. `discord` (DM only): `!purgedb` and `!rebuilddb` in payload. `api`: `/purgedb`, `/freeze`, `/rebuilddb` slash-text in payload. `webpage`: `/purgedb`, `/freeze`, `/rebuilddb` in the chat SPA — these are routed via the api proxy in `00048-webpage-chat`, so they arrive as `api` flow requests and are handled here (inline handling in 00048 has been removed). No Discord-API access — pure DB operations only. `rebuilddb` rebuilds the derived context tables for the current channel only and recreates its timeline rows from scratch. |
 | 00056 | `webpage-gallery` | Image gallery SPA (port 3120, `/gallery`) — lists, uploads, and deletes the logged-in user's images stored in `pub/documents/<userId>/`. Integrates with the inpainting SPA via the `inpaintingUrl` config key. |
-| 00057 | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth page (port 3124, `/graph-auth`). Logged-in users connect or disconnect their Microsoft account. Stores access + refresh tokens in `graph_tokens` DB table. Required before the `getGraph` tool can be used. |
 | 00058 | `cron-graph-token-refresh` | Cron module — refreshes expiring Microsoft Graph tokens. Queries `graph_tokens` for rows with `expires_at` within the configured buffer window and calls the MS token refresh endpoint. Skips on failure (does not delete). Only runs in the `cron-graph-token-refresh` flow (the cron job `id` must match exactly). |
 | 00061 | `webpage-spotify-auth` | Spotify OAuth2 delegated auth page (port 3125, `/spotify-auth`). Logged-in users connect or disconnect their Spotify account. Stores access + refresh tokens in `spotify_tokens` DB table. Required before the `getSpotify` tool can be used. Uses `Authorization: Basic` header for token exchange (Spotify-specific). |
 | 00062 | `cron-spotify-token-refresh` | Cron module — refreshes expiring Spotify tokens. Queries `spotify_tokens` for rows with `expires_at` within the configured buffer window. Uses `Authorization: Basic` header. Stores new refresh token if Spotify issues one. Skips on failure (does not delete). Only runs in the `cron-spotify-token-refresh` flow (the cron job `id` must match exactly). |
@@ -2519,9 +2615,11 @@ export default async function myModule(coreData) {
 | 00068 | `webpage-channel-config-manager` | Admin-only channel config manager SPA (port 3129, `/channels`). Routes: `GET /channels`, `GET /channels/api/list`, `GET /channels/api/item?index=`, `POST /channels/api/save`, and `POST /channels/api/delete`. Edits entries inside `config["core-channel-config"].channels` in `core.json`. |
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
 | 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user). Skipped when `wo.doNotWriteToContext === true` (e.g. internal wiki/system API calls). |
-| 00073 | *(deleted)* | `webpage-add-context` has been removed. Its logic was inlined into `00048-webpage-chat`. |
+| 00073 | `webpage-oauth-exposure` | Admin UI for controlling which registered OAuth2 providers are exposed as available tools per Discord channel or user role (port 3132, `/oauth-exposure`). |
 | 00074 | `core-trigger-gate` | Flow-agnostic trigger gate. Stops the pipeline when `wo.payload` does not start with the configured trigger word. |
-| 00075 | *(deleted)* | `discord-trigger-gate` has been removed. Flow-agnostic replacement: `00074-core-trigger-gate`. |
+| 00075 | `webpage-timeline` | Timeline DB editor SPA (port 3128, `/timeline`) — browse, search, edit, and bulk-delete timeline summary rows |
+| 00076 | `webpage-keymanager` | Admin UI for managing API key secrets stored in the `secrets` DB table (port 3122, `/key-manager`). Provides list, set, and delete operations via REST API. |
+| 00077 | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth page (port 3124, `/graph-auth`). Logged-in users connect or disconnect their Microsoft account. Stores access + refresh tokens in `graph_tokens` DB table. Required before the `getGraph` tool can be used. |
 | 00080 | `discord-reaction-start` | Adds a progress reaction emoji to the user's message |
 | 00999 | `core-ai-context-loader` | Pre-loads conversation context into `wo._contextSnapshot` before any `core-ai-*` module runs. When `channelId` is missing (e.g. not yet set by `00048`), leaves `_contextSnapshot` unset; AI modules fall back to `getContext()` themselves. Retrieval planning, compression, and indexing live in `core/context.js`, not in the loader. |
 
@@ -4293,7 +4391,7 @@ The previously introduced `context_turns`, `context_segments`, `context_nodes`, 
 
 ### Table: graph_tokens
 
-Created automatically on first access to `/graph-auth` by module `00057-webpage-graph-auth.js`.
+Created automatically on first access to `/graph-auth` by module `00077-webpage-graph-auth.js`.
 
 | Column | Type | Description |
 |---|---|---|
@@ -5074,7 +5172,7 @@ https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=8&scope=bot
 | `00047-webpage-voice.js` | 3119 | `/voice` | `webpage-voice` | Browser push-to-talk voice interface |
 | `00053-webpage-context.js` | 3118 | `/context` | `webpage-context` | Context DB editor — browse, search, search & replace, bulk-delete conversation rows |
 | `00056-webpage-gallery.js` | 3120 | `/gallery` | `webpage-gallery` | Image gallery — browse, upload and delete the logged-in user's generated images |
-| `00057-webpage-graph-auth.js` | 3124 | `/graph-auth` | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth — connect/disconnect Microsoft account, stores token in `graph_tokens` |
+| `00077-webpage-graph-auth.js` | 3124 | `/graph-auth` | `webpage-graph-auth` | Microsoft Graph OAuth2 delegated auth — connect/disconnect Microsoft account, stores token in `graph_tokens` |
 | `00058-cron-graph-token-refresh.js` | — | — | `cron-graph-token-refresh` | Cron — refreshes expiring Microsoft Graph tokens in `graph_tokens` |
 | `00059-webpage-live.js` | 3123 | `/live` | `webpage-live` | Live context monitor — real-time transcript stream, channel/field selection, autoscroll, collapsible settings sidebar |
 | `00061-webpage-spotify-auth.js` | 3125 | `/spotify-auth` | `webpage-spotify-auth` | Spotify OAuth2 delegated auth — connect/disconnect Spotify account, stores token in `spotify_tokens` |
@@ -6192,7 +6290,7 @@ See [§16.12 Permission Concept](#1612-permission-concept) for the full rules.
 
 ### 16.14 Key Manager (`/key-manager`)
 
-**Module:** `modules/00058-webpage-keymanager.js`
+**Module:** `modules/00076-webpage-keymanager.js`
 **Port:** 3122 (default, set via `config["webpage-keymanager"].port`)
 **Base path:** `/key-manager`
 **Default roles:** `["admin"]`
@@ -6298,7 +6396,7 @@ Add an admin-only menu item such as:
 
 ### 16.15 Microsoft Graph Auth (`/graph-auth`)
 
-**Module:** `modules/00057-webpage-graph-auth.js`
+**Module:** `modules/00077-webpage-graph-auth.js`
 **Port:** 3124 (default; override with `cfg.port`)
 **Flow:** `webpage`
 
@@ -6749,7 +6847,7 @@ User-facing page for managing personal OAuth2 account connections (authorization
 
 ### 16.22 OAuth Provider Exposure (`/oauth-exposure`)
 
-**Module:** `modules/00070-webpage-oauth-exposure.js`
+**Module:** `modules/00073-webpage-oauth-exposure.js`
 **Flow:** `webpage`
 **Port:** 3132
 

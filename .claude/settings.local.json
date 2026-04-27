@@ -15,7 +15,9 @@
       "WebFetch(domain:support.anthropic.com)",
       "WebFetch(domain:support.claude.com)",
       "WebFetch(domain:ts.sdk.modelcontextprotocol.io)",
-      "WebFetch(domain:mcp-auth.dev)"
+      "WebFetch(domain:mcp-auth.dev)",
+      "Bash(grep -v \"//.*config\\\\[\")",
+      "Bash(xargs grep *)"
     ]
   }
 }

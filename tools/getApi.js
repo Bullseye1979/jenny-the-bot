@@ -57,14 +57,21 @@ async function resolveAuthHeader(authType, authName, wo, pool) {
   }
 
   if (type === "oauth_user") {
-    const userId = String(wo?.userId || "");
-    if (!userId) throw new Error("oauth_user requires a logged-in user (wo.userId not set)");
+    const userId    = String(wo?.userId    || "");
+    const channelId = String(wo?.channelId || "");
 
     await ensureOAuthTables(pool);
     const reg = await getOAuthRegistration(pool, String(authName));
     if (!reg) throw new Error(`No OAuth registration found for "${authName}"`);
 
-    let tokenRow = await getOAuthToken(pool, String(authName), userId);
+    let tokenRow = userId ? await getOAuthToken(pool, String(authName), userId) : null;
+    if (!tokenRow && channelId) {
+      const [rows] = await pool.query(
+        "SELECT * FROM oauth_tokens WHERE provider = ? AND delegate_channels IS NOT NULL AND JSON_CONTAINS(delegate_channels, JSON_QUOTE(?)) LIMIT 1",
+        [String(authName), channelId]
+      );
+      tokenRow = rows?.[0] || null;
+    }
     if (!tokenRow) throw new Error(`No token for provider "${authName}" and current user. User must connect via /connections.`);
 
     const needsRefresh = Number(tokenRow.expires_at || 0) < Date.now() + 60000;

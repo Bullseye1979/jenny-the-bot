@@ -27,5 +27,5 @@ export function hasActiveBackgroundTask(wo) {
 
 export function setBackgroundTaskRunningResponse(wo) {
   const msg = String(wo?._backgroundTaskStatusMessage || "").trim();
-  wo.response = msg || "Die Hintergrundaufgabe wurde gestartet und laeuft weiter. Das Endergebnis wird nachgeliefert, sobald es fertig ist.";
+  wo.response = msg || "The background task has been started and is running. The final result will be delivered once it is ready.";
 }

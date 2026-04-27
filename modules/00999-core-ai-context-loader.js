@@ -6,6 +6,8 @@
 import { getContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";
 
+const MODULE_NAME = "core-ai-context-loader";
+
 export default async function getCoreAiContextLoader(coreData) {
   const wo = coreData?.workingObject;
   const log = getPrefixedLogger(wo, import.meta.url);

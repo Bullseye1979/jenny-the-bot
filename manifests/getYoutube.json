@@ -1,7 +1,7 @@
 {
   "name": "getYoutube",
-  "description": "Fetch and process YouTube video transcripts, or search YouTube. For mode='transcript': fetches the transcript and either dumps it (short) or summarizes/answers questions (long). For mode='search': searches YouTube via the Data API. Always fetch fresh — never reuse transcript content from previous calls. If a previous call returned an error, retry. Returns structured JSON only.",
-  "policyHint": "When the user asks about a YouTube video, wants a transcript, or asks to search YouTube, use this tool. Do not answer YouTube questions from memory.",
+  "description": "Fetch YouTube video transcripts or search YouTube. For mode='transcript': fetches the transcript in pages. The first call returns rows[0..N-1]; if has_more=true, call again with start_ctx_id=next_start_ctx_id to get the next page — repeat until has_more=false. For mode='search': searches YouTube via the Data API.",
+  "policyHint": "When the user asks about a YouTube video, wants a transcript, or asks to search YouTube, use this tool. If has_more=true in the response, always call again with start_ctx_id=next_start_ctx_id to retrieve remaining transcript segments before answering.",
   "parameters": {
     "type": "object",
     "additionalProperties": false,
@@ -12,7 +12,7 @@
           "transcript",
           "search"
         ],
-        "description": "transcript = fetch and dump or summarize; search = YouTube search via Data API."
+        "description": "transcript = fetch transcript (paginated); search = YouTube search via Data API."
       },
       "metaOnly": {
         "type": "boolean",
@@ -37,6 +37,10 @@
       "safeSearch": {
         "type": "string",
         "description": "YouTube safeSearch setting: 'none', 'moderate', or 'strict'."
+      },
+      "start_ctx_id": {
+        "type": "number",
+        "description": "Pagination offset (item index). Omit or set to 0 for the first page. Use the next_start_ctx_id value from the previous response to fetch the next page."
       }
     }
   }

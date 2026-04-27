@@ -132,6 +132,10 @@
  * @property {string} [botName]
  * @property {string} [trigger]
  * @property {string} [persona]
+ * @property {string} [modAdmin] Discord user ID of the bot administrator.
+ * @property {string} [modSilence] Magic string that suppresses bot response when set as payload.
+ * @property {boolean} [tracePipeline] When true, logs each module execution step to console.
+ * @property {string[]} [tracePipelineExcludeFlows] Flow name patterns excluded from pipeline tracing.
  * @property {string} [instructions]
  * @property {string} [timezone]
  * @property {string} [apiKey] Alias for the AI provider secret.
@@ -230,6 +234,21 @@
  * @property {boolean} [bypassTriggerGate]
  * @property {boolean} [bypassGdprGate]
  * @property {string} [gdprDisclaimer]
+ * @property {string} [agentRolePrompt] System prompt fragment for orchestrator/specialist agents (completions/responses modules).
+ * @property {string} [agentDelegateRolePrompt] System prompt fragment for orchestrator/specialist agents (pseudotoolcalls/roleplay modules).
+ * @property {string} [primaryRolePrompt] System prompt fragment for primary user-facing assistant mode.
+ * @property {string[]} [toolsBlacklist] Tool names excluded from the active tool list.
+ * @property {Object} [fallbackOverrides] Applied when the primary endpoint is unreachable.
+ * @property {string} [callerTurnId] Turn ID of the calling agent.
+ * @property {string} [primaryImageUrl] URL of the primary generated image in the response.
+ * @property {Array} [toolCallLog] Log of tool calls made during this turn.
+ * @property {boolean} [detailedContext] Whether to include detailed context in the prompt.
+ * @property {boolean} [simplifiedContext] Whether to use simplified context format.
+ * @property {string} [contextMetaFrames] Context meta frame inclusion mode.
+ * @property {boolean} [_backgroundTaskActive] Internal: set to true when a tool signals a background task start.
+ * @property {string} [_backgroundTaskTool] Internal: name of the tool that started the background task.
+ * @property {string} [_backgroundTaskStatus] Internal: status string from the background task signal.
+ * @property {string} [_backgroundTaskStatusMessage] Internal: user-facing message from the background task.
  */
 
 export {};

@@ -96,7 +96,7 @@ export async function deleteFile(wo, filename) {
 }
 
 
-export async function listUserFiles(wo) {
+async function listUserFiles(wo) {
   try {
     const entries = await fs.readdir(getUserDir(wo), { withFileTypes: true });
     return entries.filter(e => e.isFile()).map(e => e.name).sort();
@@ -111,4 +111,4 @@ export async function listUserImages(wo) {
   return files.filter(f => IMAGE_EXTS.has(path.extname(f).toLowerCase()));
 }
 
-export default { saveFile, deleteFile, listUserFiles, listUserImages, getUserId, getUserDir, getPublicBaseUrl, ensureUserDir, getUniqueFilename };
+export default { saveFile, deleteFile, listUserImages, getUserId, getUserDir, getPublicBaseUrl, ensureUserDir, getUniqueFilename };

@@ -15,6 +15,7 @@ import {
   getOAuthRegistration,
   getOAuthToken,
   upsertOAuthToken,
+  updateOAuthTokenDelegation,
   deleteOAuthToken,
   createOAuthAuthState,
   deleteOAuthAuthState,
@@ -124,12 +125,24 @@ async function handleIndex(wo, pool, userId, menuHtml) {
       ? `<a class="btn btn-danger" href="/connections/${encodeURIComponent(reg.name)}/disconnect">Disconnect</a>${renewBtn}`
       : `<a class="btn btn-primary" href="/connections/${encodeURIComponent(reg.name)}/login">Connect</a>`;
 
+    let delegateChannels = "";
+    try { delegateChannels = escHtml((JSON.parse(tok?.delegate_channels || "[]")).join(", ")); } catch { delegateChannels = ""; }
+    const delegateForm = isConnected
+      ? `<form id="_df_${i}" style="margin:10px 0 6px">` +
+        `<label style="display:block;font-size:.8rem;margin-bottom:4px;color:var(--muted)">Delegate to channels</label>` +
+        `<input id="_dc_${i}" value="${delegateChannels}" placeholder="mcp, 123456789" style="width:100%;padding:6px 9px;border-radius:5px;border:1px solid var(--bdr,#e2e8f0);font-size:.85rem;box-sizing:border-box;background:var(--bg2,#f8fafc);color:var(--txt)">` +
+        `<button type="submit" style="margin-top:6px;padding:5px 14px;border-radius:5px;border:none;background:var(--accent,#5865f2);color:#fff;font-weight:600;cursor:pointer;font-size:.8rem">Save</button>` +
+        `</form>` +
+        `<script>document.getElementById('_df_${i}').onsubmit=async function(e){e.preventDefault();const ch=document.getElementById('_dc_${i}').value.split(',').map(s=>s.trim()).filter(Boolean);await fetch('/connections/${encodeURIComponent(reg.name)}/delegate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channels:ch})});location.reload();};</script>`
+      : "";
+
     return `<div class="provider-card">
   <p class="provider-name">${escHtml(reg.name)}</p>
   <p class="provider-desc">${escHtml(reg.description || "")}</p>
   ${reg.scope ? `<p class="provider-scope">${escHtml(reg.scope)}</p>` : ""}
   ${statusBadge}
   ${expiryText ? `<p class="expiry">${escHtml(expiryText)}</p>` : ""}
+  ${delegateForm}
   ${actionBtn}
 </div>`;
   }).join("\n");
@@ -334,7 +347,7 @@ export default async function webpageOauthConnections(coreData) {
     return coreData;
   }
 
-  const providerMatch = cleanPath.match(/^\/connections\/([^/]+)\/(login|callback|disconnect|renew)$/);
+  const providerMatch = cleanPath.match(/^\/connections\/([^/]+)\/(login|callback|disconnect|renew|delegate)$/);
 
   try {
     if (cleanPath === base || cleanPath === base + "/") {
@@ -353,6 +366,10 @@ export default async function webpageOauthConnections(coreData) {
         await handleDisconnect(wo, pool, userId, provider);
       } else if (action === "renew") {
         await handleRenew(wo, pool, userId, provider, menuHtml);
+      } else if (action === "delegate") {
+        const channels = [].concat(wo.http?.json?.channels || []).map(s => String(s).trim()).filter(Boolean);
+        await updateOAuthTokenDelegation(pool, provider, userId, channels);
+        wo.http.response = { status: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true }) };
       }
     }
   } catch (e) {

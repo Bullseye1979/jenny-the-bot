@@ -31,14 +31,26 @@ See the [Admin Manual](ADMIN_MANUAL.md) for full setup instructions.
 Jenny uses a numbered module pipeline. Every incoming event (Discord message, HTTP request, cron tick, voice audio) passes through all modules in order. Each module checks whether it should act on the current event and either transforms the shared `workingObject` or passes it through unchanged.
 
 ```
-flows/          Entry points (discord, webpage, api, cron, voice)
+flows/          Entry points (discord, webpage, api, cron, voice, mcp)
 modules/        Pipeline stages (00005 → 10000)
 tools/          LLM-callable tools (getImage, getGoogle, getGraph, ...)
-core/           Runtime utilities (registry, context, secrets, logging)
-shared/         Feature-specific utilities (oauth, voice, webpage)
+core/           Runtime utilities (registry, context, secrets, logging, utils)
+shared/         Feature-specific utilities (oauth, voice, webpage, mcp)
 manifests/      Tool parameter schemas (JSON)
 types/          JSDoc type definitions
 ```
+
+---
+
+## MCP Server
+
+Jenny includes a built-in MCP (Model Context Protocol) server that exposes all tool manifests as MCP tools. Compatible with Claude Desktop, Cursor, VS Code, and any MCP client.
+
+**Transports supported:**
+- **stdio** — for local clients (Claude Desktop, Cursor). Enable with `config.mcp.stdio: true`.
+- **HTTP/SSE** — for network clients. Enable with `config.mcp.http.enabled: true`.
+
+See [Admin Manual](ADMIN_MANUAL.md#mcp-server) for setup instructions.
 
 ---
 

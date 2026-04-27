@@ -43,8 +43,7 @@ export default async function getDiscordStatusPrepareFlow(baseCore) {
 
   const log = getPrefixedLogger(workingObject, moduleUrl);
 
-  const cfgRoot = baseCore.config || workingObject.config || {};
-  const config = cfgRoot["discord-status-prepare"] || {};
+  const config = baseCore?.config?.[MODULE_NAME] || {};
   const allowedList = getCleanAllowedChannels(config);
 
   if (!allowedList || allowedList.length === 0) {
