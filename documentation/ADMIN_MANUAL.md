@@ -1,6 +1,6 @@
 ﻿# Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1.0 · **Date:** 2026-04-05
+> **Version:** 1 · **Date:** 2026-04-05
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -51,18 +51,26 @@
    - [getPDF](#getpdf)
    - [getText](#gettext)
    - [getHistory](#gethistory)
-   - [getTimeline](#gettimeline)
    - [getLocation](#getlocation)
    - [getTime](#gettime)
    - [getToken](#gettoken)
    - [getBan](#getban)
    - [getGraph](#getgraph)
    - [getSpotify](#getspotify)
+   - [getOrchestrator](#getorchestrator)
+   - [getSpecialists](#getspecialists)
+   - [getFile](#getfile)
+   - [getFileContent](#getfilecontent)
+   - [getZIP](#getzip)
    - [getApi](#getapi)
    - [getShell](#getshell)
+   - [getMcpTools](#getmcptools)
+   - [getMcp](#getmcp)
    - [getOauthProviders](#getoauthproviders)
    - [getApiBearers](#getapibearers)
    - [getMyConnections](#getmyconnections)
+   - [Creating a New Tool — Checklist](#creating-a-new-tool--checklist)
+   - [Creating a New Module — Checklist](#creating-a-new-module--checklist)
 9. [Core Infrastructure](#9-core-infrastructure)
    - 9.1 [registry.js — In-Memory Key-Value Store](#91-registryjs--in-memory-key-value-store)
    - 9.2 [context.js — MySQL Conversation Storage](#92-contextjs--mysql-conversation-storage)
@@ -107,6 +115,10 @@
    - 16.23 [API Key Exposure (`/bearer-exposure`)](#1623-api-key-exposure-bearer-exposure)
 17. [Bard Music System](#17-bard-music-system)
 18. [Dependencies](#18-dependencies)
+19. [Extension Guide — Building Custom Components](#19-extension-guide--building-custom-components)
+   - 19.1 [Creating a Custom Tool (`tools/getXxx.js` + manifest)](#191-creating-a-custom-tool)
+   - 19.2 [Creating a Custom Module (`modules/NNNNN-my-module.js`)](#192-creating-a-custom-module)
+   - 19.3 [Creating a Custom Web Module (`modules/NNNNN-webpage-xxx.js`)](#193-creating-a-custom-web-module)
 
 ---
 
@@ -2205,8 +2217,8 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 
 - `subchannel` — optional; routes the request through a specific subchannel context. Subchannels scope context only and do not inject prompt text.
 - `doNotWriteToContext` — optional boolean; when `true`, neither the user message (`00072`) nor the AI response (`01004`) are written to the MySQL context. Used for internal system calls (e.g. wiki article generation) that must not pollute the conversation history.
-- `callerChannelId` — forwarded from the parent when called by `getSubAgent`; used to mirror tool-call status to the original Discord channel
-- `agentDepth` / `agentType` — subagent nesting controls forwarded by `getSubAgent`
+- `callerChannelId` — forwarded from the parent orchestrator/specialist call; used to mirror tool-call status to the original Discord channel
+- `agentDepth` / `agentType` — subagent nesting controls forwarded by the orchestrator dispatch
 
 **POST /api response:**
 ```json
@@ -2519,6 +2531,52 @@ npx @modelcontextprotocol/inspector node /path/to/repo-codex/main.js
 
 Opens a browser UI listing all tools and allowing test calls.
 
+**Using Jenny as an MCP client:**
+
+**Version:** 1
+
+Jenny can also call remote MCP servers from normal conversations through the tools `getMcpTools` and `getMcp`. These are regular Jenny tools and must be enabled in the effective `workingObject.tools` list for the channel/user that should use them.
+
+`getMcpTools` discovers remote tools and their input schemas. `getMcp` executes one discovered remote tool. The two tools intentionally do not share configuration: `getMcpTools` reads only `workingObject.toolsconfig.getMcpTools`, and `getMcp` reads only `workingObject.toolsconfig.getMcp`.
+
+```jsonc
+"tools": ["getMcpTools", "getMcp"],
+"toolsconfig": {
+  "getMcpTools": {
+    "servers": [
+      {
+        "name": "local-jenny",
+        "namespace": "jenny-mcp",
+        "type": "streamableHttp",
+        "url": "http://localhost:3100/mcp",
+        "headers": [
+          { "header": "x-channel-id", "value": "mcp" }
+        ],
+        "bearerTokenSecret": "JENNY_MCP_TOKEN",
+        "timeoutMs": 30000
+      }
+    ]
+  },
+  "getMcp": {
+    "servers": [
+      {
+        "name": "local-jenny",
+        "namespace": "jenny-mcp",
+        "type": "streamableHttp",
+        "url": "http://localhost:3100/mcp",
+        "headers": [
+          { "header": "x-channel-id", "value": "mcp" }
+        ],
+        "bearerTokenSecret": "JENNY_MCP_TOKEN",
+        "timeoutMs": 30000
+      }
+    ]
+  }
+}
+```
+
+HTTP headers are configured generically as `{ "header": "...", "value": "..." }` entries. Jenny's own MCP server uses `x-channel-id` to select the effective channel, but the MCP client tools have no special `channelId` config key.
+
 ---
 
 ## 7. Module Pipeline
@@ -2610,7 +2668,7 @@ export default async function myModule(coreData) {
 | 00060 | `discord-admin-avatar` | Generates or uploads a bot avatar via DALL-E or URL |
 | 00065 | `discord-admin-macro` | Macro management (create, list, delete, run) |
 | 00066 | `webpage-manifests` | Admin-only manifest JSON editor SPA (port 3126, `/manifests`). Uses a manifest selector and structured JSON editor. Routes: `GET /manifests`, `GET /manifests/api/list`, `GET /manifests/api/get?name=`, `POST /manifests/api/save`. Config key: `webpage-manifests`. |
-| 00067 | `webpage-subagent-manager` | Admin-only subagent manager SPA (port 3127, `/subagents`). Routes: `GET /subagents`, `GET /subagents/api/list`, `GET /subagents/api/get?type=`, `POST /subagents/api/save`, `DELETE /subagents/api/delete?type=`. Saves subagent channel entries into `core.json` and matching blocks into `manifests/getSubAgent.json`. |
+| 00067 | `webpage-subagent-manager` | Admin-only subagent manager SPA (port 3127, `/subagents`). Routes: `GET /subagents`, `GET /subagents/api/list`, `GET /subagents/api/get?type=`, `POST /subagents/api/save`, `DELETE /subagents/api/delete?type=`. Saves subagent channel entries into `core.json` and updates `manifests/getOrchestrator.json` / `manifests/getSpecialists.json` enum lists with the new type names. |
 | 00068 | `webpage-channel-config-manager` | Admin-only channel config manager SPA (port 3129, `/channels`). Routes: `GET /channels`, `GET /channels/api/list`, `GET /channels/api/item?index=`, `POST /channels/api/save`, and `POST /channels/api/delete`. Edits entries inside `config["core-channel-config"].channels` in `core.json`. |
 | 00070 | `discord-add-context` | Writes the incoming Discord user message to the context DB (role=user) |
 | 00072 | `api-add-context` | Writes the incoming API user message to the context DB (role=user). Skipped when `wo.doNotWriteToContext === true` (e.g. internal wiki/system API calls). |
@@ -2922,7 +2980,7 @@ Every tool must have a corresponding manifest file at `manifests/<toolName>.json
 ```javascript
 /**************************************************************/
 /* filename: "getMyTool.js"                                   */
-/* Version 1.0                                               */
+/* Version 1                                               */
 /* Purpose: LLM-callable tool implementation.               */
 /**************************************************************/
 
@@ -2992,7 +3050,7 @@ export default {
 
 ### Creating a New Module — Checklist
 
-1. **Create `modules/NNNNN-my-module.js`** with a `Version 1.0` header and a default export function.
+1. **Create `modules/NNNNN-my-module.js`** with a `Version 1` header and a default export function.
 2. **Read config only from** `coreData.config["my-module"]` and the current `workingObject`.
 3. **Do not import from `tools/` or other `modules/`**. Shared logic belongs in `core/` or `shared/`.
 4. **If the module needs LLM reasoning**, route it through the internal API flow or the existing `core-ai-*` modules rather than calling the provider directly.
@@ -3005,7 +3063,7 @@ export default {
 ```javascript
 /**************************************************************/
 /* filename: "00099-my-module.js"                             */
-/* Version 1.0                                               */
+/* Version 1                                               */
 /* Purpose: Short description of what this module does.     */
 /**************************************************************/
 
@@ -3887,6 +3945,112 @@ Output is truncated at `maxOutputBytes` (default 8192 bytes) per stream with a `
 
 ---
 
+### getMcpTools
+
+**File:** `tools/getMcpTools.js`
+**Version:** 1
+**Purpose:** Discovers tools exposed by configured remote MCP servers. Use it before `getMcp` when the AI needs to find available remote tool names, descriptions, and input schemas.
+
+**Configuration:** `toolsconfig.getMcpTools.servers`
+
+This tool reads only its own config section. It does not read or fall back to `toolsconfig.getMcp`.
+
+```jsonc
+"getMcpTools": {
+  "servers": [
+    {
+      "name": "local-jenny",
+      "namespace": "jenny-mcp",
+      "type": "streamableHttp",
+      "url": "http://localhost:3100/mcp",
+      "headers": [
+        { "header": "x-channel-id", "value": "mcp" }
+      ],
+      "bearerTokenSecret": "JENNY_MCP_TOKEN",
+      "timeoutMs": 30000
+    }
+  ]
+}
+```
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `server` | string | No | Configured MCP server name. If omitted, lists tools for all configured servers |
+| `query` | string | No | Case-insensitive filter for remote tool names and descriptions. Use a short task term such as `time`, `email`, `file`, or `search` |
+
+**Returns:** `{ ok, servers: [{ name, namespace, ok, tools, error? }] }`.
+
+Returned remote tool names are namespaced as `mcp.<namespace>.<tool>`, for example `mcp.jenny-mcp.getTime`. These names identify remote MCP tools, not local Jenny tools. Execute them through `getMcp`.
+
+---
+
+### getMcp
+
+**File:** `tools/getMcp.js`
+**Version:** 1
+**Purpose:** Executes a tool on a configured remote MCP server.
+
+**Configuration:** `toolsconfig.getMcp.servers`
+
+This tool reads only its own config section. It does not read or fall back to `toolsconfig.getMcpTools`.
+
+```jsonc
+"getMcp": {
+  "servers": [
+    {
+      "name": "local-jenny",
+      "namespace": "jenny-mcp",
+      "type": "streamableHttp",
+      "url": "http://localhost:3100/mcp",
+      "headers": [
+        { "header": "x-channel-id", "value": "mcp" }
+      ],
+      "bearerTokenSecret": "JENNY_MCP_TOKEN",
+      "timeoutMs": 30000
+    }
+  ]
+}
+```
+
+**Server config keys:**
+
+| Key | Type | Description |
+|---|---|---|
+| `name` | string | Stable server name used by `getMcpTools.server` and raw `getMcp.server` calls |
+| `namespace` | string | Optional namespace used in discovered tool names. Defaults to `name`. A tool such as `getTime` becomes `mcp.<namespace>.getTime` |
+| `type` | string | `streamableHttp`, `sse`, or `stdio` |
+| `url` | string | MCP endpoint for `streamableHttp` and `sse` |
+| `headers` | array | Optional HTTP headers as `{ "header": "...", "value": "..." }` entries |
+| `bearerTokenSecret` | string | Secret-store key sent as `Authorization: Bearer ...` |
+| `bearerToken` | string | Literal bearer token. Prefer `bearerTokenSecret` |
+| `timeoutMs` | number | Connect and request timeout |
+| `command` | string | Executable for `stdio` servers |
+| `args` | array | Arguments for `stdio` servers |
+| `cwd` | string | Optional working directory for `stdio` servers |
+| `env` | object | Optional environment for `stdio` servers |
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `server` | string | No | Configured MCP server name. Required only when `tool` is a raw remote tool name instead of `mcp.<namespace>.<tool>` |
+| `tool` | string | Yes | Namespaced MCP tool name returned by `getMcpTools`, e.g. `mcp.jenny-mcp.getTime`, or a raw remote tool name when `server` is provided |
+| `arguments` | object | No | Arguments object matching the schema returned by `getMcpTools` |
+
+**Returns:** `{ ok, server, tool, result }` on success or `{ ok: false, server, tool, error }` on failure.
+
+There is no special `channelId` key. For Jenny's own MCP server, set it as a normal header:
+
+```json
+"headers": [
+  { "header": "x-channel-id", "value": "mcp" }
+]
+```
+
+---
+
 ### getOauthProviders
 
 **File:** `tools/getOauthProviders.js`
@@ -3970,6 +4134,101 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 1. User says "show me my Spotify playlists"
 2. AI calls `getMyConnections()` → receives `{ connections: [{ name: "spotify", description: "Spotify", status: "active" }] }`
 3. AI calls `getApi(url: "https://api.spotify.com/v1/me/playlists", authType: "oauth_user", authName: "spotify")`
+
+---
+
+### getOrchestrator
+
+**File:** `tools/getOrchestrator.js`
+**Purpose:** Synchronous orchestrator for complex multi-step tasks. The calling AI blocks until the orchestrator finishes and returns its result. The orchestrator runs as a normal API pipeline (`flow: api`) on a dynamically generated unique channel ID (`<baseChannelId>-<randomHex>`), giving it full access to all tools including `getSpecialists`.
+
+**Returns:** `{ ok, rows: [responseText] }`.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `prompt` | string | Yes | Task or goal for the orchestrator |
+| `type` | string | No | Orchestrator type (uses `defaultType` if omitted) |
+
+**Enable:** Add `"getOrchestrator"` to the channel's `tools` array. The orchestrator channel referenced by each `type` must be configured as a valid API channel in `core.json`.
+
+> **Full configuration:** see [`toolsconfig.getOrchestrator`](#toolsconfiggetorchestrator) in Section 5.6.
+
+---
+
+### getSpecialists
+
+**File:** `tools/getSpecialists.js`
+**Purpose:** Parallel specialist dispatcher. Runs multiple specialist AI workers concurrently in sequential batches. **Designed to be called from within an orchestrator** — not directly from a primary user channel. Each specialist receives its own unique channel ID and dedicated tool palette.
+
+**Returns:** `{ ok, count, complete, failed, rows: [...results] }` where each result is `{ jobID, type, ok, response?, error? }`.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `specialists` | array | Yes | Array of `{ type, jobID, prompt }` — each entry defines one specialist run |
+
+> **Full configuration:** see [`toolsconfig.getSpecialists`](#toolsconfiggetspecialists) in Section 5.6.
+
+---
+
+### getFile
+
+**File:** `tools/getFile.js`
+**Purpose:** Saves text or binary content to a persistent file under `pub/documents/{userId}/` and returns a public URL. Supports subdirectory paths (e.g. `src/components/Button.js`) — directories are created automatically. Used by development and generation subagents to persist generated artifacts. Multiple agents can write **different** files in parallel safely; writing to the **same** filename from multiple agents simultaneously risks data loss.
+
+**Returns:** `{ ok, filename, url, path, bytes }`. The `url` is a public download link for later `getFileContent` or `getZIP` calls.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `content` | string | Yes | File content to write (raw source code for code files — no explanations) |
+| `filename` | string | No | Path including optional subdirs and extension, e.g. `src/main.js`. Auto-generated when omitted. |
+| `encoding` | string | No | `"text"` (default, UTF-8) or `"base64"` (binary) |
+| `contentType` | string | No | MIME type hint for extension inference when `filename` is omitted |
+| `overwrite` | boolean | No | If `true` and `filename` is set, replaces the existing file at that exact path |
+
+**No toolsconfig keys required.** Storage path and public base URL derive from `workingObject.publicBaseUrl` at runtime.
+
+---
+
+### getFileContent
+
+**File:** `tools/getFileContent.js`
+**Purpose:** Fetches the raw text content of a previously generated file by its public URL. Intended for the read-edit-write cycle: read a prior `getFile` URL, apply the change, write it back with `getFile(overwrite: true)`. Binary files (images, PDFs, ZIPs) and files larger than 512 KB are rejected. Use `getShell` for local filesystem paths.
+
+**Returns:** `{ ok, url, bytes, content }`. `content` is the raw UTF-8 text of the file.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `url` | string | Yes | Absolute http/https URL of the file to read (must be a text file) |
+
+**No toolsconfig keys required.**
+
+---
+
+### getZIP
+
+**File:** `tools/getZIP.js`
+**Purpose:** Downloads one or more files by URL and packages them into a ZIP archive. Provide `baseUrl` to preserve the original directory structure inside the archive — each file's path relative to `baseUrl` becomes its path inside the ZIP. Returns the public URL of the generated archive.
+
+**Returns:** `{ ok, filename, url, path, bytes, files, results[] }`.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `urls` | string[] | Yes | Public URLs of the files to include |
+| `filename` | string | No | Base name for the ZIP (`.zip` added automatically, default: `archive`) |
+| `timeoutMs` | number | No | Per-file download timeout in milliseconds (default: 30000) |
+| `baseUrl` | string | No | Reference URL prefix — files' paths relative to this become their paths inside the ZIP |
+
+**No toolsconfig keys required.**
 
 ---
 
@@ -5231,7 +5490,7 @@ The page uses the same collapsible JSON editing pattern as the config editor, bu
 - `POST /subagents/api/save` — saves `{previousTypeKey?, typeKey, channelId, title, manifestBlock, overrides}`
 - `DELETE /subagents/api/delete?type=...` — deletes one subagent definition
 
-Saving a subagent updates both `core.json` and the `xSubagents` areas inside `manifests/getSubAgent.json`. Deleting a subagent removes both the `core-channel-config` entry and the matching manifest block.
+Saving a subagent updates both `core.json` (channel config entry) and the `enum` lists in `manifests/getOrchestrator.json` and/or `manifests/getSpecialists.json`. Deleting a subagent removes both the `core-channel-config` entry and the matching manifest enum entry.
 
 Prompt field convention for subagents:
 - `persona` defines the subagent identity and job and is used as the `You are` block
@@ -5443,7 +5702,7 @@ Configure in `core.json["webpage-bard"]`:
     "maxLoops":         5,
     "requestTimeoutMs": 120000,
     "contextSize":      150,
-    "tools":            ["getImage", "getTimeline"],
+    "tools":            ["getImage", "getHistory"],
     "systemPrompt":     "",
     "persona":          "",
     "instructions":     ""
@@ -5488,7 +5747,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 | `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
 | `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. **Default `false`** — see note below |
 | `overrides.contextSize` | number | `150` | Number of recent messages loaded when `includeHistory: true` |
-| `overrides.tools` | array | `["getImage","getTimeline"]` | Tools available to the AI |
+| `overrides.tools` | array | `["getImage","getHistory"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona string injected into the AI call |
 | `overrides.instructions` | string | `""` | Instructions injected into the AI call |
@@ -5502,7 +5761,7 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 
 - Channel NOT listed in `channels[]` → 404
 - `allowedRoles: []` → publicly accessible (no login required)
-- `getTimeline` and **`getImage`** are both mandatory in the built-in prompt; AI uses **only tool results** as facts; events always in **chronological order**
+- **`getImage`** is mandatory in the built-in prompt for article illustration; the AI calls `getHistory` to retrieve conversation facts; AI uses **only tool results** as facts; events always in **chronological order**
 - **Article expiry:** only articles that have **never been manually edited** (`updated_at IS NULL`) are subject to the TTL. Once an article is edited it is permanently retained. Expired articles are pruned on each request and in the background. All users always see a colour-coded expiry badge on unedited articles (green > 5 days, yellow ≤ 5 days, orange ≤ 2 days / expired); no badge on edited articles.
 - **Edit form** (editor only): title, intro, sections (JSON), infobox (JSON), categories, related terms, image URL + drag-and-drop upload (max 8 MB) + **🔄 Regenerate Image via AI** button with a **"Replace base prompt entirely"** checkbox and a textarea below it. Without the checkbox: text is sent as `promptAddition` and appended to the article's base prompt. With the checkbox checked: text is sent as `promptOverride` and replaces the base prompt completely (useful when the original `infobox.imageAlt` triggers content filters). Old local image file is automatically deleted on successful regeneration; updates DB + preview immediately; save the article to persist the new URL
 - **Search page:** creators see an optional **"Additional context for generation"** textarea before the results/generate section. Text entered here is sent as `promptAddition` with the generate request and appended to the AI payload. Non-creators never see this textarea. When no results are found, creators see a **"✨ Generate article"** button (not an auto-spinner) so they can fill in context before triggering generation.
@@ -5568,9 +5827,9 @@ Image generation is **built into the wiki module** and does **not** depend on `t
 
 #### System Prompt
 
-The configured system prompt for the wiki article pipeline should instruct the AI to call `getTimeline` and use `getHistory` when raw evidence is needed before outputting a JSON article. Image generation happens outside the AI pipeline and requires no `getImage` tool call.
+The configured system prompt for the wiki article pipeline should instruct the AI to call `getHistory` when raw evidence is needed before outputting a JSON article. Image generation happens outside the AI pipeline and requires no `getImage` tool call.
 
-**Tools active in the article pipeline:** `getTimeline` and optionally `getHistory` (configurable via `overrides.tools`).
+**Tools active in the article pipeline:** `getHistory` for context retrieval, optionally `getImage` for inline image generation (configurable via `overrides.tools`).
 
 **Recommended channel override for reliable article quality:**
 
@@ -6154,7 +6413,7 @@ The following template shows the standard pattern for a new webpage module inclu
 ```javascript
 /************************************************************************************/
 /* filename: 000xx-webpage-mymodule.js                                              */
-/* Version 1.0                                                                      */
+/* Version 1                                                                      */
 /* Purpose: Description of what this module does. Reads config only from            */
 /*          config["webpage-my-module"].                                             */
 /*                                                                                  */
@@ -7360,15 +7619,6 @@ User request
     ← final answer to user
 ```
 
-### Key Differences from Async Subagents
-
-| Aspect | Synchronous (Orchestrator/Specialists) | Async (getSubAgent) |
-|---|---|---|
-| **Blocking** | Yes — caller waits for completion | No — returns jobId immediately |
-| **Delivery** | Result returned in tool loop | Result delivered as Discord message later |
-| **Use case** | Complex reasoning that needs intermediate results | Long-running tasks that can run in background |
-| **Status** | Tool status visible in Discord during execution | Acknowledged with "Working on it..." message |
-
 ### How It Works
 
 **`getOrchestrator`:**
@@ -7446,130 +7696,93 @@ Use `matchMode: "prefix"` so both the base channel ID and the dynamically suffix
 
 ### Overview
 
-The subagent system allows the main AI to delegate tasks to isolated sub-processes, each running the full module pipeline with a dedicated tool palette. Subagents are invoked via the `getSubAgent` tool and communicate through the internal API endpoint (`/api` on port 3400).
+The subagent system allows the main AI to delegate tasks to isolated sub-processes, each running the full module pipeline with a dedicated tool palette. The entry points are:
+
+- **`getOrchestrator`** — synchronous, blocks until the orchestrator finishes and returns its result. The orchestrator runs on a dynamically generated channel ID.
+- **`getSpecialists`** — parallel dispatch, runs multiple specialist workers concurrently and waits for all to complete. Called from within an orchestrator, not from primary channels.
+
+> **Note:** An older async tool (`getSubAgent`) existed in earlier versions — it has been removed. The subagent *architecture* (virtual channels, isolated pipelines, orchestration context) is unchanged; the tool interface has moved to `getOrchestrator` / `getSpecialists`.
+
+Both tools communicate through the internal API endpoint (`/api` on port 3400). See [Section 8](#8-tools--llm-callable-functions) for the full tool references and [`toolsconfig.getOrchestrator`](#toolsconfiggetorchestrator) / [`toolsconfig.getSpecialists`](#toolsconfiggetspecialists) for configuration.
 
 ### How It Works
 
-1. The main AI calls `getSubAgent(type, task)`.
-2. `getSubAgent` sends a POST to `http://localhost:3400/api/spawn` with the virtual channel ID for the requested type.
-3. The API flow loads `core-channel-config` for that virtual channel, and the spawned subagent uses the target virtual channel's own `systemPrompt`, `persona`, and `instructions`.
-4. The tool returns `{ jobId, projectId, status: "started" }` immediately; final delivery then happens via the subagent poll flows to the originating channel. Web delivery may apply a final caller-channel persona pass before returning the answer to the user.
+1. The main AI calls `getOrchestrator(prompt, type)`.
+2. The tool POSTs a payload to `http://localhost:3400/api` with a dynamically generated channel ID (`<baseChannelId>-<randomHex>`).
+3. The API flow loads `core-channel-config` for that virtual channel; the orchestrator uses that channel's own `systemPrompt`, `persona`, `tools`, and context settings.
+4. The tool blocks until the orchestrator returns its final result and then passes it back to the calling AI.
+5. The orchestrator may itself call `getSpecialists` to launch parallel sub-workers, each receiving their own unique channel ID.
 
-The caller's channel ID (`wo.channelId`) and channel ID list (`wo.channelIds`) are forwarded automatically. When the tool call sets `includeCallerContext: true`, the spawned subagent preloads the original caller context source (`callerContextChannelId` plus grouped `callerChannelIds`) using the target subagent channel's own `contextSize` and `compressedContextElements` overrides. Caller persona, caller system prompt, and caller instructions are not injected into the spawned subagent. The subagent answers in its own target-channel role, and only the later delivery layer may restyle that output for the caller channel.
+The caller's channel ID (`wo.channelId`) and channel ID list (`wo.channelIds`) are forwarded automatically. Orchestrator and specialist channels are **stateless/virtual**: the same base channel name can serve multiple concurrent users without context collision (the random hex suffix ensures uniqueness per call). No context DB entries are written for orchestrator/specialist turns (`doNotWriteToContext: true`).
 
-If the subagent task text omits source URLs that are still present in the caller payload, `getSubAgent` automatically appends those missing URLs in a `[SOURCE URLS]` block before spawning. This keeps webpage, browser-extension, and similar URL-driven requests grounded in the original link even when the main AI compresses the task too aggressively.
-
-The manifest description for `getSubAgent` also treats this as a mandatory caller rule: when a user request contains a concrete URL or artifact link, the exact URL must be copied into the `task` string instead of being replaced with vague wording.
+When the prompt contains a concrete URL or artifact link, the exact URL must be included in the `prompt` string — the orchestrator has no access to the caller's payload.
 
 ### Context and Statefulness
 
-Subagent calls use `doNotWriteToContext: true` — no context DB entries are written for the subagent turn. Subagent channels are **stateless/virtual**: the same channel name (e.g. `subagent-research`) can serve multiple concurrent users without context collision. The full task context is passed via the payload (orchestration block) rather than being read from the DB. Caller context is opt-in per tool call via `includeCallerContext`; by default subagents stay context-light and rely only on the supplied task plus caller channel metadata.
-
-### Available Subagent Types
-
-| Type | Virtual Channel | Tools | Use when |
-|------|----------------|-------|----------|
-| `history` | `subagent-history` | getHistory, getTime, getSubAgent | Questions about persons, places, events, chronology, or deeper older history from prior session context |
-| `research` | `subagent-research` | getYoutube, getWebpage, getLocation, getTavily, getTime, getSubAgent | General knowledge, current events, web research, YouTube, route planning, and location lookups |
-| `generate` | `subagent-generate` | getPDF, getText, getFile, getZIP, getSubAgent | PDF or text document generation |
-| `media` | `subagent-media` | getImage, getAnimatedPicture, getVideoFromText, getImageDescription, getToken, getZIP | Image, video, token generation, and media analysis |
-| `atlassian` | `subagent-atlassian` | getJira, getConfluence, getZIP, getSubAgent | Jira/Confluence tasks |
-| `microsoft` | `subagent-microsoft` | getGraph, getZIP, getSubAgent | Microsoft 365/Graph |
-| `develop` | `subagent-develop` | getFile, getZIP, getTavily, getWebpage, getTime, getSubAgent | Code generation — writes files to persistent storage via getFile, returns ZIP; uses getSubAgent(type: media) for image assets |
-| `patch` | `subagent-patch` | getFile, getZIP | One targeted patch to one file artifact |
-| `orchestrate` | `subagent-orchestrate` | getSubAgent, getTavily, getWebpage, getTime | Requests with truly independent parts needing different tool sets; handles simple tasks directly without spawning |
-| `test` | `subagent-test` | getTestA, getTestB | Internal pipeline smoke tests |
-| `generic` | `subagent-generic` | getGoogle, getTavily, getWebpage, getHistory, getYoutube, getImage, getImageDescription, getTime, getToken, getLocation | General-purpose fallback when no specialist fits better |
+Orchestrator calls use `doNotWriteToContext: true` — no context DB entries are written. The full task context is passed via the `prompt` field (and the `orchestration` parameter for multi-specialist coordination). Caller context can be pre-loaded by setting `includeCallerContext: true` on the orchestrator call (e.g. for `type: "context"` queries that must read the caller channel's history).
 
 ### Routing Logic for Main Channels
 
-Main channels typically keep direct tools lightweight and escalate only when needed. Routing logic:
+Main channels typically keep direct tools lightweight and escalate only when needed:
 
-- **Simple web search** (facts, current events) → `getTavily` directly — no subagent needed
-- **Simple image generation** → `getImage` directly — no subagent needed
-- **Session history questions** (who is X, what happened at Y, when did Z) → `getSubAgent(type: history, includeCallerContext: true)`
-- **General knowledge / YouTube / route planning / location queries** → `getSubAgent(type: research)`
-- **Code / development requests** → `getSubAgent(type: develop)`
-- **Complex media** (animated token, video generation, multi-step image) → `getSubAgent(type: media)`
+- **Simple web search** (facts, current events) → `getTavily` directly — no orchestrator needed
+- **Simple image generation** → `getImage` directly — no orchestrator needed
+- **Session history / context questions** (who is X, what happened at Y, when did Z) → `getOrchestrator(type: "context", prompt: "...")`
+- **Code / development requests** → `getOrchestrator` with appropriate type
+- **Complex media** (animated token, video generation, multi-step image) → `getOrchestrator` with media-type specialists
 - **If the answer is in the current conversation context** → answer directly without tool call
 
-**Convention:** Subagent descriptions must explicitly list each tool in the type's palette so the caller AI understands what capabilities are available. Keep these updated whenever tools are added or removed.
+**Convention:** Orchestrator/specialist `systemPrompt` descriptions must explicitly list each tool in the type's palette so the caller AI understands what capabilities are available. Keep these updated whenever tools are added or removed.
 
-### Subagent Architecture
-
-`history` must never spawn another `history` subagent. `media` is typically treated as a leaf node for simple asset work. `orchestrate` has only `getSubAgent` plus lightweight direct tools (`getTavily`, `getWebpage`, `getTime`) so it can coordinate without duplicating specialist work.
+### Orchestrator / Specialist Architecture
 
 ```
-Main AI (tools: getSubAgent, getTavily, getImage)
-  ├─ getTavily(...)                    ← direct for simple searches
-  ├─ getImage(...)                     ← direct for simple single image (no further steps)
-  └─ getSubAgent(type: generate)       ← for PDFs/documents WITH images
-       ├─ getSubAgent(type: media)     ← STEP 1: get image URL first
-       └─ getPDF(html+imageUrl)        ← STEP 2: only after image URL is in hand
-
-Main AI
-  └─ getSubAgent(type: orchestrate)    ← only for multi-tool requests
-       ├─ getSubAgent(type: media, orchestration: {...})     ← STEP 1: owns image
-       └─ getSubAgent(type: generate, orchestration: {...})  ← STEP 2: receives image URL
+Main AI (tools: getOrchestrator, getTavily, getImage)
+  ├─ getTavily(...)                       ← direct for simple searches
+  ├─ getImage(...)                        ← direct for simple single image
+  └─ getOrchestrator(prompt, type)        ← for multi-step tasks
+       └─ getSpecialists(specialists[])   ← parallel workers inside orchestrator
+            ├─ specialist-image-video     ← STEP 1: get image URL
+            └─ specialist-document-generate  ← STEP 2: receives image URL
 ```
 
-The caller's channel ID set is forwarded at every level so `getHistory` can query the correct source channel regardless of nesting depth. Tool call status is also mirrored to the caller's Discord channel ID so the status display works correctly, and the final poll delivery clears any remaining tool status for that caller channel.
+The caller's channel ID set is forwarded at every level so `getHistory` can query the correct source channel regardless of nesting depth. Tool call status is mirrored to the caller's Discord channel ID so the status display works correctly.
 
-### Creating a New Subagent — Checklist
+### Creating a New Orchestrator or Specialist Type (Subagent)
 
-1. **Add the type mapping** under `workingObject.toolsconfig.getSubAgent.types` in `core.json`.
-2. **Add or update the manifest entry** in `manifests/getSubAgent.json` so the AI can discover the type.
-3. **Create a dedicated virtual channel override** under `config["core-channel-config"].channels[]` with its own tools, model, prompts, and context settings.
-4. **Keep prompt text in config or manifests only**. Do not store subagent prompts in the database.
-5. **Decide whether caller context should ever be preloaded**. Default remains off; callers opt in via `includeCallerContext: true`.
-6. **Document the new type** in this subagent section and in `CORE_JSON.md`.
+1. **Add the type mapping** under `toolsconfig.getOrchestrator.types` or `toolsconfig.getSpecialists.types` in `core.json`.
+2. **Update the manifest enum** in `manifests/getOrchestrator.json` or `manifests/getSpecialists.json` so the AI can select the new type.
+3. **Create a dedicated virtual channel override** under `config["core-channel-config"].channels[]` with its own tools, model, prompts, and context settings. Use `matchMode: "prefix"` to match the dynamically generated channel IDs.
+4. **Keep prompt text in config only**. Do not store subagent prompts in the database.
+5. **Document the new type** in this section and in `CORE_JSON.md`.
 
-**Subagent spawn timeout:** `toolsconfig.getSubAgent.spawnTimeoutMs` controls only the initial HTTP spawn request. The job then continues asynchronously in the background.
+### Orchestration Context (Multi-Specialist Coordination)
 
-### Orchestration Context (Multi-Subagent Coordination)
-
-When multiple subagents are involved in a single user request, each `getSubAgent` call should include an `orchestration` parameter to prevent duplicate side effects (e.g. two subagents each generating the same portrait image).
-
-**The problem it solves:** Without orchestration context, each subagent receives only its own task and may reconstruct the global goal — then conclude it also needs to generate the image, write the PDF, or do other steps already assigned to other agents.
+When multiple specialists are involved in a single user request, the `orchestration` parameter passed to each `getSpecialists` entry prevents duplicate side effects (e.g. two specialists each generating the same portrait image).
 
 **Core rules:**
-- **One deliverable = one owner.** Only one subagent may produce a given artifact (image, PDF, etc.).
-- **Sequential dependencies must be resolved by the caller.** If B needs A's output, call A first, wait for the result, then pass it explicitly in B's task. Never let B discover the dependency itself.
-- **Pass `orchestration` to every subagent call** when more than one subagent is involved.
+- **One deliverable = one owner.** Only one specialist may produce a given artifact (image, PDF, etc.).
+- **Sequential dependencies must be resolved by the orchestrator.** If B needs A's output, call A first (either in a prior `getSpecialists` batch or directly), wait for the result, then pass it explicitly in B's task.
 
-**Orchestration object schema:**
+**Orchestration object schema** (passed via `specialists[].prompt` or as a prepended block):
 ```json
 {
   "globalGoal": "User's original request",
-  "yourTask": "Exact deliverable this subagent must produce",
+  "yourTask": "Exact deliverable this specialist must produce",
   "yourRole": "e.g. 'portrait image generation'",
   "doOnly": ["generate portrait image of Melissa"],
-  "doNot": ["create character sheet", "generate PDF", "spawn additional media subagents"],
+  "doNot": ["create character sheet", "generate PDF"],
   "existingArtifacts": {
     "portrait_image": "https://example.com/portrait.png"
   },
-  "assignedToOthers": ["PDF assembly → generate agent"],
+  "assignedToOthers": ["PDF assembly → document-generate specialist"],
   "toolLocks": {
-    "getImage": "portrait already generated by media agent"
+    "getImage": "portrait already generated by image-video specialist"
   }
 }
 ```
 
-**`callerTurnId` propagation:** `wo.turnId` is forwarded as `callerTurnId` to every spawned subagent via `api.js`. Each subagent receives it in `wo.callerTurnId`. The orchestration block injected into the subagent's task also includes the `turnId` for traceability.
-
-**`buildOrchestrationBlock` (in `getSubAgent.js`):** Serialises the orchestration object into a human-readable block that is prepended to the subagent's task payload:
-```
-[ORCHESTRATION CONTEXT]
-turnId: 01JXYZ...
-globalGoal: "Create character sheet with portrait for Melissa"
-yourTask: "Generate portrait image"
-...
-[/ORCHESTRATION CONTEXT]
-
-[YOUR TASK]
-Generate a portrait of Melissa...
-[/YOUR TASK]
-```
+**`callerTurnId` propagation:** `wo.turnId` is forwarded as `callerTurnId` to every dispatched orchestrator/specialist via `api.js`. The orchestration block prepended to the specialist's task also includes the `turnId` for traceability.
 
 ### File Tools (getFile, getZIP)
 
@@ -7607,31 +7820,17 @@ Example prompt:
 
 The develop subagent will read `game.js`, identify the bug, write the corrected version back to the same path via `getFile(overwrite: true)`, and return the updated link.
 
-### getTimeline Return Format
-
-`getTimeline` returns `{ timeline, meta }`.
-
-**Timeline entries** — each entry has a `type` field:
-
-| Type | Has snippets? | start_ts / end_ts | Meaning |
-|------|-------------|-------------------|---------|
-| `detail` | Yes (`snippets[]`) | From derived context segment ranges | Keyword matches found in this period |
-| `period` | No | From derived context segment or node summaries | No matches — coarse summary only |
-| `unplaced` | Yes (`snippets[]`) | Derived from snippet timestamps | Matches not covered by any known period |
-
-Each snippet in `snippets[]` has: `channel_id`, `rn`, `ts`, `sender`, `content`.
-
 ### Deep-Context Pattern (getHistory)
 
 When the AI needs to retrieve historical content that is not in the current context window, it calls `getHistory` with appropriate `start`/`end` time ranges to retrieve the actual message rows from that period. The history-oriented subagent implements this pattern internally, reading as much of the conversation history as needed to answer the question.
 
-### Tools Called Directly (No Subagent)
+### Tools Called Directly (No Orchestrator)
 
-These tools are available in the main AI's tool palette and are preferred for simple single-step tasks — no subagent needed:
+These tools are available in the main AI's tool palette and are preferred for simple single-step tasks — no orchestrator needed:
 
 | Tool | Purpose |
 |------|---------|
-| `getSubAgent` | Spawns a subagent for complex or multi-step tasks |
+| `getOrchestrator` | Delegates complex or multi-step tasks to an orchestrator |
 | `getTavily` | Web search — use directly for simple lookup questions |
 | `getImage` | Generates images — use directly for simple single-image requests |
 
@@ -7651,49 +7850,14 @@ Node.js default `maxListeners` is 10. With concurrent subagent HTTP calls each r
 EventEmitter.defaultMaxListeners = 30;
 ```
 
-### Async Subagent Mode
-
-`getSubAgent` is always asynchronous. It returns immediately and the result is delivered to the Discord channel when the subagent finishes.
-
-**How it works:**
-1. The AI calls `getSubAgent(type, task)` (and optionally `mode: "resume"` with `projectId` to continue an existing project).
-2. `getSubAgent` posts to `/api/spawn` (configured via `toolsconfig.getSubAgent.asyncSpawnPath`).
-3. The API flow stores a `"job:<jobId>"` entry in the registry with `status: "running"`, then starts the pipeline as a fire-and-forget async IIFE.
-4. When the subagent finishes, the result is stored and delivered to the original Discord channel.
-5. The Discord output module sends the result as a message in the original channel.
-
-**`getSubAgent` return value (async mode):**
-```json
-{
-  "ok": true,
-  "jobId": "01JXXX...",
-  "projectId": "01JYYY...",
-  "status": "started",
-  "message": "Working on it — result will be delivered when complete.",
-  "type": "develop",
-  "channelId": "subagent-develop"
-}
-```
-
-**`projectId` resume:** If `projectId` is passed and a job with that project ID is already `"running"`, `getSubAgent` returns an error instead of spawning a duplicate. Use the `projectId` from the previous async response to continue a project.
-
-**Config keys** (`toolsconfig.getSubAgent`):
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `asyncSpawnPath` | `"/api/spawn"` | Path appended to `apiUrl` for async spawning |
-| `spawnTimeoutMs` | `10000` | HTTP timeout for the spawn request (ms). The subagent runs beyond this. |
-
----
-
 ### Pipeline Abort Mechanism
 
-When a subagent's HTTP connection is closed by the client (e.g. because `getSubAgent` timed out), the server-side pipeline stops at the next AI loop iteration via `wo.aborted`.
+When an orchestrator's or specialist's HTTP connection is closed by the client (e.g. due to timeout), the server-side pipeline stops at the next AI loop iteration via `wo.aborted`.
 
 **How it works:**
 - `flows/api.js` and `flows/webpage.js` register `req.socket.on("close", ...)` at the start of each request. If the socket is destroyed before the response is sent (`!res.writableEnded`), `wo.aborted` is set to `true`.
 - All AI modules (`01000`–`01005`) check `wo.aborted` at the start of each loop iteration and return immediately if set.
-- `getSubAgent` also checks `wo.aborted` before making the outbound API call, preventing new subagents from being spawned after the parent is aborted.
+- `getOrchestrator` and `getSpecialists` also check `wo.aborted` before making outbound API calls, preventing new sub-pipelines from being spawned after the parent is aborted.
 
 **Flows without abort mechanism** (not needed — no HTTP connection to close):
 - `discord` — Discord gateway events are fire-and-forget
@@ -7702,22 +7866,23 @@ When a subagent's HTTP connection is closed by the client (e.g. because `getSubA
 - `bard` — internal timer-driven scheduler
 - `cron` — timer-triggered jobs
 
-### Adding a New Subagent Type
+### Adding a New Orchestrator or Specialist Type
 
-**Step 1** — Register the type in `core.json` under `workingObject.toolsconfig.getSubAgent.types`:
+**Step 1** — Register the type in `core.json` under `toolsconfig.getOrchestrator.types` (for orchestrators) or `toolsconfig.getSpecialists.types` (for specialists):
 
 ```json
 "types": {
-  "research": "subagent-research",
-  "mytype":   "subagent-mytype"
+  "generic": "subagent-orchestrator-generic",
+  "mytype":  "subagent-orchestrator-mytype"
 }
 ```
 
-**Step 2** — Add a channel config block in `config["core-channel-config"].channels`:
+**Step 2** — Add a channel config block in `config["core-channel-config"].channels` using `matchMode: "prefix"` so dynamically generated IDs (base + random hex) are matched:
 
 ```json
 {
-  "channelMatch": ["subagent-mytype"],
+  "channelMatch": ["subagent-orchestrator-mytype"],
+  "matchMode": "prefix",
   "overrides": {
     "botName": "Jenny",
     "persona": "Who the subagent is and what its job is.",
@@ -7735,11 +7900,11 @@ When a subagent's HTTP connection is closed by the client (e.g. because `getSubA
     "apiEnabled": 1,
     "apiSecret": "API_SECRET"
   },
-  "_title": "Subagent: MyType"
+  "_title": "Orchestrator: MyType"
 }
 ```
 
-**Step 3** — Add the new type to the `enum` array in `manifests/getSubAgent.json`.
+**Step 3** — Add the new type to the `enum` array in `manifests/getOrchestrator.json` or `manifests/getSpecialists.json`.
 
 No Discord channel is required. The channel name is virtual and only needs to match between `types` and `channelMatch`.
 
@@ -7766,7 +7931,7 @@ All tool manifests in `manifests/` must follow this structure:
 ```
 
 Rules:
-- `name` must match the tool filename (`getSubAgent` → `tools/getSubAgent.js`)
+- `name` must match the tool filename (e.g. `getTime` → `tools/getTime.js`)
 - `additionalProperties: false` is required on every `parameters` object
 - `required` must list all mandatory parameters
 - All text in English

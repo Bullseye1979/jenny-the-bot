@@ -1,6 +1,6 @@
 ﻿# core.json â€” Complete Reference
 
-> **Version:** 1.0 - **Date:** 2026-04-05
+> **Version:** 1 - **Date:** 2026-04-05
 
 `core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime - any change triggers an automatic hot-reload within seconds. No restart is required.
 
@@ -39,7 +39,6 @@ All key names follow **camelCase** throughout.
      - [getWebpage](#getwebpage)
      - [getYoutube](#getyoutube)
      - [getHistory](#gethistory)
-     - [getTimeline](#gettimeline)
      - [getConfluence](#getconfluence)
      - [getJira](#getjira)
      - [getPDF](#getpdf)
@@ -47,13 +46,19 @@ All key names follow **camelCase** throughout.
      - [getToken](#gettoken)
      - [getLocation](#getlocation)
      - [getTime](#gettime)
-     - [getSubAgent](#getsubagent)
      - [getOrchestrator](#getorchestrator)
      - [getSpecialists](#getspecialists)
      - [getBan](#getban)
      - [getApi](#getapi)
      - [getApiBearers](#getapibearers)
      - [getMyConnections](#getmyconnections)
+     - [getFile](#getfile)
+     - [getFileContent](#getfilecontent)
+     - [getZIP](#getzip)
+     - [getShell](#getshell)
+     - [getGraph](#getgraph)
+     - [getSpotify](#getspotify)
+     - [getOauthProviders](#getoauthproviders)
 2. [config](#config)
    - [discord](#discord)
    - [api](#api)
@@ -451,15 +456,6 @@ Date-range history retrieval directly from the database. Returns raw rows ordere
 - Default: primary = `channelId` arg → `wo.callerChannelId` → `wo.channelId`; extra = `channelIds` arg → `wo.callerChannelIds` → `wo.channelIds`.
 - `strictChannelId=true`: only the explicitly provided `channelId`/`channelIds` are queried; workingObject channel lists are ignored.
 
-#### getTimeline
-
-Chronological timeline retrieval from derived context segments and nodes.
-
-| Key | Type | Example | Description |
-|---|---|---|---|
-| `maxEntries` | number | `120` | Maximum number of timeline entries returned |
-| `compact` | boolean | `true` | Allow higher-level node summaries when the timeline is large |
-
 #### getConfluence
 
 Atlassian Confluence integration.
@@ -554,84 +550,6 @@ Returns the current UTC time as an ISO 8601 string. No admin configuration requi
 |---|---|---|
 | *(no keys)* | â€” | This tool requires no toolsconfig entry |
 
-#### getSubAgent
-
-Spawns an isolated AI subagent via the internal API flow. Each subagent type maps to a virtual channel configured with its own tool palette, model, and prompt.
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `apiUrl` | string | `”http://localhost:3400”` | Base URL of the internal API server |
-| `apiSecret` | string | `”API_SECRET”` | Placeholder name for the bearer token (resolved from `bot_secrets` at runtime) |
-| `asyncSpawnPath` | string | `”/api/spawn”` | Path used for spawning jobs |
-| `spawnTimeoutMs` | number | `10000` | Timeout for the initial spawn HTTP request (ms). The subagent runs independently after that. |
-| `maxSpawnDepth` | number | `3` | Maximum nesting depth. Depth 0 = user channel, 1 = orchestrator, 2 = specialist, 3 = nested specialist. A subagent at depth >= `maxSpawnDepth` cannot spawn further subagents. **Set to at least 3** when using orchestrators that spawn specialists. |
-| `projectContextPrompt` | string | `””` | Prompt template for resume calls. Use `${projectId}` as placeholder. |
-| `types` | object | see below | **Required.** Map of type name to virtual channel ID. Missing entries cause silent fallback to `generic`. |
-
-**Standard `types` mapping** (copy from `core.json.example`):
-
-```jsonc
-“types”: {
-  “orchestrator-development”:   “subagent-orchestrator-development”,
-  “orchestrator-research”:      “subagent-orchestrator-research”,
-  “orchestrator-actions”:       “subagent-orchestrator-actions”,
-  “orchestrator-context”:       “subagent-orchestrator-context”,
-  “orchestrator-generic”:       “subagent-orchestrator-generic”,
-  “specialist-coding”:          “subagent-specialist-coding”,
-  “specialist-file-edit”:       “subagent-specialist-file-edit”,
-  “specialist-image-video”:     “subagent-specialist-image-video”,
-  “specialist-content-search”:  “subagent-specialist-content-search”,
-  “specialist-context-research”:”subagent-specialist-context-research”,
-  “specialist-generic”:         “subagent-specialist-generic”,
-  “specialist-document-generate”:”subagent-specialist-document-generate”,
-  “specialist-atlassian”:       “subagent-specialist-atlassian”,
-  “specialist-microsoft”:       “subagent-specialist-microsoft”,
-  “specialist-code-check”:      “subagent-specialist-code-check”,
-  “specialist-security-check”:  “subagent-specialist-security-check”,
-  “generic”: “subagent-generic”  // fallback — always keep this entry
-}
-```
-
-**Orchestrator / Specialist overview:**
-
-| Type | Role |
-|---|---|
-| `orchestrator-development` | Phases: dependency install (getShell) → code-check → security-check → coding → file-edit → synthesis |
-| `orchestrator-research` | Delegates web research to content-search specialists |
-| `orchestrator-actions` | Coordinates external system actions (Atlassian, Microsoft, APIs) |
-| `orchestrator-context` | Partitions a channel’s timeline into equal time windows, spawns parallel context-research specialists, synthesizes results |
-| `orchestrator-generic` | Fallback multi-step orchestrator |
-| `specialist-coding` | Writes complete code. **Continue logic:** never truncates to fit a token budget — the system requests the remainder in follow-up calls |
-| `specialist-file-edit` | Handles **exactly one file** per call; returns an error if the task references multiple files |
-| `specialist-code-check` | Reads source files; returns a structured PASSED / WARNINGS / FAILED quality report |
-| `specialist-security-check` | Reads code and dependencies; uses `getTavily` to search for CVEs and exploits; returns a severity-ranked security report |
-| `specialist-context-research` | Reconstructs events within a strictly assigned time window. Uses `channelId` + `strictChannelId=true` on `getHistory` to stay within its partition |
-| `specialist-content-search` | Web search, webpage fetch, YouTube, location |
-| `specialist-image-video` | Image generation, animation, video, media analysis |
-| `specialist-document-generate` | PDF and document assembly |
-| `specialist-atlassian` | Jira and Confluence |
-| `specialist-microsoft` | Microsoft 365 / Graph API |
-| `specialist-generic` | General-purpose fallback specialist |
-
-**Orchestration context** (passed via the `orchestration` parameter):
-
-| Field | Description |
-|---|---|
-| `globalGoal` | Shared objective for all parallel specialists |
-| `yourTask` | This specialist’s specific assignment |
-| `yourRole` | Role label |
-| `doOnly` / `doNot` | Action whitelist / blacklist |
-| `existingArtifacts` | Already-produced artifacts |
-| `assignedToOthers` | Work already delegated elsewhere |
-| `toolLocks` | Tools this specialist must not call |
-| `timeframe.start` / `timeframe.end` | ISO 8601 window boundaries (context specialists) |
-| `datasetInfo.channelId` | Main channel ID — authoritative context source (context specialists) |
-| `datasetInfo.totalRecords` / `.partitionIndex` / `.partitionTotal` | Dataset metadata for partitioned jobs |
-
-**Context injection:** By default a spawned subagent only loads its own (empty) project context. Set `includeCallerContext=true` when calling `getSubAgent` to pre-load the original caller channel’s context into the subagent, compressed to the subagent channel’s own `contextSize`. This is required for `specialist-context-research` subagents that need to run `getHistory` against the original channel.
-
-`getSubAgent` posts to `/api/spawn` and returns immediately with `{ jobId, projectId, status: “started” }`. Results are delivered back to the originating channel by the subagent poll flows. If the task text is missing URLs that appear in the caller payload, they are appended automatically in a `[SOURCE URLS]` block.
-
 #### getOrchestrator
 
 Synchronous orchestrator tool. Blocks until the orchestrator finishes. The orchestrator runs on a dynamically generated channel ID (`<baseChannelId>-<randomHex>`).
@@ -690,6 +608,135 @@ No `toolsconfig` keys. Add `"getApiBearers"` to `tools` alongside `"getApi"` whe
 Discovery companion for `getApi` with per-user OAuth2 (`oauth_user`). Returns the list of OAuth2 providers that **the current Discord user** has personally connected at `/connections`, including connection status (`active`, `expired_renewable`, `expired`). No toolsconfig keys.
 
 Add `"getMyConnections"` to `tools` alongside `"getApi"` whenever per-user OAuth flows are enabled for this channel.
+
+#### getFile
+
+Saves text or binary content to a persistent file under `pub/documents/{userId}/` and returns a public URL. Supports subdirectory paths (e.g. `src/main.js`) — directories are created automatically. Used by development subagents to persist generated artifacts (source code, reports, markdown, JSON).
+
+No `toolsconfig` keys required. Storage path and public base URL are derived from `workingObject.publicBaseUrl` and `workingObject.userId` at runtime.
+
+```json
+"getFile": {}
+```
+
+**Returns:** `{ ok, filename, url, path, bytes }`. The `url` field is the public download link for subsequent `getFileContent` or `getZIP` calls.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `content` | string | Yes | File content to write. For source code files: raw valid source code only. |
+| `filename` | string | No | Desired path including optional subdirs and extension, e.g. `src/main.js`. Auto-generated when omitted. |
+| `encoding` | string | No | `"text"` (default, UTF-8) or `"base64"` (binary) |
+| `contentType` | string | No | MIME type hint for extension inference when `filename` is omitted |
+| `overwrite` | boolean | No | If `true` and `filename` is provided, replaces the existing file at that path |
+
+#### getFileContent
+
+Fetches the raw text content of a previously generated file by its public URL. Intended for the read-edit-write cycle: read a prior `getFile` URL, modify the content, write it back with `getFile(overwrite: true)`. Binary files (images, PDFs, ZIPs) are rejected. Maximum file size: 512 KB.
+
+No `toolsconfig` keys required.
+
+```json
+"getFileContent": {}
+```
+
+**Returns:** `{ ok, url, bytes, content }`. `content` contains the raw UTF-8 text of the file.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `url` | string | Yes | Absolute http/https URL of the file to read (must be a text file) |
+
+#### getZIP
+
+Downloads one or more files by URL and packages them into a ZIP archive. Provide `baseUrl` to preserve directory structure inside the archive. Returns the public URL of the generated ZIP.
+
+No `toolsconfig` keys required.
+
+```json
+"getZIP": {}
+```
+
+**Returns:** `{ ok, filename, url, path, bytes, files, results[] }`. `url` is the public download link of the ZIP.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `urls` | string[] | Yes | Public URLs of the files to include |
+| `filename` | string | No | Base name for the ZIP file (`.zip` added automatically, default: `archive`) |
+| `timeoutMs` | number | No | Per-file download timeout in milliseconds (default: 30000) |
+| `baseUrl` | string | No | Reference URL prefix — each file's path relative to this prefix becomes its path inside the ZIP |
+
+#### getShell
+
+Executes a shell command on the server as the bot user and returns stdout/stderr. Commands run without shell operators (`&&`, `|`, `;`, `$()`) — all arguments must be passed in the `args` array (`shell: false` is always enforced). An optional allowlist restricts which executables are permitted.
+
+```json
+"getShell": {
+  "allowlist": ["ls", "df", "systemctl", "journalctl", "whoami", "python3"],
+  "maxOutputBytes": 16384,
+  "defaultTimeoutMs": 15000
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `allowlist` | string[] | `null` (all allowed) | If set, only listed executable names are permitted |
+| `maxOutputBytes` | number | `8192` | Maximum combined stdout/stderr bytes before truncation |
+| `defaultTimeoutMs` | number | `15000` | Default command timeout in milliseconds |
+
+**Returns:** `{ ok, exitCode, output, stdout, stderr }`. `output` is the primary field — stdout and stderr combined, stderr prefixed with `[stderr]`.
+
+#### getGraph
+
+Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user management. Uses delegated OAuth2 tokens stored per Discord user in the `graph_tokens` table. Credentials are managed via `/graph-auth` (module `00077`) and the `cron-graph-token-refresh` cron job.
+
+```json
+"getGraph": {
+  "defaultSharePointHostname": "mycompany.sharepoint.com",
+  "defaultMailFolderId":       "inbox",
+  "defaultPageSize":           25
+}
+```
+
+| Key | Type | Description |
+|---|---|---|
+| `defaultSharePointHostname` | string | SharePoint host for site auto-discovery |
+| `defaultUserId` | string | Fallback user ID / UPN |
+| `defaultSiteId` | string | Fallback SharePoint site ID (auto-discovered when omitted) |
+| `defaultDriveId` | string | Fallback drive ID (auto-discovered when omitted) |
+| `defaultMailFolderId` | string | Fallback mail folder (`inbox`, `sentitems`, `drafts`, etc.) |
+| `defaultDestinationFolderId` | string | Fallback destination folder for `moveEmails` |
+| `forcedUserId` / `forcedSiteId` / `forcedDriveId` / `forcedMailFolderId` / `forcedDestinationFolderId` | string | Hard-override IDs the AI cannot change |
+| `version` | string | Graph API version (`v1.0` or `beta`) |
+| `defaultPageSize` | number | Default page size for list/search operations |
+| `defaultEntityTypes` | array | Default entity types for `fulltextSearch` |
+| `timeoutMs` | number | HTTP request timeout in ms (default: 30000) |
+
+**Minimum required config:** none — the tool works with an empty config object as long as the user has authenticated at `/graph-auth`.
+
+#### getSpotify
+
+Spotify API — playback control, device management, playlist operations, and search. Uses delegated OAuth2 tokens stored per Discord user in the `spotify_tokens` table. Credentials are managed via `/spotify-auth` (module `00061`) and the `cron-spotify-token-refresh` cron job. **Spotify Premium is required for playback control.**
+
+No configuration keys required. The tool reads the authenticated user's token directly from the DB.
+
+```json
+"getSpotify": {}
+```
+
+#### getOauthProviders
+
+Discovery tool. Returns the list of OAuth2 client_credentials provider names (and metadata) currently exposed to the AI. Stateless — reads from the `tool_exposure` DB table. No `toolsconfig` keys.
+
+```json
+"getOauthProviders": {}
+```
+
+Add `"getOauthProviders"` to `tools` alongside `"getApi"` when `authType: "oauth_cc"` flows are used. Exposure is controlled per-channel via the `/oauth-exposure` admin UI.
 
 ---
 
@@ -951,7 +998,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
     "requestTimeoutMs": 120000,               // AI request timeout in ms
     "includeHistory":   false,                // true = load channel chat history; see note in ADMIN_MANUAL
     "contextSize":      150,                  // messages to load when includeHistory=true
-    "tools":            ["getImage", "getTimeline"],
+    "tools":            ["getImage", "getHistory"],
     "systemPrompt":     "",                   // empty = use built-in prompt
     "persona":          "",
     "instructions":     ""
@@ -997,7 +1044,7 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 | `overrides.requestTimeoutMs` | number | `120000` | AI request timeout in ms |
 | `overrides.includeHistory` | boolean | `false` | Load channel chat history as AI context. Default `false` â€” see `includeHistory` note in ADMIN_MANUAL |
 | `overrides.contextSize` | number | `150` | Number of recent messages loaded when `includeHistory: true` |
-| `overrides.tools` | array | `["getImage","getTimeline"]` | Tools available to the AI |
+| `overrides.tools` | array | `["getImage","getHistory"]` | Tools available to the AI |
 | `overrides.systemPrompt` | string | *(built-in)* | Empty = use built-in prompt |
 | `overrides.persona` | string | `""` | Persona injected into the AI call |
 | `overrides.instructions` | string | `""` | Instructions injected into the AI call |
@@ -1479,7 +1526,7 @@ Structured manifest editor for files in `manifests/*.json`. Includes a manifest 
 
 ### webpage-subagent-manager
 
-Admin UI for managing subagent definitions. Creating, editing, or deleting an entry updates both `core.json` and `manifests/getSubAgent.json`.
+Admin UI for managing subagent definitions. Creating, editing, or deleting an entry updates both `core.json` (channel config entry) and the `enum` lists in `manifests/getOrchestrator.json` / `manifests/getSpecialists.json`.
 
 ```jsonc
 "webpage-subagent-manager": {
@@ -2159,6 +2206,85 @@ Set `config.mcp.stdio: true` in `core.json` and the server starts automatically 
 
 ---
 
+### MCP client tools (`getMcpTools`, `getMcp`)
+
+Version 1.
+
+Jenny can call remote MCP servers from normal conversations through two tools:
+
+| Tool | Purpose | Config key |
+|---|---|---|
+| `getMcpTools` | Discover remote tools and input schemas from configured MCP servers | `workingObject.toolsconfig.getMcpTools` |
+| `getMcp` | Execute one discovered remote MCP tool | `workingObject.toolsconfig.getMcp` |
+
+Each tool has its own isolated `toolsconfig` section. Do not rely on shared server lists between the two tools. If both tools should access the same MCP server, define that server in both arrays.
+
+```jsonc
+"tools": [
+  "getMcpTools",
+  "getMcp"
+],
+"toolsconfig": {
+  "getMcpTools": {
+    "servers": [
+      {
+        "name": "local-jenny",
+        "namespace": "jenny-mcp",
+        "type": "streamableHttp",
+        "url": "http://localhost:3100/mcp",
+        "headers": [
+          { "header": "x-channel-id", "value": "mcp" }
+        ],
+        "bearerTokenSecret": "JENNY_MCP_TOKEN",
+        "timeoutMs": 30000
+      }
+    ]
+  },
+  "getMcp": {
+    "servers": [
+      {
+        "name": "local-jenny",
+        "namespace": "jenny-mcp",
+        "type": "streamableHttp",
+        "url": "http://localhost:3100/mcp",
+        "headers": [
+          { "header": "x-channel-id", "value": "mcp" }
+        ],
+        "bearerTokenSecret": "JENNY_MCP_TOKEN",
+        "timeoutMs": 30000
+      }
+    ]
+  }
+}
+```
+
+| Server key | Type | Description |
+|---|---|---|
+| `name` | string | Stable name used in `getMcpTools.server` and raw `getMcp.server` calls |
+| `namespace` | string | Optional namespace used in discovered tool names. Defaults to `name`. A tool such as `getTime` becomes `mcp.<namespace>.getTime` |
+| `type` | string | `streamableHttp`, `sse`, or `stdio` |
+| `url` | string | MCP endpoint for `streamableHttp` / `sse` servers |
+| `headers` | array | Optional HTTP headers as `{ "header": "...", "value": "..." }` entries |
+| `bearerTokenSecret` | string | Optional secret name resolved through Jenny's secret store and sent as `Authorization: Bearer ...` |
+| `bearerToken` | string | Optional literal bearer token. Prefer `bearerTokenSecret` for real credentials |
+| `timeoutMs` | number | Connect and request timeout in milliseconds |
+| `command` | string | Executable for `stdio` servers |
+| `args` | array | Arguments for `stdio` servers |
+| `cwd` | string | Optional working directory for `stdio` servers |
+| `env` | object | Optional environment for `stdio` servers |
+
+For Jenny's own HTTP MCP server, `x-channel-id` is configured as a normal header:
+
+```json
+"headers": [
+  { "header": "x-channel-id", "value": "mcp" }
+]
+```
+
+There is no special `channelId` key in MCP client tool configuration. `getMcpTools` returns remote MCP tools as namespaced names such as `mcp.jenny-mcp.getTime`; execute those names through `getMcp`.
+
+---
+
 ### Module Flow Subscriptions
 
 Every module has an entry under `config` that declares which flows it participates in. The key is the exact module name (filename prefix stripped).
@@ -2368,8 +2494,8 @@ Below is a minimal but functional `core.json` template with every section includ
     "tools": [
       "getGoogle", "getWebpage", "getImage", "getImageDescription",
       "getAnimatedPicture", "getVideoFromText", "getYoutube",
-      "getHistory", "getTimeline", "getText", "getPDF",
-      "getTime", "getToken", "getLocation", "getSubAgent"
+      "getHistory", "getText", "getPDF",
+      "getTime", "getToken", "getLocation", "getOrchestrator"
     ],
 
     // â”€â”€ Voice (TTS / Whisper) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2668,7 +2794,7 @@ Below is a minimal but functional `core.json` template with every section includ
         "requestTimeoutMs": 120000,
         "includeHistory":   false,
         "contextSize":      150,
-        "tools":            ["getImage", "getTimeline"],
+        "tools":            ["getImage", "getHistory"],
         "systemPrompt":     "",
         "persona":          "",
         "instructions":     ""
@@ -2720,5 +2846,4 @@ Below is a minimal but functional `core.json` template with every section includ
 
 ---
 
-*Documentation updated 2026-04-05. Version 1.0.*
-
+*Documentation updated 2026-04-05. Version 1.*

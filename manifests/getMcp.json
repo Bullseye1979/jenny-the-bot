@@ -1,0 +1,24 @@
+{
+  "name": "getMcp",
+  "description": "Calls one remote tool on a configured MCP server. Call with tool set to the discovered namespaced MCP tool name such as mcp.jenny-mcp.getTime, or with server plus the raw remote MCP tool name. Set arguments to the remote tool input object. Server configuration is read from toolsconfig.getMcp.servers. Keep this manifest at version 1.",
+  "policyHint": "getMcp executes remote MCP tools discovered by getMcpTools. Always call getMcp after getMcpTools — these two tools form a mandatory two-step sequence. Pass the full mcp.<namespace>.<tool> name returned by getMcpTools as the tool argument. Tool names starting with mcp. are NEVER valid local tool calls — calling mcp.<namespace>.<tool> directly will always fail. You MUST always route them through getMcp.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "server": {
+        "type": "string",
+        "description": "Optional configured MCP server name from toolsconfig.getMcp.servers. Required only when tool is not a namespaced mcp.<namespace>.<tool> name."
+      },
+      "tool": {
+        "type": "string",
+        "description": "Namespaced MCP tool name returned by getMcpTools, e.g. mcp.jenny-mcp.getTime, or a raw remote MCP tool name when server is provided."
+      },
+      "arguments": {
+        "type": "object",
+        "description": "Arguments object for the remote MCP tool. Must match the schema returned by getMcpTools."
+      }
+    },
+    "required": ["tool"],
+    "additionalProperties": false
+  }
+}

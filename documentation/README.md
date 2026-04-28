@@ -1,6 +1,6 @@
 # Jenny — Documentation
 
-> **Version:** 1.0
+> **Version:** 1
 
 Jenny is a self-hosted, modular AI assistant for Discord. It runs a configurable pipeline of modules across multiple flows (Discord, voice, web, API, cron) and exposes LLM-callable tools for search, image generation, file handling, and external integrations.
 
@@ -42,7 +42,7 @@ types/          JSDoc type definitions
 
 ---
 
-## MCP Server
+## MCP
 
 Jenny includes a built-in MCP (Model Context Protocol) server that exposes all tool manifests as MCP tools. Compatible with Claude Desktop, Cursor, VS Code, and any MCP client.
 
@@ -50,8 +50,10 @@ Jenny includes a built-in MCP (Model Context Protocol) server that exposes all t
 - **stdio** — for local clients (Claude Desktop, Cursor). Enable with `config.mcp.stdio: true`.
 - **HTTP/SSE** — for network clients. Enable with `config.mcp.http.enabled: true`.
 
-See [Admin Manual](ADMIN_MANUAL.md#mcp-server) for setup instructions.
+Jenny can also act as an MCP client through the LLM-callable tools `getMcpTools` and `getMcp`. Configure remote MCP servers in `workingObject.toolsconfig.getMcpTools.servers` and `workingObject.toolsconfig.getMcp.servers`.
+
+See [Admin Manual](ADMIN_MANUAL.md#mcp-server) and [Core JSON Reference](CORE_JSON.md#mcp-client-tools-getmcptools-getmcp) for setup instructions.
 
 ---
 
-*Version 1.0*
+*Version 1*

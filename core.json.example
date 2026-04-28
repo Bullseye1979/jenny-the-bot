@@ -35,6 +35,8 @@
       "getToken",
       "getLocation",
       "getBan",
+      "getMcpTools",
+      "getMcp",
       "getOrchestrator"
     ],
     "toolsBlacklist": [
@@ -313,6 +315,68 @@
       },
       "getSpotify": {
         "__description": "Spotify API — delegated OAuth2. Users must connect their account at /spotify-auth. No credentials here. Requires Spotify Premium for playback control."
+      },
+      "getMcpTools": {
+        "__description": "MCP discovery configuration. Keep this server list separate from toolsconfig.getMcp.servers.",
+        "servers": [
+          {
+            "name": "local-jenny",
+            "namespace": "jenny-mcp",
+            "type": "streamableHttp",
+            "url": "http://localhost:3100/mcp",
+            "headers": [
+              {
+                "header": "x-channel-id",
+                "value": "mcp"
+              }
+            ],
+            "bearerTokenSecret": "JENNY_MCP_TOKEN",
+            "timeoutMs": 30000
+          },
+          {
+            "name": "example-stdio",
+            "namespace": "filesystem",
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+              "-y",
+              "@modelcontextprotocol/server-filesystem",
+              "/tmp"
+            ],
+            "timeoutMs": 30000
+          }
+        ]
+      },
+      "getMcp": {
+        "__description": "MCP client configuration. Multiple servers are supported via the servers array. Supported type values: streamableHttp, sse, stdio.",
+        "servers": [
+          {
+            "name": "local-jenny",
+            "namespace": "jenny-mcp",
+            "type": "streamableHttp",
+            "url": "http://localhost:3100/mcp",
+            "headers": [
+              {
+                "header": "x-channel-id",
+                "value": "mcp"
+              }
+            ],
+            "bearerTokenSecret": "JENNY_MCP_TOKEN",
+            "timeoutMs": 30000
+          },
+          {
+            "name": "example-stdio",
+            "namespace": "filesystem",
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+              "-y",
+              "@modelcontextprotocol/server-filesystem",
+              "/tmp"
+            ],
+            "timeoutMs": 30000
+          }
+        ]
       },
       "getGoogle": {
         "__description": "Google Custom Search — requires apiKey and cseId",
