@@ -2838,19 +2838,20 @@ Two-pass generation for roleplay and narrative scenarios. Pass 1 generates the m
 4. Sets `wo.response` to the accumulated text
 
 **Pass 2 — Image prompt generation:**
-1. Builds a secondary system prompt using `imagePromptRules` from `config["core-ai-roleplay"]`
+1. Builds a secondary system prompt using `imagePromptRules` from the working object or `config["core-ai-roleplay"]`
 2. Calls the model with limited tokens (`imagePromptMaxTokens`, default 260) and low temperature (`imagePromptTemperature`, default 0.35)
 3. Passes the result to `getImageSD` (if configured) to generate an image
 4. If pass 2 fails or returns empty, a fallback single-line prompt is generated from the response text
 
-**Image prompt config (workingObject):**
+**Image prompt config (working object or `config["core-ai-roleplay"]`):**
 
 | Parameter | Default | Description |
 |---|---|---|
-| `imagePromptRules` | `""` | Multiline string with SD prompt generation rules. **Must be configured** in `config["core-ai-roleplay"]` in `core.json` — the module produces no image if this is empty. |
+| `imagePromptRules` | `""` | Multiline string with SD prompt generation rules. Configure this in `config["core-ai-roleplay"]` in `core.json`; without it, image prompt generation has less guidance and may be less relevant to the current scene. |
 | `imagePromptMaxTokens` | `260` | Max tokens for the image prompt generation call |
 | `imagePromptTemperature` | `0.35` | Temperature for the image prompt call |
 | `imagePersonaHint` | `""` | Visual description of the main character, prepended to the image prompt system |
+| `imageContextTurns` | `8` | Number of recent context turns included in the image prompt generation call |
 
 **`skipAiCompletions` flag:** If `wo.skipAiCompletions === true`, both passes are skipped.
 

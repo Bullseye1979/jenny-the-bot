@@ -63,20 +63,20 @@ function getWithTurnId(rec, wo) {
 }
 
 
-function getKiCfg(wo) {
+function getKiCfg(wo, moduleCfg = {}) {
   return {
-    includeHistory: getBool(wo?.includeHistory, true),
-    includeHistorySystemMessages: getBool(wo?.includeHistorySystemMessages, false),
-    temperature: getNum(wo?.temperature, 0.7),
-    maxTokens: getNum(wo?.maxTokens, 1200),
-    requestTimeoutMs: getNum(wo?.requestTimeoutMs, 120000),
+    includeHistory: getBool(wo?.includeHistory, getBool(moduleCfg?.includeHistory, true)),
+    includeHistorySystemMessages: getBool(wo?.includeHistorySystemMessages, getBool(moduleCfg?.includeHistorySystemMessages, false)),
+    temperature: getNum(wo?.temperature, getNum(moduleCfg?.temperature, 0.7)),
+    maxTokens: getNum(wo?.maxTokens, getNum(moduleCfg?.maxTokens, 1200)),
+    requestTimeoutMs: getNum(wo?.requestTimeoutMs, getNum(moduleCfg?.requestTimeoutMs, 120000)),
     toolsList: Array.isArray(wo?.tools) ? wo.tools : [],
-    imagePromptMaxTokens: getNum(wo?.imagePromptMaxTokens, 260),
-    imagePromptTemperature: getNum(wo?.imagePromptTemperature, 0.35),
-    imagePersonaHint: getStr(wo?.imagePersonaHint, ""),
-    imageContextTurns: Math.max(0, getNum(wo?.imageContextTurns, 8)),
-    maxLoops: Math.max(1, getNum(wo?.maxLoops, 5)),
-    imagePromptRules: getStr(wo?.imagePromptRules, "")
+    imagePromptMaxTokens: getNum(wo?.imagePromptMaxTokens, getNum(moduleCfg?.imagePromptMaxTokens, 260)),
+    imagePromptTemperature: getNum(wo?.imagePromptTemperature, getNum(moduleCfg?.imagePromptTemperature, 0.35)),
+    imagePersonaHint: getStr(wo?.imagePersonaHint, getStr(moduleCfg?.imagePersonaHint, "")),
+    imageContextTurns: Math.max(0, getNum(wo?.imageContextTurns, getNum(moduleCfg?.imageContextTurns, 8))),
+    maxLoops: Math.max(1, getNum(wo?.maxLoops, getNum(moduleCfg?.maxLoops, 5))),
+    imagePromptRules: getStr(wo?.imagePromptRules, getStr(moduleCfg?.imagePromptRules, ""))
   };
 }
 
@@ -393,8 +393,8 @@ export default async function getCoreAi(coreData) {
     return coreData;
   }
 
-  const kiCfg = getKiCfg(wo);
   const moduleCfg = coreData.config?.[MODULE_NAME] || {};
+  const kiCfg = getKiCfg(wo, moduleCfg);
   const userPromptRaw = String(wo.payload ?? "");
   if (!userPromptRaw.trim()) {
     log("Skipped: empty payload", "info");

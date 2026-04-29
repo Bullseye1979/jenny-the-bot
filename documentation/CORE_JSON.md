@@ -2676,7 +2676,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "core-ai-responses":       { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "core-ai-completions":     { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "core-ai-pseudotoolcalls": { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
-    "core-ai-roleplay":        { "flow": ["discord","discord-voice","api","discord-status","webpage"], "imagePromptRules": "" },
+    "core-ai-roleplay":        { "flow": ["discord","discord-voice","api","discord-status","webpage"], "imagePromptRules": "Stable Diffusion prompt generation rules" },
     "discord-add-context":     { "flow": ["discord","discord-voice"] },
     "discord-text-output":     { "flow": ["all"] },
     "core-output":             { "flow": ["all"] },

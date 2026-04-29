@@ -367,9 +367,6 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     }
 
     if (req.method === "GET" && (req.url === browserActionPath || req.url.startsWith(browserActionPath + "?"))) {
-      if (!isBearerValid(req, baseCore)) {
-        return getJson(res, 401, { ok: false, error: "unauthorized" });
-      }
       try {
         const _baUrl = new URL(req.url, `http://localhost:${port}`);
         const _baUserId = String(_baUrl.searchParams.get("userId") || "").trim();

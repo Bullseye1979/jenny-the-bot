@@ -256,6 +256,7 @@
  * @property {number} [imagePromptTemperature] Temperature for image-prompt generation in the roleplay module.
  * @property {string} [imagePersonaHint] Short persona hint appended to image prompts in the roleplay module.
  * @property {number} [imageContextTurns] Number of context turns passed to image-prompt generation.
+ * @property {string} [imagePromptRules] Rules for generating Stable Diffusion prompts in the roleplay module.
  * @property {string} [endpointFilesContent] Endpoint used by the responses module to upload file content.
  * @property {boolean} [debugPayload] When true, logs the raw AI payload for debugging.
  * @property {string} [reasoningThreadName] Discord thread name for reasoning-mode responses.
