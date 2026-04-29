@@ -1,0 +1,9 @@
+{
+  "name": "getBrowserStatus",
+  "description": "Retrieves the current browser status (active tab URL and title) from the user's Jenny browser extension. Returns null status if the extension is not active, the user is not logged in, or status reporting is disabled via the extension checkbox. Only use this when the user wants to share or reference their current browser activity.",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  }
+}

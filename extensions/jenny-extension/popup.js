@@ -11,6 +11,7 @@ var lastAssistantTimer = null;
 var lastAssistantTs = null;
 var LAST_ASSISTANT_INTERVAL_MS = 2000;
 var jobPollTimer = null;
+var statusPollTimer = null;
 
 function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
@@ -216,12 +217,10 @@ function startJobPoll() {
   if (jobPollTimer) return;
   if (!cfg.apiUrl || !webSession || !webSession.userId) return;
   var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
-  var url = baseUrl + "/browser-action?userId=" + encodeURIComponent(webSession.userId);
+  var url = baseUrl + "/browser-action";
   jobPollTimer = setInterval(function() {
-    if (!webSession || !webSession.userId) return;
-    var headers = {};
-    if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
-    fetch(url, { headers: headers })
+    if (!webSession || !webSession.userId) { clearInterval(jobPollTimer); jobPollTimer = null; return; }
+    fetch(url, { credentials: "include" })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (!d || !d.ok || !d.action) return;
@@ -232,6 +231,39 @@ function startJobPoll() {
       })
       .catch(function() {});
   }, 2000);
+}
+
+function stopJobPoll() {
+  if (jobPollTimer) { clearInterval(jobPollTimer); jobPollTimer = null; }
+}
+
+function startStatusPoll() {
+  if (statusPollTimer) return;
+  if (!cfg.apiUrl || !webSession || !webSession.userId) return;
+  var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
+  var url = baseUrl + "/browser-status";
+  statusPollTimer = setInterval(function() {
+    if (!webSession || !webSession.userId) { clearInterval(statusPollTimer); statusPollTimer = null; return; }
+    var cb = document.getElementById("status-enabled");
+    if (!cb || !cb.checked) return;
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+      if (chrome.runtime.lastError || !tabs || !tabs.length || !tabs[0].url) return;
+      var tab = tabs[0];
+      var tabUrl = tab.url || "";
+      var tabTitle = tab.title || "";
+      if (!safeUrl(tabUrl)) return;
+      fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: tabUrl, title: tabTitle })
+      }).catch(function() {});
+    });
+  }, 10000);
+}
+
+function stopStatusPoll() {
+  if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null; }
 }
 
 function getUploadUrl() {
@@ -385,11 +417,14 @@ function migrateStorage(callback) {
 
 function init() {
   migrateStorage(function() {
-    chrome.storage.sync.get(["apiUrl", "channelId", "apiSecret", "webBaseUrl"], function(stored) {
+    chrome.storage.sync.get(["apiUrl", "channelId", "apiSecret", "webBaseUrl", "statusEnabled"], function(stored) {
       cfg.apiUrl     = stored.apiUrl     || "";
       cfg.channelId  = stored.channelId  || "";
       cfg.apiSecret  = stored.apiSecret  || "";
       cfg.webBaseUrl = (stored.webBaseUrl || "").trim().replace(/\/$/, "");
+
+      var statusCb = document.getElementById("status-enabled");
+      if (statusCb) statusCb.checked = stored.statusEnabled !== false;
 
       if (!cfg.apiUrl || !cfg.channelId) {
         document.getElementById("config-warn").classList.remove("hidden");
@@ -400,20 +435,26 @@ function init() {
 
       function setAuthBar(sess) {
         webSession = sess;
-        var bar     = document.getElementById("auth-bar");
-        var userEl  = document.getElementById("auth-user");
-        var loginEl = document.getElementById("auth-login");
-        var logoutEl= document.getElementById("auth-logout");
+        var bar       = document.getElementById("auth-bar");
+        var userEl    = document.getElementById("auth-user");
+        var loginEl   = document.getElementById("auth-login");
+        var logoutEl  = document.getElementById("auth-logout");
+        var statusLbl = document.getElementById("status-label");
         bar.classList.remove("hidden");
         if (sess) {
           userEl.textContent  = "\uD83D\uDC64 " + (sess.username || sess.userId);
           loginEl.classList.add("hidden");
           logoutEl.classList.remove("hidden");
+          statusLbl.classList.remove("hidden");
           startJobPoll();
+          startStatusPoll();
         } else {
-          userEl.textContent  = "Not logged in";
+          userEl.textContent = "Not logged in";
           loginEl.classList.remove("hidden");
           logoutEl.classList.add("hidden");
+          statusLbl.classList.add("hidden");
+          stopJobPoll();
+          stopStatusPoll();
         }
       }
 
@@ -435,6 +476,10 @@ function init() {
             .then(function() { setAuthBar(null); })
             .catch(function() { setAuthBar(null); });
         }
+      });
+
+      document.getElementById("status-enabled").addEventListener("change", function() {
+        chrome.storage.sync.set({ statusEnabled: this.checked });
       });
 
       document.getElementById("open-options").addEventListener("click", function() {

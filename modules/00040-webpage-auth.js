@@ -7,14 +7,19 @@
 
 "use strict";
 
-import crypto from "node:crypto";
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { setSendNow, setJsonResp } from "../shared/webpage/utils.js";
 import { getSecret } from "../core/secrets.js";
+import {
+  getParseCookies,
+  getSignToken,
+  getVerifyToken,
+  getSessionCookieName
+} from "../shared/webpage/session.js";
 
 const MODULE_NAME = "webpage-auth";
 const COOKIE_STATE = "jenny_oauth_state";
-const COOKIE_SESS = "jenny_session";
+const COOKIE_SESS = getSessionCookieName();
 
 
 function setRedirect(wo, url, cookies = []) {
@@ -39,64 +44,7 @@ function getIsHttps(wo) {
 }
 
 
-function getParseCookies(cookieHeader) {
-  const out = {};
-  const s = String(cookieHeader || "");
-  if (!s) return out;
-  for (const p of s.split(";")) {
-    const idx = p.indexOf("=");
-    if (idx <= 0) continue;
-    out[p.slice(0, idx).trim()] = decodeURIComponent(p.slice(idx + 1).trim());
-  }
-  return out;
-}
 
-
-function getB64UrlEncode(input) {
-  const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input));
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-
-function getB64UrlDecode(s) {
-  const t = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
-  const pad = t.length % 4 ? "=".repeat(4 - (t.length % 4)) : "";
-  return Buffer.from(t + pad, "base64");
-}
-
-
-function getHmac(secret, data) {
-  return crypto.createHmac("sha256", String(secret)).update(String(data)).digest();
-}
-
-
-function getSignToken(secret, payloadObj) {
-  const payloadJson = JSON.stringify(payloadObj);
-  const p = getB64UrlEncode(payloadJson);
-  const sig = getB64UrlEncode(getHmac(secret, p));
-  return `${p}.${sig}`;
-}
-
-
-function getVerifyToken(secret, token) {
-  const s = String(token || "");
-  const parts = s.split(".");
-  if (parts.length !== 2) return null;
-  const p = parts[0];
-  const sig = parts[1];
-  const want = getB64UrlEncode(getHmac(secret, p));
-
-  const a = Buffer.from(want);
-  const b = Buffer.from(sig);
-  if (a.length !== b.length) return null;
-  if (!crypto.timingSafeEqual(a, b)) return null;
-
-  try {
-    return JSON.parse(getB64UrlDecode(p).toString("utf8"));
-  } catch {
-    return null;
-  }
-}
 
 
 function getCookieLine(name, value, opts = {}) {

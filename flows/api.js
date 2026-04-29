@@ -8,10 +8,12 @@
 import http from "node:http";
 import path from "node:path";
 import { setGlobalDispatcher, Agent } from "undici";
-import { getItem, deleteItem } from "../core/registry.js";
+import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { getContext } from "../core/context.js";
 import { saveFile } from "../core/file.js";
 import { getStr, getNewUlid } from "../core/utils.js";
+import { getSecret } from "../core/secrets.js";
+import { getParseCookies, getVerifyToken, getSessionCookieName } from "../shared/webpage/session.js";
 
 setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
@@ -46,11 +48,27 @@ function setCorsHeaders(res) {
   res.setHeader("access-control-allow-headers", "content-type, authorization, x-filename");
 }
 
+function setCorsCredentialHeaders(req, res) {
+  const origin = String(req.headers?.origin || "");
+  res.setHeader("access-control-allow-origin", origin || "*");
+  if (origin) res.setHeader("access-control-allow-credentials", "true");
+  res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+  res.setHeader("access-control-allow-headers", "content-type, authorization, x-filename");
+}
+
 function getJson(res, status, body) {
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.setHeader("cache-control", "no-store");
   setCorsHeaders(res);
+  res.end(JSON.stringify(body));
+}
+
+function getJsonCredential(req, res, status, body) {
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.setHeader("cache-control", "no-store");
+  setCorsCredentialHeaders(req, res);
   res.end(JSON.stringify(body));
 }
 
@@ -244,10 +262,22 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
   const contextPath = String(cfg.contextPath || "/context");
   const browserActionPath = String(cfg.browserActionPath || "/browser-action");
+  const browserStatusPath = String(cfg.browserStatusPath || "/browser-status");
+  const sessionSecretAlias = String(cfg.sessionSecret || "");
+
+  async function getSessionUser(req) {
+    if (!sessionSecretAlias) return null;
+    const secret = await getSecret(baseCore?.workingObject, sessionSecretAlias);
+    if (!secret) return null;
+    const cookies = getParseCookies(req.headers?.cookie);
+    const token = String(cookies[getSessionCookieName()] || "");
+    if (!token) return null;
+    return getVerifyToken(secret, token);
+  }
 
   const server = http.createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
-      setCorsHeaders(res);
+      setCorsCredentialHeaders(req, res);
       res.statusCode = 204;
       return res.end();
     }
@@ -368,23 +398,54 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
     if (req.method === "GET" && (req.url === browserActionPath || req.url.startsWith(browserActionPath + "?"))) {
       try {
-        const _baUrl = new URL(req.url, `http://localhost:${port}`);
-        const _baUserId = String(_baUrl.searchParams.get("userId") || "").trim();
-        if (!_baUserId) {
-          return getJson(res, 400, { ok: false, error: "userId_required" });
+        const _baSess = await getSessionUser(req);
+        if (!_baSess?.userId) {
+          return getJsonCredential(req, res, 401, { ok: false, error: "not_authenticated" });
         }
-        const _baKey = `browser-action:user:${_baUserId}`;
+        const _baKey = `browser-action:user:${_baSess.userId}`;
         const _baAction = getItem(_baKey);
         if (!_baAction) {
-          return getJson(res, 200, { ok: true, action: null });
+          return getJsonCredential(req, res, 200, { ok: true, action: null });
         }
         deleteItem(_baKey);
         if (_baAction.expiresAt && Date.now() > _baAction.expiresAt) {
-          return getJson(res, 200, { ok: true, action: null });
+          return getJsonCredential(req, res, 200, { ok: true, action: null });
         }
-        return getJson(res, 200, { ok: true, action: { type: _baAction.type, url: _baAction.url } });
+        return getJsonCredential(req, res, 200, { ok: true, action: { type: _baAction.type, url: _baAction.url } });
       } catch (e) {
-        return getJson(res, 500, { ok: false, error: "browser_action_failed", reason: e?.message || String(e) });
+        return getJsonCredential(req, res, 500, { ok: false, error: "browser_action_failed", reason: e?.message || String(e) });
+      }
+    }
+
+    if (req.method === "POST" && req.url === browserStatusPath) {
+      try {
+        const _bsSess = await getSessionUser(req);
+        if (!_bsSess?.userId) {
+          return getJsonCredential(req, res, 401, { ok: false, error: "not_authenticated" });
+        }
+        let _bsBody;
+        try {
+          _bsBody = JSON.parse(await getReadBody(req, 4096));
+        } catch {
+          return getJsonCredential(req, res, 400, { ok: false, error: "invalid_json" });
+        }
+        const _bsUrl = String(_bsBody?.url || "").trim();
+        const _bsTitle = String(_bsBody?.title || "").trim();
+        if (!_bsUrl) {
+          return getJsonCredential(req, res, 400, { ok: false, error: "url_required" });
+        }
+        let _bsParsed;
+        try { _bsParsed = new URL(_bsUrl); } catch {
+          return getJsonCredential(req, res, 400, { ok: false, error: "invalid_url" });
+        }
+        if (_bsParsed.protocol !== "https:" && _bsParsed.protocol !== "http:") {
+          return getJsonCredential(req, res, 400, { ok: false, error: "invalid_url_scheme" });
+        }
+        const _bsKey = `browser-status:user:${_bsSess.userId}`;
+        putItem({ url: _bsUrl, title: _bsTitle, ts: Date.now(), expiresAt: Date.now() + 300_000 }, _bsKey);
+        return getJsonCredential(req, res, 200, { ok: true });
+      } catch (e) {
+        return getJsonCredential(req, res, 500, { ok: false, error: "browser_status_failed", reason: e?.message || String(e) });
       }
     }
 
@@ -415,8 +476,17 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       });
     }
 
+    const _apiSess = await getSessionUser(req).catch(() => null);
+    if (_apiSess?.userId) {
+      workingObject.webAuth = {
+        userId:   String(_apiSess.userId),
+        username: String(_apiSess.username || ""),
+        role:     String(_apiSess.role || "member")
+      };
+    }
+
     workingObject.channelId = requestChannelId;
-    workingObject.userId = parsedBody.userId ? String(parsedBody.userId) : "";
+    workingObject.userId = workingObject.webAuth?.userId || (parsedBody.userId ? String(parsedBody.userId) : "");
     workingObject.payload = String(parsedBody.payload);
     workingObject.channelType = "API";
     workingObject.isDM = false;

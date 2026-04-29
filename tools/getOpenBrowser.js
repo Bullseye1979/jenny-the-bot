@@ -1,5 +1,5 @@
 /**************************************************************/
-/* filename: "openBrowserTab.js"                             */
+/* filename: "getOpenBrowser.js"                             */
 /* Version 1.0                                               */
 /* Purpose: LLM-callable tool implementation.               */
 /**************************************************************/
@@ -7,12 +7,12 @@
 import { getPrefixedLogger } from "../core/logging.js";
 import { putItem } from "../core/registry.js";
 
-const MODULE_NAME = "openBrowserTab";
+const MODULE_NAME = "getOpenBrowser";
 const ACTION_TTL_MS = 30 * 1000;
 
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
-  const userId = String(coreData?.workingObject?.userId || "").trim();
+  const userId = String(coreData?.workingObject?.webAuth?.userId || coreData?.workingObject?.userId || "").trim();
   const url = String(args?.url || "").trim();
 
   if (!userId) {
@@ -31,7 +31,7 @@ async function getInvoke(args, coreData) {
 
   const key = `browser-action:user:${userId}`;
   putItem({ type: "openTab", url, expiresAt: Date.now() + ACTION_TTL_MS }, key);
-  log.info({ userId, url }, "browser tab action stored");
+  log("browser tab action stored", "info", { userId, url });
 
   return { ok: true, message: `A new tab with ${url} will open in your browser shortly (requires Jenny extension and web login).` };
 }

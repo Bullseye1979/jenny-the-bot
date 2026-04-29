@@ -152,6 +152,8 @@ header {
 }
 #auth-user { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #auth-bar a { color: var(--acc); cursor: pointer; text-decoration: underline; font-size: 11px; }
+.status-toggle { display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; color: var(--muted); }
+.status-toggle input[type="checkbox"] { cursor: pointer; }
 
 /* ---- Config warning ---- */
 #config-warn {

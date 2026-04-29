@@ -405,8 +405,11 @@
       "getTime": {
         "__description": "No API configuration required"
       },
-      "openBrowserTab": {
+      "getOpenBrowser": {
         "__description": "No API configuration required. Requires the Jenny browser extension and an active web session."
+      },
+      "getBrowserStatus": {
+        "__description": "No API configuration required. Requires the Jenny browser extension with status reporting enabled and an active web session."
       },
       "getPDF": {
         "__description": "PDF generation via Puppeteer — requires publicBaseUrl",
@@ -519,7 +522,9 @@
       "host": "0.0.0.0",
       "port": 3400,
       "path": "/api",
-      "publicBaseUrl": "https://xbullseyegaming.de"
+      "publicBaseUrl": "https://xbullseyegaming.de",
+      "browserStatusPath": "/browser-status",
+      "sessionSecret": "SESSION_SECRET"
     },
     "cron": {
       "__description": "Scheduled jobs (optional — leave jobs array empty to disable)",
@@ -1202,7 +1207,8 @@
               "getWebpage",
               "getImage",
               "getImageSD",
-              "openBrowserTab"
+              "getOpenBrowser",
+              "getBrowserStatus"
             ],
             "toolsBlacklist": [
               "getImage"
