@@ -212,8 +212,10 @@ function getBearerToken(req) {
   return "";
 }
 
-function isBearerValid(req, baseCore) {
-  const secret = getApiSecret(baseCore);
+async function isBearerValid(req, baseCore) {
+  const alias = getApiSecret(baseCore);
+  if (!alias) return true;
+  const secret = await getSecret(baseCore?.workingObject, alias);
   if (!secret) return true;
   return getBearerToken(req) === secret;
 }
@@ -287,7 +289,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     }
 
     if (req.method === "GET" && (req.url === toolcallPath || req.url.startsWith(toolcallPath + "?"))) {
-      if (!isBearerValid(req, baseCore)) {
+      if (!await isBearerValid(req, baseCore)) {
         return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(undefined, baseCore) });
       }
 
@@ -311,7 +313,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     }
 
     if (req.method === "GET" && (req.url === contextPath || req.url.startsWith(contextPath + "?"))) {
-      if (!isBearerValid(req, baseCore)) {
+      if (!await isBearerValid(req, baseCore)) {
         return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(undefined, baseCore) });
       }
 
@@ -340,7 +342,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     const uploadPath = String(cfg.uploadPath || "/upload");
 
     if (req.method === "POST" && (req.url === uploadPath || req.url.startsWith(uploadPath + "?"))) {
-      if (!isBearerValid(req, baseCore)) {
+      if (!await isBearerValid(req, baseCore)) {
         return getJson(res, 401, { ok: false, error: "unauthorized" });
       }
       const rawName = String(req.headers["x-filename"] || "upload").replace(/[/\\]/g, "_").trim() || "upload";
@@ -371,7 +373,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     const lastAssistantPath = String(cfg.lastAssistantPath || "/context/last-assistant");
 
     if (req.method === "GET" && (req.url === lastAssistantPath || req.url.startsWith(lastAssistantPath + "?"))) {
-      if (!isBearerValid(req, baseCore)) {
+      if (!await isBearerValid(req, baseCore)) {
         return getJson(res, 401, { ok: false, error: "unauthorized" });
       }
       try {
