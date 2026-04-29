@@ -397,12 +397,16 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     }
 
     if (req.method === "GET" && (req.url === browserActionPath || req.url.startsWith(browserActionPath + "?"))) {
+      if (!isBearerValid(req, baseCore)) {
+        return getJsonCredential(req, res, 401, { ok: false, error: "unauthorized" });
+      }
       try {
-        const _baSess = await getSessionUser(req);
-        if (!_baSess?.userId) {
-          return getJsonCredential(req, res, 401, { ok: false, error: "not_authenticated" });
+        const _baUrl = new URL(req.url, `http://localhost:${port}`);
+        const _baUserId = String(_baUrl.searchParams.get("userId") || "").trim();
+        if (!_baUserId) {
+          return getJsonCredential(req, res, 400, { ok: false, error: "userId_required" });
         }
-        const _baKey = `browser-action:user:${_baSess.userId}`;
+        const _baKey = `browser-action:user:${_baUserId}`;
         const _baAction = getItem(_baKey);
         if (!_baAction) {
           return getJsonCredential(req, res, 200, { ok: true, action: null });
@@ -417,11 +421,15 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       }
     }
 
-    if (req.method === "POST" && req.url === browserStatusPath) {
+    if (req.method === "POST" && (req.url === browserStatusPath || req.url.startsWith(browserStatusPath + "?"))) {
+      if (!isBearerValid(req, baseCore)) {
+        return getJsonCredential(req, res, 401, { ok: false, error: "unauthorized" });
+      }
       try {
-        const _bsSess = await getSessionUser(req);
-        if (!_bsSess?.userId) {
-          return getJsonCredential(req, res, 401, { ok: false, error: "not_authenticated" });
+        const _bsUrlObj = new URL(req.url, `http://localhost:${port}`);
+        const _bsUserId = String(_bsUrlObj.searchParams.get("userId") || "").trim();
+        if (!_bsUserId) {
+          return getJsonCredential(req, res, 400, { ok: false, error: "userId_required" });
         }
         let _bsBody;
         try {
@@ -441,7 +449,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         if (_bsParsed.protocol !== "https:" && _bsParsed.protocol !== "http:") {
           return getJsonCredential(req, res, 400, { ok: false, error: "invalid_url_scheme" });
         }
-        const _bsKey = `browser-status:user:${_bsSess.userId}`;
+        const _bsKey = `browser-status:user:${_bsUserId}`;
         putItem({ url: _bsUrl, title: _bsTitle, ts: Date.now(), expiresAt: Date.now() + 300_000 }, _bsKey);
         return getJsonCredential(req, res, 200, { ok: true });
       } catch (e) {
