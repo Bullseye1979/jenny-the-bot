@@ -217,13 +217,10 @@ function startJobPoll() {
   if (jobPollTimer) return;
   if (!cfg.apiUrl || !webSession || !webSession.userId) return;
   var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
-  var baseActionUrl = baseUrl + "/browser-action";
+  var url = baseUrl + "/browser-action";
   jobPollTimer = setInterval(function() {
     if (!webSession || !webSession.userId) { clearInterval(jobPollTimer); jobPollTimer = null; return; }
-    var reqUrl = baseActionUrl + "?userId=" + encodeURIComponent(webSession.userId);
-    var headers = {};
-    if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
-    fetch(reqUrl, { headers: headers })
+    fetch(url, { credentials: "include" })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (!d || !d.ok || !d.action) return;
@@ -244,7 +241,7 @@ function startStatusPoll() {
   if (statusPollTimer) return;
   if (!cfg.apiUrl || !webSession || !webSession.userId) return;
   var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
-  var baseStatusUrl = baseUrl + "/browser-status";
+  var url = baseUrl + "/browser-status";
   statusPollTimer = setInterval(function() {
     if (!webSession || !webSession.userId) { clearInterval(statusPollTimer); statusPollTimer = null; return; }
     var cb = document.getElementById("status-enabled");
@@ -255,12 +252,10 @@ function startStatusPoll() {
       var tabUrl = tab.url || "";
       var tabTitle = tab.title || "";
       if (!safeUrl(tabUrl)) return;
-      var reqUrl = baseStatusUrl + "?userId=" + encodeURIComponent(webSession.userId);
-      var headers = { "Content-Type": "application/json" };
-      if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
-      fetch(reqUrl, {
+      fetch(url, {
         method: "POST",
-        headers: headers,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: tabUrl, title: tabTitle })
       }).catch(function() {});
     });

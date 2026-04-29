@@ -672,7 +672,7 @@
         3129
       ],
       "sessionMaxAgeSec": 43200,
-      "sameSite": "Lax",
+      "sameSite": "None",
       "ssoPartners": [],
       "guilds": [
         {
