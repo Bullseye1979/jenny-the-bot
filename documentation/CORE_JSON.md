@@ -809,31 +809,33 @@ The `config` section wires flows and modules together, and provides per-module s
 ### api
 
 ```jsonc
-"api": {
-  "flowName":   "api",
-  "host":       "0.0.0.0",
-  "port":       3400,
-  "path":       "/api",
-  "toolcallPath": "/toolcall",
-  "contextPath":  "/context",
-  "spawnPath":    "/api/spawn",
-  "jobsPath":     "/api/jobs",
-  "uploadPath":   "/upload",
-  "publicBaseUrl": "https://yourserver.example.com"
+“api”: {
+  “flowName”:         “api”,
+  “host”:             “0.0.0.0”,
+  “port”:             3400,
+  “path”:             “/api”,
+  “toolcallPath”:     “/toolcall”,
+  “contextPath”:      “/context”,
+  “browserActionPath”: “/browser-action”,
+  “spawnPath”:        “/api/spawn”,
+  “jobsPath”:         “/api/jobs”,
+  “uploadPath”:       “/upload”,
+  “publicBaseUrl”:    “https://yourserver.example.com”
 }
 ```
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `host` | string | `"0.0.0.0"` | Bind address for the HTTP server |
+| `host` | string | `”0.0.0.0”` | Bind address for the HTTP server |
 | `port` | number | `3400` | Port number |
-| `path` | string | `"/api"` | Path for the synchronous `POST` endpoint |
-| `toolcallPath` | string | `"/toolcall"` | `GET` endpoint for polling tool-call registry status |
-| `contextPath` | string | `"/context"` | `GET` endpoint for reading channel conversation history |
-| `spawnPath` | string | `"/api/spawn"` | `POST` endpoint for spawning async subagent jobs |
-| `jobsPath` | string | `"/api/jobs"` | `GET` endpoint for listing async jobs by `callerChannelId` |
-| `uploadPath` | string | `"/upload"` | `POST` endpoint for uploading files (returns public URL) |
-| `publicBaseUrl` | string | â€” | Public base URL used when constructing file URLs returned by `/upload` |
+| `path` | string | `”/api”` | Path for the synchronous `POST` endpoint |
+| `toolcallPath` | string | `”/toolcall”` | `GET` endpoint for polling tool-call registry status |
+| `contextPath` | string | `”/context”` | `GET` endpoint for reading channel conversation history |
+| `browserActionPath` | string | `”/browser-action”` | `GET` endpoint polled by the Jenny browser extension to receive pending browser actions (e.g. open tab). Requires `?userId=` query param and a valid Bearer token. Delivers each action exactly once — the registry entry is deleted on first read. |
+| `spawnPath` | string | `”/api/spawn”` | `POST` endpoint for spawning async subagent jobs |
+| `jobsPath` | string | `”/api/jobs”` | `GET` endpoint for listing async jobs by `callerChannelId` |
+| `uploadPath` | string | `”/upload”` | `POST` endpoint for uploading files (returns public URL) |
+| `publicBaseUrl` | string | — | Public base URL used when constructing file URLs returned by `/upload` |
 
 **Endpoints summary:**
 
@@ -843,6 +845,7 @@ The `config` section wires flows and modules together, and provides per-module s
 | `POST` | `/api` | Bearer | Synchronous AI pipeline request; returns `{ ok, response, turnId, ... }` |
 | `GET` | `/toolcall` | Bearer | Poll current tool-call status; `?channelId=` for channel-specific key |
 | `GET` | `/context` | Bearer | Read recent conversation; requires `?channelId=`; optional `?limit=` |
+| `GET` | `/browser-action` | Bearer | Poll pending browser action for a user; requires `?userId=`; one-shot delivery |
 | `POST` | `/api/spawn` | Bearer | Spawn async subagent job; returns `{ ok, jobId, projectId }` immediately |
 | `GET` | `/api/jobs` | Bearer | List async jobs for a caller channel; requires `?channelId=`. When a webpage voice delivery missed SSE, the fallback payload may also include `audioBase64` and `audioMime`. |
 | `POST` | `/upload` | Bearer | Upload a file and receive its public URL |

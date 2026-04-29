@@ -405,6 +405,9 @@
       "getTime": {
         "__description": "No API configuration required"
       },
+      "openBrowserTab": {
+        "__description": "No API configuration required. Requires the Jenny browser extension and an active web session."
+      },
       "getPDF": {
         "__description": "PDF generation via Puppeteer — requires publicBaseUrl",
         "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL",
@@ -1198,7 +1201,8 @@
               "getTavily",
               "getWebpage",
               "getImage",
-              "getImageSD"
+              "getImageSD",
+              "openBrowserTab"
             ],
             "toolsBlacklist": [
               "getImage"

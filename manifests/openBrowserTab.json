@@ -1,0 +1,15 @@
+{
+  "name": "openBrowserTab",
+  "description": "Opens a new browser tab for the user with the specified URL. Requires the user to have the Jenny browser extension active and to be logged in via the web interface. Only use this when the user explicitly asks to open a URL in their browser.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "The URL to open in a new browser tab. Must start with https:// or http://"
+      }
+    },
+    "required": ["url"],
+    "additionalProperties": false
+  }
+}

@@ -8,7 +8,7 @@
 import http from "node:http";
 import path from "node:path";
 import { setGlobalDispatcher, Agent } from "undici";
-import { getItem } from "../core/registry.js";
+import { getItem, deleteItem } from "../core/registry.js";
 import { getContext } from "../core/context.js";
 import { saveFile } from "../core/file.js";
 import { getStr, getNewUlid } from "../core/utils.js";
@@ -243,6 +243,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
   const toolcallRegistryKey = getToolcallRegistryKey(baseCore, cfg);
 
   const contextPath = String(cfg.contextPath || "/context");
+  const browserActionPath = String(cfg.browserActionPath || "/browser-action");
 
   const server = http.createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
@@ -362,6 +363,31 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         });
       } catch (e) {
         return getJson(res, 500, { ok: false, error: "last_assistant_failed", reason: e?.message || String(e) });
+      }
+    }
+
+    if (req.method === "GET" && (req.url === browserActionPath || req.url.startsWith(browserActionPath + "?"))) {
+      if (!isBearerValid(req, baseCore)) {
+        return getJson(res, 401, { ok: false, error: "unauthorized" });
+      }
+      try {
+        const _baUrl = new URL(req.url, `http://localhost:${port}`);
+        const _baUserId = String(_baUrl.searchParams.get("userId") || "").trim();
+        if (!_baUserId) {
+          return getJson(res, 400, { ok: false, error: "userId_required" });
+        }
+        const _baKey = `browser-action:user:${_baUserId}`;
+        const _baAction = getItem(_baKey);
+        if (!_baAction) {
+          return getJson(res, 200, { ok: true, action: null });
+        }
+        deleteItem(_baKey);
+        if (_baAction.expiresAt && Date.now() > _baAction.expiresAt) {
+          return getJson(res, 200, { ok: true, action: null });
+        }
+        return getJson(res, 200, { ok: true, action: { type: _baAction.type, url: _baAction.url } });
+      } catch (e) {
+        return getJson(res, 500, { ok: false, error: "browser_action_failed", reason: e?.message || String(e) });
       }
     }
 

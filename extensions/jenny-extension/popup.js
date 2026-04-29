@@ -10,6 +10,7 @@ var pendingFile = null;
 var lastAssistantTimer = null;
 var lastAssistantTs = null;
 var LAST_ASSISTANT_INTERVAL_MS = 2000;
+var jobPollTimer = null;
 
 function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
@@ -211,6 +212,28 @@ function stopLastAssistantPoll() {
   if (lastAssistantTimer) { clearInterval(lastAssistantTimer); lastAssistantTimer = null; }
 }
 
+function startJobPoll() {
+  if (jobPollTimer) return;
+  if (!cfg.apiUrl || !webSession || !webSession.userId) return;
+  var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
+  var url = baseUrl + "/browser-action?userId=" + encodeURIComponent(webSession.userId);
+  jobPollTimer = setInterval(function() {
+    if (!webSession || !webSession.userId) return;
+    var headers = {};
+    if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
+    fetch(url, { headers: headers })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d || !d.ok || !d.action) return;
+        if (d.action.type === "openTab") {
+          var safe = safeUrl(d.action.url);
+          if (safe) chrome.tabs.create({ url: safe });
+        }
+      })
+      .catch(function() {});
+  }, 2000);
+}
+
 function getUploadUrl() {
   return cfg.apiUrl.replace(/\/api\/?$/, "/upload");
 }
@@ -386,6 +409,7 @@ function init() {
           userEl.textContent  = "\uD83D\uDC64 " + (sess.username || sess.userId);
           loginEl.classList.add("hidden");
           logoutEl.classList.remove("hidden");
+          startJobPoll();
         } else {
           userEl.textContent  = "Not logged in";
           loginEl.classList.remove("hidden");

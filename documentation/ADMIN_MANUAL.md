@@ -69,6 +69,7 @@
    - [getOauthProviders](#getoauthproviders)
    - [getApiBearers](#getapibearers)
    - [getMyConnections](#getmyconnections)
+   - [openBrowserTab](#openbrowsertab)
    - [Creating a New Tool — Checklist](#creating-a-new-tool--checklist)
    - [Creating a New Module — Checklist](#creating-a-new-module--checklist)
 9. [Core Infrastructure](#9-core-infrastructure)
@@ -2429,6 +2430,7 @@ Multiple modules can share a single port. Each module routes by URL path:
 | **Chat UI** | Full chat UI with markdown rendering, link/video embeds and toolcall display |
 | **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelId=<id>` every 800 ms (per-channel) |
+| **Browser tab opening** | The AI can use the `openBrowserTab` tool to open a URL as a new tab directly in the user's browser. The extension polls `/browser-action?userId=<id>` every 2 s; actions are delivered exactly once (registry entry deleted on first read, 30 s TTL). Requires an active web login session — the `userId` from the session is the routing key. |
 | **Gallery upload** | Upload images to the bot's Gallery via drag-and-drop or click. Requires `webBaseUrl` to be configured and an active login session on the Jenny web interface. |
 | **Auth status bar** | Displays the logged-in username (from the Jenny web session) at the top of the popup. Shows a **Login** link when not authenticated and a **Logout** link when logged in. Requires `webBaseUrl` to be configured. |
 | **Options page** | `apiUrl`, `channelId`, `apiSecret`, `webBaseUrl` stored in `chrome.storage.sync` |
@@ -4229,6 +4231,34 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 | `baseUrl` | string | No | Reference URL prefix — files' paths relative to this become their paths inside the ZIP |
 
 **No toolsconfig keys required.**
+
+---
+
+### openBrowserTab
+
+**File:** `tools/openBrowserTab.js`
+**Purpose:** Instructs the user's Jenny browser extension to open a new tab with the given URL. The action is stored in the in-memory registry (30 s TTL) and delivered exactly once — the extension's `/browser-action` polling loop picks it up within 2 s and deletes the entry immediately after receipt.
+
+**Requirements:**
+- The user must have the Jenny browser extension installed and active.
+- The user must be logged in via the Jenny web interface (`webBaseUrl` configured in the extension). The `userId` from the web session is the routing key.
+- The channel must include `"openBrowserTab"` in its `tools` array.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `url` | string | Yes | URL to open. Must start with `https://` or `http://`. Other schemes are rejected. |
+
+**Returns:** `{ ok, message }` on success, or `{ ok: false, error, message }` on failure.
+
+**Security model:** Routing is based on `workingObject.userId` — the user ID associated with the triggering request. Only the extension instance authenticated as that user will receive the action. The registry entry is deleted on first retrieval (one-shot delivery). URL scheme is validated on both the backend and in the extension (defense in depth).
+
+**No toolsconfig keys required.**
+
+```json
+"openBrowserTab": {}
+```
 
 ---
 
