@@ -15,7 +15,6 @@ var lastAssistantTimer = null;
 var lastAssistantTs = null;
 var LAST_ASSISTANT_INTERVAL_MS = 2000;
 var jobPollTimer = null;
-var statusPollTimer = null;
 
 function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
@@ -241,34 +240,6 @@ function stopJobPoll() {
   if (jobPollTimer) { clearInterval(jobPollTimer); jobPollTimer = null; }
 }
 
-function startStatusPoll() {
-  if (statusPollTimer) return;
-  if (!cfg.apiUrl || !webSession || !webSession.userId) return;
-  var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
-  var url = baseUrl + "/browser-status";
-  statusPollTimer = setInterval(function() {
-    if (!webSession || !webSession.userId) { clearInterval(statusPollTimer); statusPollTimer = null; return; }
-    var cb = document.getElementById("status-enabled");
-    if (!cb || !cb.checked) return;
-    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-      if (chrome.runtime.lastError || !tabs || !tabs.length || !tabs[0].url) return;
-      var tab = tabs[0];
-      var tabUrl = tab.url || "";
-      var tabTitle = tab.title || "";
-      if (!safeUrl(tabUrl)) return;
-      fetch(url, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: tabUrl, title: tabTitle })
-      }).catch(function() {});
-    });
-  }, 10000);
-}
-
-function stopStatusPoll() {
-  if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null; }
-}
 
 function getUploadUrl() {
   return cfg.apiUrl.replace(/\/api\/?$/, "/upload");
@@ -451,14 +422,14 @@ function init() {
           logoutEl.classList.remove("hidden");
           statusLbl.classList.remove("hidden");
           startJobPoll();
-          startStatusPoll();
+          chrome.runtime.sendMessage({ type: "setLoggedIn", value: true });
         } else {
           userEl.textContent = "Not logged in";
           loginEl.classList.remove("hidden");
           logoutEl.classList.add("hidden");
           statusLbl.classList.add("hidden");
           stopJobPoll();
-          stopStatusPoll();
+          chrome.runtime.sendMessage({ type: "setLoggedIn", value: false });
         }
       }
 
