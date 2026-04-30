@@ -11,7 +11,7 @@ import crypto from "node:crypto";
 const COOKIE_SESSION = "jenny_session";
 
 
-function getB64UrlEncode(input) {
+export function getB64UrlEncode(input) {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input));
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }

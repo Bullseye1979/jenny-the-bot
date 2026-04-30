@@ -7,6 +7,7 @@
 
 "use strict";
 
+import crypto from "node:crypto";
 import { getItem, putItem, deleteItem } from "../core/registry.js";
 import { setSendNow, setJsonResp } from "../shared/webpage/utils.js";
 import { getSecret } from "../core/secrets.js";
@@ -14,7 +15,8 @@ import {
   getParseCookies,
   getSignToken,
   getVerifyToken,
-  getSessionCookieName
+  getSessionCookieName,
+  getB64UrlEncode
 } from "../shared/webpage/session.js";
 
 const MODULE_NAME = "webpage-auth";
