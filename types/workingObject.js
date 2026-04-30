@@ -254,7 +254,7 @@
  * @property {number} [maxToolCallsPerTurn] Per-turn tool-call cap for the pseudotoolcalls module.
  * @property {number} [imagePromptMaxTokens] Max tokens for image-prompt generation in the roleplay module.
  * @property {number} [imagePromptTemperature] Temperature for image-prompt generation in the roleplay module.
- * @property {string} [imagePersonaHint] Short persona hint appended to image prompts in the roleplay module.
+ * @property {string} [imagePersonaHint] Optional visual continuity hint used by the roleplay image prompt pass.
  * @property {number} [imageContextTurns] Number of context turns passed to image-prompt generation.
  * @property {string} [imagePromptRules] Rules for generating Stable Diffusion prompts in the roleplay module.
  * @property {string} [endpointFilesContent] Endpoint used by the responses module to upload file content.

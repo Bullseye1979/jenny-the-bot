@@ -89,18 +89,17 @@ function getRecentContextForImage(rows, maxTurns) {
 }
 
 
-function getSystemContentImagePromptRun(personaText, imagePersonaHint, imagePromptRules) {
-  const persona = String(personaText ?? "").trim();
-  const hint    = String(imagePersonaHint ?? "").trim();
+function getSystemContentImagePromptRun(imagePromptRules) {
+  return String(imagePromptRules ?? "").trim();
+}
 
-  const anchor = [
-    "Character anchor (MUST keep consistent across ALL images):",
-    persona ? `- persona: ${persona}` : "- persona: (none provided)",
-    hint    ? `- Fixed look hint: ${hint}` : ""
-  ].filter(Boolean).join("\n");
 
-  const rules = String(imagePromptRules ?? "").trim();
-  return [anchor, rules].filter(Boolean).join("\n\n");
+function getVisualReferenceForImage(wo, imagePersonaHint) {
+  return [
+    String(imagePersonaHint ?? "").trim(),
+    getStr(wo?.persona, "").trim(),
+    getStr(wo?.systemPrompt, "").trim()
+  ].filter(Boolean).join("\n\n");
 }
 
 
@@ -275,8 +274,9 @@ export default async function getCoreAi(coreData) {
   if (assistantPass1.authorName == null) delete assistantPass1.authorName;
 
   const personaForImages = getStr(wo?.persona, "");
-  const system2          = getSystemContentImagePromptRun(personaForImages, kiCfg.imagePersonaHint, kiCfg.imagePromptRules);
+  const system2          = getSystemContentImagePromptRun(kiCfg.imagePromptRules);
   const ctxText          = getRecentContextForImage(snapshot, kiCfg.imageContextTurns);
+  const visualReference  = getVisualReferenceForImage(wo, kiCfg.imagePersonaHint);
 
   /*
    * Current turn content is listed first so the image AI weights it most heavily.
@@ -288,6 +288,9 @@ export default async function getCoreAi(coreData) {
     "",
     "LATEST USER INPUT:",
     userPromptRaw || "(empty)",
+    "",
+    "VISUAL CHARACTER REFERENCE (appearance and continuity only — do NOT depict events from here):",
+    visualReference || "(none)",
     "",
     "ROLEPLAY CONTEXT (continuity reference only — do NOT depict old events):",
     ctxText || "(none)",
