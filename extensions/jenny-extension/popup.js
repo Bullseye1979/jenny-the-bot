@@ -13,7 +13,6 @@ var pollTimer = null;
 var pendingFile = null;
 var lastAssistantTimer = null;
 var lastAssistantTs = null;
-var lastDirectResponseText = null;
 var LAST_ASSISTANT_INTERVAL_MS = 2000;
 
 function escHtml(s) {
@@ -205,7 +204,6 @@ function startLastAssistantPoll() {
         lastAssistantTs = ts;
         var raw = String(msg.text || "").split("\n").filter(function(l) { return !/^META\|/.test(l.trim()); }).join("\n").trim();
         if (!raw) return;
-        if (raw === lastDirectResponseText) { lastDirectResponseText = null; return; }
         appendMsg("assistant", raw);
         var msgsEl = document.getElementById("msgs");
         if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
@@ -217,32 +215,25 @@ function stopLastAssistantPoll() {
   if (lastAssistantTimer) { clearInterval(lastAssistantTimer); lastAssistantTimer = null; }
 }
 
-var jobPollTimer = null;
-
-function startJobPoll() {
-  if (jobPollTimer) return;
-  if (!cfg.apiUrl || !webSession || !webSession.userId) return;
+/*
+ * After receiving an API response, fetch the current last-assistant ts so the
+ * poll does not re-append anything the pipeline wrote during processing.
+ */
+function syncAndRestartPoll() {
+  if (!cfg.apiUrl || !cfg.channelId) { startLastAssistantPoll(); return; }
   var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
-  var url = baseUrl + "/browser-action";
-  jobPollTimer = setInterval(function() {
-    if (!webSession || !webSession.userId) { clearInterval(jobPollTimer); jobPollTimer = null; return; }
-    fetch(url, { credentials: "include" })
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (!d || !d.ok || !d.action) return;
-        if (d.action.type === "openTab") {
-          var safe = safeUrl(d.action.url);
-          if (safe) chrome.tabs.create({ url: safe });
-        }
-      })
-      .catch(function() {});
-  }, 2000);
+  var url = baseUrl + "/context/last-assistant?channelId=" + encodeURIComponent(cfg.channelId);
+  var headers = {};
+  if (cfg.apiSecret) headers["Authorization"] = "Bearer " + cfg.apiSecret;
+  fetch(url, { headers: headers })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var msg = d && d.ok && d.message ? d.message : null;
+      if (msg && msg.ts) lastAssistantTs = msg.ts;
+    })
+    .catch(function() {})
+    .finally(function() { startLastAssistantPoll(); });
 }
-
-function stopJobPoll() {
-  if (jobPollTimer) { clearInterval(jobPollTimer); jobPollTimer = null; }
-}
-
 
 
 function getUploadUrl() {
@@ -301,6 +292,7 @@ function sendMessage(payload) {
   clearFilePreview();
 
   sending = true;
+  stopLastAssistantPoll();
   var sendBtn = document.getElementById("send-btn");
   sendBtn.disabled = true;
 
@@ -350,10 +342,10 @@ function sendMessage(payload) {
     sendBtn.disabled = false;
     if (d && d.response !== undefined) {
       var raw = String(d.response || "").split("\n").filter(function(l) { return !/^META\|/.test(l.trim()); }).join("\n").trim();
-      lastDirectResponseText = raw;
       appendMsg("assistant", raw);
     } else if (d && d.error) appendMsg("assistant", "\u26a0\ufe0f Error: " + d.error);
     else appendMsg("assistant", "\u26a0\ufe0f Unexpected response");
+    syncAndRestartPoll();
   })
   .catch(function(e) {
     stopPoll();
@@ -361,6 +353,7 @@ function sendMessage(payload) {
     sending = false;
     sendBtn.disabled = false;
     appendMsg("assistant", "\u26a0\ufe0f " + (e.message || "Send failed"));
+    startLastAssistantPoll();
   });
 }
 
