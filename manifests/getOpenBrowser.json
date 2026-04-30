@@ -1,15 +1,21 @@
 {
   "name": "getOpenBrowser",
-  "description": "Opens a new browser tab for the user with the specified URL. Requires the user to have the Jenny browser extension active and to be logged in via the web interface. Only use this when the user explicitly asks to open a URL in their browser.",
+  "description": "Opens a new browser tab for the user with the specified URL. Requires the Jenny browser extension. Use browserCode only when the user mentioned a Jenny browser code in the chat and normal web-login identity is not available.",
   "parameters": {
     "type": "object",
     "properties": {
       "url": {
         "type": "string",
         "description": "The URL to open in a new browser tab. Must start with https:// or http://"
+      },
+      "browserCode": {
+        "type": "string",
+        "description": "Optional Jenny browser code shown by the extension. Use only as a fallback when web-login user identity is unavailable."
       }
     },
-    "required": ["url"],
+    "required": [
+      "url"
+    ],
     "additionalProperties": false
   }
 }

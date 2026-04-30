@@ -406,10 +406,10 @@
         "__description": "No API configuration required"
       },
       "getOpenBrowser": {
-        "__description": "No API configuration required. Requires the Jenny browser extension and an active web session."
+        "__description": "No API configuration required. Requires the Jenny browser extension and uses web login first, with browserCode as an optional fallback."
       },
       "getBrowserStatus": {
-        "__description": "No API configuration required. Requires the Jenny browser extension with status reporting enabled and an active web session."
+        "__description": "No API configuration required. Requires the Jenny browser extension with status reporting enabled and uses web login first, with browserCode as an optional fallback."
       },
       "getPDF": {
         "__description": "PDF generation via Puppeteer — requires publicBaseUrl",
@@ -523,6 +523,7 @@
       "port": 3400,
       "path": "/api",
       "publicBaseUrl": "https://xbullseyegaming.de",
+      "browserActionPath": "/browser-action",
       "browserStatusPath": "/browser-status",
       "sessionSecret": "SESSION_SECRET"
     },

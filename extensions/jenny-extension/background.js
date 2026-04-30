@@ -100,13 +100,14 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
    ============================================================ */
 
 function sendBrowserStatusNow() {
-  chrome.storage.sync.get(["webBaseUrl", "statusEnabled"], function (sync) {
+  chrome.storage.sync.get(["webBaseUrl", "statusEnabled", "browserCode"], function (sync) {
     if (sync.statusEnabled === false) return;
     var webBaseUrl = (sync.webBaseUrl || "").trim().replace(/\/$/, "");
+    var browserCode = (sync.browserCode || "").trim().toUpperCase();
     if (!webBaseUrl) return;
 
     chrome.storage.local.get(["loggedIn"], function (local) {
-      if (!local.loggedIn) return;
+      if (!local.loggedIn && !browserCode) return;
 
       var queryOpts = lastNormalWindowId
         ? { active: true, windowId: lastNormalWindowId }
@@ -125,7 +126,7 @@ function sendBrowserStatusNow() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: tab.url, title: tab.title || "" })
+          body: JSON.stringify({ url: tab.url, title: tab.title || "", browserCode: browserCode })
         }).catch(function () {});
       });
     });
@@ -145,14 +146,18 @@ function sendBrowserStatusNow() {
    ============================================================ */
 
 function checkBrowserActionOnce() {
-  chrome.storage.sync.get(["webBaseUrl"], function (sync) {
+  chrome.storage.sync.get(["webBaseUrl", "browserCode"], function (sync) {
     var webBaseUrl = (sync.webBaseUrl || "").trim().replace(/\/$/, "");
+    var browserCode = (sync.browserCode || "").trim().toUpperCase();
     if (!webBaseUrl) return;
 
     chrome.storage.local.get(["loggedIn"], function (local) {
-      if (!local.loggedIn) return;
+      if (!local.loggedIn && !browserCode) return;
 
-      fetch(webBaseUrl + "/browser-action", { credentials: "include" })
+      var actionUrl = webBaseUrl + "/browser-action";
+      if (browserCode) actionUrl += "?browserCode=" + encodeURIComponent(browserCode);
+
+      fetch(actionUrl, { credentials: "include" })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (!d || !d.ok || !d.action) return;

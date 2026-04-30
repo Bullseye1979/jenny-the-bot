@@ -15,8 +15,8 @@ A Manifest V3 browser extension for Edge and Chrome that lets you chat with the 
 | **Toolcall display** | Active tool name shown next to the thinking indicator; polled from `/toolcall` every 800 ms |
 | **File attachments** | Attach files to messages; images are uploaded to the Gallery when logged in, otherwise via the regular `/upload` endpoint |
 | **Gallery upload** | Drag-and-drop or click to upload images to your personal gallery. Requires `webBaseUrl` and an active session. |
-| **Browser status reporting** | When the "Share status" checkbox is enabled and a web session is active, the background service worker pushes the active tab URL and title to `/browser-status` immediately on every tab switch and page load, plus once per minute as a heartbeat. Works whether or not the side panel is open. The AI reads this via the `getBrowserStatus` tool. |
-| **Browser tab opening** | The AI can instruct the extension to open a URL as a new tab via the `getOpenBrowser` tool. A persistent offscreen document (`offscreen.js`) polls `/browser-action` every 5 seconds — the tab opens within 5 seconds regardless of whether the side panel is open or the user is switching tabs. Requires an active web session. |
+| **Browser status reporting** | When the "Share status" checkbox is enabled, the background service worker pushes the active tab URL and title to `/browser-status` immediately on every tab switch and page load, plus once per minute as a heartbeat. Routing uses web login first and the Browser Code fallback when login is unavailable. The AI reads this via the `getBrowserStatus` tool. |
+| **Browser tab opening** | The AI can instruct the extension to open a URL as a new tab via the `getOpenBrowser` tool. A persistent offscreen document (`offscreen.js`) polls `/browser-action` every 5 seconds. Routing uses web login first and the Browser Code fallback when login is unavailable. |
 | **Auth status bar** | Shows the logged-in username at the top of the popup. Provides **Login** and **Logout** links. The user ID from the session is sent with every API message for GDPR attribution. |
 
 ---
@@ -41,8 +41,9 @@ Open the **Settings** page (⚙ button in the popup or right-click → Options).
 | `Channel ID` | Channel identifier sent with every message. Must match a channel with `apiEnabled: 1` in `core.json`. Default: `browser-extension` |
 | `API Secret` | Bearer token for the API. Leave blank if `apiSecret` is not configured on the channel. |
 | `Web Base URL` | Base URL of the Jenny web interface (e.g. `https://jenny.example.com`). Enables the auth status bar and gallery uploads. |
+| `Browser Code` | Regenerable fallback code for `getBrowserStatus` and browser tab actions when web login is unavailable. |
 
-> **User ID:** The extension automatically retrieves your user ID from the Jenny web session (`/auth/me`). No manual configuration is needed. Log in via the **Login** link in the auth bar.
+> **User ID:** The extension automatically retrieves your user ID from the Jenny web session (`/auth/me`). No manual configuration is needed. Log in via the **Login** link in the auth bar. Use the Browser Code only as a fallback and regenerate it if it should no longer connect the browser to a chat.
 
 ---
 

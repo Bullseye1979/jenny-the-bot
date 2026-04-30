@@ -833,9 +833,9 @@ The `config` section wires flows and modules together, and provides per-module s
 | `path` | string | `”/api”` | Path for the synchronous `POST` endpoint |
 | `toolcallPath` | string | `”/toolcall”` | `GET` endpoint for polling tool-call registry status |
 | `contextPath` | string | `”/context”` | `GET` endpoint for reading channel conversation history |
-| `browserActionPath` | string | `”/browser-action”` | `GET` endpoint polled by the Jenny extension to receive pending browser actions. Authenticated via `jenny_session` cookie. Delivers each action exactly once (registry entry deleted on first read, 30 s TTL). |
-| `browserStatusPath` | string | `”/browser-status”` | `POST` endpoint where the Jenny extension pushes the user's current tab URL and title. Authenticated via `jenny_session` cookie. Status is stored per user with a 5-minute TTL. |
-| `sessionSecret` | string | — | Alias for the secret used to verify `jenny_session` cookies (same value as `webpage-auth.sessionSecret`). Required for `/browser-action` and `/browser-status` cookie validation. |
+| `browserActionPath` | string | `”/browser-action”` | `GET` endpoint polled by the Jenny extension to receive pending browser actions. Uses `jenny_session` first and accepts `?browserCode=...` as fallback. Delivers each action exactly once (registry entry deleted on first read, 30 s TTL). |
+| `browserStatusPath` | string | `”/browser-status”` | `POST` endpoint where the Jenny extension pushes the user's current tab URL and title. Uses `jenny_session` first and stores an additional fallback status key when `browserCode` is present. Status has a 5-minute TTL. |
+| `sessionSecret` | string | — | Alias for the secret used to verify `jenny_session` cookies (same value as `webpage-auth.sessionSecret`). Required for user-based browser routing; Browser Code fallback remains available when no session cookie can be verified. |
 | `spawnPath` | string | `”/api/spawn”` | `POST` endpoint for spawning async subagent jobs |
 | `jobsPath` | string | `”/api/jobs”` | `GET` endpoint for listing async jobs by `callerChannelId` |
 | `uploadPath` | string | `”/upload”` | `POST` endpoint for uploading files (returns public URL) |
@@ -849,8 +849,8 @@ The `config` section wires flows and modules together, and provides per-module s
 | `POST` | `/api` | Bearer | Synchronous AI pipeline request; returns `{ ok, response, turnId, ... }` |
 | `GET` | `/toolcall` | Bearer | Poll current tool-call status; `?channelId=` for channel-specific key |
 | `GET` | `/context` | Bearer | Read recent conversation; requires `?channelId=`; optional `?limit=` |
-| `GET` | `/browser-action` | Session cookie | Poll pending browser action; authenticated via `jenny_session` cookie; one-shot delivery |
-| `POST` | `/browser-status` | Session cookie | Push current tab URL/title from the extension; authenticated via `jenny_session` cookie; 5-minute TTL |
+| `GET` | `/browser-action` | Session cookie or Browser Code | Poll pending browser action; one-shot delivery |
+| `POST` | `/browser-status` | Session cookie or Browser Code | Push current tab URL/title from the extension; 5-minute TTL |
 | `POST` | `/api/spawn` | Bearer | Spawn async subagent job; returns `{ ok, jobId, projectId }` immediately |
 | `GET` | `/api/jobs` | Bearer | List async jobs for a caller channel; requires `?channelId=`. When a webpage voice delivery missed SSE, the fallback payload may also include `audioBase64` and `audioMime`. |
 | `POST` | `/upload` | Bearer | Upload a file and receive its public URL |

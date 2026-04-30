@@ -42,6 +42,17 @@ function getToolcallRegistryKey(baseCore, apiCfg) {
   return "status:tool";
 }
 
+function getBrowserCode(value) {
+  const code = getStr(value).trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9-]{7,63}$/.test(code)) return "";
+  return code;
+}
+
+function getBrowserRegistryKey(kind, identity) {
+  if (!identity?.type || !identity?.value) return "";
+  return `browser-${kind}:${identity.type}:${identity.value}`;
+}
+
 function setCorsHeaders(res) {
   res.setHeader("access-control-allow-origin", "*");
   res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
@@ -400,12 +411,26 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
     if (req.method === "GET" && (req.url === browserActionPath || req.url.startsWith(browserActionPath + "?"))) {
       try {
+        const _baUrl = new URL(req.url, `http://localhost:${port}`);
         const _baSess = await getSessionUser(req);
-        if (!_baSess?.userId) {
+        const _baCode = getBrowserCode(_baUrl.searchParams.get("browserCode"));
+        const _baIdentities = [];
+        if (_baSess?.userId) _baIdentities.push({ type: "user", value: _baSess.userId });
+        if (_baCode) _baIdentities.push({ type: "code", value: _baCode });
+        if (!_baIdentities.length) {
           return getJsonCredential(req, res, 401, { ok: false, error: "not_authenticated" });
         }
-        const _baKey = `browser-action:user:${_baSess.userId}`;
-        const _baAction = getItem(_baKey);
+        let _baKey = "";
+        let _baAction = null;
+        for (const _baIdentity of _baIdentities) {
+          const _baCandidateKey = getBrowserRegistryKey("action", _baIdentity);
+          const _baCandidateAction = getItem(_baCandidateKey);
+          if (_baCandidateAction) {
+            _baKey = _baCandidateKey;
+            _baAction = _baCandidateAction;
+            break;
+          }
+        }
         if (!_baAction) {
           return getJsonCredential(req, res, 200, { ok: true, action: null });
         }
@@ -422,9 +447,6 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     if (req.method === "POST" && req.url === browserStatusPath) {
       try {
         const _bsSess = await getSessionUser(req);
-        if (!_bsSess?.userId) {
-          return getJsonCredential(req, res, 401, { ok: false, error: "not_authenticated" });
-        }
         let _bsBody;
         try {
           _bsBody = JSON.parse(await getReadBody(req, 4096));
@@ -443,8 +465,17 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         if (_bsParsed.protocol !== "https:" && _bsParsed.protocol !== "http:") {
           return getJsonCredential(req, res, 400, { ok: false, error: "invalid_url_scheme" });
         }
-        const _bsKey = `browser-status:user:${_bsSess.userId}`;
-        putItem({ url: _bsUrl, title: _bsTitle, ts: Date.now(), expiresAt: Date.now() + 300_000 }, _bsKey);
+        const _bsCode = getBrowserCode(_bsBody?.browserCode);
+        const _bsIdentities = [];
+        if (_bsSess?.userId) _bsIdentities.push({ type: "user", value: _bsSess.userId });
+        if (_bsCode) _bsIdentities.push({ type: "code", value: _bsCode });
+        if (!_bsIdentities.length) {
+          return getJsonCredential(req, res, 401, { ok: false, error: "not_authenticated" });
+        }
+        const _bsStatus = { url: _bsUrl, title: _bsTitle, ts: Date.now(), expiresAt: Date.now() + 300_000 };
+        for (const _bsIdentity of _bsIdentities) {
+          putItem(_bsStatus, getBrowserRegistryKey("status", _bsIdentity));
+        }
         return getJsonCredential(req, res, 200, { ok: true });
       } catch (e) {
         return getJsonCredential(req, res, 500, { ok: false, error: "browser_status_failed", reason: e?.message || String(e) });

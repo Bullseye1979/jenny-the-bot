@@ -1,9 +1,14 @@
 {
   "name": "getBrowserStatus",
-  "description": "Retrieves the current browser status (active tab URL and title) from the user's Jenny browser extension. Returns null status if the extension is not active, the user is not logged in, or status reporting is disabled via the extension checkbox. Only use this when the user wants to share or reference their current browser activity.",
+  "description": "Retrieves the current browser status (active tab URL and title) from the user's Jenny browser extension. Use browserCode only when the user mentioned a Jenny browser code in the chat and normal web-login identity is not available or does not return a status.",
   "parameters": {
     "type": "object",
-    "properties": {},
+    "properties": {
+      "browserCode": {
+        "type": "string",
+        "description": "Optional Jenny browser code shown by the extension. Use only as a fallback when web-login user identity is unavailable."
+      }
+    },
     "additionalProperties": false
   }
 }

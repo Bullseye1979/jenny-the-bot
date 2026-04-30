@@ -22,13 +22,31 @@ function migrateStorage(callback) {
   });
 }
 
+function generateBrowserCode() {
+  var bytes = new Uint8Array(15);
+  crypto.getRandomValues(bytes);
+  var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  var out = "";
+  for (var i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out.slice(0, 5) + "-" + out.slice(5, 10) + "-" + out.slice(10, 15);
+}
+
+function setBrowserCode(code) {
+  var normalized = (code || generateBrowserCode()).trim().toUpperCase();
+  chrome.storage.sync.set({ browserCode: normalized }, function() {
+    var el = document.getElementById("browserCode");
+    if (el) el.value = normalized;
+  });
+}
+
 function init() {
   migrateStorage(function() {
-    chrome.storage.sync.get(FIELDS, function(stored) {
+    chrome.storage.sync.get(FIELDS.concat(["browserCode"]), function(stored) {
       FIELDS.forEach(function(key) {
         var el = document.getElementById(key);
         if (el) el.value = stored[key] || "";
       });
+      setBrowserCode(stored.browserCode || "");
     });
   });
 
@@ -40,6 +58,10 @@ function init() {
   }
   updateLoginLink();
   document.getElementById("webBaseUrl").addEventListener("input", updateLoginLink);
+
+  document.getElementById("regen-code-btn").addEventListener("click", function() {
+    setBrowserCode(generateBrowserCode());
+  });
 
   document.getElementById("save-btn").addEventListener("click", function() {
     var data = {};

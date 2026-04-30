@@ -133,3 +133,29 @@ main { padding: 0 20px; }
   transition: background .15s;
 }
 #save-btn:hover { background: var(--acc2); }
+
+
+.code-row {
+  display: flex;
+  gap: 8px;
+}
+
+.code-row input {
+  flex: 1;
+}
+
+#regen-code-btn {
+  padding: 8px 12px;
+  border: 1px solid var(--bdr);
+  border-radius: 5px;
+  background: #f8fafc;
+  color: var(--txt);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#regen-code-btn:hover {
+  border-color: var(--acc);
+  color: var(--acc2);
+}

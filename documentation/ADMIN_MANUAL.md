@@ -2431,11 +2431,11 @@ Multiple modules can share a single port. Each module routes by URL path:
 | **Chat UI** | Full chat UI with markdown rendering, link/video embeds and toolcall display |
 | **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelId=<id>` every 800 ms (per-channel) |
-| **Browser tab opening** | The AI can use the `getOpenBrowser` tool to open a URL as a new tab directly in the user's browser. A persistent offscreen document (`offscreen.js`) polls `/browser-action` every 5 seconds continuously — the side panel does not need to be open and no tab switch is required. Actions are delivered exactly once (registry entry deleted on first read, 30 s TTL). Authenticated via `jenny_session` cookie. |
-| **Browser status reporting** | The extension pushes the user's current tab URL and title to `/browser-status` immediately on tab activation and on page load, plus once per minute as a heartbeat — runs in the background service worker regardless of whether the side panel is open. Requires the "Share status" checkbox to be enabled and an active login session. The AI can read this via the `getBrowserStatus` tool. Status expires after 5 minutes. Authenticated via `jenny_session` cookie. |
+| **Browser tab opening** | The AI can use the `getOpenBrowser` tool to open a URL as a new tab directly in the user's browser. A persistent offscreen document (`offscreen.js`) polls `/browser-action` every 5 seconds continuously. Actions are delivered exactly once (registry entry deleted on first read, 30 s TTL). Routing uses the authenticated `jenny_session` user first, or the extension Browser Code fallback when web login is unavailable. |
+| **Browser status reporting** | The extension pushes the user's current tab URL and title to `/browser-status` immediately on tab activation and on page load, plus once per minute as a heartbeat. Requires the "Share status" checkbox to be enabled. The AI can read this via the `getBrowserStatus` tool. Status expires after 5 minutes. Routing uses the authenticated `jenny_session` user first, or the extension Browser Code fallback when web login is unavailable. |
 | **Gallery upload** | Upload images to the bot's Gallery via drag-and-drop or click. Requires `webBaseUrl` to be configured and an active login session on the Jenny web interface. |
 | **Auth status bar** | Displays the logged-in username (from the Jenny web session) at the top of the popup. Shows a **Login** link when not authenticated and a **Logout** link when logged in. Requires `webBaseUrl` to be configured. |
-| **Options page** | `apiUrl`, `channelId`, `apiSecret`, `webBaseUrl` stored in `chrome.storage.sync` |
+| **Options page** | `apiUrl`, `channelId`, `apiSecret`, `webBaseUrl`, and the regenerable Browser Code are stored in `chrome.storage.sync` |
 
 #### Installation (developer mode)
 
@@ -4244,7 +4244,8 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 
 **Requirements:**
 - The user must have the Jenny browser extension installed and active.
-- The user must be logged in via the Jenny web interface (`webBaseUrl` configured in the extension). The `userId` from the web session is the routing key.
+- The user should be logged in via the Jenny web interface (`webBaseUrl` configured in the extension). The `userId` from the web session is the preferred routing key.
+- If web login is unavailable, the user can provide the Browser Code from the extension settings and the tool can pass it as `browserCode`.
 - The channel must include `"getOpenBrowser"` in its `tools` array.
 
 **Manifest parameters:**
@@ -4252,10 +4253,11 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `url` | string | Yes | URL to open. Must start with `https://` or `http://`. Other schemes are rejected. |
+| `browserCode` | string | No | Fallback Browser Code from the extension settings. Use only when normal web-login identity is unavailable. |
 
 **Returns:** `{ ok, message }` on success, or `{ ok: false, error, message }` on failure.
 
-**Security model:** Routing is based on `workingObject.webAuth.userId` (session-authenticated, preferred) or `workingObject.userId` (Discord — trusted). Only the extension instance authenticated as that user will receive the action. The registry entry is deleted on first retrieval (one-shot delivery). URL scheme is validated on both the backend and in the extension (defense in depth).
+**Security model:** Routing is based on `workingObject.webAuth.userId` or `workingObject.userId` first. When no user identity is available, `browserCode` routes the action to the extension instance that currently polls with that code. The registry entry is deleted on first retrieval (one-shot delivery). URL scheme is validated on both the backend and in the extension.
 
 **No toolsconfig keys required.**
 
@@ -4272,16 +4274,20 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 
 **Requirements:**
 - The user must have the Jenny browser extension installed and active.
-- The user must be logged in via the Jenny web interface.
+- The user should be logged in via the Jenny web interface, or provide the Browser Code from the extension settings when web login is unavailable.
 - The "Share status" checkbox in the extension must be enabled.
 - The channel must include `"getBrowserStatus"` in its `tools` array.
 - The `api.sessionSecret` config key must match the `webpage-auth.sessionSecret` value.
 
-**Manifest parameters:** None — the tool takes no arguments.
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `browserCode` | string | No | Fallback Browser Code from the extension settings. Use only when normal web-login identity is unavailable or returns no status. |
 
 **Returns:** `{ ok: true, status: { url, title, ts } }` when status is available, `{ ok: true, status: null }` otherwise.
 
-**Security model:** Status is keyed by the session-authenticated `userId` — not by any self-reported value. The extension pushes status to `/browser-status` using the `jenny_session` cookie, so the server always knows the real identity of the sender. Status expires after 5 minutes.
+**Security model:** Status is keyed by the session-authenticated `userId` first. The extension also sends its Browser Code so the server can store a fallback status key. A regenerated Browser Code immediately disconnects future status and action routing from the old code. Status expires after 5 minutes.
 
 **No toolsconfig keys required.**
 
