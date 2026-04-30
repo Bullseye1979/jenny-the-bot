@@ -157,7 +157,9 @@ Configured under `config.mcp`:
 
 ### Session Handling (HTTP)
 
-Each HTTP client connection starts with an MCP initialization handshake. Sessions are keyed by `mcp-session-id` header and expire after 30 minutes of inactivity.
+Each HTTP client connection can start with an MCP initialization handshake. Sessions are keyed by `mcp-session-id` header and expire after 30 minutes of inactivity.
+
+Tool requests without a known session ID are handled with a fresh stateless transport. This keeps request/response tool calls compatible with MCP clients that do not reuse the initialization session for later calls.
 
 ### Channel Routing
 

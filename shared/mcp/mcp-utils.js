@@ -47,7 +47,7 @@ export function getMcpToolsFromManifests() {
 export async function getMcpInvokeTool(name, args, runCore) {
   const workingObject = {
     ...runCore.workingObject,
-    userId: args?._userId || runCore.workingObject?.userId || "mcp-client",
+    userId: args?._userId || runCore.workingObject?.userId || "",
     turnId: getNewUlid()
   };
   const log = getPrefixedLogger(workingObject, import.meta.url);

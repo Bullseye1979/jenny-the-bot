@@ -2511,6 +2511,8 @@ Add `{ "label": "Browser Extension", "channelId": "browser-extension", "roles": 
 3. When an MCP client calls a tool, the server dynamically imports `tools/<name>.js` and calls `invoke(args, coreData)`.
 4. `coreData` contains a minimal `workingObject` derived from `config.workingObject` defaults with `flow: "mcp"`.
 
+HTTP clients may either reuse the initialized `mcp-session-id` or send request/response tool calls without a known session. Sessionless tool calls are handled with a fresh stateless transport and still use `x-channel-id` plus bearer authentication.
+
 **Claude Desktop setup (`~/.config/claude/claude_desktop_config.json`):**
 
 ```json

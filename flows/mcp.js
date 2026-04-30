@@ -142,6 +142,41 @@ function sendJsonRpcError(res, status, code, message) {
 
 
 /*
+ * Handles clients that perform initialization and later send tool requests
+ * without a reusable MCP session ID. The tools are request/response only, so a
+ * fresh stateless transport is enough for each non-initialize POST.
+ */
+async function handleStatelessRequest(req, res, parsedBody, log, runFlow, createRunCore) {
+  const channelId = getStr(req.headers?.[CHANNEL_ID_HEADER]) || DEFAULT_CHANNEL_ID;
+  const authHeader = getStr(req.headers?.authorization);
+
+  const runCore = createRunCore();
+  runCore.workingObject.flow = MODULE_NAME;
+  runCore.workingObject.channelId = channelId;
+  runCore.workingObject.httpAuthorization = authHeader;
+  await runFlow(MODULE_NAME, runCore);
+
+  if (!runCore.workingObject.channelAllowed) {
+    sendJsonRpcError(res, 403, -32001, "channel_not_allowed");
+    return;
+  }
+
+  if (!await isRequestAuthorized(req, runCore.workingObject)) {
+    sendJsonRpcError(res, 401, -32001, "unauthorized");
+    return;
+  }
+
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true
+  });
+  const server = getMcpServer(runCore, log, runFlow, createRunCore);
+  await server.connect(transport);
+  await transport.handleRequest(req, res, parsedBody);
+}
+
+
+/*
  * Starts the HTTP MCP transport. Manages sessions so that the MCP
  * initialization handshake (initialize -> initialized -> requests) runs on
  * the same transport instance, as required by the MCP spec.
@@ -188,7 +223,8 @@ async function startHttpTransport(baseCore, cfg, log, runFlow, createRunCore) {
       }
 
       if (!isInitializeRequest(parsedBody)) {
-        sendJsonRpcError(res, 400, -32000, "Bad Request: No valid session ID provided");
+        log("Routing stateless MCP request", "info");
+        await handleStatelessRequest(req, res, parsedBody, log, runFlow, createRunCore);
         return;
       }
 
