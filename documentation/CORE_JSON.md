@@ -1,6 +1,6 @@
 ﻿# core.json â€” Complete Reference
 
-> **Version:** 1 - **Date:** 2026-04-05
+> **Version:** 1.0 - **Date:** 2026-04-30
 
 `core.json` is the single configuration file for the entire Jenny bot. It is loaded at startup and watched at runtime - any change triggers an automatic hot-reload within seconds. No restart is required.
 
@@ -1171,7 +1171,7 @@ Discord OAuth2 SSO module. Runs passively on every webpage request â€” sets
   "redirectUri":      "",
   "scope":            "identify guilds.members.read",
   "loginPort":        3111,
-  "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120],
+  "ports":            [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120, 3121, 3122, 3123, 3124, 3125, 3126, 3127, 3128, 3129, 3130, 3131, 3132, 3133],
   "sessionMaxAgeSec": 43200,
   "sameSite":         "Lax",
   "ssoPartners":      [],
@@ -2216,7 +2216,7 @@ Set `config.mcp.stdio: true` in `core.json` and the server starts automatically 
 
 ### MCP client tools (`getMcpTools`, `getMcp`)
 
-Version 1.
+Version 1.0.
 
 Jenny can call remote MCP servers from normal conversations through two tools:
 
@@ -2625,7 +2625,7 @@ Below is a minimal but functional `core.json` template with every section includ
     "api":           { "flowName": "api" },
     "discord-admin": { "flowName": "discord-admin" },
     "discord-voice": { "flowName": "discord-voice" },
-    "webpage":       { "flowName": "webpage", "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120] },
+    "webpage":       { "flowName": "webpage", "ports": [3000, 3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120, 3121, 3122, 3123, 3124, 3125, 3126, 3127, 3128, 3129, 3130, 3131, 3132, 3133] },
     "cron": {
       "flowName": "cron",
       "timezone": "Europe/Berlin",
@@ -2732,7 +2732,7 @@ Below is a minimal but functional `core.json` template with every section includ
       "clientSecret": "<DISCORD_CLIENT_SECRET>",
       "redirectUri":  "",
       "loginPort":    3111,
-      "ports":        [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120],
+      "ports":        [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120, 3121, 3122, 3123, 3124, 3125, 3126, 3127, 3128, 3129, 3130, 3131, 3132, 3133],
       "sessionTtlMs": 86400000,
       "ssoPartners":  [],
       "users": [
@@ -2854,4 +2854,4 @@ Below is a minimal but functional `core.json` template with every section includ
 
 ---
 
-*Documentation updated 2026-04-05. Version 1.*
+*Documentation updated 2026-04-30. Version 1.0.*

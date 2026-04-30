@@ -1,6 +1,6 @@
 # Jenny — Documentation
 
-> **Version:** 1
+> **Version:** 1.0
 
 Jenny is a self-hosted, modular AI assistant for Discord. It runs a configurable pipeline of modules across multiple flows (Discord, voice, web, API, cron) and exposes LLM-callable tools for search, image generation, file handling, and external integrations.
 
@@ -56,4 +56,4 @@ See [Admin Manual](ADMIN_MANUAL.md#mcp-server) and [Core JSON Reference](CORE_JS
 
 ---
 
-*Version 1*
+*Version 1.0*

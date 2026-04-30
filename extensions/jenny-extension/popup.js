@@ -1,4 +1,8 @@
-/* popup.js — Jenny Bot browser extension */
+/**************************************************************/
+/* filename: "popup.js"                                      */
+/* Version 1.0                                               */
+/* Purpose: Popup/side-panel UI for Jenny Bot extension.     */
+/**************************************************************/
 "use strict";
 
 var cfg = { apiUrl: "", channelId: "", apiSecret: "", webBaseUrl: "" };

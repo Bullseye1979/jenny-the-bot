@@ -1,4 +1,8 @@
-/* background.js — service worker for Jenny Bot browser extension */
+/**************************************************************/
+/* filename: "background.js"                                 */
+/* Version 1.0                                               */
+/* Purpose: Service worker for Jenny Bot browser extension.  */
+/**************************************************************/
 "use strict";
 
 /* Open the side panel when the user clicks the extension icon. */

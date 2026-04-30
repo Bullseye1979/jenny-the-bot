@@ -1,6 +1,6 @@
 ﻿# Jenny Discord AI Bot — Administrator Manual
 
-> **Version:** 1 · **Date:** 2026-04-05
+> **Version:** 1.0.0 · **Date:** 2026-04-30
 > This document provides a complete reference for the bot's architecture, all modules, flows, tools, and every parameter of the `core.json`.
 
 ---
@@ -1889,7 +1889,7 @@ Discord OAuth2 SSO for all web modules. Handles login (`/auth/login`), OAuth2 ca
   "flow":           ["webpage"],
   "enabled":        true,
   "loginPort":      3111,
-  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119],
+  "ports":          [3111, 3112, 3113, 3114, 3115, 3116, 3117, 3118, 3119, 3120, 3121, 3122, 3123, 3124, 3125, 3126, 3127, 3128, 3129, 3130, 3131, 3132, 3133],
   "clientId":       "YOUR_DISCORD_APP_CLIENT_ID",
   "clientSecret":   "YOUR_DISCORD_APP_CLIENT_SECRET",
   "sessionSecret":  "long_random_secret_string",
@@ -2537,7 +2537,7 @@ Opens a browser UI listing all tools and allowing test calls.
 
 **Using Jenny as an MCP client:**
 
-**Version:** 1
+**Version:** 1.0
 
 Jenny can also call remote MCP servers from normal conversations through the tools `getMcpTools` and `getMcp`. These are regular Jenny tools and must be enabled in the effective `workingObject.tools` list for the channel/user that should use them.
 
@@ -2985,7 +2985,7 @@ Every tool must have a corresponding manifest file at `manifests/<toolName>.json
 ```javascript
 /**************************************************************/
 /* filename: "getMyTool.js"                                   */
-/* Version 1                                               */
+/* Version 1.0                                             */
 /* Purpose: LLM-callable tool implementation.               */
 /**************************************************************/
 
@@ -3055,7 +3055,7 @@ export default {
 
 ### Creating a New Module — Checklist
 
-1. **Create `modules/NNNNN-my-module.js`** with a `Version 1` header and a default export function.
+1. **Create `modules/NNNNN-my-module.js`** with a `Version 1.0` header and a default export function.
 2. **Read config only from** `coreData.config["my-module"]` and the current `workingObject`.
 3. **Do not import from `tools/` or other `modules/`**. Shared logic belongs in `core/` or `shared/`.
 4. **If the module needs LLM reasoning**, route it through the internal API flow or the existing `core-ai-*` modules rather than calling the provider directly.
@@ -3068,7 +3068,7 @@ export default {
 ```javascript
 /**************************************************************/
 /* filename: "00099-my-module.js"                             */
-/* Version 1                                               */
+/* Version 1.0                                             */
 /* Purpose: Short description of what this module does.     */
 /**************************************************************/
 
@@ -3953,7 +3953,7 @@ Output is truncated at `maxOutputBytes` (default 8192 bytes) per stream with a `
 ### getMcpTools
 
 **File:** `tools/getMcpTools.js`
-**Version:** 1
+**Version:** 1.0
 **Purpose:** Discovers tools exposed by configured remote MCP servers. Use it before `getMcp` when the AI needs to find available remote tool names, descriptions, and input schemas.
 
 **Configuration:** `toolsconfig.getMcpTools.servers`
@@ -3994,7 +3994,7 @@ Returned remote tool names are namespaced as `mcp.<namespace>.<tool>`, for examp
 ### getMcp
 
 **File:** `tools/getMcp.js`
-**Version:** 1
+**Version:** 1.0
 **Purpose:** Executes a tool on a configured remote MCP server.
 
 **Configuration:** `toolsconfig.getMcp.servers`
@@ -6472,7 +6472,7 @@ The following template shows the standard pattern for a new webpage module inclu
 ```javascript
 /************************************************************************************/
 /* filename: 000xx-webpage-mymodule.js                                              */
-/* Version 1                                                                      */
+/* Version 1.0                                                                    */
 /* Purpose: Description of what this module does. Reads config only from            */
 /*          config["webpage-my-module"].                                             */
 /*                                                                                  */

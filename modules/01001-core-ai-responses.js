@@ -1,124 +1,150 @@
 /**************************************************************/
-/* filename: "01001-core-ai-responses.js"                           */
+/* filename: "01001-core-ai-responses.js"                    */
 /* Version 1.0                                               */
-/* Purpose: Pipeline module implementation.                 */
+/* Purpose: Pipeline module — OpenAI-compatible Responses    */
+/*          API with reasoning, image persistence, and       */
+/*          native tool call loop.                           */
 /**************************************************************/
 
-
 import { getContext, getContextEarliestTimestamps } from "../core/context.js";
-import { getStr, getNum } from "../core/utils.js";
-import { putItem, getItem, deleteItem } from "../core/registry.js";
-import { saveFile } from "../core/file.js";
-import { getPrefixedLogger } from "../core/logging.js";
-import { getSecret } from "../core/secrets.js";
-import { fetchWithTimeout } from "../core/fetch.js";
-import { applyAiFallbackOverrides } from "../core/ai-fallback.js";
-import fs from "node:fs";
-import path from "node:path";
+import { getStr, getNum }                           from "../core/utils.js";
+import { saveFile }                                 from "../core/file.js";
+import { getPrefixedLogger }                        from "../core/logging.js";
+import { getSecret }                                from "../core/secrets.js";
+import { fetchWithTimeout }                         from "../core/fetch.js";
+import { applyAiFallbackOverrides }                 from "../core/ai-fallback.js";
+import {
+  getAssistantAuthorName,
+  getAuthHeaders,
+  getTryParseJSON,
+  getWithTurnId,
+  getBool,
+  getPreview,
+  getLooksCutOff,
+  getLimitNotice,
+  getToolsByName,
+  getToolStatusScope,
+  getToolStatusKey,
+  setRememberActiveToolStatus,
+  setEnsureFinalSynthesisPrompt,
+  getParseArtifactsBlock,
+  getExpandedToolArgs,
+  getSystemContentText
+} from "../shared/ai/utils.js";
+import fs            from "node:fs";
+import path          from "node:path";
 import { randomUUID, createHash } from "node:crypto";
-import { fileURLToPath } from "node:url";
 
-const _manifestDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../manifests");
-
-const ARG_PREVIEW_MAX = 400;
+const MODULE_NAME      = "core-ai-responses";
+const ARG_PREVIEW_MAX  = 400;
 const RESULT_PREVIEW_MAX = 400;
-const MODULE_NAME = "core-ai-responses";
-const DEBUG_DIR = path.resolve("./pub/debug");
-
-
-function getAssistantAuthorName(wo) {
-  const v = (typeof wo?.botName === "string" && wo.botName.trim().length) ? wo.botName.trim() : "";
-  return v.length ? v : undefined;
-}
+const DEBUG_DIR        = path.resolve("./pub/debug");
 
 
 function getToString(v) { return typeof v === "string" ? v : (v == null ? "" : String(v)); }
 
 
-function getAuthHeaders(apiKey = "", baseHeaders = {}) {
-  const headers = { ...baseHeaders };
-  const secret = String(apiKey || "").trim();
-  if (secret) headers.Authorization = `Bearer ${secret}`;
-  return headers;
-}
-
-
-function getJSON(t, f = null) { try { return JSON.parse(t); } catch { return f; } }
-
-
-function getWithTurnId(rec, wo) { const t = (typeof wo?.turnId === "string" && wo.turnId) ? wo.turnId : undefined; const uid = typeof wo?.userId === "string" && wo.userId ? wo.userId : undefined; return { ...(t ? { ...rec, turnId: t } : rec), ...(uid ? { userId: uid } : {}), ts: new Date().toISOString() }; }
-
-
-function getPreview(s, n = 400) { const t = getToString(s); return t.length > n ? t.slice(0, n) + " …[truncated]" : t; }
-
-
-function getToolStatusScope(wo) {
-  const explicit =
-    String(wo?.toolcallScope ?? "").trim();
-  if (explicit) return explicit;
-  const callerFlow = String(wo?.callerFlow || "").trim();
-  if (callerFlow) return callerFlow;
-  return String(wo?.flow || "").trim();
-}
-
-
-function getToolStatusKey(wo) {
-  const explicit = String(wo?.toolStatusChannelOverride || "").trim();
-  if (explicit) return explicit;
-  return String(wo?.callerChannelId || wo?.channelId || "").trim();
-}
-
-
-function setRememberActiveToolStatus(wo, payload, hasGlobalStatus = true) {
-  if (!wo || !payload?.token) return;
-  const staleMs = Number.isFinite(wo?.statusToolStaleMs) ? Number(wo.statusToolStaleMs) : 600000;
-  wo._activeToolStatus = {
-    token: payload.token,
-    statusKey: String(payload.statusKey || ""),
-    hasGlobalStatus: hasGlobalStatus !== false
-  };
-  if (wo._activeToolStatusTimer) {
-    try { clearTimeout(wo._activeToolStatusTimer); } catch {}
-  }
-  const timer = setTimeout(() => {
-    try {
-      const current = getItem("status:tool");
-      if (hasGlobalStatus !== false && current?.token === payload.token) deleteItem("status:tool");
-    } catch {}
-    if (payload.statusKey) {
-      try {
-        const current = getItem("status:tool:" + payload.statusKey);
-        if (current?.token === payload.token) deleteItem("status:tool:" + payload.statusKey);
-      } catch {}
+function getNormalizedToolDefs(toolsLike) {
+  if (!Array.isArray(toolsLike)) return [];
+  const out = [];
+  for (const d of toolsLike) {
+    if (!d) continue;
+    if (d.type === "function" && d.name) { out.push(d); continue; }
+    if (d.type === "function" && d.function?.name) {
+      out.push({
+        type:        "function",
+        name:        d.function.name,
+        description: d.function.description || "",
+        parameters:  d.function.parameters || { type: "object", properties: {} }
+      });
     }
-  }, Math.max(1000, staleMs));
-  Object.defineProperty(wo, "_activeToolStatusTimer", {
-    value: timer,
-    configurable: true,
-    writable: true,
-    enumerable: false
-  });
-}
-
-
-function getParseArtifactsBlock(text) {
-  const s = String(text || "");
-  const marker = "\nARTIFACTS:\n";
-  const idx = s.indexOf(marker);
-  if (idx === -1) return { primaryImageUrl: null };
-
-  const lines = s.slice(idx + marker.length).split("\n");
-  for (const line of lines) {
-    if (!line.trim()) break;
-    const m = /^[a-z_]+:\s*(https?:\/\/\S+)/i.exec(line.trim());
-    if (m) return { primaryImageUrl: m[1] };
   }
-
-  return { primaryImageUrl: null };
+  return out;
 }
 
 
-function getLooksBase64(s) { return typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s); }
+function getNormalizedToolChoice(tc) {
+  if (!tc || tc === "auto" || tc === "none") return tc || "auto";
+  if (tc?.type === "function" && tc?.name) return tc;
+  if (tc?.type === "function" && tc?.function?.name) return { type: "function", name: tc.function.name };
+  return "auto";
+}
+
+
+function getReasoningEffort(wo) {
+  const v = wo?.reasoning;
+  if (v == null || v === false || v === 0) return null;
+  if (typeof v === "number") return (Number.isFinite(v) && v > 0) ? "medium" : null;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (!s || s === "0" || s === "false" || s === "none" || s === "off" || s === "disabled") return null;
+    if (s === "true") return "medium";
+    return s;
+  }
+  if (v === true) return "medium";
+  return null;
+}
+
+
+function getResponseToolsRaw(wo) {
+  return Array.isArray(wo?.responseTools) ? wo.responseTools : [];
+}
+
+
+function getNormalizedResponseTools(toolsLike) {
+  const out  = [];
+  const seen = new Set();
+  for (const t of (Array.isArray(toolsLike) ? toolsLike : [])) {
+    let rec = null;
+    if (typeof t === "string" && t.trim().length) {
+      rec = { type: t.trim() };
+    } else if (t && typeof t === "object" && typeof t.type === "string" && t.type.trim().length) {
+      rec = { ...t, type: t.type.trim() };
+    }
+    if (!rec || rec.type.toLowerCase() === "function") continue;
+    const key = JSON.stringify(rec);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(rec);
+  }
+  return out;
+}
+
+
+function getToolsForResponses(toolDefs, responseTools, toolsDisabled) {
+  if (toolsDisabled) return [];
+  const out = [];
+  for (const d of (responseTools || [])) out.push(d);
+  for (const d of (toolDefs || [])) out.push(d);
+  return out;
+}
+
+
+function getRuntimeContextFromLast(wo, snapshot) {
+  if (wo?.includeRuntimeContext !== true) return null;
+  const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
+  if (last && "content" in last) delete last.content;
+  const metadata = {
+    id:        String(wo?.channelId ?? ""),
+    flow:      String(wo?.flow ?? ""),
+    clientRef: String(wo?.clientRef ?? ""),
+    model:     String(wo?.model ?? ""),
+    tool_choice: (wo?.toolChoice ?? "auto"),
+    timezone:  String(wo?.timezone ?? "Europe/Berlin")
+  };
+  return { metadata, last };
+}
+
+
+function getAppendRuntimeContextToUserContent(baseText, ctx) {
+  if (!ctx) return baseText ?? "";
+  return (baseText ?? "") + "\n\n[context]\n```json\n" + JSON.stringify(ctx) + "\n```";
+}
+
+
+function getLooksBase64(s) {
+  return typeof s === "string" && s.length > 32 && /^[A-Za-z0-9+/=\r\n]+$/.test(s);
+}
 
 
 function setEnsureDir(dirPath) {
@@ -135,7 +161,7 @@ function getSafeJSONStringify(obj) { try { return JSON.stringify(obj, null, 2); 
 
 
 function setRedactSecrets(s) {
-  s = (typeof s === "string") ? s : String(s);
+  s = typeof s === "string" ? s : String(s);
   s = s.replace(/(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+\-\/=]+/gi, "$1***REDACTED***");
   s = s.replace(/("Authorization"\s*:\s*")Bearer\s+[^"]+(")/gi, "$1Bearer ***REDACTED***$2");
   s = s.replace(/(["']?(?:api[-_\s]?key|token|secret)["']?\s*:\s*")([^"]+)(")/gi, "$1***REDACTED***$3");
@@ -144,45 +170,42 @@ function setRedactSecrets(s) {
 
 
 function getApproxBase64Bytes(b64) {
-  const s = (typeof b64 === "string") ? b64 : "";
+  const s    = typeof b64 === "string" ? b64 : "";
   const pads = s.endsWith("==") ? 2 : (s.endsWith("=") ? 1 : 0);
   return Math.max(0, Math.floor(s.length * 0.75) - pads);
 }
 
 
-function getSha256OfBase64(b64) { try { return createHash("sha256").update(Buffer.from(b64 || "", "base64")).digest("hex"); } catch { return "n/a"; } }
+function getSha256OfBase64(b64) {
+  try { return createHash("sha256").update(Buffer.from(b64 || "", "base64")).digest("hex"); } catch { return "n/a"; }
+}
 
 
 function getSanitizedForLog(obj) {
-  const seen = new WeakSet();
+  const seen       = new WeakSet();
   const MAX_STRING = 2000;
-
 
   function walk(x) {
     if (x && typeof x === "object") {
       if (seen.has(x)) return "[[circular]]";
       seen.add(x);
-
       if (Array.isArray(x)) return x.map(walk);
-
       const o = {};
       for (const [k, v] of Object.entries(x)) {
         if (typeof v === "string") {
           if (k === "b64_json" || k === "base64" || k === "b64" || (k === "result" && getLooksBase64(v))) {
             const bytes = getApproxBase64Bytes(v);
-            const hash = getSha256OfBase64(v);
+            const hash  = getSha256OfBase64(v);
             o[k] = `[[base64 ${bytes} bytes sha256=${hash}]]`;
             continue;
           }
-
           if (/^data:image\//i.test(v)) {
-            const b64 = v.split(",")[1] || "";
+            const b64   = v.split(",")[1] || "";
             const bytes = getApproxBase64Bytes(b64);
-            const hash = getSha256OfBase64(b64);
+            const hash  = getSha256OfBase64(b64);
             o[k] = `[[data-url image base64 ${bytes} bytes sha256=${hash}]]`;
             continue;
           }
-
           if (v.length > MAX_STRING) {
             o[k] = v.slice(0, MAX_STRING) + ` …[+${v.length - MAX_STRING} chars truncated]`;
             continue;
@@ -203,10 +226,10 @@ function getImageSummaryForLog(images) {
   return (images || []).map(im => {
     if (im.kind === "b64") {
       const bytes = getApproxBase64Bytes(im.b64 || "");
-      const hash = getSha256OfBase64(im.b64 || "");
+      const hash  = getSha256OfBase64(im.b64 || "");
       return { kind: "b64", mime: im.mime || "image/png", bytes, sha256: hash };
     }
-    if (im.kind === "url") return { kind: "url", mime: im.mime || undefined, url: im.url };
+    if (im.kind === "url")     return { kind: "url",     mime: im.mime || undefined, url: im.url };
     if (im.kind === "file_id") return { kind: "file_id", mime: im.mime || "image/png", file_id: im.file_id };
     return im;
   });
@@ -214,289 +237,87 @@ function getImageSummaryForLog(images) {
 
 
 function setLogBig(label, data, { toFile = false } = {}) {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const sanitized = getSanitizedForLog(data);
-  const asText = typeof sanitized === "string" ? sanitized : getSafeJSONStringify(sanitized);
-  const red = setRedactSecrets(asText);
   if (!toFile) return;
+  const ts        = new Date().toISOString().replace(/[:.]/g, "-");
+  const sanitized = getSanitizedForLog(data);
+  const asText    = typeof sanitized === "string" ? sanitized : getSafeJSONStringify(sanitized);
+  const red       = setRedactSecrets(asText);
   try {
     setEnsureDebugDir();
-    const file = path.join(DEBUG_DIR, `${ts}-${label}.log`);
-    fs.writeFileSync(file, red, "utf8");
+    fs.writeFileSync(path.join(DEBUG_DIR, `${ts}-${label}.log`), red, "utf8");
   } catch {}
 }
 
 
-function getIdemp(wo) { if (!wo.__idemp) wo.__idemp = { tools: new Set(), images: new Set() }; return wo.__idemp; }
-
-
-function getNormalizedToolDefs(toolsLike) {
-  if (!Array.isArray(toolsLike)) return [];
-  const out = [];
-  for (const d of toolsLike) {
-    if (!d) continue;
-    if (d.type === "function" && d.name) { out.push(d); continue; }
-    if (d.type === "function" && d.function?.name) {
-      out.push({
-        type: "function",
-        name: d.function.name,
-        description: d.function.description || "",
-        parameters: d.function.parameters || { type: "object", properties: {} }
-      });
-    }
-  }
-  return out;
-}
-
-
-function getNormalizedToolChoice(tc) {
-  if (!tc || tc === "auto" || tc === "none") return tc || "auto";
-  if (tc?.type === "function" && tc?.name) return tc;
-  if (tc?.type === "function" && tc?.function?.name) return { type: "function", name: tc.function.name };
-  return "auto";
-}
-
-
-function getReasoningEffort(wo) {
-  const v = wo?.reasoning;
-
-  if (v == null) return null;
-  if (v === false) return null;
-  if (v === 0) return null;
-
-  if (typeof v === "number") return (Number.isFinite(v) && v > 0) ? "medium" : null;
-
-  if (typeof v === "string") {
-    const s = v.trim().toLowerCase();
-    if (!s.length) return null;
-    if (s === "0") return null;
-    if (s === "false") return null;
-    if (s === "none") return null;
-    if (s === "off") return null;
-    if (s === "disabled") return null;
-    if (s === "true") return "medium";
-    return s;
-  }
-
-  if (v === true) return "medium";
-
-  return null;
-}
-
-
-function getResponseToolsRaw(wo) {
-  if (Array.isArray(wo?.responseTools)) return wo.responseTools;
-  return [];
-}
-
-
-function getNormalizedResponseTools(toolsLike) {
-  const out = [];
-  const seen = new Set();
-
-  for (const t of (Array.isArray(toolsLike) ? toolsLike : [])) {
-    let rec = null;
-
-    if (typeof t === "string" && t.trim().length) {
-      rec = { type: t.trim() };
-    } else if (t && typeof t === "object" && typeof t.type === "string" && t.type.trim().length) {
-      rec = { ...t, type: t.type.trim() };
-    }
-
-    if (!rec) continue;
-    if (rec.type.toLowerCase() === "function") continue;
-
-    const key = getSafeJSONStringify(rec);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(rec);
-  }
-
-  return out;
-}
-
-
-function getToolsForResponses(toolDefs, responseTools, toolsDisabled) {
-  if (toolsDisabled) return [];
-  const out = [];
-  for (const d of (responseTools || [])) out.push(d);
-  for (const d of (toolDefs || [])) out.push(d);
-  return out;
-}
-
-
-function getRuntimeContextFromLast(wo, snapshot) {
-  if (wo?.includeRuntimeContext !== true) return null;
-  const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
-  if (last && "content" in last) delete last.content;
-  const metadata = {
-    id: String(wo?.channelId ?? ""),
-    flow: String(wo?.flow ?? ""),
-    clientRef: String(wo?.clientRef ?? ""),
-    model: String(wo?.model ?? ""),
-    tool_choice: (wo?.toolChoice ?? "auto"),
-    timezone: String(wo?.timezone ?? "Europe/Berlin")
-  };
-  return { metadata, last };
-}
-
-
-function getAppendRuntimeContextToUserContent(baseText, ctx) {
-  if (!ctx) return baseText ?? "";
-  const jsonBlock = "```json\n" + JSON.stringify(ctx) + "\n```";
-  return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
-}
-
-
-function getChannelAwarenessBlock(wo) {
-  const agentType = typeof wo?.agentType === "string" ? wo.agentType.trim() : "";
-  const mode = agentType ? "orchestrator-or-specialist" : "primary-user-channel";
-
-  const lines = [
-    "Channel awareness:",
-    `- channel_awareness_mode: ${mode}`,
-  ];
-
-  if (agentType) {
-    lines.push(`- agent_type: ${agentType}`);
-    if (wo?.agentRolePrompt) lines.push(`- ${wo.agentRolePrompt}`);
-  } else {
-    if (wo?.primaryRolePrompt) lines.push(`- ${wo.primaryRolePrompt}`);
-    const toolNames = Array.isArray(wo?.tools) ? wo.tools : [];
-    getManifestPolicyHints(toolNames).forEach(h => lines.push(`- ${h}`));
-  }
-
-  return lines.join("\n");
-}
-
-
-function getManifestDef(name, logFn) {
-  try {
-    const raw = fs.readFileSync(path.join(_manifestDir, `${name}.json`), "utf8");
-    const fn = JSON.parse(raw);
-    if (fn && typeof fn === "object" && fn.name && fn.description && fn.parameters) {
-      return { type: "function", function: fn };
-    }
-  } catch {}
-  if (logFn) logFn(`Tool "${name}" has no manifest in manifests/ — it will not be advertised to the AI.`, "warn");
-  return null;
-}
-
-
-function getManifestPolicyHints(toolNames) {
-  const hints = [];
-  for (const name of toolNames) {
-    try {
-      const raw = fs.readFileSync(path.join(_manifestDir, `${name}.json`), "utf8");
-      const m = JSON.parse(raw);
-      if (typeof m?.policyHint === "string" && m.policyHint.trim()) hints.push(m.policyHint.trim());
-    } catch {}
-  }
-  return hints;
-}
-
-
-async function getToolsByName(names, wo) {
-  const log = getPrefixedLogger(wo, import.meta.url);
-  const loaded = [];
-  for (const name of names || []) {
-    try {
-      const mod = await import(`../tools/${name}.js`);
-      const tool = mod?.default ?? mod;
-      if (tool && typeof tool.invoke === "function") {
-        const manifestDef = getManifestDef(name, log);
-        loaded.push({ ...tool, definition: manifestDef || undefined });
-      } else {
-        log(`Tool "${name}" invalid (missing invoke); skipped.`, "warn");
-      }
-    } catch (e) {
-      log(`Tool "${name}" load failed: ${e?.message || String(e)}`, "warn");
-    }
-  }
-  return loaded;
-}
-
-
-function getExpandedToolArgs(args, wo) {
-  const log = getPrefixedLogger(wo, import.meta.url);
-  const full = typeof wo?._fullAssistantText === "string" ? wo._fullAssistantText : "";
-  if (!full || !args || typeof args !== "object") return args;
-  const candidateKeys = ["body", "content", "text", "message"];
-  for (const key of candidateKeys) {
-    const v = args[key];
-    if (typeof v === "string" && v.length && full.length > v.length && full.includes(v)) {
-      log(`Expanded tool argument "${key}" to full assistant text.`, "info", { original_length: v.length, full_length: full.length });
-      return { ...args, [key]: full };
-    }
-  }
-  return args;
+function getIdemp(wo) {
+  if (!wo.__idemp) wo.__idemp = { tools: new Set(), images: new Set() };
+  return wo.__idemp;
 }
 
 
 async function setExecGenericTool(toolModules, call, coreData) {
-  const wo = coreData?.workingObject ?? {};
-  const log = getPrefixedLogger(wo, import.meta.url);
+  const wo   = coreData?.workingObject ?? {};
+  const log  = getPrefixedLogger(wo, import.meta.url);
   const idemp = getIdemp(wo);
 
-  const name = call?.function?.name || call?.name;
+  const name    = call?.function?.name || call?.name;
   const argsRaw = call?.function?.arguments ?? call?.arguments ?? "{}";
-  let args = typeof argsRaw === "string" ? getJSON(argsRaw, {}) : (argsRaw || {});
+  let   args    = typeof argsRaw === "string" ? getTryParseJSON(argsRaw, {}) : (argsRaw || {});
   args = getExpandedToolArgs(args, wo);
 
-  const tool = toolModules.find(t => (t.definition?.function?.name || t.definition?.name || t.name) === name);
+  const tool   = toolModules.find(t => (t.definition?.function?.name || t.definition?.name || t.name) === name);
   const callId = call?.call_id || call?.id || `${name}:${createHash("sha256").update(JSON.stringify(args)).digest("hex")}`;
 
   if (idemp.tools.has(callId)) {
     return {
-      ok: true,
+      ok:       true,
       name,
-      call_id: callId,
-      content: JSON.stringify({ type: "tool_result", tool: name, call_id: callId, ok: true, skipped: "idempotent-skip" })
+      call_id:  callId,
+      content:  JSON.stringify({ type: "tool_result", tool: name, call_id: callId, ok: true, skipped: "idempotent-skip" })
     };
   }
-
   idemp.tools.add(callId);
 
-  log("Tool call start", "info", { tool: name, call_id: callId, args_preview: getPreview(args, ARG_PREVIEW_MAX) });
+  log("Tool call start", "info", { tool: name, call_id: callId, args_preview: getPreview(JSON.stringify(args), ARG_PREVIEW_MAX) });
 
   if (!tool) {
     return {
-      ok: false,
+      ok:      false,
       name,
       call_id: callId,
       content: JSON.stringify({ type: "tool_result", tool: name, call_id: callId, ok: false, error: `Tool "${name}" not found` })
     };
   }
 
-  const _statusScope = getToolStatusScope(coreData?.workingObject || {});
+  const _statusScope    = getToolStatusScope(coreData?.workingObject || {});
   if (!Number.isFinite(wo._statusToolGen)) wo._statusToolGen = 0;
-  const _myGen = ++wo._statusToolGen;
-  const _statusToken = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
-  const _statusKey = getToolStatusKey(coreData?.workingObject || {});
-  const _statusPayload = {
+  const _myGen          = ++wo._statusToolGen;
+  const _statusToken    = `${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+  const _statusKey      = getToolStatusKey(coreData?.workingObject || {});
+  const _statusPayload  = {
     name,
-    flow: String(coreData?.workingObject?.flow || ""),
-    scope: _statusScope,
-    token: _statusToken,
-    channelId: _statusKey,
-    statusKey: _statusKey,
+    flow:       String(coreData?.workingObject?.flow || ""),
+    scope:      _statusScope,
+    token:      _statusToken,
+    channelId:  _statusKey,
+    statusKey:  _statusKey,
     toolCallId: callId || ""
   };
+
   try {
+    const { putItem } = await import("../core/registry.js");
     try { await putItem(_statusPayload, "status:tool"); } catch {}
     if (_statusKey) try { await putItem(_statusPayload, "status:tool:" + _statusKey); } catch {}
-    const res = await tool.invoke(args, coreData);
-    const mapped = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getJSON(res, res) : res) };
+
+    const res     = await tool.invoke(args, coreData);
+    const mapped  = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getTryParseJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
 
     log("Tool call success", "info", { tool: name, call_id: callId, result_preview: getPreview(content, RESULT_PREVIEW_MAX) });
-
     return { ok: true, name, call_id: callId, content };
   } catch (e) {
     const mappedErr = { type: "tool_result", tool: name, call_id: callId, ok: false, error: e?.message || String(e) };
-
     log("Tool call error", "error", { tool: name, call_id: callId, error: String(e?.message || e) });
-
     return { ok: false, name, call_id: callId, content: JSON.stringify(mappedErr) };
   } finally {
     if (wo._statusToolGen === _myGen) {
@@ -508,12 +329,12 @@ async function setExecGenericTool(toolModules, call, coreData) {
 
 function getExtFromMime(m) {
   const mime = (m || "").toLowerCase();
-  if (mime.includes("png")) return ".png";
+  if (mime.includes("png"))                          return ".png";
   if (mime.includes("jpeg") || mime.includes("jpg")) return ".jpg";
-  if (mime.includes("webp")) return ".webp";
-  if (mime.includes("gif")) return ".gif";
-  if (mime.includes("bmp")) return ".bmp";
-  if (mime.includes("svg")) return ".svg";
+  if (mime.includes("webp"))                         return ".webp";
+  if (mime.includes("gif"))                          return ".gif";
+  if (mime.includes("bmp"))                          return ".bmp";
+  if (mime.includes("svg"))                          return ".svg";
   return ".png";
 }
 
@@ -526,34 +347,28 @@ function getBuildUrl(filename, baseUrl) {
 
 async function setSaveB64(b64, mime, baseUrl, wo) {
   const idemp = getIdemp(wo);
-  const hash = getSha256OfBase64(b64 || "");
+  const hash  = getSha256OfBase64(b64 || "");
   if (idemp.images.has(hash)) return getBuildUrl(`DUP-${hash}.png`, baseUrl);
   idemp.images.add(hash);
 
-  const ext = getExtFromMime(mime || "image/png");
+  const ext   = getExtFromMime(mime || "image/png");
   const saved = await saveFile(wo, Buffer.from(b64, "base64"), { prefix: "img", ext, publicBaseUrl: baseUrl });
   return saved.url;
 }
 
 
-async function getFetch() {
-  return fetchWithTimeout;
-}
-
-
 async function setMirrorURL(url, baseUrl, wo) {
   const idemp = getIdemp(wo);
-  const key = `url:${createHash("sha256").update(url || "").digest("hex")}`;
+  const key   = `url:${createHash("sha256").update(url || "").digest("hex")}`;
   if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(url).digest("hex")}.png`, baseUrl);
   idemp.images.add(key);
 
-  const f = await getFetch();
-  const res = await f(url, { headers: { "User-Agent": "core-ai-responses/1.0" } });
+  const res = await fetchWithTimeout(url, { headers: { "User-Agent": "core-ai-responses/1.0" } });
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
 
-  const mime = res.headers.get("content-type") || "image/png";
-  const ext = getExtFromMime(mime);
-  const buf = Buffer.from(await res.arrayBuffer());
+  const mime  = res.headers.get("content-type") || "image/png";
+  const ext   = getExtFromMime(mime);
+  const buf   = Buffer.from(await res.arrayBuffer());
   const saved = await saveFile(wo, buf, { prefix: "img", ext, publicBaseUrl: baseUrl });
   return saved.url;
 }
@@ -561,7 +376,7 @@ async function setMirrorURL(url, baseUrl, wo) {
 
 async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, endpointFilesContentTemplate }, wo) {
   const idemp = getIdemp(wo);
-  const key = `file:${fileId}`;
+  const key   = `file:${fileId}`;
   if (idemp.images.has(key)) return getBuildUrl(`DUP-${createHash("sha256").update(fileId).digest("hex")}.png`, baseUrl);
   idemp.images.add(key);
 
@@ -573,14 +388,13 @@ async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, e
     url = `${base}/files/${encodeURIComponent(fileId)}/content`;
   }
 
-  const f = await getFetch();
   const headers = getAuthHeaders(apiKey, { "User-Agent": "core-ai-responses/1.0" });
-  const res = await f(url, { method: "GET", headers });
+  const res     = await fetchWithTimeout(url, { method: "GET", headers });
   if (!res.ok) throw new Error(`File download failed: ${res.status} ${res.statusText}`);
 
-  const mime = res.headers.get("content-type") || "image/png";
-  const ext = getExtFromMime(mime);
-  const buf = Buffer.from(await res.arrayBuffer());
+  const mime  = res.headers.get("content-type") || "image/png";
+  const ext   = getExtFromMime(mime);
+  const buf   = Buffer.from(await res.arrayBuffer());
   const saved = await saveFile(wo, buf, { prefix: "img", ext, publicBaseUrl: baseUrl });
   return saved.url;
 }
@@ -588,114 +402,83 @@ async function setSaveFromFileId(fileId, { baseUrl, apiKey, endpointResponses, e
 
 function getParsedTextFromNode(node) {
   if (!node || typeof node !== "object") return "";
-  if (typeof node.text === "string") return node.text;
-  if (typeof node.text?.value === "string") return node.text.value;
-  if (typeof node.value === "string" && (node.type === "text" || node.type === "output_text")) return node.value;
+  if (typeof node.text === "string")             return node.text;
+  if (typeof node.text?.value === "string")      return node.text.value;
+  if (typeof node.value === "string"   && (node.type === "text" || node.type === "output_text")) return node.value;
   if (typeof node.content === "string" && (node.type === "text" || node.type === "output_text")) return node.content;
-  if (typeof node.output_text === "string") return node.output_text;
+  if (typeof node.output_text === "string")      return node.output_text;
   return "";
 }
 
 
 function getParsedResponsesOutput(raw) {
-  const out = { text: "", toolCalls: [], images: [] };
-  const seen = new WeakSet();
-
+  const out       = { text: "", toolCalls: [], images: [] };
+  const seen      = new WeakSet();
   const textParts = [];
-  const toolSeen = new Set();
+  const toolSeen  = new Set();
   const imageSeen = new Set();
 
-
-  function isHttpUrl(u) { return (typeof u === "string" && /^https?:\/\//i.test(u)); }
-
-
-  function isDataUrl(u) { return (typeof u === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(u)); }
-
-
-  function b64FromDataUrl(u) { return (typeof u === "string" ? (u.split(",")[1] || "") : ""); }
-
-
-  function getIsImageMime(m) {
-    return (typeof m === "string" && m.trim().toLowerCase().startsWith("image/"));
-  }
-
-
+  function isHttpUrl(u)  { return typeof u === "string" && /^https?:\/\//i.test(u); }
+  function isDataUrl(u)  { return typeof u === "string" && /^data:image\/[a-z0-9+.\-]+;base64,/i.test(u); }
+  function b64FromDataUrl(u) { return typeof u === "string" ? (u.split(",")[1] || "") : ""; }
+  function getIsImageMime(m) { return typeof m === "string" && m.trim().toLowerCase().startsWith("image/"); }
   function getIsLikelyImageHttpUrl(u) {
-    const s = String(u || "");
-    if (!isHttpUrl(s)) return false;
-    const noHash = s.split("#")[0];
-    const pathPart = noHash.split("?")[0].toLowerCase();
-    return (/\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(pathPart));
+    if (!isHttpUrl(u)) return false;
+    const pathPart = u.split("#")[0].split("?")[0].toLowerCase();
+    return /\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(pathPart);
   }
-
 
   function pushImage(rec) {
     if (!rec) return;
-
     const key =
-      rec.kind === "url" ? `url:${rec.url}` :
+      rec.kind === "url"     ? `url:${rec.url}` :
       rec.kind === "file_id" ? `file:${rec.file_id}` :
-      rec.kind === "b64" ? `b64:${getSha256OfBase64(rec.b64 || "")}` :
-      `other:${getSafeJSONStringify(rec)}`;
-
+      rec.kind === "b64"     ? `b64:${getSha256OfBase64(rec.b64 || "")}` :
+      `other:${JSON.stringify(rec)}`;
     if (imageSeen.has(key)) return;
     imageSeen.add(key);
     out.images.push(rec);
   }
 
-
   function pushImageUrl(u, mime) {
-    if (isDataUrl(u)) {
-      pushImage({ kind: "b64", b64: b64FromDataUrl(u), mime: mime || "image/png" });
-      return;
-    }
-
+    if (isDataUrl(u)) { pushImage({ kind: "b64", b64: b64FromDataUrl(u), mime: mime || "image/png" }); return; }
     if (!isHttpUrl(u)) return;
-
-    if (getIsImageMime(mime) || getIsLikelyImageHttpUrl(u)) {
-      pushImage({ kind: "url", url: u, mime: mime || undefined });
-    }
+    if (getIsImageMime(mime) || getIsLikelyImageHttpUrl(u)) pushImage({ kind: "url", url: u, mime: mime || undefined });
   }
-
 
   function pushImageB64(b64, mime) {
     if (typeof b64 === "string" && b64.length) pushImage({ kind: "b64", b64, mime: mime || "image/png" });
   }
 
-
   function pushFileId(id, mime) {
     if (typeof id === "string" && id.length) pushImage({ kind: "file_id", file_id: id, mime: mime || "image/png" });
   }
 
-
   function pushToolCall(node, typeHint) {
     const name = node?.name || node?.function?.name || node?.tool_name;
     if (!name) return;
-
-    const call_id = node?.call_id || node?.id || node?.tool_call_id || node?.function_call_id || "";
-    const args = node?.arguments ?? node?.function?.arguments ?? node?.input ?? {};
-    const argsStr = (typeof args === "string") ? args : JSON.stringify(args ?? {});
-    const key = `${name}:${call_id}:${argsStr}`;
+    const call_id  = node?.call_id || node?.id || node?.tool_call_id || node?.function_call_id || "";
+    const args     = node?.arguments ?? node?.function?.arguments ?? node?.input ?? {};
+    const argsStr  = typeof args === "string" ? args : JSON.stringify(args ?? {});
+    const key      = `${name}:${call_id}:${argsStr}`;
     if (toolSeen.has(key)) return;
     toolSeen.add(key);
-
     out.toolCalls.push({
-      id: node?.id || call_id,
-      call_id: call_id || node?.id,
-      type: typeHint || node?.type || "function_call",
+      id:        node?.id || call_id,
+      call_id:   call_id || node?.id,
+      type:      typeHint || node?.type || "function_call",
       name,
       arguments: argsStr
     });
   }
-
 
   function crawl(node, inReasoning) {
     if (!node || typeof node !== "object") return;
     if (seen.has(node)) return;
     seen.add(node);
 
-    const t = node.type;
-    let reasoningMode = Boolean(inReasoning);
+    const t             = node.type;
+    let reasoningMode   = Boolean(inReasoning);
     if (t === "reasoning") reasoningMode = true;
 
     if (!reasoningMode && (t === "output_text" || t === "text")) {
@@ -704,24 +487,24 @@ function getParsedResponsesOutput(raw) {
     }
 
     if (t === "image" || t === "image_url" || t === "output_image") {
-      const u = node?.image_url?.url || node?.image_url || node?.url;
-      const b = node?.b64_json || node?.data?.b64_json || node?.base64;
-      const fid = node?.file_id || node?.image_file?.file_id || node?.data?.file_id || node?.asset_pointer?.file_id || node?.image?.file_id;
+      const u    = node?.image_url?.url || node?.image_url || node?.url;
+      const b    = node?.b64_json || node?.data?.b64_json || node?.base64;
+      const fid  = node?.file_id || node?.image_file?.file_id || node?.data?.file_id || node?.asset_pointer?.file_id || node?.image?.file_id;
       const mime = node?.mime || node?.mime_type || node?.data?.mime || "image/png";
-      if (u) pushImageUrl(u, mime);
-      if (b) pushImageB64(b, mime);
+      if (u)   pushImageUrl(u, mime);
+      if (b)   pushImageB64(b, mime);
       if (fid) pushFileId(fid, mime);
     }
 
     if (t === "image_generation_call") {
       const mime = (node?.output_format && typeof node.output_format === "string") ? `image/${node.output_format.toLowerCase()}` : "image/png";
       if (typeof node?.result === "string") {
-        if (isDataUrl(node.result)) pushImageB64(b64FromDataUrl(node.result), mime);
+        if (isDataUrl(node.result))       pushImageB64(b64FromDataUrl(node.result), mime);
         else if (getLooksBase64(node.result)) pushImageB64(node.result, mime);
         else pushImageUrl(node.result, mime);
       }
       if (typeof node?.url === "string") pushImageUrl(node.url, mime);
-      if (node?.file_id) pushFileId(node.file_id, mime);
+      if (node?.file_id)                 pushFileId(node.file_id, mime);
     }
 
     if (t === "tool_call" || t === "function_call" || t === "tool_use") pushToolCall(node, t);
@@ -735,40 +518,31 @@ function getParsedResponsesOutput(raw) {
 
     if (Array.isArray(node?.images)) {
       for (const im of node.images) {
-        const iu = im?.url || im?.image_url?.url || im?.image_url;
+        const iu   = im?.url || im?.image_url?.url || im?.image_url;
         const ib64 = im?.b64_json || im?.base64;
         const ifid = im?.file_id || im?.image_file?.file_id || im?.asset_pointer?.file_id;
-        const mm = im?.mime || im?.mime_type || "image/png";
-        if (iu) pushImageUrl(iu, mm);
+        const mm   = im?.mime || im?.mime_type || "image/png";
+        if (iu)   pushImageUrl(iu, mm);
         if (ib64) pushImageB64(ib64, mm);
         if (ifid) pushFileId(ifid, mm);
       }
     }
 
     for (const v of Object.values(node)) {
-      if (Array.isArray(v)) v.forEach(x => crawl(x, reasoningMode));
+      if (Array.isArray(v))            v.forEach(x => crawl(x, reasoningMode));
       else if (v && typeof v === "object") crawl(v, reasoningMode);
     }
   }
 
   const arr = Array.isArray(raw?.output) ? raw.output : (raw ? [raw] : []);
   arr.forEach(x => crawl(x, false));
-
   out.text = textParts.join("").trim();
 
   if (!out.text && typeof raw?.output_text === "string" && raw.output_text.trim().length) out.text = raw.output_text.trim();
-  if (!out.text && typeof raw?.text === "string" && raw.text.trim().length) out.text = raw.text.trim();
-  if (!out.text && Array.isArray(raw?.choices) && raw.choices[0]?.message?.content) out.text = getToString(raw.choices[0].message.content).trim();
+  if (!out.text && typeof raw?.text        === "string" && raw.text.trim().length)        out.text = raw.text.trim();
+  if (!out.text && Array.isArray(raw?.choices) && raw.choices[0]?.message?.content)       out.text = getToString(raw.choices[0].message.content).trim();
 
   return out;
-}
-
-
-function getLooksCutOff(text) {
-  const s = String(text ?? "").trimEnd();
-  if (!s) return false;
-  const last = s[s.length - 1];
-  return !/[.!?:;*"»)\]}>~`]/.test(last);
 }
 
 
@@ -791,7 +565,9 @@ function getWasTruncatedOutput(data) {
     const outputs = Array.isArray(data?.output) ? data.output : [];
     for (const m of outputs) {
       const content = Array.isArray(m?.content) ? m.content : [];
-      for (const c of content) { if (c?.finish_reason && String(c.finish_reason).toLowerCase() === "length") return true; }
+      for (const c of content) {
+        if (c?.finish_reason && String(c.finish_reason).toLowerCase() === "length") return true;
+      }
     }
   } catch {}
   return false;
@@ -802,108 +578,85 @@ function getSanitizeReasoningText(s) {
   const raw = getToString(s);
   if (!raw.trim()) return "";
 
-  const isRsId = (x) => /^rs_[a-z0-9]{10,}$/i.test(String(x || "").trim());
+  const isRsId     = (x) => /^rs_[a-z0-9]{10,}$/i.test(String(x || "").trim());
   const isMetaWord = (x, w) => new RegExp(`^${w}$`, "i").test(String(x || "").trim());
 
   const lines = raw.replace(/\r\n?/g, "\n").split("\n");
-  const out = [];
+  const out   = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = String(lines[i] || "");
-    const t = line.trim();
+    const t    = line.trim();
     if (!t.length) continue;
 
-    const prev = i > 0 ? lines[i - 1] : "";
+    const prev = i > 0               ? lines[i - 1] : "";
     const next = i + 1 < lines.length ? lines[i + 1] : "";
 
     if (isRsId(t)) continue;
 
     const looksLikeMetaContext =
       isRsId(prev) || isRsId(next) ||
-      isMetaWord(prev, "reasoning") || isMetaWord(next, "reasoning") ||
+      isMetaWord(prev, "reasoning")    || isMetaWord(next, "reasoning")    ||
       isMetaWord(prev, "summary_text") || isMetaWord(next, "summary_text") ||
-      isMetaWord(prev, "summary") || isMetaWord(next, "summary");
+      isMetaWord(prev, "summary")      || isMetaWord(next, "summary");
 
-    if (looksLikeMetaContext && isMetaWord(t, "reasoning")) continue;
+    if (looksLikeMetaContext && isMetaWord(t, "reasoning"))    continue;
     if (looksLikeMetaContext && isMetaWord(t, "summary_text")) continue;
-    if (looksLikeMetaContext && isMetaWord(t, "summary")) continue;
+    if (looksLikeMetaContext && isMetaWord(t, "summary"))      continue;
 
     out.push(line);
   }
 
-  const joined = out.join("\n").trim();
-  return joined.replace(/\n{3,}/g, "\n\n").trim();
+  return out.join("\n").trim().replace(/\n{3,}/g, "\n\n").trim();
 }
 
 
 function getReasoningSummaryFromResponse(data) {
-  const BAD = new Set(["auto", "none", "concise", "detailed", "low", "medium", "high"]);
-  const seenObj = new WeakSet();
+  const BAD      = new Set(["auto", "none", "concise", "detailed", "low", "medium", "high"]);
+  const seenObj  = new WeakSet();
   const seenText = new Set();
-  const out = [];
-
+  const out      = [];
 
   function norm(s) {
-    return String(s || "")
-      .replace(/\r\n/g, "\n")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
+    return String(s || "").replace(/\r\n/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   }
-
 
   function add(s) {
     if (typeof s !== "string") return;
     let t = norm(s);
-    if (!t.length) return;
-    if (BAD.has(t.toLowerCase())) return;
-
+    if (!t.length || BAD.has(t.toLowerCase())) return;
     t = getSanitizeReasoningText(t);
     t = norm(t);
-    if (!t.length) return;
-
-    if (seenText.has(t)) return;
+    if (!t.length || seenText.has(t)) return;
     seenText.add(t);
     out.push(t);
   }
-
 
   function isReasonKey(k) {
     const kk = String(k || "").toLowerCase();
     return kk.includes("summary") || kk.includes("reason") || kk.includes("explain") || kk === "text";
   }
 
-
   function walk(node, keyHint) {
     const hint = getToString(keyHint);
-
     if (node == null) return;
-
-    if (typeof node === "string") {
-      if (isReasonKey(hint)) add(node);
-      return;
-    }
-
+    if (typeof node === "string") { if (isReasonKey(hint)) add(node); return; }
     if (typeof node !== "object") return;
     if (seenObj.has(node)) return;
     seenObj.add(node);
 
-    if (Array.isArray(node)) {
-      for (const x of node) walk(x, hint);
-      return;
-    }
+    if (Array.isArray(node)) { for (const x of node) walk(x, hint); return; }
 
-    const t = String(node?.type || "").toLowerCase();
+    const t          = String(node?.type || "").toLowerCase();
     const isReasonNode = (t === "reasoning");
 
     if (typeof node.summary_text === "string") add(node.summary_text);
-    if (typeof node.summary === "string") add(node.summary);
-    if (typeof node.explanation === "string") add(node.explanation);
+    if (typeof node.summary      === "string") add(node.summary);
+    if (typeof node.explanation  === "string") add(node.explanation);
     if (typeof node.text === "string" && (isReasonNode || isReasonKey(hint))) add(node.text);
 
     for (const [k, v] of Object.entries(node)) {
-      if (k === "input") continue;
-      if (k === "instructions") continue;
+      if (k === "input" || k === "instructions") continue;
       if (!isReasonNode && !isReasonKey(k) && !isReasonKey(hint)) continue;
       walk(v, k);
     }
@@ -911,7 +664,6 @@ function getReasoningSummaryFromResponse(data) {
 
   try {
     if (data?.reasoning) walk(data.reasoning, "reasoning");
-
     const output = Array.isArray(data?.output) ? data.output : [];
     for (const item of output) {
       if (item && typeof item === "object" && String(item.type || "").toLowerCase() === "reasoning") walk(item, "reasoning");
@@ -920,22 +672,19 @@ function getReasoningSummaryFromResponse(data) {
         if (c && typeof c === "object" && String(c.type || "").toLowerCase() === "reasoning") walk(c, "reasoning");
       }
     }
-
     const joined = out.join("\n\n").trim();
     return joined.length ? joined : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 
 function getPayload(row) {
   const j = (typeof row?.json === "string" && row.json.trim().length) ? row.json.trim() : "";
   if (j) {
-    const obj = getJSON(j, null);
+    const obj = getTryParseJSON(j, null);
     if (obj && typeof obj === "object") {
       if (typeof obj.content === "string" && obj.content.length) return obj.content;
-      if (typeof obj.text === "string" && obj.text.length) return obj.text;
+      if (typeof obj.text    === "string" && obj.text.length)    return obj.text;
       if (obj.object === "response" && Array.isArray(obj.output)) {
         const parsed = getParsedResponsesOutput(obj);
         if (typeof parsed?.text === "string" && parsed.text.length) return parsed.text;
@@ -945,22 +694,23 @@ function getPayload(row) {
     return j;
   }
   if (typeof row?.content === "string" && row.content.length) return row.content;
-  if (typeof row?.text === "string" && row.text.length) return row.text;
+  if (typeof row?.text    === "string" && row.text.length)    return row.text;
   return "";
 }
 
 
 function getSnapshotMappedToChat(rows, options = {}) {
-  const out = [];
-  const includeSystem = getBool(options?.includeHistorySystemMessages, false);
-  let lastAssistantCallIds = new Set();
+  const out                  = [];
+  const includeSystem        = getBool(options?.includeHistorySystemMessages, false);
+  let   lastAssistantCallIds = new Set();
+
   for (const r of rows || []) {
-    const role = r?.role;
+    const role    = r?.role;
     const payload = getPayload(r);
+
     if (role === "system") {
       if (includeSystem) out.push({ role: "system", content: payload });
-    }
-    else if (role === "user") {
+    } else if (role === "user") {
       out.push({ role: "user", content: payload });
       lastAssistantCallIds = new Set();
     } else if (role === "assistant") {
@@ -968,10 +718,10 @@ function getSnapshotMappedToChat(rows, options = {}) {
       if (Array.isArray(r?.tool_calls) && r.tool_calls.length) {
         msg.tool_calls = r.tool_calls
           .map((tc) => ({
-            id: tc?.id,
+            id:   tc?.id,
             type: "function",
             function: {
-              name: tc?.function?.name,
+              name:      tc?.function?.name,
               arguments: typeof tc?.function?.arguments === "string"
                 ? tc.function.arguments
                 : JSON.stringify(tc?.function?.arguments ?? {})
@@ -987,10 +737,10 @@ function getSnapshotMappedToChat(rows, options = {}) {
       const tcid = String(r?.tool_call_id || "").trim();
       if (!tcid || !lastAssistantCallIds.has(tcid)) continue;
       out.push({
-        role: "tool",
+        role:         "tool",
         tool_call_id: tcid,
-        name: String(r?.name || ""),
-        content: typeof r?.content === "string" ? r.content : JSON.stringify(r?.content ?? "")
+        name:         String(r?.name || ""),
+        content:      typeof r?.content === "string" ? r.content : JSON.stringify(r?.content ?? "")
       });
     }
   }
@@ -1006,7 +756,7 @@ function getResponsesInputFromMessages(messages) {
     if (role === "assistant" && Array.isArray(m?.tool_calls) && m.tool_calls.length) {
       for (const tc of m.tool_calls) {
         const callId = String(tc?.id || "").trim();
-        const name = String(tc?.function?.name || tc?.name || "").trim();
+        const name   = String(tc?.function?.name || tc?.name || "").trim();
         if (!callId || !name) continue;
         const args = typeof tc?.function?.arguments === "string"
           ? tc.function.arguments
@@ -1022,11 +772,7 @@ function getResponsesInputFromMessages(messages) {
     if (role === "tool") {
       const callId = String(m?.tool_call_id || m?.id || "").trim();
       if (!callId) continue;
-      out.push({
-        type: "function_call_output",
-        call_id: callId,
-        output: getToString(m?.content ?? "")
-      });
+      out.push({ type: "function_call_output", call_id: callId, output: getToString(m?.content ?? "") });
       continue;
     }
     const type = (role === "assistant") ? "output_text" : "input_text";
@@ -1039,10 +785,9 @@ function getResponsesInputFromMessages(messages) {
 
 function setAppendReasoningBlock(reasoningParts, iter, rs, toolCalls) {
   const toolNames = Array.isArray(toolCalls) ? toolCalls.map(t => t?.name).filter(Boolean) : [];
-  const header = `--- Iteration ${iter + 1}${toolNames.length ? ` (tools: ${toolNames.join(", ")})` : ""} ---`;
-  const body = (typeof rs === "string" && rs.trim().length) ? rs.trim() : "";
+  const header    = `--- Iteration ${iter + 1}${toolNames.length ? ` (tools: ${toolNames.join(", ")})` : ""} ---`;
+  const body      = (typeof rs === "string" && rs.trim().length) ? rs.trim() : "";
   reasoningParts.push(`${header}\n${body}`.trimEnd());
-  return true;
 }
 
 
@@ -1052,41 +797,20 @@ function getToolsDisabledMode(totalToolCalls, maxToolCalls, wo) {
   return "normal";
 }
 
+
 function getToolsForCurrentStep(toolDefs, responseToolsNormalized, toolsMode) {
-  const base = getToolsForResponses(toolDefs, responseToolsNormalized, false);
   if (toolsMode === "final_only" || toolsMode === "disabled") return [];
-  return base;
-}
-
-function getLimitNotice(kind) {
-  if (kind === "tool") {
-    return "Tool budget reached. This is the partial result so far. Start a new AI run if you want me to continue the deep dive.";
-  }
-  if (kind === "loop") {
-    return "Loop limit reached. This is the partial result so far. Start a new AI run if you want me to continue from here.";
-  }
-  return "";
-}
-
-
-function setEnsureFinalSynthesisPrompt(messages, wo) {
-  if (wo?.__didToolBudgetNotice === true) return false;
-  wo.__didToolBudgetNotice = true;
-  messages.push({
-    role: "user",
-    content: "Tool-call budget exhausted. Provide the best possible final answer using only the existing conversation and prior tool outputs. Do not request or call any tools."
-  });
-  return true;
+  return getToolsForResponses(toolDefs, responseToolsNormalized, false);
 }
 
 
 export default async function getCoreAi(coreData) {
-  let wo = coreData?.workingObject ?? {};
+  let wo  = coreData?.workingObject ?? {};
   const log = getPrefixedLogger(wo, import.meta.url);
   wo = await applyAiFallbackOverrides(wo, { log, moduleName: MODULE_NAME, endpoint: wo?.endpointResponses || wo?.endpoint });
   coreData.workingObject = wo;
 
-  const gate = String(wo?.useAiModule ?? wo?.useAiModule ?? "").trim().toLowerCase();
+  const gate = String(wo?.useAiModule ?? "").trim().toLowerCase();
   if (gate && gate !== "responses") {
     log(`Skipped: useAiModule="${gate}" != "responses"`, "info");
     return coreData;
@@ -1097,20 +821,19 @@ export default async function getCoreAi(coreData) {
     return coreData;
   }
 
-  const endpoint = getStr(wo?.endpointResponses, "");
-  const apiKeyName = getStr(wo?.apiKey, "");
-  const apiKey = apiKeyName ? await getSecret(wo, apiKeyName) : "";
-  const model = getStr(wo?.model, "");
-  const baseUrl = getStr(wo?.baseUrl, "");
+  const endpoint                  = getStr(wo?.endpointResponses, "");
+  const apiKeyName                = getStr(wo?.apiKey, "");
+  const apiKey                    = apiKeyName ? await getSecret(wo, apiKeyName) : "";
+  const model                     = getStr(wo?.model, "");
+  const baseUrl                   = getStr(wo?.baseUrl, "");
   const endpointFilesContentTemplate = getStr(wo?.endpointFilesContent, "");
-  const maxTokens = getNum(wo?.maxTokens, 2000);
-  const maxLoops = getNum(wo?.maxLoops, 16);
-  const maxToolCalls = getNum(wo?.maxToolCalls, 8);
-  const timeoutMs = getNum(wo?.requestTimeoutMs, 120000);
-  const debugOn = Boolean(wo?.debugPayload ?? process.env.AI_DEBUG);
-
-  const reasoningEffort = getReasoningEffort(wo);
-  const reasoningEnabled = (typeof reasoningEffort === "string" && reasoningEffort.length > 0);
+  const maxTokens                 = getNum(wo?.maxTokens, 2000);
+  const maxLoops                  = getNum(wo?.maxLoops, 16);
+  const maxToolCalls              = getNum(wo?.maxToolCalls, 8);
+  const timeoutMs                 = getNum(wo?.requestTimeoutMs, 120000);
+  const debugOn                   = Boolean(wo?.debugPayload ?? process.env.AI_DEBUG);
+  const reasoningEffort           = getReasoningEffort(wo);
+  const reasoningEnabled          = typeof reasoningEffort === "string" && reasoningEffort.length > 0;
 
   if (!endpoint || !model) {
     wo.response = "[Empty AI response]";
@@ -1118,9 +841,11 @@ export default async function getCoreAi(coreData) {
     return coreData;
   }
 
-  const responseToolsNormalized = getNormalizedResponseTools(getResponseToolsRaw(wo));
+  const responseToolsNormalized      = getNormalizedResponseTools(getResponseToolsRaw(wo));
   const includeHistorySystemMessages = getBool(wo?.includeHistorySystemMessages, false);
-  const responseToolsInfo = responseToolsNormalized.length ? responseToolsNormalized.map(x => x?.type).filter(Boolean).join(", ") : "(none)";
+  const responseToolsInfo            = responseToolsNormalized.length
+    ? responseToolsNormalized.map(x => x?.type).filter(Boolean).join(", ")
+    : "(none)";
 
   log(`Using baseUrl="${baseUrl || "(relative /documents)"}"`, "info");
   log(`Responses built-in tools (workingObject.responseTools): ${responseToolsInfo}`, "info");
@@ -1133,112 +858,42 @@ export default async function getCoreAi(coreData) {
     catch (e) { log(`getContext failed; continuing: ${e?.message || String(e)}`, "warn"); }
   }
 
+  const earliestTimestamps = await getContextEarliestTimestamps(wo).catch(() => []);
+  const moduleCfg          = coreData.config?.[MODULE_NAME] || {};
+  const sys                = getSystemContentText(wo, { earliestTimestamps, moduleCfg });
 
-  const _earliestTimestamps = await getContextEarliestTimestamps(wo).catch(() => []);
-
-  function getSystemContent(wo2) {
-    const nowIso = new Date().toISOString();
-    const tz = getStr(wo2?.timezone, "Europe/Berlin");
-    const base = [
-      typeof wo2.systemPrompt === "string" ? wo2.systemPrompt.trim() : "",
-      typeof wo2.persona === "string" ? wo2.persona.trim() : "",
-      typeof wo2.instructions === "string" ? wo2.instructions.trim() : "",
-      typeof wo2._deliveryInstructions === "string" ? wo2._deliveryInstructions.trim() : ""
-    ].filter(Boolean).join("\n\n");
-
-    const earliestLines = _earliestTimestamps.map(
-      ({ channelId, earliestTs }) => `- context_earliest_record (channel "${channelId}"): ${earliestTs}`
-    );
-
-    const runtimeInfo = [
-      "Runtime info:",
-      `- current_time_iso: ${nowIso}`,
-      `- timezone_hint: ${tz}`,
-      ...earliestLines,
-      ...(earliestLines.length
-        ? ["- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window. History tools can retrieve records all the way back to this date."]
-        : []),
-      "- When the user uses relative time terms (e.g., today, tomorrow), interpret them relative to current_time_iso unless another explicit reference time is provided.",
-      "- If you generate calendar-like text, prefer explicit dates (YYYY-MM-DD) when helpful."
-    ].join("\n");
-
-    const moduleCfg = coreData.config?.[MODULE_NAME] || {};
-    const policy = getStr(wo2?.policyPrompt, "") || getStr(moduleCfg?.policyPrompt, "");
-
-    const multiChannelNote = (() => {
-      const raw = Array.isArray(wo2?.contextIDs) ? wo2.contextIDs : [];
-      const extraIds = raw.map(v => String(v || "").trim()).filter(v => v.length > 0);
-      if (!extraIds.length) return "";
-      const currentId = String(wo2?.id ?? "").trim();
-      const lines = [
-        "Multi-channel context:",
-        "- The context includes messages from multiple channels. Each message may carry a `channelId` field that identifies its source channel."
-      ];
-      if (currentId) lines.push(`- Treat "${currentId}" as your primary (effective) channelId for this conversation.`);
-      return lines.join("\n");
-    })();
-
-    const agentInfo = (() => {
-      const type  = typeof wo2?.agentType === "string" ? wo2.agentType.trim() : "";
-      const depth = Number.isFinite(Number(wo2?.agentDepth)) ? Number(wo2.agentDepth) : 0;
-      if (!type) return "Agent context:\n- agent_type: main-channel\n- agent_depth: 0";
-      return [
-        "Agent context:",
-        `- agent_type: ${type}`,
-        `- agent_depth: ${depth}`
-      ].join("\n");
-    })();
-
-    const systemPromptAddition = typeof wo2?.systemPromptAddition === "string" ? wo2.systemPromptAddition.trim() : "";
-
-    const parts = [];
-    if (base) parts.push(base);
-    if (agentInfo) parts.push(agentInfo);
-    parts.push(getChannelAwarenessBlock(wo2));
-    parts.push(runtimeInfo);
-    parts.push(policy);
-    if (systemPromptAddition) parts.push(systemPromptAddition);
-    if (multiChannelNote) parts.push(multiChannelNote);
-    return parts.filter(Boolean).join("\n\n");
-  }
-
-  const sys = getSystemContent(wo);
-  const fromDb = getSnapshotMappedToChat(Array.isArray(snapshot) ? snapshot : [], { includeHistorySystemMessages });
-  const userPayloadRaw = getToString(wo?.payload ?? "");
+  const fromDb          = getSnapshotMappedToChat(Array.isArray(snapshot) ? snapshot : [], { includeHistorySystemMessages });
+  const userPayloadRaw  = getToString(wo?.payload ?? "");
   if (!userPayloadRaw.trim()) {
     log("Skipped: empty payload", "info");
     return coreData;
   }
-  const runtimeCtx = getRuntimeContextFromLast(wo, snapshot);
+
+  const runtimeCtx  = getRuntimeContextFromLast(wo, snapshot);
   const userContent = getAppendRuntimeContextToUserContent(userPayloadRaw, runtimeCtx);
 
-  let messages = [{ role: "system", content: sys }, ...fromDb, ...(userPayloadRaw ? [{ role: "user", content: userContent }] : [])];
+  let messages = [{ role: "system", content: sys }, ...fromDb, { role: "user", content: userContent }];
 
-  const _toolsRaw = Array.isArray(wo?.tools) ? wo.tools : [];
+  const _toolsRaw       = Array.isArray(wo?.tools) ? wo.tools : [];
   const _toolsBlacklist = Array.isArray(wo?.toolsBlacklist) ? wo.toolsBlacklist : [];
-  const toolNames = _toolsBlacklist.length ? _toolsRaw.filter(t => !_toolsBlacklist.includes(t)) : _toolsRaw;
-  const genericTools = await getToolsByName(toolNames, wo);
-  const toolDefs = getNormalizedToolDefs(genericTools.map(t => t.definition).filter(Boolean));
+  const toolNames       = _toolsBlacklist.length ? _toolsRaw.filter(t => !_toolsBlacklist.includes(t)) : _toolsRaw;
+  const genericTools    = await getToolsByName(toolNames, wo);
+  const toolDefs        = getNormalizedToolDefs(genericTools.map(t => t.definition).filter(Boolean));
 
   const toolChoiceInitial = getNormalizedToolChoice(wo?.toolChoice) || "auto";
   if (!Array.isArray(wo._contextPersistQueue)) wo._contextPersistQueue = [];
 
-  let finalText = "";
-  let accumulatedText = "";
-  let allHostedLinks = [];
-
+  let finalText        = "";
+  let accumulatedText  = "";
+  let allHostedLinks   = [];
   const reasoningParts = [];
-  const toolCallLog = [];
-
-  let totalToolCalls = 0;
-  let attempts = 0;
-  const maxAttempts = Math.max(1, getNum(wo?.maxAttempts, Math.min(3, maxLoops)));
-  let hitMaxLoops = false;
-  let hitMaxToolCalls = false;
-  
-
-
-  let emptyOutputConsec = 0;
+  const toolCallLog    = [];
+  let   totalToolCalls   = 0;
+  let   attempts         = 0;
+  const maxAttempts      = Math.max(1, getNum(wo?.maxAttempts, Math.min(3, maxLoops)));
+  let   hitMaxLoops      = false;
+  let   hitMaxToolCalls  = false;
+  let   emptyOutputConsec = 0;
 
   for (let iter = 0; iter < maxLoops; iter++) {
     if (wo.aborted) {
@@ -1249,46 +904,42 @@ export default async function getCoreAi(coreData) {
     attempts++;
 
     try {
+      const toolsMode          = getToolsDisabledMode(totalToolCalls, maxToolCalls, wo);
+      const toolsForResponses  = getToolsForCurrentStep(toolDefs, responseToolsNormalized, toolsMode);
+      const toolsDisabled      = !Array.isArray(toolsForResponses) || toolsForResponses.length === 0;
+      const requestToolNames   = toolsForResponses.map(tool => String(tool?.name || tool?.function?.name || tool?.type || "").trim()).filter(Boolean);
 
-      const toolsMode = getToolsDisabledMode(totalToolCalls, maxToolCalls, wo);
-      const toolsForResponses = getToolsForCurrentStep(toolDefs, responseToolsNormalized, toolsMode);
-      const toolsDisabled = !Array.isArray(toolsForResponses) || toolsForResponses.length === 0;
-      const requestToolNames = Array.isArray(toolsForResponses)
-        ? toolsForResponses.map((tool) => String(tool?.name || tool?.function?.name || tool?.type || "").trim()).filter(Boolean)
-        : [];
       log("AI request tool snapshot", "info", {
-        channelId: String(wo?.channelId || ""),
+        channelId:       String(wo?.channelId || ""),
         callerChannelId: String(wo?.callerChannelId || ""),
-        useAiModule: String(wo?.useAiModule || ""),
+        useAiModule:     String(wo?.useAiModule || ""),
         toolsDisabled,
-        toolMode: toolsMode,
+        toolMode:        toolsMode,
         configuredTools: Array.isArray(wo?.tools) ? wo.tools : [],
         requestToolNames,
-        toolChoice: toolsDisabled ? "none" : toolChoiceInitial
+        toolChoice:      toolsDisabled ? "none" : toolChoiceInitial
       });
 
       const body = {
         model,
-        input: getResponsesInputFromMessages(messages),
+        input:        getResponsesInputFromMessages(messages),
         instructions: sys,
-        tools: toolsForResponses,
-        tool_choice: toolsDisabled ? "none" : toolChoiceInitial,
+        tools:        toolsForResponses,
+        tool_choice:  toolsDisabled ? "none" : toolChoiceInitial,
         ...(reasoningEnabled ? { reasoning: { effort: reasoningEffort, summary: "auto" } } : {}),
         ...(maxTokens ? { max_output_tokens: maxTokens } : {})
       };
 
       setLogBig("responses-request-body", { endpoint, model, tool_choice: body.tool_choice, tools: body.tools, input: body.input, instructions: body.instructions, reasoning: body.reasoning }, { toFile: debugOn });
 
-    const headers = getAuthHeaders(apiKey, { "Content-Type": "application/json" });
-    const res = await fetchWithTimeout(endpoint, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
-
+      const headers = getAuthHeaders(apiKey, { "Content-Type": "application/json" });
+      const res     = await fetchWithTimeout(endpoint, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
       const rawText = await res.text();
-      const hdr = {}; try { res.headers?.forEach?.((v, k) => { hdr[k] = v; }); } catch {}
-      const RAW_MAX = 8000;
+      const hdr     = {}; try { res.headers?.forEach?.((v, k) => { hdr[k] = v; }); } catch {}
 
-      setLogBig("responses-status", { status: res.status, statusText: res.statusText }, { toFile: debugOn });
-      setLogBig("responses-headers", hdr, { toFile: debugOn });
-      setLogBig("responses-payload-raw", rawText.length > RAW_MAX ? rawText.slice(0, RAW_MAX) + ` …[+${rawText.length - RAW_MAX} chars truncated]` : rawText, { toFile: debugOn });
+      setLogBig("responses-status",      { status: res.status, statusText: res.statusText }, { toFile: debugOn });
+      setLogBig("responses-headers",     hdr,     { toFile: debugOn });
+      setLogBig("responses-payload-raw", rawText.length > 8000 ? rawText.slice(0, 8000) + ` …[+${rawText.length - 8000} chars truncated]` : rawText, { toFile: debugOn });
 
       if (!res.ok) {
         const retryable = (res.status >= 500 && res.status <= 599) || res.status === 429;
@@ -1300,7 +951,7 @@ export default async function getCoreAi(coreData) {
         return coreData;
       }
 
-      const data = getJSON(rawText, {});
+      const data   = getTryParseJSON(rawText, {});
       setLogBig("responses-payload-json", data, { toFile: debugOn });
 
       const parsed = getParsedResponsesOutput(data);
@@ -1312,12 +963,11 @@ export default async function getCoreAi(coreData) {
       }
 
       const hostedLinks = [];
-
       if (parsed.images.length) {
         for (const it of parsed.images) {
           try {
-            if (it.kind === "b64") hostedLinks.push(await setSaveB64(it.b64, it.mime || "image/png", baseUrl, wo));
-            else if (it.kind === "url") hostedLinks.push(await setMirrorURL(it.url, baseUrl, wo));
+            if      (it.kind === "b64")     hostedLinks.push(await setSaveB64(it.b64, it.mime || "image/png", baseUrl, wo));
+            else if (it.kind === "url")     hostedLinks.push(await setMirrorURL(it.url, baseUrl, wo));
             else if (it.kind === "file_id") hostedLinks.push(await setSaveFromFileId(it.file_id, { baseUrl, apiKey, endpointResponses: endpoint, endpointFilesContentTemplate }, wo));
           } catch (e) {
             const placeholder = getBuildUrl(`FAILED-${Date.now()}-${randomUUID()}.txt`, baseUrl);
@@ -1332,15 +982,15 @@ export default async function getCoreAi(coreData) {
       if (hostedLinks.length) allHostedLinks.push(...hostedLinks);
 
       setLogBig("responses-parsed-summary", { textPreview: getPreview(parsed.text, 300), images: getImageSummaryForLog(parsed.images), toolCalls: parsed.toolCalls }, { toFile: debugOn });
-      setLogBig("responses-hosted-links", hostedLinks, { toFile: debugOn });
+      setLogBig("responses-hosted-links",   hostedLinks, { toFile: debugOn });
 
-      const toolCalls = Array.isArray(parsed.toolCalls) ? parsed.toolCalls : [];
-      const hasToolCalls = toolCalls.length > 0;
-      const assistantText = (parsed.text || "").trim();
-      const finish = getFinishReasonFromData(data);
+      const toolCalls       = Array.isArray(parsed.toolCalls) ? parsed.toolCalls : [];
+      const hasToolCalls    = toolCalls.length > 0;
+      const assistantText   = (parsed.text || "").trim();
+      const finish          = getFinishReasonFromData(data);
       log(`AI turn ${iter + 1}: finish_reason="${finish ?? "null"}" content_length=${assistantText.length} tool_calls=${toolCalls.length}`, "info");
 
-      const linkBlockThisIter = hostedLinks.length ? hostedLinks.map(u => `- ${u}`).join("\n") : "";
+      const linkBlockThisIter      = hostedLinks.length ? hostedLinks.map(u => `- ${u}`).join("\n") : "";
       const persistAssistantContent = [assistantText, linkBlockThisIter].filter(Boolean).join("\n\n").trim();
 
       if (persistAssistantContent.length) {
@@ -1357,15 +1007,15 @@ export default async function getCoreAi(coreData) {
 
         if (hasToolCalls && genericTools.length && totalToolCalls < maxToolCalls) {
           const assistantToolMsg = {
-            role: "assistant",
+            role:       "assistant",
             authorName: getAssistantAuthorName(wo),
-            content: "",
+            content:    "",
             tool_calls: toolCalls.map((tc) => ({
-              id: tc?.call_id || tc?.id || `${tc?.name || "tool"}:${createHash("sha256").update(getToString(tc?.arguments ?? "")).digest("hex")}`,
+              id:   tc?.call_id || tc?.id || `${tc?.name || "tool"}:${createHash("sha256").update(getToString(tc?.arguments ?? "")).digest("hex")}`,
               type: "function",
               function: {
-                name: tc?.name || "",
-                arguments: (typeof tc?.arguments === "string") ? tc.arguments : JSON.stringify(tc?.arguments ?? {})
+                name:      tc?.name || "",
+                arguments: typeof tc?.arguments === "string" ? tc.arguments : JSON.stringify(tc?.arguments ?? {})
               }
             })).filter((tc) => tc.id && tc?.function?.name)
           };
@@ -1382,26 +1032,27 @@ export default async function getCoreAi(coreData) {
             if (!isGeneric) continue;
             if (totalToolCalls >= maxToolCalls) { hitMaxToolCalls = true; break; }
 
-            const call_id = tc?.call_id || tc?.id || `${tc?.name || "tool"}:${createHash("sha256").update(getToString(tc?.arguments ?? "")).digest("hex")}`;
-            const callArgsStr = (typeof tc?.arguments === "string") ? tc.arguments : JSON.stringify(tc?.arguments ?? {});
+            const call_id     = tc?.call_id || tc?.id || `${tc?.name || "tool"}:${createHash("sha256").update(getToString(tc?.arguments ?? "")).digest("hex")}`;
+            const callArgsStr = typeof tc?.arguments === "string" ? tc.arguments : JSON.stringify(tc?.arguments ?? {});
             messages.push({ type: "function_call", call_id, name: tc?.name, arguments: callArgsStr });
 
             const _tcStartMs = Date.now();
-            const result = await setExecGenericTool(genericTools, { ...tc, call_id, arguments: callArgsStr }, coreData);
+            const result     = await setExecGenericTool(genericTools, { ...tc, call_id, arguments: callArgsStr }, coreData);
             const _tcDurationMs = Date.now() - _tcStartMs;
             totalToolCalls++;
             ranAnyTool = true;
+
             let _tcStatus = "success";
-            try { const _tcR = JSON.parse(getToString(result?.content || "{}")); if (_tcR?.ok === false) _tcStatus = "failed"; } catch {}
+            try { const _tcR = getTryParseJSON(getToString(result?.content || "{}"), {}); if (_tcR?.ok === false) _tcStatus = "failed"; } catch {}
             toolCallLog.push({ tool: tc?.name || "?", status: _tcStatus, durationMs: _tcDurationMs, task: "" });
 
             const outputStr = getToString(result?.content ?? "");
             messages.push({ type: "function_call_output", call_id, output: outputStr });
             wo._contextPersistQueue.push(getWithTurnId({
-              role: "tool",
+              role:         "tool",
               tool_call_id: call_id,
-              name: String(tc?.name || ""),
-              content: outputStr
+              name:         String(tc?.name || ""),
+              content:      outputStr
             }, wo));
           }
 
@@ -1409,29 +1060,22 @@ export default async function getCoreAi(coreData) {
           if (ranAnyTool) continue;
         }
 
-      if (hasToolCalls && totalToolCalls >= maxToolCalls) {
-        hitMaxToolCalls = true;
-        wo.__forceNoTools = true;
-        setEnsureFinalSynthesisPrompt(messages, wo);
-        continue;
-      }
+        if (hasToolCalls && totalToolCalls >= maxToolCalls) {
+          hitMaxToolCalls    = true;
+          wo.__forceNoTools  = true;
+          setEnsureFinalSynthesisPrompt(messages, wo);
+          continue;
+        }
       }
 
       if (hasToolCalls && !persistAssistantContent.length && persistedToolCallRequest) {
         log("Persisted assistant tool_call request + tool output pair for context continuity.", "info");
       }
 
-      if (toolsDisabled && hasToolCalls) {
-        log("tools disabled mode active; ignoring any tool-call requests in output.", "info");
-      }
-
-      const truncated = getWasTruncatedOutput(data);
+      const truncated   = getWasTruncatedOutput(data);
       const looksCutOff = getLooksCutOff(assistantText);
-      const cutOff = !wo.__noContinuation && (truncated || looksCutOff);
+      const cutOff      = !wo.__noContinuation && (truncated || looksCutOff);
       if (cutOff) {
-        
-
-
         if (truncated && !assistantText.trim()) {
           emptyOutputConsec++;
           if (emptyOutputConsec >= 2) {
@@ -1450,14 +1094,14 @@ export default async function getCoreAi(coreData) {
       }
       emptyOutputConsec = 0;
 
-      const primaryText = [(accumulatedText || assistantText || "")].filter(Boolean).join("\n\n");
-      const linkText = allHostedLinks.length ? allHostedLinks.map(u => `- ${u}`).join("\n") : "";
-      finalText = [primaryText, linkText].filter(Boolean).join("\n\n");
+      const primaryText = (accumulatedText || assistantText || "").trim();
+      const linkText    = allHostedLinks.length ? allHostedLinks.map(u => `- ${u}`).join("\n") : "";
+      finalText         = [primaryText, linkText].filter(Boolean).join("\n\n");
       break;
     } catch (err) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
-    if (isAbort && attempts < maxAttempts) { log(`Retrying due to timeout after ${timeoutMs}ms`, "warn"); continue; }
-    wo.response = "[Empty AI response]";
+      if (isAbort && attempts < maxAttempts) { log(`Retrying due to timeout after ${timeoutMs}ms`, "warn"); continue; }
+      wo.response = "[Empty AI response]";
       log(isAbort ? `AI request timed out after ${timeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       setLogBig("responses-error", { message: err?.message || String(err), stack: err?.stack }, { toFile: debugOn });
       return coreData;
@@ -1472,18 +1116,18 @@ export default async function getCoreAi(coreData) {
 
   if (reasoningEnabled) {
     const reasoningJoined = getSanitizeReasoningText(reasoningParts.join("\n\n")).trim();
-    const toolsBlock = toolCallLog.length ? "Tools called:\n" + toolCallLog.map(e => {
+    const toolsBlock      = toolCallLog.length ? "Tools called:\n" + toolCallLog.map(e => {
       if (typeof e === "object") {
         const icon = e.status === "success" ? "✅" : (e.status === "failed" ? "❌" : "⚠️");
-        const ms = e.durationMs >= 1000 ? `${(e.durationMs / 1000).toFixed(1)}s` : `${e.durationMs}ms`;
+        const ms   = e.durationMs >= 1000 ? `${(e.durationMs / 1000).toFixed(1)}s` : `${e.durationMs}ms`;
         const task = e.task ? ` — ${e.task}` : "";
         return `${icon} **${e.tool}** (${ms})${task}`;
       }
       return `- ${e}`;
     }).join("\n") : "";
     const noActivity = !reasoningJoined && !toolsBlock;
-    const fallback = noActivity ? "Answered from context — no tool calls." : "";
-    const combined = [reasoningJoined, toolsBlock, fallback].filter(Boolean).join("\n\n");
+    const fallback   = noActivity ? "Answered from context — no tool calls." : "";
+    const combined   = [reasoningJoined, toolsBlock, fallback].filter(Boolean).join("\n\n");
     wo.reasoningSummary = combined.length ? combined : "Answered from context — no tool calls.";
   } else {
     wo.reasoningSummary = undefined;
@@ -1495,16 +1139,16 @@ export default async function getCoreAi(coreData) {
     wo._pendingSubtaskLogs = [];
   }
 
-  setLogBig("responses-final", { finalTextPreview: getPreview(finalText, 400), queuedTurns: wo._contextPersistQueue.length, reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400) }, { toFile: debugOn });
+  setLogBig("responses-final", {
+    finalTextPreview:      getPreview(finalText, 400),
+    queuedTurns:           wo._contextPersistQueue.length,
+    reasoningSummaryPreview: getPreview(getToString(wo?.reasoningSummary ?? ""), 400)
+  }, { toFile: debugOn });
 
   if (finalText) {
-    if (hitMaxToolCalls) {
-      wo.response = finalText + "\n\n" + getLimitNotice("tool");
-    } else if (hitMaxLoops) {
-      wo.response = finalText + "\n\n" + getLimitNotice("loop");
-    } else {
-      wo.response = finalText;
-    }
+    wo.response = hitMaxToolCalls ? finalText + "\n\n" + getLimitNotice("tool")
+                : hitMaxLoops    ? finalText + "\n\n" + getLimitNotice("loop")
+                : finalText;
   } else if (hitMaxToolCalls) {
     const partial = (accumulatedText || "").trim();
     wo.response = partial ? (partial + "\n\n" + getLimitNotice("tool")) : ("[Max Tool Calls Hit]\n\n" + getLimitNotice("tool"));
@@ -1514,6 +1158,7 @@ export default async function getCoreAi(coreData) {
   } else {
     wo.response = "[Empty AI response]";
   }
+
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
   log("AI response received.", "info");

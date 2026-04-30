@@ -605,18 +605,24 @@
         3113,
         3114,
         3115,
+        3116,
         3117,
         3118,
         3119,
         3120,
         3121,
         3122,
+        3123,
         3124,
         3125,
         3126,
         3127,
         3128,
-        3129
+        3129,
+        3130,
+        3131,
+        3132,
+        3133
       ]
     },
     "webpage-router": {
@@ -658,18 +664,24 @@
         3113,
         3114,
         3115,
+        3116,
         3117,
         3118,
         3119,
         3120,
         3121,
         3122,
+        3123,
         3124,
         3125,
         3126,
         3127,
         3128,
-        3129
+        3129,
+        3130,
+        3131,
+        3132,
+        3133
       ],
       "sessionMaxAgeSec": 43200,
       "sameSite": "None",
@@ -802,7 +814,6 @@
         "getPDF": "⏳ Generating a PDF …",
         "getText": "⏳ Generating a file …",
         "getHistory": "⏳ Checking history …",
-        "getTimeline": "⏳ Checking the timeline …",
         "getToken": "⏳ Generating a token …",
         "getLocation": "⏳ Looking up a location …",
         "getJira": "⏳ Working with Jira …",
@@ -906,7 +917,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3111,
+      "port": 3112,
       "lastAssistantIntervalMs": 2000,
       "host": "127.0.0.1",
       "token": "",
@@ -942,8 +953,7 @@
         "includeHistory": false,
         "contextSize": 150,
         "tools": [
-          "getImage",
-          "getTimeline"
+          "getImage"
         ],
         "systemPrompt": "",
         "persona": "",
@@ -1528,7 +1538,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3113,
       "basePath": "/inpainting",
       "allowedRoles": []
     },
@@ -1537,7 +1547,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3115,
       "basePath": "/dashboard",
       "allowedRoles": [
         "admin"
@@ -1549,7 +1559,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3118,
       "basePath": "/context",
       "allowedRoles": [
         "admin"
@@ -1560,7 +1570,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3116,
       "basePath": "/docs",
       "allowedRoles": []
     },
@@ -1578,7 +1588,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3121,
       "basePath": "/gdpr",
       "gdprTable": "gdpr"
     },
@@ -1587,7 +1597,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3123,
       "basePath": "/live",
       "allowedRoles": [
         "admin"
@@ -1600,7 +1610,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3130,
       "basePath": "/oauth",
       "allowedRoles": [
         "admin"
@@ -1611,7 +1621,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3131,
       "basePath": "/connections",
       "redirectUriBase": "https://YOUR_DOMAIN"
     },
@@ -1620,7 +1630,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3132,
       "basePath": "/oauth-exposure",
       "roles": [
         "admin"
@@ -1631,7 +1641,7 @@
       "flow": [
         "webpage"
       ],
-      "port": 3120,
+      "port": 3133,
       "basePath": "/bearer-exposure",
       "roles": [
         "admin"

@@ -1,4 +1,8 @@
-/* options.js — Jenny Bot extension settings page */
+/**************************************************************/
+/* filename: "options.js"                                    */
+/* Version 1.0                                               */
+/* Purpose: Extension settings page for Jenny Bot.           */
+/**************************************************************/
 "use strict";
 
 var FIELDS = ["apiUrl", "channelId", "apiSecret", "webBaseUrl"];

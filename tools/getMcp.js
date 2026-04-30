@@ -1,8 +1,14 @@
+/**************************************************************/
+/* filename: "getMcp.js"                                     */
+/* Version 1.0                                               */
+/* Purpose: LLM-callable tool — executes a tool on a        */
+/*          configured MCP server.                           */
+/**************************************************************/
+
 import { getPrefixedLogger } from "../core/logging.js";
 import { getMcpServerConfig, getMcpServers, withMcpClient } from "../shared/mcp/mcp-client.js";
 
 const MODULE_NAME = "getMcp";
-const VERSION = "1.0";
 
 
 function getServerNamespace(server) {
@@ -62,4 +68,4 @@ async function getInvoke(args, coreData) {
 }
 
 
-export default { name: MODULE_NAME, version: VERSION, invoke: getInvoke };
+export default { name: MODULE_NAME, invoke: getInvoke };

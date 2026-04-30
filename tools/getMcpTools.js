@@ -1,8 +1,14 @@
+/**************************************************************/
+/* filename: "getMcpTools.js"                                */
+/* Version 1.0                                               */
+/* Purpose: LLM-callable tool — lists available tools on    */
+/*          configured MCP servers.                          */
+/**************************************************************/
+
 import { getPrefixedLogger } from "../core/logging.js";
 import { getMcpServerConfig, getMcpServers, withMcpClient } from "../shared/mcp/mcp-client.js";
 
 const MODULE_NAME = "getMcpTools";
-const VERSION = "1.0";
 
 
 function slimTool(tool) {
@@ -113,4 +119,4 @@ async function getInvoke(args, coreData) {
 }
 
 
-export default { name: MODULE_NAME, version: VERSION, invoke: getInvoke };
+export default { name: MODULE_NAME, invoke: getInvoke };

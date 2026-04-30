@@ -1,6 +1,6 @@
 ﻿# Jenny — User Guide
 
-> **Version:** 1.0 · **Date:** 2026-04-05
+> **Version:** 1.0 · **Date:** 2026-04-30
 
 Jenny is an AI assistant that lives in your Discord server. She can chat, answer questions, generate images and videos, look things up on the web, read YouTube transcripts, manage Confluence and Jira, and even talk back to you in voice channels.
 
@@ -387,7 +387,6 @@ jenny, what was the recipe you gave me yesterday?
 She uses two tools for this:
 
 - Jenny's internal context engine also builds a context mesh from micro blocks, rollup summaries, entity links, and a local semantic retrieval layer so precise follow-up questions can reach back beyond only the most recent chat window.
-- **`getTimeline`** — returns the chronological timeline of older events and conversation ranges.
 - **`getHistory`** — zooms exactly one level deeper into an older history block and returns either child blocks or raw rows at the bottom.
 
 ---

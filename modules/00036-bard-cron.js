@@ -173,7 +173,7 @@ export default async function getBardCron(coreData) {
       wo._bardLastRunKey  = lastRunKey;
       wo._bardLastRunTs   = targetNowTs;
 
-      if (!wo.model) wo.model = "gpt-4o-mini";
+      if (!wo.model) wo.model = getStr(cfg.model, "gpt-4o-mini");
 
       wo.temperature       = 0.3;
       wo.maxTokens         = 80;

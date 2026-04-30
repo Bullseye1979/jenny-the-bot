@@ -269,6 +269,9 @@
  * @property {boolean} [__aiFallbackApplied] Internal: true when fallbackOverrides were applied.
  * @property {string} [__aiProbeReason] Internal: reason string from the endpoint TCP probe.
  * @property {string} [__aiPrimaryEndpoint] Internal: primary endpoint that was found unreachable.
+ * @property {boolean} [__noContinuation] Internal: when true, suppresses automatic "continue" prompts on length-truncated AI responses.
+ * @property {string} [reasoningSummary] Human-readable summary of tool calls or reasoning steps made during this turn.
+ * @property {string[]} [_pendingSubtaskLogs] Internal: accumulated sub-task log entries to append to reasoningSummary at turn end.
  */
 
 export {};

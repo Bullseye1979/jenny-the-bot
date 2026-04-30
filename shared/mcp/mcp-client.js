@@ -1,10 +1,17 @@
+/**************************************************************/
+/* filename: "mcp-client.js"                                 */
+/* Version 1.0                                               */
+/* Purpose: Shared MCP client — connect to MCP servers via  */
+/*          stdio, SSE, or streamable-HTTP transports.       */
+/**************************************************************/
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { getSecret } from "../../core/secrets.js";
 
-export const MCP_CLIENT_VERSION = "1.0";
+const MCP_CLIENT_VERSION = "1.0";
 const DEFAULT_TIMEOUT_MS = 30000;
 
 
