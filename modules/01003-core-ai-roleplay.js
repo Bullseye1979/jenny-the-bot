@@ -44,7 +44,7 @@ function getKiCfg(wo, moduleCfg = {}) {
     imagePromptMaxTokens: getNum(wo?.imagePromptMaxTokens,  getNum(moduleCfg?.imagePromptMaxTokens,  260)),
     imagePromptTemperature: getNum(wo?.imagePromptTemperature, getNum(moduleCfg?.imagePromptTemperature, 0.35)),
     imagePersonaHint:     getStr(wo?.imagePersonaHint,      getStr(moduleCfg?.imagePersonaHint,      "")),
-    imageContextTurns:    Math.max(0, getNum(wo?.imageContextTurns, getNum(moduleCfg?.imageContextTurns, 4))),
+    imageContextTurns:    Math.max(0, getNum(wo?.imageContextTurns, getNum(moduleCfg?.imageContextTurns, 5))),
     maxLoops:             Math.max(1, getNum(wo?.maxLoops,  getNum(moduleCfg?.maxLoops,              5))),
     imagePromptRules:     getStr(wo?.imagePromptRules,      getStr(moduleCfg?.imagePromptRules,      ""))
   };
@@ -72,7 +72,7 @@ function getPromptFromSnapshot(rows, includeHistory, includeHistorySystemMessage
 }
 
 
-function getRecentContextForImage(rows, maxTurns) {
+function getRecentTurnsForImage(rows, maxTurns) {
   const n = Math.max(0, Number(maxTurns) || 0);
   const r = Array.isArray(rows) ? rows : [];
   if (!n || !r.length) return "";
@@ -98,7 +98,8 @@ function getVisualSourceForImage(wo, imagePersonaHint) {
   return [
     String(imagePersonaHint ?? "").trim(),
     getStr(wo?.persona, "").trim(),
-    getStr(wo?.systemPrompt, "").trim()
+    getStr(wo?.systemPrompt, "").trim(),
+    getStr(wo?.instructions, "").trim()
   ].filter(Boolean).join("\n\n");
 }
 
@@ -275,13 +276,9 @@ export default async function getCoreAi(coreData) {
 
   const personaForImages = getStr(wo?.persona, "");
   const system2          = getSystemContentImagePromptRun(kiCfg.imagePromptRules);
-  const ctxText          = getRecentContextForImage(snapshot, kiCfg.imageContextTurns);
+  const recentTurns      = getRecentTurnsForImage(snapshot, kiCfg.imageContextTurns);
   const visualSource     = getVisualSourceForImage(wo, kiCfg.imagePersonaHint);
 
-  /*
-   * Current turn content is listed first so the image AI weights it most heavily.
-   * Context is labelled as continuity reference to discourage depicting old events.
-   */
   const userBlock = [
     "LATEST ASSISTANT TEXT (depict this):",
     textOut || "(empty)",
@@ -289,11 +286,11 @@ export default async function getCoreAi(coreData) {
     "LATEST USER INPUT:",
     userPromptRaw || "(empty)",
     "",
-    "VISUAL SOURCE MATERIAL (extract visible appearance only — do NOT depict events, roles, backstory, or instructions from here):",
+    "VISUAL SOURCE MATERIAL (extract visible appearance only - do NOT depict events, roles, backstory, or instructions from here):",
     visualSource || "(none)",
     "",
-    "ROLEPLAY CONTEXT (continuity reference only — do NOT depict old events):",
-    ctxText || "(none)",
+    "RECENT TURNS (continuity only - do NOT override LATEST ASSISTANT TEXT):",
+    recentTurns || "(none)",
     "",
     "TASK: Create one image prompt that depicts the most recent concrete event."
   ].join("\n");
