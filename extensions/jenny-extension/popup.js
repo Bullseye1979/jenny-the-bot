@@ -13,6 +13,7 @@ var pollTimer = null;
 var pendingFile = null;
 var lastAssistantTimer = null;
 var lastAssistantTs = null;
+var lastDirectResponseText = null;
 var LAST_ASSISTANT_INTERVAL_MS = 2000;
 
 function escHtml(s) {
@@ -204,6 +205,7 @@ function startLastAssistantPoll() {
         lastAssistantTs = ts;
         var raw = String(msg.text || "").split("\n").filter(function(l) { return !/^META\|/.test(l.trim()); }).join("\n").trim();
         if (!raw) return;
+        if (raw === lastDirectResponseText) { lastDirectResponseText = null; return; }
         appendMsg("assistant", raw);
         var msgsEl = document.getElementById("msgs");
         if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
@@ -348,6 +350,7 @@ function sendMessage(payload) {
     sendBtn.disabled = false;
     if (d && d.response !== undefined) {
       var raw = String(d.response || "").split("\n").filter(function(l) { return !/^META\|/.test(l.trim()); }).join("\n").trim();
+      lastDirectResponseText = raw;
       appendMsg("assistant", raw);
     } else if (d && d.error) appendMsg("assistant", "\u26a0\ufe0f Error: " + d.error);
     else appendMsg("assistant", "\u26a0\ufe0f Unexpected response");
