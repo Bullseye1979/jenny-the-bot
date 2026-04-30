@@ -2431,8 +2431,8 @@ Multiple modules can share a single port. Each module routes by URL path:
 | **Chat UI** | Full chat UI with markdown rendering, link/video embeds and toolcall display |
 | **Summarize button** | Sends the active tab's URL to the bot with a summarization task; auto-detects YouTube vs. general web page |
 | **Toolcall display** | Active tool name shown next to the animated thinking dots; polled from `/toolcall?channelId=<id>` every 800 ms (per-channel) |
-| **Browser tab opening** | The AI can use the `getOpenBrowser` tool to open a URL as a new tab directly in the user's browser. The extension polls `/browser-action` every 2 s using the `jenny_session` cookie for authentication; actions are delivered exactly once (registry entry deleted on first read, 30 s TTL). |
-| **Browser status reporting** | The extension pushes the user's current tab URL and title to `/browser-status` every 10 s when the "Share status" checkbox is enabled. The AI can read this via the `getBrowserStatus` tool. Status expires after 5 minutes. Authenticated via `jenny_session` cookie. |
+| **Browser tab opening** | The AI can use the `getOpenBrowser` tool to open a URL as a new tab directly in the user's browser. The background service worker checks `/browser-action` on every tab activation and on a 1-minute periodic alarm — the side panel does not need to be open. Actions are delivered exactly once (registry entry deleted on first read, 30 s TTL). Authenticated via `jenny_session` cookie. |
+| **Browser status reporting** | The extension pushes the user's current tab URL and title to `/browser-status` immediately on tab activation and on page load, plus once per minute as a heartbeat — runs in the background service worker regardless of whether the side panel is open. Requires the "Share status" checkbox to be enabled and an active login session. The AI can read this via the `getBrowserStatus` tool. Status expires after 5 minutes. Authenticated via `jenny_session` cookie. |
 | **Gallery upload** | Upload images to the bot's Gallery via drag-and-drop or click. Requires `webBaseUrl` to be configured and an active login session on the Jenny web interface. |
 | **Auth status bar** | Displays the logged-in username (from the Jenny web session) at the top of the popup. Shows a **Login** link when not authenticated and a **Logout** link when logged in. Requires `webBaseUrl` to be configured. |
 | **Options page** | `apiUrl`, `channelId`, `apiSecret`, `webBaseUrl` stored in `chrome.storage.sync` |
@@ -4240,7 +4240,7 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 ### getOpenBrowser
 
 **File:** `tools/getOpenBrowser.js`
-**Purpose:** Instructs the user's Jenny browser extension to open a new tab with the given URL. The action is stored in the in-memory registry (30 s TTL) and delivered exactly once — the extension's `/browser-action` polling loop picks it up within 2 s and deletes the entry immediately after receipt.
+**Purpose:** Instructs the user's Jenny browser extension to open a new tab with the given URL. The action is stored in the in-memory registry (30 s TTL) and delivered exactly once — the extension's background service worker checks `/browser-action` on every tab activation and on a 1-minute periodic alarm, so the action is executed as soon as the user next switches or loads a tab. The side panel does not need to be open.
 
 **Requirements:**
 - The user must have the Jenny browser extension installed and active.

@@ -15,6 +15,8 @@ A Manifest V3 browser extension for Edge and Chrome that lets you chat with the 
 | **Toolcall display** | Active tool name shown next to the thinking indicator; polled from `/toolcall` every 800 ms |
 | **File attachments** | Attach files to messages; images are uploaded to the Gallery when logged in, otherwise via the regular `/upload` endpoint |
 | **Gallery upload** | Drag-and-drop or click to upload images to your personal gallery. Requires `webBaseUrl` and an active session. |
+| **Browser status reporting** | When the "Share status" checkbox is enabled and a web session is active, the background service worker pushes the active tab URL and title to `/browser-status` immediately on every tab switch and page load, plus once per minute as a heartbeat. Works whether or not the side panel is open. The AI reads this via the `getBrowserStatus` tool. |
+| **Browser tab opening** | The AI can instruct the extension to open a URL as a new tab via the `getOpenBrowser` tool. The background service worker picks up the pending action on every tab activation and on the 1-minute alarm — no side panel required. |
 | **Auth status bar** | Shows the logged-in username at the top of the popup. Provides **Login** and **Logout** links. The user ID from the session is sent with every API message for GDPR attribution. |
 
 ---

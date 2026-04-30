@@ -14,7 +14,6 @@ var pendingFile = null;
 var lastAssistantTimer = null;
 var lastAssistantTs = null;
 var LAST_ASSISTANT_INTERVAL_MS = 2000;
-var jobPollTimer = null;
 
 function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
@@ -216,29 +215,6 @@ function stopLastAssistantPoll() {
   if (lastAssistantTimer) { clearInterval(lastAssistantTimer); lastAssistantTimer = null; }
 }
 
-function startJobPoll() {
-  if (jobPollTimer) return;
-  if (!cfg.apiUrl || !webSession || !webSession.userId) return;
-  var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
-  var url = baseUrl + "/browser-action";
-  jobPollTimer = setInterval(function() {
-    if (!webSession || !webSession.userId) { clearInterval(jobPollTimer); jobPollTimer = null; return; }
-    fetch(url, { credentials: "include" })
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (!d || !d.ok || !d.action) return;
-        if (d.action.type === "openTab") {
-          var safe = safeUrl(d.action.url);
-          if (safe) chrome.tabs.create({ url: safe });
-        }
-      })
-      .catch(function() {});
-  }, 2000);
-}
-
-function stopJobPoll() {
-  if (jobPollTimer) { clearInterval(jobPollTimer); jobPollTimer = null; }
-}
 
 
 function getUploadUrl() {
@@ -349,7 +325,6 @@ function sendMessage(payload) {
       appendMsg("assistant", raw);
     } else if (d && d.error) appendMsg("assistant", "\u26a0\ufe0f Error: " + d.error);
     else appendMsg("assistant", "\u26a0\ufe0f Unexpected response");
-    startJobPoll();
   })
   .catch(function(e) {
     stopPoll();
@@ -421,14 +396,12 @@ function init() {
           loginEl.classList.add("hidden");
           logoutEl.classList.remove("hidden");
           statusLbl.classList.remove("hidden");
-          startJobPoll();
           chrome.runtime.sendMessage({ type: "setLoggedIn", value: true });
         } else {
           userEl.textContent = "Not logged in";
           loginEl.classList.remove("hidden");
           logoutEl.classList.add("hidden");
           statusLbl.classList.add("hidden");
-          stopJobPoll();
           chrome.runtime.sendMessage({ type: "setLoggedIn", value: false });
         }
       }

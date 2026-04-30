@@ -54,15 +54,17 @@ chrome.tabs.onActivated.addListener(function (activeInfo) {
       lastActiveTabPerWindow[tab.windowId] = tab.url;
     }
     sendBrowserStatusNow();
+    checkBrowserActionNow();
   });
 });
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
   if (changeInfo.status === "complete" && tab.active && tab.url) {
     lastActiveTabPerWindow[tab.windowId] = tab.url;
-    /* Only trigger a send when the updated tab is in the focused normal window. */
+    /* Only trigger for the focused normal window. */
     if (!lastNormalWindowId || tab.windowId === lastNormalWindowId) {
       sendBrowserStatusNow();
+      checkBrowserActionNow();
     }
   }
 });
@@ -114,6 +116,42 @@ function sendBrowserStatusNow() {
   });
 }
 
+/* ============================================================
+   Browser-action poller — opens tabs requested by the bot.
+
+   Triggered by the same tab events as status sending, plus
+   the periodic alarm. When the bot issues an "openTab" action,
+   the user is typically switching tabs anyway, so onActivated
+   fires and the command executes with near-zero latency.
+   ============================================================ */
+
+function checkBrowserActionNow() {
+  chrome.storage.sync.get(["webBaseUrl"], function (sync) {
+    var webBaseUrl = (sync.webBaseUrl || "").trim().replace(/\/$/, "");
+    if (!webBaseUrl) return;
+
+    chrome.storage.local.get(["loggedIn"], function (local) {
+      if (!local.loggedIn) return;
+
+      fetch(webBaseUrl + "/browser-action", { credentials: "include" })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || !d.ok || !d.action) return;
+          if (d.action.type === "openTab") {
+            var u = String(d.action.url || "");
+            try {
+              var p = new URL(u);
+              if (p.protocol === "https:" || p.protocol === "http:") {
+                chrome.tabs.create({ url: u });
+              }
+            } catch (e) {}
+          }
+        })
+        .catch(function () {});
+    });
+  });
+}
+
 /* ---- Periodic alarm (survives service-worker termination) -- */
 var STATUS_ALARM_NAME = "jenny-browser-status";
 
@@ -124,7 +162,10 @@ chrome.alarms.get(STATUS_ALARM_NAME, function (alarm) {
 });
 
 chrome.alarms.onAlarm.addListener(function (alarm) {
-  if (alarm.name === STATUS_ALARM_NAME) sendBrowserStatusNow();
+  if (alarm.name === STATUS_ALARM_NAME) {
+    sendBrowserStatusNow();
+    checkBrowserActionNow();
+  }
 });
 
 /* ============================================================
