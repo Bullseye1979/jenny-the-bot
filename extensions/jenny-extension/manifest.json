@@ -29,7 +29,8 @@
     "tabs",
     "storage",
     "sidePanel",
-    "alarms"
+    "alarms",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"

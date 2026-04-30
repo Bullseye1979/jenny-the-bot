@@ -11,6 +11,26 @@ chrome.sidePanel
   .catch(console.error);
 
 /* ============================================================
+   Offscreen document — provides continuous browser-action
+   polling every 5 s without relying on the service worker
+   staying alive. Created once on startup; Chrome keeps it
+   running as long as the extension is active.
+   ============================================================ */
+
+function ensureOffscreen() {
+  chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] }, function (contexts) {
+    if (chrome.runtime.lastError || (contexts && contexts.length)) return;
+    chrome.offscreen.createDocument({
+      url: "offscreen.html",
+      reasons: ["BLOBS"],
+      justification: "Continuous browser-action polling"
+    }).catch(function () {});
+  });
+}
+
+ensureOffscreen();
+
+/* ============================================================
    Active-tab URL tracking — per window
    The side panel runs in its own window (Chrome 117+), so a
    single global lastActiveTabUrl breaks when multiple browser
@@ -54,7 +74,7 @@ chrome.tabs.onActivated.addListener(function (activeInfo) {
       lastActiveTabPerWindow[tab.windowId] = tab.url;
     }
     sendBrowserStatusNow();
-    checkBrowserActionNow();
+    checkBrowserActionOnce();
   });
 });
 
@@ -64,7 +84,7 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
     /* Only trigger for the focused normal window. */
     if (!lastNormalWindowId || tab.windowId === lastNormalWindowId) {
       sendBrowserStatusNow();
-      checkBrowserActionNow();
+      checkBrowserActionOnce();
     }
   }
 });
@@ -77,10 +97,6 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
      - Tab activation change (immediate, see onActivated above)
      - Active tab finishes loading (see onUpdated above)
      - Periodic alarm (every 1 minute, see below)
-
-   Reads config from chrome.storage.sync (webBaseUrl,
-   statusEnabled) and session flag from chrome.storage.local
-   (loggedIn). Only sends when both are set.
    ============================================================ */
 
 function sendBrowserStatusNow() {
@@ -117,15 +133,18 @@ function sendBrowserStatusNow() {
 }
 
 /* ============================================================
-   Browser-action poller — opens tabs requested by the bot.
+   Browser-action handler — opens tabs requested by the bot.
 
-   Triggered by the same tab events as status sending, plus
-   the periodic alarm. When the bot issues an "openTab" action,
-   the user is typically switching tabs anyway, so onActivated
-   fires and the command executes with near-zero latency.
+   checkBrowserActionOnce() executes a single check and is
+   called directly from tab events for immediate response.
+
+   The offscreen document (offscreen.js) calls this every 5 s
+   continuously via the "checkBrowserAction" message, covering
+   the case where the user does nothing and the side panel is
+   closed — no tab switch required.
    ============================================================ */
 
-function checkBrowserActionNow() {
+function checkBrowserActionOnce() {
   chrome.storage.sync.get(["webBaseUrl"], function (sync) {
     var webBaseUrl = (sync.webBaseUrl || "").trim().replace(/\/$/, "");
     if (!webBaseUrl) return;
@@ -164,7 +183,7 @@ chrome.alarms.get(STATUS_ALARM_NAME, function (alarm) {
 chrome.alarms.onAlarm.addListener(function (alarm) {
   if (alarm.name === STATUS_ALARM_NAME) {
     sendBrowserStatusNow();
-    checkBrowserActionNow();
+    ensureOffscreen();
   }
 });
 
@@ -200,6 +219,11 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 
     /* Return true to keep the message channel open for async sendResponse */
     return true;
+  }
+
+  if (msg && msg.type === "checkBrowserAction") {
+    checkBrowserActionOnce();
+    return;
   }
 
   if (msg && msg.type === "setLoggedIn") {

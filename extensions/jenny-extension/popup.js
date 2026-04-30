@@ -215,6 +215,32 @@ function stopLastAssistantPoll() {
   if (lastAssistantTimer) { clearInterval(lastAssistantTimer); lastAssistantTimer = null; }
 }
 
+var jobPollTimer = null;
+
+function startJobPoll() {
+  if (jobPollTimer) return;
+  if (!cfg.apiUrl || !webSession || !webSession.userId) return;
+  var baseUrl = cfg.apiUrl.replace(/\/api\/?$/, "");
+  var url = baseUrl + "/browser-action";
+  jobPollTimer = setInterval(function() {
+    if (!webSession || !webSession.userId) { clearInterval(jobPollTimer); jobPollTimer = null; return; }
+    fetch(url, { credentials: "include" })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d || !d.ok || !d.action) return;
+        if (d.action.type === "openTab") {
+          var safe = safeUrl(d.action.url);
+          if (safe) chrome.tabs.create({ url: safe });
+        }
+      })
+      .catch(function() {});
+  }, 2000);
+}
+
+function stopJobPoll() {
+  if (jobPollTimer) { clearInterval(jobPollTimer); jobPollTimer = null; }
+}
+
 
 
 function getUploadUrl() {
