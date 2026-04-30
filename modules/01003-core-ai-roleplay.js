@@ -94,7 +94,7 @@ function getSystemContentImagePromptRun(imagePromptRules) {
 }
 
 
-function getVisualReferenceForImage(wo, imagePersonaHint) {
+function getVisualSourceForImage(wo, imagePersonaHint) {
   return [
     String(imagePersonaHint ?? "").trim(),
     getStr(wo?.persona, "").trim(),
@@ -276,7 +276,7 @@ export default async function getCoreAi(coreData) {
   const personaForImages = getStr(wo?.persona, "");
   const system2          = getSystemContentImagePromptRun(kiCfg.imagePromptRules);
   const ctxText          = getRecentContextForImage(snapshot, kiCfg.imageContextTurns);
-  const visualReference  = getVisualReferenceForImage(wo, kiCfg.imagePersonaHint);
+  const visualSource     = getVisualSourceForImage(wo, kiCfg.imagePersonaHint);
 
   /*
    * Current turn content is listed first so the image AI weights it most heavily.
@@ -289,8 +289,8 @@ export default async function getCoreAi(coreData) {
     "LATEST USER INPUT:",
     userPromptRaw || "(empty)",
     "",
-    "VISUAL CHARACTER REFERENCE (appearance and continuity only — do NOT depict events from here):",
-    visualReference || "(none)",
+    "VISUAL SOURCE MATERIAL (extract visible appearance only — do NOT depict events, roles, backstory, or instructions from here):",
+    visualSource || "(none)",
     "",
     "ROLEPLAY CONTEXT (continuity reference only — do NOT depict old events):",
     ctxText || "(none)",
