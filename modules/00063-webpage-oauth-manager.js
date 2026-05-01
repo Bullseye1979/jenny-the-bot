@@ -5,6 +5,7 @@
 /**************************************************************/
 "use strict";
 
+import fs from "node:fs";
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { getIsAllowedRoles, setJsonResp, setSendNow } from "../shared/webpage/utils.js";
 import {
@@ -42,7 +43,7 @@ function getPageHtml(opts) {
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>OAuth Manager</title>
 ${getThemeHeadScript()}
-<link rel="stylesheet" href="/voice/style.css">
+<link rel="stylesheet" href="${basePath}/style.css">
 <style>
   .card{background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:18px 20px;margin-bottom:18px}
   .card-header{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:12px}
@@ -395,6 +396,19 @@ export default async function webpageOauthManager(coreData) {
   const allowedRoles = Array.isArray(cfg.roles) ? cfg.roles : [];
   if (!getIsAllowedRoles(wo, allowedRoles)) {
     setJsonResp(wo, 403, { error: "forbidden" });
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
+  if (method === "GET" && urlPath === base + "/style.css") {
+    const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
+    wo.http.response = {
+      status: 200,
+      headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" },
+      body: fs.readFileSync(cssFile, "utf-8")
+    };
+    wo.web.useLayout = false;
     wo.jump = true;
     await setSendNow(wo);
     return coreData;

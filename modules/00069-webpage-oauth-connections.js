@@ -6,6 +6,7 @@
 "use strict";
 
 import crypto                                      from "node:crypto";
+import fs                                          from "node:fs";
 import { getPrefixedLogger }                       from "../core/logging.js";
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import {
@@ -39,7 +40,7 @@ function getCleanPath(wo) {
 }
 
 
-function getPageHtml(title, bodyHtml, menuHtml = "") {
+function getPageHtml(title, bodyHtml, menuHtml = "", basePath = "/connections") {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -47,7 +48,7 @@ function getPageHtml(title, bodyHtml, menuHtml = "") {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escHtml(title)}</title>
 ${getThemeHeadScript()}
-<link rel="stylesheet" href="/voice/style.css">
+<link rel="stylesheet" href="${escHtml(basePath)}/style.css">
 <style>
   .provider-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:16px}
   .provider-card{background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:18px 20px}
@@ -324,11 +325,24 @@ export default async function webpageOauthConnections(coreData) {
 
   const menuHtml = getMenuHtml(wo.web?.menu || [], cleanPath, wo.webAuth?.role || "", null, null, wo.webAuth);
 
+  if (method === "GET" && cleanPath === base + "/style.css") {
+    const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
+    wo.http.response = {
+      status: 200,
+      headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" },
+      body: fs.readFileSync(cssFile, "utf-8")
+    };
+    wo.web.useLayout = false;
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
+
   if (!userId) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getPageHtml("Login Required", `<h2 style="margin-bottom:12px">Login Required</h2><p>You must be logged in to manage your connections.</p>`, menuHtml)
+      body:    getPageHtml("Login Required", `<h2 style="margin-bottom:12px">Login Required</h2><p>You must be logged in to manage your connections.</p>`, menuHtml, base)
     };
     return coreData;
   }
@@ -342,7 +356,7 @@ export default async function webpageOauthConnections(coreData) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getPageHtml("Error", `<h2>Database error</h2><p>Could not connect to database.</p>`, menuHtml)
+      body:    getPageHtml("Error", `<h2>Database error</h2><p>Could not connect to database.</p>`, menuHtml, base)
     };
     return coreData;
   }
@@ -377,7 +391,7 @@ export default async function webpageOauthConnections(coreData) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getPageHtml("Error", `<h2>Unexpected error</h2><p>${escHtml(String(e?.message || e))}</p>`, menuHtml)
+      body:    getPageHtml("Error", `<h2>Unexpected error</h2><p>${escHtml(String(e?.message || e))}</p>`, menuHtml, base)
     };
   }
 

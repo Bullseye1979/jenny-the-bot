@@ -673,7 +673,7 @@ export default async function getWebpageDashboard(coreData) {
 
   const url     = getStr(wo.http?.url || "/");
   const method  = getStr(wo.http?.method || "GET").toUpperCase();
-  const urlPath = url.split("?")[0];
+  const urlPath = getStr(wo.http?.path || url.split("?")[0] || "/");
 
   if (!urlPath.startsWith(basePath)) return coreData;
 
@@ -693,11 +693,15 @@ export default async function getWebpageDashboard(coreData) {
         body: "Not Found"
       };
     }
+    wo.web.useLayout = false;
+    wo.jump = true;
     wo.stop = true; wo.stopReason = "dashboard_request_handled";
     await setSendNow(wo);
     return coreData;
   }
 
+  wo.web.useLayout = false;
+  wo.jump = true;
   wo.stop = true; wo.stopReason = "dashboard_request_handled";
 
   if (!getIsAllowedRoles(wo, allowedRoles)) {

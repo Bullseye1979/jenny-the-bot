@@ -4,7 +4,7 @@
 /* Purpose: Pipeline module implementation.                 */
 /**************************************************************/
 
-
+import fs from "node:fs";
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { getIsAllowedRoles, setSendNow } from "../shared/webpage/utils.js";
 import { getSecret, listSecrets, setSecret, deleteSecret, setEnsureSecretsTable } from "../core/secrets.js";
@@ -27,7 +27,7 @@ function buildPageHtml(menu, basePath) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Key Manager</title>
 ${getThemeHeadScript()}
-<link rel="stylesheet" href="/dashboard/style.css">
+<link rel="stylesheet" href="${basePath}/style.css">
 <style>
   .km-table { width:100%; border-collapse:collapse; margin-top:1rem; table-layout:fixed; }
   .km-table th, .km-table td { padding:.5rem .75rem; border:1px solid var(--bdr); text-align:left; vertical-align:top; overflow:hidden; }
@@ -272,6 +272,19 @@ export default async function getWebpageKeymanager(coreData) {
   const urlPath = url.split("?")[0];
 
   if (!urlPath.startsWith(basePath)) return coreData;
+
+  if (method === "GET" && urlPath === basePath + "/style.css") {
+    const cssFile = new URL("../shared/webpage/style.css", import.meta.url);
+    wo.http.response = {
+      status: 200,
+      headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" },
+      body: fs.readFileSync(cssFile, "utf-8")
+    };
+    wo.web.useLayout = false;
+    wo.jump = true;
+    await setSendNow(wo);
+    return coreData;
+  }
 
   if (!getIsAllowedRoles(wo, allowedRoles)) {
     if (!wo.webAuth?.userId) {
