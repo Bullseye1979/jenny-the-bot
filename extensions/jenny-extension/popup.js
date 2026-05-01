@@ -373,23 +373,8 @@ function summarizePage() {
   });
 }
 
-function migrateStorage(callback) {
-  chrome.storage.sync.get(["channelID", "channelId"], function(stored) {
-    var oldVal = stored["channelID"];
-    var newVal = stored["channelId"];
-    if (oldVal && !newVal) {
-      chrome.storage.sync.set({ channelId: oldVal }, function() {
-        chrome.storage.sync.remove("channelID", callback);
-      });
-    } else {
-      callback();
-    }
-  });
-}
-
 function init() {
-  migrateStorage(function() {
-    chrome.storage.sync.get(["apiUrl", "channelId", "apiSecret", "webBaseUrl", "statusEnabled"], function(stored) {
+  chrome.storage.sync.get(["apiUrl", "channelId", "apiSecret", "webBaseUrl", "statusEnabled"], function(stored) {
       cfg.apiUrl     = stored.apiUrl     || "";
       cfg.channelId  = stored.channelId  || "";
       cfg.apiSecret  = stored.apiSecret  || "";
@@ -568,7 +553,6 @@ function init() {
         this.style.height = "";
         this.style.height = Math.min(this.scrollHeight, 100) + "px";
       });
-    });
   });
 }
 

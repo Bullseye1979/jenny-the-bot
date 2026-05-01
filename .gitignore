@@ -1,5 +1,6 @@
 core.json
 .env
+ai-instructions-codex.txt
 node_modules/
 npm-debug.log*
 yarn.lock

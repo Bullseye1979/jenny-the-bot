@@ -7,18 +7,13 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { getMenuHtml, getThemeHeadScript, escHtml } from "../shared/webpage/interface.js";
 import { getItem } from "../core/registry.js";
 import { setSendNow, getUserRoleLabels, getIsAllowedRoles } from "../shared/webpage/utils.js";
 import { getStr } from "../core/utils.js";
+import { getLogsRoot } from "../core/log-paths.js";
 
 const MODULE_NAME = "webpage-dashboard";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const LOGS_ROOT   = path.join(__dirname, "..", "logs");
-const EVENTS_DIR  = path.join(LOGS_ROOT, "events");
-const PIPELINE_DIR = path.join(LOGS_ROOT, "pipeline");
 const EVENTS_RE   = /^events-(\d+)\.log$/;
 const PIPELINE_RE = /^pipeline-(\d+)\.log$/;
 
@@ -487,10 +482,10 @@ function getLogFileText(filePath) {
 }
 
 
-function buildLogViewerHtml(menu, role, basePath, webAuth) {
+function buildLogViewerHtml(menu, role, basePath, webAuth, logsRoot) {
   const menuHtml = getMenuHtml(menu, basePath, role, null, null, webAuth);
-  const evtFiles  = getLogFileList(EVENTS_DIR,  EVENTS_RE);
-  const pipeFiles = getLogFileList(PIPELINE_DIR, PIPELINE_RE);
+  const evtFiles  = getLogFileList(path.join(logsRoot, "events"), EVENTS_RE);
+  const pipeFiles = getLogFileList(path.join(logsRoot, "pipeline"), PIPELINE_RE);
 
   function fileOpts(files, type) {
     if (!files.length) return `<option disabled>— no files —</option>`;
@@ -746,8 +741,11 @@ export default async function getWebpageDashboard(coreData) {
     const qp    = new URLSearchParams(url.includes("?") ? url.slice(url.indexOf("?") + 1) : "");
     const type  = qp.get("type") || "events";
     const fileN = qp.get("file");
+    const logsRoot = getLogsRoot(coreData);
+    const eventsDir = path.join(logsRoot, "events");
+    const pipelineDir = path.join(logsRoot, "pipeline");
     if (fileN !== null) {
-      const dir = type === "pipeline" ? PIPELINE_DIR : EVENTS_DIR;
+      const dir = type === "pipeline" ? pipelineDir : eventsDir;
       const re  = type === "pipeline" ? PIPELINE_RE : EVENTS_RE;
       const n   = Number(fileN);
       const basename = type === "pipeline" ? `pipeline-${n}.log` : `events-${n}.log`;
@@ -758,8 +756,8 @@ export default async function getWebpageDashboard(coreData) {
         wo.http.response = { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ content }) };
       }
     } else {
-      const eFiles = getLogFileList(EVENTS_DIR,  EVENTS_RE);
-      const pFiles = getLogFileList(PIPELINE_DIR, PIPELINE_RE);
+      const eFiles = getLogFileList(eventsDir,  EVENTS_RE);
+      const pFiles = getLogFileList(pipelineDir, PIPELINE_RE);
       wo.http.response = { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ events: eFiles, pipeline: pFiles }) };
     }
     await setSendNow(wo);
@@ -769,7 +767,7 @@ export default async function getWebpageDashboard(coreData) {
   if (urlPath === basePath + "/logs") {
     const menu    = Array.isArray(wo?.web?.menu) ? wo.web.menu : [];
     const role    = getStr(wo?.webAuth?.role || "");
-    const html    = buildLogViewerHtml(menu, role, basePath, wo.webAuth);
+    const html    = buildLogViewerHtml(menu, role, basePath, wo.webAuth, getLogsRoot(coreData));
     wo.http.response = { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }, body: html };
     await setSendNow(wo);
     return coreData;

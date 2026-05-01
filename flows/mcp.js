@@ -2,8 +2,8 @@
 /* filename: "mcp.js"                                                               */
 /* Version 1.0                                                                      */
 /* Purpose: MCP (Model Context Protocol) server flow. Starts a stdio transport      */
-/*          and/or an HTTP+SSE transport depending on config, exposing all tool      */
-/*          manifests as MCP tools. Auto-loaded by main.js via getStartFlows().     */
+/*          and/or an HTTP+SSE transport depending on config. Tools are exposed     */
+/*          from the channel's resolved tools configuration.                        */
 /************************************************************************************/
 
 import http from "node:http";
@@ -34,7 +34,9 @@ function getMcpServer(sessionRunCore, log, runFlow, createRunCore) {
     { capabilities: { tools: {} } }
   );
 
-  const tools = getMcpToolsFromManifests();
+  const configuredTools = Array.isArray(sessionRunCore?.workingObject?.tools) ? sessionRunCore.workingObject.tools : [];
+  const blockedTools = Array.isArray(sessionRunCore?.workingObject?.toolsBlacklist) ? new Set(sessionRunCore.workingObject.toolsBlacklist) : new Set();
+  const tools = getMcpToolsFromManifests(configuredTools.filter(name => !blockedTools.has(name)));
   log(`MCP tools registered: ${tools.map(t => t.name).join(", ")}`, "info");
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));

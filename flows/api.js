@@ -306,7 +306,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
       try {
         const _tcUrlObj = new URL(req.url, `http://localhost:${port}`);
-        const _tcChannelId = String(_tcUrlObj.searchParams.get("channelID") || _tcUrlObj.searchParams.get("channelId") || "").trim();
+        const _tcChannelId = String(_tcUrlObj.searchParams.get("channelId") || "").trim();
         const effectiveKey = _tcChannelId
           ? toolcallRegistryKey + ":" + _tcChannelId
           : toolcallRegistryKey;
@@ -330,7 +330,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
 
       try {
         const _ctxUrlObj = new URL(req.url, `http://localhost:${port}`);
-        const _ctxChannelId = String(_ctxUrlObj.searchParams.get("channelID") || _ctxUrlObj.searchParams.get("channelId") || "").trim();
+        const _ctxChannelId = String(_ctxUrlObj.searchParams.get("channelId") || "").trim();
         const _ctxLimit = String(_ctxUrlObj.searchParams.get("limit") || "").trim();
 
         if (!_ctxChannelId) {
@@ -389,7 +389,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       }
       try {
         const _laUrl = new URL(req.url, `http://localhost:${port}`);
-        const _laChannelId = String(_laUrl.searchParams.get("channelID") || _laUrl.searchParams.get("channelId") || "").trim();
+        const _laChannelId = String(_laUrl.searchParams.get("channelId") || "").trim();
         if (!_laChannelId) {
           return getJson(res, 400, { ok: false, error: "channelId_required" });
         }
@@ -501,7 +501,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       return getJson(res, 400, { error: "invalid_json", botname: getBotname(workingObject, baseCore) });
     }
 
-    const requestChannelId = String(parsedBody?.channelId || parsedBody?.channelID || "").trim();
+    const requestChannelId = String(parsedBody?.channelId || "").trim();
     if (!requestChannelId || !parsedBody?.payload) {
       return getJson(res, 400, {
         error: "channelId_and_payload_required",

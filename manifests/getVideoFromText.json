@@ -5,13 +5,7 @@
   "parameters": {
     "type": "object",
     "properties": {
-      "prompt": { "type": "string", "description": "Describe the video scene to generate from scratch." },
-      "videoApiToken": { "type": "string", "description": "Override Replicate API token (defaults to toolsconfig.getVideoFromText.videoApiToken)." },
-      "videoBaseUrl": { "type": "string", "description": "Override Replicate base URL (defaults to toolsconfig.getVideoFromText.videoBaseUrl)." },
-      "videoModel": { "type": "string", "description": "Override model version (defaults to toolsconfig.getVideoFromText.videoModel, e.g. 'google/veo-3')." },
-      "videoPollIntervalMs": { "type": "number", "description": "Override poll interval in ms (defaults to toolsconfig.getVideoFromText.videoPollIntervalMs)." },
-      "videoTimeoutMs": { "type": "number", "description": "Override timeout in ms (defaults to toolsconfig.getVideoFromText.videoTimeoutMs)." },
-      "videoPublicBaseUrl": { "type": "string", "description": "Override public base URL for saved files (defaults to toolsconfig.getVideoFromText.videoPublicBaseUrl)." }
+      "prompt": { "type": "string", "description": "Describe the video scene to generate from scratch." }
     },
     "required": ["prompt"],
     "additionalProperties": false

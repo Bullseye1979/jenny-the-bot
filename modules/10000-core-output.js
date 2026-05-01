@@ -7,14 +7,9 @@
 
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { getLogsRoot, getLogMaxBytes, getLogKeepFiles, setAppendRollingFile } from "../core/log-paths.js";
 
 const MODULE_NAME = "core-output";
-const MAX_FILE_BYTES = 3 * 1024 * 1024;
-const DIRNAME = path.dirname(fileURLToPath(import.meta.url));
-const LOG_DIR = path.join(DIRNAME, "..", "logs");
-const OBJECTS_DIR = path.join(LOG_DIR, "objects");
-const EVENTS_DIR = path.join(LOG_DIR, "events");
 const FILE_BASENAME = "objects";
 const FILE_EXT = ".log";
 const FILE_RE = /^objects-(\d+)\.log$/;
@@ -25,6 +20,7 @@ const LAST_OBJECT_NAME = "last-object.json";
 const SECRET_ALIAS_RE = /^[A-Z][A-Z0-9_]*$/;
 
 let WRITE_CHAIN = Promise.resolve();
+let CURRENT_CORE_DATA = {};
 
 
 function setLog(wo, message, level = "info", extra = {}) {
@@ -140,12 +136,15 @@ async function getVerifyWritable(dir) {
 
 
 async function setEnsureDirs() {
-  await fsp.mkdir(LOG_DIR, { recursive: true });
-  await fsp.mkdir(OBJECTS_DIR, { recursive: true });
-  await fsp.mkdir(EVENTS_DIR, { recursive: true });
-  await getVerifyWritable(LOG_DIR);
-  await getVerifyWritable(OBJECTS_DIR);
-  await getVerifyWritable(EVENTS_DIR);
+  const logDir = getLogsRoot(CURRENT_CORE_DATA);
+  const objectsDir = path.join(logDir, "objects");
+  const eventsDir = path.join(logDir, "events");
+  await fsp.mkdir(logDir, { recursive: true });
+  await fsp.mkdir(objectsDir, { recursive: true });
+  await fsp.mkdir(eventsDir, { recursive: true });
+  await getVerifyWritable(logDir);
+  await getVerifyWritable(objectsDir);
+  await getVerifyWritable(eventsDir);
 }
 
 
@@ -182,7 +181,7 @@ function getFlowKey(coreData) {
 
 
 function getFlowObjectsDir(flowKey) {
-  return path.join(OBJECTS_DIR, flowKey);
+  return path.join(getLogsRoot(CURRENT_CORE_DATA), "objects", flowKey);
 }
 
 
@@ -217,32 +216,14 @@ async function getFileSize(p) {
 
 
 async function setAppendRolling(text, flowKey) {
-  await setEnsureDirs();
-  const flowDir = getFlowObjectsDir(flowKey);
-  await fsp.mkdir(flowDir, { recursive: true });
-  await getVerifyWritable(flowDir);
-  const files = await getListLogFiles(flowKey);
-  let currentIdx = files.length ? files[files.length - 1].index : 1;
-  let currentPath = getBuildObjectsPath(currentIdx, flowKey);
-  const payload = Buffer.from(text, "utf8");
-  const needed = payload.length;
-  let size = await getFileSize(currentPath);
-  if (size === 0 && files.length === 0) {
-    await fsp.writeFile(currentPath, "");
-  }
-  if (size + needed > MAX_FILE_BYTES) {
-    currentIdx = currentIdx + 1;
-    currentPath = getBuildObjectsPath(currentIdx, flowKey);
-    await fsp.writeFile(currentPath, "");
-    const updated = await getListLogFiles(flowKey);
-    const toKeep = updated.slice(-2).map(f => f.index);
-    const toDelete = updated.filter(f => !toKeep.includes(f.index));
-    for (const f of toDelete) {
-      await fsp.rm(f.full, { force: true }).catch(() => {});
-    }
-  }
-  await fsp.appendFile(currentPath, payload);
-  return currentPath;
+  return await setAppendRollingFile({
+    dir: getFlowObjectsDir(flowKey),
+    basename: FILE_BASENAME,
+    ext: FILE_EXT,
+    text,
+    maxBytes: getLogMaxBytes(CURRENT_CORE_DATA),
+    keepFiles: getLogKeepFiles(CURRENT_CORE_DATA)
+  });
 }
 
 
@@ -310,21 +291,22 @@ function getReadableLogBlock(wo) {
 
 
 function getBuildEventsPath(index) {
-  return path.join(EVENTS_DIR, `${EVENT_BASENAME}-${index}${EVENT_EXT}`);
+  return path.join(getLogsRoot(CURRENT_CORE_DATA), "events", `${EVENT_BASENAME}-${index}${EVENT_EXT}`);
 }
 
 
 async function getListEventFiles() {
   await setEnsureDirs();
   const out = [];
-  const entries = await fsp.readdir(EVENTS_DIR, { withFileTypes: true });
+  const eventsDir = path.join(getLogsRoot(CURRENT_CORE_DATA), "events");
+  const entries = await fsp.readdir(eventsDir, { withFileTypes: true });
   for (const ent of entries) {
     if (!ent.isFile()) continue;
     const m = ent.name.match(EVENT_RE);
     if (!m) continue;
     const idx = Number(m[1]);
     if (!Number.isFinite(idx)) continue;
-    out.push({ name: ent.name, index: idx, full: path.join(EVENTS_DIR, ent.name) });
+    out.push({ name: ent.name, index: idx, full: path.join(eventsDir, ent.name) });
   }
   out.sort((a, b) => a.index - b.index);
   return out;
@@ -332,35 +314,21 @@ async function getListEventFiles() {
 
 
 async function setAppendReadableLog(text) {
-  await setEnsureDirs();
-  const files = await getListEventFiles();
-  let currentIdx = files.length ? files[files.length - 1].index : 1;
-  let currentPath = getBuildEventsPath(currentIdx);
-  const payload = Buffer.from(text, "utf8");
-  const needed = payload.length;
-  let size = await getFileSize(currentPath);
-  if (size === 0 && files.length === 0) {
-    await fsp.writeFile(currentPath, "");
-  }
-  if (size + needed > MAX_FILE_BYTES) {
-    currentIdx = currentIdx + 1;
-    currentPath = getBuildEventsPath(currentIdx);
-    await fsp.writeFile(currentPath, "");
-    const updated = await getListEventFiles();
-    const toKeep = updated.slice(-2).map(f => f.index);
-    const toDelete = updated.filter(f => !toKeep.includes(f.index));
-    for (const f of toDelete) {
-      await fsp.rm(f.full, { force: true }).catch(() => {});
-    }
-  }
-  await fsp.appendFile(currentPath, payload);
-  return currentPath;
+  return await setAppendRollingFile({
+    dir: path.join(getLogsRoot(CURRENT_CORE_DATA), "events"),
+    basename: EVENT_BASENAME,
+    ext: EVENT_EXT,
+    text,
+    maxBytes: getLogMaxBytes(CURRENT_CORE_DATA),
+    keepFiles: getLogKeepFiles(CURRENT_CORE_DATA)
+  });
 }
 
 
 export default async function getCoreOutput(coreData) {
   try {
     if (!coreData || typeof coreData !== "object") return coreData;
+    CURRENT_CORE_DATA = coreData;
 
     const wo = coreData?.workingObject || {};
     const flowKey = getFlowKey(coreData);
@@ -395,11 +363,11 @@ export default async function getCoreOutput(coreData) {
 
     try {
       const pathWritten = await setEnqueueWrite(() => setAppendRolling(record, flowKey));
-      setLog(wo, "Core data appended to per-flow rolling log file.", "info", {
-        path: pathWritten,
-        flowKey,
-        maxFileBytes: MAX_FILE_BYTES,
-        policy: "2-file rolling per flow, oldest removed on third"
+        setLog(wo, "Core data appended to per-flow rolling log file.", "info", {
+          path: pathWritten,
+          flowKey,
+          maxFileBytes: getLogMaxBytes(coreData),
+          policy: "2-file rolling per flow, oldest removed on third"
       });
     } catch (e) {
       setLog(wo, "Failed to append core data to per-flow rolling log.", "error", {
@@ -427,7 +395,7 @@ export default async function getCoreOutput(coreData) {
         const pathReadable = await setEnqueueWrite(() => setAppendReadableLog(readable));
         setLog(wo, "Readable log appended to events file.", "info", {
           path: pathReadable,
-          maxFileBytes: MAX_FILE_BYTES,
+          maxFileBytes: getLogMaxBytes(coreData),
           policy: "2-file rolling, oldest removed on third"
         });
       } catch (e) {

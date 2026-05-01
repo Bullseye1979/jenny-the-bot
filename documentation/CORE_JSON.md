@@ -148,7 +148,7 @@ All key names follow **camelCase** throughout.
 | `agentDepth` | number | `1` | Nesting depth for agentic contexts. `0` = primary user channel, `1` = orchestrator, `2` = specialist. Embedded in the system prompt alongside `agentType`. |
 | `showReactions` | boolean | `true` | Add emoji reactions to Discord messages during processing |
 | `agentRolePrompt` | string | `"You are running as an orchestrator..."` | System prompt fragment injected by `core-ai-completions` and `core-ai-responses` when the channel is in agent mode (`agentType` is set). |
-| `agentDelegateRolePrompt` | string | `"You are running as an orchestrator..."` | System prompt fragment injected by `core-ai-pseudotoolcalls` and `core-ai-roleplay` when in agent mode. Supports `\n` for multi-line. |
+| `agentDelegateRolePrompt` | string | `"You are running as an orchestrator..."` | System prompt fragment injected by agent-aware AI modules when in agent mode. Supports `\n` for multi-line. |
 | `primaryRolePrompt` | string | `"You are the primary assistant..."` | System prompt fragment injected by all AI modules when the channel is in primary user mode (no `agentType`). |
 | `timezone` | string | `"Europe/Berlin"` | Default timezone for time-aware modules and tools |
 | `baseUrl` | string | `"https://yourserver.example.com"` | Public base URL for serving generated files (images, PDFs, etc.) |
@@ -717,6 +717,32 @@ Microsoft Graph API — SharePoint, OneDrive, Exchange mail, Azure AD/Entra user
 | `timeoutMs` | number | HTTP request timeout in ms (default: 30000) |
 
 **Minimum required config:** none — the tool works with an empty config object as long as the user has authenticated at `/graph-auth`.
+
+**Calendar operations:** `getGraph` also supports `listCalendars`, `listCalendarEvents`, `createCalendarEvent`, `updateCalendarEvent`, and `deleteCalendarEvent`. Calendar reads require `startDateTime` and `endDateTime`. Create/update can use either a raw Graph `event` payload or convenience fields such as `subject`, `startDateTime`, `endDateTime`, `timeZone`, `location`, `attendees`, `body`, and `isAllDay`.
+
+**Microsoft delegated scopes:** the Entra app needs delegated `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Files.ReadWrite.All`, `Sites.ReadWrite.All`, `User.ReadWrite.All`, `Calendars.ReadWrite`, and `Calendars.ReadWrite.Shared` when all Graph features are enabled. Add them under **API permissions → Microsoft Graph → Delegated permissions**, grant admin consent where required, then reconnect the user at `/graph-auth`.
+
+#### logging
+
+Shared log storage and rotation config used by events, pipeline, object dumps, and toolcall logs.
+
+```json
+"logging": {
+  "logsDir": "logs",
+  "maxFileBytes": 3145728,
+  "keepFiles": 2
+}
+```
+
+| Key | Type | Description |
+|---|---|---|
+| `logsDir` | string | Absolute path or repo-relative directory for runtime logs |
+| `maxFileBytes` | number | Maximum size before a new log file is opened |
+| `keepFiles` | number | Number of rotated files to keep per log stream |
+
+#### webpage-chat subchannel expiry
+
+`config.webpage-chat.subchannelTtlHours` sets an end-of-life for newly created chat subchannels. A value of `0` or omission disables expiry. The `chat-subchannel-gc` module should be enabled in the `chat-subchannel-gc` flow and scheduled from `config.cron.jobs`, typically with `"cron": "0 3 * * *"`.
 
 #### getSpotify
 
@@ -2178,7 +2204,7 @@ Sends TTS audio back to the webpage voice caller. Must run in the output phase (
 
 ### mcp
 
-The MCP (Model Context Protocol) server exposes all tool manifests from `manifests/` as MCP tools. Compatible with Claude Desktop, Cursor, VS Code, and any MCP-compliant client.
+The MCP (Model Context Protocol) server exposes only the tool manifests that match the current channel's resolved `workingObject.tools`. HTTP clients select the channel with `X-Channel-Id`; stdio uses the `mcp` channel. Compatible with Claude Desktop, Cursor, VS Code, and any MCP-compliant client.
 
 ```jsonc
 "mcp": {
@@ -2316,7 +2342,6 @@ Every module has an entry under `config` that declares which flows it participat
 | `core-ai-completions` | `discord`, `discord-voice`, `api`, `discord-status`, `webpage` |
 | `core-ai-responses` | `discord`, `discord-voice`, `api`, `discord-status`, `webpage` |
 | `core-ai-pseudotoolcalls` | `discord`, `discord-voice`, `api`, `discord-status`, `webpage` |
-| `core-ai-roleplay` | `discord`, `discord-voice`, `api`, `discord-status`, `webpage` |
 | `discord-voice-capture` | `discord-voice` |
 | `core-voice-transcribe` | `discord-voice`, `webpage` |
 | `core-voice-tts` | `discord-voice`, `webpage` |
@@ -2681,7 +2706,6 @@ Below is a minimal but functional `core.json` template with every section includ
     "core-ai-responses":       { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "core-ai-completions":     { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
     "core-ai-pseudotoolcalls": { "flow": ["discord","discord-voice","api","discord-status","webpage"] },
-    "core-ai-roleplay":        { "flow": ["discord","discord-voice","api","discord-status","webpage"], "imagePromptRules": "Stable Diffusion prompt generation rules" },
     "discord-add-context":     { "flow": ["discord","discord-voice"] },
     "discord-text-output":     { "flow": ["all"] },
     "core-output":             { "flow": ["all"] },

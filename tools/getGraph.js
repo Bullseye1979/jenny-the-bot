@@ -974,6 +974,130 @@ async function getOperationSendMail(toolCfg, args) {
 }
 
 
+function getResolveCalendarBase(args, toolCfg) {
+  const userBase = getResolveUserBase(args, toolCfg);
+  const calendarId = getStr(args.calendarId, "");
+  return calendarId
+    ? `${userBase}/calendars/${encodeURIComponent(calendarId)}`
+    : `${userBase}/calendar`;
+}
+
+
+async function getOperationListCalendars(toolCfg, args) {
+  const version = getResolveApiVersion(args, toolCfg);
+  const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const userBase = getResolveUserBase(args, toolCfg);
+  const top = getClamp(getNum(args.top, getNum(toolCfg.defaultPageSize, 50)), 1, 999);
+
+  const res = await getGraphRequest(toolCfg, {
+    baseUrl,
+    path: `${userBase}/calendars`,
+    method: "GET",
+    query: { $top: top, $select: getStr(args.select, "id,name,canEdit,canShare,owner") }
+  });
+
+  return { operation: "listCalendars", ok: res.ok, status: res.status, statusText: res.statusText, result: res.data };
+}
+
+
+async function getOperationListCalendarEvents(toolCfg, args) {
+  const startDateTime = getStr(args.startDateTime, "").trim();
+  const endDateTime = getStr(args.endDateTime, "").trim();
+  if (!startDateTime || !endDateTime) return { operation: "listCalendarEvents", ok: false, error: "Missing startDateTime or endDateTime" };
+
+  const version = getResolveApiVersion(args, toolCfg);
+  const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const top = getClamp(getNum(args.top, getNum(toolCfg.defaultPageSize, 50)), 1, 999);
+  const calendarBase = getResolveCalendarBase(args, toolCfg);
+
+  const res = await getGraphRequest(toolCfg, {
+    baseUrl,
+    path: `${calendarBase}/calendarView`,
+    method: "GET",
+    headers: getStr(args.timeZone, "") ? { Prefer: `outlook.timezone="${getStr(args.timeZone)}"` } : {},
+    query: {
+      startDateTime,
+      endDateTime,
+      $top: top,
+      $orderby: getStr(args.orderby, "start/dateTime"),
+      $select: getStr(args.select, "id,subject,start,end,location,organizer,attendees,webLink,isAllDay,showAs,bodyPreview")
+    }
+  });
+
+  return { operation: "listCalendarEvents", ok: res.ok, status: res.status, statusText: res.statusText, startDateTime, endDateTime, result: res.data };
+}
+
+
+function getBuildEventPayload(args) {
+  const event = getObj(args.event, {});
+  if (Object.keys(event).length) return event;
+
+  const subject = getStr(args.subject, "").trim();
+  const startDateTime = getStr(args.startDateTime, "").trim();
+  const endDateTime = getStr(args.endDateTime, "").trim();
+  const timeZone = getStr(args.timeZone, "UTC").trim() || "UTC";
+  const body = getStr(args.body, "").trim();
+  const location = getStr(args.location, "").trim();
+  const attendeesRaw = getArr(args.attendees, []);
+  const payload = {};
+
+  if (subject) payload.subject = subject;
+  if (startDateTime) payload.start = { dateTime: startDateTime, timeZone };
+  if (endDateTime) payload.end = { dateTime: endDateTime, timeZone };
+  if (body) payload.body = { contentType: getStr(args.bodyType, "text").toLowerCase() === "html" ? "HTML" : "Text", content: body };
+  if (location) payload.location = { displayName: location };
+  if (typeof args.isAllDay === "boolean") payload.isAllDay = args.isAllDay;
+  if (attendeesRaw.length) {
+    payload.attendees = attendeesRaw
+      .map(item => typeof item === "string" ? { emailAddress: { address: item }, type: "required" } : getObj(item, {}))
+      .filter(item => getStr(item?.emailAddress?.address, ""));
+  }
+
+  return payload;
+}
+
+
+async function getOperationCreateCalendarEvent(toolCfg, args) {
+  const event = getBuildEventPayload(args);
+  if (!Object.keys(event).length) return { operation: "createCalendarEvent", ok: false, error: "Missing event payload" };
+
+  const version = getResolveApiVersion(args, toolCfg);
+  const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const calendarBase = getResolveCalendarBase(args, toolCfg);
+  const res = await getGraphRequest(toolCfg, { baseUrl, path: `${calendarBase}/events`, method: "POST", body: event });
+
+  return { operation: "createCalendarEvent", ok: res.ok, status: res.status, statusText: res.statusText, result: res.data };
+}
+
+
+async function getOperationUpdateCalendarEvent(toolCfg, args) {
+  const eventId = getStr(args.eventId, "").trim();
+  if (!eventId) return { operation: "updateCalendarEvent", ok: false, error: "Missing eventId" };
+  const event = getBuildEventPayload(args);
+  if (!Object.keys(event).length) return { operation: "updateCalendarEvent", ok: false, error: "Missing event payload" };
+
+  const version = getResolveApiVersion(args, toolCfg);
+  const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const calendarBase = getResolveCalendarBase(args, toolCfg);
+  const res = await getGraphRequest(toolCfg, { baseUrl, path: `${calendarBase}/events/${encodeURIComponent(eventId)}`, method: "PATCH", body: event });
+
+  return { operation: "updateCalendarEvent", ok: res.ok, status: res.status, statusText: res.statusText, result: res.data };
+}
+
+
+async function getOperationDeleteCalendarEvent(toolCfg, args) {
+  const eventId = getStr(args.eventId, "").trim();
+  if (!eventId) return { operation: "deleteCalendarEvent", ok: false, error: "Missing eventId" };
+
+  const version = getResolveApiVersion(args, toolCfg);
+  const baseUrl = getResolveBaseUrl(toolCfg, version);
+  const calendarBase = getResolveCalendarBase(args, toolCfg);
+  const res = await getGraphRequest(toolCfg, { baseUrl, path: `${calendarBase}/events/${encodeURIComponent(eventId)}`, method: "DELETE" });
+
+  return { operation: "deleteCalendarEvent", ok: res.ok, status: res.status, statusText: res.statusText };
+}
+
+
 async function getOperationGraphRequest(toolCfg, args) {
   const request = getObj(args.request, {});
   const path = getStr(request.path, "");
@@ -1026,6 +1150,11 @@ async function getInvoke(args, coreData) {
       case "renameFiles":             return await getOperationRenameFiles(enrichedToolCfg, safeArgs);
       case "moveEmails":              return await getOperationMoveEmails(enrichedToolCfg, safeArgs);
       case "sendMail":                return await getOperationSendMail(enrichedToolCfg, safeArgs);
+      case "listCalendars":           return await getOperationListCalendars(enrichedToolCfg, safeArgs);
+      case "listCalendarEvents":      return await getOperationListCalendarEvents(enrichedToolCfg, safeArgs);
+      case "createCalendarEvent":     return await getOperationCreateCalendarEvent(enrichedToolCfg, safeArgs);
+      case "updateCalendarEvent":     return await getOperationUpdateCalendarEvent(enrichedToolCfg, safeArgs);
+      case "deleteCalendarEvent":     return await getOperationDeleteCalendarEvent(enrichedToolCfg, safeArgs);
       case "searchUsers":             return await getOperationSearchUsers(enrichedToolCfg, safeArgs);
       case "showUser":                return await getOperationShowUser(enrichedToolCfg, safeArgs);
       case "createUser":              return await getOperationCreateUser(enrichedToolCfg, safeArgs);

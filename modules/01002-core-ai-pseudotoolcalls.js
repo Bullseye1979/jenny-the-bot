@@ -563,7 +563,7 @@ export default async function getCoreAi(coreData) {
         try { const r = getTryParseJSON(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}"), {}); if (r?.ok === false) _tcStatus = "failed"; } catch {}
         toolCallLog.push({ tool: extracted.name, status: _tcStatus, durationMs: _tcDurationMs, task: "" });
         wo.toolCallLog = toolCallLog.slice();
-        writeToolcallLog({ ...getToolcallLogBase(wo), tool: extracted.name, status: _tcStatus, durationMs: _tcDurationMs, ...getToolPaginationMeta(extracted.name, toolMsg.content) });
+        writeToolcallLog({ ...getToolcallLogBase(wo), coreData, tool: extracted.name, status: _tcStatus, durationMs: _tcDurationMs, ...getToolPaginationMeta(extracted.name, toolMsg.content) });
 
         wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
 

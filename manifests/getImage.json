@@ -12,11 +12,6 @@
       "n": { "type": "integer", "minimum": 1, "maximum": 4, "description": "Number of images to generate (subject to model limits)." },
       "strictPrompt": { "type": "boolean", "description": "If true, sends the prompt exactly as given with no enhancement." },
       "negative": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Extra negative terms to avoid in the image." },
-      "enhancerEndpoint": { "type": "string", "description": "Chat/completions endpoint for the prompt enhancer (overrides toolsconfig)." },
-      "enhancerApiKey": { "type": "string", "description": "API key for the prompt enhancer (overrides toolsconfig)." },
-      "enhancerModel": { "type": "string", "description": "Model for the prompt enhancer (overrides toolsconfig)." },
-      "enhancerTemperature": { "type": "number", "description": "Temperature for the prompt enhancer (overrides toolsconfig)." },
-      "enhancerMaxTokens": { "type": "number", "description": "Max tokens for the prompt enhancer (overrides toolsconfig)." },
       "preferDigitalPainting": { "type": "boolean", "description": "Prefer a digital painting style (default: true)." }
     },
     "required": ["prompt"],

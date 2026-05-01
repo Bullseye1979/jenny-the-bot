@@ -18,11 +18,18 @@ import { listSecrets } from "../core/secrets.js";
 
 const MODULE_NAME = "webpage-bearer-exposure";
 const BASE_PATH   = "/bearer-exposure";
-const TOOL_NAME   = "getApiBearers";
 
+function escHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function getPageHtml(opts) {
   const menuHtml = getMenuHtml(opts?.menu || [], BASE_PATH, opts?.role || "", null, null, opts?.webAuth);
+  const toolName = escHtml(opts?.toolName || "");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -52,7 +59,7 @@ ${getThemeHeadScript()}
 <div style="margin-top:var(--hh);padding:16px 20px;max-width:960px">
 
   <p style="font-size:.85rem;color:var(--muted);margin:0 0 18px">
-    Toggle which API key <em>names</em> the AI can discover via the <code>getApiBearers</code> tool.
+    Toggle which API key <em>names</em> the AI can discover via the <code>${toolName}</code> tool.
     Only <strong style="color:var(--ok,#22c55e)">Exposed</strong> key names will be returned.
     Actual key values are <strong>never</strong> revealed to the AI.
   </p>
@@ -121,6 +128,8 @@ load();
 export default async function webpageBearerExposure(coreData) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
+  const toolName = String(cfg.toolName || "").trim();
+  if (!toolName) return coreData;
 
   const urlRaw  = String(wo?.http?.url ?? "");
   const urlPath = urlRaw.split("?")[0];
@@ -158,7 +167,7 @@ export default async function webpageBearerExposure(coreData) {
       return coreData;
     }
     const keys    = allSecrets.map((s) => ({ name: s.name, description: s.description || null }));
-    const exposed = await listExposed(pool, TOOL_NAME);
+    const exposed = await listExposed(pool, toolName);
     setJsonResp(wo, 200, { keys, exposed });
     wo.jump = true;
     await setSendNow(wo);
@@ -171,9 +180,9 @@ export default async function webpageBearerExposure(coreData) {
     const expose = Boolean(data.expose);
     if (!name) { setJsonResp(wo, 400, { error: "name is required" }); wo.jump = true; await setSendNow(wo); return coreData; }
     if (expose) {
-      await addExposed(pool, TOOL_NAME, name);
+      await addExposed(pool, toolName, name);
     } else {
-      await removeExposed(pool, TOOL_NAME, name);
+      await removeExposed(pool, toolName, name);
     }
     setJsonResp(wo, 200, { ok: true });
     wo.jump = true;
@@ -185,7 +194,7 @@ export default async function webpageBearerExposure(coreData) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getPageHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", webAuth: wo.webAuth })
+      body:    getPageHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", webAuth: wo.webAuth, toolName })
     };
     wo.jump = true;
     await setSendNow(wo);

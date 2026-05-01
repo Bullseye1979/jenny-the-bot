@@ -10,14 +10,14 @@
 import { getSecret }          from "../../core/secrets.js";
 import { getPrefixedLogger }  from "../../core/logging.js";
 import { putItem, getItem, deleteItem } from "../../core/registry.js";
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join }      from "node:path";
 import { fileURLToPath }      from "node:url";
+import { getLogsRoot, getLogMaxBytes, getLogKeepFiles, setAppendRollingFile } from "../../core/log-paths.js";
 
 const _dir         = dirname(fileURLToPath(import.meta.url));
 const _manifestDir = join(_dir, "../../manifests");
 const _logDir      = join(_dir, "../../logs");
-const _toolcallLog = join(_logDir, "toolcalls.log");
 
 try { mkdirSync(_logDir, { recursive: true }); } catch {}
 
@@ -258,7 +258,16 @@ export function setRememberActiveToolStatus(wo, payload, hasGlobalStatus = true)
  * Appends a structured tool call entry to the toolcalls log file.
  */
 export function writeToolcallLog(entry) {
-  try { appendFileSync(_toolcallLog, JSON.stringify(entry) + "\n", "utf8"); } catch {}
+  const coreData = entry?.coreData && typeof entry.coreData === "object" ? entry.coreData : {};
+  const { coreData: _coreData, ...logEntry } = entry && typeof entry === "object" ? entry : { value: entry };
+  const dir = getLogsRoot(coreData);
+  setAppendRollingFile({
+    dir,
+    basename: "toolcalls",
+    text: JSON.stringify(logEntry) + "\n",
+    maxBytes: getLogMaxBytes(coreData),
+    keepFiles: getLogKeepFiles(coreData)
+  }).catch(() => {});
 }
 
 
@@ -287,46 +296,20 @@ export function getToolPaginationMeta(toolName, result) {
   const len = (x) => (typeof x === "string" ? x.length : Array.isArray(x) ? x.length : undefined);
   const out = (o) => Object.fromEntries(Object.entries(o).filter(([, val]) => val !== undefined));
 
-  const stdPage = out({ rows: num(v.count), hasMore: v.has_more === true ? true : undefined, nextCtxId: v.next_start_ctx_id ?? undefined });
-
-  switch (toolName) {
-    case "getHistory":
-    case "getGoogle":
-    case "getTavily":
-    case "getWebpage":
-    case "getJira":
-    case "getConfluence":
-      return stdPage;
-
-    case "getYoutube":
-      return out({ rows: num(v.count), hasMore: v.has_more === true ? true : undefined, nextCtxId: v.next_start_ctx_id ?? undefined, mode: v.mode || undefined });
-
-    case "getSpecialists": {
-      const r = Array.isArray(v.rows) ? v.rows : [];
-      return { specialistCount: num(v.count) ?? r.length, complete: num(v.complete) ?? r.filter(x => x.ok).length, failed: num(v.failed) ?? r.filter(x => !x.ok).length };
-    }
-
-    case "getOrchestrator":
-      return out({ rows: num(v.count), responseLen: Array.isArray(v.rows) && v.rows[0] ? len(v.rows[0]) : undefined });
-
-    case "getShell":
-      return out({ exitCode: v.exitCode ?? undefined, outputBytes: len(Array.isArray(v.rows) ? v.rows[0] : undefined) });
-
-    case "getApi":
-    case "getGraph":
-      return out({ status: num(v.status) });
-
-    case "getFile":
-    case "getFileContent":
-    case "getText":
-      return out({ bytes: num(v.bytes) });
-
-    case "getZIP":
-      return out({ bytes: num(v.bytes), files: Array.isArray(v.files) ? v.files.length : undefined });
-
-    default:
-      return {};
-  }
+  const rows = Array.isArray(v.rows) ? v.rows : Array.isArray(v.items) ? v.items : Array.isArray(v.files) ? v.files : null;
+  return out({
+    tool: typeof toolName === "string" ? toolName : undefined,
+    rows: num(v.count) ?? (rows ? rows.length : undefined),
+    hasMore: v.has_more === true ? true : undefined,
+    nextCtxId: v.next_start_ctx_id ?? undefined,
+    status: num(v.status),
+    bytes: num(v.bytes),
+    files: Array.isArray(v.files) ? v.files.length : undefined,
+    outputBytes: len(Array.isArray(v.rows) ? v.rows[0] : undefined),
+    responseLen: Array.isArray(v.rows) && v.rows[0] ? len(v.rows[0]) : undefined,
+    exitCode: v.exitCode ?? undefined,
+    mode: v.mode || undefined
+  });
 }
 
 

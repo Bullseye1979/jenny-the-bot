@@ -124,7 +124,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   args = getExpandedToolArgs(args, wo);
 
   if (!name) {
-    writeToolcallLog({ ...getToolcallLogBase(wo), tool: "", status: "skipped_no_name", durationMs: 0 });
+    writeToolcallLog({ ...getToolcallLogBase(wo), coreData, tool: "", status: "skipped_no_name", durationMs: 0 });
     return { role: "tool", tool_call_id: toolCall?.id, name: null, content: JSON.stringify({ error: "Tool call has no function name" }) };
   }
 
@@ -136,7 +136,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
 
   if (!tool) {
     log("Tool call failed (not found)", "error", { tool_call_id: toolCall?.id || null, tool: name || null });
-    writeToolcallLog({ ...getToolcallLogBase(wo), tool: String(name || ""), status: "not_found", durationMs: 0 });
+    writeToolcallLog({ ...getToolcallLogBase(wo), coreData, tool: String(name || ""), status: "not_found", durationMs: 0 });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: `Tool "${name}" not found` }) };
   }
 
@@ -179,6 +179,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
 
     writeToolcallLog({
       ...getToolcallLogBase(wo),
+      coreData,
       tool:   name,
       status: resultMeta.ok ? "success" : "returned_error",
       durationMs,
@@ -191,7 +192,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   } catch (e) {
     const durationMs = Date.now() - startTs;
     log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, durationMs, error: String(e?.message || e) });
-    writeToolcallLog({ ...getToolcallLogBase(wo), tool: name, status: "error", durationMs, error: String(e?.message || e) });
+    writeToolcallLog({ ...getToolcallLogBase(wo), coreData, tool: name, status: "error", durationMs, error: String(e?.message || e) });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
   } finally {
     if (wo._statusToolGen === _myGen) {

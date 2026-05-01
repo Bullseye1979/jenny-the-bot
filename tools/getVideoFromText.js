@@ -36,21 +36,19 @@ async function getDownloadToBuffer(url) {
 
 async function resolveToolConfig(wo = {}, args = {}) {
   const tc = wo?.toolsconfig?.getVideoFromText || {};
-  const apiToken = await getSecret(wo, String(args.videoApiToken || tc.videoApiToken || wo.videoApiToken || "").trim());
-  const baseUrl  = String(args.videoBaseUrl  || tc.videoBaseUrl  || wo.videoBaseUrl  || "https://api.replicate.com/v1").trim();
-  const model    = String(args.videoModel    || tc.videoModel    || wo.videoModel    || "google/veo-3").trim();
-  const pollIntervalMs = Number.isFinite(args.videoPollIntervalMs)
-    ? args.videoPollIntervalMs
-    : (Number.isFinite(tc.videoPollIntervalMs) ? tc.videoPollIntervalMs
-      : (Number.isFinite(wo.videoPollIntervalMs) ? wo.videoPollIntervalMs : 5000));
-  const timeoutMs = Number.isFinite(args.videoTimeoutMs)
-    ? args.videoTimeoutMs
-    : (Number.isFinite(tc.videoTimeoutMs) ? tc.videoTimeoutMs
-      : (Number.isFinite(wo.videoTimeoutMs) ? wo.videoTimeoutMs : 600000));
-  const publicBaseUrl = typeof (args.videoPublicBaseUrl || tc.videoPublicBaseUrl || wo.videoPublicBaseUrl) === "string"
-    ? String(args.videoPublicBaseUrl || tc.videoPublicBaseUrl || wo.videoPublicBaseUrl).replace(/\/+$/, "")
+  const apiToken = await getSecret(wo, String(tc.videoApiToken || wo.videoApiToken || "").trim());
+  const baseUrl  = String(tc.videoBaseUrl  || wo.videoBaseUrl  || "https://api.replicate.com/v1").trim();
+  const model    = String(tc.videoModel    || wo.videoModel    || "google/veo-3").trim();
+  const pollIntervalMs = Number.isFinite(tc.videoPollIntervalMs)
+    ? tc.videoPollIntervalMs
+    : (Number.isFinite(wo.videoPollIntervalMs) ? wo.videoPollIntervalMs : 5000);
+  const timeoutMs = Number.isFinite(tc.videoTimeoutMs)
+    ? tc.videoTimeoutMs
+    : (Number.isFinite(wo.videoTimeoutMs) ? wo.videoTimeoutMs : 600000);
+  const publicBaseUrl = typeof (tc.videoPublicBaseUrl || wo.videoPublicBaseUrl) === "string"
+    ? String(tc.videoPublicBaseUrl || wo.videoPublicBaseUrl).replace(/\/+$/, "")
     : null;
-  if (!apiToken) throw new Error(`[${MODULE_NAME}] missing toolsconfig.getVideoFromText.videoApiToken (or args.videoApiToken)`);
+  if (!apiToken) throw new Error(`[${MODULE_NAME}] missing toolsconfig.getVideoFromText.videoApiToken`);
   return { apiToken, baseUrl, model, pollIntervalMs, timeoutMs, publicBaseUrl };
 }
 

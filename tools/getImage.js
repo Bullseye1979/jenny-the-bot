@@ -199,12 +199,12 @@ function getBuiltSize({ size, aspect, targetLongEdge = 1024 }) {
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const toolCfg = wo?.toolsconfig?.getImage || {};
-  const apiKey = await getSecret(wo, String(args?.apiKey || toolCfg.apiKey || wo?.apiKey || ""));
-  if (!apiKey) return { ok: false, error: "Missing API key for images (args.apiKey / toolsconfig.getImage.apiKey / workingObject.apiKey)" };
+  const apiKey = await getSecret(wo, String(toolCfg.apiKey || wo?.apiKey || ""));
+  if (!apiKey) return { ok: false, error: "Missing API key for images (toolsconfig.getImage.apiKey / workingObject.apiKey)" };
   const promptRaw = String(args?.prompt || "").trim();
   if (!promptRaw) return { ok: false, error: "Missing prompt" };
-  const model = String(args?.model || toolCfg.model || "gpt-image-1");
-  const imagesEndpoint = String(args?.endpoint || toolCfg.endpoint || "https://api.openai.com/v1/images/generations");
+  const model = String(toolCfg.model || "gpt-image-1");
+  const imagesEndpoint = String(toolCfg.endpoint || "https://api.openai.com/v1/images/generations");
   const requestedSize = String(args?.size || toolCfg.size || "");
   const aspect = args?.aspect ? String(args.aspect) : (toolCfg.aspect ? String(toolCfg.aspect) : "");
   const targetLongEdge = Number.isFinite(args?.targetLongEdge) ? Number(args.targetLongEdge) : Number.isFinite(toolCfg.targetLongEdge) ? Number(toolCfg.targetLongEdge) : 1024;

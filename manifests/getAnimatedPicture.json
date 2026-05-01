@@ -6,13 +6,7 @@
     "type": "object",
     "properties": {
       "prompt": { "type": "string", "description": "Describe how the given image should be animated or transformed." },
-      "imageURL": { "type": "string", "format": "uri", "description": "Public image URL (http/https) to animate/transform." },
-      "videoApiToken": { "type": "string", "description": "Override Replicate API token (defaults to toolsconfig.getAnimatedPicture.videoApiToken)." },
-      "videoBaseUrl": { "type": "string", "description": "Override Replicate base URL (defaults to toolsconfig.getAnimatedPicture.videoBaseUrl)." },
-      "videoModel": { "type": "string", "description": "Override model version (defaults to toolsconfig.getAnimatedPicture.videoModel, e.g. 'google/veo-3')." },
-      "videoPollIntervalMs": { "type": "number", "description": "Override poll interval in ms (defaults to toolsconfig.getAnimatedPicture.videoPollIntervalMs)." },
-      "videoTimeoutMs": { "type": "number", "description": "Override timeout in ms (defaults to toolsconfig.getAnimatedPicture.videoTimeoutMs)." },
-      "videoPublicBaseUrl": { "type": "string", "description": "Override public base URL for saved files (defaults to toolsconfig.getAnimatedPicture.videoPublicBaseUrl)." }
+      "imageURL": { "type": "string", "format": "uri", "description": "Public image URL (http/https) to animate/transform." }
     },
     "required": ["prompt", "imageURL"],
     "additionalProperties": false

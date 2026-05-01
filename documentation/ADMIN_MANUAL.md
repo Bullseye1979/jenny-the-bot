@@ -1971,7 +1971,6 @@ Every module can be restricted to specific flows via its config block:
 | `core-ai-completions` | discord-status, discord, discord-voice, api, **bard-label-gen**, webpage |
 | `core-ai-responses` | discord-status, discord, discord-voice, api, webpage |
 | `core-ai-pseudotoolcalls` | discord-status, discord, discord-voice, api, webpage |
-| `core-ai-roleplay` | discord-status, discord, discord-voice, api, webpage |
 | `core-output` | all |
 | `bard-join` | discord-admin, discord, webpage, api |
 | `discord-purge` | discord-admin, discord |
@@ -2697,9 +2696,8 @@ Only **one** of these modules runs per turn, selected by `workingObject.useAiMod
 | 01000 | `core-ai-completions` | `"completions"` | OpenAI-compatible `chat/completions` runner with tool calling, multi-turn continue logic, and local-model heuristics |
 | 01001 | `core-ai-responses` | `"responses"` | Full Responses API with iterative tool calling, reasoning, image persistence |
 | 01002 | `core-ai-pseudotoolcalls` | `"pseudotoolcalls"` | Text-based pseudo tool calling for local models without native function-call support |
-| 01003 | `core-ai-roleplay` | `"roleplay"` | Two-pass generation (text + image prompt) with tool calling, finish_reason logging, and automatic cut-off continuation |
 
-**All four modules share identical continue logic** — see the continue strategy below.
+**All AI modules share identical continue logic** — see the continue strategy below.
 
 #### config.core-ai-context-loader
 
@@ -2828,39 +2826,6 @@ Multiple calls can appear in a single response. The module extracts all occurren
 **Agentic context awareness:** When `wo.agentType` is set, the module appends the agent type and depth to the system prompt. This allows the model to adapt its behavior when running as an orchestrator or specialist.
 
 **`skipAiCompletions` flag:** If `wo.skipAiCompletions === true`, the module exits immediately without any LLM call.
-
-#### core-ai-roleplay (01003) — Detailed flow
-
-Two-pass generation for roleplay and narrative scenarios. Pass 1 generates the main text response with tool support. Pass 2 generates a single-line Stable Diffusion image prompt that reflects the scene in the response.
-
-**Activation:** `wo.useAiModule === "roleplay"` or `"core-ai-roleplay"`.
-
-**Pass 1 — Text generation:**
-1. Builds system prompt from persona + optional agentic context (`agentType`, `agentDepth`)
-2. Calls `POST /chat/completions` with tools disabled for the narrative response
-3. Loops on the continue heuristic when the model response is cut off
-4. Sets `wo.response` to the accumulated text
-
-**Pass 2 — Image prompt generation:**
-1. Builds a secondary system prompt using `imagePromptRules` from the working object or `config["core-ai-roleplay"]`
-2. Calls the model with limited tokens (`imagePromptMaxTokens`, default 260) and low temperature (`imagePromptTemperature`, default 0.35)
-3. Provides the latest assistant text first, followed by latest user input, visual source material from `imagePersonaHint`, `persona`, `systemPrompt`, and `instructions`, then `RECENT TURNS` for visible continuity only. Pass 2 must extract only visible appearance from the visual source material.
-4. Passes the result to the configured image tool, usually `getImageSD`, to generate an image
-5. If pass 2 fails or returns empty, a fallback single-line prompt is generated from the response text
-
-**Image prompt config (working object or `config["core-ai-roleplay"]`):**
-
-| Parameter | Default | Description |
-|---|---|---|
-| `imagePromptRules` | `""` | Multiline string with SD prompt generation rules. Configure this in `config["core-ai-roleplay"]` in `core.json`; without it, image prompt generation has less guidance and may be less relevant to the current scene. |
-| `imagePromptMaxTokens` | `260` | Max tokens for the image prompt generation call |
-| `imagePromptTemperature` | `0.35` | Temperature for the image prompt call |
-| `imagePersonaHint` | `""` | Optional visual source material for recurring character appearance. Pass 2 extracts visible appearance from it; it must not override the latest assistant text. |
-| `imageContextTurns` | `5` | Number of recent user/assistant turns included as `RECENT TURNS` for visible continuity in the image prompt generation call |
-
-**`skipAiCompletions` flag:** If `wo.skipAiCompletions === true`, both passes are skipped.
-
----
 
 ### 7.3 Output & Post-Processing (02xxx–08xxx)
 
@@ -3152,7 +3117,6 @@ All hardcoded AI prompts — in both tools and modules — have been moved to `c
 | `core-ai-pseudotoolcalls` | `policyPrompt` | Policy block appended to every system prompt |
 | `core-ai-pseudotoolcalls` | `toolContractPrompt` | Tool-call syntax contract shown to the model |
 | `core-ai-pseudotoolcalls` | `continuationPrompt` | User message injected when output was cut off |
-| `core-ai-roleplay` | `imagePromptRules` | Stable Diffusion image prompt generation rules |
 | `bard-cron` | `prompt` | Full music-classifier prompt (supports `{{LOCATION_TAGS}}`, `{{SITUATION_TAGS}}`, `{{MOOD_TAGS}}`, `{{CURRENT_LABELS}}`, `{{EXAMPLE_LINES}}` placeholders) |
 | `webpage-voice-record` | `diarizationSystemPrompt` | Speaker diarization system prompt |
 
@@ -3535,6 +3499,10 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 **Authentication:** OAuth 2.0 **delegated** flow. Each Discord user must connect their Microsoft account once at `/graph-auth`. The access token is stored in the `graph_tokens` DB table and refreshed automatically by the `cron-graph-token-refresh` module. No app-level token is required in `toolsconfig.getGraph`. If a user has not authenticated, the tool returns `{ ok: false, error: "No Microsoft account connected ... Please authenticate at /graph-auth" }`.
 
 **Auto-discovery:** When `defaultSiteId` is not configured, the tool discovers it from `defaultSharePointHostname`. The SharePoint site's drive ID is cached separately from the user's OneDrive — OneDrive operations always use `/me/drive` and are never redirected to SharePoint.
+
+**Calendar operations:** `getGraph` supports `listCalendars`, `listCalendarEvents`, `createCalendarEvent`, `updateCalendarEvent`, and `deleteCalendarEvent`. Use `startDateTime` and `endDateTime` for timeframe reads. Create/update may pass either a raw Graph `event` object or convenience fields (`subject`, `startDateTime`, `endDateTime`, `timeZone`, `location`, `attendees`, `body`, `isAllDay`).
+
+**Required delegated scopes for full Graph support:** configure the Entra app with `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Files.ReadWrite.All`, `Sites.ReadWrite.All`, `User.ReadWrite.All`, `Calendars.ReadWrite`, and `Calendars.ReadWrite.Shared` under **API permissions → Microsoft Graph → Delegated permissions**. Grant admin consent for tenant-wide permissions, then have each user reconnect at `/graph-auth` so the refreshed token contains the new scopes.
 
 **`storageScope` — always set explicitly for file operations:**
 
@@ -7718,7 +7686,7 @@ When a pipeline runs as an orchestrator or specialist, the following `workingObj
 | `callerChannelIds` | API flow via request body | Full channel ID chain (enables `getHistory` to query the correct source) |
 | `aborted` | `flows/api.js` socket close | `true` if client disconnected; orchestrator/specialists exit immediately |
 
-The AI modules (`core-ai-completions`, `core-ai-pseudotoolcalls`, `core-ai-roleplay`) embed `agentType` and `agentDepth` into the system prompt, allowing the model to adapt its behavior (e.g. never ask clarifying questions, format output for consumption by the caller AI, not by a human).
+The agent-aware AI modules embed `agentType` and `agentDepth` into the system prompt, allowing the model to adapt its behavior (e.g. never ask clarifying questions, format output for consumption by the caller AI, not by a human).
 
 ### Configuring Orchestrator and Specialist Channels
 
@@ -8015,6 +7983,14 @@ Rules:
 ```
 
 The AI infers tool chains from each tool's own description and requirements — never from explicit tool name references. This keeps the system modular: tools remain independent and composable without hard-coded dependencies.
+
+## Streamlining Notes
+
+Runtime logs are controlled by `config.logging`: `logsDir` can be absolute or repository-relative, `maxFileBytes` controls rotation size, and `keepFiles` controls retention per stream. This applies to events, pipeline traces, per-flow object dumps, and `toolcalls` logs.
+
+MCP tool exposure is channel-scoped. The HTTP MCP flow reads `X-Channel-Id`, applies `core-channel-config`, and advertises only the resulting `workingObject.tools` entries. Tool calls outside that resolved list are rejected.
+
+Chat subchannels support an end-of-life through `config.webpage-chat.subchannelTtlHours`. Schedule `chat-subchannel-gc` in `config.cron.jobs` (for example `0 3 * * *`) to delete expired subchannel rows and their scoped context rows once per day.
 
 ---
 

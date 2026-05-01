@@ -8,6 +8,7 @@
 
 import { getPrefixedLogger } from "../core/logging.js";
 import { getStr, getNum } from "../core/utils.js";
+import { CronExpressionParser } from "cron-parser";
 
 const MODULE_NAME = "cron";
 
@@ -30,17 +31,25 @@ function getParseEveryMinutes(expr) {
 
 function getNextDue(job, log) {
   const stepMinutes = getParseEveryMinutes(job.expr);
-  if (!stepMinutes) {
+  if (stepMinutes) {
+    return Date.now() + stepMinutes * 60_000;
+  }
+
+  try {
+    const interval = CronExpressionParser.parse(job.expr, {
+      currentDate: new Date(),
+      tz: job.timezone || "Europe/Berlin"
+    });
+    return interval.next().getTime();
+  } catch {
     log(
-      `invalid or unsupported cron expression for job "${job.id}": ${job.expr} (only "* * * * *" or "*/N * * * *" supported)`,
+      `invalid cron expression for job "${job.id}": ${job.expr}`,
       "error",
       { moduleName: MODULE_NAME }
     );
     job.enabled = false;
     return 0;
   }
-  const next = Date.now() + stepMinutes * 60_000;
-  return next;
 }
 
 
@@ -61,15 +70,12 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
       getStr(cfg.timezone, "") ||
       getStr(baseCore?.workingObject?.timezone, "") ||
       "Europe/Berlin";
-    const defaultChannelId = getStr(
-      cfg.channelId || cfg.channel,
-      "cron"
-    );
+    const defaultChannelId = getStr(cfg.channelId, "cron");
     const jobsCfg = Array.isArray(cfg.jobs) ? cfg.jobs : [];
     return jobsCfg
       .map((j, idx) => {
-        const id = getStr(j.id || j.cronId || j.cronID, `job-${idx + 1}`);
-        const expr = getStr(j.cron || j.schedule, "");
+        const id = getStr(j.id || j.cronId, `job-${idx + 1}`);
+        const expr = getStr(j.cron, "");
         const enabled = getBool(j.enabled, true);
         if (!expr || !enabled) return null;
         const prev = jobState.get(id);
@@ -77,9 +83,9 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
         return {
           id,
           expr,
-          timezone: getStr(j.timezone || j.tz, defaultTz),
+          timezone: getStr(j.timezone, defaultTz),
           flowName: id,
-          channelId: getStr(j.channelId || j.channel, defaultChannelId),
+          channelId: getStr(j.channelId, defaultChannelId),
           enabled: true,
           running: prev?.running ?? false,
           nextDueAt: (prev && !exprChanged) ? (prev.nextDueAt ?? 0) : 0
@@ -114,7 +120,7 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
 
         const rc = createRunCore();
 
-        rc.workingObject.cronID = job.id;
+        rc.workingObject.cronId = job.id;
         rc.workingObject.CronMeta = {
           id: job.id,
           cron: job.expr,
@@ -125,6 +131,7 @@ export default async function getCronFlow(baseCore, runFlow, createRunCore) {
 
         const targetFlow = job.flowName;
         const channelId = job.channelId;
+        rc.workingObject.cronJob = job;
 
         rc.workingObject.flow = targetFlow;
         rc.workingObject.channelId = channelId;

@@ -20,7 +20,10 @@ const TOOLS_DIR = join(__dirname, "../../tools");
  * Reads all JSON manifests from the manifests/ directory and returns them as
  * an array of MCP tool definition objects { name, description, inputSchema }.
  */
-export function getMcpToolsFromManifests() {
+export function getMcpToolsFromManifests(toolNames = null) {
+  const allow = Array.isArray(toolNames)
+    ? new Set(toolNames.map(name => String(name || "").trim()).filter(Boolean))
+    : null;
   const files = readdirSync(MANIFESTS_DIR).filter(f => f.endsWith(".json"));
   const tools = [];
   for (const file of files) {
@@ -28,6 +31,7 @@ export function getMcpToolsFromManifests() {
       const raw = readFileSync(join(MANIFESTS_DIR, file), "utf8");
       const manifest = JSON.parse(raw);
       if (!manifest.name) continue;
+      if (allow && !allow.has(String(manifest.name))) continue;
       tools.push({
         name: manifest.name,
         description: manifest.description || "",
@@ -45,6 +49,16 @@ export function getMcpToolsFromManifests() {
  * and a minimal coreData built from baseCore. Returns the tool result.
  */
 export async function getMcpInvokeTool(name, args, runCore) {
+  const allowedTools = Array.isArray(runCore?.workingObject?.tools)
+    ? runCore.workingObject.tools.map(toolName => String(toolName || "").trim()).filter(Boolean)
+    : [];
+  const blockedTools = Array.isArray(runCore?.workingObject?.toolsBlacklist)
+    ? runCore.workingObject.toolsBlacklist.map(toolName => String(toolName || "").trim()).filter(Boolean)
+    : [];
+  const cleanName = String(name || "").trim();
+  if (!allowedTools.includes(cleanName) || blockedTools.includes(cleanName)) {
+    return { ok: false, error: `TOOL_NOT_ALLOWED — ${name}` };
+  }
   const workingObject = {
     ...runCore.workingObject,
     userId: args?._userId || runCore.workingObject?.userId || "",

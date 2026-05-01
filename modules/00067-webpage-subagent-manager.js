@@ -14,14 +14,22 @@ import { getPrefixedLogger } from "../core/logging.js";
 const MODULE_NAME = "webpage-subagent-manager";
 const CHANNEL_CONFIG_KEY = "core-channel-config";
 
-const AVAILABLE_TOOLS = [
-  "getTavily", "getWebpage", "getYoutube", "getGoogle", "getImage", "getImageSD",
-  "getAnimatedPicture", "getVideoFromText", "getImageDescription",
-  "getHistory", "getTime", "getLocation",
-  "getFile", "getFileContent", "getText", "getZIP", "getPDF", "getShell",
-  "getApi", "getApiBearers", "getConfluence", "getJira", "getGraph", "getSpotify",
-  "getOrchestrator", "getSpecialists", "getToken", "getBan", "getMyConnections"
-];
+function getAvailableTools() {
+  const manifestsDir = fileURLToPath(new URL("../manifests", import.meta.url));
+  return fs.readdirSync(manifestsDir)
+    .filter(name => name.endsWith(".json"))
+    .map(name => {
+      try {
+        const raw = fs.readFileSync(new URL("../manifests/" + name, import.meta.url), "utf8");
+        const manifest = JSON.parse(raw);
+        return getStr(manifest?.name);
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+}
 
 function getBasePath(cfg) {
   const v = getStr(cfg.basePath ?? "/subagents").trim();
@@ -41,8 +49,15 @@ function getSlugFromMatch(role, match) {
   return s;
 }
 
-function getToolsconfigKey(role) {
-  return role === "orchestrator" ? "getOrchestrator" : "getSpecialists";
+function getModuleCfg(configJson) {
+  return configJson?.config?.[MODULE_NAME] || {};
+}
+
+function getToolsconfigKey(configJson, role) {
+  const cfg = getModuleCfg(configJson);
+  if (role === "orchestrator") return getStr(cfg.orchestratorToolName);
+  if (role === "specialist") return getStr(cfg.specialistToolName);
+  return "";
 }
 
 function getSubagentChannels(configJson, role) {
@@ -78,7 +93,8 @@ function apiGet(configJson, role, slug) {
     return m === prefix;
   });
   if (!ch) return { ok: false, error: "Not found" };
-  const tc = configJson?.workingObject?.toolsconfig?.[getToolsconfigKey(role)] || {};
+  const tcKey = getToolsconfigKey(configJson, role);
+  const tc = tcKey ? (configJson?.workingObject?.toolsconfig?.[tcKey] || {}) : {};
   return {
     ok: true,
     role,
@@ -112,7 +128,8 @@ function apiSave(configJson, { role, slug, title, tools, systemPrompt, instructi
   if (idx >= 0) channels[idx] = entry;
   else channels.push(entry);
 
-  const tcKey = getToolsconfigKey(role);
+  const tcKey = getToolsconfigKey(configJson, role);
+  if (!tcKey) return { ok: false, error: "Subagent tool name is not configured" };
   if (!configJson.workingObject.toolsconfig) configJson.workingObject.toolsconfig = {};
   if (!configJson.workingObject.toolsconfig[tcKey]) configJson.workingObject.toolsconfig[tcKey] = {};
   if (!configJson.workingObject.toolsconfig[tcKey].types) configJson.workingObject.toolsconfig[tcKey].types = {};
@@ -129,8 +146,8 @@ function apiDelete(configJson, { role, slug }) {
     const m = Array.isArray(c.channelMatch) ? c.channelMatch[0] : String(c.channelMatch || "");
     return m !== matchStr;
   });
-  const tcKey = getToolsconfigKey(role);
-  if (configJson.workingObject.toolsconfig?.[tcKey]?.types) {
+  const tcKey = getToolsconfigKey(configJson, role);
+  if (tcKey && configJson.workingObject.toolsconfig?.[tcKey]?.types) {
     delete configJson.workingObject.toolsconfig[tcKey].types[slug];
   }
   return { ok: true, removed: before - configJson.config[CHANNEL_CONFIG_KEY].channels.length };
@@ -139,7 +156,7 @@ function apiDelete(configJson, { role, slug }) {
 function buildPageHtml(opts) {
   const basePath = String(opts.basePath || "/subagents").replace(/\/+$/, "");
   const menuHtml = opts.menuHtml || "";
-  const toolsJson = JSON.stringify(AVAILABLE_TOOLS);
+  const toolsJson = JSON.stringify(getAvailableTools());
   const baseJson  = JSON.stringify(basePath);
 
   return "<!DOCTYPE html>\n" +

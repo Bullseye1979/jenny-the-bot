@@ -6,25 +6,31 @@
 /**************************************************************/
 
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { EventEmitter } from "node:events";
 import { putItem, getItem } from "./core/registry.js";
 import { startSetupWizard } from "./core/setup.js";
+import { getLogsRoot, getLogMaxBytes, getLogKeepFiles, setAppendRollingFile } from "./core/log-paths.js";
 
 EventEmitter.defaultMaxListeners = 30;
 
 const MODULE_NAME = "main";
-const LOGS_DIR    = path.join(path.dirname(fileURLToPath(import.meta.url)), "logs");
-const JSON_ERR_LOG = path.join(LOGS_DIR, "json-error.log");
-
-const PIPELINE_DIR       = path.join(LOGS_DIR, "pipeline");
+const DEFAULT_LOGS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "logs");
 const PIPELINE_BASENAME  = "pipeline";
-const PIPELINE_MAX_BYTES = 2 * 1024 * 1024;
-const PIPELINE_RE        = /^pipeline-(\d+)\.log$/;
 let   _pipelineChain     = Promise.resolve();
+let   currentBase;
+
+
+function getRuntimeLogsDir() {
+  try { return getLogsRoot(currentBase || {}); } catch { return DEFAULT_LOGS_DIR; }
+}
+
+
+function getRuntimeLogMaxBytes(fallback = 3 * 1024 * 1024) {
+  try { return getLogMaxBytes(currentBase || {}, fallback); } catch { return fallback; }
+}
 
 function getPipelineSafeJson(wo) {
   const seen = new WeakSet();
@@ -83,27 +89,13 @@ function getPipelineDiff(aJson, bJson) {
 }
 
 async function setPipelineAppend(text) {
-  await fsp.mkdir(PIPELINE_DIR, { recursive: true });
-  const ents = await fsp.readdir(PIPELINE_DIR, { withFileTypes: true }).catch(() => []);
-  const files = ents
-    .filter(e => e.isFile() && PIPELINE_RE.test(e.name))
-    .map(e => ({ index: Number(e.name.match(PIPELINE_RE)[1]), full: path.join(PIPELINE_DIR, e.name) }))
-    .sort((a, b) => a.index - b.index);
-  let idx = files.length ? files[files.length - 1].index : 1;
-  let fp  = path.join(PIPELINE_DIR, `${PIPELINE_BASENAME}-${idx}.log`);
-  const buf  = Buffer.from(text, "utf8");
-  const size = (await fsp.stat(fp).catch(() => null))?.size || 0;
-  if (size === 0 && !files.length) await fsp.writeFile(fp, "");
-  if (size + buf.length > PIPELINE_MAX_BYTES) {
-    idx++;
-    fp = path.join(PIPELINE_DIR, `${PIPELINE_BASENAME}-${idx}.log`);
-    await fsp.writeFile(fp, "");
-    const keep = new Set([...files, { index: idx }].slice(-2).map(f => f.index));
-    for (const f of files) {
-      if (!keep.has(f.index)) fsp.rm(f.full, { force: true }).catch(() => {});
-    }
-  }
-  await fsp.appendFile(fp, buf);
+  await setAppendRollingFile({
+    dir: path.join(getRuntimeLogsDir(), "pipeline"),
+    basename: PIPELINE_BASENAME,
+    text,
+    maxBytes: getRuntimeLogMaxBytes(2 * 1024 * 1024),
+    keepFiles: getLogKeepFiles(currentBase || {})
+  });
 }
 
 function setPipelineLog(text) {
@@ -124,8 +116,9 @@ function getPipelineExcluded(wo) {
 function logJsonError(err, context) {
   const entry = JSON.stringify({ ts: new Date().toISOString(), context, error: err?.message || String(err) });
   try {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
-    fs.appendFileSync(JSON_ERR_LOG, entry + "\n");
+    const dir = getRuntimeLogsDir();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, "json-error.log"), entry + "\n");
   } catch {}
 }
 
@@ -484,7 +477,6 @@ if (!fs.existsSync(CORE_PATH)) {
   process.exit(0);
 }
 
-let currentBase;
 try {
   currentBase = getInitCurrentBase();
 } catch (err) {

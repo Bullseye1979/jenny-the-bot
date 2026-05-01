@@ -21,11 +21,18 @@ import {
 
 const MODULE_NAME = "webpage-oauth-exposure";
 const BASE_PATH   = "/oauth-exposure";
-const TOOL_NAME   = "getOauthProviders";
 
+function escHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function getPageHtml(opts) {
   const menuHtml = getMenuHtml(opts?.menu || [], BASE_PATH, opts?.role || "", null, null, opts?.webAuth);
+  const toolName = escHtml(opts?.toolName || "");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -56,7 +63,7 @@ ${getThemeHeadScript()}
 
   <p style="font-size:.85rem;color:var(--muted);margin:0 0 18px">
     Toggle which OAuth2 (client_credentials) providers the AI can discover via the
-    <code>getOauthProviders</code> tool. Only <strong style="color:var(--ok,#22c55e)">Exposed</strong>
+    <code>${toolName}</code> tool. Only <strong style="color:var(--ok,#22c55e)">Exposed</strong>
     providers will be returned.
   </p>
 
@@ -125,6 +132,8 @@ load();
 export default async function webpageOauthExposure(coreData) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
+  const toolName = String(cfg.toolName || "").trim();
+  if (!toolName) return coreData;
 
   const urlRaw  = String(wo?.http?.url ?? "");
   const urlPath = urlRaw.split("?")[0];
@@ -157,7 +166,7 @@ export default async function webpageOauthExposure(coreData) {
     const providers = allRegs
       .filter((r) => r.flow === "client_credentials")
       .map((r) => ({ name: r.name, description: r.description || null, scope: r.scope || null }));
-    const exposed = await listExposed(pool, TOOL_NAME);
+    const exposed = await listExposed(pool, toolName);
     setJsonResp(wo, 200, { providers, exposed });
     wo.jump = true;
     await setSendNow(wo);
@@ -170,9 +179,9 @@ export default async function webpageOauthExposure(coreData) {
     const expose = Boolean(data.expose);
     if (!name) { setJsonResp(wo, 400, { error: "name is required" }); wo.jump = true; await setSendNow(wo); return coreData; }
     if (expose) {
-      await addExposed(pool, TOOL_NAME, name);
+      await addExposed(pool, toolName, name);
     } else {
-      await removeExposed(pool, TOOL_NAME, name);
+      await removeExposed(pool, toolName, name);
     }
     setJsonResp(wo, 200, { ok: true });
     wo.jump = true;
@@ -184,7 +193,7 @@ export default async function webpageOauthExposure(coreData) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getPageHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", webAuth: wo.webAuth })
+      body:    getPageHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", webAuth: wo.webAuth, toolName })
     };
     wo.jump = true;
     await setSendNow(wo);

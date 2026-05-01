@@ -44,7 +44,7 @@ types/          JSDoc type definitions
 
 ## MCP
 
-Jenny includes a built-in MCP (Model Context Protocol) server that exposes all tool manifests as MCP tools. Compatible with Claude Desktop, Cursor, VS Code, and any MCP client.
+Jenny includes a built-in MCP (Model Context Protocol) server. It exposes only the tools resolved for the request channel through `core-channel-config`, so a channel with a small `tools` array receives a small MCP tool list. Compatible with Claude Desktop, Cursor, VS Code, and any MCP client.
 
 **Transports supported:**
 - **stdio** — for local clients (Claude Desktop, Cursor). Enable with `config.mcp.stdio: true`.
@@ -53,6 +53,13 @@ Jenny includes a built-in MCP (Model Context Protocol) server that exposes all t
 Jenny can also act as an MCP client through the LLM-callable tools `getMcpTools` and `getMcp`. Configure remote MCP servers in `workingObject.toolsconfig.getMcpTools.servers` and `workingObject.toolsconfig.getMcp.servers`.
 
 See [Admin Manual](ADMIN_MANUAL.md#mcp-server) and [Core JSON Reference](CORE_JSON.md#mcp-client-tools-getmcptools-getmcp) for setup instructions.
+
+## Runtime Changes
+
+- Logs are stored under configurable `config.logging.logsDir` and rotate by `config.logging.maxFileBytes` / `config.logging.keepFiles`, including `toolcalls`.
+- Chat subchannels can expire via `config.webpage-chat.subchannelTtlHours`; the `chat-subchannel-gc` cron flow removes expired subchannel rows and their scoped context rows daily.
+- Microsoft Graph calendar operations are available through `getGraph`: list calendars, list events by timeframe, create events, update events, and delete events.
+- The web root redirects to `config.webpage-menu.homePath` or the first menu item the authenticated user can access.
 
 ---
 

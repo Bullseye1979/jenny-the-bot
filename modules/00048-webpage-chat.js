@@ -80,10 +80,42 @@ async function getEnsureChatSubchannelsTable(pool) {
       channel_id    VARCHAR(128) NOT NULL,
       name          VARCHAR(255) NOT NULL DEFAULT '',
       created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at    DATETIME     NULL,
       PRIMARY KEY (subchannel_id),
-      KEY idx_csc_channel (channel_id)
+      KEY idx_csc_channel (channel_id),
+      KEY idx_csc_expires (expires_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  try {
+    await pool.query("ALTER TABLE chat_subchannels ADD COLUMN expires_at DATETIME NULL");
+  } catch {}
+  try {
+    await pool.query("ALTER TABLE chat_subchannels ADD KEY idx_csc_expires (expires_at)");
+  } catch {}
+}
+
+
+function getSubchannelTtlHours(cfg, chatEntry) {
+  const raw = chatEntry?.subchannelTtlHours ?? cfg?.subchannelTtlHours;
+  const ttl = Number(raw);
+  return Number.isFinite(ttl) && ttl > 0 ? ttl : 0;
+}
+
+
+function getSubchannelExpiresAtSql(cfg, chatEntry) {
+  const ttlHours = getSubchannelTtlHours(cfg, chatEntry);
+  if (!ttlHours) return null;
+  return new Date(Date.now() + ttlHours * 60 * 60 * 1000);
+}
+
+
+async function setBackfillSubchannelExpiry(pool, cfg, chatEntry, channelId) {
+  const ttlHours = getSubchannelTtlHours(cfg, chatEntry);
+  if (!ttlHours || !channelId) return;
+  await pool.execute(
+    "UPDATE chat_subchannels SET expires_at = DATE_ADD(created_at, INTERVAL ? HOUR) WHERE channel_id = ? AND expires_at IS NULL",
+    [ttlHours, channelId]
+  );
 }
 
 
@@ -329,11 +361,12 @@ export default async function getWebpageChat(coreData) {
     try {
       const pool = await getDb(coreData);
       await getEnsureChatSubchannelsTable(pool);
+      await setBackfillSubchannelExpiry(pool, cfg, chatEntry, channelId);
       const [rows] = await pool.query(
-        "SELECT subchannel_id, name, created_at FROM chat_subchannels WHERE channel_id = ? ORDER BY created_at ASC",
+        "SELECT subchannel_id, name, created_at, expires_at FROM chat_subchannels WHERE channel_id = ? AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at ASC",
         [channelId]
       );
-      setJsonResp(wo, 200, rows.map(r => ({ subchannelId: r.subchannel_id, name: r.name, createdAt: r.created_at })));
+      setJsonResp(wo, 200, rows.map(r => ({ subchannelId: r.subchannel_id, name: r.name, createdAt: r.created_at, expiresAt: r.expires_at })));
     } catch (e) {
       setJsonResp(wo, 500, { error: String(e?.message || e) });
     }
@@ -362,12 +395,14 @@ export default async function getWebpageChat(coreData) {
     try {
       const pool        = await getDb(coreData);
       await getEnsureChatSubchannelsTable(pool);
+      await setBackfillSubchannelExpiry(pool, cfg, chatEntry, channelId);
       const subchannelId = crypto.randomUUID();
+      const expiresAt = getSubchannelExpiresAtSql(cfg, chatEntry);
       await pool.execute(
-        "INSERT INTO chat_subchannels (subchannel_id, channel_id, name) VALUES (?, ?, ?)",
-        [subchannelId, channelId, name]
+        "INSERT INTO chat_subchannels (subchannel_id, channel_id, name, expires_at) VALUES (?, ?, ?, ?)",
+        [subchannelId, channelId, name, expiresAt]
       );
-      setJsonResp(wo, 200, { subchannelId, name, channelId });
+      setJsonResp(wo, 200, { subchannelId, name, channelId, expiresAt });
     } catch (e) {
       setJsonResp(wo, 500, { error: String(e?.message || e) });
     }

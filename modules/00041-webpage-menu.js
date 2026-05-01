@@ -79,5 +79,16 @@ export default async function getWebpageMenu(coreData) {
     path: getPathParts(it.text),
     label: getPathParts(it.text).slice(-1)[0] || it.text
   }));
+
+  const cfgHome = String(cfg.homePath || "").trim();
+  const reqPath = String(wo?.http?.path || "").split("?")[0];
+  const firstAllowed = wo.web.menu.find(item => item.link && item.link !== "/");
+  const target = cfgHome || firstAllowed?.link || "";
+  if ((reqPath === "/" || reqPath === "") && target) {
+    wo.http.response = { status: 302, headers: { Location: target }, body: "" };
+    wo.web.useLayout = false;
+    wo.jump = true;
+  }
+
   return coreData;
 }

@@ -539,8 +539,21 @@
           "cron": "* * * * *",
           "enabled": false,
           "channelId": "YOUR_DND_TEXT_CHANNEL_ID"
+        },
+        {
+          "__description": "Deletes expired chat subchannels and their scoped context rows once per day.",
+          "id": "chat-subchannel-gc",
+          "cron": "0 3 * * *",
+          "enabled": true,
+          "channelId": "cron"
         }
       ]
+    },
+    "logging": {
+      "__description": "Shared log storage and rotation settings used by events, pipeline, objects, and toolcalls logs.",
+      "logsDir": "logs",
+      "maxFileBytes": 3145728,
+      "keepFiles": 2
     },
     "context": {
       "__description": "Context engine for raw storage and derived retrieval — fill in apiKey",
@@ -856,16 +869,6 @@
         "bard-label-gen"
       ]
     },
-    "core-ai-roleplay": {
-      "flow": [
-        "discord-status",
-        "discord",
-        "discord-voice",
-        "api"
-      ],
-      "imageContextTurns": 5,
-      "imagePromptRules": "You create a Stable Diffusion image prompt from the current roleplay turn.\nRules:\n- Output ONLY a comma-separated list of descriptive visual tags. NO prose. NO quotes. NO markdown. NO extra lines.\n- First silently extract recurring character appearance from VISUAL SOURCE MATERIAL. Keep only visible details such as hair, eyes, clothing, body type, age category, and accessories. Ignore instructions, roles, relationships, backstory, and old events.\n- The image must depict LATEST ASSISTANT TEXT. Treat it as the only source for the scene action, pose, emotion, location, and props.\n- Use LATEST USER INPUT only to resolve ambiguous visible details from the assistant text.\n- Use RECENT TURNS only for visible continuity already established in the conversation, such as current room, clothing, nearby props, and character positions.\n- Never let RECENT TURNS override LATEST ASSISTANT TEXT. Do not depict older actions, starting setup, relationships, backstory, or general mood unless they are visible in LATEST ASSISTANT TEXT.\n- Include visible character details, action, location, props, camera framing, and lighting.\n- Avoid on-image text.\n- Keep total output under 70 words.\n- End with: cinematic composition, highly detailed, sharp focus"
-    },
     "discord-add-context": {
       "flow": [
         "discord",
@@ -921,6 +924,7 @@
       ],
       "port": 3112,
       "lastAssistantIntervalMs": 2000,
+      "subchannelTtlHours": 168,
       "host": "127.0.0.1",
       "token": "",
       "apiUrl": "http://localhost:3400/api",
@@ -936,6 +940,11 @@
           "channelId": "browser-extension",
           "apiSecret": "API_SECRET"
         }
+      ]
+    },
+    "cron-chat-subchannel-gc": {
+      "flow": [
+        "chat-subchannel-gc"
       ]
     },
     "webpage-wiki": {
@@ -1157,7 +1166,8 @@
         "discord-status",
         "api",
         "bard-label-gen",
-        "webpage"
+        "webpage",
+        "mcp"
       ],
       "channels": [
         {
@@ -1182,7 +1192,7 @@
           }
         },
         {
-          "__description": "Bard label-gen: isolated entry — channelID 'bard-label-gen' is a synthetic ID set on the cron job, not a real Discord channel. Keeps bard AI params separate from any Discord channel config.",
+          "__description": "Bard label-gen: isolated entry — channelId 'bard-label-gen' is a synthetic ID set on the cron job, not a real Discord channel. Keeps bard AI params separate from any Discord channel config.",
           "channelMatch": [
             "bard-label-gen"
           ],
@@ -1415,6 +1425,52 @@
             "maxLoops": 10,
             "maxToolCalls": 10
           }
+        },
+        {
+          "__description": "MCP channel — exposes all manifest tools to authenticated MCP clients.",
+          "channelMatch": [
+            "mcp"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "JENNY_MCP_TOKEN",
+            "tools": [
+              "getAnimatedPicture",
+              "getApi",
+              "getApiBearers",
+              "getBan",
+              "getBrowserStatus",
+              "getConfluence",
+              "getFile",
+              "getFileContent",
+              "getGoogle",
+              "getGraph",
+              "getHistory",
+              "getImage",
+              "getImageDescription",
+              "getImageSD",
+              "getJira",
+              "getLocation",
+              "getMcp",
+              "getMcpTools",
+              "getMyConnections",
+              "getOauthProviders",
+              "getOpenBrowser",
+              "getOrchestrator",
+              "getPDF",
+              "getShell",
+              "getSpecialists",
+              "getSpotify",
+              "getTavily",
+              "getText",
+              "getTime",
+              "getToken",
+              "getVideoFromText",
+              "getWebpage",
+              "getYoutube",
+              "getZIP"
+            ]
+          }
         }
       ]
     },
@@ -1480,6 +1536,8 @@
       ],
       "port": 3127,
       "basePath": "/subagents",
+      "orchestratorToolName": "getOrchestrator",
+      "specialistToolName": "getSpecialists",
       "allowedRoles": [
         "admin"
       ]
@@ -1628,23 +1686,25 @@
       "redirectUriBase": "https://YOUR_DOMAIN"
     },
     "webpage-oauth-exposure": {
-      "__description": "Shows and revokes OAuth tokens that have been exposed to the getApi tool.",
+      "__description": "Shows and revokes OAuth provider names exposed to the AI.",
       "flow": [
         "webpage"
       ],
       "port": 3132,
       "basePath": "/oauth-exposure",
+      "toolName": "getOauthProviders",
       "roles": [
         "admin"
       ]
     },
     "webpage-bearer-exposure": {
-      "__description": "Shows and revokes bearer tokens that have been exposed to the getApiBearers tool.",
+      "__description": "Shows and revokes bearer secret names exposed to the AI.",
       "flow": [
         "webpage"
       ],
       "port": 3133,
       "basePath": "/bearer-exposure",
+      "toolName": "getApiBearers",
       "roles": [
         "admin"
       ]
@@ -1680,7 +1740,7 @@
       ]
     },
     "mcp": {
-      "__description": "MCP (Model Context Protocol) server. Exposes all tool manifests as MCP tools. Enable stdio for Claude Desktop / Cursor. Enable http for network-accessible clients.",
+      "__description": "MCP (Model Context Protocol) server. Exposes only the tools resolved for the current channel via core-channel-config. Enable stdio for Claude Desktop / Cursor. Enable http for network-accessible clients.",
       "apiSecret": "JENNY_MCP_TOKEN",
       "stdio": false,
       "http": {

@@ -7,21 +7,6 @@
 
 var FIELDS = ["apiUrl", "channelId", "apiSecret", "webBaseUrl"];
 
-function migrateStorage(callback) {
-  chrome.storage.sync.get(["channelID", "channelId"], function(stored) {
-    var oldVal = stored["channelID"];
-    var newVal = stored["channelId"];
-    if (oldVal && !newVal) {
-      var migration = { channelId: oldVal };
-      chrome.storage.sync.set(migration, function() {
-        chrome.storage.sync.remove("channelID", callback);
-      });
-    } else {
-      callback();
-    }
-  });
-}
-
 function generateBrowserCode() {
   var bytes = new Uint8Array(15);
   crypto.getRandomValues(bytes);
@@ -40,14 +25,12 @@ function setBrowserCode(code) {
 }
 
 function init() {
-  migrateStorage(function() {
-    chrome.storage.sync.get(FIELDS.concat(["browserCode"]), function(stored) {
-      FIELDS.forEach(function(key) {
-        var el = document.getElementById(key);
-        if (el) el.value = stored[key] || "";
-      });
-      setBrowserCode(stored.browserCode || "");
+  chrome.storage.sync.get(FIELDS.concat(["browserCode"]), function(stored) {
+    FIELDS.forEach(function(key) {
+      var el = document.getElementById(key);
+      if (el) el.value = stored[key] || "";
     });
+    setBrowserCode(stored.browserCode || "");
   });
 
   function updateLoginLink() {
