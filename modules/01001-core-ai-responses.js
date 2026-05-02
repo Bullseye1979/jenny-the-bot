@@ -128,6 +128,43 @@ function getToolsForResponses(toolDefs, responseTools, toolsDisabled) {
 }
 
 
+function getForcedToolNameForStep(wo, toolsForResponses) {
+  const forcedToolName = String(wo?.__forceToolName || "").trim();
+  if (!forcedToolName || wo?.__forceNoTools === true) return "";
+  const availableNames = (Array.isArray(toolsForResponses) ? toolsForResponses : [])
+    .map(tool => String(tool?.name || tool?.function?.name || "").trim())
+    .filter(Boolean);
+  return availableNames.includes(forcedToolName) ? forcedToolName : "";
+}
+
+
+function getToolChoiceForStep(wo, fallbackChoice, toolsDisabled, toolsForResponses) {
+  if (toolsDisabled) return "none";
+  const forcedToolName = getForcedToolNameForStep(wo, toolsForResponses);
+  if (forcedToolName) return { type: "function", name: forcedToolName };
+  return fallbackChoice;
+}
+
+
+function setForcedToolName(wo, name, reason = "") {
+  if (!wo) return;
+  const toolName = String(name || "").trim();
+  if (!toolName) return;
+  wo.__forceToolName = toolName;
+  wo.__forceToolReason = String(reason || "").trim();
+}
+
+
+function clearForcedToolNameIfMatched(wo, name) {
+  if (!wo) return;
+  const forcedToolName = String(wo?.__forceToolName || "").trim();
+  if (!forcedToolName) return;
+  if (String(name || "").trim() !== forcedToolName) return;
+  delete wo.__forceToolName;
+  delete wo.__forceToolReason;
+}
+
+
 function getRuntimeContextFromLast(wo, snapshot) {
   if (wo?.includeRuntimeContext !== true) return null;
   const last = Array.isArray(snapshot) && snapshot.length ? { ...snapshot[snapshot.length - 1] } : null;
@@ -318,9 +355,11 @@ async function setExecGenericTool(toolModules, call, coreData) {
     try { await putItem(_statusPayload, "status:tool"); } catch {}
     if (_statusKey) try { await putItem(_statusPayload, "status:tool:" + _statusKey); } catch {}
 
-    const res     = await tool.invoke(args, coreData);
+    const res        = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
-    setUpdatePaginationGuardState(wo, name, res);
+    const continuationState = setUpdatePaginationGuardState(wo, name, res);
+    if (continuationState?.pending === true) setForcedToolName(wo, continuationState.toolName || name, continuationState.reason || "continuation_pending");
+    else clearForcedToolNameIfMatched(wo, name);
     const mapped  = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getTryParseJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
 
@@ -948,7 +987,9 @@ export default async function getCoreAi(coreData) {
         toolMode:        toolsMode,
         configuredTools: Array.isArray(wo?.tools) ? wo.tools : [],
         requestToolNames,
-        toolChoice:      toolsDisabled ? "none" : toolChoiceInitial
+        toolChoice:      getToolChoiceForStep(wo, toolChoiceInitial, toolsDisabled, toolsForResponses),
+        forcedToolName:  String(wo?.__forceToolName || "").trim() || undefined,
+        forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined
       });
 
       const body = {
@@ -956,7 +997,7 @@ export default async function getCoreAi(coreData) {
         input:        getResponsesInputFromMessages(messages),
         instructions: sys,
         tools:        toolsForResponses,
-        tool_choice:  toolsDisabled ? "none" : toolChoiceInitial,
+        tool_choice:  getToolChoiceForStep(wo, toolChoiceInitial, toolsDisabled, toolsForResponses),
         ...(reasoningEnabled ? { reasoning: { effort: reasoningEffort, summary: "auto" } } : {}),
         ...(maxTokens ? { max_output_tokens: maxTokens } : {})
       };
@@ -1051,6 +1092,10 @@ export default async function getCoreAi(coreData) {
         let ranAnyTool = false;
 
         if (hasToolCalls && genericTools.length && totalToolCalls < maxToolCalls) {
+          const requestedForcedTool = String(wo?.__forceToolName || "").trim();
+          if (requestedForcedTool && toolCalls.some(tc => String(tc?.name || "").trim() === requestedForcedTool)) {
+            wo.__paginationGuardConsec = 0;
+          }
           const assistantToolMsg = {
             role:       "assistant",
             authorName: getAssistantAuthorName(wo),
@@ -1155,20 +1200,23 @@ export default async function getCoreAi(coreData) {
       if (getNeedsPaginationContinuation(wo)) {
         const guardCount = Number.isFinite(Number(wo.__paginationGuardConsec)) ? Number(wo.__paginationGuardConsec) : 0;
         wo.__paginationGuardConsec = guardCount + 1;
-        if (wo.__paginationGuardConsec >= 3) {
-          log(`Pagination guard triggered ${wo.__paginationGuardConsec} times without a follow-up tool call - breaking`, "warn");
-          break;
-        }
+        setForcedToolName(
+          wo,
+          String(wo?.__toolContinuationState?.toolName || wo?.__forceToolName || "").trim(),
+          String(wo?.__toolContinuationState?.reason || "continuation_pending").trim()
+        );
         const cont = { role: "user", content: getPaginationContinuationPrompt(wo) };
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         writeToolcallLog({
           ...getToolcallLogBase(wo),
-          event: "ai_pagination_guard",
+          event: "ai_tool_continuation_guard",
           coreData,
           loop: iter + 1,
+          forcedToolName: String(wo?.__forceToolName || "").trim() || undefined,
+          forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined,
           guardCount: wo.__paginationGuardConsec,
-          pendingPages: wo.__specialistsPaginationState?.pendingItems || []
+          pendingPages: wo.__toolContinuationState?.pendingItems || []
         });
         continue;
       }

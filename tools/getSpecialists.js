@@ -125,6 +125,18 @@ async function getInvoke(args, coreData) {
     ? undefined
     : results.filter(r => !r.ok).map(r => `[${r.type || "?"}] ${r.error}`).join("; ");
   const paginationState = getSpecialistsPaginationState({ rows: results });
+  const continuationPrompt = paginationState.pending
+    ? [
+        "The previous getSpecialists result is incomplete.",
+        "Do not synthesize or finalize.",
+        "Call getSpecialists again only for the still-pending windows.",
+        "For each pending window, use prompt format exactly: start=<assignedStart> end=<assignedEnd> startCtxId=<nextPageId>.",
+        "Pending windows:",
+        ...paginationState.pendingItems.slice(0, 24).map(item =>
+          `- jobID=${item.jobID ?? "?"} start=${item.assignedStart || "?"} end=${item.assignedEnd || "?"} nextPageId=${item.nextPageId ?? "?"} status=${item.status || "PARTIAL"}`
+        )
+      ].join("\n")
+    : "";
 
   log(`Specialists done: ${nOk}/${results.length} succeeded`);
 
@@ -140,6 +152,8 @@ async function getInvoke(args, coreData) {
     pagination_pending_count: paginationState.pendingCount,
     pagination_parse_failures: paginationState.parseFailures,
     pending_pages: paginationState.pendingItems,
+    requires_followup_tool: paginationState.pending ? MODULE_NAME : "",
+    continuation_prompt: continuationPrompt,
     ...(failedSummary ? { error: failedSummary } : {})
   };
 }

@@ -421,29 +421,68 @@ export function getSpecialistsPaginationState(result) {
 
 
 export function setUpdatePaginationGuardState(wo, toolName, result) {
-  if (!wo || toolName !== "getSpecialists") return null;
-  const state = getSpecialistsPaginationState(result);
-  wo.__specialistsPaginationState = state;
-  return state;
+  if (!wo) return null;
+  if (toolName === "getSpecialists") {
+    wo.__specialistsPaginationState = getSpecialistsPaginationState(result);
+  }
+
+  let continuationState = null;
+  const value = getResultObject(result);
+  if (value && typeof value === "object") {
+    const followupToolName = typeof value.requires_followup_tool === "string" && value.requires_followup_tool.trim()
+      ? value.requires_followup_tool.trim()
+      : typeof value.continuation_tool === "string" && value.continuation_tool.trim()
+        ? value.continuation_tool.trim()
+      : String(toolName || "").trim();
+    const pendingItems = Array.isArray(value.pending_pages)
+      ? value.pending_pages
+      : Array.isArray(value.pendingItems)
+        ? value.pendingItems
+        : [];
+    const continuationPrompt = typeof value.continuation_prompt === "string" && value.continuation_prompt.trim()
+      ? value.continuation_prompt.trim()
+      : "";
+    const continuationPending = value.pagination_pending === true
+      || value.continuation_pending === true
+      || value.has_more === true
+      || value.hasMore === true;
+    if (continuationPending && followupToolName) {
+      continuationState = {
+        pending: true,
+        toolName: followupToolName,
+        reason: value.pagination_pending === true ? "pagination_pending" : "has_more",
+        pendingItems,
+        prompt: continuationPrompt || (
+          `The previous tool result indicates more data is available for ${followupToolName}. ` +
+          `Continue with the required follow-up tool call instead of finalizing, using the continuation information from the last tool result.`
+        )
+      };
+    }
+  }
+
+  wo.__toolContinuationState = continuationState;
+  return continuationState;
 }
 
 
 export function getNeedsPaginationContinuation(wo) {
-  const agentType = String(wo?.agentType || "").trim().toLowerCase();
-  if (agentType !== "context") return false;
-  return wo?.__specialistsPaginationState?.pending === true;
+  return wo?.__toolContinuationState?.pending === true;
 }
 
 
 export function getPaginationContinuationPrompt(wo) {
-  const items = Array.isArray(wo?.__specialistsPaginationState?.pendingItems)
-    ? wo.__specialistsPaginationState.pendingItems
+  const continuationState = wo?.__toolContinuationState || {};
+  if (typeof continuationState.prompt === "string" && continuationState.prompt.trim()) {
+    return continuationState.prompt;
+  }
+  const items = Array.isArray(continuationState?.pendingItems)
+    ? continuationState.pendingItems
     : [];
+  const toolName = String(continuationState?.toolName || "").trim() || "the required tool";
   const lines = [
-    "Pagination is not complete yet.",
+    "The previous tool work is not complete yet.",
     "Do not synthesize or finalize.",
-    "Call getSpecialists again only for the still-pending windows.",
-    "For each pending window, use prompt format exactly: start=<assignedStart> end=<assignedEnd> startCtxId=<nextPageId>."
+    `Call ${toolName} again only for the still-pending work.`
   ];
   if (items.length) {
     lines.push("Pending windows:");
