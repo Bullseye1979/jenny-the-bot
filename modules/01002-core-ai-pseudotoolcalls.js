@@ -553,6 +553,17 @@ export default async function getCoreAi(coreData) {
 
       if (!res.ok) {
         log(`HTTP ${res.status} ${res.statusText} ${raw.slice(0, 400)}`, "warn");
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          event: "ai_error",
+          coreData,
+          loop: i + 1,
+          errorType: "http_error",
+          httpStatus: res.status,
+          httpStatusText: res.statusText,
+          responsePreview: getPreview(raw, RESULT_PREVIEW_MAX),
+          contentPreview: getPreview(accumulatedText || finalText || "", RESULT_PREVIEW_MAX)
+        });
         wo.response = accumulatedText.trim() || "[Empty AI response]";
         return coreData;
       }
@@ -722,6 +733,15 @@ export default async function getCoreAi(coreData) {
     } catch (err) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
       wo.response = "[Empty AI response]";
+      writeToolcallLog({
+        ...getToolcallLogBase(wo),
+        event: "ai_error",
+        coreData,
+        loop: i + 1,
+        errorType: isAbort ? "timeout" : "request_error",
+        error: err?.message || String(err),
+        contentPreview: getPreview(accumulatedText || finalText || "", RESULT_PREVIEW_MAX)
+      });
       log(isAbort ? `AI request timed out after ${kiCfg.requestTimeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       return coreData;
     }

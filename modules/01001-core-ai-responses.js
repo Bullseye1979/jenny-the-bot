@@ -1018,6 +1018,17 @@ export default async function getCoreAi(coreData) {
         if (retryable && attempts < maxAttempts) { log(`Retrying due to HTTP ${res.status}`, "warn"); continue; }
         log(`HTTP ${res.status} ${res.statusText}`, "warn");
         const _partial = accumulatedText.trim();
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          event: "ai_error",
+          coreData,
+          loop: iter + 1,
+          errorType: "http_error",
+          httpStatus: res.status,
+          httpStatusText: res.statusText,
+          responsePreview: getPreview(rawText, RESULT_PREVIEW_MAX),
+          contentPreview: getPreview(_partial || finalText || "", RESULT_PREVIEW_MAX)
+        });
         wo.response = _partial ? `[PARTIAL RESULT — interrupted at HTTP ${res.status}]\n\n${_partial}` : "[Empty AI response]";
         if (_partial) log(`Returning partial result: ${_partial.length} chars`, "info");
         return coreData;
@@ -1244,6 +1255,15 @@ export default async function getCoreAi(coreData) {
       const isAbort = err?.name === "AbortError" || String(err?.type).toLowerCase() === "aborted";
       if (isAbort && attempts < maxAttempts) { log(`Retrying due to timeout after ${timeoutMs}ms`, "warn"); continue; }
       wo.response = "[Empty AI response]";
+      writeToolcallLog({
+        ...getToolcallLogBase(wo),
+        event: "ai_error",
+        coreData,
+        loop: iter + 1,
+        errorType: isAbort ? "timeout" : "request_error",
+        error: err?.message || String(err),
+        contentPreview: getPreview(accumulatedText || finalText || "", RESULT_PREVIEW_MAX)
+      });
       log(isAbort ? `AI request timed out after ${timeoutMs} ms (AbortError).` : `AI request failed: ${err?.message || String(err)}`, isAbort ? "warn" : "error");
       setLogBig("responses-error", { message: err?.message || String(err), stack: err?.stack }, { toFile: debugOn });
       return coreData;
