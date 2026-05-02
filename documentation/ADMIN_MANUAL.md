@@ -1172,10 +1172,19 @@ Parallel specialist dispatcher. Runs multiple specialist AI workers concurrently
 ```json
 "getSpecialists": {
   "types": {
-    "specialist-generic": "subagent-specialist-generic",
-    "specialist-coding":  "subagent-specialist-coding"
+    "context-research": "subagent-specialist-context-research",
+    "web": "subagent-specialist-web",
+    "atlassian": "subagent-specialist-atlassian",
+    "microsoft": "subagent-specialist-microsoft",
+    "system": "subagent-specialist-system",
+    "file": "subagent-specialist-file",
+    "navigation": "subagent-specialist-navigation",
+    "images": "subagent-specialist-images",
+    "browser": "subagent-specialist-browser",
+    "api": "subagent-specialist-api",
+    "media": "subagent-specialist-media"
   },
-  "defaultType":    "specialist-generic",
+  "defaultType":    "",
   "apiUrl":         "http://localhost:3400",
   "apiSecret":      "API_SECRET",
   "timeoutMs":      604800000,

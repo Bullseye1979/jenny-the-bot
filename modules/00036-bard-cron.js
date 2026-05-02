@@ -102,6 +102,10 @@ export default async function getBardCron(coreData) {
     wo.jump = true;
     return coreData;
   }
+    log("no active bard sessions — skipping label generation", "info", { moduleName: MODULE_NAME });
+    wo.jump = true;
+    return coreData;
+  }
 
   const musicDir = path.resolve(
     __dirname, "..",
@@ -123,7 +127,8 @@ export default async function getBardCron(coreData) {
       if (!textChannelId) continue;
 
       const isSnowflake = /^\d{10,}$/.test(woCh);
-      if (isSnowflake && woCh !== textChannelId) continue;
+      // Removed channelId check to allow cron to process all sessions
+      // if (isSnowflake && woCh !== textChannelId) continue;
 
       const lastRunKey = `bard:lastrun:${session.textChannelId}`;
       let lastRunData = null;
@@ -138,6 +143,9 @@ export default async function getBardCron(coreData) {
       log(`[label-debug] channel=${session.textChannelId} textChannelId=${textChannelId} lastRunAt="${lastRunAt||"none"}" contextRows=${rows.length}`, "info", { moduleName: MODULE_NAME });
 
       if (!rows.length) {
+        log(`no new context since ${lastRunAt || "last 300s"} for channel ${textChannelId}`, "info", { moduleName: MODULE_NAME });
+        continue;
+      }
         log(`no new context since ${lastRunAt || "last 300s"} for channel ${textChannelId}`, "info", { moduleName: MODULE_NAME });
         continue;
       }

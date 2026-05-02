@@ -149,6 +149,8 @@ export default async function getBardLabelOutput(coreData) {
 
   await putItem(labelsEntry, `bard:labels:${channelId}`);
 
+  log(`updated labels for channel ${channelId}: ${labels.join(",")}`, "info", { moduleName: MODULE_NAME });
+
   log(`labels written for channel ${channelId}: ${labels.join(",")}`, "info", {
     moduleName: MODULE_NAME,
     labels,

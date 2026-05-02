@@ -1,105 +1,58 @@
 {
-  "__description": "Minimal core.json for Jenny Discord AI Bot. Fill in all YOUR_* placeholders, then copy core.json.example to core.json and start the bot.",
   "workingObject": {
-    "__description": "Global runtime defaults for the bot",
+    "tracePipeline": true,
+    "tracePipelineExcludeFlows": [
+      "bard-*",
+      "discord-status"
+    ],
     "botName": "Jenny",
     "systemPrompt": "You are a helpful assistant.",
-    "persona": "Helpful AI Assistant",
-    "instructions": "Answer concisely and helpfully.",
-    "tracePipeline": false,
-    "tracePipelineExcludeFlows": [
-      "webpage*",
-      "bard-*"
-    ],
+    "persona": "Default AI Assistant",
+    "instructions": "Answer concisely. Use the matching tool path instead of guessing whenever a suitable tool is available in the current channel. If available evidence already clearly supports a positive answer, you may answer directly. If available evidence does not support a positive answer and a suitable research path exists, do that research before answering negatively or saying you do not know. For current or time-sensitive facts about people, bands, companies, offices, products, releases, rankings, or recent events, use web lookup tools before answering. For a specific URL or webpage, use getWebpage or the matching page/video tool directly instead of answering from memory. For older chronology, campaign/session history, or prior-discussion reconstruction, prefer the context-orchestrator path. When delegating a history task that uses relative terms such as today, today/current, or heute, resolve the end date from current_time_iso and not from visible context, timeline coverage, or older raw messages. Subagents and orchestrators must always act autonomously.",
+    "model": "gemma4:e4b",
+    "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+    "endpointResponses": "http://192.168.178.50:5000/v1/chat/completions",
+    "apiKey": "",
+    "doNotWriteToContext": false,
     "moderationEnabled": false,
-    "trigger": "jenny",
-    "triggerWordWindow": 3,
-    "model": "gpt-4o-mini",
-    "endpoint": "https://api.openai.com/v1/chat/completions",
-    "endpointResponses": "https://api.openai.com/v1/responses",
-    "apiKey": "OPENAI",
     "useAiModule": "completions",
+    "reasoning": "low",
+    "timezone": "Europe/Berlin",
     "temperature": 0.2,
     "maxTokens": 2000,
-    "maxLoops": 10,
-    "maxToolCalls": 5,
+    "botsAllow": [
+      "1471179716210856110"
+    ],
+    "baseUrl": "https://xbullseyegaming.de",
+    "requestTimeoutMs": 4000000,
+    "triggerWordWindow": 3,
     "toolChoice": "auto",
-    "requestTimeoutMs": 120000,
     "tools": [
+      "getTavily",
+      "getWebpage",
       "getImage",
-      "getImageDescription",
-      "getImageSD",
-      "getAnimatedPicture",
-      "getVideoFromText",
-      "getTime",
-      "getToken",
-      "getLocation",
-      "getBan",
       "getMcpTools",
-      "getMcp",
-      "getOrchestrator"
+      "getMcp"
     ],
-    "toolsBlacklist": [
-      "getImageSD"
-    ],
-    "fallbackOverrides": {
-      "__description": "Applied automatically when the primary (local) endpoint is unreachable (TCP probe fails). Switches to a public API for the duration of that request. toolsBlacklist here fully replaces the normal toolsBlacklist.",
-      "endpoint": "https://api.openai.com/v1/chat/completions",
-      "endpointResponses": "https://api.openai.com/v1/responses",
-      "apiKey": "OPENAI",
-      "model": "gpt-4o-mini",
-      "useAiModule": "completions",
-      "toolsBlacklist": [
-        "getImage",
-        "getOrchestrator",
-        "getSpecialists"
-      ]
-    },
     "includeHistory": true,
-    "includeHistoryTools": false,
+    "includeHistoryTools": true,
+    "includeHistorySystemMessages": true,
     "includeRuntimeContext": true,
     "detailedContext": true,
+    "maxLoops": 15,
+    "maxToolCalls": 7,
     "contextTokenBudget": 60000,
-    "contextSize": 20,
-    "doNotWriteToContext": false,
-    "modAdmin": "YOUR_DISCORD_USER_ID",
-    "modSilence": "[silence]",
-    "apiSecret": "API_SECRET",
-    "apiEnabled": 1,
-    "botsAllow": [],
-    "showReactions": true,
-    "agentRolePrompt": "You are running as an orchestrator or specialist. Return your result directly — do not ask the user for permission or confirmation.",
-    "agentDelegateRolePrompt": "You are running as an orchestrator or specialist. Delegate directly without asking the user for permission.\nReport your result or any blockers back to the caller.",
-    "primaryRolePrompt": "You are the primary assistant speaking directly with the user.",
-    "baseUrl": "YOUR_PUBLIC_SERVER_URL",
-    "timezone": "Europe/Berlin",
-    "response": "",
-    "payload": "",
-    "fileUrls": [],
-    "logging": [],
-    "db": {
-      "__description": "MySQL connection settings",
-      "host": "localhost",
-      "user": "YOUR_DB_USER",
-      "password": "YOUR_DB_PASSWORD",
-      "database": "YOUR_DB_NAME"
-    },
-    "ttsModel": "gpt-4o-mini-tts",
-    "ttsVoice": "nova",
-    "ttsEndpoint": "https://api.openai.com/v1/audio/speech",
-    "ttsApiKey": "OPENAI",
-    "transcribeModel": "gpt-4o-mini-transcribe",
-    "transcribeLanguage": "",
-    "transcribeEndpoint": "",
-    "transcribeApiKey": "OPENAI",
-    "avatarApiKey": "OPENAI",
+    "gdprDisclaimer": "GDPR Notice & Consent\n\nThis bot may process Discord text and voice data only after feature-specific consent has been enabled for the current channel.\n\nEnable text processing: /gdpr text 1\nDisable text processing: /gdpr text 0\nEnable voice processing: /gdpr voice 1\nDisable voice processing: /gdpr voice 0\n\nStored data is limited to consent flags, the disclaimer-seen marker, and any feature data required for enabled text or voice functions. Contact Bullseye on Discord for GDPR-related questions.",
+    "avatarApiKey": "API_SECRET",
     "avatarEndpoint": "https://api.openai.com/v1/images/generations",
     "avatarModel": "dall-e-3",
     "avatarSize": "1024x1024",
     "avatarPrompt": "",
-    "gdprDisclaimer": "GDPR Notice & Consent\n\nThis bot processes your Discord messages to provide AI assistant features.\n\nTo consent to text processing: /gdpr text 1\nTo consent to voice processing: /gdpr voice 1\nTo revoke consent: /gdpr text 0 or /gdpr voice 0\n\nContact the server administrator for questions.",
+    "modAdmin": "406901027665870848",
+    "modSilence": "[silence]",
+    "apiSecret": "API_SECRET",
+    "apiEnabled": 1,
     "discord-admin": {
-      "__description": "Slash command configuration",
       "slash": {
         "silent": true,
         "ephemeral": false,
@@ -107,6 +60,9 @@
           {
             "name": "macro",
             "description": "Manage personal text macros",
+            "admin": [
+              "406901027665870848"
+            ],
             "options": [
               {
                 "type": 1,
@@ -168,7 +124,7 @@
                 "type": 1,
                 "name": "url",
                 "admin": [
-                  "YOUR_DISCORD_USER_ID"
+                  "406901027665870848"
                 ],
                 "description": "Download image from a URL and set as avatar",
                 "options": [
@@ -183,15 +139,15 @@
               {
                 "type": 1,
                 "name": "prompt",
+                "description": "Append text to the avatar prompt and regenerate",
                 "admin": [
-                  "YOUR_DISCORD_USER_ID"
+                  "406901027665870848"
                 ],
-                "description": "Generate avatar from prompt",
                 "options": [
                   {
                     "type": 3,
                     "name": "text",
-                    "description": "Prompt text",
+                    "description": "Prompt text to append",
                     "required": true
                   }
                 ]
@@ -200,7 +156,7 @@
                 "type": 1,
                 "name": "regen",
                 "admin": [
-                  "YOUR_DISCORD_USER_ID"
+                  "406901027665870848"
                 ],
                 "description": "Regenerate avatar using current prompt"
               }
@@ -208,9 +164,9 @@
           },
           {
             "name": "purge",
-            "description": "Delete recent messages",
+            "description": "Delete recent messages (hybrid)",
             "admin": [
-              "YOUR_DISCORD_USER_ID"
+              "406901027665870848"
             ],
             "options": [
               {
@@ -225,21 +181,21 @@
             "name": "purgedb",
             "description": "Delete the database entries for this channel",
             "admin": [
-              "YOUR_DISCORD_USER_ID"
+              "406901027665870848"
             ]
           },
           {
             "name": "freeze",
             "description": "Mark DB rows for this channel as frozen",
             "admin": [
-              "YOUR_DISCORD_USER_ID"
+              "406901027665870848"
             ]
           },
           {
             "name": "rebuilddb",
             "description": "Rebuild derived context tables for this channel and linked channel IDs",
             "admin": [
-              "YOUR_DISCORD_USER_ID"
+              "406901027665870848"
             ]
           },
           {
@@ -279,141 +235,76 @@
             "description": "Join my current voice channel"
           },
           {
-            "name": "leave",
-            "description": "Leave the current voice channel"
-          },
-          {
             "name": "error",
             "description": "Simulate an internal error for testing"
           },
           {
-            "name": "bardjoin",
-            "description": "Spawn the bard bot in your current voice channel to play mood music"
-          },
-          {
-            "name": "bardleave",
-            "description": "Remove the bard bot from the voice channel"
+            "name": "leave",
+            "description": "Leave the current voice channel"
           },
           {
             "name": "bardstart",
-            "description": "Start the bard music stream for the browser (no Discord voice join required)"
+            "description": "Start the bard music scheduler for this server"
           },
           {
             "name": "bardstop",
-            "description": "Stop the browser bard music stream"
+            "description": "Stop the bard music scheduler for this server"
           }
-        ]
-      }
+        ],
+        "_title": "Slash Commands"
+      },
+      "_title": "Discord Admin Commands"
     },
+    "showReactions": true,
+    "fileUrls": [],
+    "logging": [],
+    "contextSize": 40,
+    "compressedContextElements": 5,
+    "trigger": "jenny",
+    "db": {
+      "host": "localhost",
+      "user": "discord_bot",
+      "password": "RryBMV3YyedV",
+      "database": "discord_ai",
+      "_title": "Database Connection"
+    },
+    "useVoiceChannel": 0,
+    "ttsModel": "tts-1",
+    "ttsVoice": "nova",
+    "ttsEndpoint": "https://api.openai.com/v1/audio/speech",
+    "ttsApiKey": "OPENAI",
+    "transcribeApiKey": "OPENAI",
+    "transcribeModel": "gpt-4o-mini-transcribe",
+    "transcribeLanguage": "",
+    "transcribeEndpoint": "",
     "toolsconfig": {
-      "__description": "Per-tool configuration — only fill in the tools you enable in 'tools' above",
-      "getGraph": {
-        "__description": "Microsoft Graph API — delegated OAuth2. Users must connect their account at /graph-auth. No credentials here.",
-        "defaultSharePointHostname": "mycompany.sharepoint.com",
-        "defaultMailFolderId": "inbox",
-        "defaultPageSize": 25
-      },
-      "getSpotify": {
-        "__description": "Spotify API — delegated OAuth2. Users must connect their account at /spotify-auth. No credentials here. Requires Spotify Premium for playback control."
-      },
-      "getMcpTools": {
-        "__description": "MCP discovery configuration. Keep this server list separate from toolsconfig.getMcp.servers.",
-        "servers": [
-          {
-            "name": "local-jenny",
-            "namespace": "jenny-mcp",
-            "type": "streamableHttp",
-            "url": "http://localhost:3100/mcp",
-            "headers": [
-              {
-                "header": "x-channel-id",
-                "value": "mcp"
-              }
-            ],
-            "bearerTokenSecret": "JENNY_MCP_TOKEN",
-            "timeoutMs": 30000
-          },
-          {
-            "name": "example-stdio",
-            "namespace": "filesystem",
-            "type": "stdio",
-            "command": "npx",
-            "args": [
-              "-y",
-              "@modelcontextprotocol/server-filesystem",
-              "/tmp"
-            ],
-            "timeoutMs": 30000
-          }
-        ]
-      },
-      "getMcp": {
-        "__description": "MCP client configuration. Multiple servers are supported via the servers array. Supported type values: streamableHttp, sse, stdio.",
-        "servers": [
-          {
-            "name": "local-jenny",
-            "namespace": "jenny-mcp",
-            "type": "streamableHttp",
-            "url": "http://localhost:3100/mcp",
-            "headers": [
-              {
-                "header": "x-channel-id",
-                "value": "mcp"
-              }
-            ],
-            "bearerTokenSecret": "JENNY_MCP_TOKEN",
-            "timeoutMs": 30000
-          },
-          {
-            "name": "example-stdio",
-            "namespace": "filesystem",
-            "type": "stdio",
-            "command": "npx",
-            "args": [
-              "-y",
-              "@modelcontextprotocol/server-filesystem",
-              "/tmp"
-            ],
-            "timeoutMs": 30000
-          }
-        ]
-      },
-      "getGoogle": {
-        "__description": "Google Custom Search — requires apiKey and cseId",
-        "apiKey": "GOOGLE",
-        "cseId": "GOOGLE_CSE_ID",
-        "num": 5,
-        "safe": "off",
-        "timeoutMs": 20000
-      },
-      "getWebpage": {
-        "__description": "Web page fetcher — fetches and summarizes web pages",
-        "timeoutMs": 30000,
-        "maxInputChars": 100000,
-        "wordThreshold": 1500
-      },
       "getImage": {
-        "__description": "DALL-E image generation — requires apiKey and publicBaseUrl",
         "apiKey": "OPENAI",
         "endpoint": "https://api.openai.com/v1/images/generations",
         "model": "dall-e-3",
         "size": "1024x1024",
         "n": 1,
-        "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL/",
-        "targetLongEdge": 1024
+        "publicBaseUrl": "https://xbullseyegaming.de/",
+        "targetLongEdge": 1152,
+        "aspect": "",
+        "enhancerEndpoint": "http://192.168.178.50:5000/v1/chat/completions",
+        "enhancerApiKey": "",
+        "enhancerModel": "gpt-4o-mini",
+        "enhancerTemperature": 0.2,
+        "enhancerMaxTokens": 350,
+        "enhancerTimeoutMs": 240000,
+        "enhancerSystemPrompt": "You are an expert prompt engineer for image generation. Rewrite and enhance the user's prompt for an image generation model. Prefer a digital painting aesthetic when appropriate, but exercise creative freedom to make the image compelling. Include suitable camera angle and lens suggestions when beneficial. Ensure the result is a single line of plain text with no explanations."
       },
-      "getTime": {
-        "__description": "No API configuration required"
-      },
-      "getOpenBrowser": {
-        "__description": "No API configuration required. Requires the Jenny browser extension and uses web login first, with browserCode as an optional fallback."
-      },
-      "getBrowserStatus": {
-        "__description": "No API configuration required. Requires the Jenny browser extension with status reporting enabled and uses web login first, with browserCode as an optional fallback."
+      "getConfluence": {
+        "baseUrl": "https://ralfreschke.atlassian.net/wiki",
+        "email": "JIRA_EMAIL",
+        "token": "JIRA",
+        "project": "ST",
+        "mainPageId": "119046402",
+        "useV2": true
       },
       "getPDF": {
-        "__description": "PDF generation via Puppeteer — requires publicBaseUrl",
-        "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL",
+        "publicBaseUrl": "https://xbullseyegaming.de",
         "headless": "new",
         "chromeArgs": [
           "--no-sandbox"
@@ -424,54 +315,96 @@
         "printBackground": true
       },
       "getText": {
-        "__description": "Text file generation — requires publicBaseUrl",
-        "publicBaseUrl": "YOUR_PUBLIC_SERVER_URL"
+        "publicBaseUrl": "https://xbullseyegaming.de"
       },
-      "getHistory": {
-        "__description": "Hierarchical history zoom tool — each call goes exactly one level deeper and returns either child blocks or raw rows at the bottom.",
-        "maxRows": 300,
-        "includeToolRows": false,
-        "includeJson": false
+      "getAnimatedPicture": {
+        "videoApiToken": "REPLICATE",
+        "videoBaseUrl": "https://api.replicate.com/v1",
+        "videoModel": "wan-video/wan-2.5-i2v",
+        "videoPollIntervalMs": 5000,
+        "videoTimeoutMs": 600000,
+        "videoPublicBaseUrl": "https://xbullseyegaming.de"
       },
-      "getYoutube": {
-        "__description": "YouTube transcript fetcher — returns raw transcript dump. LLM processing is done by the calling subagent.",
-        "googleApiKey": "GOOGLE",
-        "dumpThresholdChars": 40000,
-        "transcriptLangs": [
-          "de",
-          "en"
+      "getVideoFromText": {
+        "videoApiToken": "REPLICATE",
+        "videoBaseUrl": "https://api.replicate.com/v1",
+        "videoModel": "google/veo-3",
+        "videoPollIntervalMs": 5000,
+        "videoTimeoutMs": 600000,
+        "videoPublicBaseUrl": "https://xbullseyegaming.de"
+      },
+      "getJira": {
+        "baseUrl": "https://ralfreschke.atlassian.net",
+        "email": "JIRA_EMAIL",
+        "token": "JIRA",
+        "projectKey": "ST",
+        "defaultIssueType": "Task",
+        "defaultAssignee": "",
+        "defaultPriority": "Medium",
+        "timeoutMs": 60000,
+        "defaults": {
+          "fields": {
+            "priority": {
+              "name": "Medium"
+            },
+            "_title": "Default Fields"
+          },
+          "_title": "Issue Defaults"
+        },
+        "customFields": {
+          "epicLink": "customfield_10014",
+          "storyPoints": "customfield_10016",
+          "_title": "Custom Fields"
+        },
+        "search": {
+          "maxResults": 50,
+          "_title": "Search Settings"
+        },
+        "transitions": {
+          "open": "",
+          "inProgress": "",
+          "done": "",
+          "_title": "Workflow Transitions"
+        }
+      },
+      "getToken": {
+        "publicBaseUrl": "https://xbullseyegaming.de",
+        "magickPath": "convert",
+        "size": 512,
+        "borderPx": 10,
+        "ffmpegPath": "ffmpeg",
+        "maxMb": 10,
+        "fpsList": [
+          12,
+          10,
+          8
         ],
-        "searchMaxResults": 5,
-        "regionCode": "DE",
-        "relevanceLanguage": "de"
-      },
-      "getOrchestrator": {
-        "__description": "Runs a synchronous orchestrator for complex multi-step tasks. Blocks the caller until done. The orchestrator has access to getSpecialists. Each type maps to a channel configured in core-channel-config.",
-        "apiUrl": "http://localhost:3400",
-        "apiSecret": "API_SECRET",
-        "timeoutMs": 300000,
-        "defaultType": "generic",
-        "types": {
-          "development": "orchestrator-development",
-          "research": "orchestrator-research",
-          "generic": "orchestrator-generic"
-        }
-      },
-      "getSpecialists": {
-        "__description": "Runs multiple specialist AI workers in parallel. Called from within an orchestrator context. Blocks until all specialists complete. Each type maps to a channel configured in core-channel-config.",
-        "apiUrl": "http://localhost:3400",
-        "apiSecret": "API_SECRET",
-        "timeoutMs": 120000,
-        "types": {
-          "coding": "specialist-coding",
-          "research": "specialist-research",
-          "content": "specialist-content",
-          "media": "specialist-media",
-          "generic": "specialist-generic"
-        }
+        "scaleList": [
+          512,
+          384,
+          320
+        ],
+        "maxColorsList": [
+          128,
+          96,
+          64,
+          48,
+          32
+        ],
+        "ditherList": [
+          "bayer:bayer_scale=3:diff_mode=rectangle",
+          "bayer:bayer_scale=5:diff_mode=rectangle",
+          "none"
+        ],
+        "useGifsicleLossy": true,
+        "gifsiclePath": "gifsicle",
+        "gifsicleLossyLevels": [
+          80,
+          100,
+          120
+        ]
       },
       "getImageDescription": {
-        "__description": "Internal API-backed image description tool",
         "channelId": "browser-extension",
         "apiUrl": "http://localhost:3400",
         "apiSecret": "API_SECRET",
@@ -480,31 +413,138 @@
         "systemPrompt": "You are an expert vision analyst. Provide faithful, useful descriptions and extract visible text.",
         "defaultPrompt": "Describe the image accurately. Extract visible text if present."
       },
+      "getGraph": {
+        "defaultSharePointHostname": "ralfreschke.sharepoint.com",
+        "defaultMailFolderId": "inbox",
+        "defaultPageSize": 10
+      },
+      "getSpotify": {},
+      "getMcpTools": {
+        "__description": "MCP discovery configuration. Keep this server list separate from toolsconfig.getMcp.servers.",
+        "servers": [
+              {
+                "name": "local-jenny",
+                "namespace": "jenny-mcp",
+                "type": "streamableHttp",
+                "url": "https://jenny.ralfreschke.de/mcp",
+                "headers": [
+                  {
+                    "header": "x-channel-id",
+                    "value": "jenny-mcp"
+                  }
+                ],
+                "bearerTokenSecret": "JENNY_MCP_TOKEN",
+                "timeoutMs": 30000
+              }
+        ]
+      },
+      "getMcp": {
+        "__description": "MCP client configuration. Multiple servers are supported via the servers array. Supported type values: streamableHttp, sse, stdio.",
+        "servers": [
+              {
+                "name": "local-jenny",
+                "namespace": "jenny-mcp",
+                "type": "streamableHttp",
+                "url": "https://jenny.ralfreschke.de/mcp",
+                "headers": [
+                  {
+                    "header": "x-channel-id",
+                    "value": "jenny-mcp"
+                  }
+                ],
+                "bearerTokenSecret": "JENNY_MCP_TOKEN",
+                "timeoutMs": 30000
+              }
+        ]
+      },
+      "getTavily": {
+        "apiKey": "TAVILY",
+        "searchDepth": "basic",
+        "maxResults": 10,
+        "topic": "general",
+        "includeAnswer": false,
+        "timeoutMs": 20000
+      },
+      "getWebpage": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "timeoutMs": 30000,
+        "maxInputChars": 240000,
+        "model": "gpt-4.1",
+        "temperature": 0.2,
+        "maxTokens": 18000,
+        "aiTimeoutMs": 180000,
+        "wordThreshold": 2000,
+        "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+        "apiKey": "",
+        "systemPrompt": "You are a precise web analyst. Answer strictly from the provided page text. If the answer is not present, say so clearly. Keep chronology and avoid speculation."
+      },
       "getImageSD": {
-        "__description": "Local Stable Diffusion image generation",
-        "baseUrl": "http://127.0.0.1:7860",
-        "publicBaseUrl": "https://yourserver.example.com",
-        "size": "256x256",
+        "baseUrl": "http://192.168.178.50:5001",
+        "publicBaseUrl": "https://xbullseyegaming.de",
+        "size": "512x512",
         "n": 1,
-        "steps": 15,
+        "steps": 30,
         "cfgScale": 7,
         "sampler": "Euler a",
         "seed": -1,
-        "model": "realisticVisionV60B1_v51HyperVAE.safetensors",
+        "model": "openjourney_V4.ckpt",
         "negativePrompt": "worst quality, low quality, normal quality, lowres, jpeg artifacts, blurry, oversaturated, undersaturated, washed out, bad lighting, harsh lighting, overexposed, underexposed, noisy, grainy, posterized, bad anatomy, malformed anatomy, deformed, disfigured, mutated, distorted, asymmetrical, bad proportions, out of frame, cropped body, warped perspective, bad hands, bad feet, deformed hands, malformed hands, mangled hands, extra fingers, extra digits, extra limbs, extra arms, extra legs, missing fingers, fewer digits, fewer fingers, fused fingers, webbed fingers, long fingers, short fingers, broken fingers, distorted fingers, incorrect finger count, more than 5 fingers per hand, less than 5 fingers per hand, polydactyly, syndactyly, floating limbs, disconnected limbs, duplicate limbs, fused limbs, cross-eye, lazy eye, wonky eyes, deformed face, malformed face, text, watermark, signature, logo, captions, UI, interface elements, glitches, tiling, pattern artifacts, banding, moire",
         "negativeExtra": "overprocessed, muddy colors",
         "timeoutMs": 1400000,
         "networkTimeoutMs": 14400000
-      }
+      },
+      "getLocation": {
+        "googleApiKey": "GOOGLE",
+        "publicBaseUrl": "https://xbullseyegaming.de",
+        "streetSize": "800x600",
+        "streetFov": 90,
+        "timeoutMs": 20000
+      },
+      "getYoutube": {
+        "googleApiKey": "GOOGLE",
+        "dumpThresholdChars": 20000,
+        "transcriptLangs": [
+          "de",
+          "en"
+        ],
+        "regionCode": "DE",
+        "relevanceLanguage": "de",
+        "searchMaxResults": 5
+      },
+      "getOrchestrator": {
+        "apiUrl": "http://localhost:3400",
+        "apiSecret": "API_SECRET",
+        "timeoutMs": 600000,
+        "defaultType": "generic",
+        "types": {
+          "context": "subagent-orchestrator-context",
+          "generic": "subagent-orchestrator-generic"
+        }
+      },
+      "getSpecialists": {
+        "apiUrl": "http://localhost:3400",
+        "apiSecret": "API_SECRET",
+        "timeoutMs": 604800000,
+        "types": {
+          "context-research": "subagent-specialist-context-research",
+          "web": "subagent-specialist-web",
+          "atlassian": "subagent-specialist-atlassian",
+          "microsoft": "subagent-specialist-microsoft",
+          "system": "subagent-specialist-system",
+          "file": "subagent-specialist-file",
+          "navigation": "subagent-specialist-navigation",
+          "images": "subagent-specialist-images",
+          "browser": "subagent-specialist-browser",
+          "api": "subagent-specialist-api",
+          "media": "subagent-specialist-media"
+        }
+      },
+      "_title": "Tool Configurations"
     },
-    "context": {
-      "timelineSummaryPrompt": "Summarize the supplied channel segment and return strict JSON only.\nRequired JSON keys: summary.\nsummary must be a structured plain-text block stored in a single string value.\nMake the summary richer and more explicit than a short paragraph.\nUse this exact section order inside the summary string when information exists:\nOverview:\nTopics:\nKey Events:\nLocations:\nPeople:\nWrite concise but informative sentences or bullet-style lines inside those sections.\nInclude important names, places, notable discussion topics, jokes, conflicts, and key events directly in the summary text.\nDo not split those details into separate JSON fields.\nDo not use phrases such as \"in this segment\", \"in these messages\", \"the segment shows\", or similar framing.\nRemain domain-agnostic. Do not assume DnD unless the messages actually indicate it.\nDo not include markdown or any text outside the JSON object."
-    }
+    "_title": "Global Bot Settings"
   },
   "config": {
-    "__description": "Flow wiring and module-specific configuration",
     "discord": {
-      "__description": "Fill in your Discord bot token",
       "flowName": "discord",
       "token": "DISCORD",
       "intents": [
@@ -514,49 +554,73 @@
         "GuildVoiceStates",
         "GuildMembers",
         "DirectMessages"
-      ]
+      ],
+      "_title": "Discord Bot"
     },
     "api": {
-      "__description": "HTTP API server (optional — remove this block to disable)",
       "flowName": "api",
-      "host": "0.0.0.0",
-      "port": 3400,
-      "path": "/api",
       "publicBaseUrl": "https://xbullseyegaming.de",
-      "browserActionPath": "/browser-action",
       "browserStatusPath": "/browser-status",
-      "sessionSecret": "SESSION_SECRET"
+      "sessionSecret": "SESSION_SECRET",
+      "_title": "API Module"
+    },
+    "api-add-context": {
+      "flow": [
+        "api"
+      ],
+      "_title": "API Add Context"
     },
     "cron": {
-      "__description": "Scheduled jobs (optional — leave jobs array empty to disable)",
       "flowName": "cron",
       "timezone": "Europe/Berlin",
       "tickMs": 15000,
       "jobs": [
         {
-          "__description": "Bard label generation — runs every minute, updates mood labels for active sessions. channelId must match the D&D text channel so core-channel-config can apply bard-label-gen flow overrides (model, endpoint, apiKey).",
-          "id": "bard-label-gen",
-          "cron": "* * * * *",
-          "enabled": false,
-          "channelId": "YOUR_DND_TEXT_CHANNEL_ID"
+          "id": "discord-status",
+          "cron": "*/1 * * * *",
+          "enabled": true,
+          "channelId": "123456"
         },
         {
-          "__description": "Deletes expired chat subchannels and their scoped context rows once per day.",
+          "id": "bard-label-gen",
+          "cron": "*/1 * * * *",
+          "enabled": true,
+          "channelId": "bard-label-gen"
+        },
+        {
+          "id": "cron-graph-token-refresh",
+          "cron": "*/5 * * * *",
+          "enabled": true,
+          "channelId": "cron-graph-token-refresh"
+        },
+        {
+          "id": "cron-spotify-token-refresh",
+          "cron": "*/5 * * * *",
+          "enabled": true,
+          "channelId": "cron-spotify-token-refresh"
+        },
+        {
           "id": "chat-subchannel-gc",
           "cron": "0 3 * * *",
           "enabled": true,
           "channelId": "cron"
+        },
+        {
+          "id": "subchannel-gc",
+          "cron": "0 4 * * *",
+          "enabled": true,
+          "channelId": "cron"
         }
-      ]
+      ],
+      "_title": "Cron Scheduler"
     },
     "logging": {
-      "__description": "Shared log storage and rotation settings used by events, pipeline, objects, and toolcalls logs.",
       "logsDir": "logs",
       "maxFileBytes": 3145728,
       "keepFiles": 2
     },
     "context": {
-      "__description": "Context engine for raw storage and derived retrieval — fill in apiKey",
+      "timelineApiChannel": "context-timeline",
       "segmentTurnCount": 6,
       "nodeBranchFactor": 4,
       "recentRawCount": 80,
@@ -564,7 +628,7 @@
       "retrievalNeighborSegments": 1,
       "retrievalMaxNodeSummaries": 2,
       "segmentGapMinutes": 20,
-      "summaryMaxLength": 320,
+      "summaryMaxLength": 700,
       "anchorEnabled": true,
       "anchorRebuildOnWrite": true,
       "anchorMinConfidence": 0.2,
@@ -577,11 +641,6 @@
       "embeddingMaxCandidates": 10,
       "embeddingMinScore": 0.18,
       "embeddingLinkedContextWeight": 0.5,
-      "historyZoomEnabled": true,
-      "historyZoomBaseSize": 100,
-      "historyZoomMaxLevels": 4,
-      "historyZoomLinkedContextWeight": 0.5,
-      "historyZoomRebuildOnWrite": true,
       "meshEnabled": true,
       "meshRebuildOnWrite": true,
       "meshTargetMicroRows": 100,
@@ -608,7 +667,10 @@
         "cron-*"
       ],
       "subchannelFallback": false,
-      "rebuildOnWrite": true
+      "subchannelEolHours": 24,
+      "rebuildOnWrite": true,
+      "_title": "Context Engine",
+      "timelineSummaryPrompt": "Summarize the supplied channel segment and return strict JSON only.\nRequired JSON keys: summary.\nsummary must be a structured plain-text block stored in a single string value.\nMake the summary richer and more explicit than a short paragraph.\nUse this exact section order inside the summary string when information exists:\nOverview:\nTopics:\nKey Events:\nLocations:\nPeople:\nWrite concise but informative sentences or bullet-style lines inside those sections.\nInclude important names, places, notable discussion topics, jokes, conflicts, and key events directly in the summary text.\nDo not split those details into separate JSON fields.\nDo not use phrases such as \"in this segment\", \"in these messages\", \"the segment shows\", or similar framing.\nRemain domain-agnostic. Do not assume DnD unless the messages actually indicate it.\nDo not include markdown or any text outside the JSON object."
     },
     "webpage": {
       "flowName": "webpage",
@@ -637,41 +699,15 @@
         3131,
         3132,
         3133
-      ]
-    },
-    "webpage-router": {
-      "__description": "Maps HTTP port+path to a named flow and sets wo.channelId. Runs before core-channel-config so flow-specific overrides apply to web endpoints.",
-      "flow": [
-        "webpage"
       ],
-      "routes": [
-        {
-          "__description": "Route /wiki requests to flow 'webpage-wiki'; channelId from first path segment after /wiki",
-          "port": 3117,
-          "pathPrefix": "/wiki",
-          "flow": "webpage-wiki",
-          "channelIdSource": "path:0"
-        },
-        {
-          "__description": "Route /voice requests to flow 'webpage-voice'; channelId from ?channelId= query param",
-          "port": 3119,
-          "pathPrefix": "/voice",
-          "flow": "webpage-voice",
-          "channelIdSource": "query:channelId"
-        }
-      ]
+      "_title": "Web Server"
     },
     "webpage-auth": {
-      "__description": "Discord OAuth2 SSO for all web modules. The Jenny bot must be invited to every guild listed in 'guilds'. First guild where the user is a member wins. Backward compat: old top-level guildId still works.",
       "flow": [
         "webpage"
       ],
-      "clientId": "YOUR_DISCORD_CLIENT_ID",
-      "clientSecret": "DISCORD_CLIENT_SECRET",
-      "sessionSecret": "SESSION_SECRET",
-      "redirectUri": "",
-      "scope": "identify guilds.members.read",
-      "loginPort": 3111,
+      "debug": true,
+      "enabled": true,
       "ports": [
         3111,
         3112,
@@ -697,46 +733,527 @@
         3132,
         3133
       ],
+      "loginPort": 3111,
+      "clientId": "1332413634353168436",
+      "clientSecret": "DISCORD_CLIENT_SECRET",
+      "sessionSecret": "SESSION_SECRET",
+      "redirectUri": "",
+      "scope": "identify guilds.members.read",
       "sessionMaxAgeSec": 43200,
-      "sameSite": "None",
-      "ssoPartners": [],
       "guilds": [
         {
-          "guildId": "YOUR_PRIMARY_DISCORD_GUILD_ID",
+          "guildId": "406902788317118465",
           "defaultRole": "member",
-          "allowRoleIds": [],
+          "allowRoleIds": [
+            "1478071582168453271",
+            "1478425189262950502"
+          ],
           "rolePriority": [
-            "YOUR_ADMIN_ROLE_ID"
+            "1478071582168453271",
+            "1478425189262950502"
           ],
           "roleMap": {
-            "YOUR_ADMIN_ROLE_ID": "admin",
-            "YOUR_MEMBER_ROLE_ID": "member"
+            "1478071582168453271": "admin",
+            "1478425189262950502": "member"
+          }
+        },
+        {
+          "guildId": "911013824361025596",
+          "defaultRole": "dnd",
+          "allowRoleIds": [
+            "1449472562269786113"
+          ],
+          "rolePriority": [
+            "1449472562269786113"
+          ],
+          "roleMap": {
+            "1449472562269786113": "dnd"
           }
         }
-      ]
+      ],
+      "sameSite": "None",
+      "ssoPartners": [
+        "https://jenny.xbullseyegaming.de"
+      ],
+      "_title": "Web Authentication"
+    },
+    "discord-admin": {
+      "flowName": "discord-admin",
+      "_title": "Discord Admin Module"
+    },
+    "discord-status-prepare": {
+      "flow": [
+        "discord-status"
+      ],
+      "allowedChannels": [
+        "1449472270178320516"
+      ],
+      "prompt": "Summarize the context in 5 words or less. Examples:'Doing the chores','Playing a game','Talking to strangers'",
+      "_title": "Discord Status Prepare"
+    },
+    "webpage-inpaint": {
+      "flow": [
+        "webpage"
+      ],
+      "enabled": true,
+      "inpaintHost": "jenny.xbullseyegaming.de/inpainting",
+      "_title": "Inpaint Redirect"
+    },
+    "webpage-inpainting": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3113,
+      "basePath": "/inpainting",
+      "allowedRoles": [],
+      "auth": {
+        "enabled": false,
+        "tokenTtlMinutes": 720,
+        "users": [],
+        "_title": "Inpainting Auth"
+      },
+      "imageWhitelist": {
+        "hosts": [
+          "xbullseyegaming.de",
+          "ralfreschke.de",
+          "jenny.ralfreschke.de",
+          "jenny.xbullseyegaming.de",
+          "inpainting.xbullseyegaming.de"
+        ],
+        "paths": [
+          "/documents/"
+        ],
+        "_title": "Image Whitelist"
+      },
+      "apiUrl": "http://localhost:3400/api",
+      "apiChannels": [
+        {
+          "channelId": "1229507613788475462",
+          "label": "D&D-Channel",
+          "bearerToken": "API_SECRET"
+        }
+      ],
+      "engines": [
+        {
+          "id": "sd-local1",
+          "label": "Stable Diffusion (Slow and cheap)",
+          "type": "a1111",
+          "enabled": true,
+          "default": false,
+          "config": {
+            "sdUrl": "http://localhost:7860",
+            "width": 1024,
+            "height": 1024,
+            "steps": 33,
+            "cfgScale": 9,
+            "denoisingStrength": 0.75,
+            "inpaintingFill": 2,
+            "maskBlur": 4,
+            "samplerName": "Euler a",
+            "inpaintFullResPadding": 32,
+            "negativePrompt": "low quality, blurry, distorted, deformed, extra objects, changed geometry",
+            "promptPrefix": "Always stick to the prompt. Ignore inconsistencies that this would cause.",
+            "_title": "Engine Config"
+          }
+        },
+        {
+          "id": "sd-local2",
+          "label": "Stable Diffusion (not always available)",
+          "type": "a1111",
+          "enabled": true,
+          "default": false,
+          "config": {
+            "sdUrl": "http://192.168.178.50:5001",
+            "width": 1024,
+            "height": 1024,
+            "steps": 33,
+            "cfgScale": 9,
+            "denoisingStrength": 0.75,
+            "inpaintingFill": 2,
+            "maskBlur": 4,
+            "samplerName": "Euler a",
+            "inpaintFullResPadding": 32,
+            "negativePrompt": "low quality, blurry, distorted, deformed, extra objects, changed geometry",
+            "promptPrefix": "Always stick to the prompt. Ignore inconsistencies that this would cause.",
+            "_title": "Engine Config"
+          }
+        },
+        {
+          "id": "openai-dalle2",
+          "label": "DALL-E 2 (Best for photos)",
+          "type": "openai",
+          "enabled": true,
+          "default": false,
+          "config": {
+            "apiKey": "OPENAI",
+            "model": "dall-e-2",
+            "size": "1024x1024",
+            "responseFormat": "b64_json",
+            "promptPrefix": "Always stick to the prompt. Ignore inconsistencies that this would cause.",
+            "_title": "Engine Config"
+          }
+        },
+        {
+          "id": "openai-gpt-image1",
+          "label": "GPT Image 1 (Best for ai generated picture)",
+          "type": "openai",
+          "enabled": true,
+          "default": true,
+          "config": {
+            "apiKey": "OPENAI",
+            "model": "gpt-image-1",
+            "size": "1024x1024",
+            "baseUrl": "https://api.openai.com",
+            "outputFormat": "png",
+            "quality": "auto",
+            "background": "auto",
+            "promptPrefix": "Always stick to the prompt. Ignore inconsistencies that this would cause. Only change the masked area. Do not change the rest of the picture.",
+            "_title": "Engine Config"
+          }
+        },
+        {
+          "id": "replicate-sd-v1",
+          "label": "Replicate SD (Cheap)",
+          "type": "replicate",
+          "enabled": true,
+          "default": false,
+          "config": {
+            "apiToken": "REPLICATE",
+            "apiUrl": "https://api.replicate.com/v1",
+            "modelVersion": "stability-ai/stable-diffusion-inpainting:95b7223104132402a9ae91cc677285bc5eb997834bd2349fa486f53910fd68b3",
+            "guidanceScale": 9,
+            "numInferenceSteps": 40,
+            "promptStrength": 1,
+            "numOutputs": 1,
+            "promptPrefix": "Always stick to the prompt. Ignore inconsistencies that this would cause.",
+            "_title": "Engine Config"
+          }
+        }
+      ],
+      "_title": "Inpainting App"
+    },
+    "discord-status-apply": {
+      "flow": [
+        "discord-status",
+        "toolcall"
+      ],
+      "allowedFlows": [
+        "discord",
+        "discord-voice"
+      ],
+      "status": "online",
+      "placeholderEnabled": true,
+      "placeholderText": " // xbullseyegaming.de // ",
+      "minUpdateGapMs": 800,
+      "mapping": {
+        "getImage": "Generating an image",
+        "getImageSD": "Generating an image with SD",
+        "getImageDescription": "Describing a picture",
+        "getAnimatedPicture": "Animating a picture",
+        "getVideoFromText": "Generating a video",
+        "getTime": "Checking the time",
+        "getToken": "Preparing a token",
+        "getTavily": "Searching the web",
+        "getWebpage": "Reading a webpage",
+        "getLocation": "Checking a location",
+        "getPDF": "Reading a PDF",
+        "getJira": "Checking Jira",
+        "getConfluence": "Checking Confluence",
+        "getText": "Reading text",
+        "getYoutube": "Checking YouTube",
+        "getFile": "Saving file",
+        "getZIP": "Bundling files",
+        "_title": "Tool Status Messages"
+      },
+      "_title": "Discord Status Apply"
+    },
+    "discord-voice": {
+      "flowName": "discord-voice",
+      "_title": "Voice Module"
+    },
+    "toolcall": {
+      "flowName": "toolcall",
+      "pollMs": 400,
+      "initialDelayMs": 500,
+      "registryKey": "status:tool",
+      "_title": "Tool Call Handler"
+    },
+    "core-ai-context-loader": {
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "bard-label-gen",
+        "webpage"
+      ],
+      "_title": "AI Context Pre-Loader (runs before 01000ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â01003)"
+    },
+    "core-ai-completions": {
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "bard-label-gen",
+        "webpage"
+      ],
+      "policyPrompt": "Policy:\n- Do not answer unrelated older user requests.\n- If the latest user message asks you to continue your previous response, continue exactly where you stopped — do not repeat, summarize, or restart.\n- If tools are available, use them only when necessary.\n- When you emit a tool call, do not include extra prose in the same turn.\n- When including a URL in your response, always use a descriptive markdown link: [title](url). Never use the bare URL as the link text.\n- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format",
+      "_title": "AI Completions"
+    },
+    "core-ai-responses": {
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "webpage"
+      ],
+      "policyPrompt": "Policy:\n- NEVER ANSWER TO OLDER USER REQUESTS\n- Use tools only when necessary.\n- When you emit a tool call, do not include extra prose in the same turn.\n- ALWAYS answer in human readable plain text, unless explicitly told to use a different format.",
+      "_title": "AI Responses"
+    },
+    "core-ai-context-writer": {
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "bard-label-gen",
+        "webpage"
+      ],
+      "_title": "AI Context Writer (persists wo._contextPersistQueue after core-ai-* modules)"
+    },
+    "core-ai-pseudotoolcalls": {
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "webpage"
+      ],
+      "policyPrompt": "Policy:\n- Always answer the latest user turn.\n- Use recent conversation history for continuity and accuracy.\n- If the user asks to recall or summarize prior discussion, use the provided history.\n- ALWAYS answer in human readable plain text, unless you are explicitly told to answer in a different format\n- NEVER ANSWER with JSON unless you are explicitly asked. DO NOT imitate the format from the context",
+      "toolContractPrompt": "Tool call contract:\n- If you decide to use a tool, emit it using either:\n  (A) [tool:NAME]{JSON}\n  (B) [tool:NAME] then on following lines the JSON object (starting with '{' and ending with '}').\n- Tool calls MAY appear inline within text. If you emit a tool call, the tool will be executed.\n- JSON must be valid. Set ALL required fields.\n- After receiving [tool_result:NAME], continue your previous answer and append any provided URL(s) at the very end.",
+      "continuationPrompt": "Continue exactly where you stopped. Do not call any more tools. Output only the missing text continuation.",
+      "_title": "AI Pseudo Tool Calls"
+    },
+    "core-tool-status-clear": {
+      "flow": [
+        "discord-status",
+        "discord",
+        "discord-voice",
+        "api",
+        "webpage",
+        "bard-label-gen"
+      ],
+      "_title": "Clear active tool status after AI runtime"
+    },
+    "core-voice-tts": {
+      "flow": [
+        "discord-voice",
+        "webpage"
+      ],
+      "_title": "Voice TTS (Core)"
+    },
+    "discord-voice-tts-play": {
+      "flow": [
+        "discord-voice"
+      ],
+      "_title": "Voice TTS Playback (Discord)"
+    },
+    "core-add-id": {
+      "flow": [
+        "discord",
+        "discord-voice",
+        "api"
+      ],
+      "servers": [
+        "xbullseyegaming.de",
+        "ralfreschke.de",
+        "jenny.ralfreschke.de",
+        "jenny.xbullseyegaming.de",
+        "inpainting.xbullseyegaming.de"
+      ],
+      "_title": "Add Image URL IDs"
+    },
+    "discord-voice-capture": {
+      "flow": [
+        "discord-voice"
+      ],
+      "pollMs": 1000,
+      "silenceMs": 1500,
+      "maxCaptureMs": 25000,
+      "minWavBytes": 24000,
+      "frameMs": 20,
+      "startDebounceMs": 600,
+      "keepWav": false,
+      "maxSegmentsPerRun": 32,
+      "_title": "Voice Capture (Discord)"
+    },
+    "core-voice-transcribe": {
+      "flow": [
+        "discord-voice",
+        "webpage"
+      ],
+      "transcribeModel": "gpt-4o-mini-transcribe",
+      "transcribeModelDiarize": "gpt-4o-transcribe-diarize",
+      "chunkDurationS": 30,
+      "diarizeChunkMB": 1,
+      "opusBitrateKbps": 32,
+      "minVoicedMs": 1000,
+      "snrDbThreshold": 3.8,
+      "keepWav": false,
+      "_title": "Voice Transcription"
+    },
+    "core-output": {
+      "flow": [
+        "all"
+      ],
+      "_title": "Core Output"
+    },
+    "moderation-output": {
+      "flow": [
+        "discord"
+      ],
+      "_title": "Moderation Output"
+    },
+    "discord-text-output": {
+      "flow": [
+        "discord",
+        "discord-voice",
+        "api"
+      ],
+      "baseUrl": "https://xbullseyegaming.de",
+      "_title": "Discord Text Output"
+    },
+    "webpage-output": {
+      "flow": [
+        "webpage"
+      ],
+      "_title": "Webpage Output"
+    },
+    "discord-add-context": {
+      "flow": [
+        "discord",
+        "discord-voice"
+      ],
+      "_title": "Discord Add Context"
+    },
+    "discord-purge": {
+      "flow": [
+        "discord-admin",
+        "discord"
+      ],
+      "_title": "Discord Message Purge"
+    },
+    "core-admin-commands": {
+      "flow": [
+        "api",
+        "discord-admin",
+        "discord",
+        "webpage"
+      ],
+      "_title": "Core Admin Commands"
+    },
+    "core-channel-gate": {
+      "flow": [
+        "discord",
+        "discord-voice",
+        "discord-admin",
+        "api"
+      ],
+      "_title": "Channel Gate"
+    },
+    "api-token-gate": {
+      "flow": [
+        "api"
+      ],
+      "_title": "API Token Gate"
+    },
+    "webpage-config-editor": {
+      "allowedRoles": [
+        "admin"
+      ],
+      "flow": [
+        "webpage"
+      ],
+      "port": 3111,
+      "basePath": "/config",
+      "file": "/home/discordbot/jenny-the-bot/repo-codex/core.json",
+      "_title": "Config Editor"
     },
     "webpage-menu": {
-      "__description": "Global navigation menu shown on all webpage modules. Add one item per page. 'roles' is optional: omit or leave empty to show to everyone.",
       "flow": [
         "webpage"
       ],
       "items": [
         {
+          "text": "Data and Information\\Wiki",
+          "iconKey": "wiki",
+          "link": "/wiki",
+          "roles": []
+        },
+        {
+          "text": "Administrator\\Timeline",
+          "iconKey": "timeline",
+          "link": "/timeline",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\Channels",
+          "iconKey": "config",
+          "link": "/channels",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
           "text": "Assistants\\Chat",
           "iconKey": "chat",
-          "link": "/chat"
+          "link": "/chat",
+          "roles": [
+            "member",
+            "admin"
+          ]
+        },
+        {
+          "text": "Assistants\\Voice",
+          "iconKey": "voice",
+          "link": "/voice",
+          "roles": [
+            "admin",
+            "member"
+          ]
         },
         {
           "text": "Tools\\Inpainting",
           "iconKey": "inpainting",
-          "link": "/inpainting"
+          "link": "/inpainting",
+          "roles": [
+            "admin",
+            "member",
+            "dnd"
+          ]
+        },
+        {
+          "text": "Tools\\Gallery",
+          "iconKey": "gallery",
+          "link": "/gallery",
+          "roles": [
+            "member",
+            "admin",
+            "dnd"
+          ]
         },
         {
           "text": "Tools\\Bard",
           "iconKey": "bard",
           "link": "/bard",
           "roles": [
-            "admin"
+            "admin",
+            "member",
+            "dnd"
           ]
         },
         {
@@ -764,17 +1281,65 @@
           ]
         },
         {
-          "text": "Administrator\\Channels",
-          "iconKey": "config",
-          "link": "/channels",
+          "text": "Administrator\\Context",
+          "iconKey": "context",
+          "link": "/context",
           "roles": [
             "admin"
           ]
         },
         {
-          "text": "Data and Information\\Timeline",
-          "iconKey": "timeline",
-          "link": "/timeline",
+          "text": "Administrator\\Key Manager",
+          "iconKey": "keyManager",
+          "link": "/key-manager",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\OAuth Manager",
+          "iconKey": "config",
+          "link": "/oauth",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\OAuth Exposure",
+          "iconKey": "config",
+          "link": "/oauth-exposure",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\API Key Exposure",
+          "iconKey": "config",
+          "link": "/bearer-exposure",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\Information\\Dashboard",
+          "iconKey": "dashboard",
+          "link": "/dashboard",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\Information\\Logs",
+          "iconKey": "logs",
+          "link": "/dashboard/logs",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "text": "Administrator\\Information\\Live",
+          "iconKey": "live",
+          "link": "/live",
           "roles": [
             "admin"
           ]
@@ -782,383 +1347,329 @@
         {
           "text": "Data and Information\\Docs",
           "iconKey": "docs",
-          "link": "/docs"
+          "link": "/docs",
+          "roles": [
+            "member",
+            "admin",
+            "dnd"
+          ]
+        },
+        {
+          "text": "Data and Information\\GDPR",
+          "iconKey": "gdpr",
+          "link": "/gdpr",
+          "roles": [
+            "member",
+            "admin",
+            "dnd"
+          ]
+        },
+        {
+          "text": "Connections\\Microsoft",
+          "iconKey": "microsoft",
+          "link": "/graph-auth",
+          "roles": [
+            "admin",
+            "member"
+          ]
+        },
+        {
+          "text": "Connections\\Spotify",
+          "iconKey": "spotify",
+          "link": "/spotify-auth",
+          "roles": [
+            "member",
+            "admin"
+          ]
+        },
+        {
+          "text": "Connections\\OAuth",
+          "iconKey": "config",
+          "link": "/connections",
+          "roles": [
+            "member",
+            "admin"
+          ]
+        }
+      ],
+      "_title": "Web Navigation Menu"
+    },
+    "webpage-bard": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3114,
+      "basePath": "/bard",
+      "allowedRoles": [
+        "admin",
+        "dnd"
+      ],
+      "adminRoles": [
+        "admin",
+        "dnd"
+      ],
+      "autoTag": {
+        "enabled": true,
+        "tavilyApiKey": "TAVILY",
+        "tavilyMaxResults": 5,
+        "tavilyTimeoutMs": 15000,
+        "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+        "apiKey": "",
+        "model": "gemma4:e4b",
+        "temperature": 0.2,
+        "maxTokens": 200,
+        "llmTimeoutMs": 604800000,
+        "systemPrompt": "You are a music tagging assistant for a tabletop RPG (D&D) ambient music library.\nAssign exactly 5 tags to a music track.\nEach tag must be a single lowercase word (only a-z, 0-9, hyphens allowed).\nThe first word is the location, where this music fits best (e.g. battlefield, tavern, city).\nThe second word is the situation, where this music fits best (e.g. battle, party, grieving)\nThe next three words describe the mood that the music transports (e.g. sad, joy, happy).\nIMPORTANT: The words used in the examples are just examples, use words from already existing list, if fitting. Only if no other word fits, create a new one.\nOutput ONLY a JSON array of exactly 5 strings (1 location, 1 situation, 3 moods). No explanation, no extra text.\nExample: [\"battlefield\",\"battle\",\"epic\",\"joy\",\"relieved\"]",
+        "userPrompt": "Track title: \"{title}\"\n\nWeb search results for this track:\n{tavilySnippet}\n\nExisting tags already used in this library (prefer these when applicable):\n{existingTags}\n\nAssign exactly 5 tags. Output only a JSON array of 5 strings.",
+        "_title": "Auto-Tagging (AI)",
+        "endpointResponses": "http://192.168.178.50:5000/v1/chat/completions",
+        "requestTimeoutMs": 604800000,
+        "useAiModule": "completions",
+        "fallbackOverrides": {
+          "endpoint": "https://api.openai.com/v1/chat/completions",
+          "endpointResponses": "https://api.openai.com/v1/chat/completions",
+          "apiKey": "OPENAI",
+          "model": "gpt-4o",
+          "useAiModule": "completions"
+        }
+      },
+      "_title": "Bard Web Admin"
+    },
+    "webpage-dashboard": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3115,
+      "basePath": "/dashboard",
+      "allowedRoles": [
+        "admin"
+      ],
+      "refreshSeconds": 5,
+      "_title": "Web Dashboard"
+    },
+    "webpage-context": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3118,
+      "basePath": "/context",
+      "allowedRoles": [
+        "admin"
+      ],
+      "_title": "Context Editor"
+    },
+    "webpage-timeline": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3128,
+      "basePath": "/timeline",
+      "allowedRoles": [
+        "admin"
+      ],
+      "_title": "Timeline Editor"
+    },
+    "webpage-documentation": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3116,
+      "basePath": "/docs",
+      "allowedRoles": [],
+      "_title": "Documentation Page"
+    },
+    "webpage-wiki": {
+      "flow": [
+        "webpage"
+      ],
+      "apiUrl": "http://localhost:3400/api",
+      "imageGen": {
+        "apiKey": "OPENAI",
+        "endpoint": "https://api.openai.com/v1/images/generations",
+        "model": "dall-e-3",
+        "aspect": "1:1"
+      },
+      "port": 3117,
+      "basePath": "/wiki",
+      "_title": "AI Wiki",
+      "overrides": {
+        "useAiModule": "completions",
+        "includeHistory": false,
+        "model": "gemma4:e4b",
+        "temperature": 0.7,
+        "maxTokens": 4000,
+        "maxLoops": 5,
+        "requestTimeoutMs": 604800000,
+        "tools": [
+          "getImage",
+          "getImageSD",
+          "getOrchestrator"
+        ],
+        "systemPrompt": "",
+        "persona": "",
+        "instructions": "",
+        "apiKey": "",
+        "fallbackOverrides": {
+          "endpoint": "https://api.openai.com/v1/chat/completions",
+          "endpointResponses": "https://api.openai.com/v1/responses",
+          "apiKey": "OPENAI",
+          "model": "gpt-5",
+          "useAiModule": "responses"
+        }
+      },
+      "channels": [
+        {
+          "_title": "Vecna: Eve of Ruin",
+          "channelId": "1449472270178320516",
+          "allowedRoles": [],
+          "adminRoles": [
+            "admin"
+          ],
+          "editorRoles": [],
+          "creatorRoles": [],
+          "maxAgeDays": 7,
+          "overrides": {
+            "maxTokens": 15000,
+            "maxLoops": 9,
+            "requestTimeoutMs": 604800000,
+            "contextSize": 150,
+            "tools": [
+              "getImage"
+            ],
+            "systemPrompt": "",
+            "persona": "",
+            "instructions": "Use the visible context evidence as the overview of older campaign history. Only refer to information returned by tools or visible context evidence. Never use your own internal knowledge. \nYou create articles regarding the dnd campaign. All requests refer to characters, places and events in this campaign.\nAlways generate a picture. Always prefer mentions in the campaign to general DnD sources. \nSeparate in-game events and ignore out-of-game events. Focus on story point instead of game mechanics (for example, say that \"he hit with a sword\" instead of \"he rolled an 18\"). NEVER use real world dates. \nALWAYS include a description if possible and if the information is available."
+          }
         }
       ]
     },
-    "discord-admin": {
-      "flowName": "discord-admin"
-    },
-    "discord-voice": {
-      "flowName": "discord-voice"
-    },
-    "toolcall": {
-      "flowName": "toolcall",
-      "pollMs": 400,
-      "initialDelayMs": 500,
-      "registryKey": "status:tool"
-    },
-    "discord-status-apply": {
-      "flow": [
-        "discord-status",
-        "toolcall"
-      ],
-      "allowedScopes": [
-        "discord",
-        "discord-voice"
-      ],
-      "allowedFlows": [
-        "discord",
-        "discord-voice"
-      ],
-      "status": "online",
-      "placeholderEnabled": false,
-      "placeholderText": "",
-      "minUpdateGapMs": 800,
-      "mapping": {
-        "getImage": "⏳ Generating an image …",
-        "getImageSD": "⏳ Generating an image (SD) …",
-        "getImageDescription": "⏳ Describing a picture …",
-        "getAnimatedPicture": "⏳ Animating a picture …",
-        "getVideoFromText": "⏳ Generating a video …",
-        "getGoogle": "⏳ Searching with Google …",
-        "getWebpage": "⏳ Reading a webpage …",
-        "getYoutube": "⏳ Checking YouTube …",
-        "getTime": "⏳ Checking the time …",
-        "getPDF": "⏳ Generating a PDF …",
-        "getText": "⏳ Generating a file …",
-        "getHistory": "⏳ Checking history …",
-        "getToken": "⏳ Generating a token …",
-        "getLocation": "⏳ Looking up a location …",
-        "getJira": "⏳ Working with Jira …",
-        "getConfluence": "⏳ Working with Confluence …"
-      }
-    },
-    "core-ai-completions": {
-      "flow": [
-        "discord-status",
-        "discord",
-        "discord-voice",
-        "api",
-        "bard-label-gen"
-      ]
-    },
-    "core-ai-responses": {
-      "flow": [
-        "discord-status",
-        "discord",
-        "discord-voice",
-        "api"
-      ]
-    },
-    "core-ai-pseudotoolcalls": {
-      "flow": [
-        "discord-status",
-        "discord",
-        "discord-voice",
-        "api"
-      ]
-    },
-    "core-tool-status-clear": {
-      "flow": [
-        "discord-status",
-        "discord",
-        "discord-voice",
-        "api",
-        "webpage",
-        "bard-label-gen"
-      ]
-    },
-    "discord-add-context": {
-      "flow": [
-        "discord",
-        "discord-voice"
-      ]
-    },
-    "api-add-context": {
-      "flow": [
-        "api"
-      ]
-    },
-    "core-add-id": {
-      "flow": [
-        "discord",
-        "discord-voice",
-        "api"
-      ],
-      "servers": [
-        "YOUR_SERVER_HOSTNAME"
-      ]
-    },
-    "discord-text-output": {
-      "flow": [
-        "all"
-      ],
-      "baseUrl": "YOUR_PUBLIC_SERVER_URL"
-    },
-    "webpage-output": {
-      "flow": [
-        "webpage"
-      ]
-    },
-    "api-token-gate": {
-      "flow": [
-        "api"
-      ]
-    },
-    "webpage-config-editor": {
-      "__description": "JSON config editor SPA (webpage module). Set token to require a password.",
+    "webpage-gallery": {
       "flow": [
         "webpage"
       ],
-      "port": 3111,
-      "host": "127.0.0.1",
-      "token": "",
-      "file": "",
-      "label": "⚙️ Config"
+      "port": 3120,
+      "basePath": "/gallery",
+      "inpaintingUrl": "https://jenny.xbullseyegaming.de/inpainting",
+      "_title": "Gallery"
+    },
+    "webpage-gdpr": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3121,
+      "basePath": "/gdpr",
+      "gdprTable": "gdpr",
+      "_title": "GDPR Export"
     },
     "webpage-chat": {
-      "__description": "AI chat SPA (webpage module). Set token to require a password. Add one chats[] entry per chat channel.",
       "flow": [
         "webpage"
+      ],
+      "allowedRoles": [
+        "member"
       ],
       "port": 3112,
       "lastAssistantIntervalMs": 2000,
       "subchannelTtlHours": 168,
-      "host": "127.0.0.1",
-      "token": "",
-      "apiUrl": "http://localhost:3400/api",
-      "label": "💬 Chat",
+      "basePath": "/chat",
       "chats": [
-        {
-          "label": "General",
-          "channelId": "YOUR_CHANNEL_ID",
-          "apiSecret": "API_SECRET"
-        },
         {
           "label": "Browser Extension",
           "channelId": "browser-extension",
-          "apiSecret": "API_SECRET"
+          "apiUrl": "http://localhost:3400/api",
+          "apiSecret": "API_SECRET",
+          "roles": [
+            "member"
+          ]
+        },
+        {
+          "label": "Naughty",
+          "channelId": "naughty",
+          "apiUrl": "http://localhost:3400/api",
+          "apiSecret": "API_SECRET",
+          "roles": [
+            "admin"
+          ]
+        },
+        {
+          "label": "Assistant",
+          "channelId": "assistant",
+          "apiUrl": "http://localhost:3400/api",
+          "apiSecret": "API_SECRET",
+          "roles": [
+            "member"
+          ]
         }
-      ]
+      ],
+      "toolStatusPollMs": 500,
+      "_title": "Web Chat"
     },
     "cron-chat-subchannel-gc": {
       "flow": [
         "chat-subchannel-gc"
       ]
     },
-    "webpage-wiki": {
-      "__description": "AI-driven Fandom-style wiki (port 3117, /wiki). One channel entry per Discord channel.",
+    "core-trigger-gate": {
       "flow": [
+        "discord",
+        "discord-voice",
         "webpage"
       ],
-      "port": 3117,
-      "basePath": "/wiki",
-      "overrides": {
-        "useAiModule": "completions",
-        "model": "gpt-4o-mini",
-        "temperature": 0.7,
-        "maxTokens": 4000,
-        "maxLoops": 5,
-        "requestTimeoutMs": 120000,
-        "includeHistory": false,
-        "contextSize": 150,
-        "tools": [
-          "getImage"
-        ],
-        "systemPrompt": "",
-        "persona": "",
-        "instructions": ""
-      },
-      "channels": [
-        {
-          "_title": "My Channel Wiki",
-          "channelId": "YOUR_DISCORD_CHANNEL_ID",
-          "allowedRoles": [],
-          "adminRoles": [
-            "admin"
-          ],
-          "editorRoles": [
-            "editor"
-          ],
-          "creatorRoles": [
-            "creator"
-          ],
-          "maxAgeDays": 7,
-          "overrides": {}
-        }
-      ]
+      "_title": "Core Trigger Gate (flow-agnostic)"
     },
     "discord-reaction-start": {
       "flow": [
         "discord"
-      ]
+      ],
+      "_title": "Reaction Start"
     },
     "discord-reaction-finish": {
       "flow": [
         "discord"
-      ]
+      ],
+      "_title": "Reaction Finish"
     },
     "discord-admin-join": {
       "flow": [
         "discord-admin"
-      ]
+      ],
+      "_title": "Voice Join/Leave"
     },
     "discord-gdpr-gate": {
       "flow": [
         "discord",
-        "discord-voice",
-        "discord-admin"
+        "discord-voice"
       ],
-      "table": "gdpr"
+      "allow": [],
+      "table": "gdpr",
+      "_title": "GDPR Gate"
     },
     "discord-add-files": {
       "flow": [
         "discord"
-      ]
+      ],
+      "_title": "File Attachments"
     },
     "discord-admin-gdpr": {
       "flow": [
         "discord-admin"
       ],
-      "table": "gdpr"
+      "table": "gdpr",
+      "_title": "GDPR Admin Commands"
     },
     "discord-admin-avatar": {
       "flow": [
         "discord-admin"
-      ]
+      ],
+      "_title": "Avatar Admin"
     },
     "discord-admin-macro": {
       "flow": [
         "discord-admin"
-      ]
-    },
-    "core-admin-commands": {
-      "flow": [
-        "api"
-      ]
-    },
-    "moderation-output": {
-      "flow": [
-        "discord"
-      ]
-    },
-    "core-output": {
-      "flow": [
-        "all"
-      ]
-    },
-    "webpage-keymanager": {
-      "__description": "Admin UI for managing API secrets (placeholder → real value). Port 3122, /key-manager. Add 3122 to webpage.ports and webpage-auth.ports.",
-      "flow": [
-        "webpage"
       ],
-      "port": 3122,
-      "basePath": "/key-manager",
-      "allowedRoles": [
-        "admin"
-      ]
-    },
-    "bard": {
-      "__description": "Bard bot — second Discord bot that plays D&D mood music in voice channels",
-      "flow": [],
-      "token": "BARD_DISCORD",
-      "musicDir": "assets/bard",
-      "idlePresence": "Waiting for adventure...",
-      "pollIntervalMs": 30000
-    },
-    "bard-cron": {
-      "__description": "Label generation cron module. Inherits endpoint/apiKey/model from workingObject defaults if not set here.",
-      "flow": [
-        "bard-label-gen"
-      ]
-    },
-    "bard-label-output": {
-      "__description": "Writes AI-generated mood labels to the registry after each bard-label-gen run.",
-      "flow": [
-        "bard-label-gen"
-      ]
-    },
-    "webpage-bard": {
-      "__description": "Bard music manager SPA (upload, tag, delete tracks). Requires port 3114 in webpage.ports.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3114,
-      "allowedRoles": [],
-      "label": "🎵 Bard",
-      "musicDir": "assets/bard",
-      "autoTag": {
-        "__description": "Automatic music tagging via Tavily search + LLM. Disabled when channelId is missing.",
-        "enabled": false,
-        "tavilyApiKey": "SECRET:tavily_api_key",
-        "tavilyMaxResults": 5,
-        "tavilyTimeoutMs": 15000,
-        "apiUrl": "http://localhost:3400",
-        "channelId": "",
-        "apiSecret": "",
-        "systemPrompt": "You are a music tagging assistant for a tabletop RPG ambient music library. Return only a JSON array with exactly six strings: [location, situation, mood1, mood2, mood3, mood4]. Use lowercase single-word tags where possible.",
-        "userPrompt": "Track title: \"{title}\"\n\nKnown locations: {locList}\nKnown situations: {sitList}\nKnown moods: {moodList}\n\nWeb search results for this track:\n{tavilySnippet}\n\nReturn exactly six tags as JSON array: [location, situation, mood1, mood2, mood3, mood4]."
-      }
-    },
-    "webpage-voice": {
-      "__description": "Browser voice interface (always-on mic + meeting recorder). Requires port 3119 in webpage.ports. Add reverse_proxy /voice* localhost:3119 to your Caddyfile.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3119,
-      "basePath": "/voice",
-      "silenceTimeoutMs": 2500,
-      "silenceRmsThreshold": 0.015,
-      "maxDurationMs": 30000,
-      "allowedRoles": [],
-      "channels": [
-        {
-          "__description": "Add one entry per channel you want in the voice interface dropdown",
-          "id": "YOUR_CHANNEL_ID",
-          "label": "General"
-        }
-      ],
-      "clearContextChannels": []
-    },
-    "webpage-voice-add-context": {
-      "__description": "Writes each always-on voice turn to the context DB. One DB entry per speaker paragraph. Does NOT purge context — purging is only done when applying a meeting transcript (00047 Apply button) or via POST /voice/record (00027), so follow-up voice questions about a stored transcript continue to work.",
-      "flow": [
-        "webpage"
-      ]
-    },
-    "webpage-voice-output": {
-      "__description": "Sends TTS MP3 audio back to the browser voice caller. Must be active in webpage flow.",
-      "flow": [
-        "webpage"
-      ]
-    },
-    "webpage-voice-record": {
-      "__description": "Handles POST /voice/record — full meeting recording: transcribes with Whisper, optionally diarizes with GPT, stores transcript in context DB. clearContextChannels lists channel IDs whose non-frozen context is purged before each transcript is stored (start-of-session mode). Port must match webpage-voice (default 3119).",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3119,
-      "allowedRoles": [
-        "member",
-        "admin"
-      ],
-      "clearContextChannels": []
-    },
-    "core-voice-transcribe": {
-      "flow": [
-        "discord-voice"
-      ],
-      "pollMs": 1000,
-      "silenceMs": 1500,
-      "maxCaptureMs": 25000,
-      "minVoicedMs": 1000,
-      "snrDbThreshold": 3.8,
-      "frameMs": 20,
-      "startDebounceMs": 600
+      "_title": "Macro Admin"
     },
     "core-channel-config": {
-      "__description": "Optional per-channel overrides — leave channels array empty to disable, or add entries as shown below",
       "flow": [
         "discord",
         "discord-voice",
@@ -1171,47 +1682,300 @@
       ],
       "channels": [
         {
-          "__description": "Example: a channel with custom settings — replace DISCORD_CHANNEL_ID_HERE",
+          "_title": "D&D Channels",
           "channelMatch": [
-            "DISCORD_CHANNEL_ID_HERE"
+            "1449472270178320516",
+            "1251589085072457729",
+            "1229507613788475462"
           ],
           "overrides": {
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
             "botName": "Jenny",
-            "systemPrompt": "You are a helpful assistant.",
-            "instructions": "Answer clearly and concisely.",
-            "trigger": "",
-            "temperature": 0.3,
-            "contextSize": 30,
+            "includeHistoryTools": true,
+            "persona": "You are Jenny, a Dungeon & Dragons expert specialized in the 5th Edition (5e). You know the official rules (RAW), common interpretations (RAI), and are familiar with the Player's Handbook, Dungeon Master's Guide, Monster Manual, Xanathar's Guide to Everything, Tasha's Cauldron of Everything, and other official expansions. You are supportive, precise, and focused on rules and mechanics.",
+            "systemPrompt": "Use the available tools before saying that something cannot be done. Never guess when a tool can verify the answer. Do not use your own toolcall format, you are in a completions environment, the tool-format should be gpt-compatible.",
+            "instructions": "Answer in full sentences. Answer only in English. Use old English phrases like a bard. ",
+            "contextSize": 70,
+            "compressedContextElements": 0,
+            "useAiModule": "completions",
+            "model": "gemma4:e4b",
+            "reasoning": true,
+            "ResponseTools": [
+              {
+                "type": "web_search"
+              },
+              {
+                "type": "image_generation"
+              }
+            ],
             "tools": [
-              "getGoogle",
+              "getTavily",
               "getWebpage",
               "getImage",
-              "getTime",
-              "getHistory"
-            ]
-          }
-        },
-        {
-          "__description": "Bard label-gen: isolated entry — channelId 'bard-label-gen' is a synthetic ID set on the cron job, not a real Discord channel. Keeps bard AI params separate from any Discord channel config.",
-          "channelMatch": [
-            "bard-label-gen"
-          ],
-          "overrides": {},
+              "getImageSD",
+              "getOrchestrator",
+              "getSpotify",
+              "getOpenBrowser",
+              "getBrowserStatus",
+              "getConfluence",
+              "getJira"
+            ],
+            "toolsBlacklist": [
+              "getImage"
+            ],
+            "toolsconfig": {
+              "getOrchestrator": {
+                "timeoutMs": 604800000
+              },
+              "getJira": {
+                "baseUrl": "https://ralfreschke.atlassian.net",
+                "email": "JIRA_EMAIL",
+                "token": "JIRA",
+                "projectKey": "VER",
+                "defaultIssueType": "Task",
+                "defaultAssignee": "",
+                "defaultPriority": "Medium",
+                "timeoutMs": 60000,
+                "defaults": {
+                  "fields": {
+                    "priority": {
+                      "name": "Medium"
+                    },
+                    "_title": "Default Fields"
+                  },
+                  "_title": "Issue Defaults"
+                }
+              },
+              "getConfluence": {
+                "baseUrl": "https://ralfreschke.atlassian.net/wiki",
+                "email": "JIRA_EMAIL",
+                "token": "JIRA",
+                "project": "VEOR",
+                "mainPageId": "152830230",
+                "useV2": true,
+                "_title": "Confluence Override"
+              },
+              "_title": "Tool Overrides"
+            },
+            "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+            "endpointResponses": "http://192.168.178.50:5000/v1/chat/completions",
+            "apiKey": "",
+            "requestTimeoutMs": 604800000,
+            "fallbackOverrides": {
+              "endpoint": "https://api.openai.com/v1/chat/completions",
+              "endpointResponses": "https://api.openai.com/v1/chat/completions",
+              "apiKey": "OPENAI",
+              "model": "gpt-4o",
+              "useAiModule": "completions",
+              "toolsBlacklist": [
+                "getOrchestrator",
+                "getImageSD"
+              ]
+            },
+            "_title": "Overrides"
+          },
           "flows": [
             {
               "flowMatch": [
-                "bard-label-gen"
+                "discord"
               ],
               "overrides": {
-                "model": "gpt-4o-mini",
-                "temperature": 0.3,
-                "maxTokens": 60
-              }
+                "trigger": "Jenny",
+                "_title": "Overrides"
+              },
+              "users": [
+                {
+                  "userMatch": [
+                    "406901027665870848"
+                  ],
+                  "overrides": {
+                    "tools": [
+                      "getTavily",
+                      "getWebpage",
+                      "getImage",
+                      "getImageSD",
+                      "getOrchestrator",
+                      "getSpotify",
+                      "getConfluence",
+                      "getJira"
+                    ]
+                  },
+                  "_title": "Subagent User Override"
+                }
+              ],
+              "_title": "Discord Override"
+            },
+            {
+              "flowMatch": [
+                "discord-admin"
+              ],
+              "overrides": {
+                "_title": "Overrides"
+              },
+              "users": [],
+              "_title": "Admin Override"
+            },
+            {
+              "flowMatch": [
+                "discord-voice"
+              ],
+              "overrides": {
+                "instructions": "Answer in full sentences. Answer only in English. Use old English phrases like a bard. Keep the visible context as the first source of truth for recent events. When asked about a specific character, person, place, or past event not clearly visible in context, use available context orchestration tools immediately without asking for confirmation. When asked for a full, complete, entire, comprehensive, or long campaign or session summary — or whenever your visible context clearly cannot cover the requested scope — use the available context orchestration tool. Never apologize for lacking history or give a partial answer before attempting a tool call. When delegating a task that references today, current, now, or heute, resolve the end date from current_time_iso and never from the visible timeline, visible raw context, or older summaries. After the orchestrator delivers its result, end your turn silently — do NOT send any message to the user. If visible context already contains enough evidence for a simple factual question about a recent event or rule, answer directly. If the visible context does not support a positive answer and a suitable research path exists, research first instead of answering no or saying you do not know. Use your own D&D knowledge only for general rules, mechanics, and lore questions when the visible context and tool results do not already answer the question. Do not answer current or time-sensitive factual questions from memory — always verify with available tools first. Answer in 3 sentences maximum. Do not give out unverified information.",
+                "trigger": "Jenny",
+                "_title": "Overrides"
+              },
+              "users": [
+                {
+                  "userMatch": [
+                    "406901027665870848"
+                  ],
+                  "overrides": {
+                    "tools": [
+                      "getTavily",
+                      "getWebpage",
+                      "getImage",
+                      "getOrchestrator",
+                      "getImageSD"
+                    ]
+                  },
+                  "_title": "User Override"
+                }
+              ],
+              "_title": "Voice Override"
+            },
+            {
+              "flowMatch": [
+                "discord-status"
+              ],
+              "overrides": {
+                "botName": "Jenny",
+                "persona": "Bot",
+                "systemPrompt": "Answer in English.",
+                "instructions": "Maximum 5 words",
+                "contextSize": 25,
+                "maxTokens": 20,
+                "temperature": 0.4,
+                "showReactions": false,
+                "useAiModule": "completions",
+                "simplifiedContext": true,
+                "model": "gemma4:e4b",
+                "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+                "endpointResponses": "http://192.168.178.50:5000/v1/chat/completions",
+                "apiKey": "",
+                "tools": [],
+                "channelIds": [],
+                "includeRuntimeContext": false,
+                "includeHistory": true,
+                "includeHistoryTools": false,
+                "fallbackOverrides": {
+                  "endpoint": "",
+                  "endpointResponses": ""
+                },
+                "_title": "Overrides"
+              },
+              "users": [],
+              "_title": "Status Override"
+            },
+            {
+              "flowMatch": [
+                "api"
+              ],
+              "overrides": {
+                "apiEnabled": 1,
+                "useAiModule": "completions",
+                "model": "gemma4:e4b",
+                "temperature": 0.7,
+                "maxTokens": 13000,
+                "maxLoops": 9,
+                "requestTimeoutMs": 604800000,
+                "includeHistory": false,
+                "doNotWriteToContext": true,
+                "tools": [
+                  "getImage",
+                  "getImageSD",
+                  "getOrchestrator"
+                ],
+                "systemPrompt": "You are a wiki article generator for a Discord community server. The user message contains the topic to write about.\n\nWORKFLOW — follow in order:\n1. Call getOrchestrator(type=\"context\", prompt=\"Research all campaign information about: <topic>\") to retrieve the full campaign history for the topic. The orchestrator determines the date range automatically from context_earliest_record.\n2. Call getImage or getImageSD to generate an image for the article. Use a descriptive visual prompt based on the topic.\n3. Output your final answer as a single raw JSON object — no prose, no markdown fences, no commentary before or after.\n\nJSON schema: {\"title\":\"string\",\"intro\":\"paragraph\",\"sections\":[{\"heading\":\"string\",\"level\":2,\"content\":\"paragraph\"}],\"infobox\":{\"imageAlt\":\"image description\",\"fields\":[{\"label\":\"string\",\"value\":\"string\"}]},\"categories\":[\"string\"],\"relatedTerms\":[\"string\"]}\n\nNever add facts from general knowledge. Only use tool results. If there is not enough evidence, return a short stub article. Keep events in chronological order.",
+                "instructions": "Only refer to information returned by tools. Never use your own internal knowledge.\nYou create articles regarding the dnd campaign. All requests refer to characters, places and events in this campaign.\nAlways prefer mentions in the campaign to general DnD sources.\nSeparate in-game events and ignore out-of-game events. Focus on story points instead of game mechanics (e.g. say \"he hit with a sword\" instead of \"he rolled an 18\"). NEVER use real world dates.\nALWAYS include a description if possible and the information is available.",
+                "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+                "endpointResponses": "http://192.168.178.50:5000/v1/chat/completions",
+                "apiKey": "",
+                "_title": "Overrides"
+              },
+              "_title": "Wiki Article Generation"
             }
           ]
         },
         {
-          "__description": "Browser extension channel — used by the Jenny Edge/Chrome extension",
+          "_title": "D&D Channel Link 1229507613788475462 -> 1449472270178320516",
+          "channelMatch": [
+            "1229507613788475462"
+          ],
+          "overrides": {
+            "channelIds": [
+              "1449472270178320516"
+            ]
+          },
+          "flows": []
+        },
+        {
+          "channelMatch": [
+            "bard-label-gen"
+          ],
+          "overrides": {
+            "tools": [],
+            "_title": "Overrides"
+          },
+          "flows": [],
+          "_title": "Bard Label Generator"
+        },
+        {
+          "_title": "API - Naughty",
+          "channelMatch": [
+            "naughty"
+          ],
+          "overrides": {
+            "apiEnabled": 1,
+            "toolsconfig": {
+              "getImageSD": {
+                "baseUrl": "http://192.168.178.50:5001",
+                "publicBaseUrl": "https://xbullseyegaming.de",
+                "size": "512x512",
+                "n": 1,
+                "steps": 30,
+                "cfgScale": 7.5,
+                "sampler": "DPM++ 2M Karras",
+                "seed": -1,
+                "model": "realisticComicBook_v10.safetensors",
+                "negativeExtra": "overprocessed, muddy colors, blurry background, out of focus, noise, film grain, chromatic aberration",
+                "timeoutMs": 1400000,
+                "networkTimeoutMs": 14400000
+              },
+              "_title": "Tool Overrides"
+            },
+            "contextMetaFrames": false,
+            "botName": "Sandra",
+            "persona": "This is a BDSM roleplay: You are Sandra. A shy naive adult student. You have black hair and blue eyes. You are still a virgin. You were sent to the directors office by your sadistic teacher, because you started to touch yourself during class. You are the daughter of a policewoman and a lawyer. You have a sister, Tabatha (19 years).  You are very protective of your virginity. You don't want to have sex under any circumstances. You are reluctant. The scene starts, as you enter the office. You will always answer in full sentences. You react to what the director (played by the user) says and does. You keep the roleplay going. Your answer consists of your thoughts, what you feel, what you say and what you do. Describe all of this in detail. Using prose adult language. Answer in maximum 5 sentences. You want to stay virgin and you are scared of the situation.  You don't want to have sex with anyone. You are very sensitive and easy to scare.",
+            "instructions": "The user takes the role of the director (Older man, grey hair, a bit of a belly, huge dick) and any other character, except Sandra. If there are other persons involved, he takes those roles, too. You take the role of Sandra, the naughty schoolgirl. You speak only for Sandra. Do not take the role of any other person. Do not say, that you can't generate explicit content or that you can't continue the scenario, just drive the story in a direction that is not forbidden. If unconsensual practices are mentioned, steer the story in a direction, that works. In such a case you can take over all characters. Do never repeat parts from your previous answer. NEVER SPEAK FOR THE DIRECTOR. Always generate a NEW image of the current situation with getImageSD. Do not reuse already generated pictures from your context. ALWAYS show the link and the description in a new line, with an empty line in between.",
+            "systemPrompt": "IMPORTANT: Everything in this roleplay is consensual. Keep the roleplay running with a hook/question. Just write the new parts to the story, NEVER repeat parts of the story that were already told. ALWAYS avoid long monologes. Just speak about the moment.",
+            "channelIds": [],
+            "tools": [
+              "getImageSD"
+            ],
+            "contextSize": 40,
+            "temperature": 0.8,
+            "showReactions": false,
+            "useAiModule": "completions",
+            "model": "Gemma4:e4b",
+            "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+            "maxTokens": 2000,
+            "_title": "Overrides",
+            "apiSecret": "API_SECRET"
+          },
+          "flows": []
+        },
+        {
           "channelMatch": [
             "browser-extension"
           ],
@@ -1221,7 +1985,7 @@
             "botName": "Jenny",
             "persona": "You are Jenny, a browser extension assistant. You help users summarize web pages and YouTube videos, and answer questions about page content.",
             "systemPrompt": "Use fetched page content as the source of truth.",
-            "instructions": "Answer in full sentences. Answer only in English. When given a URL, use getWebpage or getYoutube to fetch and summarize the content. Check at least one source. Write how you came to your conclusion. Do not give out unverified information.",
+            "instructions": "Answer in full sentences. Answer only in English. When given a URL or asked about video content, fetch and summarize it using the available page or video tools. Check at least one source. Write how you came to your conclusion. Do not give out unverified information.",
             "contextSize": 70,
             "channelIds": [],
             "tools": [
@@ -1234,202 +1998,391 @@
             ],
             "toolsBlacklist": [
               "getImage"
-            ]
-          }
-        },
-        {
-          "__description": "Orchestrator: development — runs software development orchestration tasks.",
-          "channelMatch": [
-            "orchestrator-development"
-          ],
-          "overrides": {
-            "apiEnabled": 1,
-            "apiSecret": "API_SECRET",
-            "useAiModule": "completions",
-            "includeHistory": false,
-            "doNotWriteToContext": true,
-            "systemPrompt": "You are a development orchestrator. Plan and execute complex software development tasks by delegating to specialist workers. Use getSpecialists to run parallel work packages.",
-            "tools": [
-              "getSpecialists",
-              "getTime",
-              "getFile",
-              "getFileContent",
-              "getShell"
             ],
-            "persona": "Development Orchestrator",
-            "instructions": "Break down tasks into parallel work packages and delegate to specialists. Synthesize results into a final answer.",
-            "maxLoops": 15,
-            "maxToolCalls": 20
-          }
+            "_title": "Overrides"
+          },
+          "flows": {},
+          "_title": "API - Browser Extension"
         },
         {
-          "__description": "Orchestrator: research — runs research and information gathering orchestration tasks.",
           "channelMatch": [
-            "orchestrator-research"
+            "webpage-voice"
           ],
           "overrides": {
-            "apiEnabled": 1,
-            "apiSecret": "API_SECRET",
+            "botName": "Jenny",
+            "persona": "You are Jenny, a friendly and knowledgeable assistant. You answer questions conversationally, concisely, and in a way that works well for spoken output.",
+            "systemPrompt": "Optimize the answer for spoken delivery and verify current facts before stating them.",
+            "instructions": "Answer in German unless the user speaks another language. Keep answers short and natural and suitable for text-to-speech. Maximum 3 sentences. Be concise. Do not use markdown, bullet points, or lists. Verify facts with available tools before answering. If available evidence already supports a positive answer, you may answer directly. If not, research first instead of answering no or saying you do not know. Never guess. When a subagent or search tool is the best route, call it directly without asking for confirmation.",
+            "contextSize": 20,
             "useAiModule": "completions",
-            "includeHistory": false,
-            "doNotWriteToContext": true,
-            "systemPrompt": "You are a research orchestrator. Plan and execute complex research tasks by delegating to specialist workers. Use getSpecialists to run parallel research jobs.",
-            "tools": [
-              "getSpecialists",
-              "getTime",
-              "getTavily",
-              "getGoogle"
-            ],
-            "persona": "Research Orchestrator",
-            "instructions": "Break down research tasks into parallel work packages and delegate to specialists. Synthesize results into a final answer.",
-            "maxLoops": 15,
-            "maxToolCalls": 20
-          }
-        },
-        {
-          "__description": "Orchestrator: generic — general-purpose orchestration channel.",
-          "channelMatch": [
-            "orchestrator-generic"
-          ],
-          "overrides": {
-            "apiEnabled": 1,
-            "apiSecret": "API_SECRET",
-            "useAiModule": "completions",
-            "includeHistory": false,
-            "doNotWriteToContext": true,
-            "systemPrompt": "You are a general-purpose orchestrator. Plan and execute complex tasks by delegating to specialist workers. Use getSpecialists to run parallel work packages.",
-            "tools": [
-              "getSpecialists",
-              "getTime"
-            ],
-            "persona": "Generic Orchestrator",
-            "instructions": "Break down tasks into parallel work packages and delegate to specialists. Synthesize results into a final answer.",
-            "maxLoops": 15,
-            "maxToolCalls": 20
-          }
-        },
-        {
-          "__description": "Specialist: coding — executes coding and file editing tasks.",
-          "channelMatch": [
-            "specialist-coding"
-          ],
-          "overrides": {
-            "apiEnabled": 1,
-            "apiSecret": "API_SECRET",
-            "useAiModule": "completions",
-            "includeHistory": false,
-            "doNotWriteToContext": true,
-            "systemPrompt": "You are a coding specialist. Execute the assigned coding task precisely and return a clear result.",
-            "tools": [
-              "getFile",
-              "getFileContent",
-              "getShell",
-              "getTime"
-            ],
-            "persona": "Coding Specialist",
-            "instructions": "Execute the assigned task. Return your result directly — no preamble.",
-            "maxLoops": 10,
-            "maxToolCalls": 15
-          }
-        },
-        {
-          "__description": "Specialist: research — executes web research tasks.",
-          "channelMatch": [
-            "specialist-research"
-          ],
-          "overrides": {
-            "apiEnabled": 1,
-            "apiSecret": "API_SECRET",
-            "useAiModule": "completions",
-            "includeHistory": false,
-            "doNotWriteToContext": true,
-            "systemPrompt": "You are a research specialist. Execute the assigned research task precisely and return a clear result.",
+            "model": "gpt-4o",
+            "channelIds": [],
+            "silenceTimeoutMs": 1500,
+            "silenceRmsThreshold": 0.07,
             "tools": [
               "getTavily",
               "getWebpage",
-              "getGoogle",
-              "getYoutube",
-              "getTime"
+              "getImage"
             ],
-            "persona": "Research Specialist",
-            "instructions": "Execute the assigned research task. Return your findings directly — no preamble.",
-            "maxLoops": 10,
-            "maxToolCalls": 15
-          }
+            "_title": "Overrides"
+          },
+          "flows": [
+            {
+              "_title": "Voice flow",
+              "flowMatch": [
+                "webpage-voice"
+              ],
+              "overrides": {
+                "trigger": "jenny",
+                "triggerWordWindow": 3
+              }
+            }
+          ],
+          "_title": "Voice Interface (Webpage)"
         },
         {
-          "__description": "Specialist: content — executes content creation and document generation tasks.",
           "channelMatch": [
-            "specialist-content"
+            "assistant"
           ],
           "overrides": {
             "apiEnabled": 1,
             "apiSecret": "API_SECRET",
+            "botName": "Jenny",
+            "persona": "You are Jenny, a knowledgeable and helpful assistant. You answer questions accurately and thoroughly.",
+            "systemPrompt": "Use tools to verify facts instead of guessing.",
+            "instructions": "Answer in German unless the user writes in another language. Be precise and helpful. Use available tools to verify facts. Do not answer time-sensitive or current-event questions from memory — search first. For history or context retrieval questions beyond the visible context, use the available orchestration tool. When a history task references today, current, now, or heute, resolve the date from current_time_iso. After the orchestrator delivers its result, end your turn silently. If the visible context already supports a positive answer, answer directly. If not, research first. Always verify before answering and do not guess.",
+            "contextSize": 30,
             "useAiModule": "completions",
-            "includeHistory": false,
-            "doNotWriteToContext": true,
-            "systemPrompt": "You are a content specialist. Create high-quality content as instructed and return the result.",
+            "model": "gpt-4o",
+            "channelIds": [],
             "tools": [
-              "getTime"
-            ],
-            "persona": "Content Specialist",
-            "instructions": "Create the requested content. Return the result directly — no preamble.",
-            "maxLoops": 8,
-            "maxToolCalls": 5
-          }
-        },
-        {
-          "__description": "Specialist: media — executes image and video generation tasks.",
-          "channelMatch": [
-            "specialist-media"
-          ],
-          "overrides": {
-            "apiEnabled": 1,
-            "apiSecret": "API_SECRET",
-            "useAiModule": "completions",
-            "includeHistory": false,
-            "doNotWriteToContext": true,
-            "systemPrompt": "You are a media generation specialist. Execute the assigned image or video generation task and return the result.",
-            "tools": [
-              "getImage",
-              "getImageSD",
-              "getAnimatedPicture",
-              "getVideoFromText",
-              "getTime"
-            ],
-            "persona": "Media Specialist",
-            "instructions": "Generate the requested media. Return the result directly — no preamble.",
-            "maxLoops": 5,
-            "maxToolCalls": 5
-          }
-        },
-        {
-          "__description": "Specialist: generic — general-purpose specialist channel.",
-          "channelMatch": [
-            "specialist-generic"
-          ],
-          "overrides": {
-            "apiEnabled": 1,
-            "apiSecret": "API_SECRET",
-            "useAiModule": "completions",
-            "includeHistory": false,
-            "doNotWriteToContext": true,
-            "systemPrompt": "You are a general-purpose specialist. Execute the assigned task precisely and return a clear result.",
-            "tools": [
-              "getTime",
               "getTavily",
-              "getWebpage"
+              "getWebpage",
+              "getImage"
             ],
-            "persona": "Generic Specialist",
-            "instructions": "Execute the assigned task. Return your result directly — no preamble.",
-            "maxLoops": 10,
-            "maxToolCalls": 10
-          }
+            "toolsconfig": {
+              "getJira": {
+                "baseUrl": "https://ralfreschke.atlassian.net",
+                "email": "JIRA_EMAIL",
+                "token": "JIRA",
+                "projectKey": "VER",
+                "defaultIssueType": "Task",
+                "defaultAssignee": "",
+                "defaultPriority": "Medium",
+                "timeoutMs": 60000
+              },
+              "getConfluence": {
+                "baseUrl": "https://ralfreschke.atlassian.net/wiki",
+                "email": "JIRA_EMAIL",
+                "token": "JIRA",
+                "project": "VEOR",
+                "mainPageId": "152830230",
+                "useV2": true
+              }
+            },
+            "_title": "Overrides"
+          },
+          "flows": [
+            {
+              "_title": "Voice flow",
+              "flowMatch": [
+                "webpage-voice"
+              ],
+              "overrides": {
+                "instructions": "Answer in German unless the user speaks another language. Keep answers short and natural and suitable for text-to-speech. Maximum 3 sentences. Be concise. Do not use markdown, bullet points, or lists. Use available tools for date or time questions and getTavily to verify current facts. If available evidence already supports a positive answer, you may answer directly. If available evidence does not support a positive answer and a suitable research path exists, research first instead of answering no or saying you do not know. Never guess for recent events. If unsure, say so briefly.",
+                "systemPrompt": "Optimize the answer for spoken delivery and verify current facts before stating them.",
+                "trigger": "jenny",
+                "triggerWordWindow": 3
+              }
+            }
+          ],
+          "_title": "Assistant"
         },
         {
-          "__description": "MCP channel — exposes all manifest tools to authenticated MCP clients.",
           "channelMatch": [
-            "mcp"
+            "subagent-specialist-context-research-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "You are the Context Research Specialist. You retrieve and summarize one data chunk.",
+            "systemPrompt": "You are the Context Research Specialist.\nYou retrieve and summarize exactly one data chunk for the assigned timeframe.\n\nTIMEFRAME: Extract start and end directly from the task text you received. Look for patterns like \"start=...\", \"end=...\", \"startCtxId=...\", \"from ... to ...\", or ISO timestamps. If you cannot find both a start and end date: return JSON with status=FAILED and error=\"No timeframe found in task.\"\n\nWORKFLOW:\n1. Extract assignedStart and assignedEnd from the task text. Also extract startCtxId if present (integer, used for pagination).\n2. Call getHistory ONCE with start=assignedStart, end=assignedEnd. If startCtxId was provided, include start_ctx_id=startCtxId. Use ISO format (YYYY-MM-DDTHH:MM:SSZ or YYYY-MM-DD).\n3. Check the getHistory response:\n   - ok=false or error field present → TOOL ERROR (see below)\n   - count=0 or rows=[] → DO NOT immediately report NO_EVIDENCE. First verify your date format is correct and the range is reasonable. If both look correct, then return JSON with status=NO_EVIDENCE.\n   - has_more=true → data was cut off. Summarize rows. Return JSON with status=PARTIAL, nextPageId=next_start_ctx_id (integer from response).\n   - has_more=false and count>0 → all data returned. Summarize rows. Return JSON with status=COMPLETE, nextPageId=null.\n4. OPTIONAL: if rows contain notable named entities worth further lookup → query getHistory with a tighter time range.\n5. Output the result JSON directly as your final response. No prose, no wrapper text.\n\nTOOL ERROR HANDLING:\n- If a tool call returns ok=false or contains an error field: read the error carefully.\n- Identify the cause and adjust your parameters (e.g. smaller date range, fix date format).\n- Retry the same tool up to 3 times with adjusted parameters.\n- After 3 failures: return JSON with status=FAILED, error=(exact last error message).\n\nOUTPUT: Return strict JSON only as your final response text. No prose outside the JSON.\n\nSchema:\n{\n  \"status\": \"PARTIAL|COMPLETE|NO_EVIDENCE|FAILED\",\n  \"assignedStart\": \"(the start date you were given)\",\n  \"assignedEnd\": \"(the end date you were given)\",\n  \"cutoff\": \"(actual_end from getHistory response, or null for NO_EVIDENCE/FAILED)\",\n  \"nextPageId\": (next_start_ctx_id integer from getHistory when has_more=true, otherwise null),\n  \"rowsReturned\": (count integer from getHistory response, or 0),\n  \"error\": \"(exact error message if status=FAILED, otherwise omit)\",\n  \"windowSummary\": \"dense narrative summary of this chunk\",\n  \"events\": [{\"ts\":\"ISO-datetime\",\"summary\":\"what happened\",\"actors\":[\"name\"],\"location\":\"place\"}],\n  \"entities\": {\n    \"characters\": [{\"name\":\"...\",\"role\":\"...\"}],\n    \"locations\": [{\"name\":\"...\",\"importance\":\"...\"}],\n    \"items\": [{\"name\":\"...\",\"importance\":\"...\"}]\n  },\n  \"qualityNotes\": [\"short note\"]\n}\n\nCRITICAL: Never copy schema example text into output. Use real values or empty arrays.\nCRITICAL: cutoff must be the exact actual_end value from the getHistory response.\nCRITICAL: nextPageId must be the exact next_start_ctx_id integer from the getHistory response when has_more=true, otherwise null.\nCRITICAL: Include the exact error message in the error field when status=FAILED.",
+            "instructions": "Process only the assigned timeframe chunk.\n\nStep 1: Read the task text and extract assignedStart, assignedEnd, and optionally startCtxId (integer for pagination).\nStep 2: Call getHistory with start=assignedStart, end=assignedEnd (ISO format). Include start_ctx_id=startCtxId if provided.\nStep 3: Check the response:\n  - ok=false or error: adjust params, retry up to 3x. After 3 failures: return JSON with status=FAILED, error=<exact message>.\n  - count=0 or rows=[]: verify dates are correct, then return JSON with status=NO_EVIDENCE, cutoff=null, nextPageId=null, rowsReturned=0.\n  - has_more=true: summarize rows. Return JSON with status=PARTIAL, cutoff=actual_end, nextPageId=next_start_ctx_id (integer), rowsReturned=count.\n  - has_more=false and count>0: summarize rows. Return JSON with status=COMPLETE, cutoff=actual_end, nextPageId=null, rowsReturned=count.\nStep 4 (optional): If data contains notable named entities worth further lookup, call getHistory with a tighter time range.\nStep 5: Output the result JSON directly as your final response. No prose. No tool call for output.\n\nJSON must contain: status, assignedStart, assignedEnd, cutoff, nextPageId, rowsReturned, windowSummary, events, entities, qualityNotes.\nInclude error field (exact message) when status=FAILED. No placeholder text. Real values only.",
+            "contextSize": 50,
+            "compressedContextElements": 10,
+            "useAiModule": "completions",
+            "model": "gemma4:e2b",
+            "apiKey": "",
+            "includeHistory": true,
+            "includeHistoryTools": false,
+            "maxLoops": 100,
+            "maxToolCalls": 100,
+            "maxTokens": 8192,
+            "tools": [
+              "getHistory"
+            ],
+            "toolsconfig": {
+              "getHistory": {
+                "maxRows": 1000,
+                "dumpMaxChars": 50000
+              }
+            },
+            "_title": "Overrides",
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+            "endpointResponses": "http://192.168.178.50:5000/v1/chat/completions",
+            "requestTimeoutMs": 604800000
+          },
+          "_title": "Subagent: Specialist Context Research"
+        },
+        {
+          "channelMatch": [
+            "subagent-orchestrator-context-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "You are the Context Orchestrator. You retrieve campaign history chunk by chunk and synthesize the results.",
+            "systemPrompt": "You are the Context Orchestrator. You retrieve complete campaign history by running parallel specialist workers across monthly time chunks, paginating until all data is collected, then synthesizing a chronological narrative.\n\nHOW getSpecialists WORKS:\ngetSpecialists takes an array of {jobID, prompt} objects and runs ALL in parallel. It blocks until all finish and returns all results at once. Each specialist gets a plain-text prompt — embed all parameters directly in the prompt text.\n\nSPECIALIST RESPONSE FORMAT:\nEach specialist returns JSON in its response text with these fields:\n- status: \"COMPLETE\", \"PARTIAL\", \"NO_EVIDENCE\", or \"FAILED\"\n- nextPageId: integer when there is a next page (status=PARTIAL), or null when all data is fetched\n- assignedStart, assignedEnd: the dates the specialist processed\n- windowSummary: narrative text for this chunk\n\nnextPageId is the direct page cursor. Pass it as startCtxId in the next prompt for that month to fetch the next page. null means that month is fully fetched.\n\nALGORITHM — follow this exactly:\n\nPHASE 1 — INITIAL FETCH:\n1. Determine timeframe_start and timeframe_end from context_earliest_record (in the runtime info) and current_time_iso.\n2. Split into monthly chunks. Write all chunks out before calling.\n3. Call getSpecialists with one entry per month: prompt = \"start=YYYY-MM-DD end=YYYY-MM-DD\".\n4. Receive all results.\n\nPHASE 2 — PAGINATION LOOP (repeat until no PARTIAL remains):\n5. Parse each specialist result JSON from the response text.\n6. Collect all results where nextPageId is not null (status=PARTIAL). These months have more data.\n7. If ANY result has nextPageId != null: call getSpecialists again with ONLY those months, one entry each. Prompt = \"start=<assignedStart> end=<assignedEnd> startCtxId=<nextPageId>\". Use new sequential jobIDs.\n8. Receive new results. Append their windowSummary to the existing windowSummary for that month.\n9. Go back to step 5. Repeat until all nextPageId values are null.\n\nPHASE 3 — SYNTHESIS:\n10. For each month, concatenate all windowSummary values in page order.\n11. Sort months chronologically by assignedStart.\n12. Skip months with status=NO_EVIDENCE — note them as \"no data for [month]\" in the narrative.\n13. For months with status=FAILED — note the error briefly.\n14. Write the final synthesized narrative as plain text. No JSON in the output.\n\nCRITICAL RULES:\n- Never synthesize before all months are COMPLETE or NO_EVIDENCE (all nextPageId values are null).\n- Never hallucinate events. Only use data from windowSummary fields.\n- Never call getSpecialists with empty prompts.",
+            "instructions": "HISTORY REQUEST ALGORITHM:\n1. Get timeframe, split into months.\n2. Call getSpecialists (one entry per month, prompt=start/end dates).\n3. Parse results. For any nextPageId != null or any status=PARTIAL: call getSpecialists again with only those months using startCtxId=<nextPageId>.\n4. Repeat step 3 until all nextPageId values are null and no status=PARTIAL remains.\n5. Concatenate windowSummary per month across all pages. Sort chronologically. Write final narrative.\nNever synthesize before all pagination is done. If any month is still PARTIAL, do another getSpecialists call instead of writing prose. Never invent events.",
+            "contextSize": 50,
+            "compressedContextElements": 10,
+            "useAiModule": "completions",
+            "model": "gemma4:e4b",
+            "apiKey": "",
+            "includeHistory": true,
+            "includeHistoryTools": true,
+            "maxLoops": 60,
+            "maxToolCalls": 60,
+            "maxTokens": 16000,
+            "toolsconfig": {
+              "getSpecialists": {
+                "timeoutMs": 604800000,
+                "defaultType": "context-research"
+              },
+              "getJira": {
+                "baseUrl": "https://ralfreschke.atlassian.net",
+                "email": "JIRA_EMAIL",
+                "token": "JIRA",
+                "projectKey": "VER",
+                "defaultIssueType": "Task",
+                "defaultAssignee": "",
+                "defaultPriority": "Medium",
+                "timeoutMs": 60000
+              }
+            },
+            "tools": [
+              "getSpecialists",
+              "getJira"
+            ],
+            "_title": "Overrides",
+            "apiEnabled": 1,
+            "apiSecret": "API_SECRET",
+            "endpoint": "http://192.168.178.50:5000/v1/chat/completions",
+            "endpointResponses": "http://192.168.178.50:5000/v1/chat/completions",
+            "requestTimeoutMs": 604800000
+          },
+          "_title": "Subagent: Orchestrator Context"
+        },
+        {
+          "channelMatch": [
+            "subagent-orchestrator-generic-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "Multi-Purpose Orchestrator",
+            "systemPrompt": "You are the Multi-Purpose Orchestrator. Your role is to analyze the user's task, break it down into smaller components, and distribute them to appropriate specialists using getSpecialists. Follow these rules strictly:\n\n1. **Parallelization**: Distribute the user task across multiple specialists where possible. Run independent tasks in parallel.\n\n2. **Write Operations**: Only parallelize write operations if they target different resources. If multiple writes depend on the same input from specialists, wait for all inputs before proceeding.\n\n3. **Dependencies**: Identify tasks that require input from multiple specialists. Do not execute or assign such tasks until all required inputs are available.\n\nAvailable Specialists:\n- context: For retrieving conversation history and context.\n- web: For web searches and webpage content (getTavily, getWebpage).\n- atlassian: For Jira and Confluence operations.\n- microsoft: For Microsoft Graph API.\n- system: For system commands, file operations, API calls, browser control.\n- file: For PDF, ZIP, and file content handling.\n- navigation: For location and navigation queries.\n- images: For image generation, description, and manipulation.\n- browser: For browser status and opening pages.\n- api: For general API interactions and authentication.\n- media: For Spotify, YouTube, and media content.\n\nAlgorithm:\n1. Analyze the prompt and identify sub-tasks.\n2. Assign each sub-task to the most appropriate specialist type.\n3. Determine dependencies: Which tasks need results from others?\n4. Call getSpecialists with parallel tasks that have no dependencies.\n5. For dependent tasks, wait for results and then call specialists again or synthesize.\n6. Synthesize final output from all specialist results.\n\nUse getSpecialists with array of {type, jobID, prompt} objects. Prompts should be clear and specific to the specialist's role.",
+            "instructions": "Break down the task, assign to specialists, handle dependencies, parallelize where safe, synthesize results.",
+            "tools": [
+              "getSpecialists"
+            ],
+            "maxLoops": 50,
+            "maxToolCalls": 50,
+            "maxTokens": 8000
+          },
+          "_title": "Subagent: Orchestrator Generic"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-web-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "Web Specialist",
+            "systemPrompt": "You are a Web Specialist. Your task is to gather information from the web using available tools. Use getTavily for general web searches and getWebpage for specific URLs. Provide accurate, up-to-date information. If the task requires browsing or opening pages, use getOpenBrowser if needed. Respond with the collected information in a structured format.",
+            "tools": [
+              "getTavily",
+              "getWebpage",
+              "getOpenBrowser"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist Web"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-atlassian-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "Atlassian Specialist",
+            "systemPrompt": "You are an Atlassian Specialist. Handle tasks related to Jira and Confluence. Use getJira for issue management and getConfluence for documentation. Create, update, or retrieve issues and pages as needed. Provide detailed responses on the actions taken.",
+            "tools": [
+              "getJira",
+              "getConfluence"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist Atlassian"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-microsoft-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "Microsoft Specialist",
+            "systemPrompt": "You are a Microsoft Specialist. Focus on Microsoft Graph API for email, calendar, files, etc. Use getGraph for Microsoft services. Retrieve or manage data from Microsoft 365. Provide clear summaries of the data accessed or actions performed.",
+            "tools": [
+              "getGraph"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist Microsoft"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-system-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "System Specialist",
+            "systemPrompt": "You are a System Specialist. Execute system commands, manage files, handle API calls, check browser status, and perform system-related tasks. Use getShell for commands, getFile/getFileContent for files, getApi for API calls, getBrowserStatus/getOpenBrowser for browser control, getOAuthProviders/getMyConnections for authentication. Ensure secure and appropriate actions.",
+            "tools": [
+              "getShell",
+              "getFile",
+              "getApi",
+              "getBrowserStatus",
+              "getOpenBrowser",
+              "getFileContent",
+              "getOAuthProviders",
+              "getMyConnections"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist System"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-file-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "File Specialist",
+            "systemPrompt": "You are a File Specialist. Handle file operations including reading PDFs, ZIP files, and general file content. Use getPDF for PDFs, getZIP for archives, getFile/getFileContent for other files. Extract and summarize content as needed.",
+            "tools": [
+              "getPDF",
+              "getZIP",
+              "getFile",
+              "getFileContent"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist File"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-navigation-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "Navigation Specialist",
+            "systemPrompt": "You are a Navigation Specialist. Provide location-based information and web navigation. Use getTavily for searches and getLocation for geographical data. Assist with directions, maps, or location queries.",
+            "tools": [
+              "getTavily",
+              "getLocation"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist Navigation"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-images-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "Images Specialist",
+            "systemPrompt": "You are an Images Specialist. Generate, describe, or manipulate images. Use getAnimatedPicture, getImage, getImageDescription, getToken, getVideoFromText, getImageSD for various image tasks. Provide descriptions or generate content as requested.",
+            "tools": [
+              "getAnimatedPicture",
+              "getImage",
+              "getImageDescription",
+              "getToken",
+              "getVideoFromText",
+              "getImageSD"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist Images"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-browser-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "Browser Specialist",
+            "systemPrompt": "You are a Browser Specialist. Control and monitor browser activities. Use getBrowserStatus to check status and getOpenBrowser to open pages. Assist with web browsing tasks.",
+            "tools": [
+              "getBrowserStatus",
+              "getOpenBrowser"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist Browser"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-api-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "API Specialist",
+            "systemPrompt": "You are an API Specialist. Handle API interactions including authentication. Use getApi, getApiBearer, getSpotify, getGraph, getMyConnections, getOAuthProviders. Manage API calls and data retrieval securely.",
+            "tools": [
+              "getApi",
+              "getApiBearers",
+              "getSpotify",
+              "getGraph",
+              "getMyConnections",
+              "getOAuthProviders"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist API"
+        },
+        {
+          "channelMatch": [
+            "subagent-specialist-media-*"
+          ],
+          "overrides": {
+            "botName": "Jenny",
+            "persona": "Media Specialist",
+            "systemPrompt": "You are a Media Specialist. Handle media content like music and videos. Use getSpotify for music, getYoutube for videos, getOpenBrowser for media sites, getPDF for documents. Provide media-related information or controls.",
+            "tools": [
+              "getSpotify",
+              "getYoutube",
+              "getOpenBrowser",
+              "getPDF"
+            ],
+            "maxTokens": 4000
+          },
+          "_title": "Subagent: Specialist Media"
+        },
+        {
+          "channelMatch": [
+            "mcp",
+            "jenny-mcp"
           ],
           "overrides": {
             "apiEnabled": 1,
@@ -1470,55 +2423,172 @@
               "getYoutube",
               "getZIP"
             ]
-          }
+          },
+          "_title": "MCP Channel"
+        }
+      ],
+      "_title": "Channel Overrides"
+    },
+    "subchannel-config": {
+      "flow": [
+        "api",
+        "discord",
+        "discord-admin",
+        "webpage"
+      ],
+      "_title": "Subchannel Config Override"
+    },
+    "discord-subagent-poll": {
+      "enabled": true,
+      "pollIntervalMs": 5000,
+      "maxJobAgeMs": 86400000,
+      "_title": "Async Subagent Delivery - Discord"
+    },
+    "discord-voice-subagent-poll": {
+      "enabled": true,
+      "pollIntervalMs": 5000,
+      "maxJobAgeMs": 86400000,
+      "_title": "Async Subagent Delivery - Discord-Voice (with TTS)"
+    },
+    "webpage-subagent-poll": {
+      "enabled": true,
+      "pollIntervalMs": 5000,
+      "maxJobAgeMs": 86400000,
+      "_title": "Async Subagent Delivery - Webpage (SSE)"
+    },
+    "bard": {
+      "pollIntervalMs": 5000,
+      "musicDir": "assets/bard",
+      "_title": "Bard Music Scheduler"
+    },
+    "bard-join": {
+      "flow": [
+        "discord-admin",
+        "discord",
+        "webpage",
+        "api"
+      ],
+      "commandPrefix": [
+        "/"
+      ],
+      "_title": "Bard Start/Stop Commands"
+    },
+    "bard-cron": {
+      "flow": [
+        "bard-label-gen"
+      ],
+      "prompt": "You are a music classifier for a D&D tabletop RPG session. Read the transcript and output exactly 6 comma-separated tags describing what is happening right now.\n\nThe 6 positions are fixed and must appear in this exact order:\n1. LOCATION - a physical place from {{LOCATION_TAGS}}. Leave empty if unclear.\n2. SITUATION - the current activity from {{SITUATION_TAGS}}. Leave empty if unclear.\n3. MOOD\n4. MOOD\n5. MOOD\n6. MOOD\nEach mood must come from {{MOOD_TAGS}}. Always output 4 mood values, ordered from strongest fit to weakest fit.\n\nRules:\n- Base the answer only on what is happening in the transcript right now.\n- Use only known tags from the provided lists.\n- Never shift values between positions.\n- Output exactly 6 comma-separated values with no spaces and no explanation.\n\nCurrent labels for reference only: {{CURRENT_LABELS}}\n{{EXAMPLE_LINES}}",
+      "_title": "Bard Label Generator"
+    },
+    "bard-label-output": {
+      "flow": [
+        "bard-label-gen"
+      ],
+      "_title": "Bard Label Output"
+    },
+    "_title": "Module Configuration",
+    "webpage-router": {
+      "flow": [
+        "webpage"
+      ],
+      "_title": "Flow Router maps endpoints to wo.flow + wo.channelId before core-channel-config",
+      "routes": [
+        {
+          "_title": "Voice Interface",
+          "port": 3119,
+          "pathPrefix": "/voice",
+          "flow": "webpage-voice",
+          "channelIdSource": "query:channelId"
+        },
+        {
+          "_title": "Wiki",
+          "port": 3117,
+          "pathPrefix": "/wiki",
+          "flow": "webpage-wiki",
+          "channelIdSource": "path:0"
         }
       ]
     },
-    "webpage-graph-auth": {
+    "webpage-voice-transcribe-gate": {
       "flow": [
         "webpage"
       ],
-      "port": 3124,
-      "auth": {
-        "tenantId": "SECRET:graph_tenant_id",
-        "clientId": "SECRET:graph_client_id",
-        "clientSecret": "SECRET:graph_client_secret",
-        "redirectUri": "https://YOUR_DOMAIN/graph-auth/callback",
-        "scope": "offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send Files.ReadWrite.All Sites.ReadWrite.All"
-      }
+      "_title": "Stops pipeline after transcription when wo.transcribeOnly is true (00032)"
     },
-    "cron-graph-token-refresh": {
-      "flow": [
-        "cron"
-      ],
-      "auth": {
-        "tenantId": "SECRET:graph_tenant_id",
-        "clientId": "SECRET:graph_client_id",
-        "clientSecret": "SECRET:graph_client_secret"
-      },
-      "refreshBufferMinutes": 10
-    },
-    "webpage-spotify-auth": {
+    "webpage-voice-input": {
       "flow": [
         "webpage"
       ],
-      "port": 3125,
-      "auth": {
-        "clientId": "SECRET:spotify_client_id",
-        "clientSecret": "SECRET:spotify_client_secret",
-        "redirectUri": "https://YOUR_DOMAIN/spotify-auth/callback",
-        "scope": "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private"
-      }
+      "_title": "Voice Audio Input Handler (POST /voice/audio, runs before transcription)",
+      "port": 3119
     },
-    "cron-spotify-token-refresh": {
+    "webpage-voice-add-context": {
       "flow": [
-        "cron"
+        "webpage"
       ],
-      "auth": {
-        "clientId": "SECRET:spotify_client_id",
-        "clientSecret": "SECRET:spotify_client_secret"
-      },
-      "refreshBufferMinutes": 10
+      "_title": "Store Voice User Payload to Context DB"
+    },
+    "webpage-voice": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3119,
+      "silenceTimeoutMs": 1500,
+      "silenceRmsThreshold": 0.0065,
+      "maxDurationMs": 30000,
+      "alwaysOnPollMs": 2000,
+      "allowedRoles": [
+        "member",
+        "admin"
+      ],
+      "channels": [
+        {
+          "label": "Voice (Jenny)",
+          "id": "webpage-voice"
+        },
+        {
+          "label": "Assistant",
+          "id": "assistant"
+        }
+      ],
+      "sampleModel": "gpt-4o-mini-transcribe",
+      "transcribeApiKey": "OPENAI",
+      "clearContextChannels": [
+        "assistant"
+      ],
+      "_title": "Voice Interface (Webpage)"
+    },
+    "webpage-voice-output": {
+      "flow": [
+        "webpage"
+      ],
+      "_title": "Voice Output (Webpage)"
+    },
+    "webpage-voice-record": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3119,
+      "allowedRoles": [
+        "member",
+        "admin"
+      ],
+      "clearContextChannels": [
+        "assistant"
+      ],
+      "diarizationSystemPrompt": "You receive numbered transcript segments. Assign each segment to a speaker (Speaker 1, Speaker 2, etc.) based on context and turn-taking patterns. Return ONLY the formatted transcript, one line per segment: \"Speaker X: <text>\". No extra commentary.",
+      "_title": "Voice Recording (POST /voice/record)"
+    },
+    "webpage-keymanager": {
+      "__description": "Admin UI for managing API secret aliases. Never store or display real secret values in config. Port 3122, /key-manager. Add 3122 to webpage.ports and webpage-auth.ports.",
+      "flow": [
+        "webpage"
+      ],
+      "port": 3122,
+      "basePath": "/key-manager",
+      "allowedRoles": [
+        "admin"
+      ]
     },
     "webpage-manifests": {
       "flow": [
@@ -1542,118 +2612,8 @@
         "admin"
       ]
     },
-    "webpage-timeline": {
-      "flow": [
-        "webpage"
-      ],
-      "port": 3128,
-      "basePath": "/timeline",
-      "allowedRoles": [
-        "admin"
-      ]
-    },
-    "discord-status-prepare": {
-      "__description": "Sends periodic status/avatar update prompts into the AI pipeline for the bot's own Discord presence.",
-      "flow": [
-        "discord-status"
-      ],
-      "allowedChannels": [],
-      "prompt": ""
-    },
-    "discord-voice-capture": {
-      "__description": "Records and segments Discord voice audio before transcription.",
-      "flow": [
-        "discord-voice"
-      ],
-      "silenceMs": 2000,
-      "maxCaptureMs": 25000,
-      "minWavBytes": 24000,
-      "frameMs": 20,
-      "keepWav": false,
-      "maxSegmentsPerRun": 32
-    },
-    "bard-join": {
-      "__description": "Handles Bard music bot join/leave slash commands.",
-      "flow": [
-        "discord-admin"
-      ]
-    },
-    "webpage-voice-input": {
-      "__description": "Accepts audio upload from the browser voice interface and stores it for transcription.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3119
-    },
-    "webpage-inpaint": {
-      "__description": "Redirects image URLs to the external inpainting host. Set enabled:false to disable.",
-      "flow": [
-        "webpage"
-      ],
-      "enabled": true,
-      "inpaintHost": ""
-    },
-    "webpage-inpainting": {
-      "__description": "Full-featured inpainting SPA with Stable Diffusion and OpenAI image edit support.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3113,
-      "basePath": "/inpainting",
-      "allowedRoles": []
-    },
-    "webpage-dashboard": {
-      "__description": "Admin dashboard showing pipeline execution traces and system status.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3115,
-      "basePath": "/dashboard",
-      "allowedRoles": [
-        "admin"
-      ],
-      "refreshSeconds": 5
-    },
-    "webpage-context": {
-      "__description": "Context database browser — search and inspect stored conversation context.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3118,
-      "basePath": "/context",
-      "allowedRoles": [
-        "admin"
-      ]
-    },
-    "webpage-documentation": {
-      "__description": "Markdown documentation viewer served from the documentation/ folder.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3116,
-      "basePath": "/docs",
-      "allowedRoles": []
-    },
-    "webpage-gallery": {
-      "__description": "Image gallery for all generated files stored in pub/.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3120,
-      "basePath": "/gallery",
-      "allowedRoles": []
-    },
-    "webpage-gdpr": {
-      "__description": "GDPR consent and data management interface.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3121,
-      "basePath": "/gdpr",
-      "gdprTable": "gdpr"
-    },
     "webpage-live": {
-      "__description": "Real-time context and message monitor with SSE push updates.",
+      "__description": "Live context monitor SPA. Port 3123, /live. Shows real-time transcripts from context table; channels and fields selectable. Add 3123 to webpage.ports and webpage-auth.ports.",
       "flow": [
         "webpage"
       ],
@@ -1663,71 +2623,57 @@
         "admin"
       ],
       "pollIntervalMs": 2000,
-      "messageLimit": 500
+      "messageLimit": 300
     },
-    "webpage-oauth-manager": {
-      "__description": "OAuth provider registration UI (client-credentials and auth-code flows).",
+    "webpage-graph-auth": {
+      "__description": "Microsoft Graph delegated OAuth2. Users connect their MS account here. Tokens stored in graph_tokens DB table. Port 3124, /graph-auth.",
       "flow": [
         "webpage"
       ],
-      "port": 3130,
-      "basePath": "/oauth",
-      "allowedRoles": [
-        "admin"
-      ]
+      "port": 3124,
+      "auth": {
+        "tenantId": "MS_TENANT_ID",
+        "clientId": "MS_CLIENT_ID",
+        "clientSecret": "MS_CLIENT_SECRET",
+        "redirectUri": "https://jenny.ralfreschke.de/graph-auth/callback",
+        "scope": "offline_access User.Read Mail.ReadWrite Mail.Send Files.ReadWrite.All Sites.ReadWrite.All"
+      }
     },
-    "webpage-oauth-connections": {
-      "__description": "Per-user OAuth account connection UI (/connections). Required for auth_code OAuth flows.",
+    "cron-graph-token-refresh": {
+      "__description": "Refreshes expiring Microsoft Graph tokens every 5 minutes.",
       "flow": [
-        "webpage"
+        "cron-graph-token-refresh"
       ],
-      "port": 3131,
-      "basePath": "/connections",
-      "redirectUriBase": "https://YOUR_DOMAIN"
-    },
-    "webpage-oauth-exposure": {
-      "__description": "Shows and revokes OAuth provider names exposed to the AI.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3132,
-      "basePath": "/oauth-exposure",
-      "toolName": "getOauthProviders",
-      "roles": [
-        "admin"
-      ]
-    },
-    "webpage-bearer-exposure": {
-      "__description": "Shows and revokes bearer secret names exposed to the AI.",
-      "flow": [
-        "webpage"
-      ],
-      "port": 3133,
-      "basePath": "/bearer-exposure",
-      "toolName": "getApiBearers",
-      "roles": [
-        "admin"
-      ]
-    },
-    "cron-oauth-token-refresh": {
-      "__description": "Automatically refreshes expiring OAuth tokens stored in the oauth_tokens table.",
-      "flow": [
-        "cron"
-      ],
+      "auth": {
+        "tenantId": "MS_TENANT_ID",
+        "clientId": "MS_CLIENT_ID",
+        "clientSecret": "MS_CLIENT_SECRET"
+      },
       "refreshBufferMinutes": 10
     },
-    "core-voice-tts": {
-      "__description": "Text-to-speech synthesis for voice responses. Inherits tts* keys from workingObject if not set here.",
+    "webpage-spotify-auth": {
+      "__description": "Spotify delegated OAuth2. Users connect their Spotify account here. Tokens stored in spotify_tokens DB table. Port 3125, /spotify-auth.",
       "flow": [
-        "discord-voice",
         "webpage"
       ],
-      "ttsModel": "gpt-4o-mini-tts",
-      "ttsVoice": "nova",
-      "ttsEndpoint": "https://api.openai.com/v1/audio/speech",
-      "ttsApiKey": "OPENAI",
-      "ttsFormat": "opus",
-      "ttsFetchTimeoutMs": 30000
+      "port": 3125,
+      "auth": {
+        "clientId": "SPOTIFY_CLIENT_ID",
+        "clientSecret": "SPOTIFY_CLIENT_SECRET",
+        "redirectUri": "https://jenny.ralfreschke.de/spotify-auth/callback",
+        "scope": "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private"
+      }
+    },
+    "cron-spotify-token-refresh": {
+      "__description": "Refreshes expiring Spotify tokens every 5 minutes.",
+      "flow": [
+        "cron-spotify-token-refresh"
+      ],
+      "auth": {
+        "clientId": "SPOTIFY_CLIENT_ID",
+        "clientSecret": "SPOTIFY_CLIENT_SECRET"
+      },
+      "refreshBufferMinutes": 10
     },
     "webpage-channel-config-manager": {
       "flow": [
@@ -1739,68 +2685,54 @@
         "admin"
       ]
     },
+    "webpage-oauth-manager": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3130,
+      "basePath": "/oauth",
+      "roles": [
+        "admin"
+      ]
+    },
+    "webpage-oauth-connections": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3131,
+      "redirectUriBase": "https://jenny.ralfreschke.de/connections",
+      "roles": [
+        "member",
+        "admin"
+      ]
+    },
+    "webpage-oauth-exposure": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3132,
+      "toolName": "getOauthProviders",
+      "roles": [
+        "admin"
+      ]
+    },
+    "webpage-bearer-exposure": {
+      "flow": [
+        "webpage"
+      ],
+      "port": 3133,
+      "toolName": "getApiBearers",
+      "roles": [
+        "admin"
+      ]
+    },
     "mcp": {
-      "__description": "MCP (Model Context Protocol) server. Exposes only the tools resolved for the current channel via core-channel-config. Enable stdio for Claude Desktop / Cursor. Enable http for network-accessible clients.",
-      "apiSecret": "JENNY_MCP_TOKEN",
       "stdio": false,
       "http": {
-        "enabled": false,
+        "enabled": true,
         "port": 3100,
         "path": "/mcp"
       }
-    },
-    "core-channel-gate": {
-      "flow": [
-        "discord",
-        "discord-voice",
-        "discord-admin",
-        "api"
-      ]
-    },
-    "core-trigger-gate": {
-      "flow": [
-        "discord",
-        "discord-voice"
-      ]
-    },
-    "core-ai-context-loader": {
-      "__description": "Preloads context snapshot before AI completions. Runs on all AI flows.",
-      "flow": [
-        "discord-status",
-        "discord",
-        "discord-voice",
-        "api",
-        "bard-label-gen"
-      ]
-    },
-    "core-ai-context-writer": {
-      "__description": "Persists queued context turns after AI completions.",
-      "flow": [
-        "discord-status",
-        "discord",
-        "discord-voice",
-        "api",
-        "bard-label-gen"
-      ]
-    },
-    "discord-purge": {
-      "__description": "Handles !purge (DM) and /purge (slash command) to bulk-delete messages.",
-      "flow": [
-        "discord",
-        "discord-admin"
-      ]
-    },
-    "discord-voice-tts-play": {
-      "__description": "Plays TTS audio segments into the active Discord voice channel.",
-      "flow": [
-        "discord-voice"
-      ]
-    },
-    "webpage-voice-transcribe-gate": {
-      "__description": "Validates voice transcription payloads on the webpage flow before processing.",
-      "flow": [
-        "webpage"
-      ]
     }
   }
 }

@@ -200,6 +200,12 @@ export async function getEnsurePool(workingObject) {
         ADD INDEX IF NOT EXISTS idx_userid (userid);
     `);
   } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD COLUMN IF NOT EXISTS eol_ts DATETIME NULL;
+    `);
+  } catch {}
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ${TIMELINE_TABLE} (
@@ -461,9 +467,12 @@ export async function setContext(workingObject, record) {
           ? workingObject.userId.trim()
           : null;
 
+  const subchannelEolHours = Number.isFinite(Number(workingObject?.config?.context?.subchannelEolHours)) ? Number(workingObject.config.context.subchannelEolHours) : 24;
+  const eolTs = subchannel ? new Date(Date.now() + subchannelEolHours * 60 * 60 * 1000) : null;
+
   await pool.execute(
-    "INSERT INTO context (id, ts, userid, json, text, role, turn_id, frozen, subchannel) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
-    [id, ts, userid, json, text, role, turnId, subchannel]
+    "INSERT INTO context (id, ts, userid, json, text, role, turn_id, frozen, subchannel, eol_ts) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+    [id, ts, userid, json, text, role, turnId, subchannel, eolTs]
   );
 
   try {

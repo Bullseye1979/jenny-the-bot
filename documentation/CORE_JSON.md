@@ -568,7 +568,7 @@ Parallel specialist dispatcher. Runs multiple specialist workers concurrently in
 
 | Key | Type | Example | Description |
 |---|---|---|---|
-| `types` | object | `{ “specialist-generic”: “subagent-specialist-generic” }` | **Required.** Maps specialist type names to base channel IDs |
+| `types` | object | `{ “context-research”: “subagent-specialist-context-research”, “web”: “subagent-specialist-web”, “atlassian”: “subagent-specialist-atlassian”, “microsoft”: “subagent-specialist-microsoft”, “system”: “subagent-specialist-system”, “file”: “subagent-specialist-file”, “navigation”: “subagent-specialist-navigation”, “images”: “subagent-specialist-images”, “browser”: “subagent-specialist-browser”, “api”: “subagent-specialist-api”, “media”: “subagent-specialist-media” }` | **Required.** Maps specialist type names to base channel IDs |
 | `defaultType` | string | `””` | Fallback type when a specialist entry omits `type` |
 | `apiUrl` | string | `”http://localhost:3400”` | Internal API base URL |
 | `apiSecret` | string | `”API_SECRET”` | Bearer token placeholder (resolved from `bot_secrets`) |
@@ -821,7 +821,8 @@ The `config` section wires flows and modules together, and provides per-module s
 ```jsonc
 "context": {
   "timelineApiChannel": "context-timeline",
-  "timelineSummaryPrompt": "Summarize the supplied channel segment and return strict JSON only..."
+  "timelineSummaryPrompt": "Summarize the supplied channel segment and return strict JSON only...",
+  "subchannelEolHours": 24
 }
 ```
 
@@ -829,6 +830,7 @@ The `config` section wires flows and modules together, and provides per-module s
 |---|---|
 | `timelineApiChannel` | Virtual channel used for timeline summarization requests through the internal API flow |
 | `timelineSummaryPrompt` | Prompt template for timeline summarization. This prompt must live in `core.json`, not in `core/context.js`. |
+| `subchannelEolHours` | Hours after which subchannel context records are deleted by the `subchannel-gc` cron job. Default: 24. |
 
 ---
 
@@ -1771,6 +1773,12 @@ The `channelId` must match the text channel where your D&D session takes place (
       "cron":      "*/1 * * * *",
       "enabled":   true,
       "channelId": "123456"
+    },
+    {
+      "id":        "subchannel-gc",
+      "cron":      "0 4 * * *",
+      "enabled":   true,
+      "channelId": "cron"
     }
   ]
 }
