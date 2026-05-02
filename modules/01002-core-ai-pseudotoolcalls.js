@@ -32,6 +32,9 @@ import {
   getToolArgsMeta,
   getToolPaginationMeta,
   getToolTraceMeta,
+  setUpdatePaginationGuardState,
+  getNeedsPaginationContinuation,
+  getPaginationContinuationPrompt,
   getParseArtifactsBlock,
   getExpandedToolArgs,
   getChannelAwarenessBlock,
@@ -401,6 +404,7 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
     const result     = await tool.invoke(normalizedArgs, coreData);
     const durationMs = Date.now() - startTs;
     log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
+    setUpdatePaginationGuardState(wo, name, result);
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
@@ -617,6 +621,59 @@ export default async function getCoreAi(coreData) {
         wo._fullAssistantText = undefined;
         continue;
       }
+
+      const emptyAssistantTurn = !cleanAssistantText && !extracted;
+      if (finish === "length" && emptyAssistantTurn) {
+        const toolsStillEnabled = toolCallsUsedTotal < kiCfg.maxToolCallsTotal && wo.__forceNoTools !== true;
+        if (toolsStillEnabled) {
+          const guard = Number.isFinite(Number(wo.__emptyToolCapableTurnConsec)) ? Number(wo.__emptyToolCapableTurnConsec) : 0;
+          wo.__emptyToolCapableTurnConsec = guard + 1;
+          if (wo.__emptyToolCapableTurnConsec >= 2) {
+            log(`Empty output loop guard triggered (${wo.__emptyToolCapableTurnConsec} consecutive tool-capable iterations) - breaking`, "warn");
+            break;
+          }
+          const cont = {
+            role: "user",
+            content: "No visible output was produced. Continue the task normally. If tools are needed, you may still call them."
+          };
+          messages.push(cont);
+          wo._contextPersistQueue.push(getWithTurnId(cont, wo));
+          writeToolcallLog({
+            ...getToolcallLogBase(wo),
+            event: "ai_continue",
+            coreData,
+            loop: i + 1,
+            finishReason: finish ?? null,
+            looksCutOff: false,
+            emptyAssistantTurn: true,
+            toolsStillEnabled: true
+          });
+          continue;
+        }
+      }
+      wo.__emptyToolCapableTurnConsec = 0;
+
+      if (getNeedsPaginationContinuation(wo)) {
+        const guardCount = Number.isFinite(Number(wo.__paginationGuardConsec)) ? Number(wo.__paginationGuardConsec) : 0;
+        wo.__paginationGuardConsec = guardCount + 1;
+        if (wo.__paginationGuardConsec >= 3) {
+          log(`Pagination guard triggered ${wo.__paginationGuardConsec} times without a follow-up tool call - breaking`, "warn");
+          break;
+        }
+        const cont = { role: "user", content: getPaginationContinuationPrompt(wo) };
+        messages.push(cont);
+        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          event: "ai_pagination_guard",
+          coreData,
+          loop: i + 1,
+          guardCount: wo.__paginationGuardConsec,
+          pendingPages: wo.__specialistsPaginationState?.pendingItems || []
+        });
+        continue;
+      }
+      wo.__paginationGuardConsec = 0;
 
       const cutOff = !wo.__noContinuation && (finish === "length" || getLooksCutOff(cleanAssistantText));
       if (cutOff) {

@@ -26,6 +26,14 @@ import {
   getToolStatusScope,
   getToolStatusKey,
   setRememberActiveToolStatus,
+  writeToolcallLog,
+  getToolcallLogBase,
+  getToolArgsMeta,
+  getToolPaginationMeta,
+  getToolTraceMeta,
+  setUpdatePaginationGuardState,
+  getNeedsPaginationContinuation,
+  getPaginationContinuationPrompt,
   setEnsureFinalSynthesisPrompt,
   getParseArtifactsBlock,
   getExpandedToolArgs,
@@ -267,6 +275,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
 
   const tool   = toolModules.find(t => (t.definition?.function?.name || t.definition?.name || t.name) === name);
   const callId = call?.call_id || call?.id || `${name}:${createHash("sha256").update(JSON.stringify(args)).digest("hex")}`;
+  const startTs = Date.now();
 
   if (idemp.tools.has(callId)) {
     return {
@@ -310,14 +319,36 @@ async function setExecGenericTool(toolModules, call, coreData) {
     if (_statusKey) try { await putItem(_statusPayload, "status:tool:" + _statusKey); } catch {}
 
     const res     = await tool.invoke(args, coreData);
+    const durationMs = Date.now() - startTs;
+    setUpdatePaginationGuardState(wo, name, res);
     const mapped  = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getTryParseJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
 
     log("Tool call success", "info", { tool: name, call_id: callId, result_preview: getPreview(content, RESULT_PREVIEW_MAX) });
+    writeToolcallLog({
+      ...getToolcallLogBase(wo),
+      coreData,
+      tool: name,
+      status: "success",
+      durationMs,
+      ...getToolArgsMeta(name, args),
+      ...getToolPaginationMeta(name, res),
+      ...getToolTraceMeta(name, res)
+    });
     return { ok: true, name, call_id: callId, content };
   } catch (e) {
+    const durationMs = Date.now() - startTs;
     const mappedErr = { type: "tool_result", tool: name, call_id: callId, ok: false, error: e?.message || String(e) };
     log("Tool call error", "error", { tool: name, call_id: callId, error: String(e?.message || e) });
+    writeToolcallLog({
+      ...getToolcallLogBase(wo),
+      coreData,
+      tool: name,
+      status: "error",
+      durationMs,
+      error: e?.message || String(e),
+      ...getToolArgsMeta(name, args)
+    });
     return { ok: false, name, call_id: callId, content: JSON.stringify(mappedErr) };
   } finally {
     if (wo._statusToolGen === _myGen) {
@@ -989,6 +1020,20 @@ export default async function getCoreAi(coreData) {
       const assistantText   = (parsed.text || "").trim();
       const finish          = getFinishReasonFromData(data);
       log(`AI turn ${iter + 1}: finish_reason="${finish ?? "null"}" content_length=${assistantText.length} tool_calls=${toolCalls.length}`, "info");
+      writeToolcallLog({
+        ...getToolcallLogBase(wo),
+        event: "ai_turn",
+        coreData,
+        loop: iter + 1,
+        finishReason: finish ?? null,
+        contentLen: assistantText.length,
+        contentPreview: getPreview(assistantText, RESULT_PREVIEW_MAX),
+        toolMode: toolsMode,
+        toolsDisabled,
+        toolCallsRequested: toolCalls.map(tc => String(tc?.name || "").trim()).filter(Boolean),
+        totalToolCallsBefore: totalToolCalls,
+        maxToolCalls
+      });
 
       const linkBlockThisIter      = hostedLinks.length ? hostedLinks.map(u => `- ${u}`).join("\n") : "";
       const persistAssistantContent = [assistantText, linkBlockThisIter].filter(Boolean).join("\n\n").trim();
@@ -1063,6 +1108,15 @@ export default async function getCoreAi(coreData) {
         if (hasToolCalls && totalToolCalls >= maxToolCalls) {
           hitMaxToolCalls    = true;
           wo.__forceNoTools  = true;
+          writeToolcallLog({
+            ...getToolcallLogBase(wo),
+            event: "ai_limit",
+            coreData,
+            loop: iter + 1,
+            limitType: "maxToolCalls",
+            totalToolCalls,
+            maxToolCalls
+          });
           setEnsureFinalSynthesisPrompt(messages, wo);
           continue;
         }
@@ -1071,6 +1125,54 @@ export default async function getCoreAi(coreData) {
       if (hasToolCalls && !persistAssistantContent.length && persistedToolCallRequest) {
         log("Persisted assistant tool_call request + tool output pair for context continuity.", "info");
       }
+
+      const emptyAssistantTurn = !assistantText && !hasToolCalls;
+      if (finish === "length" && emptyAssistantTurn && !toolsDisabled) {
+        emptyOutputConsec++;
+        if (emptyOutputConsec >= 2) {
+          log(`Empty-output loop guard: ${emptyOutputConsec} consecutive tool-capable iterations with no visible text - stopping loop.`, "warn");
+          break;
+        }
+        const cont = {
+          role: "user",
+          content: "No visible output was produced. Continue the task normally. If tools are needed, you may still call them."
+        };
+        messages.push(cont);
+        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          event: "ai_continue",
+          coreData,
+          loop: iter + 1,
+          finishReason: finish ?? null,
+          looksCutOff: false,
+          emptyAssistantTurn: true,
+          toolsStillEnabled: true
+        });
+        continue;
+      }
+
+      if (getNeedsPaginationContinuation(wo)) {
+        const guardCount = Number.isFinite(Number(wo.__paginationGuardConsec)) ? Number(wo.__paginationGuardConsec) : 0;
+        wo.__paginationGuardConsec = guardCount + 1;
+        if (wo.__paginationGuardConsec >= 3) {
+          log(`Pagination guard triggered ${wo.__paginationGuardConsec} times without a follow-up tool call - breaking`, "warn");
+          break;
+        }
+        const cont = { role: "user", content: getPaginationContinuationPrompt(wo) };
+        messages.push(cont);
+        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          event: "ai_pagination_guard",
+          coreData,
+          loop: iter + 1,
+          guardCount: wo.__paginationGuardConsec,
+          pendingPages: wo.__specialistsPaginationState?.pendingItems || []
+        });
+        continue;
+      }
+      wo.__paginationGuardConsec = 0;
 
       const truncated   = getWasTruncatedOutput(data);
       const looksCutOff = getLooksCutOff(assistantText);
@@ -1089,6 +1191,15 @@ export default async function getCoreAi(coreData) {
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         log(`Continue triggered: finish_reason="${finish ?? "null"}" truncated=${truncated} looks_cut_off=${looksCutOff}`, "info");
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          event: "ai_continue",
+          coreData,
+          loop: iter + 1,
+          finishReason: finish ?? null,
+          looksCutOff,
+          contentPreview: getPreview(assistantText, RESULT_PREVIEW_MAX)
+        });
         wo.__forceNoTools = true;
         continue;
       }
@@ -1161,6 +1272,20 @@ export default async function getCoreAi(coreData) {
 
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;
+  writeToolcallLog({
+    ...getToolcallLogBase(wo),
+    event: "ai_final",
+    coreData,
+    toolCallsUsed: totalToolCalls,
+    calledTools: toolCallLog.map(e => e.tool),
+    hitMaxLoops,
+    hitMaxToolCalls,
+    responseState: hitMaxToolCalls ? "max_tool_calls"
+      : hitMaxLoops ? "max_loops"
+      : (finalText ? "final_text" : "empty"),
+    responsePreview: getPreview(wo.response || "", RESULT_PREVIEW_MAX),
+    confluenceCallCount: toolCallLog.filter(e => e.tool === "getConfluence").length
+  });
   log("AI response received.", "info");
 
   return coreData;

@@ -288,6 +288,8 @@ export function getToolcallLogBase(wo) {
     agentDepth:    Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0,
     useAiModule:   String(wo.useAiModule || ""),
     model:         String(wo.model || ""),
+    fallbackActive: wo?.__aiFallbackApplied === true,
+    fallbackReason: String(wo?.__aiProbeReason || ""),
     channelIds:    Array.isArray(wo.channelIds) ? wo.channelIds.map(v => String(v || "")).filter(Boolean) : [],
     callerChannelIds: Array.isArray(wo.callerChannelIds) ? wo.callerChannelIds.map(v => String(v || "")).filter(Boolean) : []
   };
@@ -342,6 +344,114 @@ function getSpecialistResponseSummary(row) {
     reason: typeof parsed.reason === "string" ? getLogSafeString(parsed.reason, 160) : undefined,
     responsePreview: responseText ? getLogSafeString(responseText, 200) : undefined
   };
+}
+
+
+function getUnfencedJsonText(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return "";
+  const fenced = raw.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? String(fenced[1] || "").trim() : raw;
+}
+
+
+export function getParsedSpecialistResponse(responseText) {
+  const cleaned = getUnfencedJsonText(responseText);
+  if (!cleaned) return null;
+  const parsed = getTryParseJSON(cleaned, null);
+  return parsed && typeof parsed === "object" ? parsed : null;
+}
+
+
+export function getSpecialistsPaginationState(result) {
+  const value = getResultObject(result);
+  const rows = Array.isArray(value?.rows) ? value.rows : [];
+  const pending = [];
+  const summaries = [];
+  let parseFailures = 0;
+
+  for (const row of rows) {
+    const parsed = getParsedSpecialistResponse(row?.response);
+    const summary = {
+      jobID: row?.jobID ?? null,
+      type: typeof row?.type === "string" ? row.type : "",
+      ok: row?.ok === true,
+      parsed: !!parsed
+    };
+    if (!parsed) {
+      parseFailures++;
+      summaries.push(summary);
+      continue;
+    }
+    const nextPageId = parsed.nextPageId ?? parsed.next_page_id ?? null;
+    const status = typeof parsed.status === "string" ? parsed.status.trim().toUpperCase() : "";
+    const assignedStart = typeof parsed.assignedStart === "string" ? parsed.assignedStart : "";
+    const assignedEnd = typeof parsed.assignedEnd === "string" ? parsed.assignedEnd : "";
+    const cutoff = typeof parsed.cutoff === "string" ? parsed.cutoff : "";
+    const isPending = nextPageId != null || status === "PARTIAL";
+    if (isPending) {
+      pending.push({
+        jobID: row?.jobID ?? null,
+        type: typeof row?.type === "string" ? row.type : "",
+        status: status || "PARTIAL",
+        assignedStart,
+        assignedEnd,
+        nextPageId,
+        cutoff
+      });
+    }
+    summaries.push({
+      ...summary,
+      status,
+      assignedStart,
+      assignedEnd,
+      nextPageId,
+      cutoff
+    });
+  }
+
+  return {
+    pending: pending.length > 0,
+    pendingCount: pending.length,
+    parseFailures,
+    pendingItems: pending,
+    specialistSummaries: summaries
+  };
+}
+
+
+export function setUpdatePaginationGuardState(wo, toolName, result) {
+  if (!wo || toolName !== "getSpecialists") return null;
+  const state = getSpecialistsPaginationState(result);
+  wo.__specialistsPaginationState = state;
+  return state;
+}
+
+
+export function getNeedsPaginationContinuation(wo) {
+  const agentType = String(wo?.agentType || "").trim().toLowerCase();
+  if (agentType !== "context") return false;
+  return wo?.__specialistsPaginationState?.pending === true;
+}
+
+
+export function getPaginationContinuationPrompt(wo) {
+  const items = Array.isArray(wo?.__specialistsPaginationState?.pendingItems)
+    ? wo.__specialistsPaginationState.pendingItems
+    : [];
+  const lines = [
+    "Pagination is not complete yet.",
+    "Do not synthesize or finalize.",
+    "Call getSpecialists again only for the still-pending windows.",
+    "For each pending window, use prompt format exactly: start=<assignedStart> end=<assignedEnd> startCtxId=<nextPageId>."
+  ];
+  if (items.length) {
+    lines.push("Pending windows:");
+    for (const item of items.slice(0, 12)) {
+      lines.push(`- jobID=${item.jobID ?? "?"} start=${item.assignedStart || "?"} end=${item.assignedEnd || "?"} nextPageId=${item.nextPageId ?? "?"} status=${item.status || "PARTIAL"}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 
@@ -416,11 +526,16 @@ export function getToolTraceMeta(toolName, result) {
 
   if (toolName === "getSpecialists") {
     const rows = Array.isArray(value.rows) ? value.rows : [];
+    const paginationState = getSpecialistsPaginationState(value);
     return {
       specialistsReturned: rows.length,
       specialistsComplete: typeof value.complete === "number" ? value.complete : undefined,
       specialistsFailed: typeof value.failed === "number" ? value.failed : undefined,
-      specialistSummaries: rows.slice(0, 12).map(getSpecialistResponseSummary)
+      specialistSummaries: rows.slice(0, 12).map(getSpecialistResponseSummary),
+      paginationPending: paginationState.pending ? true : undefined,
+      paginationPendingCount: paginationState.pendingCount || undefined,
+      paginationParseFailures: paginationState.parseFailures || undefined,
+      pendingPages: paginationState.pendingItems.slice(0, 12)
     };
   }
 

@@ -13,6 +13,7 @@ import { randomBytes }       from "node:crypto";
 import { getSecret }         from "../core/secrets.js";
 import { fetchWithTimeout }  from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSpecialistsPaginationState } from "../shared/ai/utils.js";
 
 const MODULE_NAME = "getSpecialists";
 
@@ -123,6 +124,7 @@ async function getInvoke(args, coreData) {
   const failedSummary = allOk
     ? undefined
     : results.filter(r => !r.ok).map(r => `[${r.type || "?"}] ${r.error}`).join("; ");
+  const paginationState = getSpecialistsPaginationState({ rows: results });
 
   log(`Specialists done: ${nOk}/${results.length} succeeded`);
 
@@ -134,6 +136,10 @@ async function getInvoke(args, coreData) {
     rows: results,
     complete: nOk,
     failed: results.length - nOk,
+    pagination_pending: paginationState.pending,
+    pagination_pending_count: paginationState.pendingCount,
+    pagination_parse_failures: paginationState.parseFailures,
+    pending_pages: paginationState.pendingItems,
     ...(failedSummary ? { error: failedSummary } : {})
   };
 }
