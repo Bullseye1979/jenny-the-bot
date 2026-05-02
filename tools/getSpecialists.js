@@ -17,6 +17,19 @@ import { getSpecialistsPaginationState } from "../shared/ai/utils.js";
 
 const MODULE_NAME = "getSpecialists";
 
+
+function getIsRetryableSpecialistError(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  return text.includes("[empty ai response]")
+    || text.includes("[max loops hit]")
+    || text.includes("specialist timed out")
+    || text.includes("aborterror")
+    || text.includes("http 502")
+    || text.includes("http 503")
+    || text.includes("http 504");
+}
+
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo  = coreData?.workingObject || {};
@@ -44,6 +57,9 @@ async function getInvoke(args, coreData) {
   const maxConcurrent  = Number.isFinite(Number(cfg.maxConcurrent)) && Number(cfg.maxConcurrent) > 0
     ? Math.floor(Number(cfg.maxConcurrent))
     : 3;
+  const maxRetriesPerSpecialist = Number.isFinite(Number(cfg.maxRetriesPerSpecialist)) && Number(cfg.maxRetriesPerSpecialist) >= 0
+    ? Math.floor(Number(cfg.maxRetriesPerSpecialist))
+    : 1;
 
   const headers = { "Content-Type": "application/json" };
   if (apiSecret) headers["Authorization"] = `Bearer ${apiSecret}`;
@@ -91,23 +107,35 @@ async function getInvoke(args, coreData) {
       ...(statusKey ? { toolStatusChannelOverride: statusKey } : {}),
     });
 
-    try {
-      const res  = await fetchWithTimeout(apiBase + "/api", { method: "POST", headers, body }, timeoutMs);
-      const data = await res.json().catch(() => ({}));
+    let lastFailure = null;
+    for (let attempt = 0; attempt <= maxRetriesPerSpecialist; attempt++) {
+      try {
+        const res  = await fetchWithTimeout(apiBase + "/api", { method: "POST", headers, body }, timeoutMs);
+        const data = await res.json().catch(() => ({}));
 
-      if (!res.ok || !data.ok) {
-        return { jobID, type, ok: false, error: data.error || `HTTP ${res.status}` };
+        if (!res.ok || !data.ok) {
+          const error = data.error || `HTTP ${res.status}`;
+          lastFailure = { jobID, type, ok: false, error, attempts: attempt + 1, retryable: getIsRetryableSpecialistError(error) };
+        } else {
+          const responseText = String(data.response || "");
+          if (!responseText || responseText.startsWith("[Empty AI response]") || responseText.startsWith("[Max Loops Hit]")) {
+            const error = responseText || "Specialist returned empty response";
+            lastFailure = { jobID, type, ok: false, error, attempts: attempt + 1, retryable: getIsRetryableSpecialistError(error) };
+          } else {
+            return { jobID, type, ok: true, response: responseText, attempts: attempt + 1 };
+          }
+        }
+      } catch (e) {
+        const isAbort = e?.name === "AbortError";
+        const error = isAbort ? "Specialist timed out" : (e?.message || String(e));
+        lastFailure = { jobID, type, ok: false, error, attempts: attempt + 1, retryable: getIsRetryableSpecialistError(error) };
       }
 
-      const responseText = String(data.response || "");
-      if (!responseText || responseText.startsWith("[Empty AI response]") || responseText.startsWith("[Max Loops Hit]")) {
-        return { jobID, type, ok: false, error: responseText || "Specialist returned empty response" };
-      }
-      return { jobID, type, ok: true, response: responseText };
-    } catch (e) {
-      const isAbort = e?.name === "AbortError";
-      return { jobID, type, ok: false, error: isAbort ? "Specialist timed out" : (e?.message || String(e)) };
+      if (!lastFailure?.retryable || attempt >= maxRetriesPerSpecialist) break;
+      log(`Retrying specialist jobID=${jobID ?? "?"} type="${type}" after transient failure: ${lastFailure.error}`, "warn");
     }
+
+    return lastFailure || { jobID, type, ok: false, error: "Specialist failed", attempts: maxRetriesPerSpecialist + 1, retryable: false };
   };
 
   const results = [];
@@ -120,11 +148,27 @@ async function getInvoke(args, coreData) {
 
   const allOk   = results.every(r => r.ok);
   const nOk     = results.filter(r => r.ok).length;
+  const failedResults = results.filter(r => !r.ok);
 
   const failedSummary = allOk
     ? undefined
-    : results.filter(r => !r.ok).map(r => `[${r.type || "?"}] ${r.error}`).join("; ");
+    : failedResults.map(r => `[${r.type || "?"}] ${r.error}`).join("; ");
   const paginationState = getSpecialistsPaginationState({ rows: results });
+  const retryPendingItems = failedResults
+    .filter(r => r.retryable !== false)
+    .map(r => {
+      const original = specialists.find(spec => String(spec?.jobID ?? "") === String(r.jobID ?? "") && String(spec?.type || defaultType || "").trim() === String(r.type || "").trim())
+        || specialists.find(spec => String(spec?.jobID ?? "") === String(r.jobID ?? ""));
+      return {
+        jobID: r.jobID ?? null,
+        type: r.type || defaultType || "",
+        prompt: String(original?.prompt || "").trim(),
+        error: String(r.error || "").trim(),
+        attempts: Number.isFinite(Number(r.attempts)) ? Number(r.attempts) : undefined
+      };
+    })
+    .filter(item => item.type && item.prompt);
+  const continuationPending = paginationState.pending || retryPendingItems.length > 0;
   const continuationPrompt = paginationState.pending
     ? [
         "The previous getSpecialists result is incomplete.",
@@ -136,6 +180,17 @@ async function getInvoke(args, coreData) {
           `- jobID=${item.jobID ?? "?"} start=${item.assignedStart || "?"} end=${item.assignedEnd || "?"} nextPageId=${item.nextPageId ?? "?"} status=${item.status || "PARTIAL"}`
         )
       ].join("\n")
+    : retryPendingItems.length
+      ? [
+          "Some specialist workers failed transiently and need to be retried.",
+          "Do not synthesize or finalize yet.",
+          "Call getSpecialists again only for the failed specialist jobs below, reusing the same type, jobID, and prompt.",
+          "Failed specialists:"
+        ].concat(
+          retryPendingItems.slice(0, 24).map(item =>
+            `- jobID=${item.jobID ?? "?"} type=${item.type} attempts=${item.attempts ?? "?"} error=${item.error || "unknown"}`
+          )
+        ).join("\n")
     : "";
 
   log(`Specialists done: ${nOk}/${results.length} succeeded`);
@@ -152,7 +207,9 @@ async function getInvoke(args, coreData) {
     pagination_pending_count: paginationState.pendingCount,
     pagination_parse_failures: paginationState.parseFailures,
     pending_pages: paginationState.pendingItems,
-    requires_followup_tool: paginationState.pending ? MODULE_NAME : "",
+    continuation_pending: continuationPending,
+    pending_specialists: retryPendingItems,
+    requires_followup_tool: continuationPending ? MODULE_NAME : "",
     continuation_prompt: continuationPrompt,
     ...(failedSummary ? { error: failedSummary } : {})
   };

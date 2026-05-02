@@ -438,6 +438,8 @@ export function setUpdatePaginationGuardState(wo, toolName, result) {
       ? value.pending_pages
       : Array.isArray(value.pendingItems)
         ? value.pendingItems
+        : Array.isArray(value.pending_specialists)
+          ? value.pending_specialists
         : [];
     const continuationPrompt = typeof value.continuation_prompt === "string" && value.continuation_prompt.trim()
       ? value.continuation_prompt.trim()
@@ -450,7 +452,11 @@ export function setUpdatePaginationGuardState(wo, toolName, result) {
       continuationState = {
         pending: true,
         toolName: followupToolName,
-        reason: value.pagination_pending === true ? "pagination_pending" : "has_more",
+        reason: value.pagination_pending === true
+          ? "pagination_pending"
+          : value.continuation_pending === true
+            ? "continuation_pending"
+            : "has_more",
         pendingItems,
         prompt: continuationPrompt || (
           `The previous tool result indicates more data is available for ${followupToolName}. ` +
@@ -574,7 +580,9 @@ export function getToolTraceMeta(toolName, result) {
       paginationPending: paginationState.pending ? true : undefined,
       paginationPendingCount: paginationState.pendingCount || undefined,
       paginationParseFailures: paginationState.parseFailures || undefined,
-      pendingPages: paginationState.pendingItems.slice(0, 12)
+      pendingPages: paginationState.pendingItems.slice(0, 12),
+      continuationPending: value.continuation_pending === true ? true : undefined,
+      pendingSpecialists: Array.isArray(value.pending_specialists) ? value.pending_specialists.slice(0, 12) : undefined
     };
   }
 
