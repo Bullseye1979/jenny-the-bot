@@ -29,7 +29,9 @@ import {
   setRememberActiveToolStatus,
   writeToolcallLog,
   getToolcallLogBase,
+  getToolArgsMeta,
   getToolPaginationMeta,
+  getToolTraceMeta,
   getParseArtifactsBlock,
   getExpandedToolArgs,
   getChannelAwarenessBlock,
@@ -520,21 +522,44 @@ export default async function getCoreAi(coreData) {
       const msg        = choice?.message || {};
       const msgText    = typeof msg.content === "string" ? msg.content : "";
       const extracted  = (!wo.__forceNoTools && msgText) ? getExtractPseudoToolCall(msgText) : null;
+      const cleanAssistantText = extracted ? String(extracted.cleanText || "").trim() : String(msgText || "").trim();
 
       log(`AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${msgText.length} pseudo_tool=${extracted ? extracted.name : "none"}`, "info");
+      writeToolcallLog({
+        ...getToolcallLogBase(wo),
+        event: "ai_turn",
+        coreData,
+        loop: i + 1,
+        finishReason: finish ?? null,
+        contentLen: msgText.length,
+        contentPreview: getPreview(msgText, RESULT_PREVIEW_MAX),
+        extractedTool: extracted ? extracted.name : null,
+        extractedToolArgs: extracted ? getToolArgsMeta(extracted.name, extracted.args) : undefined,
+        totalToolCallsBefore: toolCallsUsedTotal,
+        maxToolCalls: kiCfg.maxToolCallsTotal
+      });
 
       const assistantMsg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: msgText };
       if (assistantMsg.authorName == null) delete assistantMsg.authorName;
       messages.push(assistantMsg);
       wo._contextPersistQueue.push(getWithTurnId(assistantMsg, wo));
 
-      const cleanAssistantText = extracted ? String(extracted.cleanText || "").trim() : String(msgText || "").trim();
       if (cleanAssistantText) accumulatedText += (accumulatedText ? "\n" : "") + cleanAssistantText;
 
       if (extracted) {
         if (toolCallsUsedTotal >= kiCfg.maxToolCallsTotal) {
           hitMaxToolCalls = true;
           log(`Tool call ignored: maxToolCallsTotal reached (${toolCallsUsedTotal}/${kiCfg.maxToolCallsTotal})`, "warn", { tool: extracted.name });
+          writeToolcallLog({
+            ...getToolcallLogBase(wo),
+            event: "ai_limit",
+            coreData,
+            loop: i + 1,
+            limitType: "maxToolCallsTotal",
+            totalToolCalls: toolCallsUsedTotal,
+            maxToolCalls: kiCfg.maxToolCallsTotal,
+            pendingTool: extracted.name
+          });
           finalText = accumulatedText || cleanAssistantText || msgText.trim() || "";
           break;
         }
@@ -563,7 +588,16 @@ export default async function getCoreAi(coreData) {
         try { const r = getTryParseJSON(typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content ?? "{}"), {}); if (r?.ok === false) _tcStatus = "failed"; } catch {}
         toolCallLog.push({ tool: extracted.name, status: _tcStatus, durationMs: _tcDurationMs, task: "" });
         wo.toolCallLog = toolCallLog.slice();
-        writeToolcallLog({ ...getToolcallLogBase(wo), coreData, tool: extracted.name, status: _tcStatus, durationMs: _tcDurationMs, ...getToolPaginationMeta(extracted.name, toolMsg.content) });
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          coreData,
+          tool: extracted.name,
+          status: _tcStatus,
+          durationMs: _tcDurationMs,
+          ...getToolArgsMeta(extracted.name, extracted.args),
+          ...getToolPaginationMeta(extracted.name, toolMsg.content),
+          ...getToolTraceMeta(extracted.name, toolMsg.content)
+        });
 
         wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));
 
@@ -592,6 +626,15 @@ export default async function getCoreAi(coreData) {
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         log(`Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(cleanAssistantText)}`, "info");
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          event: "ai_continue",
+          coreData,
+          loop: i + 1,
+          finishReason: finish ?? null,
+          looksCutOff: getLooksCutOff(cleanAssistantText),
+          contentPreview: getPreview(cleanAssistantText, RESULT_PREVIEW_MAX)
+        });
         continue;
       }
 
@@ -646,6 +689,18 @@ export default async function getCoreAi(coreData) {
   } else {
     wo.response = "[Empty AI response]";
   }
+
+  writeToolcallLog({
+    ...getToolcallLogBase(wo),
+    event: "ai_final",
+    coreData,
+    toolCallsUsed: toolCallsUsedTotal,
+    calledTools: toolCallLog.map(e => e.tool),
+    hitMaxLoops,
+    hitMaxToolCalls,
+    responsePreview: getPreview(wo.response || "", RESULT_PREVIEW_MAX),
+    confluenceCallCount: toolCallLog.filter(e => e.tool === "getConfluence").length
+  });
 
   wo.toolCallLog = toolCallLog.slice();
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);

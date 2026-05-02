@@ -276,11 +276,172 @@ export function writeToolcallLog(entry) {
  */
 export function getToolcallLogBase(wo) {
   return {
+    event:         "toolcall",
     ts:            new Date().toISOString(),
     turnId:        String(wo.turnId || wo.callerTurnId || ""),
+    callerTurnId:  String(wo.callerTurnId || ""),
     channel:       String(wo.channelId || ""),
     callerChannel: String(wo.callerChannelId || ""),
-    flow:          String(wo.flow || "")
+    flow:          String(wo.flow || ""),
+    callerFlow:    String(wo.callerFlow || ""),
+    agentType:     String(wo.agentType || ""),
+    agentDepth:    Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0,
+    useAiModule:   String(wo.useAiModule || ""),
+    model:         String(wo.model || ""),
+    channelIds:    Array.isArray(wo.channelIds) ? wo.channelIds.map(v => String(v || "")).filter(Boolean) : [],
+    callerChannelIds: Array.isArray(wo.callerChannelIds) ? wo.callerChannelIds.map(v => String(v || "")).filter(Boolean) : []
+  };
+}
+
+
+function getLogSafeString(value, max = 240) {
+  const s = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  return s.length > max ? s.slice(0, max) + " ...[truncated]" : s;
+}
+
+
+function getResultObject(result) {
+  if (typeof result === "string") return getTryParseJSON(result, result);
+  return result;
+}
+
+
+function getToolResultRows(value) {
+  if (Array.isArray(value?.rows)) return value.rows;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.files)) return value.files;
+  return null;
+}
+
+
+function getSpecialistResponseSummary(row) {
+  const responseText = typeof row?.response === "string" ? row.response.trim() : "";
+  const parsed = responseText ? getTryParseJSON(responseText, null) : null;
+  const base = {
+    jobID: row?.jobID ?? null,
+    type: typeof row?.type === "string" ? row.type : "",
+    ok: row?.ok === true,
+    error: typeof row?.error === "string" && row.error.trim() ? getLogSafeString(row.error, 200) : undefined
+  };
+  if (!parsed || typeof parsed !== "object") {
+    return {
+      ...base,
+      responsePreview: responseText ? getLogSafeString(responseText, 200) : undefined
+    };
+  }
+  return {
+    ...base,
+    status: typeof parsed.status === "string" ? parsed.status : undefined,
+    nextPageId: parsed.nextPageId ?? parsed.next_page_id ?? undefined,
+    cutoff: typeof parsed.cutoff === "string" ? parsed.cutoff : undefined,
+    assignedStart: typeof parsed.assignedStart === "string" ? parsed.assignedStart : undefined,
+    assignedEnd: typeof parsed.assignedEnd === "string" ? parsed.assignedEnd : undefined,
+    actualStart: typeof parsed.actualStart === "string" ? parsed.actualStart : undefined,
+    actualEnd: typeof parsed.actualEnd === "string" ? parsed.actualEnd : undefined,
+    reason: typeof parsed.reason === "string" ? getLogSafeString(parsed.reason, 160) : undefined,
+    responsePreview: responseText ? getLogSafeString(responseText, 200) : undefined
+  };
+}
+
+
+export function getToolArgsMeta(toolName, args) {
+  const value = args && typeof args === "object" ? args : {};
+  const preview = getPreview(getJsonSafe(value), 500);
+
+  if (toolName === "getHistory") {
+    return {
+      argsPreview: preview,
+      requestedStartInput: typeof value.start === "string" ? value.start : undefined,
+      requestedEndInput: typeof value.end === "string" ? value.end : undefined,
+      requestedStartCtxId: value.startCtxId ?? value.start_ctx_id ?? value.start_ctx ?? undefined
+    };
+  }
+
+  if (toolName === "getSpecialists") {
+    const specialists = Array.isArray(value.specialists) ? value.specialists : [];
+    return {
+      argsPreview: preview,
+      specialistsRequested: specialists.length,
+      specialistRequests: specialists.slice(0, 12).map((row) => ({
+        jobID: row?.jobID ?? null,
+        type: typeof row?.type === "string" ? row.type : "",
+        promptPreview: typeof row?.prompt === "string" ? getLogSafeString(row.prompt, 180) : ""
+      }))
+    };
+  }
+
+  if (toolName === "getConfluence") {
+    const markdown = typeof value.markdown === "string" ? value.markdown : "";
+    const content = typeof value.content === "string" ? value.content : "";
+    return {
+      argsPreview: preview,
+      op: typeof value.op === "string" ? value.op : (typeof value.action === "string" ? value.action : undefined),
+      title: typeof value.title === "string" ? getLogSafeString(value.title, 120) : undefined,
+      pageId: value.pageId ?? value.page_id ?? undefined,
+      parentId: value.parentId ?? value.parent_id ?? undefined,
+      spaceKey: typeof value.spaceKey === "string" ? value.spaceKey : undefined,
+      markdownChars: markdown ? markdown.length : undefined,
+      contentChars: content ? content.length : undefined
+    };
+  }
+
+  return { argsPreview: preview };
+}
+
+
+export function getToolTraceMeta(toolName, result) {
+  const value = getResultObject(result);
+  if (!value || typeof value !== "object") {
+    return typeof value === "string" && value.trim()
+      ? { resultPreview: getLogSafeString(value, 240) }
+      : {};
+  }
+
+  if (toolName === "getHistory") {
+    return {
+      requestedStart: typeof value.requested_start === "string" ? value.requested_start : undefined,
+      requestedEnd: typeof value.requested_end === "string" ? value.requested_end : undefined,
+      actualStart: typeof value.actual_start === "string" ? value.actual_start : undefined,
+      actualEnd: typeof value.actual_end === "string" ? value.actual_end : undefined,
+      dbEnd: typeof value.db_end === "string" ? value.db_end : undefined,
+      fetchedCount: typeof value.fetched_count === "number" ? value.fetched_count : undefined,
+      preloadedCount: typeof value.preloaded_count === "number" ? value.preloaded_count : undefined,
+      maxRows: typeof value.max_rows === "number" ? value.max_rows : undefined,
+      cappedByPreload: value.capped_by_preload === true ? true : undefined,
+      cappedByChars: value.capped_by_chars === true ? true : undefined,
+      channelsQueried: Array.isArray(value.channels) ? value.channels.slice(0, 12) : undefined
+    };
+  }
+
+  if (toolName === "getSpecialists") {
+    const rows = Array.isArray(value.rows) ? value.rows : [];
+    return {
+      specialistsReturned: rows.length,
+      specialistsComplete: typeof value.complete === "number" ? value.complete : undefined,
+      specialistsFailed: typeof value.failed === "number" ? value.failed : undefined,
+      specialistSummaries: rows.slice(0, 12).map(getSpecialistResponseSummary)
+    };
+  }
+
+  if (toolName === "getConfluence") {
+    return {
+      op: typeof value.op === "string" ? value.op : undefined,
+      ok: value.ok === true ? true : undefined,
+      pageId: value.pageId ?? value.id ?? undefined,
+      parentId: value.parentId ?? undefined,
+      title: typeof value.title === "string" ? getLogSafeString(value.title, 120) : undefined,
+      spaceKey: typeof value.spaceKey === "string" ? value.spaceKey : undefined,
+      viewUrl: typeof value.viewUrl === "string" ? value.viewUrl : undefined
+    };
+  }
+
+  const rows = getToolResultRows(value);
+  return {
+    resultPreview: getLogSafeString(getJsonSafe(value), 240),
+    ok: value.ok === false ? false : (value.ok === true ? true : undefined),
+    error: typeof value.error === "string" && value.error.trim() ? getLogSafeString(value.error, 200) : undefined,
+    resultRows: rows ? rows.length : undefined
   };
 }
 
@@ -289,14 +450,14 @@ export function getToolcallLogBase(wo) {
  * Returns pagination/summary metadata for a tool result, keyed by tool name.
  */
 export function getToolPaginationMeta(toolName, result) {
-  const v = typeof result === "string" ? getTryParseJSON(result, result) : result;
+  const v = getResultObject(result);
   if (!v || typeof v !== "object") return {};
 
   const num = (x) => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
   const len = (x) => (typeof x === "string" ? x.length : Array.isArray(x) ? x.length : undefined);
   const out = (o) => Object.fromEntries(Object.entries(o).filter(([, val]) => val !== undefined));
 
-  const rows = Array.isArray(v.rows) ? v.rows : Array.isArray(v.items) ? v.items : Array.isArray(v.files) ? v.files : null;
+  const rows = getToolResultRows(v);
   return out({
     tool: typeof toolName === "string" ? toolName : undefined,
     rows: num(v.count) ?? (rows ? rows.length : undefined),

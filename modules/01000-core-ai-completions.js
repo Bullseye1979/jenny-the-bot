@@ -29,7 +29,9 @@ import {
   setRememberActiveToolStatus,
   writeToolcallLog,
   getToolcallLogBase,
+  getToolArgsMeta,
   getToolPaginationMeta,
+  getToolTraceMeta,
   getToolResultMeta,
   setEnsureFinalSynthesisPrompt,
   getParseArtifactsBlock,
@@ -184,7 +186,9 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       status: resultMeta.ok ? "success" : "returned_error",
       durationMs,
       ...(resultMeta.error ? { error: resultMeta.error } : {}),
-      ...getToolPaginationMeta(name, result)
+      ...getToolArgsMeta(name, args),
+      ...getToolPaginationMeta(name, result),
+      ...getToolTraceMeta(name, result)
     });
 
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
@@ -192,7 +196,15 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
   } catch (e) {
     const durationMs = Date.now() - startTs;
     log("Tool call error", "error", { tool_call_id: toolCall?.id || null, tool: name, durationMs, error: String(e?.message || e) });
-    writeToolcallLog({ ...getToolcallLogBase(wo), coreData, tool: name, status: "error", durationMs, error: String(e?.message || e) });
+    writeToolcallLog({
+      ...getToolcallLogBase(wo),
+      coreData,
+      tool: name,
+      status: "error",
+      durationMs,
+      error: String(e?.message || e),
+      ...getToolArgsMeta(name, args)
+    });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
   } finally {
     if (wo._statusToolGen === _myGen) {
@@ -315,13 +327,29 @@ export default async function getCoreAi(coreData) {
       const finish    = choice?.finish_reason;
       const msg       = choice?.message || {};
       const toolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
+      const toolNamesRequested = toolCalls?.map(tc => String(tc?.function?.name || "").trim()).filter(Boolean) || [];
+      const contentText = typeof msg.content === "string" ? msg.content : "";
 
       log(`AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${typeof msg.content === "string" ? msg.content.length : 0} tool_calls=${toolCalls?.length ?? 0}`, "info");
+      writeToolcallLog({
+        ...getToolcallLogBase(wo),
+        event: "ai_turn",
+        coreData,
+        loop: i + 1,
+        finishReason: finish ?? null,
+        contentLen: contentText.length,
+        contentPreview: getPreview(contentText, RESULT_PREVIEW_MAX),
+        toolMode: toolStep.mode,
+        toolsDisabled,
+        toolCallsRequested: toolNamesRequested,
+        totalToolCallsBefore: totalToolCalls,
+        maxToolCalls: kiCfg.maxToolCalls
+      });
 
       const assistantMsg = {
         role:       "assistant",
         authorName: getAssistantAuthorName(wo),
-        content:    typeof msg.content === "string" ? msg.content : ""
+        content:    contentText
       };
       if (assistantMsg.authorName == null) delete assistantMsg.authorName;
 
@@ -353,7 +381,16 @@ export default async function getCoreAi(coreData) {
       if (toolCalls && toolCalls.length && toolModules.length) {
         if (totalToolCalls >= kiCfg.maxToolCalls) {
           hitMaxToolCalls = true;
-          log(`maxToolCalls limit reached (${totalToolCalls}/${kiCfg.maxToolCalls}) — requesting synthesis`, "warn");
+          log(`maxToolCalls limit reached (${totalToolCalls}/${kiCfg.maxToolCalls}) - requesting synthesis`, "warn");
+          writeToolcallLog({
+            ...getToolcallLogBase(wo),
+            event: "ai_limit",
+            coreData,
+            loop: i + 1,
+            limitType: "maxToolCalls",
+            totalToolCalls,
+            maxToolCalls: kiCfg.maxToolCalls
+          });
           wo.__forceNoTools = true;
           setEnsureFinalSynthesisPrompt(messages, wo);
           continue;
@@ -363,7 +400,17 @@ export default async function getCoreAi(coreData) {
         for (const tc of toolCalls) {
           if (totalToolCalls >= kiCfg.maxToolCalls) {
             hitMaxToolCalls = true;
-            log(`maxToolCalls limit reached mid-batch (${totalToolCalls}/${kiCfg.maxToolCalls}) — skipping remaining`, "warn");
+            log(`maxToolCalls limit reached mid-batch (${totalToolCalls}/${kiCfg.maxToolCalls}) - skipping remaining`, "warn");
+            writeToolcallLog({
+              ...getToolcallLogBase(wo),
+              event: "ai_limit",
+              coreData,
+              loop: i + 1,
+              limitType: "maxToolCallsMidBatch",
+              totalToolCalls,
+              maxToolCalls: kiCfg.maxToolCalls,
+              pendingTool: tcName
+            });
             break;
           }
 
@@ -407,6 +454,15 @@ export default async function getCoreAi(coreData) {
         messages.push(cont);
         wo._contextPersistQueue.push(getWithTurnId(cont, wo));
         log(`Continue triggered: finish_reason="${finish ?? "null"}" looks_cut_off=${getLooksCutOff(chunkText)}`, "info");
+        writeToolcallLog({
+          ...getToolcallLogBase(wo),
+          event: "ai_continue",
+          coreData,
+          loop: i + 1,
+          finishReason: finish ?? null,
+          looksCutOff: getLooksCutOff(chunkText),
+          contentPreview: getPreview(chunkText, RESULT_PREVIEW_MAX)
+        });
         wo.__forceNoTools = true;
         continue;
       }
@@ -457,6 +513,21 @@ export default async function getCoreAi(coreData) {
   } else {
     wo.response = "[Empty AI response]";
   }
+
+  writeToolcallLog({
+    ...getToolcallLogBase(wo),
+    event: "ai_final",
+    coreData,
+    toolCallsUsed: totalToolCalls,
+    calledTools: toolCallLog.map(e => e.tool),
+    hitMaxLoops,
+    hitMaxToolCalls,
+    responseState: hitMaxToolCalls ? "max_tool_calls"
+      : hitMaxLoops ? "max_loops"
+      : (_finalText ? "final_text" : "empty"),
+    responsePreview: getPreview(wo.response || "", RESULT_PREVIEW_MAX),
+    confluenceCallCount: toolCallLog.filter(e => e.tool === "getConfluence").length
+  });
 
   const { primaryImageUrl: _primaryImg } = getParseArtifactsBlock(wo.response);
   if (_primaryImg) wo.primaryImageUrl = _primaryImg;

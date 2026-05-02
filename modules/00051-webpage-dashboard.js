@@ -139,23 +139,37 @@ function getCalledTools(f) {
       index: i + 1
     }))
     .filter(c => c.name);
+  const deduped = [];
+  for (const call of out) {
+    const last = deduped[deduped.length - 1];
+    if (
+      last &&
+      last.name === call.name &&
+      last.status === call.status &&
+      last.task === call.task &&
+      last.durationMs === call.durationMs
+    ) {
+      continue;
+    }
+    deduped.push(call);
+  }
   if (activeName) {
-    const last = out[out.length - 1];
-    if (!last || last.name !== activeName || last.status) {
-      out.push({
+    const last = deduped[deduped.length - 1];
+    if (!last || last.name !== activeName) {
+      deduped.push({
         name: activeName,
         status: "running",
         durationMs: 0,
         task: "",
         active: true,
-        index: out.length + 1
+        index: deduped.length + 1
       });
     } else {
       last.active = true;
-      last.status = last.status || "running";
+      last.status = "running";
     }
   }
-  return out.slice(-8);
+  return deduped.slice(-8).map((call, i) => ({ ...call, index: i + 1 }));
 }
 
 
@@ -166,16 +180,65 @@ function getCallStatusCls(call) {
 }
 
 
-function renderToolCallCard(call) {
+function getHasSpecialistChildren(node) {
+  return !!(node && Array.isArray(node.children) && node.children.some(child => getStr(child?.f?.agentType).trim()));
+}
+
+
+function getInlineSpecialistChildren(node) {
+  if (!getHasSpecialistChildren(node)) return [];
+  const calledTools = getCalledTools(node.f || {});
+  const hasSpecialistTool = calledTools.some(call => call.name === "getSpecialists");
+  if (!hasSpecialistTool) return [];
+  return node.children.filter(child => getStr(child?.f?.agentType).trim());
+}
+
+
+function getSpecialistSummary(children) {
+  const list = Array.isArray(children) ? children : [];
+  if (!list.length) return null;
+
+  const byType = new Map();
+  let running = 0;
+  let failed = 0;
+  let done = 0;
+
+  for (const child of list) {
+    const flow = child?.f || {};
+    const type = getStr(flow.agentType).trim() || "specialist";
+    byType.set(type, (byType.get(type) || 0) + 1);
+
+    if (Number(flow.fail || 0) > 0) failed++;
+    else if (flow.phase === "done" || flow.finishedAt) done++;
+    else running++;
+  }
+
+  return {
+    total: list.length,
+    running,
+    failed,
+    done,
+    types: [...byType.entries()].map(([type, count]) => `${type}${count > 1 ? ` x${count}` : ""}`).join(", ")
+  };
+}
+
+
+function renderToolCallCard(call, extra = {}) {
   const cls = getCallStatusCls(call);
   const duration = Number.isFinite(call.durationMs) && call.durationMs > 0 ? getFmtElapsed(call.durationMs) : "";
   const badge = call.active || call.status === "running"
     ? "&#x25B6;&nbsp;tool"
     : (cls === "st-err" ? "&#x2716;&nbsp;tool" : "&#x2714;&nbsp;tool");
+  const specialistSummary = extra?.specialistSummary || null;
   const detail = [
     call.status ? `<span><span class="dlbl">status:</span> ${escHtml(call.status)}</span>` : "",
     duration ? `<span><span class="dlbl">time:</span> ${escHtml(duration)}</span>` : "",
-    call.task ? `<span><span class="dlbl">task:</span> ${escHtml(call.task)}</span>` : ""
+    call.task ? `<span><span class="dlbl">task:</span> ${escHtml(call.task)}</span>` : "",
+    specialistSummary?.total ? `<span><span class="dlbl">specialists:</span> ${escHtml(String(specialistSummary.total))}</span>` : "",
+    specialistSummary?.types ? `<span><span class="dlbl">types:</span> ${escHtml(specialistSummary.types)}</span>` : "",
+    specialistSummary && (specialistSummary.running || specialistSummary.done || specialistSummary.failed)
+      ? `<span><span class="dlbl">workers:</span> ${escHtml(`${specialistSummary.done} done, ${specialistSummary.running} running, ${specialistSummary.failed} failed`)}</span>`
+      : ""
   ].filter(Boolean).join("");
   return `<div class="dnode dcallnode">
 <div class="dflow dcall ${cls}" data-flow="toolcall">
@@ -202,6 +265,8 @@ function renderFlowCard(node, depth = 0) {
   const depthLabel = Number.isFinite(Number(f.agentDepth)) ? Number(f.agentDepth) : 0;
   const childCount = node.children.length;
   const parallelInfo = node.siblingCount > 1 ? `${node.siblingCount} parallel` : "";
+  const inlineSpecialists = getInlineSpecialistChildren(node);
+  const specialistSummary = getSpecialistSummary(inlineSpecialists);
 
   const meta = [
     f.channelId ? `<span><span class="dlbl">channel:</span> ${escHtml(f.channelId)}</span>` : "",
@@ -222,8 +287,14 @@ function renderFlowCard(node, depth = 0) {
     f.lastError ? `<span class="derr">${escHtml(f.lastError)}</span>` : ""
   ].filter(Boolean).join("");
 
-  const callCards = calledTools.map(call => renderToolCallCard(call)).join("\n");
-  const childCards = node.children.map(child => renderFlowCard(child, depth + 1)).join("\n");
+  const callCards = calledTools.map(call => renderToolCallCard(
+    call,
+    call.name === "getSpecialists" ? { specialistSummary } : {}
+  )).join("\n");
+  const childCards = node.children
+    .filter(child => !inlineSpecialists.includes(child))
+    .map(child => renderFlowCard(child, depth + 1))
+    .join("\n");
   const children = callCards || childCards
     ? `<div class="dchildren">${[callCards, childCards].filter(Boolean).join("\n")}</div>`
     : "";
