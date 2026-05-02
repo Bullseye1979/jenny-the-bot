@@ -1,13 +1,13 @@
 {
   "name": "getJira",
-  "description": "ALWAYS USE THIS TOOL to access Jira. Always execute a fresh Jira operation — never reuse issue data from previous calls. If a previous call failed, retry with corrected parameters. Supports high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE) and raw API requests. Enforces configured project key and credentials. JQL is normalized automatically. LIST returns {key, summary, status}.\nMULTI-WORKER: Multiple agents may operate on DIFFERENT issues in parallel safely. Concurrent UPDATE/STATUS calls on the SAME issue cause conflicts — serialize writes to the same issue.",
-  "policyHint": "For any Jira operation — listing, creating, updating, or checking issues — use this tool immediately without asking for confirmation.",
+  "description": "ALWAYS USE THIS TOOL to access Jira. Always execute a fresh Jira operation - never reuse issue data from previous calls. If a previous call failed, retry with corrected parameters. Supports high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE) and raw API requests. Uses configured Jira credentials and normalizes JQL automatically. LIST returns {key, summary, status}. IMPORTANT: Never invent, guess, or hallucinate a Jira project key. If the correct project key is not explicitly known from user input or trusted tool results, omit any project restriction from your request and let the tool/config handle scoping.\nMULTI-WORKER: Multiple agents may operate on DIFFERENT issues in parallel safely. Concurrent UPDATE/STATUS calls on the SAME issue cause conflicts - serialize writes to the same issue.",
+  "policyHint": "For any Jira operation - listing, creating, updating, or checking issues - use this tool immediately without asking for confirmation. Never guess a project key; if uncertain, omit it.",
   "parameters": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
       "op": { "type": "string", "enum": ["LIST", "TASK", "STATUS", "CREATE", "DELETE", "UPDATE"], "description": "High-level operation. If omitted, raw request mode is used via the 'json' field." },
-      "jql": { "type": "string", "description": "For LIST: optional JQL filter. Project scoping is auto-enforced unless meta.allowCrossProject=true." },
+      "jql": { "type": "string", "description": "For LIST: optional JQL filter. Do not invent or guess a project key in JQL. If the project is not explicitly known, omit any project clause and let tool/config scoping handle it. Project scoping is auto-enforced unless meta.allowCrossProject=true." },
       "key": { "type": "string", "description": "Issue key for TASK/STATUS/UPDATE/DELETE." },
       "status": { "type": "string", "description": "Target status for STATUS/UPDATE (auto-transition)." },
       "resolutionName": { "type": "string", "description": "Optional resolution to set during STATUS (e.g. 'Done', 'Won't Fix')." },
@@ -16,7 +16,7 @@
       "fields": { "type": "object", "description": "For CREATE/UPDATE: Jira REST fields payload (summary, issuetype, etc.)." },
       "json": {
         "type": "object",
-        "description": "Raw low-level Jira request (alternative to op-mode). Proxy enforces base URL and project key.",
+        "description": "Raw low-level Jira request (alternative to op-mode). Proxy enforces base URL. Never invent or guess a project key in path, url, query, or body; if uncertain, omit it and let tool/config scoping handle it.",
         "additionalProperties": false,
         "properties": {
           "method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"] },
