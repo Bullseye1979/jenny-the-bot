@@ -406,14 +406,59 @@ export function getChannelAwarenessBlock(wo) {
   return lines.join("\n");
 }
 
+function getNormalizeOffsetText(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "Z";
+  if (s === "GMT" || s === "UTC") return "Z";
+  const m = s.match(/^(?:GMT|UTC)([+-]\d{1,2})(?::?(\d{2}))?$/i);
+  if (!m) return "Z";
+  const hh = String(Math.abs(Number(m[1]))).padStart(2, "0");
+  const mm = String(m[2] || "00").padStart(2, "0");
+  return `${String(m[1]).startsWith("-") ? "-" : "+"}${hh}:${mm}`;
+}
+
+function getLocalIsoForTimeZone(date, timeZone) {
+  try {
+    const dtf = new Intl.DateTimeFormat("sv-SE", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23"
+    });
+    const parts = dtf.formatToParts(date);
+    const get = (type) => parts.find(p => p.type === type)?.value || "";
+    const y = get("year");
+    const m = get("month");
+    const d = get("day");
+    const hh = get("hour");
+    const mm = get("minute");
+    const ss = get("second");
+    const offsetText = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      timeZoneName: "shortOffset"
+    }).formatToParts(date).find(p => p.type === "timeZoneName")?.value || "UTC";
+    const offset = getNormalizeOffsetText(offsetText);
+    if (!y || !m || !d || !hh || !mm || !ss) return date.toISOString();
+    return `${y}-${m}-${d}T${hh}:${mm}:${ss}${offset}`;
+  } catch {
+    return date.toISOString();
+  }
+}
+
 
 /*
  * Builds the main system message text from workingObject fields and runtime info.
  * earliestTimestamps is pre-fetched by the caller to keep this function synchronous.
  */
 export function getSystemContentText(wo, { earliestTimestamps = [], moduleCfg = {} } = {}) {
-  const nowIso = new Date().toISOString();
+  const now = new Date();
   const tz     = (typeof wo?.timezone === "string" && wo.timezone.trim()) ? wo.timezone.trim() : "Europe/Berlin";
+  const nowIso = getLocalIsoForTimeZone(now, tz);
+  const nowUtcIso = now.toISOString();
 
   const base = [
     typeof wo.systemPrompt  === "string" ? wo.systemPrompt.trim()  : "",
@@ -429,10 +474,11 @@ export function getSystemContentText(wo, { earliestTimestamps = [], moduleCfg = 
   const runtimeInfo = [
     "Runtime info:",
     `- current_time_iso: ${nowIso}`,
+    `- current_time_utc_iso: ${nowUtcIso}`,
     `- timezone_hint: ${tz}`,
     ...earliestLines,
     ...(earliestLines.length ? ["- context_earliest_record shows how far back the database holds records for each channel, regardless of how many entries are visible in this context window. History tools can retrieve records all the way back to this date."] : []),
-    "- When the user uses relative time terms (e.g., today, tomorrow), interpret them relative to current_time_iso unless another explicit reference time is provided.",
+    "- current_time_iso is already expressed in timezone_hint and should be used for relative date boundaries such as today/current/heute unless another explicit reference time is provided.",
     "- If you generate calendar-like text, prefer explicit dates (YYYY-MM-DD) when helpful."
   ].join("\n");
 

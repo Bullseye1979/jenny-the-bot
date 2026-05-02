@@ -148,8 +148,9 @@ async function getPreloadUpToCap(
   let cursor = Number.isFinite(startCtxId) && startCtxId > 0 ? startCtxId : null;
   const size = Math.max(1, pageSize || 1000);
   const hardCap = Math.max(1, cap || 10000);
-  while (out.length < hardCap) {
-    const need = Math.min(size, hardCap - out.length);
+  const lookaheadCap = hardCap + 1;
+  while (out.length < lookaheadCap) {
+    const need = Math.min(size, lookaheadCap - out.length);
     const chunk = await getRowsByTime(pool, channelIds, {
       startTs,
       endTs,
@@ -163,7 +164,12 @@ async function getPreloadUpToCap(
     cursor = chunk[chunk.length - 1].ctx_id;
     if (chunk.length < need) break;
   }
-  return out;
+  const hasMore = out.length > hardCap;
+  return {
+    rows: hasMore ? out.slice(0, hardCap) : out,
+    hasMore,
+    fetchedCount: out.length
+  };
 }
 
 
@@ -227,7 +233,7 @@ async function getHistoryInvoke(args, coreData) {
   const includeJson = cfgTool.includeJson === true;
   const dumpMaxChars = Number.isFinite(Number(cfgTool?.dumpMaxChars)) ? Number(cfgTool.dumpMaxChars) : 40000;
   const pool = await getEnsurePool(wo);
-  let rows = await getPreloadUpToCap(pool, channelIds, {
+  const preload = await getPreloadUpToCap(pool, channelIds, {
     startTs,
     endTs,
     endExclusive,
@@ -236,8 +242,9 @@ async function getHistoryInvoke(args, coreData) {
     pageSize,
     includeToolRows
   });
+  let rows = preload.rows;
   const preloadedCount = rows.length;
-  const cappedByCap = preloadedCount >= maxRows;
+  const cappedByCap = preload.hasMore;
   log(`getHistory DB result: channels=${JSON.stringify(channelIds)} start=${startTs} end=${endTs} rows=${preloadedCount} capped=${cappedByCap}`, "info");
   if (!rows.length) {
     return {
@@ -254,6 +261,7 @@ async function getHistoryInvoke(args, coreData) {
       count: 0,
       max_rows: maxRows,
       preloaded_count: 0,
+      fetched_count: preload.fetchedCount,
       capped_by_preload: false
     };
   }
@@ -312,6 +320,7 @@ async function getHistoryInvoke(args, coreData) {
     count: charsTrimmedRows.length,
     max_rows: maxRows,
     preloaded_count: preloadedCount,
+    fetched_count: preload.fetchedCount,
     capped_by_preload: cappedByCap,
     capped_by_chars: cappedByChars,
     has_more: hasMore,
