@@ -106,6 +106,12 @@ export function getLooksCutOff(text) {
   if (!s) return false;
   if (/[.!?:;*"»)\]}>~`]$/.test(s)) return false;
   if (/https?:\/\/\S+$/.test(s)) return false;
+  const wordCount = s.split(/\s+/).filter(Boolean).length;
+  if (wordCount <= 8 && !/\n/.test(s)) {
+    if (!/\b(?:and|or|but|because|with|without|to|for|of|in|on|at|from|into|onto|about|the|a|an|my|your|his|her|their|our|its)$/i.test(s)) {
+      return false;
+    }
+  }
   return true;
 }
 
