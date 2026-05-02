@@ -48,7 +48,63 @@ function getExtractContent(r) {
 function getPadString(n) { return String(n).padStart(2, "0"); }
 
 
-function getParsedHumanDate(input, isEnd = false) {
+function getNormalizeOffsetText(offsetText) {
+  const raw = String(offsetText || "").trim();
+  if (!raw) return "Z";
+  if (raw === "GMT" || raw === "UTC") return "Z";
+  const m = raw.match(/(?:GMT|UTC)([+-])(\d{1,2})(?::?(\d{2}))?$/i);
+  if (!m) return "Z";
+  const sign = m[1];
+  const hh = String(m[2] || "0").padStart(2, "0");
+  const mm = String(m[3] || "0").padStart(2, "0");
+  return `${sign}${hh}:${mm}`;
+}
+
+
+function getTimeZoneOffsetMs(date, timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      timeZoneName: "shortOffset"
+    }).formatToParts(date);
+    const offsetText = parts.find((part) => part.type === "timeZoneName")?.value || "UTC";
+    const normalized = getNormalizeOffsetText(offsetText);
+    if (normalized === "Z") return 0;
+    const m = normalized.match(/^([+-])(\d{2}):(\d{2})$/);
+    if (!m) return 0;
+    const sign = m[1] === "-" ? -1 : 1;
+    return sign * ((Number(m[2]) * 60) + Number(m[3])) * 60000;
+  } catch {
+    return 0;
+  }
+}
+
+
+function getUtcSqlForLocalParts({ year, month, day, hour, minute, second, timeZone }) {
+  let utcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  for (let i = 0; i < 3; i++) {
+    const offsetMs = getTimeZoneOffsetMs(new Date(utcMs), timeZone);
+    const nextUtcMs = Date.UTC(year, month - 1, day, hour, minute, second) - offsetMs;
+    if (nextUtcMs === utcMs) break;
+    utcMs = nextUtcMs;
+  }
+  const d = new Date(utcMs);
+  return `${d.getUTCFullYear()}-${getPadString(d.getUTCMonth() + 1)}-${getPadString(d.getUTCDate())} ${getPadString(d.getUTCHours())}:${getPadString(d.getUTCMinutes())}:${getPadString(d.getUTCSeconds())}`;
+}
+
+
+function getAddDaysLocal(year, month, day, days) {
+  const d = new Date(Date.UTC(year, month - 1, day));
+  d.setUTCDate(d.getUTCDate() + (days | 0));
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate()
+  };
+}
+
+
+function getParsedHumanDate(input, isEnd = false, timeZone = "UTC") {
   if (!input) return null;
   const raw = String(input).trim();
   const mDe = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
@@ -56,15 +112,29 @@ function getParsedHumanDate(input, isEnd = false) {
     const day = Number(mDe[1]);
     const month = Number(mDe[2]);
     const year = Number(mDe[3]);
-    let hh = Number(mDe[4] ?? (isEnd ? 23 : 0));
-    let mm = Number(mDe[5] ?? (isEnd ? 59 : 0));
-    let ss = Number(mDe[6] ?? (isEnd ? 59 : 0));
-    return `${year}-${getPadString(month)}-${getPadString(day)} ${getPadString(hh)}:${getPadString(mm)}:${getPadString(ss)}`;
+    const hh = Number(mDe[4] ?? (isEnd ? 23 : 0));
+    const mm = Number(mDe[5] ?? (isEnd ? 59 : 0));
+    const ss = Number(mDe[6] ?? (isEnd ? 59 : 0));
+    return getUtcSqlForLocalParts({ year, month, day, hour: hh, minute: mm, second: ss, timeZone });
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    return isEnd ? `${raw} 23:59:59` : `${raw} 00:00:00`;
+    const [year, month, day] = raw.split("-").map(Number);
+    return getUtcSqlForLocalParts({
+      year,
+      month,
+      day,
+      hour: isEnd ? 23 : 0,
+      minute: isEnd ? 59 : 0,
+      second: isEnd ? 59 : 0,
+      timeZone
+    });
   }
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) {
+    const [datePart, timePart] = raw.split(" ");
+    const [year, month, day] = datePart.split("-").map(Number);
+    const [hour, minute, second] = timePart.split(":").map(Number);
+    return getUtcSqlForLocalParts({ year, month, day, hour, minute, second, timeZone });
+  }
   const d = new Date(raw);
   if (!Number.isNaN(d.getTime())) {
     return `${d.getUTCFullYear()}-${getPadString(d.getUTCMonth() + 1)}-${getPadString(d.getUTCDate())} ${getPadString(d.getUTCHours())}:${getPadString(d.getUTCMinutes())}:${getPadString(d.getUTCSeconds())}`;
@@ -87,16 +157,6 @@ function getISO(ts) {
 function getIsDateOnly(raw) {
   const s = String(raw || "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(s) || /^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s);
-}
-
-
-function getAddDaysUTC(yyyy_mm_dd, days) {
-  const d = new Date(yyyy_mm_dd + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + (days | 0));
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const da = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${da}`;
 }
 
 
@@ -212,10 +272,11 @@ async function getHistoryInvoke(args, coreData) {
     return getErrorResult("db_incomplete", "workingObject.db incomplete");
   }
   const startRaw = args?.start ? String(args.start).trim() : null;
+  const timeZone = (typeof wo?.timezone === "string" && wo.timezone.trim()) ? wo.timezone.trim() : "Europe/Berlin";
   if (!startRaw) {
     return getErrorResult("timeframe_required", "timeframe_required", { hint: 'Pass at least {"start":"2025-10-25"}' });
   }
-  const startTs = getParsedHumanDate(startRaw, false);
+  const startTs = getParsedHumanDate(startRaw, false, timeZone);
   if (!startTs) {
     return getErrorResult("invalid_start", "invalid_start", { hint: `Use YYYY-MM-DD or DD.MM.YYYY (got start="${startRaw}")` });
   }
@@ -226,13 +287,24 @@ async function getHistoryInvoke(args, coreData) {
     endTs = getNowUtcSql();
     endExclusive = false;
   } else if (getIsDateOnly(endRaw)) {
-    const endStart = getParsedHumanDate(endRaw, false);
-    const endDate = endStart.slice(0, 10);
-    const nextDay = getAddDaysUTC(endDate, 1);
-    endTs = `${nextDay} 00:00:00`;
+    const mDe = endRaw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    const mIso = endRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const year = Number(mDe ? mDe[3] : mIso?.[1]);
+    const month = Number(mDe ? mDe[2] : mIso?.[2]);
+    const day = Number(mDe ? mDe[1] : mIso?.[3]);
+    const nextDay = getAddDaysLocal(year, month, day, 1);
+    endTs = getUtcSqlForLocalParts({
+      year: nextDay.year,
+      month: nextDay.month,
+      day: nextDay.day,
+      hour: 0,
+      minute: 0,
+      second: 0,
+      timeZone
+    });
     endExclusive = true;
   } else {
-    endTs = getParsedHumanDate(endRaw, true);
+    endTs = getParsedHumanDate(endRaw, true, timeZone);
     if (!endTs) {
       return getErrorResult("invalid_end", "invalid_end", { hint: `Use YYYY-MM-DD or DD.MM.YYYY (got end="${endRaw}")` });
     }

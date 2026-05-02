@@ -828,6 +828,30 @@ export async function getContext(workingObject) {
   }
 
   let hasTimelineBlocks = false;
+  const rawCoverageNote = (() => {
+    if (!rows.length) return "";
+    const earliestMs = rows.reduce((min, row) => {
+      const current = new Date(row.ts).getTime();
+      return Number.isFinite(min) ? Math.min(min, current) : current;
+    }, Number.NaN);
+    const latestMs = rows.reduce((max, row) => {
+      const current = new Date(row.ts).getTime();
+      return Number.isFinite(max) ? Math.max(max, current) : current;
+    }, Number.NaN);
+    const coveredChannels = [...new Set(rows.map(row => String(row.id || "").trim()).filter(Boolean))];
+    const earliestIso = Number.isFinite(earliestMs) ? new Date(earliestMs).toISOString() : "?";
+    const latestIso = Number.isFinite(latestMs) ? new Date(latestMs).toISOString() : "?";
+    return [
+      "Visible raw context note:",
+      `- visible_raw_start_utc: ${earliestIso}`,
+      `- visible_raw_end_utc: ${latestIso}`,
+      `- visible_raw_channels: ${coveredChannels.join(", ") || baseId}`,
+      "- The visible raw context is the most recent tail only. It is not the full database history.",
+      "- Timeline blocks, if present, summarize older history before the visible raw tail.",
+      "- Do not assume the end of any timeline summary equals the end of history. The newest visible raw entry is later than all visible timeline blocks.",
+      "- For exact history boundaries, rely on explicit tool results such as requested_start, requested_end, actual_end, db_end, has_more, and next_start_ctx_id rather than guessing from visible context alone."
+    ].join("\n");
+  })();
   if (nCompressed > 0) {
     const earliestRawTs = rows.length
       ? rows.reduce((min, row) => {
@@ -863,6 +887,12 @@ export async function getContext(workingObject) {
       content: isContextOrchestrator
         ? "Timeline blocks are compressed planning aids from the conversation database. Use them only to understand rough chronology and to derive candidate time windows. Do not use visible timeline blocks as final answer evidence when tool-based historical retrieval or specialist research is available."
         : "Timeline blocks are compressed normal context from the conversation database. Treat them like regular context messages that summarize older parts of the conversation. Use them as normal source material for facts, chronology, people, places, and developments. Do not treat visible timeline blocks as missing context."
+    });
+  }
+  if (rawCoverageNote) {
+    messages.unshift({
+      role: "system",
+      content: rawCoverageNote
     });
   }
 
