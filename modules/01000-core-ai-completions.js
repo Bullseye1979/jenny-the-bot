@@ -48,6 +48,7 @@ import {
 const MODULE_NAME     = "core-ai-completions";
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
+const TOOL_CHOICE_SUPPORT_BY_ENDPOINT = new Map();
 
 
 function getShouldRunForThisModule(wo) {
@@ -68,12 +69,43 @@ function getToolDefsForCurrentStep(toolDefs, wo, totalToolCalls, maxToolCalls) {
 }
 
 
+function getToolChoiceCacheKey(wo) {
+  return String(wo?.endpoint || "").trim().toLowerCase();
+}
+
+
+function getSupportsStructuredToolChoice(wo) {
+  const key = getToolChoiceCacheKey(wo);
+  if (!key) return true;
+  if (!TOOL_CHOICE_SUPPORT_BY_ENDPOINT.has(key)) return true;
+  return TOOL_CHOICE_SUPPORT_BY_ENDPOINT.get(key) !== false;
+}
+
+
+function setSupportsStructuredToolChoice(wo, supported) {
+  const key = getToolChoiceCacheKey(wo);
+  if (!key) return;
+  TOOL_CHOICE_SUPPORT_BY_ENDPOINT.set(key, supported !== false);
+}
+
+
+function getIsToolChoiceTypeError(status, rawText, toolChoice) {
+  if (Number(status) !== 400) return false;
+  if (!toolChoice || typeof toolChoice !== "object") return false;
+  const text = String(rawText || "").toLowerCase();
+  return text.includes("invalid tool_choice type")
+    || (text.includes("tool_choice") && text.includes("supported string values"));
+}
+
+
 function getToolChoiceForStep(wo, fallbackChoice, toolsDisabled) {
   if (toolsDisabled) return undefined;
   const forcedToolName = String(wo?.__forceToolName || "").trim();
   if (forcedToolName) {
+    if (!getSupportsStructuredToolChoice(wo)) return "required";
     return { type: "function", function: { name: forcedToolName } };
   }
+  if (!getSupportsStructuredToolChoice(wo) && fallbackChoice && typeof fallbackChoice === "object") return "required";
   return fallbackChoice;
 }
 
@@ -344,13 +376,14 @@ export default async function getCoreAi(coreData) {
         forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined
       });
 
+      const toolChoiceForStep = getToolChoiceForStep(wo, kiCfg.toolChoice, toolsDisabled);
       const body = {
         model:       wo.model,
         messages,
         temperature: kiCfg.temperature,
         max_tokens:  kiCfg.maxTokens,
         tools:       !toolsDisabled ? activeToolDefs : undefined,
-        tool_choice: getToolChoiceForStep(wo, kiCfg.toolChoice, toolsDisabled)
+        tool_choice: toolChoiceForStep
       };
 
       const headers = await getRequestHeaders(wo);
@@ -358,6 +391,23 @@ export default async function getCoreAi(coreData) {
       const raw     = await res.text();
 
       if (!res.ok) {
+        if (getIsToolChoiceTypeError(res.status, raw, toolChoiceForStep)) {
+          setSupportsStructuredToolChoice(wo, false);
+          log("Backend rejected structured tool_choice; retrying with string-based compatibility mode", "warn", {
+            endpoint: String(wo?.endpoint || ""),
+            forcedToolName: String(wo?.__forceToolName || "").trim() || undefined
+          });
+          writeToolcallLog({
+            ...getToolcallLogBase(wo),
+            event: "ai_backend_compat",
+            coreData,
+            loop: i + 1,
+            compatibilityIssue: "tool_choice_object_unsupported",
+            fallbackApplied: "tool_choice=required",
+            responsePreview: getPreview(raw, RESULT_PREVIEW_MAX)
+          });
+          continue;
+        }
         log(`HTTP ${res.status} ${res.statusText}: ${raw.slice(0, 800)}`, "warn");
         writeToolcallLog({
           ...getToolcallLogBase(wo),
