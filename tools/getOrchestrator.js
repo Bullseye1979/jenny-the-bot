@@ -16,6 +16,23 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getOrchestrator";
 
+function getErrorResult(code, message, details = {}) {
+  return {
+    ok: false,
+    count: 0,
+    has_more: false,
+    next_start_ctx_id: null,
+    rows: [],
+    error: String(message || code || "unknown_error"),
+    error_status: {
+      source: MODULE_NAME,
+      code: String(code || "unknown_error"),
+      message: String(message || code || "unknown_error")
+    },
+    ...details
+  };
+}
+
 
 function getIsInvalidOrchestratorResponse(text) {
   const s = String(text || "").trim();
@@ -33,20 +50,20 @@ async function getInvoke(args, coreData) {
   const prompt = String(args?.prompt || "").trim();
   const type   = String(args?.type || cfg.defaultType || "generic").trim();
 
-  if (!prompt) return { ok: false, error: "prompt is required" };
+  if (!prompt) return getErrorResult("prompt_missing", "prompt is required");
 
   const types           = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
   const baseChannelId   = String(types[type] || "").trim();
   if (!baseChannelId) {
-    return {
-      ok:    false,
-      error: `No channel configured for orchestrator type "${type}". Configure toolsconfig.getOrchestrator.types.${type} in core.json.`,
-    };
+    return getErrorResult(
+      "orchestrator_channel_missing",
+      `No channel configured for orchestrator type "${type}". Configure toolsconfig.getOrchestrator.types.${type} in core.json.`
+    );
   }
 
   const channelId = `${baseChannelId}-${randomBytes(6).toString("hex")}`;
 
-  if (wo.aborted) return { ok: false, error: "Pipeline aborted" };
+  if (wo.aborted) return getErrorResult("pipeline_aborted", "Pipeline aborted");
 
   const apiBase      = String(cfg.apiUrl || "http://localhost:3400");
   const apiSecretKey = String(cfg.apiSecret || "").trim();
@@ -86,14 +103,21 @@ async function getInvoke(args, coreData) {
     if (!res.ok || !data.ok) {
       const err = data.error || `HTTP ${res.status}`;
       log(`Orchestrator failed: ${err}`, "warn");
-      return { ok: false, count: 0, has_more: false, next_start_ctx_id: null, rows: [], error: err };
+      return getErrorResult("orchestrator_http_error", err, {
+        error_status: {
+          source: MODULE_NAME,
+          code: "orchestrator_http_error",
+          message: String(err || `HTTP ${res.status}`),
+          httpStatus: res.status
+        }
+      });
     }
 
     const response = String(data.response || "");
     if (getIsInvalidOrchestratorResponse(response)) {
       const err = response || "Orchestrator returned empty response";
       log(`Orchestrator failed: ${err}`, "warn");
-      return { ok: false, count: 0, has_more: false, next_start_ctx_id: null, rows: [], error: err };
+      return getErrorResult("orchestrator_empty_response", err);
     }
 
     log(`Orchestrator done: type="${type}" responseLen=${response.length}`);
@@ -101,7 +125,7 @@ async function getInvoke(args, coreData) {
   } catch (e) {
     const isAbort = e?.name === "AbortError";
     log(`Orchestrator error: ${isAbort ? "timeout" : (e?.message || String(e))}`, "error");
-    return { ok: false, count: 0, has_more: false, next_start_ctx_id: null, rows: [], error: isAbort ? "Orchestrator timed out" : (e?.message || String(e)) };
+    return getErrorResult(isAbort ? "orchestrator_timeout" : "orchestrator_request_error", isAbort ? "Orchestrator timed out" : (e?.message || String(e)));
   }
 }
 

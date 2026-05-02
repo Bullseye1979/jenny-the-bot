@@ -16,6 +16,19 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getHistory";
 
+function getErrorResult(code, message, details = {}) {
+  return {
+    ok: false,
+    error: String(message || code || "unknown_error"),
+    error_status: {
+      source: MODULE_NAME,
+      code: String(code || "unknown_error"),
+      message: String(message || code || "unknown_error")
+    },
+    ...details
+  };
+}
+
 
 const ROW_CONTENT_MAX = 500;
 
@@ -192,19 +205,19 @@ async function getHistoryInvoke(args, coreData) {
   const channelIds = [...channelIdSet];
   log(`getHistory channel resolution: channelId=${wo?.channelId || "?"} callerChannelId=${wo?.callerChannelId || "?"} callerChannelIds=${JSON.stringify(wo?.callerChannelIds || [])} channelIds=${JSON.stringify(wo?.channelIds || [])} → querying=${JSON.stringify(channelIds)}`, "info");
   if (!channelIds.length) {
-    return { ok: false, error: "channelId missing (wo.channelId / wo.channelIds)" };
+    return getErrorResult("channel_missing", "channelId missing (wo.channelId / wo.channelIds)");
   }
   const mainChannelId = primaryChannelId || channelIds[0];
   if (!wo?.db || !wo.db.host || !wo.db.user || !wo.db.database) {
-    return { ok: false, error: "workingObject.db incomplete" };
+    return getErrorResult("db_incomplete", "workingObject.db incomplete");
   }
   const startRaw = args?.start ? String(args.start).trim() : null;
   if (!startRaw) {
-    return { ok: false, error: "timeframe_required", hint: 'Pass at least {"start":"2025-10-25"}' };
+    return getErrorResult("timeframe_required", "timeframe_required", { hint: 'Pass at least {"start":"2025-10-25"}' });
   }
   const startTs = getParsedHumanDate(startRaw, false);
   if (!startTs) {
-    return { ok: false, error: "invalid_start", hint: `Use YYYY-MM-DD or DD.MM.YYYY (got start="${startRaw}")` };
+    return getErrorResult("invalid_start", "invalid_start", { hint: `Use YYYY-MM-DD or DD.MM.YYYY (got start="${startRaw}")` });
   }
   const endRaw = args?.end ? String(args.end).trim() : null;
   let endTs;
@@ -221,7 +234,7 @@ async function getHistoryInvoke(args, coreData) {
   } else {
     endTs = getParsedHumanDate(endRaw, true);
     if (!endTs) {
-      return { ok: false, error: "invalid_end", hint: `Use YYYY-MM-DD or DD.MM.YYYY (got end="${endRaw}")` };
+      return getErrorResult("invalid_end", "invalid_end", { hint: `Use YYYY-MM-DD or DD.MM.YYYY (got end="${endRaw}")` });
     }
     endExclusive = false;
   }

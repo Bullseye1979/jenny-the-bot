@@ -17,6 +17,19 @@ import { getSpecialistsPaginationState } from "../shared/ai/utils.js";
 
 const MODULE_NAME = "getSpecialists";
 
+function getErrorResult(code, message, details = {}) {
+  return {
+    ok: false,
+    error: String(message || code || "unknown_error"),
+    error_status: {
+      source: MODULE_NAME,
+      code: String(code || "unknown_error"),
+      message: String(message || code || "unknown_error")
+    },
+    ...details
+  };
+}
+
 
 function getIsRetryableSpecialistError(message) {
   const text = String(message || "").trim().toLowerCase();
@@ -37,15 +50,15 @@ async function getInvoke(args, coreData) {
 
   const specialists = Array.isArray(args?.specialists) ? args.specialists : [];
   if (!specialists.length) {
-    return { ok: false, error: 'specialists array is required and must not be empty. Example: [{"type":"context-research","jobID":1,"prompt":"start=2025-11-01 end=2025-11-30"}]' };
+    return getErrorResult("specialists_missing", 'specialists array is required and must not be empty. Example: [{"type":"context-research","jobID":1,"prompt":"start=2025-11-01 end=2025-11-30"}]');
   }
 
   const allEmpty = specialists.every(s => !String(s?.type || "").trim() && !String(s?.prompt || "").trim());
   if (allEmpty) {
-    return {
-      ok: false,
-      error: `All ${specialists.length} specialist entries are missing required fields. Each entry must be an object with: "type" (string, e.g. "context-research"), "jobID" (integer), "prompt" (string with the task). Example: [{"type":"context-research","jobID":1,"prompt":"start=2025-11-01 end=2025-11-30"},{"type":"context-research","jobID":2,"prompt":"start=2025-12-01 end=2025-12-31"}]`,
-    };
+    return getErrorResult(
+      "specialists_invalid",
+      `All ${specialists.length} specialist entries are missing required fields. Each entry must be an object with: "type" (string, e.g. "context-research"), "jobID" (integer), "prompt" (string with the task). Example: [{"type":"context-research","jobID":1,"prompt":"start=2025-11-01 end=2025-11-30"},{"type":"context-research","jobID":2,"prompt":"start=2025-12-01 end=2025-12-31"}]`
+    );
   }
 
   const types          = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
@@ -73,7 +86,17 @@ async function getInvoke(args, coreData) {
 
     if (!type || !prompt) {
       const received = JSON.stringify(spec ?? null).slice(0, 300);
-      return { jobID, type: type || "?", ok: false, error: `type and prompt are required for each specialist. Received: ${received}` };
+      return {
+        jobID,
+        type: type || "?",
+        ok: false,
+        error: `type and prompt are required for each specialist. Received: ${received}`,
+        error_status: {
+          source: MODULE_NAME,
+          code: "specialist_input_invalid",
+          message: `type and prompt are required for each specialist. Received: ${received}`
+        }
+      };
     }
 
     const baseChannelId = String(types[type] || "").trim();
@@ -83,6 +106,11 @@ async function getInvoke(args, coreData) {
         type,
         ok:    false,
         error: `No channel configured for specialist type "${type}". Configure toolsconfig.getSpecialists.types.${type} in core.json.`,
+        error_status: {
+          source: MODULE_NAME,
+          code: "specialist_channel_missing",
+          message: `No channel configured for specialist type "${type}". Configure toolsconfig.getSpecialists.types.${type} in core.json.`
+        }
       };
     }
 
@@ -115,12 +143,37 @@ async function getInvoke(args, coreData) {
 
         if (!res.ok || !data.ok) {
           const error = data.error || `HTTP ${res.status}`;
-          lastFailure = { jobID, type, ok: false, error, attempts: attempt + 1, retryable: getIsRetryableSpecialistError(error) };
+          lastFailure = {
+            jobID,
+            type,
+            ok: false,
+            error,
+            attempts: attempt + 1,
+            retryable: getIsRetryableSpecialistError(error),
+            error_status: {
+              source: MODULE_NAME,
+              code: "specialist_http_error",
+              message: String(error || `HTTP ${res.status}`),
+              httpStatus: res.status
+            }
+          };
         } else {
           const responseText = String(data.response || "");
           if (!responseText || responseText.startsWith("[Empty AI response]") || responseText.startsWith("[Max Loops Hit]")) {
             const error = responseText || "Specialist returned empty response";
-            lastFailure = { jobID, type, ok: false, error, attempts: attempt + 1, retryable: getIsRetryableSpecialistError(error) };
+            lastFailure = {
+              jobID,
+              type,
+              ok: false,
+              error,
+              attempts: attempt + 1,
+              retryable: getIsRetryableSpecialistError(error),
+              error_status: {
+                source: MODULE_NAME,
+                code: "specialist_empty_response",
+                message: String(error || "Specialist returned empty response")
+              }
+            };
           } else {
             return { jobID, type, ok: true, response: responseText, attempts: attempt + 1 };
           }
@@ -128,14 +181,38 @@ async function getInvoke(args, coreData) {
       } catch (e) {
         const isAbort = e?.name === "AbortError";
         const error = isAbort ? "Specialist timed out" : (e?.message || String(e));
-        lastFailure = { jobID, type, ok: false, error, attempts: attempt + 1, retryable: getIsRetryableSpecialistError(error) };
+        lastFailure = {
+          jobID,
+          type,
+          ok: false,
+          error,
+          attempts: attempt + 1,
+          retryable: getIsRetryableSpecialistError(error),
+          error_status: {
+            source: MODULE_NAME,
+            code: isAbort ? "specialist_timeout" : "specialist_request_error",
+            message: String(error || "Specialist request failed")
+          }
+        };
       }
 
       if (!lastFailure?.retryable || attempt >= maxRetriesPerSpecialist) break;
       log(`Retrying specialist jobID=${jobID ?? "?"} type="${type}" after transient failure: ${lastFailure.error}`, "warn");
     }
 
-    return lastFailure || { jobID, type, ok: false, error: "Specialist failed", attempts: maxRetriesPerSpecialist + 1, retryable: false };
+    return lastFailure || {
+      jobID,
+      type,
+      ok: false,
+      error: "Specialist failed",
+      attempts: maxRetriesPerSpecialist + 1,
+      retryable: false,
+      error_status: {
+        source: MODULE_NAME,
+        code: "specialist_failed",
+        message: "Specialist failed"
+      }
+    };
   };
 
   const results = [];
@@ -211,7 +288,22 @@ async function getInvoke(args, coreData) {
     pending_specialists: retryPendingItems,
     requires_followup_tool: continuationPending ? MODULE_NAME : "",
     continuation_prompt: continuationPrompt,
-    ...(failedSummary ? { error: failedSummary } : {})
+    ...(failedSummary ? {
+      error: failedSummary,
+      error_status: {
+        source: MODULE_NAME,
+        code: "specialists_failed",
+        message: failedSummary
+      },
+      specialist_errors: failedResults.map(r => ({
+        jobID: r.jobID ?? null,
+        type: r.type || "",
+        error: String(r.error || "").trim(),
+        attempts: Number.isFinite(Number(r.attempts)) ? Number(r.attempts) : undefined,
+        retryable: r.retryable === true,
+        error_status: r.error_status || undefined
+      }))
+    } : {})
   };
 }
 

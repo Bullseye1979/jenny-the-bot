@@ -32,9 +32,6 @@ import {
   getToolArgsMeta,
   getToolPaginationMeta,
   getToolTraceMeta,
-  setUpdatePaginationGuardState,
-  getNeedsPaginationContinuation,
-  getPaginationContinuationPrompt,
   getParseArtifactsBlock,
   getExpandedToolArgs,
   getChannelAwarenessBlock,
@@ -181,28 +178,8 @@ function getRenderPseudoCatalog(specs) {
 
 function getAllowedToolNamesForStep(wo, toolsList) {
   const names = Array.isArray(toolsList) ? toolsList.map(t => String(t || "").trim()).filter(Boolean) : [];
-  const forcedToolName = String(wo?.__forceToolName || "").trim();
-  if (!forcedToolName || wo?.__forceNoTools === true) return names;
-  return names.includes(forcedToolName) ? [forcedToolName] : names;
-}
-
-
-function setForcedToolName(wo, name, reason = "") {
-  if (!wo) return;
-  const toolName = String(name || "").trim();
-  if (!toolName) return;
-  wo.__forceToolName = toolName;
-  wo.__forceToolReason = String(reason || "").trim();
-}
-
-
-function clearForcedToolNameIfMatched(wo, name) {
-  if (!wo) return;
-  const forcedToolName = String(wo?.__forceToolName || "").trim();
-  if (!forcedToolName) return;
-  if (String(name || "").trim() !== forcedToolName) return;
-  delete wo.__forceToolName;
-  delete wo.__forceToolReason;
+  void wo;
+  return names;
 }
 
 
@@ -431,9 +408,6 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
     const result     = await tool.invoke(normalizedArgs, coreData);
     const durationMs = Date.now() - startTs;
     log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
-    const continuationState = setUpdatePaginationGuardState(wo, name, result);
-    if (continuationState?.pending === true) setForcedToolName(wo, continuationState.toolName || name, continuationState.reason || "continuation_pending");
-    else clearForcedToolNameIfMatched(wo, name);
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
@@ -536,8 +510,8 @@ export default async function getCoreAi(coreData) {
         configuredTools: Array.isArray(wo?.tools) ? wo.tools : [],
         requestToolNames: allowedToolNames,
         toolChoice:      "pseudo-inline",
-        forcedToolName:  String(wo?.__forceToolName || "").trim() || undefined,
-        forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined
+        forcedToolName:  undefined,
+        forcedToolReason: undefined
       });
 
       const body = {
@@ -682,31 +656,6 @@ export default async function getCoreAi(coreData) {
         }
       }
       wo.__emptyToolCapableTurnConsec = 0;
-
-      if (getNeedsPaginationContinuation(wo)) {
-        const guardCount = Number.isFinite(Number(wo.__paginationGuardConsec)) ? Number(wo.__paginationGuardConsec) : 0;
-        wo.__paginationGuardConsec = guardCount + 1;
-        setForcedToolName(
-          wo,
-          String(wo?.__toolContinuationState?.toolName || wo?.__forceToolName || "").trim(),
-          String(wo?.__toolContinuationState?.reason || "continuation_pending").trim()
-        );
-        const cont = { role: "user", content: getPaginationContinuationPrompt(wo) };
-        messages.push(cont);
-        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
-        writeToolcallLog({
-          ...getToolcallLogBase(wo),
-          event: "ai_tool_continuation_guard",
-          coreData,
-          loop: i + 1,
-          forcedToolName: String(wo?.__forceToolName || "").trim() || undefined,
-          forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined,
-          guardCount: wo.__paginationGuardConsec,
-          pendingPages: wo.__toolContinuationState?.pendingItems || []
-        });
-        continue;
-      }
-      wo.__paginationGuardConsec = 0;
 
       const cutOff = !wo.__noContinuation && (finish === "length" || getLooksCutOff(cleanAssistantText));
       if (cutOff) {

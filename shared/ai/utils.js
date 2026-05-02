@@ -450,10 +450,13 @@ export function setUpdatePaginationGuardState(wo, toolName, result) {
     const continuationPrompt = typeof value.continuation_prompt === "string" && value.continuation_prompt.trim()
       ? value.continuation_prompt.trim()
       : "";
+    const hasExplicitContinuationMetadata = !!continuationPrompt
+      || pendingItems.length > 0
+      || (typeof value.requires_followup_tool === "string" && value.requires_followup_tool.trim())
+      || (typeof value.continuation_tool === "string" && value.continuation_tool.trim());
     const continuationPending = value.pagination_pending === true
       || value.continuation_pending === true
-      || value.has_more === true
-      || value.hasMore === true;
+      || ((value.has_more === true || value.hasMore === true) && hasExplicitContinuationMetadata);
     if (continuationPending && followupToolName) {
       continuationState = {
         pending: true,

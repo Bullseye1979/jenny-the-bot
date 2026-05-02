@@ -31,9 +31,6 @@ import {
   getToolArgsMeta,
   getToolPaginationMeta,
   getToolTraceMeta,
-  setUpdatePaginationGuardState,
-  getNeedsPaginationContinuation,
-  getPaginationContinuationPrompt,
   setEnsureFinalSynthesisPrompt,
   getParseArtifactsBlock,
   getExpandedToolArgs,
@@ -128,40 +125,11 @@ function getToolsForResponses(toolDefs, responseTools, toolsDisabled) {
 }
 
 
-function getForcedToolNameForStep(wo, toolsForResponses) {
-  const forcedToolName = String(wo?.__forceToolName || "").trim();
-  if (!forcedToolName || wo?.__forceNoTools === true) return "";
-  const availableNames = (Array.isArray(toolsForResponses) ? toolsForResponses : [])
-    .map(tool => String(tool?.name || tool?.function?.name || "").trim())
-    .filter(Boolean);
-  return availableNames.includes(forcedToolName) ? forcedToolName : "";
-}
-
-
 function getToolChoiceForStep(wo, fallbackChoice, toolsDisabled, toolsForResponses) {
   if (toolsDisabled) return "none";
-  const forcedToolName = getForcedToolNameForStep(wo, toolsForResponses);
-  if (forcedToolName) return { type: "function", name: forcedToolName };
+  void wo;
+  void toolsForResponses;
   return fallbackChoice;
-}
-
-
-function setForcedToolName(wo, name, reason = "") {
-  if (!wo) return;
-  const toolName = String(name || "").trim();
-  if (!toolName) return;
-  wo.__forceToolName = toolName;
-  wo.__forceToolReason = String(reason || "").trim();
-}
-
-
-function clearForcedToolNameIfMatched(wo, name) {
-  if (!wo) return;
-  const forcedToolName = String(wo?.__forceToolName || "").trim();
-  if (!forcedToolName) return;
-  if (String(name || "").trim() !== forcedToolName) return;
-  delete wo.__forceToolName;
-  delete wo.__forceToolReason;
 }
 
 
@@ -357,9 +325,6 @@ async function setExecGenericTool(toolModules, call, coreData) {
 
     const res        = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
-    const continuationState = setUpdatePaginationGuardState(wo, name, res);
-    if (continuationState?.pending === true) setForcedToolName(wo, continuationState.toolName || name, continuationState.reason || "continuation_pending");
-    else clearForcedToolNameIfMatched(wo, name);
     const mapped  = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getTryParseJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
 
@@ -988,8 +953,8 @@ export default async function getCoreAi(coreData) {
         configuredTools: Array.isArray(wo?.tools) ? wo.tools : [],
         requestToolNames,
         toolChoice:      getToolChoiceForStep(wo, toolChoiceInitial, toolsDisabled, toolsForResponses),
-        forcedToolName:  String(wo?.__forceToolName || "").trim() || undefined,
-        forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined
+        forcedToolName:  undefined,
+        forcedToolReason: undefined
       });
 
       const body = {
@@ -1103,10 +1068,6 @@ export default async function getCoreAi(coreData) {
         let ranAnyTool = false;
 
         if (hasToolCalls && genericTools.length && totalToolCalls < maxToolCalls) {
-          const requestedForcedTool = String(wo?.__forceToolName || "").trim();
-          if (requestedForcedTool && toolCalls.some(tc => String(tc?.name || "").trim() === requestedForcedTool)) {
-            wo.__paginationGuardConsec = 0;
-          }
           const assistantToolMsg = {
             role:       "assistant",
             authorName: getAssistantAuthorName(wo),
@@ -1190,31 +1151,6 @@ export default async function getCoreAi(coreData) {
         });
         break;
       }
-
-      if (getNeedsPaginationContinuation(wo)) {
-        const guardCount = Number.isFinite(Number(wo.__paginationGuardConsec)) ? Number(wo.__paginationGuardConsec) : 0;
-        wo.__paginationGuardConsec = guardCount + 1;
-        setForcedToolName(
-          wo,
-          String(wo?.__toolContinuationState?.toolName || wo?.__forceToolName || "").trim(),
-          String(wo?.__toolContinuationState?.reason || "continuation_pending").trim()
-        );
-        const cont = { role: "user", content: getPaginationContinuationPrompt(wo) };
-        messages.push(cont);
-        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
-        writeToolcallLog({
-          ...getToolcallLogBase(wo),
-          event: "ai_tool_continuation_guard",
-          coreData,
-          loop: iter + 1,
-          forcedToolName: String(wo?.__forceToolName || "").trim() || undefined,
-          forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined,
-          guardCount: wo.__paginationGuardConsec,
-          pendingPages: wo.__toolContinuationState?.pendingItems || []
-        });
-        continue;
-      }
-      wo.__paginationGuardConsec = 0;
 
       const truncated   = getWasTruncatedOutput(data);
       const looksCutOff = getLooksCutOff(assistantText);

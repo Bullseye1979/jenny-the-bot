@@ -33,9 +33,6 @@ import {
   getToolPaginationMeta,
   getToolTraceMeta,
   getToolResultMeta,
-  setUpdatePaginationGuardState,
-  getNeedsPaginationContinuation,
-  getPaginationContinuationPrompt,
   setEnsureFinalSynthesisPrompt,
   getParseArtifactsBlock,
   getExpandedToolArgs,
@@ -48,9 +45,6 @@ import {
 const MODULE_NAME     = "core-ai-completions";
 const ARG_PREVIEW_MAX = 400;
 const RESULT_PREVIEW_MAX = 400;
-const TOOL_CHOICE_SUPPORT_BY_ENDPOINT = new Map();
-
-
 function getShouldRunForThisModule(wo) {
   const v = String(wo?.useAiModule ?? "").trim().toLowerCase();
   return v === "completions";
@@ -61,71 +55,15 @@ function getToolDefsForCurrentStep(toolDefs, wo, totalToolCalls, maxToolCalls) {
   const defs = Array.isArray(toolDefs) ? toolDefs : [];
   if (wo?.__forceNoTools === true) return { toolDefs: [], mode: "final_only" };
   if (Number.isFinite(maxToolCalls) && totalToolCalls >= maxToolCalls) return { toolDefs: [], mode: "final_only" };
-  const forcedToolName = String(wo?.__forceToolName || "").trim();
-  if (!forcedToolName) return { toolDefs: defs, mode: "normal" };
-  const forcedDefs = defs.filter(d => String(d?.function?.name || d?.name || "").trim() === forcedToolName);
-  if (forcedDefs.length) return { toolDefs: forcedDefs, mode: `forced:${forcedToolName}` };
   return { toolDefs: defs, mode: "normal" };
-}
-
-
-function getToolChoiceCacheKey(wo) {
-  return String(wo?.endpoint || "").trim().toLowerCase();
-}
-
-
-function getSupportsStructuredToolChoice(wo) {
-  const key = getToolChoiceCacheKey(wo);
-  if (!key) return true;
-  if (!TOOL_CHOICE_SUPPORT_BY_ENDPOINT.has(key)) return true;
-  return TOOL_CHOICE_SUPPORT_BY_ENDPOINT.get(key) !== false;
-}
-
-
-function setSupportsStructuredToolChoice(wo, supported) {
-  const key = getToolChoiceCacheKey(wo);
-  if (!key) return;
-  TOOL_CHOICE_SUPPORT_BY_ENDPOINT.set(key, supported !== false);
-}
-
-
-function getIsToolChoiceTypeError(status, rawText, toolChoice) {
-  if (Number(status) !== 400) return false;
-  if (!toolChoice || typeof toolChoice !== "object") return false;
-  const text = String(rawText || "").toLowerCase();
-  return text.includes("invalid tool_choice type")
-    || (text.includes("tool_choice") && text.includes("supported string values"));
 }
 
 
 function getToolChoiceForStep(wo, fallbackChoice, toolsDisabled) {
   if (toolsDisabled) return undefined;
-  const forcedToolName = String(wo?.__forceToolName || "").trim();
-  if (forcedToolName) {
-    if (!getSupportsStructuredToolChoice(wo)) return "required";
-    return { type: "function", function: { name: forcedToolName } };
-  }
-  if (!getSupportsStructuredToolChoice(wo) && fallbackChoice && typeof fallbackChoice === "object") return "required";
-  return fallbackChoice;
-}
-
-
-function setForcedToolName(wo, name, reason = "") {
-  if (!wo) return;
-  const toolName = String(name || "").trim();
-  if (!toolName) return;
-  wo.__forceToolName = toolName;
-  wo.__forceToolReason = String(reason || "").trim();
-}
-
-
-function clearForcedToolNameIfMatched(wo, name) {
-  if (!wo) return;
-  const forcedToolName = String(wo?.__forceToolName || "").trim();
-  if (!forcedToolName) return;
-  if (String(name || "").trim() !== forcedToolName) return;
-  delete wo.__forceToolName;
-  delete wo.__forceToolReason;
+  void wo;
+  if (fallbackChoice && typeof fallbackChoice === "object") return "required";
+  return fallbackChoice || "auto";
 }
 
 
@@ -258,10 +196,6 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       ...getToolPaginationMeta(name, result),
       ...getToolTraceMeta(name, result)
     });
-    const continuationState = setUpdatePaginationGuardState(wo, name, result);
-    if (continuationState?.pending === true) setForcedToolName(wo, continuationState.toolName || name, continuationState.reason || "continuation_pending");
-    else clearForcedToolNameIfMatched(wo, name);
-
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
   } catch (e) {
@@ -371,9 +305,7 @@ export default async function getCoreAi(coreData) {
         toolMode:        toolStep.mode,
         configuredTools: Array.isArray(wo?.tools) ? wo.tools : [],
         requestToolNames,
-        toolChoice:      !toolsDisabled ? getToolChoiceForStep(wo, kiCfg.toolChoice, toolsDisabled) : "none",
-        forcedToolName:  String(wo?.__forceToolName || "").trim() || undefined,
-        forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined
+        toolChoice:      !toolsDisabled ? getToolChoiceForStep(wo, kiCfg.toolChoice, toolsDisabled) : "none"
       });
 
       const toolChoiceForStep = getToolChoiceForStep(wo, kiCfg.toolChoice, toolsDisabled);
@@ -391,23 +323,6 @@ export default async function getCoreAi(coreData) {
       const raw     = await res.text();
 
       if (!res.ok) {
-        if (getIsToolChoiceTypeError(res.status, raw, toolChoiceForStep)) {
-          setSupportsStructuredToolChoice(wo, false);
-          log("Backend rejected structured tool_choice; retrying with string-based compatibility mode", "warn", {
-            endpoint: String(wo?.endpoint || ""),
-            forcedToolName: String(wo?.__forceToolName || "").trim() || undefined
-          });
-          writeToolcallLog({
-            ...getToolcallLogBase(wo),
-            event: "ai_backend_compat",
-            coreData,
-            loop: i + 1,
-            compatibilityIssue: "tool_choice_object_unsupported",
-            fallbackApplied: "tool_choice=required",
-            responsePreview: getPreview(raw, RESULT_PREVIEW_MAX)
-          });
-          continue;
-        }
         log(`HTTP ${res.status} ${res.statusText}: ${raw.slice(0, 800)}`, "warn");
         writeToolcallLog({
           ...getToolcallLogBase(wo),
@@ -481,10 +396,6 @@ export default async function getCoreAi(coreData) {
       }
 
       if (toolCalls && toolCalls.length && toolModules.length) {
-        const requestedForcedTool = String(wo?.__forceToolName || "").trim();
-        if (requestedForcedTool && toolCalls.some(tc => String(tc?.function?.name || "").trim() === requestedForcedTool)) {
-          wo.__paginationGuardConsec = 0;
-        }
         if (totalToolCalls >= kiCfg.maxToolCalls) {
           hitMaxToolCalls = true;
           log(`maxToolCalls limit reached (${totalToolCalls}/${kiCfg.maxToolCalls}) - requesting synthesis`, "warn");
@@ -553,31 +464,6 @@ export default async function getCoreAi(coreData) {
         });
         break;
       }
-
-      if (getNeedsPaginationContinuation(wo)) {
-        const guardCount = Number.isFinite(Number(wo.__paginationGuardConsec)) ? Number(wo.__paginationGuardConsec) : 0;
-        wo.__paginationGuardConsec = guardCount + 1;
-        setForcedToolName(
-          wo,
-          String(wo?.__toolContinuationState?.toolName || wo?.__forceToolName || "").trim(),
-          String(wo?.__toolContinuationState?.reason || "continuation_pending").trim()
-        );
-        const cont = { role: "user", content: getPaginationContinuationPrompt(wo) };
-        messages.push(cont);
-        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
-        writeToolcallLog({
-          ...getToolcallLogBase(wo),
-          event: "ai_tool_continuation_guard",
-          coreData,
-          loop: i + 1,
-          forcedToolName: String(wo?.__forceToolName || "").trim() || undefined,
-          forcedToolReason: String(wo?.__forceToolReason || "").trim() || undefined,
-          guardCount: wo.__paginationGuardConsec,
-          pendingPages: wo.__toolContinuationState?.pendingItems || []
-        });
-        continue;
-      }
-      wo.__paginationGuardConsec = 0;
 
       const cutOff = !wo.__noContinuation && (finish === "length" || getLooksCutOff(chunkText));
       if (cutOff) {
