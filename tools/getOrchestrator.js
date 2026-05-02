@@ -16,6 +16,15 @@ import { getPrefixedLogger } from "../core/logging.js";
 
 const MODULE_NAME = "getOrchestrator";
 
+
+function getIsInvalidOrchestratorResponse(text) {
+  const s = String(text || "").trim();
+  if (!s) return true;
+  return s === "[Empty AI response]"
+    || s.startsWith("[Max Loops Hit]")
+    || s.startsWith("[Max Tool Calls Hit]");
+}
+
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo  = coreData?.workingObject || {};
@@ -81,6 +90,12 @@ async function getInvoke(args, coreData) {
     }
 
     const response = String(data.response || "");
+    if (getIsInvalidOrchestratorResponse(response)) {
+      const err = response || "Orchestrator returned empty response";
+      log(`Orchestrator failed: ${err}`, "warn");
+      return { ok: false, count: 0, has_more: false, next_start_ctx_id: null, rows: [], error: err };
+    }
+
     log(`Orchestrator done: type="${type}" responseLen=${response.length}`);
     return { ok: true, count: 1, has_more: false, next_start_ctx_id: null, rows: [response] };
   } catch (e) {

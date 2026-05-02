@@ -663,29 +663,11 @@ export default async function getCoreAi(coreData) {
       if (emptyAssistantTurn) {
         const toolsStillEnabled = toolCallsUsedTotal < kiCfg.maxToolCallsTotal && wo.__forceNoTools !== true;
         if (toolsStillEnabled) {
-          const guard = Number.isFinite(Number(wo.__emptyToolCapableTurnConsec)) ? Number(wo.__emptyToolCapableTurnConsec) : 0;
-          wo.__emptyToolCapableTurnConsec = guard + 1;
-          if (wo.__emptyToolCapableTurnConsec >= 2) {
-            log(`Empty output loop guard triggered (${wo.__emptyToolCapableTurnConsec} consecutive tool-capable iterations) - breaking`, "warn");
-            break;
-          }
-          const cont = {
-            role: "user",
-            content: "No visible output was produced. Continue the task normally. If tools are needed, you may still call them."
-          };
-          messages.push(cont);
-          wo._contextPersistQueue.push(getWithTurnId(cont, wo));
-          writeToolcallLog({
-            ...getToolcallLogBase(wo),
-            event: "ai_continue",
-            coreData,
-            loop: i + 1,
+          log("Empty assistant turn with tools still enabled - stopping loop without rescue turn", "warn", {
             finishReason: finish ?? null,
-            looksCutOff: false,
-            emptyAssistantTurn: true,
-            toolsStillEnabled: true
+            loop: i + 1
           });
-          continue;
+          break;
         }
       }
       wo.__emptyToolCapableTurnConsec = 0;

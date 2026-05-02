@@ -1173,28 +1173,11 @@ export default async function getCoreAi(coreData) {
 
       const emptyAssistantTurn = !assistantText && !hasToolCalls;
       if (emptyAssistantTurn && !toolsDisabled) {
-        emptyOutputConsec++;
-        if (emptyOutputConsec >= 2) {
-          log(`Empty-output loop guard: ${emptyOutputConsec} consecutive tool-capable iterations with no visible text - stopping loop.`, "warn");
-          break;
-        }
-        const cont = {
-          role: "user",
-          content: "No visible output was produced. Continue the task normally. If tools are needed, you may still call them."
-        };
-        messages.push(cont);
-        wo._contextPersistQueue.push(getWithTurnId(cont, wo));
-        writeToolcallLog({
-          ...getToolcallLogBase(wo),
-          event: "ai_continue",
-          coreData,
-          loop: iter + 1,
+        log("Empty assistant turn with tools still enabled - stopping loop without rescue turn.", "warn", {
           finishReason: finish ?? null,
-          looksCutOff: false,
-          emptyAssistantTurn: true,
-          toolsStillEnabled: true
+          loop: iter + 1
         });
-        continue;
+        break;
       }
 
       if (getNeedsPaginationContinuation(wo)) {
