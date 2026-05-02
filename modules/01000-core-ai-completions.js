@@ -485,7 +485,7 @@ export default async function getCoreAi(coreData) {
       }
 
       const emptyAssistantTurn = !chunkText.trim() && !(toolCalls && toolCalls.length);
-      if (finish === "length" && emptyAssistantTurn && !toolsDisabled) {
+      if (emptyAssistantTurn && !toolsDisabled) {
         emptyOutputConsec++;
         if (emptyOutputConsec >= 2) {
           log(`Empty output loop guard triggered (${emptyOutputConsec} consecutive tool-capable iterations) - breaking`, "warn");

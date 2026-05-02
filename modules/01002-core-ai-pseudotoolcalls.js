@@ -660,7 +660,7 @@ export default async function getCoreAi(coreData) {
       }
 
       const emptyAssistantTurn = !cleanAssistantText && !extracted;
-      if (finish === "length" && emptyAssistantTurn) {
+      if (emptyAssistantTurn) {
         const toolsStillEnabled = toolCallsUsedTotal < kiCfg.maxToolCallsTotal && wo.__forceNoTools !== true;
         if (toolsStillEnabled) {
           const guard = Number.isFinite(Number(wo.__emptyToolCapableTurnConsec)) ? Number(wo.__emptyToolCapableTurnConsec) : 0;

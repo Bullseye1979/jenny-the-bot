@@ -1172,7 +1172,7 @@ export default async function getCoreAi(coreData) {
       }
 
       const emptyAssistantTurn = !assistantText && !hasToolCalls;
-      if (finish === "length" && emptyAssistantTurn && !toolsDisabled) {
+      if (emptyAssistantTurn && !toolsDisabled) {
         emptyOutputConsec++;
         if (emptyOutputConsec >= 2) {
           log(`Empty-output loop guard: ${emptyOutputConsec} consecutive tool-capable iterations with no visible text - stopping loop.`, "warn");
