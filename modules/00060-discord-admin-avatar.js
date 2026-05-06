@@ -68,14 +68,14 @@ function setLog(wo, message, level = "info", extra = null) {
 
 
 function getComposePrompt(wo) {
-  const persona = String(wo?.persona || wo?.persona || "").trim();
-  const instructions = String(wo?.instructions || wo?.instructions || "").trim();
-  const botname = String(wo?.botName || wo?.botname || "").trim();
-  const avatarPrompt = String(wo?.avatarprompt ?? wo?.avatarPrompt ?? "").trim();
+  const persona = String(wo?.persona || "").trim();
+  const instructions = String(wo?.instructions || "").trim();
+  const botName = String(wo?.botName || "").trim();
+  const avatarPrompt = String(wo?.avatarPrompt ?? "").trim();
   const parts = [];
   if (persona) parts.push(persona);
   if (instructions) parts.push(instructions);
-  if (botname) parts.push(`Bot name: ${botname}`);
+  if (botName) parts.push(`Bot name: ${botName}`);
   if (avatarPrompt) parts.push(avatarPrompt);
   const suffix = "portrait, no text, no letters, no symbols, vibrant colors, cinematic, action, digital painting, no writings, ignore text";
   let base = parts.join("\n").trim();
@@ -94,10 +94,10 @@ function getComposePrompt(wo) {
 
 
 function setAppendPrompt(wo, extra) {
-  const base = String(wo?.avatarprompt ?? wo?.avatarPrompt ?? "").trim();
+  const base = String(wo?.avatarPrompt ?? "").trim();
   const add = String(extra || "").trim();
   const combined = base ? `${base}\n${add}` : add;
-  wo.avatarprompt = combined;
+  wo.avatarPrompt = combined;
 }
 
 
@@ -180,7 +180,7 @@ function getAdminCommand(wo) {
   const cmd = (wo?.admin?.command || "").toLowerCase();
   if (cmd !== "avatar") return { isAvatar: false };
 
-  const sub = (wo?.admin?.subcommand || wo?.admin?.subCommand || wo?.admin?.options?.subcommand || "").toLowerCase() || null;
+  const sub = String(wo?.admin?.subcommand || "").toLowerCase() || null;
 
   const opts = wo?.admin?.options || {};
   if (sub === "url") {

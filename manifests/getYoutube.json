@@ -1,6 +1,6 @@
 {
   "name": "getYoutube",
-  "description": "Fetch YouTube video transcripts or search YouTube. For mode='transcript': fetches the transcript in pages. The first call returns rows[0..N-1]; if has_more=true, call again with start_ctx_id=next_start_ctx_id to get the next page — repeat until has_more=false. For mode='search': searches YouTube via the Data API.",
+  "description": "Fetch YouTube video transcripts or search YouTube. For mode='transcript': fetches the transcript in pages. The first call returns rows[0..N-1]; if has_more=true, call again with start_ctx_id=next_start_ctx_id to get the next page — repeat until has_more=false. For mode='search': searches YouTube via the Data API.\n\nPAGINATION: Every transcript response includes total_pages (total number of pages), current_page (current page number, 1-based), and page_size (items per page). You can compute all page start offsets as multiples of page_size and dispatch them as parallel workers in one batch.",
   "policyHint": "When the user asks about a YouTube video, wants a transcript, or asks to search YouTube, use this tool. If has_more=true in the response, always call again with start_ctx_id=next_start_ctx_id to retrieve remaining transcript segments before answering.",
   "parameters": {
     "type": "object",
@@ -40,7 +40,7 @@
       },
       "start_ctx_id": {
         "type": "number",
-        "description": "Pagination offset (item index). Omit or set to 0 for the first page. Use the next_start_ctx_id value from the previous response to fetch the next page."
+        "description": "Pagination offset (item index). Omit or set to 0 for the first page. Use the next_start_ctx_id value from the previous response to fetch the next page, or compute as (page_number - 1) * page_size for parallel fetching."
       }
     }
   }

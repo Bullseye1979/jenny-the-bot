@@ -1,0 +1,24 @@
+{
+  "name": "getWorkers",
+  "description": "Runs one or more worker jobs, each in its own isolated AI context (contextSize=0, maxLoops=2). Use this when you need to call tools that may return paginated or large results — each worker runs fresh without inheriting your context. Workers automatically inherit your channel's tool set. Workers in the same batch run in parallel.",
+  "policyHint": "Use getWorkers instead of calling tools directly when the tool may return paginated results, when the tool response is large, or when you want to keep your own context clean. Always use getWorkers for getHistory and other data-retrieval tools.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "workers": {
+        "type": "array",
+        "description": "Array of worker jobs. Each runs in an isolated context (contextSize=0, maxLoops=2) with the caller's tool set minus getWorkers. Workers in the same batch run in parallel.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "jobID": { "type": "integer", "description": "Sequential job number starting from 1." },
+            "prompt": { "type": "string", "description": "The task for this worker. Name the tool to call and all parameters explicitly. The worker has no context from your conversation." }
+          },
+          "required": ["jobID", "prompt"]
+        },
+        "minItems": 1
+      }
+    },
+    "required": ["workers"]
+  }
+}

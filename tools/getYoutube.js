@@ -142,14 +142,14 @@ async function getInvoke(args, coreData) {
   const searchMaxResults = getNum(cfg.searchMaxResults, 5);
   const obj = args?.json || args || {};
   const mode = getStr(obj.mode, "transcript");
-  const userPrompt = getStr(obj.userPrompt, getStr(obj.user_prompt, ""));
-  const videoRaw = getStr(obj.videoUrl, getStr(obj.video_url, obj.url || obj.videoId || obj.video_id || ""));
+  const userPrompt = getStr(obj.userPrompt, "");
+  const videoRaw = getStr(obj.videoUrl, obj.videoId || "");
   const videoId = mode === "transcript" ? getExtractVideoId(videoRaw) : null;
   const wantMetaOnly = obj.metaOnly === true;
   if (mode === "search") {
     const q = getStr(obj.query, userPrompt);
     if (!q) return { ok: false, error: "YT_SEARCH_NO_QUERY", took_ms: Date.now() - started };
-    const res = await getSearchVideos({ googleApiKey, query: q, maxResults: obj.maxResults ?? obj.max_results ?? searchMaxResults, relevanceLanguage, regionCode, safeSearch: obj.safeSearch || obj.safe_search || "none" });
+    const res = await getSearchVideos({ googleApiKey, query: q, maxResults: obj.maxResults ?? searchMaxResults, relevanceLanguage, regionCode, safeSearch: obj.safeSearch || "none" });
     const rows = res.results || [];
     return { ok: !!res.ok, count: rows.length, has_more: false, next_start_ctx_id: null, rows, mode: "search", query: q, ...(res.error && { error: res.error }), took_ms: Date.now() - started };
   }
@@ -178,6 +178,9 @@ async function getInvoke(args, coreData) {
     meta,
     lang:             tRes.lang || null,
     total_items:      tRes.items.length,
+    page_size:        maxItems,
+    current_page:     Math.floor(startOffset / maxItems) + 1,
+    total_pages:      Math.ceil(tRes.items.length / maxItems),
     took_ms:          Date.now() - started,
   };
 }

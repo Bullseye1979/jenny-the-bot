@@ -1,7 +1,7 @@
 {
   "name": "getHistory",
-  "description": "Retrieves actual message rows from the conversation log for a given time range. Always use this tool to read historical messages — never infer past events from the current context window.\n\nTIMEFRAMES: Accepts any ISO 8601 UTC timestamp as start/end. If another tool returned a time window with start and end fields, pass them directly — they are ready-to-use without conversion.\n\nTIMEZONE: All timestamps are stored and queried in UTC. The system prompt contains current_time_iso (UTC) and timezone_hint. Always convert local times to UTC before passing start/end — e.g. 20:00 CEST (UTC+2) = 18:00 UTC.\n\nPAGINATION: If the result contains has_more=true, call again with startCtxId set to next_start_ctx_id from the previous response to fetch the next page.\n\nCHANNEL SCOPE: Covers all channels in the current context automatically. Results include a channelId field on each row.",
-  "policyHint": "For questions about past events, decisions, or conversation history not visible in the current context window, call this tool with appropriate time ranges. Never infer past events from memory — always retrieve them.",
+  "description": "Retrieves actual message rows from the conversation log for a given time range. Always use this tool to read historical messages — never infer past events from the current context window.\n\nTIMEFRAMES: Accepts any ISO 8601 UTC timestamp as start/end. If another tool returned a time window with start and end fields, pass them directly — they are ready-to-use without conversion.\n\nTIMEZONE: All timestamps are stored and queried in UTC. The system prompt contains current_time_iso (UTC) and timezone_hint. Always convert local times to UTC before passing start/end — e.g. 20:00 CEST (UTC+2) = 18:00 UTC.\n\nPAGINATION — page number (preferred for parallel workers): Every response includes total_pages (integer). To fetch any page after the first, pass page=N (integer, N >= 2). Example: getHistory({start, end, page: 2}) fetches the second page. No startCtxId needed when using the page parameter.\n\nPAGINATION — sequential (has_more): If has_more=true, call again with startCtxId=next_start_ctx_id from the previous response to fetch the next page. This always works and does not require page boundary data.\n\nPAGINATION — pages array: Every response also includes a pages array [{page_number, start_ctx_id}] for pages 2, 3, ... These are boundary cursor values that can be passed as startCtxId. Prefer the page=N approach instead — it is simpler and avoids off-by-one errors.\n\nCHANNEL SCOPE: Covers all channels in the current context automatically. Results include a channelId field on each row.",
+  "policyHint": "For questions about past events, decisions, or conversation history not visible in the current context window, call this tool with appropriate time ranges. Never infer past events from memory — always retrieve them. When running inside a worker context for parallel pagination, use page=N (N=2,3,...,total_pages) to fetch each page directly.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -13,13 +13,17 @@
         "type": "string",
         "description": "OPTIONAL. End of the time range in UTC. Same format as start. If omitted, retrieves from start until now."
       },
+      "page": {
+        "type": "number",
+        "description": "OPTIONAL. Page number to fetch (integer >= 2). Preferred alternative to startCtxId for parallel pagination. The total number of pages is returned in total_pages on every response. Pass page=2, page=3, etc. to fetch subsequent pages directly — no startCtxId needed."
+      },
       "prompt": {
         "type": "string",
         "description": "OPTIONAL. Additional focus instructions for summarisation (e.g. 'focus on decisions made')."
       },
       "startCtxId": {
         "type": "number",
-        "description": "OPTIONAL. Pagination cursor — pass next_start_ctx_id from a previous response to fetch the next page. Aliases: start_ctx_id, start_ctx."
+        "description": "OPTIONAL. Pagination cursor — pass next_start_ctx_id from a previous response (for sequential pagination), or start_ctx_id from the pages array. Prefer the page parameter for parallel pagination. Aliases: start_ctx_id, start_ctx."
       }
     },
     "required": ["start"],

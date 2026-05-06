@@ -40,7 +40,7 @@ export default async function getDiscordAddContext(coreData) {
     role,
     turnId: turnId,
     content: getString(text),
-    authorName: getString(wo.authorDisplayName || wo.authorDisplayname || ""),
+    authorName: getString(wo.authorDisplayName || ""),
     channelId: channelId,
     messageId: getString(wo.messageId || ""),
     replyToId: getString(wo.replyToId || "") || undefined,

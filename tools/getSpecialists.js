@@ -43,6 +43,79 @@ function getIsRetryableSpecialistError(message) {
     || text.includes("http 504");
 }
 
+function getWorkingObjectPatch(wo) {
+  if (!wo || typeof wo !== "object") return undefined;
+  const patch = {};
+  if (wo.toolsconfig && typeof wo.toolsconfig === "object") {
+    patch.toolsconfig = JSON.parse(JSON.stringify(wo.toolsconfig));
+  }
+  if (Array.isArray(wo.channelIds)) {
+    patch.channelIds = [...wo.channelIds];
+  }
+  if (Array.isArray(wo.callerChannelIds)) {
+    patch.callerChannelIds = [...wo.callerChannelIds];
+  }
+  if (wo.callerChannelId && typeof wo.callerChannelId === "string") {
+    patch.callerChannelId = wo.callerChannelId;
+  }
+  return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+function getStringArray(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function getApplyTemplate(template, values) {
+  return String(template || "").replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => String(values?.[key] || ""));
+}
+
+function getPendingItemsText(items) {
+  return getStringArray(items.map((item) =>
+    `- jobID=${item.jobID ?? "?"} start=${item.assignedStart || "?"} end=${item.assignedEnd || "?"} nextPageId=${item.nextPageId ?? "?"} status=${item.status || "PARTIAL"}`
+  )).join("\n");
+}
+
+function getRetryItemsText(items) {
+  return getStringArray(items.map((item) =>
+    `- jobID=${item.jobID ?? "?"} type=${item.type} attempts=${item.attempts ?? "?"} error=${item.error || "unknown"}`
+  )).join("\n");
+}
+
+function getPaginationContinuationPrompt(cfg, pendingItems) {
+  const template = String(cfg?.paginationContinuationTemplate || "").trim();
+  if (!template) {
+    return [
+      "The previous getSpecialists result is incomplete.",
+      "Do not synthesize or finalize.",
+      "Call getSpecialists again only for the still-pending windows.",
+      "For each pending window, use prompt format exactly: start=<assignedStart> end=<assignedEnd> startCtxId=<nextPageId>.",
+      "Pending windows:",
+      getPendingItemsText(pendingItems.slice(0, 24))
+    ].filter(Boolean).join("\n");
+  }
+  return getApplyTemplate(template, {
+    pendingItems: getPendingItemsText(pendingItems.slice(0, 24))
+  }).trim();
+}
+
+function getRetryContinuationPrompt(cfg, retryPendingItems) {
+  const template = String(cfg?.retryContinuationTemplate || "").trim();
+  if (!template) {
+    return [
+      "Some specialist workers failed transiently and need to be retried.",
+      "Do not synthesize or finalize yet.",
+      "Call getSpecialists again only for the failed specialist jobs below, reusing the same type, jobID, and prompt.",
+      "Failed specialists:",
+      getRetryItemsText(retryPendingItems.slice(0, 24))
+    ].filter(Boolean).join("\n");
+  }
+  return getApplyTemplate(template, {
+    retryItems: getRetryItemsText(retryPendingItems.slice(0, 24))
+  }).trim();
+}
+
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo  = coreData?.workingObject || {};
@@ -120,6 +193,7 @@ async function getInvoke(args, coreData) {
     const parentDepth      = Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0;
     const statusKey        = String(wo.toolStatusChannelOverride || "").trim();
     const statusScope      = String(wo.toolcallScope || wo.callerFlow || wo.flow || "").trim();
+    const workingObjectPatch = getWorkingObjectPatch(wo);
     const body = JSON.stringify({
       channelId,
       payload: prompt,
@@ -133,6 +207,7 @@ async function getInvoke(args, coreData) {
       agentType:        type,
       toolcallScope:    statusScope,
       ...(statusKey ? { toolStatusChannelOverride: statusKey } : {}),
+      ...(workingObjectPatch ? { workingObjectPatch } : {}),
     });
 
     let lastFailure = null;
@@ -247,27 +322,9 @@ async function getInvoke(args, coreData) {
     .filter(item => item.type && item.prompt);
   const continuationPending = paginationState.pending || retryPendingItems.length > 0;
   const continuationPrompt = paginationState.pending
-    ? [
-        "The previous getSpecialists result is incomplete.",
-        "Do not synthesize or finalize.",
-        "Call getSpecialists again only for the still-pending windows.",
-        "For each pending window, use prompt format exactly: start=<assignedStart> end=<assignedEnd> startCtxId=<nextPageId>.",
-        "Pending windows:",
-        ...paginationState.pendingItems.slice(0, 24).map(item =>
-          `- jobID=${item.jobID ?? "?"} start=${item.assignedStart || "?"} end=${item.assignedEnd || "?"} nextPageId=${item.nextPageId ?? "?"} status=${item.status || "PARTIAL"}`
-        )
-      ].join("\n")
+    ? getPaginationContinuationPrompt(cfg, paginationState.pendingItems)
     : retryPendingItems.length
-      ? [
-          "Some specialist workers failed transiently and need to be retried.",
-          "Do not synthesize or finalize yet.",
-          "Call getSpecialists again only for the failed specialist jobs below, reusing the same type, jobID, and prompt.",
-          "Failed specialists:"
-        ].concat(
-          retryPendingItems.slice(0, 24).map(item =>
-            `- jobID=${item.jobID ?? "?"} type=${item.type} attempts=${item.attempts ?? "?"} error=${item.error || "unknown"}`
-          )
-        ).join("\n")
+      ? getRetryContinuationPrompt(cfg, retryPendingItems)
     : "";
 
   log(`Specialists done: ${nOk}/${results.length} succeeded`);

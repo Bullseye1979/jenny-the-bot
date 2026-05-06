@@ -59,7 +59,9 @@ See [Admin Manual](ADMIN_MANUAL.md#mcp-server) and [Core JSON Reference](CORE_JS
 - Logs are stored under configurable `config.logging.logsDir` and rotate by `config.logging.maxFileBytes` / `config.logging.keepFiles`, including `toolcalls`.
 - Chat subchannels can expire via `config.webpage-chat.subchannelTtlHours`; the `chat-subchannel-gc` cron flow removes expired subchannel rows and their scoped context rows daily.
 - Microsoft Graph calendar operations are available through `getGraph`: list calendars, list events by timeframe, create events, update events, and delete events.
-- The web root redirects to `config.webpage-menu.homePath` or the first menu item the authenticated user can access.
+- The web root redirects to `config.webpage-menu.homePath` only when that path is actually visible to the current user; otherwise it falls back to the first allowed menu entry.
+- The browser chat can remember the last selected subchannel per channel through `config.webpage-chat.rememberLastSubchannel`.
+- MCP client headers can derive `x-channel-id` dynamically from `workingObject` with `valueFromWorkingObject`, so remote MCP discovery/execution stays channel-scoped.
 
 ---
 

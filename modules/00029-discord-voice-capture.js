@@ -260,7 +260,7 @@ export default async function getDiscordVoiceCapture(coreData) {
       prev.push({
         ts: Date.now(), sessionKey,
         guildId: wo.guildId, channelId: wo.channelId,
-        userId, speaker: wo.authorDisplayname || "Unknown",
+        userId, speaker: wo.authorDisplayName || "Unknown",
         segments: segments.length
       });
       while (prev.length > 8) prev.shift();

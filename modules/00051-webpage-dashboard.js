@@ -18,6 +18,11 @@ const MODULE_NAME = "webpage-dashboard";
 const EVENTS_RE   = /^events-(\d+)\.log$/;
 const PIPELINE_RE = /^pipeline-(\d+)\.log$/;
 
+function getSpecialistToolName(config) {
+  const cfg = config?.["webpage-subagent-manager"] || {};
+  return getStr(cfg.specialistToolName || "getSpecialists").trim() || "getSpecialists";
+}
+
 
 function getBasePath(cfg) {
   const bp = getStr(cfg.basePath ?? "/dashboard").trim();
@@ -185,10 +190,10 @@ function getHasSpecialistChildren(node) {
 }
 
 
-function getInlineSpecialistChildren(node) {
+function getInlineSpecialistChildren(node, specialistToolName) {
   if (!getHasSpecialistChildren(node)) return [];
   const calledTools = getCalledTools(node.f || {});
-  const hasSpecialistTool = calledTools.some(call => call.name === "getSpecialists");
+  const hasSpecialistTool = calledTools.some(call => call.name === specialistToolName);
   if (!hasSpecialistTool) return [];
   return node.children.filter(child => getStr(child?.f?.agentType).trim());
 }
@@ -252,7 +257,7 @@ function renderToolCallCard(call, extra = {}) {
 }
 
 
-function renderFlowCard(node, depth = 0) {
+function renderFlowCard(node, specialistToolName, depth = 0) {
   const f = node.f || {};
   const total   = f.total || 0;
   const done    = (f.ok || 0) + (f.fail || 0) + (f.skip || 0);
@@ -265,7 +270,7 @@ function renderFlowCard(node, depth = 0) {
   const depthLabel = Number.isFinite(Number(f.agentDepth)) ? Number(f.agentDepth) : 0;
   const childCount = node.children.length;
   const parallelInfo = node.siblingCount > 1 ? `${node.siblingCount} parallel` : "";
-  const inlineSpecialists = getInlineSpecialistChildren(node);
+  const inlineSpecialists = getInlineSpecialistChildren(node, specialistToolName);
   const specialistSummary = getSpecialistSummary(inlineSpecialists);
 
   const meta = [
@@ -289,11 +294,11 @@ function renderFlowCard(node, depth = 0) {
 
   const callCards = calledTools.map(call => renderToolCallCard(
     call,
-    call.name === "getSpecialists" ? { specialistSummary } : {}
+    call.name === specialistToolName ? { specialistSummary } : {}
   )).join("\n");
   const childCards = node.children
     .filter(child => !inlineSpecialists.includes(child))
-    .map(child => renderFlowCard(child, depth + 1))
+    .map(child => renderFlowCard(child, specialistToolName, depth + 1))
     .join("\n");
   const children = callCards || childCards
     ? `<div class="dchildren">${[callCards, childCards].filter(Boolean).join("\n")}</div>`
@@ -333,12 +338,13 @@ function buildDashboardHtml(data, menu, role, basePath, refreshSec, webAuth) {
   const visibleFlows = flows.filter(f => !getIsDashboardRuntimeFlow(f));
   const hiddenRuntimeCount = flows.length - visibleFlows.length;
   const treeRoots = buildFlowTree(visibleFlows);
+  const specialistToolName = getSpecialistToolName(data?.config || {});
   const runningCount = visibleFlows.filter(f => f.phase !== "done" && !f.finishedAt).length;
   const agentCount = visibleFlows.filter(f => getStr(f.agentType).trim()).length;
   const activeToolCount = visibleFlows.filter(f => getStr(f.activeTool?.name || f.activeTool?.tool).trim()).length;
 
   const flowCards = visibleFlows.length
-    ? treeRoots.map(node => renderFlowCard(node, 0)).join("\n")
+    ? treeRoots.map(node => renderFlowCard(node, specialistToolName, 0)).join("\n")
     : `<div class="dempty">No flows recorded yet.</div>`;
 
   return `<!DOCTYPE html>

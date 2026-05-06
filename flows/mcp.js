@@ -24,6 +24,12 @@ const SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 
+function getDefaultChannelId(cfg) {
+  const channelId = getStr(cfg?.defaultChannelId, DEFAULT_CHANNEL_ID).trim();
+  return channelId || DEFAULT_CHANNEL_ID;
+}
+
+
 /*
  * Builds and returns a configured MCP Server instance. Each tool call runs a
  * full runFlow pass so core-channel-config applies per-channel overrides.
@@ -65,8 +71,9 @@ function getMcpServer(sessionRunCore, log, runFlow, createRunCore) {
 async function startStdioTransport(baseCore, log, runFlow, createRunCore) {
   log("Starting MCP stdio transport", "info");
   const runCore = createRunCore();
+  const cfg = baseCore?.config?.[MODULE_NAME] || {};
   runCore.workingObject.flow = MODULE_NAME;
-  runCore.workingObject.channelId = DEFAULT_CHANNEL_ID;
+  runCore.workingObject.channelId = getDefaultChannelId(cfg);
   await runFlow(MODULE_NAME, runCore);
   const server = getMcpServer(runCore, log, runFlow, createRunCore);
   const transport = new StdioServerTransport();
@@ -231,7 +238,7 @@ async function startHttpTransport(baseCore, cfg, log, runFlow, createRunCore) {
       }
 
       /* New session - authenticate first */
-      const channelId = getStr(req.headers?.[CHANNEL_ID_HEADER]) || DEFAULT_CHANNEL_ID;
+      const channelId = getStr(req.headers?.[CHANNEL_ID_HEADER]) || getDefaultChannelId(cfg);
       const authHeader = getStr(req.headers?.authorization);
 
       const runCore = createRunCore();

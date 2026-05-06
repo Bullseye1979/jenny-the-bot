@@ -39,8 +39,8 @@ The `arguments` field contains the input object matching the schema returned by 
 ### Important Rules
 
 - Tool names starting with `mcp.` are **never** valid local tool calls — they can only be executed via `getMcp`
-- `getMcpTools` is always a discovery step only; it must always be followed by `getMcp`
-- Skipping `getMcp` after `getMcpTools` is not permitted
+- `getMcpTools` is always a discovery step only; it must always be followed by the configured MCP execution tool
+- Skipping that execution step after `getMcpTools` is not permitted
 
 ---
 
@@ -91,7 +91,7 @@ Additional HTTP headers are supported via the `headers` array:
 
 ```json
 "headers": [
-  { "header": "x-channel-id", "value": "mcp" }
+  { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
 ]
 ```
 
@@ -100,17 +100,19 @@ Additional HTTP headers are supported via the `headers` array:
 ## Configuration
 
 Both tools read their server list from `workingObject.toolsconfig.<toolName>.servers`. Channel-specific overrides in `core.json` can override the server list per channel.
+`getMcpTools` may also define `executorToolName` to point discovery hints at a different local execution tool name; the default is `getMcp`.
 
 ```json
 "toolsconfig": {
   "getMcpTools": {
+    "executorToolName": "getMcp",
     "servers": [
       {
         "name": "local-jenny",
         "namespace": "jenny-mcp",
         "type": "streamableHttp",
         "url": "https://jenny.ralfreschke.de/mcp",
-        "headers": [{ "header": "x-channel-id", "value": "mcp" }],
+        "headers": [{ "header": "x-channel-id", "valueFromWorkingObject": "channelId" }],
         "bearerTokenSecret": "JENNY_MCP_TOKEN",
         "timeoutMs": 30000
       }
@@ -123,7 +125,7 @@ Both tools read their server list from `workingObject.toolsconfig.<toolName>.ser
         "namespace": "jenny-mcp",
         "type": "streamableHttp",
         "url": "https://jenny.ralfreschke.de/mcp",
-        "headers": [{ "header": "x-channel-id", "value": "mcp" }],
+        "headers": [{ "header": "x-channel-id", "valueFromWorkingObject": "channelId" }],
         "bearerTokenSecret": "JENNY_MCP_TOKEN",
         "timeoutMs": 30000
       }
@@ -163,7 +165,7 @@ Tool requests without a known session ID are handled with a fresh stateless tran
 
 ### Channel Routing
 
-The `x-channel-id` request header maps the MCP connection to a specific bot channel, applying the matching channel config overrides. If omitted, the default channel `"mcp"` is used.
+The `x-channel-id` request header maps the MCP connection to a specific bot channel, applying the matching channel config overrides. If omitted, the server falls back to `config.mcp.defaultChannelId`, which defaults to `"mcp"`.
 
 ### Authentication
 

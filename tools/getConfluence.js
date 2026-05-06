@@ -546,10 +546,15 @@ async function getEnsureApiScope(method, baseUrl, path, spaceId, headers){
 
 
 async function getEffectiveSpaceId(baseUrl, headers, spaceKey, parentId){
-  const byParent = await getSpaceIdFromParent(baseUrl, parentId, headers);
-  if (byParent) return { ok:true, spaceId: byParent, source: "parent" };
-  const byKey = await getResolvedSpaceId(baseUrl, spaceKey, headers);
-  if (byKey) return { ok:true, spaceId: byKey, source: "spaceKey" };
+  if (spaceKey) {
+    const byKey = await getResolvedSpaceId(baseUrl, spaceKey, headers);
+    if (byKey) return { ok:true, spaceId: byKey, source: "spaceKey" };
+    return { ok:false, error:"SPACE_KEY_NOT_FOUND", attemptedSpaceKey: String(spaceKey) };
+  }
+  if (parentId) {
+    const byParent = await getSpaceIdFromParent(baseUrl, parentId, headers);
+    if (byParent) return { ok:true, spaceId: byParent, source: "parent" };
+  }
   return { ok:false };
 }
 
@@ -829,6 +834,7 @@ async function getInvoke(args, coreData){
     u.searchParams.set("status", status);
     let url = u.toString();
     const collected = [];
+    let lastNextLink = null;
     while (collected.length < limit && url) {
       const res = await getFetchJson(url, { method: "GET", headers }, timeoutMs);
       if (!res.ok) {
@@ -843,15 +849,19 @@ async function getInvoke(args, coreData){
         }
       }
       const nextLink = data?._links?.next;
+      lastNextLink = nextLink || null;
       url = (collected.length < limit && nextLink) ? getMakeAbsNextUrl(baseUrl, nextLink) : null;
     }
 
+    const hitLimit = collected.length >= limit;
+    const hasMore = hitLimit && !!lastNextLink;
+    const nextCursor = hasMore ? getMakeAbsNextUrl(baseUrl, lastNextLink) : null;
     const rows = collected.map(r => getAttachAbsoluteLinksToResult(r, baseUrl));
     return {
       ok: true,
       count: rows.length,
-      has_more: false,
-      next_start_ctx_id: null,
+      has_more: hasMore,
+      next_cursor: nextCursor,
       rows,
       status: 200,
       enforced: { spaceKey, spaceId: enforced },

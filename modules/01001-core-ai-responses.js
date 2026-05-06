@@ -335,9 +335,9 @@ async function setExecGenericTool(toolModules, call, coreData) {
       tool: name,
       status: "success",
       durationMs,
-      ...getToolArgsMeta(name, args),
+      ...getToolArgsMeta(name, args, wo),
       ...getToolPaginationMeta(name, res),
-      ...getToolTraceMeta(name, res)
+      ...getToolTraceMeta(name, res, wo)
     });
     return { ok: true, name, call_id: callId, content };
   } catch (e) {
@@ -351,7 +351,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
       status: "error",
       durationMs,
       error: e?.message || String(e),
-      ...getToolArgsMeta(name, args)
+      ...getToolArgsMeta(name, args, wo)
     });
     return { ok: false, name, call_id: callId, content: JSON.stringify(mappedErr) };
   } finally {

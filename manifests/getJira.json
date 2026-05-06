@@ -1,6 +1,6 @@
 {
   "name": "getJira",
-  "description": "ALWAYS USE THIS TOOL to access Jira. Always execute a fresh Jira operation - never reuse issue data from previous calls. If a previous call failed, retry with corrected parameters. Supports high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE) and raw API requests. Uses configured Jira credentials and normalizes JQL automatically. LIST returns {key, summary, status}. IMPORTANT: Never invent, guess, or hallucinate a Jira project key. If the correct project key is not explicitly known from user input or trusted tool results, omit any project restriction from your request and let the tool/config handle scoping.\nMULTI-WORKER: Multiple agents may operate on DIFFERENT issues in parallel safely. Concurrent UPDATE/STATUS calls on the SAME issue cause conflicts - serialize writes to the same issue.",
+  "description": "ALWAYS USE THIS TOOL to access Jira. Always execute a fresh Jira operation - never reuse issue data from previous calls. If a previous call failed, retry with corrected parameters. Supports high-level ops (LIST/TASK/STATUS/CREATE/DELETE/UPDATE) and raw API requests. Uses configured Jira credentials and normalizes JQL automatically. LIST returns {key, summary, status} plus pagination metadata. IMPORTANT: Never invent, guess, or hallucinate a Jira project key. If the correct project key is not explicitly known from user input or trusted tool results, omit any project restriction from your request and let the tool/config handle scoping.\nMULTI-WORKER: Multiple agents may operate on DIFFERENT issues in parallel safely. Concurrent UPDATE/STATUS calls on the SAME issue cause conflicts - serialize writes to the same issue.\n\nLIST PAGINATION: Every LIST response includes total_count (total issues), total_pages, current_page (1-based), page_size, has_more, next_start_at, and a pages array [{page_number, start_at}] with the entry point for every page. Use pages to dispatch all pages as parallel workers in one batch.",
   "policyHint": "For any Jira operation - listing, creating, updating, or checking issues - use this tool immediately without asking for confirmation. Never guess a project key; if uncertain, omit it.",
   "parameters": {
     "type": "object",
@@ -12,7 +12,8 @@
       "status": { "type": "string", "description": "Target status for STATUS/UPDATE (auto-transition)." },
       "resolutionName": { "type": "string", "description": "Optional resolution to set during STATUS (e.g. 'Done', 'Won't Fix')." },
       "forceDelete": { "type": "boolean", "description": "For DELETE: true to perform hard delete; otherwise a transition to 'Done' is attempted." },
-      "maxResults": { "type": "number", "description": "For LIST: maximum results (default 50)." },
+      "maxResults": { "type": "number", "description": "For LIST: maximum results per page (default 50)." },
+      "startAt": { "type": "number", "description": "For LIST: pagination offset — issue index to start from (0-based). Use next_start_at from a previous response, or start_at from the pages array for parallel fetching." },
       "fields": { "type": "object", "description": "For CREATE/UPDATE: Jira REST fields payload (summary, issuetype, etc.)." },
       "json": {
         "type": "object",

@@ -1,7 +1,7 @@
 {
   "name": "getConfluence",
-  "description": "ALWAYS USE THIS TOOL for all Confluence operations. Never infer Confluence page content from conversation history — always fetch it fresh with op='read'. Supports create, append, read, list, delete, move, and raw API operations. Images and files must be referenced via public http/https URLs — local file paths are not supported. Markdown input is automatically converted to Confluence storage format.\nMULTI-WORKER: Multiple agents may append to DIFFERENT pages in parallel safely. Writing to the SAME page from multiple agents simultaneously causes version conflicts — serialize writes to the same page (one agent at a time).",
-  "policyHint": "For any Confluence operation — reading, creating, updating pages, or listing spaces — use this tool immediately without asking for confirmation.",
+  "description": "ALWAYS USE THIS TOOL for all Confluence operations. Never infer Confluence page content from conversation history - always fetch it fresh with op='read'. Supports create, append, read, list, delete, move, and raw API operations. Images and files must be referenced via public http/https URLs - local file paths are not supported. Markdown input is automatically converted to Confluence storage format.\nWRITE SAFETY: Only perform create or append when the full intended content is already available in the current prompt or tool-call context. Do not claim that a Confluence write succeeded unless this tool actually succeeded in the current run. If the write result is ambiguous or does not clearly identify the target page, verify it with a follow-up read, list, or api call before reporting success. If verification is not possible, report the result as unverified instead of successful.\nMULTI-WORKER: Multiple agents may append to DIFFERENT pages in parallel safely. Writing to the SAME page from multiple agents simultaneously causes version conflicts - serialize writes to the same page (one agent at a time).\n\nCREATE WITHOUT PAGE ID: The space key and parent page are pre-configured — you do NOT need to provide a pageId when creating a new page. To create a page, use op='create' with title and markdown only. To append to an existing page, use op='append' with title (the tool resolves the page by title automatically). Never refuse a Confluence write task just because no explicit page ID was given.\n\nLIST PAGINATION: op='list' responses include has_more and next_cursor for cursor-based pagination.",
+  "policyHint": "For any Confluence operation - reading, creating, updating pages, or listing spaces - use this tool immediately without asking for confirmation. For writes, only proceed when the full content is already available, and verify ambiguous write results before claiming success.",
   "parameters": {
     "type": "object",
     "additionalProperties": false,
@@ -16,7 +16,7 @@
       "imageUrls": { "type": "array", "items": { "type": "string" }, "description": "All must start with http/https. Will be uploaded as attachments." },
       "imageAlt": { "type": "string" },
       "imageCaption": { "type": "string" },
-      "fileUrl": { "type": "string", "description": "Any http/https URL — uploaded as an attachment." },
+      "fileUrl": { "type": "string", "description": "Any http/https URL - uploaded as an attachment." },
       "filename": { "type": "string" },
       "contentType": { "type": "string" },
       "caption": { "type": "string" },
@@ -24,6 +24,7 @@
       "embed": { "type": "boolean", "description": "create/append: images embed inline by default; attach: default false (upload only)." },
       "attachOrLink": { "type": "boolean" },
       "limit": { "type": "number" },
+      "cursor": { "type": "string", "description": "For op='list': cursor for next page — use next_cursor from the previous response." },
       "status": { "type": "string" },
       "method": { "type": "string" },
       "path": { "type": "string" },

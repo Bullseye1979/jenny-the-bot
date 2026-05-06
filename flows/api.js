@@ -18,15 +18,12 @@ import { getParseCookies, getVerifyToken, getSessionCookieName } from "../shared
 setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 
-function getBotname(workingObject, baseCore) {
+function getBotName(workingObject, baseCore) {
   const fromWO = getStr(workingObject?.botName).trim();
   if (fromWO) return fromWO;
 
   const fromBase = getStr(baseCore?.workingObject?.botName).trim();
   if (fromBase) return fromBase;
-
-  const fromCfg = getStr(baseCore?.config?.botname).trim();
-  if (fromCfg) return fromCfg;
 
   return "Bot";
 }
@@ -296,12 +293,12 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     }
 
     if (req.method === "GET" && req.url === "/health") {
-      return getJson(res, 200, { ok: true, botname: getBotname(undefined, baseCore) });
+      return getJson(res, 200, { ok: true, botName: getBotName(undefined, baseCore) });
     }
 
     if (req.method === "GET" && (req.url === toolcallPath || req.url.startsWith(toolcallPath + "?"))) {
       if (!await isBearerValid(req, baseCore)) {
-        return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(undefined, baseCore) });
+        return getJson(res, 401, { ok: false, error: "unauthorized", botName: getBotName(undefined, baseCore) });
       }
 
       try {
@@ -311,21 +308,21 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
           ? toolcallRegistryKey + ":" + _tcChannelId
           : toolcallRegistryKey;
         const snapshot = await getToolcallSnapshot(effectiveKey);
-        return getJson(res, 200, { ...snapshot, botname: getBotname(undefined, baseCore) });
+        return getJson(res, 200, { ...snapshot, botName: getBotName(undefined, baseCore) });
       } catch (e) {
         return getJson(res, 500, {
           ok: false,
           error: "registry_failed",
           reason: e?.message || String(e),
           timestamp: new Date().toISOString(),
-          botname: getBotname(undefined, baseCore),
+          botName: getBotName(undefined, baseCore),
         });
       }
     }
 
     if (req.method === "GET" && (req.url === contextPath || req.url.startsWith(contextPath + "?"))) {
       if (!await isBearerValid(req, baseCore)) {
-        return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(undefined, baseCore) });
+        return getJson(res, 401, { ok: false, error: "unauthorized", botName: getBotName(undefined, baseCore) });
       }
 
       try {
@@ -334,18 +331,18 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
         const _ctxLimit = String(_ctxUrlObj.searchParams.get("limit") || "").trim();
 
         if (!_ctxChannelId) {
-          return getJson(res, 400, { ok: false, error: "channelId_required", botname: getBotname(undefined, baseCore) });
+          return getJson(res, 400, { ok: false, error: "channelId_required", botName: getBotName(undefined, baseCore) });
         }
 
         const msgs = await getContextSnapshot(baseCore, _ctxChannelId, _ctxLimit);
-        return getJson(res, 200, { ok: true, channelId: _ctxChannelId, count: msgs.length, messages: msgs, botname: getBotname(undefined, baseCore) });
+        return getJson(res, 200, { ok: true, channelId: _ctxChannelId, count: msgs.length, messages: msgs, botName: getBotName(undefined, baseCore) });
       } catch (e) {
         return getJson(res, 500, {
           ok: false,
           error: "context_failed",
           reason: e?.message || String(e),
           timestamp: new Date().toISOString(),
-          botname: getBotname(undefined, baseCore),
+          botName: getBotName(undefined, baseCore),
         });
       }
     }
@@ -402,7 +399,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
           ok:        true,
           channelId: _laChannelId,
           message:   _laLast || null,
-          botname:   getBotname(undefined, baseCore),
+          botName:   getBotName(undefined, baseCore),
         });
       } catch (e) {
         return getJson(res, 500, { ok: false, error: "last_assistant_failed", reason: e?.message || String(e) });
@@ -483,7 +480,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     }
 
     if (req.method !== "POST" || req.url !== apiPath) {
-      return getJson(res, 404, { error: "not_found", botname: getBotname(undefined, baseCore) });
+      return getJson(res, 404, { error: "not_found", botName: getBotName(undefined, baseCore) });
     }
 
     const runCore = createRunCore();
@@ -498,14 +495,14 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     try {
       parsedBody = JSON.parse(await getReadBody(req));
     } catch {
-      return getJson(res, 400, { error: "invalid_json", botname: getBotname(workingObject, baseCore) });
+      return getJson(res, 400, { error: "invalid_json", botName: getBotName(workingObject, baseCore) });
     }
 
     const requestChannelId = String(parsedBody?.channelId || "").trim();
     if (!requestChannelId || !parsedBody?.payload) {
       return getJson(res, 400, {
         error: "channelId_and_payload_required",
-        botname: getBotname(workingObject, baseCore),
+        botName: getBotName(workingObject, baseCore),
       });
     }
 
@@ -531,9 +528,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     if (_apiSubchannel) workingObject.subchannel = _apiSubchannel;
 
     if (parsedBody.doNotWriteToContext === true) workingObject.doNotWriteToContext = true;
-    if (parsedBody.contextChannelId || parsedBody.contextChannelID) {
-      workingObject.contextChannelId = String(parsedBody.contextChannelId || parsedBody.contextChannelID);
-    }
+    if (parsedBody.contextChannelId) workingObject.contextChannelId = String(parsedBody.contextChannelId);
     if (parsedBody.systemPromptAddition) workingObject.systemPromptAddition = String(parsedBody.systemPromptAddition);
     if (parsedBody.workingObjectPatch && typeof parsedBody.workingObjectPatch === "object") {
       applyWorkingObjectPatch(workingObject, parsedBody.workingObjectPatch);
@@ -560,7 +555,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       await runFlow("api", runCore);
     } catch {
       if (!res.writableEnded) {
-        return getJson(res, 500, { error: "flow_failed", botname: getBotname(workingObject, baseCore) });
+        return getJson(res, 500, { error: "flow_failed", botName: getBotName(workingObject, baseCore) });
       }
       return;
     }
@@ -568,7 +563,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
     if (res.writableEnded) return;
 
     if (workingObject.apiGated === true) {
-      return getJson(res, 401, { ok: false, error: "unauthorized", botname: getBotname(workingObject, baseCore) });
+      return getJson(res, 401, { ok: false, error: "unauthorized", botName: getBotName(workingObject, baseCore) });
     }
 
     const silenceToken = String(workingObject.modSilence || "[silence]");
@@ -586,7 +581,7 @@ export default async function getApiFlow(baseCore, runFlow, createRunCore) {
       response: text && text !== silenceToken ? text : "",
       toolCallLog:       Array.isArray(workingObject.toolCallLog)  ? workingObject.toolCallLog  : undefined,
       primaryImageUrl:   typeof workingObject.primaryImageUrl === "string" && workingObject.primaryImageUrl ? workingObject.primaryImageUrl : undefined,
-      botname: getBotname(workingObject, baseCore),
+      botName: getBotName(workingObject, baseCore),
     });
   });
 

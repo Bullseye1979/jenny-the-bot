@@ -111,6 +111,9 @@ async function getInvoke(args, coreData) {
     title,
     content_type:     ct,
     total_characters: pageText.length,
+    page_size:        maxChars,
+    current_page:     Math.floor(startOffset / maxChars) + 1,
+    total_pages:      Math.ceil(pageText.length / maxChars),
   };
 }
 

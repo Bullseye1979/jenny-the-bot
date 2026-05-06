@@ -36,17 +36,17 @@ async function getDownloadToBuffer(url) {
 
 async function resolveToolConfig(wo = {}, args = {}) {
   const tc = wo?.toolsconfig?.getVideoFromText || {};
-  const apiToken = await getSecret(wo, String(tc.videoApiToken || wo.videoApiToken || "").trim());
-  const baseUrl  = String(tc.videoBaseUrl  || wo.videoBaseUrl  || "https://api.replicate.com/v1").trim();
-  const model    = String(tc.videoModel    || wo.videoModel    || "google/veo-3").trim();
+  const apiToken = await getSecret(wo, String(tc.videoApiToken || "").trim());
+  const baseUrl  = String(tc.videoBaseUrl  || "https://api.replicate.com/v1").trim();
+  const model    = String(tc.videoModel    || "google/veo-3").trim();
   const pollIntervalMs = Number.isFinite(tc.videoPollIntervalMs)
     ? tc.videoPollIntervalMs
-    : (Number.isFinite(wo.videoPollIntervalMs) ? wo.videoPollIntervalMs : 5000);
+    : 5000;
   const timeoutMs = Number.isFinite(tc.videoTimeoutMs)
     ? tc.videoTimeoutMs
-    : (Number.isFinite(wo.videoTimeoutMs) ? wo.videoTimeoutMs : 600000);
-  const publicBaseUrl = typeof (tc.videoPublicBaseUrl || wo.videoPublicBaseUrl) === "string"
-    ? String(tc.videoPublicBaseUrl || wo.videoPublicBaseUrl).replace(/\/+$/, "")
+    : 600000;
+  const publicBaseUrl = typeof tc.videoPublicBaseUrl === "string"
+    ? String(tc.videoPublicBaseUrl).replace(/\/+$/, "")
     : null;
   if (!apiToken) throw new Error(`[${MODULE_NAME}] missing toolsconfig.getVideoFromText.videoApiToken`);
   return { apiToken, baseUrl, model, pollIntervalMs, timeoutMs, publicBaseUrl };

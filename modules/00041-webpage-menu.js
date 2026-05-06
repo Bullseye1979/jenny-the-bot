@@ -57,6 +57,14 @@ function getIconValue(item) {
   const key = String(item?.iconKey || "").trim();
   return ICONS[key] || "";
 }
+
+
+function getAllowedHomePath(homePath, menu) {
+  const home = String(homePath || "").trim();
+  if (!home) return "";
+  return Array.isArray(menu) && menu.some(item => item?.link === home) ? home : "";
+}
+
 export default async function getWebpageMenu(coreData) {
   const wo = coreData?.workingObject || {};
   const flow = getNormFlow(wo);
@@ -80,7 +88,7 @@ export default async function getWebpageMenu(coreData) {
     label: getPathParts(it.text).slice(-1)[0] || it.text
   }));
 
-  const cfgHome = String(cfg.homePath || "").trim();
+  const cfgHome = getAllowedHomePath(cfg.homePath, wo.web.menu);
   const reqPath = String(wo?.http?.path || "").split("?")[0];
   const firstAllowed = wo.web.menu.find(item => item.link && item.link !== "/");
   const target = cfgHome || firstAllowed?.link || "";

@@ -1,6 +1,6 @@
 {
   "name": "getWebpage",
-  "description": "Fetch a webpage and extract its readable text in pages. The first call returns the first chunk; if has_more=true, call again with start_ctx_id=next_start_ctx_id to get the next chunk — repeat until has_more=false. The optional 'prompt' parameter biases the summary without overriding facts.",
+  "description": "Fetch a webpage and extract its readable text in pages. The first call returns the first chunk; if has_more=true, call again with start_ctx_id=next_start_ctx_id to get the next chunk — repeat until has_more=false. The optional 'prompt' parameter biases the summary without overriding facts.\n\nPAGINATION: Every response includes total_pages (total number of pages), current_page (current page number, 1-based), and page_size (characters per page). You can compute all page start offsets as multiples of page_size and dispatch them as parallel workers in one batch.",
   "policyHint": "When the user provides a specific URL or when search results need deeper reading from a source, fetch the page directly. If has_more=true in the response, always call again with start_ctx_id=next_start_ctx_id to retrieve remaining page content before answering.",
   "parameters": {
     "type": "object",
@@ -19,7 +19,7 @@
       },
       "start_ctx_id": {
         "type": "number",
-        "description": "Pagination offset (character position). Omit or set to 0 for the first page. Use the next_start_ctx_id value from the previous response to fetch the next chunk."
+        "description": "Pagination offset (character position). Omit or set to 0 for the first page. Use the next_start_ctx_id value from the previous response to fetch the next chunk, or compute as (page_number - 1) * page_size for parallel fetching."
       }
     },
     "required": [

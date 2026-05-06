@@ -560,7 +560,7 @@ export default async function getCoreAi(coreData) {
         contentLen: msgText.length,
         contentPreview: getPreview(msgText, RESULT_PREVIEW_MAX),
         extractedTool: extracted ? extracted.name : null,
-        extractedToolArgs: extracted ? getToolArgsMeta(extracted.name, extracted.args) : undefined,
+        extractedToolArgs: extracted ? getToolArgsMeta(extracted.name, extracted.args, wo) : undefined,
         totalToolCallsBefore: toolCallsUsedTotal,
         maxToolCalls: kiCfg.maxToolCallsTotal
       });
@@ -620,9 +620,9 @@ export default async function getCoreAi(coreData) {
           tool: extracted.name,
           status: _tcStatus,
           durationMs: _tcDurationMs,
-          ...getToolArgsMeta(extracted.name, extracted.args),
+          ...getToolArgsMeta(extracted.name, extracted.args, wo),
           ...getToolPaginationMeta(extracted.name, toolMsg.content),
-          ...getToolTraceMeta(extracted.name, toolMsg.content)
+          ...getToolTraceMeta(extracted.name, toolMsg.content, wo)
         });
 
         wo._contextPersistQueue.push(getWithTurnId(toolMsg, wo));

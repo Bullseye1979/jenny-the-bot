@@ -118,7 +118,7 @@ async function sendText(wo, status, text) {
 
 function getSlug(title) {
   return getStr(title).toLowerCase()
-    .replace(/[äöüß]/g, c => ({ ä: "ae", ö: "oe", ü: "ue", ß: "ss" })[c] || c)
+    .replace(/[\u00e4\u00f6\u00fc\u00df]/g, c => ({ "\u00e4": "ae", "\u00f6": "oe", "\u00fc": "ue", "\u00df": "ss" })[c] || c)
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 80);
@@ -325,14 +325,27 @@ function wikiImgResolveSize(cfg) {
   return "1024x1024";
 }
 
-function wikiImgEnhancePrompt(raw) {
-  const p = String(raw || "").replace(/\s+/g, " ").trim();
-  return [
-    p,
-    "Style: digital painting, painterly brushwork, studio quality, cinematic, creative angles",
-    "Quality: vibrant colors, vibrant lighting, sharp focus, high quality, highly detailed faces, anatomically correct hands",
-    "Avoid: text, captions, logos, watermarks, deformed hands, extra fingers, low-res, distorted anatomy"
-  ].join(" | ");
+function getStringArray(value) {
+  return Array.isArray(value)
+    ? value.map(item => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function getApplyTemplate(template, values) {
+  return String(template || "").replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => String(values?.[key] || ""));
+}
+
+function wikiImgEnhancePrompt(raw, cfg) {
+  const prompt = String(raw || "").replace(/\s+/g, " ").trim();
+  const template = getStr(cfg?.heuristicTemplate || "").trim();
+  if (!template) return prompt;
+  const rendered = getApplyTemplate(template, {
+    prompt,
+    styleHints: getStringArray(cfg?.styleHints).join(", "),
+    qualityHints: getStringArray(cfg?.qualityHints).join(", "),
+    negativeHints: getStringArray(cfg?.negativeHints).join(", ")
+  }).replace(/\s+/g, " ").trim();
+  return rendered || prompt;
 }
 
 async function wikiGenImage(prompt, imgCfg, wo) {
@@ -342,7 +355,7 @@ async function wikiGenImage(prompt, imgCfg, wo) {
   const endpoint = getStr(imgCfg?.endpoint || "https://api.openai.com/v1/images/generations");
   const model    = getStr(imgCfg?.model    || "gpt-image-1");
   const size     = wikiImgResolveSize(imgCfg);
-  const finalPrompt = wikiImgEnhancePrompt(prompt);
+  const finalPrompt = wikiImgEnhancePrompt(prompt, imgCfg);
 
   let res, data;
   try {
@@ -404,18 +417,24 @@ const WIKI_PATCH_KEYS = [
   "includeHistory", "includeHistoryTools", "fallbackOverrides"
 ];
 
-const WIKI_JSON_SCHEMA_PROMPT =
-  "When all research is complete, call getImageSD (preferred) or getImage to generate an article image, then capture the returned URL.\n" +
-  "Output your final answer as a single valid JSON object — no prose, no markdown fences, no commentary before or after.\n" +
-  'Schema: {"title":"string","intro":"paragraph text","sections":[{"heading":"string","level":2,"content":"paragraph text"}],' +
-  '"infobox":{"imageAlt":"short image description for generation","fields":[{"label":"string","value":"string"}]},' +
-  '"image_url":"url returned by getImageSD or getImage, or empty string if none",' +
-  '"categories":["string"],"relatedTerms":["string"]}';
+function getWikiArticleJsonPrompt(cfg) {
+  return getStr(cfg.articleJsonPrompt || "").trim();
+}
+
+function getWikiImageToolPrompt(cfg, imagePrompt) {
+  const template = getStr(cfg.imageToolPromptTemplate || "").trim();
+  if (!template) return imagePrompt;
+  return getApplyTemplate(template, {
+    imagePrompt: String(imagePrompt || "").trim()
+  }).trim();
+}
+
 
 
 async function callPipelineForArticle(query, channel, coreData, promptAddition) {
   const wo  = coreData?.workingObject || {};
   const cfg = coreData?.config?.[MODULE_NAME] || {};
+  const articleJsonPrompt = getWikiArticleJsonPrompt(cfg);
 
 
 
@@ -438,7 +457,7 @@ async function callPipelineForArticle(query, channel, coreData, promptAddition) 
     userId: "wiki",
     doNotWriteToContext: true,
     workingObjectPatch,
-    systemPromptAddition: WIKI_JSON_SCHEMA_PROMPT
+    ...(articleJsonPrompt ? { systemPromptAddition: articleJsonPrompt } : {})
   };
 
   const headers = { "Content-Type": "application/json" };
@@ -517,7 +536,7 @@ async function callPipelineForImageOnly(article, channel, coreData, promptAdditi
     headers,
     body: JSON.stringify({
       channelId: channel.channelId,
-      payload: `Generate an image using getImageSD or getImage. Visual description: ${imagePrompt}`,
+      payload: getWikiImageToolPrompt(cfg, imagePrompt),
       userId: "wiki",
       doNotWriteToContext: true,
       workingObjectPatch
@@ -550,11 +569,11 @@ function buildPageHeader(title, basePath, channelId, menu, role, webAuth) {
   const chPath   = channelId ? `${basePath}/${channelId}` : basePath;
   const menuHtml = getMenuHtml(menu, chPath, role, null, null, webAuth);
   const searchBar = channelId
-    ? `<div class="wiki-search-bar"><form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get"><input class="wiki-search-input" type="text" name="q" placeholder="Search or create…" autocomplete="off"><button class="wiki-search-btn" type="submit">Go</button></form></div>`
+    ? `<div class="wiki-search-bar"><form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get"><input class="wiki-search-input" type="text" name="q" placeholder="Search or createÃ¢â‚¬Â¦" autocomplete="off"><button class="wiki-search-btn" type="submit">Go</button></form></div>`
     : "";
   return `<header>
   <a class="wiki-logo-link" href="${escHtml(chPath)}">
-    <span class="wiki-logo">🗺️</span>
+    <span class="wiki-logo">Ã°Å¸â€”ÂºÃ¯Â¸Â</span>
     <span class="wiki-title">${escHtml(title)}</span>
   </a>
   ${menuHtml}
@@ -564,7 +583,7 @@ function buildPageHeader(title, basePath, channelId, menu, role, webAuth) {
 
 function buildWikiCss() {
   return `
-/* === Wiki theme vars — light === */
+/* === Wiki theme vars Ã¢â‚¬â€ light === */
 :root {
   --wiki-bg: var(--bg);
   --wiki-surface: var(--bg2);
@@ -580,7 +599,7 @@ function buildWikiCss() {
   --wiki-chip-bg: #e2e8f0;
   --wiki-chip-text: var(--txt);
 }
-/* === Wiki theme vars — dark === */
+/* === Wiki theme vars Ã¢â‚¬â€ dark === */
 [data-theme="dark"] {
   --wiki-bg: #1a1a2e;
   --wiki-surface: #16213e;
@@ -742,7 +761,7 @@ function buildChannelHomePage(channel, articles, basePath, menu, role, webAuth) 
     return `<a class="wiki-article-card" href="${escHtml(chPath)}/${escHtml(a.slug)}" style="text-decoration:none">
       ${a.image_url
         ? `<img class="wiki-article-card-img wiki-lazy" data-src="${escHtml(getThumbUrl(a.image_url, THUMB_WIDTH))}" data-fallback="${escHtml(a.image_url)}" alt="${escHtml(a.title)}">`
-        : `<div class="wiki-article-card-img-placeholder">📄</div>`}
+        : `<div class="wiki-article-card-img-placeholder">Ã°Å¸â€œâ€ž</div>`}
       <div class="wiki-article-card-body">
         <div class="wiki-article-card-title">${escHtml(a.title)}</div>
         <div class="wiki-article-card-intro">${escHtml(getStr(a.intro).slice(0, 150))}</div>
@@ -750,11 +769,11 @@ function buildChannelHomePage(channel, articles, basePath, menu, role, webAuth) 
     </a>`;
   }).join("");
 
-  const body = `<div class="wiki-breadcrumb"><a href="${escHtml(basePath)}">Wiki</a> › ${escHtml(chTitle)}</div>
+  const body = `<div class="wiki-breadcrumb"><a href="${escHtml(basePath)}">Wiki</a> Ã¢â‚¬Âº ${escHtml(chTitle)}</div>
 <div class="wiki-content-wrap">
   <div class="wiki-page-title">${escHtml(chTitle)}</div>
   <form class="wiki-search-form" action="${escHtml(chPath)}/search" method="get" style="margin-bottom:24px">
-    <input class="wiki-search-input" type="text" name="q" placeholder="Search or generate an article…" autocomplete="off" style="width:340px">
+    <input class="wiki-search-input" type="text" name="q" placeholder="Search or generate an articleÃ¢â‚¬Â¦" autocomplete="off" style="width:340px">
     <button class="wiki-search-btn" type="submit">Go</button>
   </form>
   ${articles.length
@@ -833,32 +852,32 @@ function buildArticlePage(channel, article, basePath, isEditor, menu, role, maxA
 
   const seeAlsoLinks = related.map(r =>
     `<a href="${escHtml(chPath)}/search?q=${encodeURIComponent(r)}">${escHtml(r)}</a>`
-  ).join(" · ");
+  ).join(" Ã‚Â· ");
 
   const editBtn = isEditor
-    ? `<a class="wiki-edit-btn" href="${escHtml(chPath)}/${escHtml(article.slug)}/edit">✏️ Edit</a>`
+    ? `<a class="wiki-edit-btn" href="${escHtml(chPath)}/${escHtml(article.slug)}/edit">Ã¢Å“ÂÃ¯Â¸Â Edit</a>`
     : "";
   const deleteBtn = isEditor
-    ? `<button class="wiki-delete-btn" onclick="wikiDeleteArticle('${escHtml(chId)}','${escHtml(article.slug)}')">🗑 Delete</button>`
+    ? `<button class="wiki-delete-btn" onclick="wikiDeleteArticle('${escHtml(chId)}','${escHtml(article.slug)}')">Ã°Å¸â€”â€˜ Delete</button>`
     : "";
   let expiryBadge = "";
   if (maxAgeDays > 0 && article.created_at && !article.updated_at) {
     const ageDays       = (Date.now() - new Date(article.created_at).getTime()) / 86400000;
     const remainingDays = Math.ceil(maxAgeDays - ageDays);
     if (remainingDays <= 0) {
-      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expired</span>`;
+      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">Ã¢Å¡Â Ã¯Â¸Â Expired</span>`;
     } else if (remainingDays <= 2) {
-      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">⚠️ Expires in ${remainingDays === 1 ? "1 day" : remainingDays + " days"}</span>`;
+      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-crit">Ã¢Å¡Â Ã¯Â¸Â Expires in ${remainingDays === 1 ? "1 day" : remainingDays + " days"}</span>`;
     } else if (remainingDays <= 5) {
-      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-warn">🕐 Expires in ${remainingDays} days</span>`;
+      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-warn">Ã°Å¸â€¢Â Expires in ${remainingDays} days</span>`;
     } else {
-      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-ok">🕐 Expires in ${remainingDays} days</span>`;
+      expiryBadge = `<span class="wiki-expiry-badge wiki-expiry-ok">Ã°Å¸â€¢Â Expires in ${remainingDays} days</span>`;
     }
   }
 
   const body = `<div class="wiki-breadcrumb">
-  <a href="${escHtml(basePath)}">Wiki</a> ›
-  <a href="${escHtml(chPath)}">${escHtml(chTitle)}</a> ›
+  <a href="${escHtml(basePath)}">Wiki</a> Ã¢â‚¬Âº
+  <a href="${escHtml(chPath)}">${escHtml(chTitle)}</a> Ã¢â‚¬Âº
   ${escHtml(article.title)}
 </div>
 <div class="wiki-content-wrap">
@@ -885,7 +904,7 @@ function wikiDeleteArticle(chId, slug) {
 }
 </script>` : ""}`;
 
-  return buildFullPage({ head: article.title + " – " + chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
+  return buildFullPage({ head: article.title + " Ã¢â‚¬â€œ " + chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
 }
 
 
@@ -902,14 +921,14 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
   const imageUrl        = getStr(article.image_url);
 
   const body = `<div class="wiki-breadcrumb">
-  <a href="${escHtml(basePath)}">Wiki</a> ›
-  <a href="${escHtml(chPath)}">${escHtml(chTitle)}</a> ›
-  <a href="${escHtml(chPath)}/${escHtml(article.slug)}">${escHtml(article.title)}</a> ›
+  <a href="${escHtml(basePath)}">Wiki</a> Ã¢â‚¬Âº
+  <a href="${escHtml(chPath)}">${escHtml(chTitle)}</a> Ã¢â‚¬Âº
+  <a href="${escHtml(chPath)}/${escHtml(article.slug)}">${escHtml(article.title)}</a> Ã¢â‚¬Âº
   Edit
 </div>
 <div class="wiki-content-wrap">
   <div class="wiki-edit-form">
-    <h2>✏️ Edit: ${escHtml(article.title)}</h2>
+    <h2>Ã¢Å“ÂÃ¯Â¸Â Edit: ${escHtml(article.title)}</h2>
 
     <div class="wiki-edit-field">
       <label for="wiki-title">Title</label>
@@ -924,7 +943,7 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
     <div class="wiki-edit-field">
       <label>Article Image</label>
       <input id="wiki-img-url" class="wiki-edit-input" type="text" value="${escHtml(imageUrl)}" placeholder="https://... or /wiki/${escHtml(chId)}/images/filename.png">
-      <button type="button" class="wiki-regen-btn" id="wiki-regen-btn" onclick="wikiRegenImage()">🔄 Regenerate Image via AI</button>
+      <button type="button" class="wiki-regen-btn" id="wiki-regen-btn" onclick="wikiRegenImage()">Ã°Å¸â€â€ž Regenerate Image via AI</button>
       <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
         <label style="font-size:0.82em;color:var(--wiki-text-muted);display:flex;align-items:center;gap:5px;cursor:pointer">
           <input type="checkbox" id="wiki-regen-override-mode" onchange="wikiRegenModeChange()">
@@ -936,8 +955,8 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
       <p class="wiki-edit-notice">Paste a URL or upload a new image below. Uploading replaces the URL automatically.</p>
       ${imageUrl ? `<img id="wiki-img-preview" class="wiki-edit-img-preview" src="${escHtml(imageUrl)}" alt="Current image">` : `<img id="wiki-img-preview" class="wiki-edit-img-preview hidden" src="" alt="">`}
       <div class="wiki-upload-area" id="wiki-upload-drop">
-        📁 Click to choose image, or drag &amp; drop here<br>
-        <span style="font-size:.8em">(PNG, JPG, GIF, WebP — max 8 MB)</span>
+        Ã°Å¸â€œÂ Click to choose image, or drag &amp; drop here<br>
+        <span style="font-size:.8em">(PNG, JPG, GIF, WebP Ã¢â‚¬â€ max 8 MB)</span>
         <input type="file" id="wiki-img-file" accept="image/*" style="display:none">
       </div>
       <p id="wiki-upload-status" class="wiki-edit-notice"></p>
@@ -964,7 +983,7 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
     </div>
 
     <div class="wiki-edit-actions">
-      <button id="wiki-save-btn" class="wiki-save-btn" onclick="wikiSaveArticle()">💾 Save</button>
+      <button id="wiki-save-btn" class="wiki-save-btn" onclick="wikiSaveArticle()">Ã°Å¸â€™Â¾ Save</button>
       <a class="wiki-cancel-btn" href="${escHtml(chPath)}/${escHtml(article.slug)}">Cancel</a>
     </div>
     <p id="wiki-save-status" class="wiki-edit-notice" style="margin-top:10px"></p>
@@ -989,8 +1008,8 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
   fileInput.addEventListener('change', () => { if (fileInput.files[0]) uploadImage(fileInput.files[0]); });
 
   function uploadImage(file) {
-    if (file.size > 8 * 1024 * 1024) { uploadSt.textContent = '❌ File too large (max 8 MB)'; return; }
-    uploadSt.textContent = '⏳ Uploading…';
+    if (file.size > 8 * 1024 * 1024) { uploadSt.textContent = 'Ã¢ÂÅ’ File too large (max 8 MB)'; return; }
+    uploadSt.textContent = 'Ã¢ÂÂ³ UploadingÃ¢â‚¬Â¦';
     const reader = new FileReader();
     reader.onload = async function(e) {
       const b64 = e.target.result.split(',')[1];
@@ -1006,11 +1025,11 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
           imgUrl.value = data.url;
           imgPrev.src  = data.url;
           imgPrev.classList.remove('hidden');
-          uploadSt.textContent = '✅ Uploaded';
+          uploadSt.textContent = 'Ã¢Å“â€¦ Uploaded';
         } else {
-          uploadSt.textContent = '❌ ' + (data.error || 'Upload failed');
+          uploadSt.textContent = 'Ã¢ÂÅ’ ' + (data.error || 'Upload failed');
         }
-      } catch { uploadSt.textContent = '❌ Upload request failed'; }
+      } catch { uploadSt.textContent = 'Ã¢ÂÅ’ Upload request failed'; }
     };
     reader.readAsDataURL(file);
   }
@@ -1042,7 +1061,7 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
     const isOverride = !!(override && override.checked);
     const body = isOverride ? { promptOverride: text } : { promptAddition: text };
     if (btn) btn.disabled = true;
-    status.textContent = '⏳ Regenerating image\u2026 this may take a moment.';
+    status.textContent = 'Ã¢ÂÂ³ Regenerating image\u2026 this may take a moment.';
     try {
       const resp = await fetch('/wiki/' + chId + '/api/regen-image/' + slug, {
         method: 'POST',
@@ -1068,10 +1087,10 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
     const btn    = document.getElementById('wiki-save-btn');
     const status = document.getElementById('wiki-save-status');
     let sections, infobox;
-    try { sections = JSON.parse(document.getElementById('wiki-sections').value); } catch { status.textContent = '❌ Sections: invalid JSON'; return; }
-    try { infobox  = JSON.parse(document.getElementById('wiki-infobox').value);  } catch { status.textContent = '❌ Infobox: invalid JSON'; return; }
+    try { sections = JSON.parse(document.getElementById('wiki-sections').value); } catch { status.textContent = 'Ã¢ÂÅ’ Sections: invalid JSON'; return; }
+    try { infobox  = JSON.parse(document.getElementById('wiki-infobox').value);  } catch { status.textContent = 'Ã¢ÂÅ’ Infobox: invalid JSON'; return; }
     btn.disabled = true;
-    status.textContent = '⏳ Saving…';
+    status.textContent = 'Ã¢ÂÂ³ SavingÃ¢â‚¬Â¦';
     const payload = {
       title:      document.getElementById('wiki-title').value.trim(),
       intro:      document.getElementById('wiki-intro').value.trim(),
@@ -1091,15 +1110,15 @@ function buildEditPage(channel, article, basePath, menu, role, webAuth) {
       if (data.ok) {
         window.location.href = chPath + '/' + slug;
       } else {
-        status.textContent = '❌ ' + (data.error || 'Save failed');
+        status.textContent = 'Ã¢ÂÅ’ ' + (data.error || 'Save failed');
         btn.disabled = false;
       }
-    } catch { status.textContent = '❌ Save request failed'; btn.disabled = false; }
+    } catch { status.textContent = 'Ã¢ÂÅ’ Save request failed'; btn.disabled = false; }
   };
 })();
 </script>`;
 
-  return buildFullPage({ head: "Edit: " + article.title + " – " + chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
+  return buildFullPage({ head: "Edit: " + article.title + " Ã¢â‚¬â€œ " + chTitle, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
 }
 
 
@@ -1115,8 +1134,8 @@ function buildSearchPage(channel, query, results, basePath, menu, role, isCreato
 </div>`).join("");
 
   const body = `<div class="wiki-breadcrumb">
-  <a href="${escHtml(basePath)}">Wiki</a> ›
-  <a href="${escHtml(chPath)}">${escHtml(chTitle)}</a> ›
+  <a href="${escHtml(basePath)}">Wiki</a> Ã¢â‚¬Âº
+  <a href="${escHtml(chPath)}">${escHtml(chTitle)}</a> Ã¢â‚¬Âº
   Search
 </div>
 <div class="wiki-content-wrap">
@@ -1140,7 +1159,7 @@ function buildSearchPage(channel, query, results, basePath, menu, role, isCreato
         ? `<div class="wiki-empty" style="text-align:left;padding:20px 0">
              No articles found for "<strong>${escHtml(query)}</strong>".
              <div style="margin-top:14px">
-               <button class="wiki-search-btn" onclick="wikiGenerate(event)" id="wiki-gen-btn">✨ Generate article</button>
+               <button class="wiki-search-btn" onclick="wikiGenerate(event)" id="wiki-gen-btn">Ã¢Å“Â¨ Generate article</button>
              </div>
            </div>`
         : `<div class="wiki-empty">No articles found for "<strong>${escHtml(query)}</strong>".</div>`}
@@ -1194,7 +1213,7 @@ function wikiDoGenerate(force) {
 }
 </script>` : ""}`;
 
-  return buildFullPage({ head: `Search: ${query} – ${chTitle}`, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
+  return buildFullPage({ head: `Search: ${query} Ã¢â‚¬â€œ ${chTitle}`, body, basePath, channelId: chId, wikiTitle: chTitle, menu, role, webAuth });
 }
 
 
@@ -1278,7 +1297,7 @@ export default async function getWebpageWiki(coreData) {
   const channel = getChannelConfig(cfg, channelId);
   if (!channel) {
     await sendHtml(wo, 404, buildFullPage({
-      head: "404 – Wiki Not Found",
+      head: "404 Ã¢â‚¬â€œ Wiki Not Found",
       body: `<div class="wiki-content-wrap"><div class="wiki-empty">Wiki not configured for channel <strong>${escHtml(channelId)}</strong>.</div></div>`,
       basePath, wikiTitle: "Wiki", menu, role, webAuth
     }));
@@ -1317,7 +1336,7 @@ export default async function getWebpageWiki(coreData) {
   dbPruneExpiredArticles(db, channelId, maxAgeDays).catch(() => {});
 
   if (method === "POST" && seg1 === "api" && seg2 === "generate") {
-    if (!isCreator) { await sendJson(wo, 403, { ok: false, error: "Forbidden – creator role required" }); return coreData; }
+    if (!isCreator) { await sendJson(wo, 403, { ok: false, error: "Forbidden Ã¢â‚¬â€œ creator role required" }); return coreData; }
     let query = "";
     let force = false;
     let promptAddition = "";
@@ -1443,7 +1462,7 @@ export default async function getWebpageWiki(coreData) {
   }
 
   if (method === "POST" && seg1 === "api" && seg2 === "regen-image" && seg3) {
-    if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden – editor role required" }); return coreData; }
+    if (!isEditor) { await sendJson(wo, 403, { ok: false, error: "Forbidden Ã¢â‚¬â€œ editor role required" }); return coreData; }
     let articleForRegen = null;
     try { articleForRegen = await dbGetArticle(db, channelId, seg3, 0); } catch {  }
     if (!articleForRegen) { await sendJson(wo, 404, { ok: false, error: "Article not found" }); return coreData; }
@@ -1525,7 +1544,7 @@ export default async function getWebpageWiki(coreData) {
     try { article = await dbGetArticle(db, channelId, seg1, maxAgeDays); } catch {  }
     if (!article) {
       await sendHtml(wo, 404, buildFullPage({
-        head: "404 – Article Not Found",
+        head: "404 Ã¢â‚¬â€œ Article Not Found",
         body: `<div class="wiki-content-wrap"><div class="wiki-empty">Article "<strong>${escHtml(seg1)}</strong>" not found.</div></div>`,
         basePath, channelId, wikiTitle: channel._title || `Wiki ${channelId}`, menu, role, webAuth
       }));
@@ -1563,7 +1582,7 @@ export default async function getWebpageWiki(coreData) {
     try { article = await dbGetArticle(db, channelId, seg1, maxAgeDays); } catch {  }
     if (!article) {
       await sendHtml(wo, 404, buildFullPage({
-        head: "404 – Article Not Found",
+        head: "404 Ã¢â‚¬â€œ Article Not Found",
         body: `<div class="wiki-content-wrap"><div class="wiki-empty">Article "<strong>${escHtml(seg1)}</strong>" not found in this wiki.</div></div>`,
         basePath, channelId, wikiTitle: channel._title || `Wiki ${channelId}`, menu, role, webAuth
       }));

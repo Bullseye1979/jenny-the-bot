@@ -766,6 +766,9 @@ async function getInvoke(args, coreData){
   let dataOut = responseType==="json" ? res?.data : (typeof res?.data==="string" ? { text: res.data } : res?.data);
   const opUsed = afterTrxReq?.__op || null;
   if (opUsed === "LIST"){
+    const jiraTotal = Number(dataOut?.total ?? -1);
+    const jiraStartAt = Number(dataOut?.startAt ?? 0);
+    const jiraMaxResults = Number(dataOut?.maxResults ?? 50);
     const issues = Array.isArray(dataOut?.issues) ? dataOut.issues : [];
     dataOut = issues.map(it => {
       const st = it?.fields?.status;
@@ -775,11 +778,28 @@ async function getInvoke(args, coreData){
         status: st ? { id: st.id, name: st.name, statusCategory: st?.statusCategory?.name || null } : null
       };
     }).filter(x => x.key && typeof x.summary === "string");
+    const listPageSize = jiraMaxResults > 0 ? jiraMaxResults : 50;
+    const listTotalCount = jiraTotal >= 0 ? jiraTotal : null;
+    const listTotalPages = (listTotalCount !== null && listPageSize > 0) ? Math.ceil(listTotalCount / listPageSize) : null;
+    const listCurrentPage = listPageSize > 0 ? Math.floor(jiraStartAt / listPageSize) + 1 : 1;
+    const listHasMore = listTotalCount !== null
+      ? (jiraStartAt + dataOut.length < listTotalCount)
+      : false;
+    const listNextStartAt = listHasMore ? (jiraStartAt + dataOut.length) : null;
+    const listPages = (listTotalPages !== null && listPageSize > 0)
+      ? Array.from({ length: listTotalPages }, (_, i) => ({ page_number: i + 1, start_at: i * listPageSize }))
+      : null;
     const out2 = {
       ok: !!res?.ok,
       count: dataOut.length,
-      has_more: false,
-      next_start_ctx_id: null,
+      total_count: listTotalCount,
+      total_pages: listTotalPages,
+      current_page: listCurrentPage,
+      page_size: listPageSize,
+      start_at: jiraStartAt,
+      has_more: listHasMore,
+      next_start_at: listNextStartAt,
+      pages: listPages,
       rows: dataOut,
       status: res?.status || 0,
       took_ms: Date.now() - startedAt

@@ -727,6 +727,12 @@ Generates images from a natural-language prompt using an OpenAI-compatible Image
 | `enhancerApiUrl` | string | `"http://localhost:3400"` | Internal API base URL for prompt enhancement |
 | `enhancerChannelId` | string | `""` | Channel ID for the prompt enhancer; if empty, heuristic fallback is used |
 | `enhancerApiSecret` | string | `""` | Optional bearer token key name for the enhancer API |
+| `enhancerHeuristicTemplate` | string | `""` | Local fallback template used when no enhancer channel is configured. Placeholders: `{prompt}`, `{qualityHints}`, `{negativeHints}`, `{cameraHint}`, `{compositionHint}` |
+| `enhancerDigitalPaintingHints` | array | `[]` | Style hints added when `preferDigitalPainting !== false` |
+| `enhancerQualityHints` | array | `[]` | Quality/style hints injected into the heuristic template |
+| `enhancerNegativeHints` | array | `[]` | Negative hints injected into the heuristic template |
+| `enhancerCameraHint` | string | `""` | Camera/lens hint injected into the heuristic template |
+| `enhancerCompositionHint` | string | `""` | Composition hint injected into the heuristic template |
 
 ---
 
@@ -1188,6 +1194,8 @@ Parallel specialist dispatcher. Runs multiple specialist AI workers concurrently
   "apiUrl":         "http://localhost:3400",
   "apiSecret":      "API_SECRET",
   "timeoutMs":      604800000,
+  "paginationContinuationTemplate": "The previous getSpecialists result is incomplete.\n...\n{pendingItems}",
+  "retryContinuationTemplate": "Some specialist workers failed transiently...\n{retryItems}",
   "maxConcurrent":  3
 }
 ```
@@ -1199,6 +1207,8 @@ Parallel specialist dispatcher. Runs multiple specialist AI workers concurrently
 | `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server. |
 | `apiSecret` | string | `""` | Placeholder name for the bearer token. |
 | `timeoutMs` | number | `604800000` | Maximum wait time per specialist (milliseconds). |
+| `paginationContinuationTemplate` | string | — | Optional follow-up instruction template returned when specialist pagination is still pending. Use `{pendingItems}` as a placeholder for the generated pending-window list. |
+| `retryContinuationTemplate` | string | — | Optional follow-up instruction template returned when retryable specialist failures remain. Use `{retryItems}` as a placeholder for the generated retry list. |
 | `maxConcurrent` | number | `3` | Maximum number of specialist calls running at the same time. Specialists are processed in sequential batches of this size. |
 
 **Input format:** The AI passes a `specialists` array where each entry is `{ type, jobID, prompt }`. The `jobID` is an integer that the orchestrator assigns and uses to correlate results. The tool returns an array of result objects `{ jobID, type, ok, response?, error? }`.
@@ -2135,7 +2145,7 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 | `payload` | Message content |
 | `channelId` | Channel ID |
 | `userId` | Discord user ID of the author |
-| `authorDisplayname` | Display name of the author |
+| `authorDisplayName` | Display name of the author |
 | `guildId` | Guild ID |
 | `isDM` | `true` if direct message |
 | `channelType` | Discord channel type integer |
@@ -2202,7 +2212,7 @@ Flows are event sources that create a `workingObject` and trigger the module pip
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/health` | None | Returns `{ ok: true, botname }` — used by reverse proxy health checks |
+| `GET` | `/health` | None | Returns `{ ok: true, botName }` — used by reverse proxy health checks |
 | `POST` | `/api` | Bearer | Synchronous AI pipeline; returns `{ ok, response, turnId, ... }` |
 | `GET` | `/toolcall` | Bearer | Poll global tool-call status from registry |
 | `GET` | `/toolcall?channelId=<id>` | Bearer | Poll channel-specific tool-call status (browser extension, chat UI) |
@@ -2242,7 +2252,7 @@ Flows are event sources that create a `workingObject` and trigger the module pip
   "response":       "The weather in Berlin is...",
   "toolCallLog":    [...],
   "subagentLog":    [...],
-  "botname":        "Jenny"
+  "botName":        "Jenny"
 }
 ```
 
@@ -2502,6 +2512,7 @@ Add `{ "label": "Browser Extension", "channelId": "browser-extension", "roles": 
 ```jsonc
 "config": {
   "mcp": {
+    "defaultChannelId": "mcp",
     "stdio": false,
     "http": {
       "enabled": false,
@@ -2517,7 +2528,7 @@ Add `{ "label": "Browser Extension", "channelId": "browser-extension", "roles": 
 1. At startup, `flows/mcp.js` reads all manifests from `manifests/` via `shared/mcp/mcp-utils.js`.
 2. Each manifest is registered as an MCP tool (`name`, `description`, `inputSchema`).
 3. When an MCP client calls a tool, the server dynamically imports `tools/<name>.js` and calls `invoke(args, coreData)`.
-4. `coreData` contains a minimal `workingObject` derived from `config.workingObject` defaults with `flow: "mcp"`.
+4. `coreData` contains a minimal `workingObject` derived from `config.workingObject` defaults with `flow: "mcp"`. For stdio clients, the virtual channel comes from `config.mcp.defaultChannelId` (default `mcp`).
 
 HTTP clients may either reuse the initialized `mcp-session-id` or send request/response tool calls without a known session. Sessionless tool calls are handled with a fresh stateless transport and still use `x-channel-id` plus bearer authentication.
 
@@ -2564,7 +2575,7 @@ Jenny can also call remote MCP servers from normal conversations through the too
         "type": "streamableHttp",
         "url": "http://localhost:3100/mcp",
         "headers": [
-          { "header": "x-channel-id", "value": "mcp" }
+          { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
         ],
         "bearerTokenSecret": "JENNY_MCP_TOKEN",
         "timeoutMs": 30000
@@ -2579,7 +2590,7 @@ Jenny can also call remote MCP servers from normal conversations through the too
         "type": "streamableHttp",
         "url": "http://localhost:3100/mcp",
         "headers": [
-          { "header": "x-channel-id", "value": "mcp" }
+          { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
         ],
         "bearerTokenSecret": "JENNY_MCP_TOKEN",
         "timeoutMs": 30000
@@ -2589,7 +2600,7 @@ Jenny can also call remote MCP servers from normal conversations through the too
 }
 ```
 
-HTTP headers are configured generically as `{ "header": "...", "value": "..." }` entries. Jenny's own MCP server uses `x-channel-id` to select the effective channel, but the MCP client tools have no special `channelId` config key.
+HTTP headers are configured generically as `{ "header": "...", "value": "..." }` or `{ "header": "...", "valueFromWorkingObject": "channelId" }` entries. Jenny's own MCP server should receive `x-channel-id` from the current `workingObject.channelId`, and the MCP client tools still have no special dedicated `channelId` config key.
 
 ---
 
@@ -3110,7 +3121,7 @@ All hardcoded AI prompts — in both tools and modules — have been moved to `c
 
 | Tool | Config key | Purpose |
 |---|---|---|
-| `getImage` | `toolsconfig.getImage.enhancerSystemPrompt` | Prompt enhancer system prompt |
+| `getImage` | `toolsconfig.getImage.enhancerHeuristicTemplate` | Local fallback template for prompt enhancement when no enhancer channel is configured |
 | `getImageDescription` | `toolsconfig.getImageDescription.systemPrompt` | Vision analyst system prompt |
 | `getWebpage` | `toolsconfig.getWebpage.systemPrompt` | Web analyst system prompt |
 | `getYoutube` | `toolsconfig.getYoutube.systemPrompt` | Transcript analyst system prompt |
@@ -3212,7 +3223,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `url` | string | Yes | Absolute URL (http/https) |
-| `userPrompt` | string | Yes | User question/task against the page text (legacy alias: `user_prompt`) |
+| `userPrompt` | string | Yes | User question/task against the page text |
 | `prompt` | string | — | Optional extra system instructions to bias the summary |
 
 **Modes:**
@@ -3316,12 +3327,12 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `mode` | string | — | `"transcript"` (default) or `"search"` |
-| `videoUrl` | string | For transcript mode | YouTube URL or 11-character video ID (legacy alias: `video_url`) |
-| `userPrompt` | string | — | Question/task against the transcript (QA mode; legacy alias: `user_prompt`) |
+| `videoUrl` | string | For transcript mode | YouTube URL or 11-character video ID |
+| `userPrompt` | string | — | Question/task against the transcript (QA mode) |
 | `metaOnly` | boolean | — | Return only video metadata |
 | `query` | string | For search mode | Search query |
-| `maxResults` | number | — | Max search results (1–10, legacy alias: `max_results`) |
-| `safeSearch` | string | — | `"none"` \| `"moderate"` \| `"strict"` (legacy alias: `safe_search`) |
+| `maxResults` | number | — | Max search results (1–10) |
+| `safeSearch` | string | — | `"none"` \| `"moderate"` \| `"strict"` |
 
 ---
 
@@ -3934,14 +3945,15 @@ Output is truncated at `maxOutputBytes` (default 8192 bytes) per stream with a `
 
 **File:** `tools/getMcpTools.js`
 **Version:** 1.0
-**Purpose:** Discovers tools exposed by configured remote MCP servers. Use it before `getMcp` when the AI needs to find available remote tool names, descriptions, and input schemas.
+**Purpose:** Discovers tools exposed by configured remote MCP servers. Use it before the configured MCP execution tool when the AI needs to find available remote tool names, descriptions, and input schemas.
 
 **Configuration:** `toolsconfig.getMcpTools.servers`
 
-This tool reads only its own config section. It does not read or fall back to `toolsconfig.getMcp`.
+This tool reads only its own config section. It does not read or fall back to `toolsconfig.getMcp`. `executorToolName` optionally changes which local tool name is referenced in the discovery hints; it defaults to `getMcp`.
 
 ```jsonc
 "getMcpTools": {
+  "executorToolName": "getMcp",
   "servers": [
     {
       "name": "local-jenny",
@@ -3949,7 +3961,7 @@ This tool reads only its own config section. It does not read or fall back to `t
       "type": "streamableHttp",
       "url": "http://localhost:3100/mcp",
       "headers": [
-        { "header": "x-channel-id", "value": "mcp" }
+        { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
       ],
       "bearerTokenSecret": "JENNY_MCP_TOKEN",
       "timeoutMs": 30000
@@ -3967,7 +3979,7 @@ This tool reads only its own config section. It does not read or fall back to `t
 
 **Returns:** `{ ok, servers: [{ name, namespace, ok, tools, error? }] }`.
 
-Returned remote tool names are namespaced as `mcp.<namespace>.<tool>`, for example `mcp.jenny-mcp.getTime`. These names identify remote MCP tools, not local Jenny tools. Execute them through `getMcp`.
+Returned remote tool names are namespaced as `mcp.<namespace>.<tool>`, for example `mcp.jenny-mcp.getTime`. These names identify remote MCP tools, not local Jenny tools. Execute them through the configured MCP execution tool, which defaults to `getMcp`.
 
 ---
 
@@ -3990,7 +4002,7 @@ This tool reads only its own config section. It does not read or fall back to `t
       "type": "streamableHttp",
       "url": "http://localhost:3100/mcp",
       "headers": [
-        { "header": "x-channel-id", "value": "mcp" }
+        { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
       ],
       "bearerTokenSecret": "JENNY_MCP_TOKEN",
       "timeoutMs": 30000
@@ -4007,7 +4019,7 @@ This tool reads only its own config section. It does not read or fall back to `t
 | `namespace` | string | Optional namespace used in discovered tool names. Defaults to `name`. A tool such as `getTime` becomes `mcp.<namespace>.getTime` |
 | `type` | string | `streamableHttp`, `sse`, or `stdio` |
 | `url` | string | MCP endpoint for `streamableHttp` and `sse` |
-| `headers` | array | Optional HTTP headers as `{ "header": "...", "value": "..." }` entries |
+| `headers` | array | Optional HTTP headers as `{ "header": "...", "value": "..." }` or `{ "header": "...", "valueFromWorkingObject": "channelId" }` entries |
 | `bearerTokenSecret` | string | Secret-store key sent as `Authorization: Bearer ...` |
 | `bearerToken` | string | Literal bearer token. Prefer `bearerTokenSecret` |
 | `timeoutMs` | number | Connect and request timeout |
@@ -4030,7 +4042,7 @@ There is no special `channelId` key. For Jenny's own MCP server, set it as a nor
 
 ```json
 "headers": [
-  { "header": "x-channel-id", "value": "mcp" }
+  { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
 ]
 ```
 
@@ -4125,7 +4137,7 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 ### getOrchestrator
 
 **File:** `tools/getOrchestrator.js`
-**Purpose:** Synchronous orchestrator for complex multi-step tasks. The calling AI blocks until the orchestrator finishes and returns its result. The orchestrator runs as a normal API pipeline (`flow: api`) on a dynamically generated unique channel ID (`<baseChannelId>-<randomHex>`), giving it full access to all tools including `getSpecialists`.
+**Purpose:** Synchronous orchestrator for complex multi-step tasks. The calling AI blocks until the orchestrator finishes and returns its result. The orchestrator runs as a normal API pipeline (`flow: api`) on a dynamically generated unique channel ID (`<baseChannelId>-<randomHex>`), giving it full access to all tools including the configured specialist execution tool, which defaults to `getSpecialists`.
 
 **Returns:** `{ ok, rows: [responseText] }`.
 
@@ -4137,6 +4149,8 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 | `type` | string | No | Orchestrator type (uses `defaultType` if omitted) |
 
 **Enable:** Add `"getOrchestrator"` to the channel's `tools` array. The orchestrator channel referenced by each `type` must be configured as a valid API channel in `core.json`.
+
+`toolsconfig.getOrchestrator.specialistToolName` optionally changes which local tool name the orchestrator prompt uses for specialist dispatch. If omitted, it defaults to `getSpecialists`.
 
 > **Full configuration:** see [`toolsconfig.getOrchestrator`](#toolsconfiggetorchestrator) in Section 5.6.
 
@@ -4404,7 +4418,7 @@ The module name/prefix is derived from the calling file's URL via `import.meta.u
 
 The final log is written by module `10000-core-output` to `logs/events/` (human-readable) and `logs/objects/<flowKey>/` (full JSON). See [Section 7.4](#74-final-logging-10xxx) for rotation details.
 
-**`logs/json-error.log`:** Parse errors in `core.json` (startup and hot-reload) are written as newline-delimited JSON to `logs/json-error.log` in the bot root. Each entry has the shape `{ ts, context, error }` where `context` is `"startup"` or `"hot-reload"`. The log directory is created automatically.
+**`logs/json-error-N.log`:** Parse errors in `core.json` (startup and hot-reload) are written as newline-delimited JSON into the configured runtime logs directory using the same rolling retention rules as other logs. Each entry has the shape `{ ts, context, error }` where `context` is `"startup"` or `"hot-reload"`.
 
 ---
 
@@ -5738,6 +5752,8 @@ Configure in `core.json["webpage-bard"]`:
   "flow": ["webpage"],
   "port": 3117,
   "basePath": "/wiki",
+  "articleJsonPrompt": "When all research is complete, call getImageSD ...",
+  "imageToolPromptTemplate": "Generate an image using getImageSD or getImage. Visual description: {imagePrompt}",
   "apiUrl": "http://localhost:3400/api",      // internal API endpoint for AI calls (default shown)
   "overrides": {                              // global defaults — apply to all channels (legacy; AI config now in api-channel-config)
     "useAiModule":      "completions",
@@ -5784,6 +5800,8 @@ All role arrays default to `[]` — **no implicit defaults**. Empty = nobody has
 |---|---|---|---|
 | `port` | number | `3117` | HTTP port |
 | `basePath` | string | `"/wiki"` | URL base path |
+| `articleJsonPrompt` | string | `""` | Prompt fragment appended as `systemPromptAddition` for the final article JSON output contract |
+| `imageToolPromptTemplate` | string | `""` | Template for the internal image-generation call. Supports `{imagePrompt}` |
 | `overrides.useAiModule` | string | `"completions"` | AI module: `completions`, `responses`, or `pseudotoolcalls` |
 | `overrides.model` | string | `"gpt-4o-mini"` | LLM model for article generation |
 | `overrides.temperature` | number | `0.7` | Generation temperature |
@@ -5849,6 +5867,10 @@ Image generation is **built into the wiki module** and does **not** depend on `t
 | `size` | — | Explicit size like `1024x1024` (overrides `aspect`) |
 | `aspect` | `1:1` | Aspect ratio: `1:1`, `16:9`, `portrait`, `landscape`, or `W:H` |
 | `publicBaseUrl` | — | Prepended to image URL (omit for relative URLs) |
+| `heuristicTemplate` | — | Local fallback template for image prompt shaping. Supports `{prompt}`, `{styleHints}`, `{qualityHints}`, `{negativeHints}` |
+| `styleHints` | `[]` | Style hints inserted into `heuristicTemplate` |
+| `qualityHints` | `[]` | Quality hints inserted into `heuristicTemplate` |
+| `negativeHints` | `[]` | Negative hints inserted into `heuristicTemplate` |
 
 **Example config:**
 ```json
@@ -7997,7 +8019,7 @@ The AI infers tool chains from each tool's own description and requirements — 
 
 Runtime logs are controlled by `config.logging`: `logsDir` can be absolute or repository-relative, `maxFileBytes` controls rotation size, and `keepFiles` controls retention per stream. This applies to events, pipeline traces, per-flow object dumps, and `toolcalls` logs.
 
-MCP tool exposure is channel-scoped. The HTTP MCP flow reads `X-Channel-Id`, applies `core-channel-config`, and advertises only the resulting `workingObject.tools` entries. Tool calls outside that resolved list are rejected.
+MCP tool exposure is channel-scoped. The HTTP MCP flow reads `X-Channel-Id`, applies `core-channel-config`, and advertises only the resulting `workingObject.tools` entries. Tool calls outside that resolved list are rejected. For MCP client calls back into Jenny, configure the request header with `valueFromWorkingObject: "channelId"` so discovery and invocation stay aligned with the current channel.
 
 Chat subchannels support an end-of-life through `config.webpage-chat.subchannelTtlHours`. Schedule `chat-subchannel-gc` in `config.cron.jobs` (for example `0 3 * * *`) to delete expired subchannel rows and their scoped context rows once per day.
 

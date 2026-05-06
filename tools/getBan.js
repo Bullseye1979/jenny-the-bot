@@ -24,7 +24,7 @@ function getPreview(s, max = 400) {
 function getPayload(wo, reason) {
   const userId      = getStr(wo?.message?.author?.id) || getStr(wo?.message?.authorId) || getStr(wo?.User?.id) || "";
   const userTag     = getStr(wo?.message?.authorTag) || getStr(wo?.User?.tag);
-  const userName    = getStr(wo?.authorDisplayname) || getStr(wo?.message?.author?.username) || getStr(wo?.User?.username) || "unknown";
+  const userName    = getStr(wo?.authorDisplayName) || getStr(wo?.message?.author?.username) || getStr(wo?.User?.username) || "unknown";
   const userMention = userId ? `<@${userId}>` : "n/a";
   const userMsg     = getStr(wo?.message?.content) || getStr(wo?.payload) || "";
   const guildId     = getStr(wo?.message?.guildId) || getStr(wo?.Guild?.id) || "";

@@ -191,7 +191,7 @@
  * @property {*} [message]
  * @property {string} [clientRef]
  * @property {string} [userId]
- * @property {string} [authorDisplayname]
+ * @property {string} [authorDisplayName]
  * @property {string} [guildId]
  * @property {string} [voiceSessionRef]
  * @property {number|null} [channelType]

@@ -73,6 +73,11 @@ function getBasePath(cfg) {
 }
 
 
+function getRememberLastSubchannel(cfg) {
+  return cfg?.rememberLastSubchannel !== false;
+}
+
+
 async function getEnsureChatSubchannelsTable(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_subchannels (
@@ -182,7 +187,16 @@ export default async function getWebpageChat(coreData) {
     wo.http.response = {
       status:  200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body:    getChatHtml({ menu: wo.web?.menu || [], role: wo.webAuth?.role || "", activePath: urlPath, chatBase: basePath, webAuth: wo.webAuth, toolStatusPollMs: Number(cfg.toolStatusPollMs ?? 500) || 500, lastAssistantIntervalMs: Number(cfg.lastAssistantIntervalMs ?? 2000) || 2000 })
+      body:    getChatHtml({
+        menu: wo.web?.menu || [],
+        role: wo.webAuth?.role || "",
+        activePath: urlPath,
+        chatBase: basePath,
+        webAuth: wo.webAuth,
+        toolStatusPollMs: Number(cfg.toolStatusPollMs ?? 500) || 500,
+        lastAssistantIntervalMs: Number(cfg.lastAssistantIntervalMs ?? 2000) || 2000,
+        rememberLastSubchannel: getRememberLastSubchannel(cfg)
+      })
     };
     wo.web.useLayout = false;
     wo.jump = true;
@@ -554,6 +568,7 @@ function getChatHtml(opts) {
   const role          = String(opts?.role || "").trim();
   const pollMs        = Number(opts?.toolStatusPollMs ?? 500) || 500;
   const lastAssistantMs = Number(opts?.lastAssistantIntervalMs ?? 2000) || 2000;
+  const rememberLastSubchannel = opts?.rememberLastSubchannel !== false;
   const menuHtml      = getMenuHtml(opts?.menu || [], activePath, role, null, null, opts?.webAuth);
 
   return (
@@ -611,10 +626,15 @@ function getChatHtml(opts) {
     "\n" +
     "<script>\n" +
     "var CHAT_BASE=\"" + chatBase + "\";\n" +
+    "var CHAT_REMEMBER_LAST_SUBCHANNEL=" + (rememberLastSubchannel ? "true" : "false") + ";\n" +
     "var LAST_ASSISTANT_INTERVAL_MS=" + lastAssistantMs + ";\n" +
     "var chatChannelId=\"\", chatSubchannelId=\"\", chatMessages=[], chatSending=false, chatSubchannelList=[], chatPendingFile=null;\n" +
     "var toolSseSource=null;\n" +
     "var lastAssistantTs=null,lastAssistantTimer=null;\n" +
+    "\n" +
+    "function getSubStoreKey(channelId){return \"jenny.chat.subchannel.\"+String(channelId||\"\");}\n" +
+    "function rememberSubchannel(channelId,subchannelId){if(!CHAT_REMEMBER_LAST_SUBCHANNEL||!channelId)return;try{if(subchannelId)localStorage.setItem(getSubStoreKey(channelId),subchannelId);else localStorage.removeItem(getSubStoreKey(channelId));}catch(ex){}}\n" +
+    "function recallSubchannel(channelId){if(!CHAT_REMEMBER_LAST_SUBCHANNEL||!channelId)return \"\";try{return localStorage.getItem(getSubStoreKey(channelId))||\"\";}catch(ex){return \"\";}}\n" +
     "\n" +
     "function startLastAssistantPoll(channelId){\n" +
     "  stopLastAssistantPoll();\n" +
@@ -659,7 +679,7 @@ function getChatHtml(opts) {
     "  stopLastAssistantPoll();\n" +
     "  if(!channelId){document.getElementById(\"chat-msgs\").innerHTML=\"<div class='chat-loading'>Select a channel.</div>\";hideSubUI();return;}\n" +
     "  startLastAssistantPoll(channelId);\n" +
-    "  loadSubchannels(channelId);\n" +
+    "  loadSubchannels(channelId,recallSubchannel(channelId));\n" +
     "}\n" +
     "\n" +
     "function hideSubUI(){[\"chat-sub-sel\",\"sub-new-btn\",\"sub-ren-btn\",\"sub-del-btn\"].forEach(function(id){document.getElementById(id).style.display=\"none\";});}\n" +
@@ -675,7 +695,9 @@ function getChatHtml(opts) {
     "      chatSubchannelList.forEach(function(s){var o=document.createElement(\"option\");o.value=s.subchannelId;o.textContent=s.name||s.subchannelId.slice(0,8);sel.appendChild(o);});\n" +
     "      sel.style.display=\"\";\n" +
     "      document.getElementById(\"sub-new-btn\").style.display=\"\";\n" +
-    "      if(autoSelectId){sel.value=autoSelectId;onSubSel(autoSelectId);}\n" +
+    "      var remembered=autoSelectId||\"\";\n" +
+    "      var hasRemembered=remembered&&chatSubchannelList.some(function(s){return s.subchannelId===remembered;});\n" +
+    "      if(hasRemembered){sel.value=remembered;onSubSel(remembered);}\n" +
     "      else{onSubSel(\"\");}\n" +
     "    })\n" +
     "    .catch(function(){hideSubUI();loadContext(channelId,\"\");});\n" +
@@ -683,6 +705,7 @@ function getChatHtml(opts) {
     "\n" +
     "function onSubSel(subchannelId){\n" +
     "  chatSubchannelId=subchannelId;\n" +
+    "  rememberSubchannel(chatChannelId,subchannelId);\n" +
     "  var renBtn=document.getElementById(\"sub-ren-btn\");\n" +
     "  var delBtn=document.getElementById(\"sub-del-btn\");\n" +
     "  renBtn.style.display=subchannelId?\"\":\"none\";\n" +

@@ -159,7 +159,7 @@ export default async function getDiscordAdminMacro(coreData) {
     if (wo?.flow !== "discord-admin") return coreData;
     const cmd = String(wo?.admin?.command || "").toLowerCase();
     if (cmd !== "macro") return coreData;
-    const sub = String(wo?.admin?.subcommand || wo?.admin?.subCommand || "").toLowerCase();
+    const sub = String(wo?.admin?.subcommand || "").toLowerCase();
     const userId = String(wo?.admin?.userId || wo.userId || "");
     const guildId = String(wo?.admin?.guildId || wo.guildId || "");
   const channelId = String(wo?.admin?.channelId || wo.channelId || "");

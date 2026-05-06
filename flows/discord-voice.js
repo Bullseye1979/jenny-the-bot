@@ -255,7 +255,7 @@ wo.turnId = getNewUlid();
       wo.config = cfg;
       wo.userId = String(userId);
       wo.channelAllowed = true;
-      wo.authorDisplayname = speaker;
+      wo.authorDisplayName = speaker;
       wo.voiceIntent = { action: "describe_and_transcribe", userId: String(userId) };
       wo.timestamp = nowIso;
 

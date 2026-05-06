@@ -296,12 +296,16 @@ OpenAI DALL-E image generation.
 | `publicBaseUrl` | string | `"https://yourserver.example.com/"` | Public base URL for serving generated images |
 | `targetLongEdge` | number | `1152` | Target pixel length for the long edge when downscaling |
 | `aspect` | string | `""` | Aspect ratio hint (passed to the model) |
-| `enhancerEndpoint` | string | OpenAI completions URL | LLM endpoint for prompt enhancement |
-| `enhancerApiKey` | string | `"OPENAI"` | Secret alias for the prompt enhancer |
-| `enhancerModel` | string | `"gpt-4o-mini"` | Model used to enhance/rewrite the image prompt |
-| `enhancerTemperature` | number | `0.2` | Temperature for prompt enhancement |
-| `enhancerMaxTokens` | number | `350` | Max tokens for prompt enhancement |
+| `enhancerApiUrl` | string | `"http://localhost:3400"` | Internal API base URL for prompt enhancement |
+| `enhancerChannelId` | string | `""` | Internal API channel used for prompt enhancement. If empty, the heuristic template is used locally |
+| `enhancerApiSecret` | string | `"API_SECRET"` | Optional bearer placeholder resolved via `bot_secrets` for the enhancer API |
 | `enhancerTimeoutMs` | number | `60000` | Timeout for the enhancer call |
+| `enhancerHeuristicTemplate` | string | `"{prompt} | Style/Quality: {qualityHints} | Camera/Lens: {cameraHint} | Avoid: {negativeHints} | Composition: {compositionHint}"` | Local fallback template used when no enhancer channel is configured |
+| `enhancerDigitalPaintingHints` | array | `["digital painting", ...]` | Style hints prepended when `preferDigitalPainting !== false` |
+| `enhancerQualityHints` | array | `["cinematic", ...]` | Additional quality/style hints inserted into the heuristic template |
+| `enhancerNegativeHints` | array | `["text, captions, logos, watermarks", ...]` | Negative hints inserted into the heuristic template |
+| `enhancerCameraHint` | string | `"suggest a cinematic lens..."` | Camera/lens hint inserted into the heuristic template |
+| `enhancerCompositionHint` | string | `"Compose for readability..."` | Composition hint inserted into the heuristic template |
 
 #### getImageSD
 
@@ -552,12 +556,13 @@ Returns the current UTC time as an ISO 8601 string. No admin configuration requi
 
 #### getOrchestrator
 
-Synchronous orchestrator tool. Blocks until the orchestrator finishes. The orchestrator runs on a dynamically generated channel ID (`<baseChannelId>-<randomHex>`).
+Synchronous orchestrator tool. Blocks until the orchestrator finishes. The orchestrator runs on a dynamically generated channel ID (`<baseChannelId>-<randomHex>`) and uses the configured specialist execution tool for worker dispatch.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
 | `types` | object | `{ “generic”: “subagent-orchestrator-generic” }` | **Required.** Maps type names to base channel IDs |
 | `defaultType` | string | `”generic”` | Type used when the AI omits the `type` argument |
+| `specialistToolName` | string | `”getSpecialists”` | Optional local tool name injected into orchestrator instructions for specialist dispatch |
 | `apiUrl` | string | `”http://localhost:3400”` | Internal API base URL |
 | `apiSecret` | string | `”API_SECRET”` | Bearer token placeholder (resolved from `bot_secrets`) |
 | `timeoutMs` | number | `604800000` | Maximum wait time in milliseconds (default: 7 days) |
@@ -574,6 +579,8 @@ Parallel specialist dispatcher. Runs multiple specialist workers concurrently in
 | `apiSecret` | string | `”API_SECRET”` | Bearer token placeholder (resolved from `bot_secrets`) |
 | `timeoutMs` | number | `604800000` | Maximum wait time per specialist (milliseconds) |
 | `maxConcurrent` | number | `3` | Concurrent specialists per batch |
+| `paginationContinuationTemplate` | string | `"The previous getSpecialists result is incomplete.\n...\n{pendingItems}"` | Optional follow-up instruction template returned when specialist pagination is still pending. Use `{pendingItems}` as a placeholder for the generated pending-window list. |
+| `retryContinuationTemplate` | string | `"Some specialist workers failed transiently...\n{retryItems}"` | Optional follow-up instruction template returned when retryable specialist failures remain. Use `{retryItems}` as a placeholder for the generated retry list. |
 
 #### getBan
 
@@ -873,7 +880,7 @@ The `config` section wires flows and modules together, and provides per-module s
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/health` | None | Returns `{ ok: true, botname }` |
+| `GET` | `/health` | None | Returns `{ ok: true, botName }` |
 | `POST` | `/api` | Bearer | Synchronous AI pipeline request; returns `{ ok, response, turnId, ... }` |
 | `GET` | `/toolcall` | Bearer | Poll current tool-call status; `?channelId=` for channel-specific key |
 | `GET` | `/context` | Bearer | Read recent conversation; requires `?channelId=`; optional `?limit=` |
@@ -936,6 +943,7 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
   "port":               3112,
   "basePath":           "/chat",
   "allowedRoles":       ["member", "admin"],
+  "rememberLastSubchannel": true,
   "contextSize":        20,
   "maxTokens":          1024,
   "toolStatusPollMs":   500,
@@ -955,6 +963,7 @@ AI chat SPA served as a **webpage-flow module** (`modules/00048`) on port 3112, 
 | `port` | HTTP port (default `3112`) |
 | `basePath` | URL prefix (default `"/chat"`) |
 | `allowedRoles` | Roles allowed to access the chat. Empty = public |
+| `rememberLastSubchannel` | When `true` (default), the browser restores the last selected subchannel per channel from local storage |
 | `contextSize` | Recent user turns to include in AI context (default `20`) |
 | `maxTokens` | Max tokens in AI response (default `1024`) |
 | `toolStatusPollMs` | Server-side check interval in ms for the toolstatus SSE stream (default `500`). The server polls the registry at this rate and pushes a new SSE event only when the active tool name changes. |
@@ -1072,6 +1081,8 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 | `flow` | array | â€” | Must include `"webpage"` |
 | `port` | number | `3117` | HTTP port â€” must also be in `config.webpage.ports` and `config.webpage-auth.ports` |
 | `basePath` | string | `"/wiki"` | URL base path |
+| `articleJsonPrompt` | string | `""` | Prompt fragment appended as `systemPromptAddition` to enforce the article JSON output contract |
+| `imageToolPromptTemplate` | string | `""` | Template used for the internal image-generation API call. Supports `{imagePrompt}` |
 | `overrides.useAiModule` | string | `"completions"` | AI module: `completions`, `responses`, or `pseudotoolcalls` |
 | `overrides.model` | string | `"gpt-4o-mini"` | LLM model for article generation |
 | `overrides.temperature` | number | `0.7` | Generation temperature |
@@ -1091,6 +1102,8 @@ AI settings are configured via the `overrides` block in `config["webpage-wiki"]`
 | `channels[].creatorRoles` | array | `[]` | Roles that may generate new articles via search. `[]` = only admins |
 | `channels[].maxAgeDays` | number | `7` | Article TTL in days (applies only to unedited articles). Manually edited articles never expire. `0` = never expire |
 | `channels[].overrides` | object | `{}` | Per-channel override block â€” same keys as global `overrides`; channel values take precedence |
+
+`imageGen` accepts `apiKey`, `endpoint`, `model`, `size`, `aspect`, plus local fallback prompt-shaping keys `heuristicTemplate`, `styleHints`, `qualityHints`, and `negativeHints`.
 
 - Channel not in `channels[]` â†’ HTTP 404
 - AI uses **only visible context and tool results** as facts — to research older history, call `getHistory(start, end)` with appropriate time ranges
@@ -2212,10 +2225,11 @@ Sends TTS audio back to the webpage voice caller. Must run in the output phase (
 
 ### mcp
 
-The MCP (Model Context Protocol) server exposes only the tool manifests that match the current channel's resolved `workingObject.tools`. HTTP clients select the channel with `X-Channel-Id`; stdio uses the `mcp` channel. Compatible with Claude Desktop, Cursor, VS Code, and any MCP-compliant client.
+The MCP (Model Context Protocol) server exposes only the tool manifests that match the current channel's resolved `workingObject.tools`. HTTP clients select the channel with `X-Channel-Id`; stdio uses `config.mcp.defaultChannelId` (default `mcp`). Compatible with Claude Desktop, Cursor, VS Code, and any MCP-compliant client.
 
 ```jsonc
 "mcp": {
+  "defaultChannelId": "mcp",
   "stdio": false,
   "http": {
     "enabled": false,
@@ -2227,6 +2241,7 @@ The MCP (Model Context Protocol) server exposes only the tool manifests that mat
 
 | Key | Type | Default | Description |
 |---|---|---|---|
+| `defaultChannelId` | string | `"mcp"` | Virtual channel used for stdio MCP clients when no HTTP `X-Channel-Id` header exists |
 | `stdio` | boolean | `false` | Start the stdio MCP transport. Enable for Claude Desktop / Cursor integration. |
 | `http.enabled` | boolean | `false` | Start an HTTP+SSE MCP transport for network-accessible clients. |
 | `http.port` | number | `3100` | Port for the HTTP transport. |
@@ -2259,15 +2274,16 @@ Jenny can call remote MCP servers from normal conversations through two tools:
 | `getMcpTools` | Discover remote tools and input schemas from configured MCP servers | `workingObject.toolsconfig.getMcpTools` |
 | `getMcp` | Execute one discovered remote MCP tool | `workingObject.toolsconfig.getMcp` |
 
-Each tool has its own isolated `toolsconfig` section. Do not rely on shared server lists between the two tools. If both tools should access the same MCP server, define that server in both arrays.
+Each tool has its own isolated `toolsconfig` section. Do not rely on shared server lists between the two tools. If both tools should access the same MCP server, define that server in both arrays. `getMcpTools.executorToolName` can point discovery hints at a different local execution tool; if omitted, it defaults to `getMcp`.
 
 ```jsonc
 "tools": [
   "getMcpTools",
   "getMcp"
 ],
-"toolsconfig": {
+  "toolsconfig": {
   "getMcpTools": {
+    "executorToolName": "getMcp",
     "servers": [
       {
         "name": "local-jenny",
@@ -2275,7 +2291,7 @@ Each tool has its own isolated `toolsconfig` section. Do not rely on shared serv
         "type": "streamableHttp",
         "url": "http://localhost:3100/mcp",
         "headers": [
-          { "header": "x-channel-id", "value": "mcp" }
+          { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
         ],
         "bearerTokenSecret": "JENNY_MCP_TOKEN",
         "timeoutMs": 30000
@@ -2290,7 +2306,7 @@ Each tool has its own isolated `toolsconfig` section. Do not rely on shared serv
         "type": "streamableHttp",
         "url": "http://localhost:3100/mcp",
         "headers": [
-          { "header": "x-channel-id", "value": "mcp" }
+          { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
         ],
         "bearerTokenSecret": "JENNY_MCP_TOKEN",
         "timeoutMs": 30000
@@ -2306,7 +2322,7 @@ Each tool has its own isolated `toolsconfig` section. Do not rely on shared serv
 | `namespace` | string | Optional namespace used in discovered tool names. Defaults to `name`. A tool such as `getTime` becomes `mcp.<namespace>.getTime` |
 | `type` | string | `streamableHttp`, `sse`, or `stdio` |
 | `url` | string | MCP endpoint for `streamableHttp` / `sse` servers |
-| `headers` | array | Optional HTTP headers as `{ "header": "...", "value": "..." }` entries |
+| `headers` | array | Optional HTTP headers as `{ "header": "...", "value": "..." }` or `{ "header": "...", "valueFromWorkingObject": "channelId" }` entries |
 | `bearerTokenSecret` | string | Optional secret name resolved through Jenny's secret store and sent as `Authorization: Bearer ...` |
 | `bearerToken` | string | Optional literal bearer token. Prefer `bearerTokenSecret` for real credentials |
 | `timeoutMs` | number | Connect and request timeout in milliseconds |
@@ -2315,15 +2331,15 @@ Each tool has its own isolated `toolsconfig` section. Do not rely on shared serv
 | `cwd` | string | Optional working directory for `stdio` servers |
 | `env` | object | Optional environment for `stdio` servers |
 
-For Jenny's own HTTP MCP server, `x-channel-id` is configured as a normal header:
+For Jenny's own HTTP MCP server, forward the active channel dynamically:
 
 ```json
 "headers": [
-  { "header": "x-channel-id", "value": "mcp" }
+  { "header": "x-channel-id", "valueFromWorkingObject": "channelId" }
 ]
 ```
 
-There is no special `channelId` key in MCP client tool configuration. `getMcpTools` returns remote MCP tools as namespaced names such as `mcp.jenny-mcp.getTime`; execute those names through `getMcp`.
+There is no special `channelId` key in MCP client tool configuration. `getMcpTools` returns remote MCP tools as namespaced names such as `mcp.jenny-mcp.getTime`; execute those names through the configured MCP execution tool, which defaults to `getMcp`.
 
 ---
 
@@ -2580,16 +2596,17 @@ Below is a minimal but functional `core.json` template with every section includ
     // â”€â”€ Tool configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     "toolsconfig": {
       "getImage": {
-        "apiKey":           "<YOUR_OPENAI_API_KEY>",
-        "endpoint":         "https://api.openai.com/v1/images/generations",
-        "model":            "dall-e-3",
-        "size":             "1024x1024",
-        "n":                1,
-        "publicBaseUrl":    "https://yourserver.example.com/",
-        "targetLongEdge":   1152,
-        "enhancerEndpoint": "https://api.openai.com/v1/chat/completions",
-        "enhancerApiKey":   "<YOUR_OPENAI_API_KEY>",
-        "enhancerModel":    "gpt-4o-mini"
+        "apiKey":                    "<YOUR_OPENAI_API_KEY>",
+        "endpoint":                  "https://api.openai.com/v1/images/generations",
+        "model":                     "dall-e-3",
+        "size":                      "1024x1024",
+        "n":                         1,
+        "publicBaseUrl":             "https://yourserver.example.com/",
+        "targetLongEdge":            1152,
+        "enhancerApiUrl":            "http://localhost:3400",
+        "enhancerChannelId":         "",
+        "enhancerApiSecret":         "API_SECRET",
+        "enhancerHeuristicTemplate": "{prompt} | Style/Quality: {qualityHints} | Camera/Lens: {cameraHint} | Avoid: {negativeHints} | Composition: {compositionHint}"
       },
       "getGoogle": {
         "apiKey":    "<GOOGLE_API_KEY>",

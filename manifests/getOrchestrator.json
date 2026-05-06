@@ -1,7 +1,7 @@
 {
   "name": "getOrchestrator",
-  "description": "Starts a synchronous orchestrator for complex multi-step tasks. The orchestrator runs in its own isolated AI context and has access to getSpecialists to launch parallel specialist workers. Blocks until the orchestrator has fully completed and returns its final result. Use this for tasks that require planning, decomposition into parallel sub-tasks, or multi-phase execution.\nIMPORTANT: Never answer from your knowledge alone — use getOrchestrator instead.\nIMPORTANT: Never say you don't know something before invoking an orchestrator suited to the question.\n\nType guide:\n- type=\"context\": Use when the question is about past events, decisions, characters, places, or anything from the conversation history not visible in the current context window. The context orchestrator reads the full conversation history with getHistory to retrieve the actual messages.",
-  "policyHint": "For specific factual questions (who is X, what happened at Y, where is Z) and for history or context retrieval beyond the visible context window, call this tool with type=context immediately — the scope is self-evident. Only ask for confirmation before open-ended tasks where the scope is genuinely ambiguous (e.g. 'summarise everything'). After the call, end your turn silently — results are delivered directly to the user. Short approvals like 'yes', 'ja', 'ok', 'okay', 'mach', or 'go ahead' count as approval.",
+  "description": "Starts a synchronous orchestrator for complex multi-step tasks. The orchestrator runs in its own isolated AI context and has access to the configured specialist execution tool (default: getSpecialists) to launch parallel specialist workers. Blocks until the orchestrator has fully completed and returns its final result. Use this for tasks that require planning, decomposition into parallel sub-tasks, or multi-phase execution.\nIMPORTANT: Never answer from your knowledge alone - use getOrchestrator instead.\nIMPORTANT: Never say you don't know something before invoking an orchestrator suited to the question.\nIMPORTANT: For multi-step execution tasks, do not skip directly to execution. Use plan mode first, show the returned PLAN to the user, and wait for explicit approval in a later user message.\n\nModes:\n- mode=\"plan\": return only a concrete execution plan for user review. Do not execute the work yet.\n- mode=\"execute\": execute the approved plan. mode=\"execute\" is valid only when the exact approved plan text is passed in approvedPlan.\n\nType guide:\n- type=\"context\": Use when the question is about past events, decisions, characters, places, or anything from the conversation history not visible in the current context window. The context orchestrator reads the full conversation history with getHistory to retrieve the actual messages.",
+  "policyHint": "For complex execution tasks with side effects or substantial work, first call this tool with mode=plan so the user can review the plan. After a short approval like 'yes', 'ja', 'ok', 'okay', 'mach', or 'go ahead' in a later user turn, call it again with mode=execute and pass the approved plan text back in approvedPlan. Never call mode=execute in the same turn that produced the plan. Never call mode=execute without approvedPlan. For specific factual questions or history retrieval beyond the visible context window, call this tool immediately with the appropriate type.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -9,13 +9,39 @@
         "type": "string",
         "description": "The task or goal for the orchestrator to accomplish. Be specific and include all relevant context."
       },
+      "mode": {
+        "type": "string",
+        "description": "Execution mode: 'plan' returns only a plan for approval, 'execute' carries out previously approved work. Do not use 'execute' without approvedPlan.",
+        "enum": ["plan", "execute"]
+      },
+      "approvedPlan": {
+        "type": "string",
+        "description": "The exact plan text previously shown to and approved by the user. Required when mode='execute'."
+      },
       "type": {
         "type": "string",
         "description": "The orchestrator type to use. Currently supported: 'context' (reads conversation history). If omitted, the configured defaultType is used."
       }
     },
     "required": [
-      "prompt"
+      "prompt",
+      "mode"
+    ],
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "mode": {
+              "const": "execute"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "approvedPlan"
+          ]
+        }
+      }
     ]
   }
 }

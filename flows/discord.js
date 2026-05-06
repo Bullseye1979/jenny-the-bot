@@ -159,7 +159,7 @@ wo.turnId = getNewUlid();
     wo.channelId = message.channelId;
     wo.toolStatusChannelOverride = "discord";
     wo.userId = message.author?.id || "";
-    wo.authorDisplayname = (message.member && (message.member.displayName || message.member.nickname)) || message.author?.username || "";
+    wo.authorDisplayName = (message.member && (message.member.displayName || message.member.nickname)) || message.author?.username || "";
     wo.guildId = message.guildId || "";
 
     if (wo.guildId && !wo.voiceSessionRef) {

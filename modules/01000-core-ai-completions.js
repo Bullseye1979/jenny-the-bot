@@ -192,9 +192,9 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       status: resultMeta.ok ? "success" : "returned_error",
       durationMs,
       ...(resultMeta.error ? { error: resultMeta.error } : {}),
-      ...getToolArgsMeta(name, args),
+      ...getToolArgsMeta(name, args, wo),
       ...getToolPaginationMeta(name, result),
-      ...getToolTraceMeta(name, result)
+      ...getToolTraceMeta(name, result, wo)
     });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
@@ -208,7 +208,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
       status: "error",
       durationMs,
       error: String(e?.message || e),
-      ...getToolArgsMeta(name, args)
+      ...getToolArgsMeta(name, args, wo)
     });
     return { role: "tool", tool_call_id: toolCall?.id, name, content: JSON.stringify({ error: e?.message || String(e) }) };
   } finally {

@@ -16,6 +16,10 @@ import { getLogsRoot, getLogMaxBytes, getLogKeepFiles, setAppendRollingFile } fr
 
 EventEmitter.defaultMaxListeners = 30;
 
+process.on("unhandledRejection", (reason) => {
+  console.error("[main] unhandledRejection:", reason);
+});
+
 const MODULE_NAME = "main";
 const DEFAULT_LOGS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "logs");
 const PIPELINE_BASENAME  = "pipeline";
@@ -115,11 +119,13 @@ function getPipelineExcluded(wo) {
 
 function logJsonError(err, context) {
   const entry = JSON.stringify({ ts: new Date().toISOString(), context, error: err?.message || String(err) });
-  try {
-    const dir = getRuntimeLogsDir();
-    fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, "json-error.log"), entry + "\n");
-  } catch {}
+  setAppendRollingFile({
+    dir: getRuntimeLogsDir(),
+    basename: "json-error",
+    text: entry + "\n",
+    maxBytes: getRuntimeLogMaxBytes(),
+    keepFiles: getLogKeepFiles(currentBase || {})
+  }).catch(() => {});
 }
 
 const art = `[48;5;239m [48;5;235m [48;5;234m [48;5;232m [48;5;232m [48;5;234m [48;5;233m [48;5;232m [48;5;233m [48;5;232m [48;5;234m [48;5;236m [48;5;233m [48;5;233m [48;5;233m [48;5;235m [48;5;237m [48;5;234m [48;5;234m [48;5;233m [48;5;235m [48;5;237m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;232m [48;5;232m [48;5;232m [48;5;233m [48;5;233m [48;5;233m [48;5;238m [48;5;235m [48;5;234m [48;5;234m [48;5;233m [48;5;233m [48;5;234m [48;5;234m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;234m [48;5;235m [48;5;234m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;233m [48;5;237m [48;5;234m [48;5;235m [48;5;235m [48;5;239m [48;5;234m [48;5;233m [48;5;233m [48;5;233m [48;5;234m [48;5;235m [48;5;236m [48;5;234m [48;5;236m [48;5;236m [48;5;235m [48;5;235m [48;5;236m [48;5;236m [48;5;236m [48;5;234m [48;5;22m [48;5;235m [48;5;234m [48;5;234m [48;5;234m [48;5;234m [48;5;236m [0m

@@ -109,10 +109,11 @@ function getSelectSong(labels, library, currentFile, excludeFile = null) {
 }
 
 
-async function getTrackDurationMs(filePath) {
+async function getTrackDurationMs(filePath, log) {
   return new Promise((resolve) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
       if (err || !Number.isFinite(metadata?.format?.duration)) {
+        if (err) log(`ffprobe error for "${filePath}": ${err.message}`, "warn", { moduleName: MODULE_NAME });
         resolve(180000);
         return;
       }
@@ -152,7 +153,7 @@ async function setPlayTrack(session, track, musicDir, log, triggerPoll) {
       `bard:nowplaying:${session.textChannelId}`
     );
 
-    const durationMs = await getTrackDurationMs(filePath);
+    const durationMs = await getTrackDurationMs(filePath, log);
     session._trackEndAt = Date.now() + durationMs;
 
     if (session._trackTimer) clearTimeout(session._trackTimer);

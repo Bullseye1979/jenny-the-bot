@@ -63,63 +63,41 @@ function getSanitized(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
-
-function getModelPolicyHints(modelName) {
-  const m = String(modelName || "").toLowerCase();
-  const base = [
-    "Ensure full compliance with the image model's safety and content filters.",
-    "No sexual or erotic content; no minors; no graphic violence/gore.",
-    "No political persuasion or propaganda.",
-    "No copyrighted logos/trademarks on the image.",
-    "No real-person deepfakes; no impersonation.",
-    "Avoid hate/harassment content."
-  ];
-  if (m.includes("dall") || m.includes("gpt-image")) {
-    base.push("Prefer neutral brandless designs and generic signage.");
-  }
-  return base;
+function getStringArray(value) {
+  return Array.isArray(value)
+    ? value.map(item => String(item || "").trim()).filter(Boolean)
+    : [];
 }
 
 
-function getHeuristicEnhancedPrompt(basePrompt, { extraNegatives = [], extraQuality = [], preferDigitalPainting = true } = {}) {
-  const ENHANCER_DEFAULT_QUALITY = [
-    "cinematic",
-    "creative angles",
-    "symbolism",
-    "no text",
-    "vibrant colors",
-    "vibrant lighting",
-    "realistic faces",
-    "faces with character",
-    "high quality",
-    "highly detailed faces",
-    "anatomically correct hands: 5 fingers per hand",
-    "no additional limbs",
-    "sharp focus",
-    "clean edges",
-    "cohesive lighting",
-    "consistent perspective"
+function getApplyTemplate(template, values) {
+  return String(template || "").replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => String(values?.[key] || ""));
+}
+
+
+function getHeuristicEnhancedPrompt(basePrompt, cfg, { extraNegatives = [], extraQuality = [], preferDigitalPainting = true } = {}) {
+  const template = String(cfg.enhancerHeuristicTemplate || "").trim();
+  if (!template) return getSanitized(basePrompt);
+
+  const qualityHints = [
+    ...preferDigitalPainting ? getStringArray(cfg.enhancerDigitalPaintingHints) : [],
+    ...getStringArray(cfg.enhancerQualityHints),
+    ...extraQuality.map(item => String(item || "").trim()).filter(Boolean)
   ];
-  const ENHANCER_DEFAULT_NEGATIVE = [
-    "text, captions, logos, watermarks",
-    "misspelled words",
-    "deformed hands, extra fingers, fused fingers",
-    "doll-like faces, plastic skin",
-    "low-res, heavy compression artifacts, banding",
-    "distorted anatomy, extra limbs, missing limbs",
-    "overexposed highlights, crushed blacks"
+  const negativeHints = [
+    ...getStringArray(cfg.enhancerNegativeHints),
+    ...extraNegatives.map(item => String(item || "").trim()).filter(Boolean)
   ];
-  const p = getSanitized(basePrompt);
-  const quality = [...ENHANCER_DEFAULT_QUALITY, ...extraQuality];
-  if (preferDigitalPainting) quality.unshift("digital painting", "painterly brushwork", "studio quality");
-  const negatives = [...ENHANCER_DEFAULT_NEGATIVE, ...extraNegatives];
-  return [
-    p,
-    `Style/Quality: ${quality.join(", ")}`,
-    "Camera/Lens: suggest a cinematic lens and appropriate focal length; choose an angle that enhances the subject (low/high/three-quarter as appropriate); use rule of thirds or strong leading lines when suitable.",
-    `Avoid: ${negatives.join(", ")}`,
-    "Compose for readability and balance; prioritize subject clarity."
-  ].join(" | ");
+
+  const rendered = getApplyTemplate(template, {
+    prompt: getSanitized(basePrompt),
+    qualityHints: qualityHints.join(", "),
+    negativeHints: negativeHints.join(", "),
+    cameraHint: String(cfg.enhancerCameraHint || "").trim(),
+    compositionHint: String(cfg.enhancerCompositionHint || "").trim()
+  }).replace(/\s+/g, " ").trim();
+
+  return rendered || getSanitized(basePrompt);
 }
 
 
@@ -220,7 +198,7 @@ async function getInvoke(args, coreData) {
     enhancedPrompt = promptRaw;
   } else {
     const aiEnhanced = await callEnhancerApi(promptRaw, toolCfg, wo);
-    enhancedPrompt = aiEnhanced ?? getHeuristicEnhancedPrompt(promptRaw, { extraNegatives: extraNeg, extraQuality: [], preferDigitalPainting });
+    enhancedPrompt = aiEnhanced ?? getHeuristicEnhancedPrompt(promptRaw, toolCfg, { extraNegatives: extraNeg, extraQuality: [], preferDigitalPainting });
   }
   const finalSize = getBuiltSize({ size: requestedSize, aspect, targetLongEdge });
   const body = { model, prompt: enhancedPrompt, size: finalSize, n };

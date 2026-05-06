@@ -603,6 +603,7 @@ The `/chat` interface supports **subchannels** — separate conversation threads
 1. Select a channel from the first dropdown.
 2. A subchannel selector appears next to it. **Main (no subchannel)** is the default thread.
 3. Choose an existing subchannel or create a new one.
+4. When `rememberLastSubchannel` is enabled, `/chat` automatically restores your last selected subchannel for that channel on the next visit.
 
 ### Managing subchannels
 

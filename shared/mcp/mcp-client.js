@@ -21,6 +21,17 @@ function getToolConfig(wo, toolName) {
 }
 
 
+function getWorkingObjectValue(wo, path) {
+  const parts = String(path || "").trim().split(".").filter(Boolean);
+  let current = wo;
+  for (const part of parts) {
+    if (!current || typeof current !== "object") return "";
+    current = current[part];
+  }
+  return current == null ? "" : String(current);
+}
+
+
 export function getMcpServers(wo, toolName) {
   const ownCfg = getToolConfig(wo, toolName);
   return Array.isArray(ownCfg.servers) ? ownCfg.servers : [];
@@ -40,7 +51,18 @@ async function getHeaders(wo, cfg) {
     for (const item of cfg.headers) {
       const header = String(item?.header || "").trim();
       if (!header) continue;
-      headers[header] = String(item?.value ?? "");
+      const valueFromWorkingObject = String(item?.valueFromWorkingObject || "").trim();
+      if (valueFromWorkingObject) {
+        headers[header] = getWorkingObjectValue(wo, valueFromWorkingObject);
+        continue;
+      }
+      if (item?.value !== undefined && item?.value !== null) {
+        headers[header] = String(item.value);
+        continue;
+      }
+      if (header.toLowerCase() === "x-channel-id") {
+        headers[header] = String(wo?.channelId || "");
+      }
     }
   }
   const bearerToken = cfg.bearerTokenSecret ? await getSecret(wo, String(cfg.bearerTokenSecret)) : cfg.bearerToken;

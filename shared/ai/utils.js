@@ -10,16 +10,13 @@
 import { getSecret }          from "../../core/secrets.js";
 import { getPrefixedLogger }  from "../../core/logging.js";
 import { putItem, getItem, deleteItem } from "../../core/registry.js";
-import { mkdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join }      from "node:path";
 import { fileURLToPath }      from "node:url";
 import { getLogsRoot, getLogMaxBytes, getLogKeepFiles, setAppendRollingFile } from "../../core/log-paths.js";
 
 const _dir         = dirname(fileURLToPath(import.meta.url));
 const _manifestDir = join(_dir, "../../manifests");
-const _logDir      = join(_dir, "../../logs");
-
-try { mkdirSync(_logDir, { recursive: true }); } catch {}
 
 
 /*
@@ -28,6 +25,12 @@ try { mkdirSync(_logDir, { recursive: true }); } catch {}
 export function getAssistantAuthorName(wo) {
   const v = (typeof wo?.botName === "string" && wo.botName.trim().length) ? wo.botName.trim() : "";
   return v.length ? v : undefined;
+}
+
+
+export function getSpecialistToolName(wo) {
+  const cfg = wo?.toolsconfig?.getOrchestrator || {};
+  return String(cfg.specialistToolName || "getSpecialists").trim() || "getSpecialists";
 }
 
 
@@ -428,7 +431,7 @@ export function getSpecialistsPaginationState(result) {
 
 export function setUpdatePaginationGuardState(wo, toolName, result) {
   if (!wo) return null;
-  if (toolName === "getSpecialists") {
+  if (toolName === getSpecialistToolName(wo)) {
     wo.__specialistsPaginationState = getSpecialistsPaginationState(result);
   }
 
@@ -509,7 +512,7 @@ export function getPaginationContinuationPrompt(wo) {
 }
 
 
-export function getToolArgsMeta(toolName, args) {
+export function getToolArgsMeta(toolName, args, wo) {
   const value = args && typeof args === "object" ? args : {};
   const preview = getPreview(getJsonSafe(value), 500);
 
@@ -522,7 +525,7 @@ export function getToolArgsMeta(toolName, args) {
     };
   }
 
-  if (toolName === "getSpecialists") {
+  if (toolName === getSpecialistToolName(wo)) {
     const specialists = Array.isArray(value.specialists) ? value.specialists : [];
     return {
       argsPreview: preview,
@@ -554,7 +557,7 @@ export function getToolArgsMeta(toolName, args) {
 }
 
 
-export function getToolTraceMeta(toolName, result) {
+export function getToolTraceMeta(toolName, result, wo) {
   const value = getResultObject(result);
   if (!value || typeof value !== "object") {
     return typeof value === "string" && value.trim()
@@ -578,7 +581,7 @@ export function getToolTraceMeta(toolName, result) {
     };
   }
 
-  if (toolName === "getSpecialists") {
+  if (toolName === getSpecialistToolName(wo)) {
     const rows = Array.isArray(value.rows) ? value.rows : [];
     const paginationState = getSpecialistsPaginationState(value);
     return {

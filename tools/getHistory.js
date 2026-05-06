@@ -148,7 +148,12 @@ function getParsedHumanDate(input, isEnd = false, timeZone = "UTC") {
 function getISO(ts) {
   if (!ts) return "";
   if (ts instanceof Date) return ts.toISOString();
-  const d = new Date(String(ts).replace(" ", "T"));
+  const s = String(ts).replace(" ", "T");
+  // Treat strings without a timezone indicator as UTC, not local time.
+  // mysql2 may return TIMESTAMP columns as "YYYY-MM-DD HH:MM:SS" strings;
+  // without the "Z" suffix, new Date() parses them as local time on CEST servers.
+  const hasOffset = /Z$|[+-]\d{2}:?\d{2}$/.test(s);
+  const d = new Date(hasOffset ? s : s + "Z");
   if (Number.isNaN(d.getTime())) return String(ts);
   return d.toISOString();
 }
@@ -212,6 +217,59 @@ async function getRowsByTime(
 }
 
 
+async function getTotalCount(pool, channelIds, { startTs, endTs, endExclusive, includeToolRows }) {
+  const ids = Array.isArray(channelIds) ? channelIds : [channelIds];
+  if (!ids.length) return 0;
+  const where = [];
+  const vals = [];
+  const idPlaceholders = ids.map(() => "?").join(", ");
+  where.push(`id IN (${idPlaceholders})`);
+  vals.push(...ids);
+  where.push("ts >= ?");
+  vals.push(startTs);
+  if (endExclusive) {
+    where.push("ts < ?");
+  } else {
+    where.push("ts <= ?");
+  }
+  vals.push(endTs);
+  if (includeToolRows === false) {
+    where.push("(role IS NULL OR LOWER(role) <> 'tool')");
+  }
+  const sql = `SELECT COUNT(*) AS total FROM context WHERE ${where.join(" AND ")}`;
+  const [rows] = await pool.execute(sql, vals);
+  return Number(rows?.[0]?.total ?? 0);
+}
+
+
+async function getPageBoundaries(pool, channelIds, { startTs, endTs, endExclusive, includeToolRows, pageRows }) {
+  const ids = Array.isArray(channelIds) ? channelIds : [channelIds];
+  if (!ids.length || pageRows < 1) return [];
+  const where = [];
+  const vals = [];
+  const idPlaceholders = ids.map(() => "?").join(", ");
+  where.push(`id IN (${idPlaceholders})`);
+  vals.push(...ids);
+  where.push("ts >= ?");
+  vals.push(startTs);
+  where.push(endExclusive ? "ts < ?" : "ts <= ?");
+  vals.push(endTs);
+  if (includeToolRows === false) where.push("(role IS NULL OR LOWER(role) <> 'tool')");
+  const whereClause = where.join(" AND ");
+  const sql = `
+    SELECT ctx_id FROM (
+      SELECT ctx_id, ROW_NUMBER() OVER (ORDER BY ctx_id ASC, ts ASC) AS rn
+      FROM context WHERE ${whereClause}
+    ) t
+    WHERE rn % ? = 0
+    ORDER BY rn ASC
+  `;
+  vals.push(pageRows);
+  const [rows] = await pool.execute(sql, vals);
+  return (rows || []).map(r => Number(r.ctx_id));
+}
+
+
 async function getPreloadUpToCap(
   pool,
   channelIds,
@@ -262,7 +320,7 @@ async function getHistoryInvoke(args, coreData) {
   for (const cid of (Array.isArray(wo?.channelIds) ? wo.channelIds : [])) {
     const s = String(cid || "").trim(); if (s) channelIdSet.add(s);
   }
-  const channelIds = [...channelIdSet];
+  const channelIds = [...channelIdSet].filter(id => !id.startsWith("subagent-"));
   log(`getHistory channel resolution: channelId=${wo?.channelId || "?"} callerChannelId=${wo?.callerChannelId || "?"} callerChannelIds=${JSON.stringify(wo?.callerChannelIds || [])} channelIds=${JSON.stringify(wo?.channelIds || [])} → querying=${JSON.stringify(channelIds)}`, "info");
   if (!channelIds.length) {
     return getErrorResult("channel_missing", "channelId missing (wo.channelId / wo.channelIds)");
@@ -311,33 +369,73 @@ async function getHistoryInvoke(args, coreData) {
     endExclusive = false;
   }
   const startCtxIdRaw = args?.startCtxId ?? args?.start_ctx_id ?? args?.start_ctx ?? null;
-  const startCtxId = startCtxIdRaw != null ? Number(startCtxIdRaw) : null;
+  const startCtxIdInput = startCtxIdRaw != null ? Number(startCtxIdRaw) : null;
+  const startCtxIdExplicit = (Number.isFinite(startCtxIdInput) && startCtxIdInput > 0) ? startCtxIdInput : null;
   const maxRows = Math.max(1, Number.isFinite(Number(cfgTool?.maxRows)) ? Number(cfgTool.maxRows) : 5000);
   const pageSize = Math.max(1, Number.isFinite(Number(cfgTool?.pagesize)) ? Number(cfgTool.pagesize) : 1000);
+  const pageRows = Math.max(1, Number.isFinite(Number(cfgTool?.pageRows)) ? Number(cfgTool.pageRows) : maxRows);
   const includeToolRows = cfgTool.includeToolRows === true;
+  const pageNum = args?.page != null ? Math.max(1, Math.floor(Number(args.page))) : null;
   const includeJson = cfgTool.includeJson === true;
-  const dumpMaxChars = Number.isFinite(Number(cfgTool?.dumpMaxChars)) ? Number(cfgTool.dumpMaxChars) : 40000;
   const pool = await getEnsurePool(wo);
-  const preload = await getPreloadUpToCap(pool, channelIds, {
-    startTs,
-    endTs,
-    endExclusive,
-    startCtxId: (Number.isFinite(startCtxId) && startCtxId > 0) ? startCtxId : null,
-    cap: maxRows,
-    pageSize,
-    includeToolRows
-  });
+
+  // When page >= 2 is requested without an explicit startCtxId, we must resolve the
+  // boundary ctx_id from getPageBoundaries first (sequential), then preload.
+  // For page 1 or explicit startCtxId, all three queries run in parallel.
+  let preload, total_count, pageBoundaries;
+  if (pageNum != null && pageNum >= 2 && startCtxIdExplicit == null) {
+    [total_count, pageBoundaries] = await Promise.all([
+      getTotalCount(pool, channelIds, { startTs, endTs, endExclusive, includeToolRows }),
+      getPageBoundaries(pool, channelIds, { startTs, endTs, endExclusive, includeToolRows, pageRows })
+    ]);
+    // pages[] entries are boundary ctx_ids at positions pageRows, 2*pageRows, ...
+    // page 2 uses boundary index 0, page 3 uses index 1, etc.
+    const boundaryIdx = pageNum - 2;
+    const boundaryCtxId = pageBoundaries[boundaryIdx];
+    if (boundaryCtxId == null) {
+      // Requested page is out of range — return empty result
+      const totalPages = pageRows > 0 ? Math.ceil(total_count / pageRows) : 1;
+      const pages = pageBoundaries.map((ctxId, i) => ({ page_number: i + 2, start_ctx_id: ctxId }));
+      return {
+        ok: true, mode: "dump", channel: mainChannelId, channels: channelIds,
+        requested_start: startTs, requested_end: endTs, actual_start: null, actual_end: null,
+        rows: [], count: 0, max_rows: maxRows, preloaded_count: 0, fetched_count: 0,
+        capped_by_preload: false, has_more: false, total_count, total_pages: totalPages,
+        page_number: pageNum, page_size: pageRows, pages, page_size_rows: 0
+      };
+    }
+    preload = await getPreloadUpToCap(pool, channelIds, {
+      startTs, endTs, endExclusive, startCtxId: Number(boundaryCtxId),
+      cap: maxRows, pageSize, includeToolRows
+    });
+  } else {
+    [preload, total_count, pageBoundaries] = await Promise.all([
+      getPreloadUpToCap(pool, channelIds, {
+        startTs, endTs, endExclusive, startCtxId: startCtxIdExplicit,
+        cap: maxRows, pageSize, includeToolRows
+      }),
+      getTotalCount(pool, channelIds, { startTs, endTs, endExclusive, includeToolRows }),
+      getPageBoundaries(pool, channelIds, { startTs, endTs, endExclusive, includeToolRows, pageRows })
+    ]);
+  }
+
   let rows = preload.rows;
   const preloadedCount = rows.length;
   const cappedByCap = preload.hasMore;
-  log(`getHistory DB result: channels=${JSON.stringify(channelIds)} start=${startTs} end=${endTs} rows=${preloadedCount} capped=${cappedByCap}`, "info");
+  log(`getHistory DB result: channels=${JSON.stringify(channelIds)} start=${startTs} end=${endTs} rows=${preloadedCount} capped=${cappedByCap}${pageNum != null ? ` page=${pageNum}` : ""}`, "info");
+  const totalPages = pageRows > 0 ? Math.ceil(total_count / pageRows) : 1;
+  // pages[] contains end-of-page boundary ctx_ids for pages 2, 3, ...
+  // Use as startCtxId (ctx_id > boundary) to fetch each successive page.
+  const pages = pageBoundaries.map((ctxId, i) => ({
+    page_number: i + 2,
+    start_ctx_id: ctxId
+  }));
   if (!rows.length) {
     return {
       ok: true,
       mode: "dump",
       channel: mainChannelId,
       channels: channelIds,
-
       requested_start: startTs,
       requested_end: endTs,
       actual_start: null,
@@ -347,7 +445,14 @@ async function getHistoryInvoke(args, coreData) {
       max_rows: maxRows,
       preloaded_count: 0,
       fetched_count: preload.fetchedCount,
-      capped_by_preload: false
+      capped_by_preload: false,
+      total_count: 0,
+      total_pages: 0,
+      page_number: pageNum ?? 1,
+      page_size: pageRows,
+      pages,
+      page_size_rows: 0,
+      estimated_total_pages: 0
     };
   }
   const actualStartIso = getISO(rows[0].ts);
@@ -370,26 +475,9 @@ async function getHistoryInvoke(args, coreData) {
   }
   rows = null;
 
-  let cappedByChars = false;
-  let charsTrimmedRows = outRows;
-  if (dumpMaxChars > 0) {
-    let charCount = 0;
-    const kept = [];
-    for (const row of outRows) {
-      const rowLen = (row.text ? row.text.length : 0) + 80;
-      if (charCount + rowLen > dumpMaxChars && kept.length > 0) {
-        cappedByChars = true;
-        break;
-      }
-      kept.push(row);
-      charCount += rowLen;
-    }
-    charsTrimmedRows = kept;
-  }
-
-  const returnedLastRow = charsTrimmedRows[charsTrimmedRows.length - 1];
+  const returnedLastRow = outRows[outRows.length - 1];
   const returnedEndIso = returnedLastRow ? getISO(returnedLastRow.ts) : dbEndIso;
-  const hasMore = cappedByCap || cappedByChars;
+  const hasMore = cappedByCap;
 
   return {
     ok: true,
@@ -401,15 +489,21 @@ async function getHistoryInvoke(args, coreData) {
     actual_start: actualStartIso,
     actual_end: returnedEndIso,
     db_end: hasMore ? dbEndIso : undefined,
-    rows: charsTrimmedRows,
-    count: charsTrimmedRows.length,
+    rows: outRows,
+    count: outRows.length,
     max_rows: maxRows,
     preloaded_count: preloadedCount,
     fetched_count: preload.fetchedCount,
     capped_by_preload: cappedByCap,
-    capped_by_chars: cappedByChars,
     has_more: hasMore,
-    next_start_ctx_id: hasMore ? (returnedLastRow?.ctx_id ?? null) : null
+    next_start_ctx_id: hasMore ? (returnedLastRow?.ctx_id ?? null) : null,
+    total_count,
+    total_pages: totalPages,
+    page_number: pageNum ?? 1,
+    page_size: pageRows,
+    pages,
+    page_size_rows: outRows.length,
+    estimated_total_pages: outRows.length > 0 ? Math.ceil(total_count / outRows.length) : null
   };
 }
 
