@@ -23,7 +23,14 @@ const THREAD_AUTO_ARCHIVE_MINUTES = 60;
 
 function getIsLikelyImageUrl(url) {
   const u = String(url).toLowerCase();
-  return /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/.test(u) || /\/documents\//.test(u);
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/.test(u) || /\/documents\//.test(u)) return true;
+  try {
+    const parsed = new URL(String(url));
+    const host = String(parsed.hostname || "").toLowerCase();
+    const path = String(parsed.pathname || "").toLowerCase();
+    if ((host === "i.scdn.co" || host.endsWith(".scdn.co")) && path.startsWith("/image/")) return true;
+  } catch {}
+  return false;
 }
 
 
