@@ -824,7 +824,7 @@ function getChatHtml(opts) {
     "    if(ytM){emb=document.createElement(\"div\");emb.className=\"chat-embed\";var yi=document.createElement(\"iframe\");yi.src=\"https://www.youtube.com/embed/\"+ytM[1];yi.setAttribute(\"frameborder\",\"0\");yi.setAttribute(\"allowfullscreen\",\"\");emb.appendChild(yi);}\n" +
     "    else{var vmM=u.match(/vimeo\\.com\\/(?:video\\/)?(\\d+)/);if(vmM){emb=document.createElement(\"div\");emb.className=\"chat-embed\";var vi=document.createElement(\"iframe\");vi.src=\"https://player.vimeo.com/video/\"+vmM[1];vi.setAttribute(\"frameborder\",\"0\");vi.setAttribute(\"allowfullscreen\",\"\");emb.appendChild(vi);}\n" +
     "    else if(/\\.(mp4|webm|ogg|mov|m4v)(\\?.*)?$/i.test(u)){emb=document.createElement(\"div\");emb.className=\"chat-embed\";var dv=document.createElement(\"video\");dv.src=u;dv.controls=true;emb.appendChild(dv);}\n" +
-    "    else if(/\\.(jpg|jpeg|png|gif|webp|svg)(\\?.*)?$/i.test(u)||/^https?:\\/\\/(?:i\\.scdn\\.co|[^\\/]+\\.scdn\\.co)\\/image\\//i.test(u)){emb=document.createElement(\"div\");emb.className=\"chat-embed\";var im=document.createElement(\"img\");im.src=u;im.className=\"chat-img\";im.alt=\"\";im.loading=\"lazy\";im.onerror=function(){if(this.parentNode)this.parentNode.removeChild(this);};emb.appendChild(im);}}\n" +
+    "    else if(/\\.(jpg|jpeg|png|gif|webp|svg)(\\?.*)?$/i.test(u)){emb=document.createElement(\"div\");emb.className=\"chat-embed\";var im=document.createElement(\"img\");im.src=u;im.className=\"chat-img\";im.alt=\"\";im.loading=\"lazy\";im.onerror=function(){if(this.parentNode)this.parentNode.removeChild(this);};emb.appendChild(im);}}\n" +
     "    if(emb)a.parentNode.insertBefore(emb,a.nextSibling);\n" +
     "  }\n" +
     "}\n" +

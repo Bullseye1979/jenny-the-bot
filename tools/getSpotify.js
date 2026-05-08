@@ -98,7 +98,10 @@ function getTrackSummary(t) {
     explicit:     t.explicit,
     popularity:   t.popularity ?? null,
     url:          t.external_urls?.spotify || "",
+    spotifyUrl:   t.external_urls?.spotify || "",
     albumCover:   getPrimaryImageUrl(t.album?.images),
+    coverUrl:     getPrimaryImageUrl(t.album?.images),
+    imageUrl:     getPrimaryImageUrl(t.album?.images),
     albumImages:  getImages(t.album?.images),
   };
 }
@@ -113,7 +116,10 @@ function getAlbumSummary(a) {
     releaseDate: a.release_date || a.releaseDate || "",
     totalTracks: a.total_tracks ?? a.totalTracks ?? null,
     url:         a.external_urls?.spotify || "",
+    spotifyUrl:  a.external_urls?.spotify || "",
     albumCover:  getPrimaryImageUrl(a.images),
+    coverUrl:    getPrimaryImageUrl(a.images),
+    imageUrl:    getPrimaryImageUrl(a.images),
     albumImages: getImages(a.images),
   };
 }
@@ -129,7 +135,10 @@ function getPlaylistSummary(p) {
     tracks:      p.tracks?.total ?? p.tracks ?? null,
     description: p.description || "",
     url:         p.external_urls?.spotify || "",
+    spotifyUrl:  p.external_urls?.spotify || "",
     image:       getPrimaryImageUrl(p.images),
+    imageUrl:    getPrimaryImageUrl(p.images),
+    coverUrl:    getPrimaryImageUrl(p.images),
     images:      getImages(p.images),
   };
 }
@@ -440,7 +449,10 @@ async function getOperationCreatePlaylist(token, coreData, args) {
     name:      res.data?.name,
     public:    res.data?.public,
     url:       res.data?.external_urls?.spotify,
+    spotifyUrl: res.data?.external_urls?.spotify,
     image:     getPrimaryImageUrl(res.data?.images),
+    imageUrl:  getPrimaryImageUrl(res.data?.images),
+    coverUrl:  getPrimaryImageUrl(res.data?.images),
     images:    getImages(res.data?.images),
   };
 }
@@ -528,9 +540,12 @@ async function getOperationPlayByName(token, args) {
     artists:    best.artists,
     uri,
     url:        best.url || "",
+    spotifyUrl: best.spotifyUrl || best.url || "",
     album:      best.album || best.name || "",
     albumUri:   best.albumUri || uri,
     albumCover: best.albumCover || "",
+    coverUrl:   best.coverUrl || best.albumCover || "",
+    imageUrl:   best.imageUrl || best.albumCover || "",
     albumImages: getArr(best.albumImages, []),
     deviceId,
     deviceName: activeDevice.name,
