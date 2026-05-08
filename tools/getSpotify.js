@@ -24,6 +24,116 @@ function getArr(v, f = []) {
   return Array.isArray(v) ? v : f;
 }
 
+function getSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function getNormalizedDevice(d) {
+  return {
+    id:               d.id,
+    name:             d.name,
+    type:             d.type,
+    isActive:         d.is_active,
+    isPrivateSession: d.is_private_session,
+    isRestricted:     d.is_restricted,
+    volumePercent:    d.volume_percent,
+    supportsVolume:   d.supports_volume,
+  };
+}
+
+function getControllableDevices(devices) {
+  return getArr(devices, []).filter((d) => getStr(d?.id, "") && !getBool(d?.isRestricted, false));
+}
+
+function getPreferredControllableDevice(devices, preferredDeviceId = "") {
+  const controllable = getControllableDevices(devices);
+  const preferredId = getStr(preferredDeviceId, "");
+  if (preferredId) {
+    const exact = controllable.find((d) => getStr(d.id, "") === preferredId);
+    if (exact) return exact;
+  }
+  return controllable.find((d) => getBool(d.isActive, false)) || controllable[0] || null;
+}
+
+function getNoControllableDeviceError(devices) {
+  const all = getArr(devices, []);
+  if (!all.length) return "No Spotify devices available — open Spotify on a device first";
+  const restricted = all.filter((d) => getBool(d.isRestricted, false));
+  const missingId  = all.filter((d) => !getStr(d.id, ""));
+  if (restricted.length || missingId.length) {
+    return "No controllable Spotify devices available — listed devices are restricted or missing device IDs. Spotify's Web API cannot control such devices; this can happen with some Alexa or other speaker integrations.";
+  }
+  return "No controllable Spotify devices available";
+}
+
+function getShouldRetryPlaybackOnTarget(error, status) {
+  const msg = String(error || "");
+  return status === 404
+    || /No active device found/i.test(msg)
+    || /Device not found/i.test(msg);
+}
+
+function getImages(images) {
+  return getArr(images, []).map((img) => ({
+    url:    img?.url || "",
+    width:  img?.width ?? null,
+    height: img?.height ?? null,
+  })).filter((img) => img.url);
+}
+
+function getPrimaryImageUrl(images) {
+  return getImages(images)[0]?.url || "";
+}
+
+function getTrackSummary(t) {
+  if (!t || typeof t !== "object") return null;
+  return {
+    uri:          t.uri,
+    id:           t.id,
+    name:         t.name,
+    artists:      getArr(t.artists, []).map((a) => a?.name).filter(Boolean),
+    album:        t.album?.name || "",
+    albumUri:     t.album?.uri || "",
+    durationMs:   t.duration_ms ?? t.durationMs ?? null,
+    explicit:     t.explicit,
+    popularity:   t.popularity ?? null,
+    url:          t.external_urls?.spotify || "",
+    albumCover:   getPrimaryImageUrl(t.album?.images),
+    albumImages:  getImages(t.album?.images),
+  };
+}
+
+function getAlbumSummary(a) {
+  if (!a || typeof a !== "object") return null;
+  return {
+    uri:         a.uri,
+    id:          a.id,
+    name:        a.name,
+    artists:     getArr(a.artists, []).map((x) => x?.name).filter(Boolean),
+    releaseDate: a.release_date || a.releaseDate || "",
+    totalTracks: a.total_tracks ?? a.totalTracks ?? null,
+    url:         a.external_urls?.spotify || "",
+    albumCover:  getPrimaryImageUrl(a.images),
+    albumImages: getImages(a.images),
+  };
+}
+
+function getPlaylistSummary(p) {
+  if (!p || typeof p !== "object") return null;
+  return {
+    id:          p.id,
+    uri:         p.uri,
+    name:        p.name,
+    owner:       p.owner?.display_name || p.owner || "",
+    public:      p.public,
+    tracks:      p.tracks?.total ?? p.tracks ?? null,
+    description: p.description || "",
+    url:         p.external_urls?.spotify || "",
+    image:       getPrimaryImageUrl(p.images),
+    images:      getImages(p.images),
+  };
+}
+
 
 async function getDbPool(coreData) {
   if (_dbPool) return _dbPool;
@@ -165,10 +275,10 @@ async function getOperationSearch(token, args) {
   if (!res.ok) return { ok: false, error: res.error };
 
   const out = { ok: true, operation: "search", query, types, results: {} };
-  if (res.data?.tracks)    out.results.tracks    = res.data.tracks.items.map(t => ({ uri: t.uri, name: t.name, artists: t.artists?.map(a => a.name), album: t.album?.name, durationMs: t.durationMs, explicit: t.explicit, popularity: t.popularity }));
-  if (res.data?.albums)    out.results.albums    = res.data.albums.items.map(a => ({ uri: a.uri, name: a.name, artists: a.artists?.map(x => x.name), releaseDate: a.release_date, totalTracks: a.total_tracks }));
+  if (res.data?.tracks)    out.results.tracks    = res.data.tracks.items.map(getTrackSummary);
+  if (res.data?.albums)    out.results.albums    = res.data.albums.items.map(getAlbumSummary);
   if (res.data?.artists)   out.results.artists   = res.data.artists.items.map(a => ({ uri: a.uri, name: a.name, genres: a.genres, popularity: a.popularity, followers: a.followers?.total }));
-  if (res.data?.playlists) out.results.playlists = res.data.playlists.items.map(p => ({ uri: p.uri, name: p.name, owner: p.owner?.display_name, tracks: p.tracks?.total, public: p.public }));
+  if (res.data?.playlists) out.results.playlists = res.data.playlists.items.map(getPlaylistSummary);
   return out;
 }
 
@@ -184,7 +294,7 @@ async function getOperationGetPlayback(token) {
     isPlaying: getBool(d.is_playing, false),
     progressMs: getNum(d.progress_ms, 0),
     device:    d.device ? { id: d.device.id, name: d.device.name, type: d.device.type, volumePercent: d.device.volume_percent } : null,
-    item:      d.item   ? { uri: d.item.uri, name: d.item.name, artists: d.item.artists?.map(a => a.name), album: d.item.album?.name, durationMs: d.item.durationMs } : null,
+    item:      d.item   ? getTrackSummary(d.item) : null,
     shuffleState:  d.shuffle_state,
     repeatState:   d.repeat_state,
     context:   d.context ? { uri: d.context.uri, type: d.context.type } : null,
@@ -193,7 +303,7 @@ async function getOperationGetPlayback(token) {
 
 
 async function getOperationPlay(token, args) {
-  const deviceId    = getStr(args.deviceId, "");
+  const requestedDeviceId = getStr(args.deviceId, "");
   const uris        = getArr(args.uris, []);
   const contextUri  = getStr(args.contextUri, "");
   const offsetIndex = args.offsetIndex !== undefined ? getNum(args.offsetIndex, 0) : undefined;
@@ -208,10 +318,39 @@ async function getOperationPlay(token, args) {
   }
   if (positionMs !== undefined) body.position_ms = positionMs;
 
-  const query = deviceId ? { device_id: deviceId } : {};
-  const res = await makeRequest(token, { method: "PUT", path: "/me/player/play", query, body: Object.keys(body).length ? body : undefined });
+  let targetDeviceId = requestedDeviceId;
+  let activatedDevice = null;
+  let transferred = false;
+
+  if (!targetDeviceId && Object.keys(body).length) {
+    const ensureRes = await getOperationEnsureActiveDevice(token, {});
+    if (!ensureRes.ok) return { ok: false, error: ensureRes.error };
+    targetDeviceId = getStr(ensureRes.device?.id, "");
+    activatedDevice = ensureRes.device;
+    transferred = !!ensureRes.transferred;
+  }
+
+  let query = targetDeviceId ? { device_id: targetDeviceId } : {};
+  let res = await makeRequest(token, { method: "PUT", path: "/me/player/play", query, body: Object.keys(body).length ? body : undefined });
+
+  if (!res.ok && targetDeviceId && getShouldRetryPlaybackOnTarget(res.error, res.status)) {
+    const ensureRes = await getOperationEnsureActiveDevice(token, { deviceId: targetDeviceId });
+    if (!ensureRes.ok) return { ok: false, error: ensureRes.error };
+    activatedDevice = ensureRes.device;
+    transferred = transferred || !!ensureRes.transferred;
+    targetDeviceId = getStr(ensureRes.device?.id, targetDeviceId);
+    query = targetDeviceId ? { device_id: targetDeviceId } : {};
+    res = await makeRequest(token, { method: "PUT", path: "/me/player/play", query, body: Object.keys(body).length ? body : undefined });
+  }
+
   if (!res.ok) return { ok: false, error: res.error };
-  return { ok: true, operation: "play" };
+  return {
+    ok: true,
+    operation: "play",
+    ...(targetDeviceId ? { deviceId: targetDeviceId } : {}),
+    ...(activatedDevice?.name ? { deviceName: activatedDevice.name } : {}),
+    ...(transferred ? { activatedDevice: true } : {})
+  };
 }
 
 
@@ -227,16 +366,31 @@ async function getOperationPause(token, args) {
 async function getOperationListDevices(token) {
   const res = await makeRequest(token, { method: "GET", path: "/me/player/devices" });
   if (!res.ok) return { ok: false, error: res.error };
-  const devices = getArr(res.data?.devices, []).map(d => ({
-    id:            d.id,
-    name:          d.name,
-    type:          d.type,
-    isActive:      d.is_active,
-    isPrivateSession: d.is_private_session,
-    isRestricted:  d.is_restricted,
-    volumePercent: d.volume_percent,
-  }));
+  const devices = getArr(res.data?.devices, []).map(getNormalizedDevice);
   return { ok: true, operation: "listDevices", devices };
+}
+
+
+async function getOperationEnsureActiveDevice(token, args = {}) {
+  const preferredDeviceId = getStr(args.deviceId, "");
+  const devRes = await getOperationListDevices(token);
+  if (!devRes.ok) return { ok: false, error: `Could not list devices: ${devRes.error}` };
+
+  const devices = getArr(devRes.devices, []);
+  const target  = getPreferredControllableDevice(devices, preferredDeviceId);
+  if (!target) return { ok: false, error: getNoControllableDeviceError(devices) };
+  if (getBool(target.isActive, false)) return { ok: true, device: target, transferred: false };
+
+  const transferRes = await getOperationTransferPlayback(token, { deviceId: target.id, play: true });
+  if (!transferRes.ok) {
+    return {
+      ok: false,
+      error: `Could not activate device "${target.name}": ${transferRes.error}`,
+      device: target
+    };
+  }
+  await getSleep(750);
+  return { ok: true, device: target, transferred: true };
 }
 
 
@@ -256,13 +410,7 @@ async function getOperationGetPlaylists(token, args) {
   const res = await makeRequest(token, { method: "GET", path: "/me/playlists", query: { limit, offset } });
   if (!res.ok) return { ok: false, error: res.error };
   const playlists = getArr(res.data?.items, []).map(p => ({
-    id:     p.id,
-    uri:    p.uri,
-    name:   p.name,
-    owner:  p.owner?.display_name,
-    public: p.public,
-    tracks: p.tracks?.total,
-    description: p.description,
+    ...getPlaylistSummary(p),
   }));
   return { ok: true, operation: "getPlaylists", total: res.data?.total, playlists };
 }
@@ -292,6 +440,8 @@ async function getOperationCreatePlaylist(token, coreData, args) {
     name:      res.data?.name,
     public:    res.data?.public,
     url:       res.data?.external_urls?.spotify,
+    image:     getPrimaryImageUrl(res.data?.images),
+    images:    getImages(res.data?.images),
   };
 }
 
@@ -359,7 +509,8 @@ async function getOperationPlayByName(token, args) {
   const devices = getArr(devRes.devices, []);
   if (!devices.length) return { ok: false, error: "No Spotify devices available — open Spotify on a device first" };
 
-  const activeDevice = devices.find(d => d.isActive) || devices[0];
+  const activeDevice = getPreferredControllableDevice(devices);
+  if (!activeDevice) return { ok: false, error: getNoControllableDeviceError(devices) };
   const deviceId     = getStr(activeDevice.id, "");
 
   const playArgs = isAlbum
@@ -376,8 +527,14 @@ async function getOperationPlayByName(token, args) {
     name:       best.name,
     artists:    best.artists,
     uri,
+    url:        best.url || "",
+    album:      best.album || best.name || "",
+    albumUri:   best.albumUri || uri,
+    albumCover: best.albumCover || "",
+    albumImages: getArr(best.albumImages, []),
     deviceId,
-    deviceName: activeDevice.name
+    deviceName: activeDevice.name,
+    result:     best
   };
 }
 
