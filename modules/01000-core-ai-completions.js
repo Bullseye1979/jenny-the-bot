@@ -444,7 +444,10 @@ export default async function getCoreAi(coreData) {
           try {
             const parsed = JSON.parse(toolMsg.content || "{}");
             if (parsed?.ok === false || (typeof parsed?.error === "string" && parsed.error.trim())) _tcStatus = "failed";
-            if (typeof parsed?.url === "string" && parsed.url) wo.primaryImageUrl = parsed.url;
+            const _imgUrl =
+              (typeof parsed?.primaryImageUrl === "string" && parsed.primaryImageUrl) ? parsed.primaryImageUrl :
+              (typeof parsed?.url === "string" && parsed.url) ? parsed.url : "";
+            if (_imgUrl) wo.primaryImageUrl = _imgUrl;
           } catch {}
 
           toolCallLog.push({ tool: tcName, task: tcTask, status: _tcStatus, durationMs: _tcMs });
