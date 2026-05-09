@@ -25,7 +25,7 @@
           "url": { "type": "string" },
           "query": { "type": "object" },
           "headers": { "type": "object" },
-          "body": { "oneOf": [{ "type": "object" }, { "type": "string" }] },
+          "body": { "type": "string", "description": "Request body as a JSON string." },
           "multipart": { "type": "boolean" },
           "form": { "type": "object" },
           "files": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "url": { "type": "string" }, "name": { "type": "string" }, "filename": { "type": "string" } }, "required": ["url"] } },

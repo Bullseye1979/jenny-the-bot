@@ -26,22 +26,6 @@
     "required": [
       "prompt",
       "mode"
-    ],
-    "allOf": [
-      {
-        "if": {
-          "properties": {
-            "mode": {
-              "const": "execute"
-            }
-          }
-        },
-        "then": {
-          "required": [
-            "approvedPlan"
-          ]
-        }
-      }
     ]
   }
 }

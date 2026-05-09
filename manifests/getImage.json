@@ -11,7 +11,7 @@
       "targetLongEdge": { "type": "number", "description": "If 'size' is omitted, long edge target in pixels (default 1024)." },
       "n": { "type": "integer", "minimum": 1, "maximum": 4, "description": "Number of images to generate (subject to model limits)." },
       "strictPrompt": { "type": "boolean", "description": "If true, sends the prompt exactly as given with no enhancement." },
-      "negative": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Extra negative terms to avoid in the image." },
+      "negative": { "type": "string", "description": "Extra negative terms to avoid in the image. Separate multiple terms with commas." },
       "preferDigitalPainting": { "type": "boolean", "description": "Prefer a digital painting style (default: true)." }
     },
     "required": ["prompt"],

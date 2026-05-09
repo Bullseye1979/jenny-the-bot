@@ -28,7 +28,7 @@
       "status": { "type": "string" },
       "method": { "type": "string" },
       "path": { "type": "string" },
-      "body": { "oneOf": [{ "type": "object" }, { "type": "string" }] },
+      "body": { "type": "string", "description": "Request body as a JSON string (for op='api')." },
       "newParentId": { "type": "string" },
       "downloadHeaders": { "type": "object" }
     },

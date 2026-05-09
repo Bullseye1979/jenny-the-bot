@@ -1,0 +1,15 @@
+{
+  "name": "getRoll",
+  "description": "Roll one or more dice using standard D&D notation and return the individual results and total. Use this for all dice rolls in the game: initiative, attack rolls, damage, saving throws, ability checks, skill checks — anything that requires a die roll. Never simulate or guess dice results; always call this tool.\n\nSupported die sizes: d2, d3, d4, d6, d8, d10, d12, d20, d100.\nNotation examples: '1d20' (single d20), '2d6+3' (two d6 plus 3), '1d20-1' (d20 with negative modifier), '4d6' (four d6, e.g. stat generation).\n\nAdvantage/disadvantage: only applies to single d20 rolls. When active, two d20s are rolled and the higher (advantage) or lower (disadvantage) is used. The modifier is then added to the chosen roll.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "notation":     { "type": "string",  "description": "Dice notation in NdS+M format, e.g. '1d20', '2d6+3', '1d8-1'. N=number of dice, S=sides, M=modifier (optional)." },
+      "advantage":    { "type": "boolean", "description": "If true, roll two d20s and take the higher result. Only applies to single d20 rolls." },
+      "disadvantage": { "type": "boolean", "description": "If true, roll two d20s and take the lower result. Only applies to single d20 rolls." },
+      "label":        { "type": "string",  "description": "Optional label for the roll, e.g. 'Goblin attack roll', 'Fireball damage', 'Stealth check'. Included in the result for clarity." }
+    },
+    "required": ["notation"],
+    "additionalProperties": false
+  }
+}
