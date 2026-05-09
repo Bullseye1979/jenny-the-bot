@@ -1,12 +1,13 @@
 {
   "name": "getFileContent",
-  "description": "Fetch the raw text content of a previously generated file by its URL. Use this only for files that were previously created through getFile and are available as getFile URLs. Do not use this as a general local filesystem reader; for explicit local paths, use getShell instead. Typical flow: read a prior getFile URL, apply the change, then write it back with getFile (overwrite: true). Binary files (images, PDFs, ZIPs) are rejected. Maximum file size: 512 KB.",
+  "description": "Read the text content of a previously saved file. Supports two addressing modes:\n\n1. By filename (preferred for known paths): provide the relative filename used when saving with getFile, e.g. 'dm-notebook/campaign.md'. The file is read directly from the user's file store without needing a URL.\n2. By URL: provide the absolute http/https URL returned by a previous getFile call.\n\nUse filename when you know the path (e.g. a persistent notebook). Use url when you only have the URL from a prior tool result.\n\nBinary files (images, PDFs, ZIPs, audio, video) are rejected. Maximum file size: 512 KB.",
   "parameters": {
     "type": "object",
     "properties": {
-      "url": { "type": "string", "description": "Absolute http/https URL of the file to read. Must point to a text file (source code, markdown, JSON, etc.)." }
+      "filename": { "type": "string", "description": "Relative file path within the user's file store, e.g. 'dm-notebook/campaign.md' or 'notes/session1.md'. Use this when you know the filename. Takes precedence over url if both are provided." },
+      "url":      { "type": "string", "description": "Absolute http/https URL of the file to read, as returned by getFile. Use this when you only have the URL and not the original filename." }
     },
-    "required": ["url"],
+    "required": [],
     "additionalProperties": false
   }
 }

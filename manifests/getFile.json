@@ -1,16 +1,19 @@
 {
   "name": "getFile",
-  "description": "Save text or binary content to a persistent file and return a public URL. Supports subdirectory paths in the filename to maintain project structure, e.g. 'src/components/Button.js' — directories are created automatically. Use this to persist any generated artifact: source code, reports, markdown, JSON, or binary. Returns the relative path and public URL for later reference or bundling.\nMULTI-WORKER: Multiple agents may write DIFFERENT files in parallel safely. Writing to the SAME filename (overwrite: true) from multiple agents simultaneously causes data loss — coordinate via the orchestrator so only one agent writes a given file path at a time.\nrequirements:\n- for binary content: set encoding to 'base64' and pass base64-encoded content\n- for overwriting: set overwrite: true and provide an explicit filename",
+  "description": "Save, update, or append to a persistent file and return a public URL. Supports subdirectory paths in the filename, e.g. 'notes/campaign.md' — directories are created automatically.\n\nModes (mutually exclusive, evaluated in this order):\n1. append: true — appends content to the end of an existing file (creates it if it does not exist). Requires filename.\n2. search + replace — finds every occurrence of search in the existing file and replaces it with replace. Fails if search is not found. Requires filename.\n3. overwrite: true — overwrites the file at the exact filename. Requires filename.\n4. default — creates a new file. If filename is taken, a unique suffix is added.\n\nNOTEBOOK PATTERN: Use a fixed filename (e.g. 'notes/dm-notebook.md') to maintain a persistent DM notebook across turns. Create with the default mode, add sections with append, and correct specific text with search+replace.\n\nMULTI-WORKER: Multiple agents may write DIFFERENT files in parallel safely. Writing to the SAME filename from multiple agents simultaneously causes data loss — coordinate via the orchestrator.\n\nRequirements:\n- For binary content: set encoding to 'base64' and pass base64-encoded content.\n- For overwriting: set overwrite: true and provide an explicit filename.",
   "parameters": {
     "type": "object",
     "properties": {
-      "content":     { "type": "string", "description": "File content to write. For source code files this MUST be raw, valid source code only — never include explanations, planning text, error messages, or prose. Plain text by default; base64-encoded binary when encoding is 'base64'." },
-      "filename":    { "type": "string", "description": "Desired filename including optional subdirectory path and extension, e.g. 'src/main.js' or 'docs/report.md'. Subdirectories are created automatically. A unique name is generated when omitted." },
-      "encoding":    { "type": "string", "enum": ["text", "base64"], "description": "Content encoding. 'text' (default) writes UTF-8 text; 'base64' decodes the content as binary before writing." },
+      "content":     { "type": "string", "description": "File content to write or append. Required for all modes except search+replace (where it is unused)." },
+      "filename":    { "type": "string", "description": "Filename including optional subdirectory path and extension, e.g. 'notes/campaign.md'. Required for append, search+replace, and overwrite modes." },
+      "encoding":    { "type": "string", "enum": ["text", "base64"], "description": "Content encoding. 'text' (default) writes UTF-8 text; 'base64' decodes as binary before writing. Only applies to write/overwrite/append modes." },
       "contentType": { "type": "string", "description": "MIME type hint used to determine file extension when filename is omitted, e.g. 'text/markdown', 'application/json'." },
-      "overwrite":   { "type": "boolean", "description": "If true and filename is provided, overwrite the file at that exact path if it already exists. Defaults to false (a unique name is generated to avoid collisions)." }
+      "overwrite":   { "type": "boolean", "description": "If true and filename is provided, overwrite the file at that exact path. Default: false." },
+      "append":      { "type": "boolean", "description": "If true, append content to the end of the existing file instead of creating or overwriting it. The file is created if it does not exist. Requires filename." },
+      "search":      { "type": "string", "description": "Exact string to find in the existing file. Every occurrence is replaced with the replace value. Requires replace and filename. The operation fails if search is not found." },
+      "replace":     { "type": "string", "description": "Replacement string for every occurrence of search. Use an empty string to delete all occurrences. Requires search and filename." }
     },
-    "required": ["content"],
+    "required": [],
     "additionalProperties": false
   }
 }

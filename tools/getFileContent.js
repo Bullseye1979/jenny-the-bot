@@ -5,8 +5,11 @@
 /**************************************************************/
 
 
+import fs from "node:fs/promises";
+import path from "node:path";
 import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getUserDir } from "../core/file.js";
 
 const MODULE_NAME  = "getFileContent";
 const MAX_BYTES    = 512 * 1024;
@@ -21,23 +24,57 @@ const BINARY_EXTENSIONS = new Set([
 ]);
 
 
-function getExtension(url) {
+function getExtension(ref) {
   try {
-    const pathname = new URL(url).pathname;
+    const pathname = new URL(ref).pathname;
     const dot = pathname.lastIndexOf(".");
     return dot >= 0 ? pathname.slice(dot).toLowerCase() : "";
   } catch {
-    const dot = String(url).lastIndexOf(".");
-    return dot >= 0 ? String(url).slice(dot).toLowerCase() : "";
+    const dot = String(ref).lastIndexOf(".");
+    return dot >= 0 ? String(ref).slice(dot).toLowerCase() : "";
   }
+}
+
+function getSafePath(rawFilename) {
+  const normalized = String(rawFilename || "").replace(/\\/g, "/");
+  const segments   = normalized.split("/").filter(s => s && s !== "." && s !== "..");
+  return segments.join("/");
 }
 
 
 async function getInvoke(args, coreData) {
-  const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
-  const url = String(args?.url || "").trim();
+  const log      = getPrefixedLogger(coreData?.workingObject, import.meta.url);
+  const wo       = coreData?.workingObject || {};
+  const url      = String(args?.url      || "").trim();
+  const filename = String(args?.filename || "").trim();
 
-  if (!url) return { ok: false, error: "url is required" };
+  // ── READ BY FILENAME ────────────────────────────────────────────────────
+  if (filename && !url) {
+    const safePath = getSafePath(filename);
+    if (!safePath) return { ok: false, error: "invalid filename" };
+
+    const ext = getExtension(filename);
+    if (BINARY_EXTENSIONS.has(ext)) {
+      return { ok: false, error: `Binary file type '${ext}' cannot be read as text` };
+    }
+
+    const absPath = path.join(getUserDir(wo), safePath);
+    let buf;
+    try {
+      buf = await fs.readFile(absPath);
+    } catch (e) {
+      return { ok: false, error: `File not found: ${safePath}` };
+    }
+
+    if (buf.length > MAX_BYTES) {
+      return { ok: false, error: `File too large (${buf.length} bytes, max ${MAX_BYTES})` };
+    }
+
+    return { ok: true, filename: safePath, bytes: buf.length, content: buf.toString("utf8") };
+  }
+
+  // ── READ BY URL ─────────────────────────────────────────────────────────
+  if (!url) return { ok: false, error: "url or filename is required" };
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     return { ok: false, error: "url must be an absolute http/https URL" };
   }
