@@ -3,7 +3,7 @@
   "name": "Jenny Bot",
   "short_name": "Jenny",
   "description": "Chat with the Jenny bot and summarize the current page or video.",
-  "version": "1.0.0",
+  "version": "1.0",
   "icons": {
     "16":  "icons/icon16.png",
     "48":  "icons/icon48.png",

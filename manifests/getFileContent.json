@@ -1,11 +1,13 @@
 {
   "name": "getFileContent",
-  "description": "Read the text content of a previously saved file. Supports two addressing modes:\n\n1. By filename (preferred for known paths): provide the relative filename used when saving with getFile, e.g. 'dm-notebook/campaign.md'. The file is read directly from the user's file store without needing a URL.\n2. By URL: provide the absolute http/https URL returned by a previous getFile call.\n\nUse filename when you know the path (e.g. a persistent notebook). Use url when you only have the URL from a prior tool result.\n\nBinary files (images, PDFs, ZIPs, audio, video) are rejected. Maximum file size: 512 KB.",
+  "description": "Read the text content of a file. Supports pagination for large files via offset+limit.\n\nAddressing modes:\n1. By filename (preferred): relative path e.g. 'dm-notebook/campaign.md'.\n2. By URL: absolute http/https URL returned by a previous getFile call.\n\nPagination: use offset (char position, default 0) and limit (max chars per page, default 100000) to read large files in slices. The response includes total_chars, current_page, total_pages, has_more, and next_offset so you can fetch the next slice. To search a large file for a section, read pages sequentially until you find the relevant content, then stop.\n\nBinary files are rejected. Maximum file size: 5 MB.",
   "parameters": {
     "type": "object",
     "properties": {
-      "filename": { "type": "string", "description": "Relative file path within the user's file store, e.g. 'dm-notebook/campaign.md' or 'notes/session1.md'. Use this when you know the filename. Takes precedence over url if both are provided." },
-      "url":      { "type": "string", "description": "Absolute http/https URL of the file to read, as returned by getFile. Use this when you only have the URL and not the original filename." }
+      "filename": { "type": "string",  "description": "Relative file path within the user's file store, e.g. 'dm-notebook/campaign.md'." },
+      "url":      { "type": "string",  "description": "Absolute http/https URL of the file. Use when you only have the URL." },
+      "offset":   { "type": "number",  "description": "Character offset to start reading from (default 0). Use next_offset from a previous response to read the next page." },
+      "limit":    { "type": "number",  "description": "Maximum number of characters to return per call (default 100000, max 5242880). Use next_offset from the response to paginate through large files." }
     },
     "required": [],
     "additionalProperties": false

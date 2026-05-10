@@ -4,7 +4,7 @@
   "parameters": {
     "type": "object",
     "properties": {
-      "content":     { "type": "string", "description": "File content to write or append. Required for all modes except search+replace (where it is unused)." },
+      "content":     { "type": "string", "description": "The full text to write, overwrite, or append. MANDATORY for write, overwrite, and append modes — you MUST supply the actual file content here, not a placeholder. Omit only for search+replace mode." },
       "filename":    { "type": "string", "description": "Filename including optional subdirectory path and extension, e.g. 'notes/campaign.md'. Required for append, search+replace, and overwrite modes." },
       "encoding":    { "type": "string", "enum": ["text", "base64"], "description": "Content encoding. 'text' (default) writes UTF-8 text; 'base64' decodes as binary before writing. Only applies to write/overwrite/append modes." },
       "contentType": { "type": "string", "description": "MIME type hint used to determine file extension when filename is omitted, e.g. 'text/markdown', 'application/json'." },

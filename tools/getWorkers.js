@@ -41,6 +41,8 @@ function getIsRetryableWorkerError(message) {
     || text.includes("http 504");
 }
 
+const CASCADED_OVERRIDE_FIELDS = ["model", "endpoint", "endpointResponses", "useAiModule", "apiKey", "maxTokens", "temperature"];
+
 function getWorkingObjectPatch(wo) {
   const patch = {};
   if (Array.isArray(wo.tools)) {
@@ -57,6 +59,10 @@ function getWorkingObjectPatch(wo) {
   }
   if (wo.callerChannelId && typeof wo.callerChannelId === "string") {
     patch.callerChannelId = wo.callerChannelId;
+  }
+  patch.bypassTriggerGate = true;
+  for (const key of CASCADED_OVERRIDE_FIELDS) {
+    if (wo[key] != null) patch[key] = wo[key];
   }
   return patch;
 }
@@ -184,7 +190,7 @@ async function getInvoke(args, coreData) {
   }
 
   const apiBase      = String(cfg.apiUrl || "http://localhost:3400");
-  const apiSecretKey = String(cfg.apiSecret || "").trim();
+  const apiSecretKey = String(cfg.apiSecret ?? "API_SECRET").trim();
   const apiSecret    = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
   const timeoutMs    = Number.isFinite(Number(cfg.timeoutMs)) ? Number(cfg.timeoutMs) : 604800000;
   const maxRetries   = Number.isFinite(Number(cfg.maxRetries)) && Number(cfg.maxRetries) >= 0

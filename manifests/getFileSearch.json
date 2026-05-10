@@ -1,0 +1,30 @@
+{
+  "name": "getFileSearch",
+  "description": "Search for text across all readable files in a directory tree and return matching files with short snippets. Use this when the player mentions a person, place, or landmark and you need to find the relevant module file before opening it with getFileContent.\n\nTypical D&D use:\n- Search dm-notebook/module for a phrase like 'Baba Lysaga', 'winery', 'amber temple', or 'we go to the old mill'\n- Inspect the matching file paths and snippets\n- Open the most relevant file with getFileContent and update dm-notebook/status/current.md if needed",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "directory": {
+        "type": "string",
+        "description": "Relative directory path to search, e.g. 'dm-notebook/module'."
+      },
+      "query": {
+        "type": "string",
+        "description": "Plain text search query to look for inside files."
+      },
+      "contextChars": {
+        "type": "number",
+        "description": "Approximate number of surrounding characters to include in each snippet. Default 220."
+      },
+      "maxResults": {
+        "type": "number",
+        "description": "Maximum number of matches to return. Default 12."
+      }
+    },
+    "required": [
+      "directory",
+      "query"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -9,6 +9,7 @@
 
 import { getSecret }          from "../../core/secrets.js";
 import { getPrefixedLogger }  from "../../core/logging.js";
+import { getSpecialistDispatcherToolName } from "../../core/tool-links.js";
 import { putItem, getItem, deleteItem } from "../../core/registry.js";
 import { readFileSync } from "node:fs";
 import { dirname, join }      from "node:path";
@@ -29,8 +30,7 @@ export function getAssistantAuthorName(wo) {
 
 
 export function getSpecialistToolName(wo) {
-  const cfg = wo?.toolsconfig?.getOrchestrator || {};
-  return String(cfg.specialistToolName || "getSpecialists").trim() || "getSpecialists";
+  return getSpecialistDispatcherToolName(wo);
 }
 
 
@@ -710,6 +710,126 @@ export function getExpandedToolArgs(args, wo) {
     }
   }
   return args;
+}
+
+
+function getEscapeRegExp(text) {
+  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+
+function getSkipWs(str, start = 0) {
+  let i = Math.max(0, Math.floor(Number(start) || 0));
+  while (i < str.length && /\s/.test(str[i])) i++;
+  return i;
+}
+
+
+function getReadBalanced(str, openChar, closeChar, start = 0) {
+  const i0 = getSkipWs(str, start);
+  if (str[i0] !== openChar) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc   = false;
+  for (let i = i0; i < str.length; i++) {
+    const ch = str[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === "\"") inStr = false;
+      continue;
+    }
+    if (ch === "\"") { inStr = true; continue; }
+    if (ch === openChar) depth++;
+    if (ch === closeChar) {
+      depth--;
+      if (depth === 0) return { text: str.slice(i0, i + 1), start: i0, end: i + 1 };
+    }
+  }
+  return null;
+}
+
+
+function getTryParseToolJson(text) {
+  const raw = String(text || "").trim();
+  if (!raw.startsWith("{") || !raw.endsWith("}")) return null;
+  const parsed = getTryParseJSON(raw, null);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed
+    : null;
+}
+
+
+function getPseudoToolMatches(text, allowedToolNames = []) {
+  const s = String(text || "");
+  if (!s.trim()) return [];
+  const names = Array.isArray(allowedToolNames)
+    ? allowedToolNames.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
+  if (!names.length) return [];
+
+  const matches = [];
+
+  for (const name of names) {
+    const escaped = getEscapeRegExp(name);
+
+    const bracketRe = new RegExp(`\\[tool:${escaped}\\]`, "g");
+    for (const match of s.matchAll(bracketRe)) {
+      const headStart = Number(match.index || 0);
+      const headEnd   = headStart + match[0].length;
+      const obj = getReadBalanced(s, "{", "}", headEnd);
+      if (!obj) continue;
+      const args = getTryParseToolJson(obj.text);
+      if (!args) continue;
+      matches.push({ name, args, start: headStart, end: obj.end });
+    }
+
+    const channelRe = new RegExp(`<\\|channel\\|?>call:${escaped}`, "g");
+    for (const match of s.matchAll(channelRe)) {
+      const headStart = Number(match.index || 0);
+      const headEnd   = headStart + match[0].length;
+      const obj = getReadBalanced(s, "{", "}", headEnd);
+      if (!obj) continue;
+      const args = getTryParseToolJson(obj.text);
+      if (!args) continue;
+      let end = obj.end;
+      const tail = s.slice(end);
+      const tailMatch = tail.match(/^\s*<tool_call\|>/);
+      if (tailMatch) end += tailMatch[0].length;
+      matches.push({ name, args, start: headStart, end });
+    }
+
+    const fnRe = new RegExp(`(^|[\\s\\n])${escaped}\\s*\\(`, "g");
+    for (const match of s.matchAll(fnRe)) {
+      const prefixLen  = match[1] ? match[1].length : 0;
+      const headStart  = Number(match.index || 0) + prefixLen;
+      const openParen  = s.indexOf("(", headStart + name.length);
+      if (openParen < 0) continue;
+      const paren = getReadBalanced(s, "(", ")", openParen);
+      if (!paren) continue;
+      const inner = String(paren.text || "").slice(1, -1).trim();
+      const args = getTryParseToolJson(inner);
+      if (!args) continue;
+      matches.push({ name, args, start: headStart, end: paren.end });
+    }
+  }
+
+  matches.sort((a, b) => a.start - b.start || a.end - b.end);
+  return matches;
+}
+
+
+export function getExtractPseudoToolCall(text, allowedToolNames = []) {
+  const matches = getPseudoToolMatches(text, allowedToolNames);
+  if (!matches.length) return null;
+  const picked = matches[matches.length - 1];
+  const source = String(text || "");
+  return {
+    name:      picked.name,
+    args:      picked.args,
+    cleanText: source.slice(0, picked.start).trim(),
+    toolText:  source.slice(picked.start, picked.end)
+  };
 }
 
 

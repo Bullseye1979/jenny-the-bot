@@ -31,6 +31,9 @@ import {
   getToolArgsMeta,
   getToolPaginationMeta,
   getToolTraceMeta,
+  setUpdatePaginationGuardState,
+  getNeedsPaginationContinuation,
+  getPaginationContinuationPrompt,
   setEnsureFinalSynthesisPrompt,
   getParseArtifactsBlock,
   getExpandedToolArgs,
@@ -220,7 +223,7 @@ function getSanitizedForLog(obj) {
             continue;
           }
           if (v.length > MAX_STRING) {
-            o[k] = v.slice(0, MAX_STRING) + ` …[+${v.length - MAX_STRING} chars truncated]`;
+            o[k] = v.slice(0, MAX_STRING) + ` ...[+${v.length - MAX_STRING} chars truncated]`;
             continue;
           }
         }
@@ -325,6 +328,7 @@ async function setExecGenericTool(toolModules, call, coreData) {
 
     const res        = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
+    setUpdatePaginationGuardState(wo, name, res);
     const mapped  = { type: "tool_result", tool: name, call_id: callId, ok: true, data: (typeof res === "string" ? getTryParseJSON(res, res) : res) };
     const content = JSON.stringify(mapped);
 
@@ -976,7 +980,7 @@ export default async function getCoreAi(coreData) {
 
       setLogBig("responses-status",      { status: res.status, statusText: res.statusText }, { toFile: debugOn });
       setLogBig("responses-headers",     hdr,     { toFile: debugOn });
-      setLogBig("responses-payload-raw", rawText.length > 8000 ? rawText.slice(0, 8000) + ` …[+${rawText.length - 8000} chars truncated]` : rawText, { toFile: debugOn });
+      setLogBig("responses-payload-raw", rawText.length > 8000 ? rawText.slice(0, 8000) + ` ...[+${rawText.length - 8000} chars truncated]` : rawText, { toFile: debugOn });
 
       if (!res.ok) {
         const retryable = (res.status >= 500 && res.status <= 599) || res.status === 429;
@@ -1119,6 +1123,11 @@ export default async function getCoreAi(coreData) {
           }
 
           wo._fullAssistantText = undefined;
+          if (ranAnyTool && getNeedsPaginationContinuation(wo)) {
+            const cont = { role: "user", content: getPaginationContinuationPrompt(wo) };
+            messages.push(cont);
+            wo._contextPersistQueue.push(getWithTurnId(cont, wo));
+          }
           if (ranAnyTool) continue;
         }
 

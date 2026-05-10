@@ -1,0 +1,15 @@
+{
+  "name": "getDnDBeyondCharacter",
+  "description": "Fetch a D&D Beyond character sheet by character ID and return a structured summary. The character ID is the number at the end of the DnD Beyond character URL (e.g. https://www.dndbeyond.com/characters/157298164 → ID is 157298164). Returns: name, race, class(es), level, proficiency bonus, inspiration, HP (current/max/temp), AC, speed, ability scores with modifiers, saving throws (with proficiency flags), skill bonuses (with proficiency and expertise flags), passive perception, equipped weapons with to-hit and damage, spell slots, conditions, death saves, currency, feats, and XP.\n\nUse this tool whenever a player shares their DnD Beyond character URL or character ID. After fetching, store the character ID in dm-notebook/status/party.md so it can be re-fetched in future sessions. If the user also wants to start play, enter a new place, or jump to a named destination, use getFileList/getFileSearch/getFileContent on dm-notebook/module plus dm-notebook/status/current.md to determine and load the correct module file before narrating.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "characterId": {
+        "type": "string",
+        "description": "The numeric character ID from the DnD Beyond URL. Example: for https://www.dndbeyond.com/characters/157298164 use '157298164'."
+      }
+    },
+    "required": ["characterId"],
+    "additionalProperties": false
+  }
+}

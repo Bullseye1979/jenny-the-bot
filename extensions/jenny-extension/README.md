@@ -40,7 +40,7 @@ Open the **Settings** page (⚙ button in the popup or right-click → Options).
 | `API URL` | Full URL of the bot's API endpoint, e.g. `https://jenny.example.com/api` |
 | `Channel ID` | Channel identifier sent with every message. Must match a channel with `apiEnabled: 1` in `core.json`. Default: `browser-extension` |
 | `API Secret` | Bearer token for the API. Leave blank if `apiSecret` is not configured on the channel. |
-| `Web Base URL` | Base URL of the Jenny web interface (e.g. `https://jenny.example.com`). Enables the auth status bar and gallery uploads. |
+| `Web Base URL` | Base URL of the Jenny web interface (e.g. `https://jenny.example.com`). Enables the auth status bar, gallery uploads, browser status reporting, and browser tab actions. |
 | `Browser Code` | Regenerable fallback code for `getBrowserStatus` and browser tab actions when web login is unavailable. |
 
 > **User ID:** The extension automatically retrieves your user ID from the Jenny web session (`/auth/me`). No manual configuration is needed. Log in via the **Login** link in the auth bar. Use the Browser Code only as a fallback and regenerate it if it should no longer connect the browser to a chat.

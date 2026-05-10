@@ -10,6 +10,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getNewUlid } from "../../core/utils.js";
 import { getPrefixedLogger } from "../../core/logging.js";
+import { getActiveToolNames } from "../../core/tool-links.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MANIFESTS_DIR = join(__dirname, "../../manifests");
@@ -20,10 +21,24 @@ const TOOLS_DIR = join(__dirname, "../../tools");
  * Reads all JSON manifests from the manifests/ directory and returns them as
  * an array of MCP tool definition objects { name, description, inputSchema }.
  */
-export function getMcpToolsFromManifests(toolNames = null) {
-  const allow = Array.isArray(toolNames)
-    ? new Set(toolNames.map(name => String(name || "").trim()).filter(Boolean))
-    : null;
+function getAllowedToolSet(options = null) {
+  if (Array.isArray(options)) {
+    return new Set(options.map(name => String(name || "").trim()).filter(Boolean));
+  }
+  if (options && typeof options === "object") {
+    if (Array.isArray(options.toolNames)) {
+      return new Set(options.toolNames.map(name => String(name || "").trim()).filter(Boolean));
+    }
+    if (options.workingObject && typeof options.workingObject === "object") {
+      return new Set(getActiveToolNames(options.workingObject));
+    }
+  }
+  return null;
+}
+
+
+export function getMcpToolsFromManifests(options = null) {
+  const allow = getAllowedToolSet(options);
   const files = readdirSync(MANIFESTS_DIR).filter(f => f.endsWith(".json"));
   const tools = [];
   for (const file of files) {

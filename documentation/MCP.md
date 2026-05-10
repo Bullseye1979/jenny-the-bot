@@ -6,8 +6,8 @@ Version 1.0
 
 The bot supports the Model Context Protocol (MCP) in two directions:
 
-- **MCP Server** — exposes all local tool manifests as MCP tools to external clients via HTTP or stdio transport (`flows/mcp.js`)
-- **MCP Client** — allows the AI to discover and call tools on remote MCP servers via the `getMcpTools` and `getMcp` local tools
+- **MCP Server** - exposes only the local tools that are active for the resolved channel via HTTP or stdio transport (`flows/mcp.js`)
+- **MCP Client** - allows the AI to discover and call tools on remote MCP servers via the `getMcpTools` and `getMcp` local tools
 
 ---
 
@@ -15,32 +15,32 @@ The bot supports the Model Context Protocol (MCP) in two directions:
 
 Remote MCP tools are never called directly. The AI always uses a two-step sequence:
 
-### Step 1 — Discovery: `getMcpTools`
+### Step 1 - Discovery: `getMcpTools`
 
 Connects to configured remote MCP servers and returns all available tools. Tool names are returned in namespaced form:
 
-```
+```text
 mcp.<namespace>.<toolName>
 ```
 
 Example: `mcp.jenny-mcp.getTime`
 
-The `query` parameter filters results by keyword (use a short single word, e.g. `"confluence"`, not a full phrase).
+The `query` parameter filters results by keyword. Use a short task term such as `time`, `email`, `file`, or `search`.
 
-### Step 2 — Execution: `getMcp`
+### Step 2 - Execution: `getMcp`
 
 Calls one specific tool on a remote MCP server. Accepts either:
 
-- A namespaced name: `tool: "mcp.jenny-mcp.getTime"` — server is resolved automatically from the namespace
+- A namespaced name: `tool: "mcp.jenny-mcp.getTime"` - server is resolved automatically from the namespace
 - A raw tool name plus explicit server: `server: "local-jenny"`, `tool: "getTime"`
 
 The `arguments` field contains the input object matching the schema returned by `getMcpTools`.
 
 ### Important Rules
 
-- Tool names starting with `mcp.` are **never** valid local tool calls — they can only be executed via `getMcp`
-- `getMcpTools` is always a discovery step only; it must always be followed by the configured MCP execution tool
-- Skipping that execution step after `getMcpTools` is not permitted
+- Tool names starting with `mcp.` are never valid local tool calls. They can only be executed via the local MCP execution tool.
+- `getMcpTools` is always a discovery step only. It must always be followed by the MCP execution tool available in the current channel.
+- Skipping that execution step after `getMcpTools` is not permitted.
 
 ---
 
@@ -100,7 +100,8 @@ Additional HTTP headers are supported via the `headers` array:
 ## Configuration
 
 Both tools read their server list from `workingObject.toolsconfig.<toolName>.servers`. Channel-specific overrides in `core.json` can override the server list per channel.
-`getMcpTools` may also define `executorToolName` to point discovery hints at a different local execution tool name; the default is `getMcp`.
+
+`getMcpTools` may define `executorToolName` to point discovery hints at a specific local execution tool. If it is omitted, the runtime resolves the execution tool dynamically from the active channel tool set.
 
 ```json
 "toolsconfig": {
@@ -140,7 +141,7 @@ Both tools read their server list from `workingObject.toolsconfig.<toolName>.ser
 
 ## MCP Server
 
-The bot exposes itself as an MCP server via `flows/mcp.js`. It reads all manifests from `manifests/` and registers them as MCP tools. Each tool call runs a full pipeline pass, so channel-specific config overrides apply per channel.
+The bot exposes itself as an MCP server via `flows/mcp.js`. It reads manifests only for the tools allowed by the resolved channel and registers only that filtered set as MCP tools. Each tool call runs a full pipeline pass, so channel-specific config overrides apply per channel.
 
 ### Transports
 
@@ -165,7 +166,7 @@ Tool requests without a known session ID are handled with a fresh stateless tran
 
 ### Channel Routing
 
-The `x-channel-id` request header maps the MCP connection to a specific bot channel, applying the matching channel config overrides. If omitted, the server falls back to `config.mcp.defaultChannelId`, which defaults to `"mcp"`.
+The `x-channel-id` request header maps the MCP connection to a specific bot channel, applying the matching channel config overrides and filtering exposed tools to that channel's active tool set. If omitted, the server falls back to `config.mcp.defaultChannelId`, which defaults to `"mcp"`.
 
 ### Authentication
 
@@ -179,8 +180,8 @@ The server checks `workingObject.apiSecret` against the `Authorization: Bearer <
 |---|---|
 | `tools/getMcpTools.js` | Local tool: discovers remote MCP tools |
 | `tools/getMcp.js` | Local tool: executes a remote MCP tool |
-| `manifests/getMcpTools.json` | Tool manifest + policy hints for the AI |
-| `manifests/getMcp.json` | Tool manifest + policy hints for the AI |
+| `manifests/getMcpTools.json` | Tool manifest and policy hints for the AI |
+| `manifests/getMcp.json` | Tool manifest and policy hints for the AI |
 | `shared/mcp/mcp-client.js` | MCP client transport factory and config reader |
 | `shared/mcp/mcp-utils.js` | MCP server utilities: manifest loader and tool invoker |
 | `flows/mcp.js` | MCP server flow: HTTP and stdio transport startup |

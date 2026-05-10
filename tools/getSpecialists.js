@@ -43,6 +43,8 @@ function getIsRetryableSpecialistError(message) {
     || text.includes("http 504");
 }
 
+const CASCADED_OVERRIDE_FIELDS = ["model", "endpoint", "endpointResponses", "useAiModule", "apiKey", "maxTokens", "temperature"];
+
 function getWorkingObjectPatch(wo) {
   if (!wo || typeof wo !== "object") return undefined;
   const patch = {};
@@ -57,6 +59,10 @@ function getWorkingObjectPatch(wo) {
   }
   if (wo.callerChannelId && typeof wo.callerChannelId === "string") {
     patch.callerChannelId = wo.callerChannelId;
+  }
+  patch.bypassTriggerGate = true;
+  for (const key of CASCADED_OVERRIDE_FIELDS) {
+    if (wo[key] != null) patch[key] = wo[key];
   }
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
@@ -85,16 +91,7 @@ function getRetryItemsText(items) {
 
 function getPaginationContinuationPrompt(cfg, pendingItems) {
   const template = String(cfg?.paginationContinuationTemplate || "").trim();
-  if (!template) {
-    return [
-      "The previous getSpecialists result is incomplete.",
-      "Do not synthesize or finalize.",
-      "Call getSpecialists again only for the still-pending windows.",
-      "For each pending window, use prompt format exactly: start=<assignedStart> end=<assignedEnd> startCtxId=<nextPageId>.",
-      "Pending windows:",
-      getPendingItemsText(pendingItems.slice(0, 24))
-    ].filter(Boolean).join("\n");
-  }
+  if (!template) return "";
   return getApplyTemplate(template, {
     pendingItems: getPendingItemsText(pendingItems.slice(0, 24))
   }).trim();
@@ -102,15 +99,7 @@ function getPaginationContinuationPrompt(cfg, pendingItems) {
 
 function getRetryContinuationPrompt(cfg, retryPendingItems) {
   const template = String(cfg?.retryContinuationTemplate || "").trim();
-  if (!template) {
-    return [
-      "Some specialist workers failed transiently and need to be retried.",
-      "Do not synthesize or finalize yet.",
-      "Call getSpecialists again only for the failed specialist jobs below, reusing the same type, jobID, and prompt.",
-      "Failed specialists:",
-      getRetryItemsText(retryPendingItems.slice(0, 24))
-    ].filter(Boolean).join("\n");
-  }
+  if (!template) return "";
   return getApplyTemplate(template, {
     retryItems: getRetryItemsText(retryPendingItems.slice(0, 24))
   }).trim();
@@ -137,7 +126,7 @@ async function getInvoke(args, coreData) {
   const types          = cfg.types && typeof cfg.types === "object" ? cfg.types : {};
   const defaultType    = String(cfg.defaultType || "").trim();
   const apiBase        = String(cfg.apiUrl || "http://localhost:3400");
-  const apiSecretKey   = String(cfg.apiSecret || "").trim();
+  const apiSecretKey   = String(cfg.apiSecret ?? "API_SECRET").trim();
   const apiSecret      = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
   const timeoutMs      = Number.isFinite(Number(cfg.timeoutMs)) ? Number(cfg.timeoutMs) : 604800000;
   const maxConcurrent  = Number.isFinite(Number(cfg.maxConcurrent)) && Number(cfg.maxConcurrent) > 0

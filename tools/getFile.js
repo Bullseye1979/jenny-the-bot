@@ -5,9 +5,18 @@
 /**************************************************************/
 
 
-import fs   from "node:fs/promises";
-import path from "node:path";
+import fs     from "node:fs/promises";
+import path   from "node:path";
 import { getUserDir, getUserId, getPublicBaseUrl } from "../core/file.js";
+import { getPrefixedLogger } from "../core/logging.js";
+
+const FS_TIMEOUT_MS = 10000;
+function withTimeout(promise, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${FS_TIMEOUT_MS}ms`)), FS_TIMEOUT_MS);
+    promise.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
+}
 
 const MODULE_NAME = "getFile";
 
@@ -51,7 +60,9 @@ function getSafePath(rawFilename) {
 
 
 async function getInvoke(args, coreData) {
-  const wo = coreData?.workingObject || {};
+  const _log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
+  const log = (msg) => { _log(msg); };
+  const wo  = coreData?.workingObject || {};
 
   const filename    = String(args?.filename    || "").trim();
   const content     = String(args?.content     ?? "");
@@ -62,11 +73,14 @@ async function getInvoke(args, coreData) {
   const search      = args?.search  != null ? String(args.search)  : null;
   const replace     = args?.replace != null ? String(args.replace) : null;
 
-  const isAppend  = append && filename;
-  const isReplace = search !== null && replace !== null && filename;
+  const isAppend  = append && !overwrite && filename;
+  const isReplace = search !== null && replace !== null && !overwrite && !append && filename;
 
-  if (!isAppend && !isReplace && args?.content === undefined) {
-    return { ok: false, error: "content is required" };
+  log(`invoke: filename=${filename || "(none)"} overwrite=${overwrite} append=${append} isReplace=${isReplace} contentLen=${String(args?.content ?? "").length}`);
+
+  if (!isReplace && (args?.content == null || String(args.content).trim() === "")) {
+    log("rejected: content empty");
+    return { ok: false, error: "content is required and must not be empty or whitespace-only" };
   }
 
   const userRoot = getUserDir(wo);
@@ -75,6 +89,8 @@ async function getInvoke(args, coreData) {
     || getExtFromContentType(contentType)
     || (encoding === "base64" ? ".bin" : ".txt");
   const targetDir = subDir ? path.join(userRoot, subDir) : userRoot;
+
+  log(`resolved: userRoot=${userRoot} targetDir=${targetDir} ext=${ext}`);
 
   // ── APPEND ──────────────────────────────────────────────────────────────
   if (isAppend) {
@@ -86,6 +102,8 @@ async function getInvoke(args, coreData) {
     const aTargetDir = aSubDir ? path.join(userRoot, aSubDir) : userRoot;
     const aAbsPath   = path.join(aTargetDir, aFinalName);
 
+    log(`append: path=${aAbsPath}`);
+
     let appendBuffer;
     try {
       appendBuffer = Buffer.from(content, "utf8");
@@ -94,13 +112,19 @@ async function getInvoke(args, coreData) {
     }
 
     try {
-      await fs.mkdir(aTargetDir, { recursive: true });
-      await fs.appendFile(aAbsPath, appendBuffer);
+      log("append: mkdir start");
+      await withTimeout(fs.mkdir(aTargetDir, { recursive: true }), "mkdir");
+      log("append: mkdir done, appendFile start");
+      await withTimeout(fs.appendFile(aAbsPath, appendBuffer), "appendFile");
+      log("append: appendFile done");
     } catch (e) {
+      log(`append: error ${e?.message}`);
       return { ok: false, error: `Failed to append to file: ${e?.message || String(e)}` };
     }
 
-    const stat    = await fs.stat(aAbsPath);
+    log("append: stat start");
+    const stat    = await withTimeout(fs.stat(aAbsPath), "stat");
+    log(`append: done bytes=${stat.size}`);
     const userId  = getUserId(wo);
     const baseUrl = getPublicBaseUrl(wo);
     const relPath = aSubDir ? `${aSubDir}/${aFinalName}` : aFinalName;
@@ -113,6 +137,10 @@ async function getInvoke(args, coreData) {
 
   // ── REPLACE (find-and-replace within existing file) ────────────────────
   if (isReplace) {
+    if (search === "") {
+      return { ok: false, error: "search string must not be empty — use overwrite: true to replace an entire file" };
+    }
+
     const { dir: rSubDir, base: rBase } = getSafePath(filename);
     const rExt = getExtFromFilename(filename) || ".txt";
     const rNameNoExt = rBase.replace(/\.[^.]+$/, "") || "file";
@@ -121,10 +149,17 @@ async function getInvoke(args, coreData) {
     const rTargetDir = rSubDir ? path.join(userRoot, rSubDir) : userRoot;
     const rAbsPath   = path.join(rTargetDir, rFinalName);
 
+    log(`replace: path=${rAbsPath} searchLen=${search.length}`);
+
     let existing;
     try {
-      existing = await fs.readFile(rAbsPath, "utf8");
+      log("replace: readFile start");
+      existing = await withTimeout(fs.readFile(rAbsPath, "utf8"), "readFile");
+      log(`replace: readFile done existingLen=${existing.length}`);
     } catch (e) {
+      if (e?.code === "ENOENT") {
+        return { ok: false, error: `File not found: ${filename} — use overwrite: true with content to create a new file` };
+      }
       return { ok: false, error: `File not found or unreadable for replace: ${e?.message || String(e)}` };
     }
 
@@ -135,7 +170,9 @@ async function getInvoke(args, coreData) {
     const updated = existing.split(search).join(replace);
 
     try {
-      await fs.writeFile(rAbsPath, updated, "utf8");
+      log("replace: writeFile start");
+      await withTimeout(fs.writeFile(rAbsPath, updated, "utf8"), "writeFile");
+      log("replace: writeFile done");
     } catch (e) {
       return { ok: false, error: `Failed to write replaced file: ${e?.message || String(e)}` };
     }
@@ -171,7 +208,8 @@ async function getInvoke(args, coreData) {
     const safeBase  = nameNoExt.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
     let candidate = safeBase + ext;
     let counter   = 0;
-    while (true) {
+    log(`write: unique-name loop start for ${safeBase}`);
+    while (counter < 50) {
       try {
         await fs.access(path.join(targetDir, candidate));
         counter++;
@@ -180,17 +218,26 @@ async function getInvoke(args, coreData) {
         break;
       }
     }
+    log(`write: unique-name loop done counter=${counter} candidate=${candidate}`);
+    if (counter >= 50) {
+      return { ok: false, error: `Too many files named '${safeBase}' — use overwrite: true to update the existing file` };
+    }
     finalName = candidate;
   } else {
     finalName = `file_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
   }
 
   const absPath = path.join(targetDir, finalName);
+  log(`write: path=${absPath} bufferLen=${buffer.length}`);
 
   try {
-    await fs.mkdir(targetDir, { recursive: true });
-    await fs.writeFile(absPath, buffer);
+    log("write: mkdir start");
+    await withTimeout(fs.mkdir(targetDir, { recursive: true }), "mkdir");
+    log("write: mkdir done, writeFile start");
+    await withTimeout(fs.writeFile(absPath, buffer), "writeFile");
+    log("write: writeFile done");
   } catch (e) {
+    log(`write: error ${e?.message}`);
     return { ok: false, error: `Failed to write file: ${e?.message || String(e)}` };
   }
 
@@ -201,6 +248,7 @@ async function getInvoke(args, coreData) {
     ? `${baseUrl}/documents/${userId}/${relPath}`
     : `/documents/${userId}/${relPath}`;
 
+  log(`write: success relPath=${relPath}`);
   return { ok: true, filename: relPath, url, path: absPath, bytes: buffer.length };
 }
 

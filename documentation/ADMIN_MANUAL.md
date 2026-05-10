@@ -442,7 +442,7 @@ The live dashboard displays:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `reasoning` | boolean | `false` | Enable extended reasoning / chain-of-thought output |
-| `ResponseTools` | array | — | Native Responses API tools, e.g. `[{"type":"web_search"},{"type":"image_generation"}]` |
+| `responseTools` | array | — | Native Responses API tools, e.g. `[{"type":"web_search"},{"type":"image_generation"}]` |
 
 #### Tool Calling
 
@@ -1151,6 +1151,11 @@ Synchronous orchestrator tool. The calling AI blocks until the orchestrator fini
     "generic": "subagent-orchestrator-generic"
   },
   "defaultType": "generic",
+  "defaultMode": "execute",
+  "forceMode": "",
+  "allowPlan": true,
+  "planPromptTemplate": "PLAN MODE ONLY...\n{prompt}",
+  "executeApprovedPlanTemplate": "EXECUTION MODE...\n{approvedPlan}\n...\n{prompt}",
   "apiUrl":      "http://localhost:3400",
   "apiSecret":   "API_SECRET",
   "timeoutMs":   604800000
@@ -1161,6 +1166,11 @@ Synchronous orchestrator tool. The calling AI blocks until the orchestrator fini
 |---|---|---|---|
 | `types` | object | `{}` | **Required.** Maps orchestrator type names to base channel IDs. Each call appends a random hex suffix to ensure uniqueness. |
 | `defaultType` | string | `"generic"` | Fallback type when the AI omits the `type` argument. |
+| `defaultMode` | string | `"execute"` | Default mode applied when the caller omits `mode`. Valid values: `"plan"` or `"execute"`. |
+| `forceMode` | string | `""` | Optional hard override for all calls. When set to `"plan"` or `"execute"`, any caller-supplied `mode` is ignored. Useful for channels that must never enter planning. |
+| `allowPlan` | boolean | `true` | If `false`, a requested `mode="plan"` is rewritten to `"execute"` unless `forceMode` is set explicitly. |
+| `planPromptTemplate` | string | `""` | Prompt template used for plan-mode orchestrator calls. Supports `{prompt}` and `{specialistToolName}` placeholders. |
+| `executeApprovedPlanTemplate` | string | `""` | Prompt template used when executing an approved plan. Supports `{approvedPlan}`, `{prompt}`, and `{specialistToolName}` placeholders. |
 | `apiUrl` | string | `"http://localhost:3400"` | Base URL of the internal API server to dispatch the orchestrator to. |
 | `apiSecret` | string | `""` | Placeholder name for the bearer token (resolved from `bot_secrets` at runtime). |
 | `timeoutMs` | number | `604800000` | Maximum wait time for the orchestrator to complete (milliseconds). Default is 7 days — set lower for interactive use cases. |
@@ -1168,6 +1178,8 @@ Synchronous orchestrator tool. The calling AI blocks until the orchestrator fini
 **How it works:** The tool posts a payload to `apiUrl/api` with the generated channel ID, user ID, guild ID, `callerChannelId`, and `callerChannelIds`. The orchestrator channel must be configured as a valid API channel in `core.json`. The `callerChannelId` allows the orchestrator to send results back to the originating channel. The tool returns `{ ok, rows: [responseText] }`.
 
 **`wo.aborted` check:** If `wo.aborted === true` when the tool is called, it returns immediately without dispatching.
+
+**Architecture note:** The `core-ai-*` modules remain tool-agnostic. Channel-specific rules such as “this channel must always use execute mode” belong here in `toolsconfig.getOrchestrator`, not in the generic AI loops.
 
 ---
 
@@ -1214,6 +1226,8 @@ Parallel specialist dispatcher. Runs multiple specialist AI workers concurrently
 **Input format:** The AI passes a `specialists` array where each entry is `{ type, jobID, prompt }`. The `jobID` is an integer that the orchestrator assigns and uses to correlate results. The tool returns an array of result objects `{ jobID, type, ok, response?, error? }`.
 
 **Batch execution:** Specialists are split into sequential batches of `maxConcurrent`. Within each batch all calls run concurrently via `Promise.all`. The tool waits for the entire batch before starting the next.
+
+**Continuation contract:** `getSpecialists` may return `pagination_pending`, `continuation_pending`, `requires_followup_tool`, `pending_pages`, `pending_specialists`, and `continuation_prompt`. The `core-ai-*` modules consume these fields generically: if a tool signals follow-up work through this contract, the loop injects the continuation prompt and keeps running. This is not special-cased to `getSpecialists`; any tool may use the same fields.
 
 **Return value:** `{ ok, count, complete, failed, rows: [...results], error? }`. `ok` is `true` only if all specialists succeeded.
 
@@ -2797,6 +2811,7 @@ Modules positioned between the last `core-ai-*` module and `01004` can inspect o
 1. Builds the message array: system prompt → history (if `includeHistory=true`) → current user turn
 2. Calls `POST /chat/completions`; loops up to `maxLoops` (default 20):
    - **Tool calls present and `maxToolCalls` not yet reached** → executes each tool, increments `totalToolCalls`, appends results, loops
+   - **Tool result requests continuation** (`continuation_pending` / `requires_followup_tool` / `continuation_prompt`) → injects the returned continuation prompt and loops
    - **`maxToolCalls` reached** → tools disabled for subsequent requests (`tool_choice` omitted); AI produces final answer without further tool calls
    - **`finish_reason === "length"`** → explicit token-limit hit; sends a continue turn and loops
    - **Output looks truncated** (`getLooksCutOff`) → heuristic continue, regardless of `finish_reason`; loops
@@ -2810,11 +2825,14 @@ All modules use `getLooksCutOff` to detect mid-sentence truncation: if the respo
 
 **Logging:** Every AI turn logs `finish_reason`, `content_length`, and `tool_calls` count at `info` level, and a `Continue triggered` entry when the continue heuristic fires. Useful for diagnosing cut-off behaviour on local models.
 
+**Malformed tool-call rescue:** This module still expects native OpenAI-style tool calls first. As a fallback for local models, it can also recover text-shaped calls such as `[tool:NAME]{...}`, `<|channel|>call:NAME{...}<tool_call|>`, and `NAME({...})`, but only for names currently allowed in `wo.tools`.
+
 #### core-ai-responses (01001) — Detailed flow
 
 1. Translates MySQL history into Responses API format
 2. Calls the Responses API; loops up to `maxLoops`:
    - **Tool calls present** → executes each tool, appends results, loops
+   - **Tool result requests continuation** (`continuation_pending` / `requires_followup_tool` / `continuation_prompt`) → injects the returned continuation prompt and loops
    - **`status === "incomplete"` or `finish_reason === "length"`** → sends a continue turn and loops
    - **Output looks truncated** (`getLooksCutOff`) → heuristic continue, regardless of `finish_reason`; loops
    - **Otherwise** → done; exits loop
@@ -2835,6 +2853,8 @@ Designed for local models that do not support native function calling. The modul
 [tool:getGoogle]{"query": "current weather Berlin"}[/tool]
 ```
 Multiple calls can appear in a single response. The module extracts all occurrences, executes each tool, inserts the results as assistant continuations, and loops.
+
+The parser remains tool-agnostic: it only accepts tool names currently present in `wo.tools`. Continuation fields such as `continuation_pending` and `continuation_prompt` are handled through the same generic contract used by the other `core-ai-*` modules.
 
 **Loop limits:**
 
@@ -3949,7 +3969,7 @@ Output is truncated at `maxOutputBytes` (default 8192 bytes) per stream with a `
 
 **Configuration:** `toolsconfig.getMcpTools.servers`
 
-This tool reads only its own config section. It does not read or fall back to `toolsconfig.getMcp`. `executorToolName` optionally changes which local tool name is referenced in the discovery hints; it defaults to `getMcp`.
+This tool reads only its own config section. It does not read or fall back to `toolsconfig.getMcp`. `executorToolName` optionally changes which local tool name is referenced in the discovery hints. If omitted, the runtime resolves the MCP execution tool dynamically from the active channel tool set.
 
 ```jsonc
 "getMcpTools": {
@@ -3979,7 +3999,7 @@ This tool reads only its own config section. It does not read or fall back to `t
 
 **Returns:** `{ ok, servers: [{ name, namespace, ok, tools, error? }] }`.
 
-Returned remote tool names are namespaced as `mcp.<namespace>.<tool>`, for example `mcp.jenny-mcp.getTime`. These names identify remote MCP tools, not local Jenny tools. Execute them through the configured MCP execution tool, which defaults to `getMcp`.
+Returned remote tool names are namespaced as `mcp.<namespace>.<tool>`, for example `mcp.jenny-mcp.getTime`. These names identify remote MCP tools, not local Jenny tools. Execute them through the MCP execution tool available in the current channel.
 
 ---
 
@@ -4137,7 +4157,7 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 ### getOrchestrator
 
 **File:** `tools/getOrchestrator.js`
-**Purpose:** Synchronous orchestrator for complex multi-step tasks. The calling AI blocks until the orchestrator finishes and returns its result. The orchestrator runs as a normal API pipeline (`flow: api`) on a dynamically generated unique channel ID (`<baseChannelId>-<randomHex>`), giving it full access to all tools including the configured specialist execution tool, which defaults to `getSpecialists`.
+**Purpose:** Synchronous orchestrator for complex multi-step tasks. The calling AI blocks until the orchestrator finishes and returns its result. The orchestrator runs as a normal API pipeline (`flow: api`) on a dynamically generated unique channel ID (`<baseChannelId>-<randomHex>`), giving it full access to all tools including the configured specialist execution tool.
 
 **Returns:** `{ ok, rows: [responseText] }`.
 
@@ -4150,7 +4170,7 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 
 **Enable:** Add `"getOrchestrator"` to the channel's `tools` array. The orchestrator channel referenced by each `type` must be configured as a valid API channel in `core.json`.
 
-`toolsconfig.getOrchestrator.specialistToolName` optionally changes which local tool name the orchestrator prompt uses for specialist dispatch. If omitted, it defaults to `getSpecialists`.
+`toolsconfig.getOrchestrator.specialistToolName` optionally changes which local tool name the orchestrator prompt uses for specialist dispatch. If omitted, the runtime resolves the linked tool dynamically from the active channel tool set when possible.
 
 > **Full configuration:** see [`toolsconfig.getOrchestrator`](#toolsconfiggetorchestrator) in Section 5.6.
 
@@ -4206,6 +4226,79 @@ No `toolsconfig` keys. The tool reads directly from `oauth_registrations` and `o
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `url` | string | Yes | Absolute http/https URL of the file to read (must be a text file) |
+
+**No toolsconfig keys required.**
+
+---
+
+### getFileList
+
+**File:** `tools/getFileList.js`
+**Purpose:** Lists files and subdirectories in a user document directory. Text files can include a short preview so the AI can choose the right file before loading the full content.
+
+**Returns:** `{ ok, directory, entries[] }`.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | Yes | Relative directory below the user document root |
+| `previewWords` | number | No | Approximate preview size per text file (default: 200 words) |
+| `includeHidden` | boolean | No | When `true`, also returns dotfiles |
+
+**No toolsconfig keys required.**
+
+---
+
+### getFileSearch
+
+**File:** `tools/getFileSearch.js`
+**Purpose:** Searches text recursively inside a user document directory and returns matching files with short snippets. Useful for finding the right module file from a location, NPC, landmark, or phrase.
+
+**Returns:** `{ ok, directory, query, matches[] }`.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | Yes | Relative directory below the user document root |
+| `query` | string | Yes | Search phrase |
+| `maxResults` | number | No | Maximum number of returned matches |
+
+**No toolsconfig keys required.**
+
+---
+
+### getDnDBeyondCharacter
+
+**File:** `tools/getDnDBeyondCharacter.js`
+**Purpose:** Loads a D&D Beyond character sheet into structured turn data. The result can include profile data, stats, and campaign-relevant notes such as backstory, allies, enemies, organizations, and other notes when present on the sheet.
+
+**Returns:** Structured character data.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `characterId` | string | No | D&D Beyond character ID |
+| `url` | string | No | D&D Beyond character URL |
+
+At least one of `characterId` or `url` is required.
+
+---
+
+### getRoll
+
+**File:** `tools/getRoll.js`
+**Purpose:** Performs DM-side dice rolls and returns structured results. Use it for NPCs, monsters, random tables, and other server-side mechanics.
+
+**Returns:** Structured roll output including total and roll details.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `formula` | string | Yes | Dice formula such as `1d20+5` or `8d6` |
 
 **No toolsconfig keys required.**
 

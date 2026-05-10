@@ -11,9 +11,10 @@ import { fetchWithTimeout } from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
 import { getUserDir } from "../core/file.js";
 
-const MODULE_NAME  = "getFileContent";
-const MAX_BYTES    = 512 * 1024;
-const TIMEOUT_MS   = 30000;
+const MODULE_NAME    = "getFileContent";
+const MAX_BYTES      = 5 * 1024 * 1024;
+const TIMEOUT_MS     = 30000;
+const DEFAULT_PAGE_CHARS = 100000;
 
 const BINARY_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
@@ -70,7 +71,28 @@ async function getInvoke(args, coreData) {
       return { ok: false, error: `File too large (${buf.length} bytes, max ${MAX_BYTES})` };
     }
 
-    return { ok: true, filename: safePath, bytes: buf.length, content: buf.toString("utf8") };
+    const fullText    = buf.toString("utf8");
+    const totalChars  = fullText.length;
+    const charOffset  = Math.max(0, Math.floor(Number(args?.offset) || 0));
+    const pageChars   = Math.max(100, Math.min(MAX_BYTES, Math.floor(Number(args?.limit) || DEFAULT_PAGE_CHARS)));
+    const slice       = fullText.slice(charOffset, charOffset + pageChars);
+    const nextOffset  = charOffset + slice.length;
+    const hasMore     = nextOffset < totalChars;
+    const totalPages  = Math.ceil(totalChars / pageChars);
+    const currentPage = Math.floor(charOffset / pageChars) + 1;
+
+    return {
+      ok: true,
+      filename:     safePath,
+      total_chars:  totalChars,
+      offset:       charOffset,
+      limit:        pageChars,
+      current_page: currentPage,
+      total_pages:  totalPages,
+      has_more:     hasMore,
+      next_offset:  hasMore ? nextOffset : null,
+      content:      slice
+    };
   }
 
   // ── READ BY URL ─────────────────────────────────────────────────────────
@@ -111,7 +133,7 @@ async function getInvoke(args, coreData) {
     if (buf.length > MAX_BYTES) {
       return {
         ok: false,
-        error: `File too large (${buf.length} bytes, max ${MAX_BYTES}). Use getLargeFile for large files.`
+        error: `File too large (${buf.length} bytes, max ${MAX_BYTES}).`
       };
     }
 

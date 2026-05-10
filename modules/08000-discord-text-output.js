@@ -31,11 +31,14 @@ function getFirstImageUrlFromText(text) {
   if (!text) return null;
   const s = String(text);
 
-  const md = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/i.exec(s);
-  if (md && getIsLikelyImageUrl(md[1])) return md[1];
+  // match both ![alt](url) and [text](url) — check url for image extension
+  const mdRegex = /!?\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/gi;
+  let m;
+  while ((m = mdRegex.exec(s)) !== null) {
+    if (getIsLikelyImageUrl(m[1])) return m[1];
+  }
 
   const urlRegex = /(https?:\/\/[^\s<>"'()]+)(?=[\s<>"')]|$)/gi;
-  let m;
   while ((m = urlRegex.exec(s)) !== null) {
     const u = m[1];
     if (getIsLikelyImageUrl(u)) return u;

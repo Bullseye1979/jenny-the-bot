@@ -33,8 +33,12 @@ import {
   getToolPaginationMeta,
   getToolTraceMeta,
   getToolResultMeta,
+  setUpdatePaginationGuardState,
+  getNeedsPaginationContinuation,
+  getPaginationContinuationPrompt,
   setEnsureFinalSynthesisPrompt,
   getParseArtifactsBlock,
+  getExtractPseudoToolCall,
   getExpandedToolArgs,
   getChannelAwarenessBlock,
   getSystemContentText,
@@ -174,6 +178,7 @@ async function getExecToolCall(toolModules, toolCall, coreData) {
     const result     = await tool.invoke(args, coreData);
     const durationMs = Date.now() - startTs;
     const resultMeta = getToolResultMeta(result);
+    setUpdatePaginationGuardState(wo, name, result);
     const logLevel   = resultMeta.ok ? "info" : "warn";
     const logLabel   = resultMeta.ok ? "Tool call success" : "Tool call returned error payload";
 
@@ -343,19 +348,35 @@ export default async function getCoreAi(coreData) {
       const choice    = data?.choices?.[0];
       const finish    = choice?.finish_reason;
       const msg       = choice?.message || {};
-      const toolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
+      const contentTextRaw = typeof msg.content === "string" ? msg.content : "";
+      const nativeToolCalls = Array.isArray(msg?.tool_calls) ? msg.tool_calls : null;
+      const pseudoTool = (!nativeToolCalls || !nativeToolCalls.length) && !wo.__forceNoTools
+        ? getExtractPseudoToolCall(contentTextRaw, requestToolNames)
+        : null;
+      const toolCalls = pseudoTool
+        ? [{
+            id: `pseudo_${pseudoTool.name}`,
+            type: "function",
+            function: {
+              name: pseudoTool.name,
+              arguments: JSON.stringify(pseudoTool.args ?? {})
+            }
+          }]
+        : nativeToolCalls;
       const toolNamesRequested = toolCalls?.map(tc => String(tc?.function?.name || "").trim()).filter(Boolean) || [];
-      const contentText = typeof msg.content === "string" ? msg.content : "";
+      const contentText = pseudoTool ? String(pseudoTool.cleanText || "") : contentTextRaw;
 
-      log(`AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${typeof msg.content === "string" ? msg.content.length : 0} tool_calls=${toolCalls?.length ?? 0}`, "info");
+      log(`AI turn ${i + 1}: finish_reason="${finish ?? "null"}" content_length=${contentTextRaw.length} tool_calls=${toolCalls?.length ?? 0}`, "info", {
+        pseudoToolFallback: pseudoTool ? pseudoTool.name : undefined
+      });
       writeToolcallLog({
         ...getToolcallLogBase(wo),
         event: "ai_turn",
         coreData,
         loop: i + 1,
         finishReason: finish ?? null,
-        contentLen: contentText.length,
-        contentPreview: getPreview(contentText, RESULT_PREVIEW_MAX),
+        contentLen: contentTextRaw.length,
+        contentPreview: getPreview(contentTextRaw, RESULT_PREVIEW_MAX),
         toolMode: toolStep.mode,
         toolsDisabled,
         toolCallsRequested: toolNamesRequested,
@@ -370,7 +391,7 @@ export default async function getCoreAi(coreData) {
       };
       if (assistantMsg.authorName == null) delete assistantMsg.authorName;
 
-      const chunkText = typeof msg.content === "string" ? msg.content : "";
+      const chunkText = contentText;
       if (chunkText) accumulatedText += (accumulatedText ? "\n" : "") + chunkText;
 
       if (toolCalls && toolCalls.length) {
@@ -414,6 +435,7 @@ export default async function getCoreAi(coreData) {
         }
 
         wo._fullAssistantText = accumulatedText;
+        let ranAnyTool = false;
         for (const tc of toolCalls) {
           if (totalToolCalls >= kiCfg.maxToolCalls) {
             hitMaxToolCalls = true;
@@ -453,9 +475,15 @@ export default async function getCoreAi(coreData) {
           toolCallLog.push({ tool: tcName, task: tcTask, status: _tcStatus, durationMs: _tcMs });
           wo.toolCallLog = toolCallLog.slice();
           totalToolCalls++;
+          ranAnyTool = true;
         }
 
         wo._fullAssistantText = undefined;
+        if (ranAnyTool && getNeedsPaginationContinuation(wo)) {
+          const cont = { role: "user", content: getPaginationContinuationPrompt(wo) };
+          messages.push(cont);
+          wo._contextPersistQueue.push(getWithTurnId(cont, wo));
+        }
         continue;
       }
 

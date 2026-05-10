@@ -6,15 +6,10 @@
 /**************************************************************/
 
 import { getPrefixedLogger } from "../core/logging.js";
+import { getMcpExecutorToolName } from "../core/tool-links.js";
 import { getMcpServerConfig, getMcpServers, withMcpClient } from "../shared/mcp/mcp-client.js";
 
 const MODULE_NAME = "getMcpTools";
-
-
-function getExecutorToolName(wo) {
-  const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
-  return String(cfg.executorToolName || "getMcp").trim() || "getMcp";
-}
 
 
 function slimTool(tool) {
@@ -71,7 +66,7 @@ function getNamespacedTool(server, tool) {
 async function listOne(wo, server, query) {
   const serverName = String(server.name || "");
   const namespace = getServerNamespace(server);
-  const executorToolName = getExecutorToolName(wo);
+  const executorToolName = getMcpExecutorToolName(wo);
   const result = await withMcpClient(wo, server, async (client, timeoutMs) => {
     const listed = await client.listTools({}, { timeout: timeoutMs });
     const tools = Array.isArray(listed?.tools) ? listed.tools.map(slimTool) : [];
@@ -81,15 +76,27 @@ async function listOne(wo, server, query) {
     name: serverName,
     namespace,
     ok: true,
-    executeWith: {
-      tool: executorToolName,
-      server: serverName,
-      argumentShape: {
-        tool: `mcp.${namespace}.<tool>`,
-        arguments: {}
-      },
-      instruction: `Execute a discovered remote MCP tool by calling ${executorToolName}. Pass the full mcp.<namespace>.<tool> name as the tool argument. Do not call the remote mcp.* name directly as a local tool.`
-    },
+    ...(executorToolName ? {
+      executeWith: {
+        tool: executorToolName,
+        server: serverName,
+        argumentShape: {
+          tool: `mcp.${namespace}.<tool>`,
+          arguments: {}
+        },
+        instruction: `Execute a discovered remote MCP tool by calling ${executorToolName}. Pass the full mcp.<namespace>.<tool> name as the tool argument. Do not call the remote mcp.* name directly as a local tool.`
+      }
+    } : {
+      executeWith: {
+        tool: "",
+        server: serverName,
+        argumentShape: {
+          tool: `mcp.${namespace}.<tool>`,
+          arguments: {}
+        },
+        instruction: "Execute a discovered remote MCP tool by calling the MCP execution tool configured for the current channel."
+      }
+    }),
     tools: result
   };
 }
@@ -98,7 +105,7 @@ async function listOne(wo, server, query) {
 async function getInvoke(args, coreData) {
   const wo = coreData?.workingObject || {};
   const log = getPrefixedLogger(wo, import.meta.url);
-  const executorToolName = getExecutorToolName(wo);
+  const executorToolName = getMcpExecutorToolName(wo);
   const serverName = String(args?.server || "").trim();
   const query = String(args?.query || "").trim();
   const servers = serverName ? [getMcpServerConfig(wo, MODULE_NAME, serverName)].filter(Boolean) : getMcpServers(wo, MODULE_NAME);
@@ -121,7 +128,10 @@ async function getInvoke(args, coreData) {
   const totalTools = results.reduce((n, r) => n + (Array.isArray(r.tools) ? r.tools.length : 0), 0);
   const data = JSON.stringify({ ok: anyOk, servers: results });
   if (anyOk && totalTools > 0) {
-    return `REQUIRED NEXT ACTION: You MUST call ${executorToolName} now using a tool name from the list below. Do not answer the user before calling ${executorToolName}.\n\n${data}`;
+    if (executorToolName) {
+      return `REQUIRED NEXT ACTION: You MUST call ${executorToolName} now using a tool name from the list below. Do not answer the user before calling ${executorToolName}.\n\n${data}`;
+    }
+    return `REQUIRED NEXT ACTION: Use the MCP execution tool configured for the current channel now with a tool name from the list below. Do not answer the user before making that tool call.\n\n${data}`;
   }
   return `No remote MCP tools are available.\n\n${data}`;
 }

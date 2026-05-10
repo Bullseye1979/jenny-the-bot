@@ -45,7 +45,7 @@ if (/(^|\.)(apikey|apikeyalias|apisecret|token|bearertoken|videotoken|videoapito
     if (!SECRET_ALIAS_RE.test(value.trim())) return "***redacted***";
   }
   const MAX = 4000;
-  if (value.length > MAX) return value.slice(0, MAX) + ` … [truncated ${value.length - MAX} chars]`;
+  if (value.length > MAX) return value.slice(0, MAX) + ` ... [truncated ${value.length - MAX} chars]`;
   return value;
 }
 

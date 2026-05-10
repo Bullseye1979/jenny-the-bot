@@ -61,6 +61,7 @@ See [Admin Manual](ADMIN_MANUAL.md#mcp-server) and [Core JSON Reference](CORE_JS
 - Microsoft Graph calendar operations are available through `getGraph`: list calendars, list events by timeframe, create events, update events, and delete events.
 - The web root redirects to `config.webpage-menu.homePath` only when that path is actually visible to the current user; otherwise it falls back to the first allowed menu entry.
 - The browser chat can remember the last selected subchannel per channel through `config.webpage-chat.rememberLastSubchannel`.
+- Chat subchannel resume is still active: the browser stores the last selected subchannel per channel in local storage and restores it on the next visit.
 - MCP client headers can derive `x-channel-id` dynamically from `workingObject` with `valueFromWorkingObject`, so remote MCP discovery/execution stays channel-scoped.
 
 ---

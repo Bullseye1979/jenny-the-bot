@@ -549,6 +549,9 @@
         "apiSecret": "API_SECRET",
         "timeoutMs": 600000,
         "defaultType": "generic",
+        "defaultMode": "execute",
+        "planPromptTemplate": "PLAN MODE ONLY.\nDo not execute anything.\nDo not call {specialistToolName}.\nReturn only the plan that should later be approved by the user.\nOutput must begin with 'PLAN:' and include a 'TODO:' section exactly as shown.\nDo not add any extra explanation, commentary, or apology.\nFormat the plan as a TODO list.\nEach line should start with 'TODO:' followed by the task description.\nGroup related tasks on the same line if they can be executed in parallel.\nSeparate sequential tasks on different lines.\n\nUSER REQUEST:\n{prompt}",
+        "executeApprovedPlanTemplate": "EXECUTION MODE.\nThe user has approved the following plan.\nExecute this approved plan now.\nDo not ask for approval again.\nParse the APPROVED PLAN to identify the TODO list.\nExecute each TODO item in order:\n  - For lines with multiple comma-separated tasks, run them in parallel using {specialistToolName}.\n  - For lines with a single task, run it sequentially using {specialistToolName}.\n  - Wait for each {specialistToolName} call to complete before proceeding to the next TODO item.\n  - After each {specialistToolName} call, use the returned results to construct prompts for subsequent TODO items.\n  - Ensure each specialist prompt is self-contained and includes all necessary input data.\nYou must call {specialistToolName} for each TODO item. Do not skip any.\n\nAPPROVED PLAN:\n{approvedPlan}\n\nORIGINAL REQUEST:\n{prompt}",
         "types": {
           "context": "subagent-orchestrator-context",
           "generic": "subagent-orchestrator-generic"
@@ -996,7 +999,12 @@
         "getConfluence": "Checking Confluence",
         "getText": "Reading text",
         "getYoutube": "Checking YouTube",
+        "getDnDBeyondCharacter": "Reading a D&D Beyond character",
         "getFile": "Saving file",
+        "getFileContent": "Reading a file",
+        "getFileList": "Listing files",
+        "getFileSearch": "Searching files",
+        "getRoll": "Rolling dice",
         "getZIP": "Bundling files",
         "_title": "Tool Status Messages"
       },
@@ -1022,7 +1030,7 @@
         "bard-label-gen",
         "webpage"
       ],
-      "_title": "AI Context Pre-Loader (runs before 01000ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â01003)"
+      "_title": "AI Context Pre-Loader (runs before 01003)"
     },
     "core-ai-completions": {
       "flow": [
@@ -1762,7 +1770,7 @@
             "useAiModule": "completions",
             "model": "gemma4:e4b",
             "reasoning": true,
-            "ResponseTools": [
+            "responseTools": [
               {
                 "type": "web_search"
               },

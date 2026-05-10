@@ -20,7 +20,7 @@ const PIPELINE_RE = /^pipeline-(\d+)\.log$/;
 
 function getSpecialistToolName(config) {
   const cfg = config?.["webpage-subagent-manager"] || {};
-  return getStr(cfg.specialistToolName || "getSpecialists").trim() || "getSpecialists";
+  return getStr(cfg.specialistToolName).trim();
 }
 
 

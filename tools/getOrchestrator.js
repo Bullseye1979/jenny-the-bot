@@ -13,13 +13,10 @@ import { randomBytes }       from "node:crypto";
 import { getSecret }         from "../core/secrets.js";
 import { fetchWithTimeout }  from "../core/fetch.js";
 import { getPrefixedLogger } from "../core/logging.js";
+import { getSpecialistDispatcherToolName } from "../core/tool-links.js";
 
 const MODULE_NAME = "getOrchestrator";
 
-
-function getSpecialistToolName(cfg) {
-  return String(cfg?.specialistToolName || "getSpecialists").trim() || "getSpecialists";
-}
 
 function getErrorResult(code, message, details = {}) {
   return {
@@ -47,7 +44,7 @@ function getIsInvalidOrchestratorResponse(text) {
     || s.startsWith("[Max Tool Calls Hit]");
 }
 
-function getWorkingObjectPatch(wo) {
+function getWorkingObjectPatch(wo, cfg) {
   if (!wo || typeof wo !== "object") return undefined;
   const patch = {};
   if (wo.toolsconfig && typeof wo.toolsconfig === "object") {
@@ -62,19 +59,70 @@ function getWorkingObjectPatch(wo) {
   if (wo.callerChannelId && typeof wo.callerChannelId === "string") {
     patch.callerChannelId = wo.callerChannelId;
   }
+  patch.bypassTriggerGate = true;
+  // subAgentOverrides: caller can force model/endpoint on all sub-agents spawned from this channel
+  const overrides = cfg?.subAgentOverrides;
+  if (overrides && typeof overrides === "object") {
+    const allowed = ["model", "endpoint", "endpointResponses", "useAiModule", "apiKey", "maxTokens", "temperature"];
+    for (const key of allowed) {
+      if (overrides[key] != null) patch[key] = overrides[key];
+    }
+  }
   return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+function getPromptMatchedType(prompt, cfg) {
+  const routes = Array.isArray(cfg?.promptTypeRoutes) ? cfg.promptTypeRoutes : [];
+  const haystack = String(prompt || "").trim().toLowerCase();
+  if (!haystack) return "";
+  for (const route of routes) {
+    const type = String(route?.type || "").trim();
+    const patterns = Array.isArray(route?.match)
+      ? route.match
+      : route?.match != null
+        ? [route.match]
+        : [];
+    if (!type || !patterns.length) continue;
+    for (const pattern of patterns) {
+      const needle = String(pattern || "").trim().toLowerCase();
+      if (needle && haystack.includes(needle)) return type;
+    }
+  }
+  return "";
+}
+
+function getApplyTemplate(template, values) {
+  return String(template || "").replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => String(values?.[key] || ""));
 }
 
 async function getInvoke(args, coreData) {
   const log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
   const wo  = coreData?.workingObject || {};
   const cfg = wo?.toolsconfig?.[MODULE_NAME] || {};
-  const specialistToolName = getSpecialistToolName(cfg);
+  const specialistToolName = getSpecialistDispatcherToolName(wo) || "the configured specialist dispatch tool";
 
   const prompt       = String(args?.prompt || "").trim();
   const approvedPlan = String(args?.approvedPlan || args?.plan || "").trim();
-  const type         = String(args?.type || cfg.defaultType || "generic").trim();
-  const mode         = String(args?.mode || cfg.defaultMode || "execute").trim().toLowerCase();
+  const requestedType = String(args?.type || "").trim();
+  const inferredType  = requestedType ? "" : getPromptMatchedType(prompt, cfg);
+  const type          = String(requestedType || inferredType || cfg.defaultType || "generic").trim();
+  const requestedMode = String(args?.mode || "").trim().toLowerCase();
+  const forcedMode    = String(cfg.forceMode || "").trim().toLowerCase();
+  let mode            = String(requestedMode || cfg.defaultMode || "execute").trim().toLowerCase();
+
+  if (inferredType) {
+    log(`Orchestrator type inferred from prompt: "${inferredType}"`, "info");
+  }
+
+  if (forcedMode === "plan" || forcedMode === "execute") {
+    if (requestedMode && requestedMode !== forcedMode) {
+      log(`Orchestrator mode override: requested="${requestedMode}" forced="${forcedMode}"`, "warn");
+    }
+    mode = forcedMode;
+  } else if (cfg.allowPlan === false && mode === "plan") {
+    log('Orchestrator mode override: requested="plan" but allowPlan=false, using "execute"', "warn");
+    mode = "execute";
+  }
 
   if (!prompt) return getErrorResult("prompt_missing", "prompt is required");
   if (mode !== "plan" && mode !== "execute") {
@@ -98,47 +146,20 @@ async function getInvoke(args, coreData) {
 
   if (wo.aborted) return getErrorResult("pipeline_aborted", "Pipeline aborted");
 
+  const planPromptTemplate = String(cfg?.planPromptTemplate || "").trim();
+  const executeApprovedPlanTemplate = String(cfg?.executeApprovedPlanTemplate || "").trim();
   const finalPrompt = mode === "plan"
-    ? [
-        "PLAN MODE ONLY.",
-        "Do not execute anything.",
-        `Do not call ${specialistToolName}.`,
-        "Return only the plan that should later be approved by the user.",
-        "Output must begin with 'PLAN:' and include a 'TODO:' section exactly as shown.",
-        "Do not add any extra explanation, commentary, or apology.",
-        "Format the plan as a TODO list.",
-        "Each line should start with 'TODO:' followed by the task description.",
-        "Group related tasks on the same line if they can be executed in parallel.",
-        "Separate sequential tasks on different lines.",
-        "",
-        "USER REQUEST:",
-        prompt
-      ].join("\n")
+    ? (planPromptTemplate
+      ? getApplyTemplate(planPromptTemplate, { prompt, specialistToolName }).trim()
+      : prompt)
     : approvedPlan
-      ? [
-          "EXECUTION MODE.",
-          "The user has approved the following plan.",
-          "Execute this approved plan now.",
-          "Do not ask for approval again.",
-          "Parse the APPROVED PLAN to identify the TODO list.",
-          "Execute each TODO item in order:",
-          `  - For lines with multiple comma-separated tasks, run them in parallel using ${specialistToolName}.`,
-          `  - For lines with a single task, run it sequentially using ${specialistToolName}.`,
-          `  - Wait for each ${specialistToolName} call to complete before proceeding to the next TODO item.`,
-          `  - After each ${specialistToolName} call, use the returned results to construct prompts for subsequent TODO items.`,
-          "  - Ensure each specialist prompt is self-contained and includes all necessary input data.",
-          `You must call ${specialistToolName} for each TODO item. Do not skip any.`,
-          "",
-          "APPROVED PLAN:",
-          approvedPlan,
-          "",
-          "ORIGINAL REQUEST:",
-          prompt
-        ].join("\n")
+      ? (executeApprovedPlanTemplate
+        ? getApplyTemplate(executeApprovedPlanTemplate, { prompt, approvedPlan, specialistToolName }).trim()
+        : approvedPlan + "\n\n" + prompt)
       : prompt;
 
-  const apiBase      = String(cfg.apiUrl || "http://localhost:3400");
-  const apiSecretKey = String(cfg.apiSecret || "").trim();
+  const apiBase      = String(cfg.apiUrl    || "http://localhost:3400");
+  const apiSecretKey = String(cfg.apiSecret ?? "API_SECRET").trim();
   const apiSecret    = apiSecretKey ? await getSecret(wo, apiSecretKey) : "";
 
   const headers = { "Content-Type": "application/json" };
@@ -151,7 +172,7 @@ async function getInvoke(args, coreData) {
   const parentDepth      = Number.isFinite(Number(wo.agentDepth)) ? Number(wo.agentDepth) : 0;
   const statusKey        = String(wo.toolStatusChannelOverride || "").trim();
   const statusScope      = String(wo.toolcallScope || wo.callerFlow || wo.flow || "").trim();
-  const workingObjectPatch = getWorkingObjectPatch(wo);
+  const workingObjectPatch = getWorkingObjectPatch(wo, cfg);
   const body = JSON.stringify({
     channelId,
     payload: finalPrompt,

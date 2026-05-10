@@ -32,6 +32,9 @@ import {
   getToolArgsMeta,
   getToolPaginationMeta,
   getToolTraceMeta,
+  setUpdatePaginationGuardState,
+  getNeedsPaginationContinuation,
+  getPaginationContinuationPrompt,
   getParseArtifactsBlock,
   getExpandedToolArgs,
   getChannelAwarenessBlock,
@@ -407,6 +410,7 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
 
     const result     = await tool.invoke(normalizedArgs, coreData);
     const durationMs = Date.now() - startTs;
+    setUpdatePaginationGuardState(wo, name, result);
     log("Tool call success", "info", { tool_call_id: toolCall?.id || null, tool: name, durationMs, result_preview: getPreview(getJsonSafe(result), RESULT_PREVIEW_MAX) });
     const content = typeof result === "string" ? result : JSON.stringify(result ?? null);
     return { role: "tool", tool_call_id: toolCall?.id, name, content };
@@ -636,7 +640,11 @@ export default async function getCoreAi(coreData) {
           content: `[tool_result:${extracted.name}]\n` +
                    toolResultText +
                    (urlsText ? `\n\nIMAGE_URLS:\n${urlsText}\n` : "\n") +
-                   `\nINSTRUCTION: Continue your previous answer. If IMAGE_URLS are present, append the first URL at the VERY END of your final text. (toolCallsUsedTotal=${toolCallsUsedTotal}/${kiCfg.maxToolCallsTotal})`
+                   `\nINSTRUCTION: ${
+                     getNeedsPaginationContinuation(wo)
+                       ? getPaginationContinuationPrompt(wo)
+                       : `Continue your previous answer. If IMAGE_URLS are present, append the first URL at the VERY END of your final text. (toolCallsUsedTotal=${toolCallsUsedTotal}/${kiCfg.maxToolCallsTotal})`
+                   }`
         };
         messages.push(userToolResult);
         wo._contextPersistQueue.push(getWithTurnId(userToolResult, wo));

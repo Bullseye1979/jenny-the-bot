@@ -1,0 +1,21 @@
+{
+  "name": "getFileList",
+  "description": "List files and subdirectories inside a directory and include a small text preview for readable files. Use this to inspect dm-notebook/module or dm-notebook/status, find likely entry files, detect spelling/path mistakes, and infer which file probably continues the adventure.\n\nEach entry includes name, path, type, optional start_hint, and a preview of about 200 words for text-like files such as .md.\n\nTypical use for D&D modules:\n- First call getFileList on 'dm-notebook/module'\n- Prefer files whose name suggests the beginning, such as '(Einstieg)', '(Start)', 'Default', or 'Start Here'\n- If no clear hint exists, use previews to infer the correct next file before opening candidates with getFileContent",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "directory": {
+        "type": "string",
+        "description": "Relative directory path within the file store, e.g. 'dm-notebook/module' or 'dm-notebook/status'."
+      },
+      "previewWords": {
+        "type": "number",
+        "description": "Approximate number of words to include in each text preview. Default 200, min 20, max 400."
+      }
+    },
+    "required": [
+      "directory"
+    ],
+    "additionalProperties": false
+  }
+}

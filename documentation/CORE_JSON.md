@@ -162,6 +162,12 @@ All key names follow **camelCase** throughout.
 | `reasoningSummary` | string | `""` | Accumulated chain-of-thought reasoning (written by AI modules) |
 | `payload` | string | `""` | The user's input message for this turn |
 
+**Tool-agnostic AI loop contract:**
+- `core-ai-completions`, `core-ai-responses`, and `core-ai-pseudotoolcalls` are intended to remain tool-agnostic.
+- They do not special-case `getOrchestrator` or `getSpecialists` by name.
+- Any tool may request automatic follow-up work by returning `continuation_pending`, `requires_followup_tool`, `pending_pages`, `pending_specialists`, or `continuation_prompt`.
+- Channel-specific policy such as “never allow plan mode here” belongs in `workingObject.toolsconfig` or in channel overrides, not in the generic AI loop.
+
 **`fallbackOverrides` example** (primary = local model, fallback = OpenAI):
 
 ```jsonc
@@ -562,10 +568,17 @@ Synchronous orchestrator tool. Blocks until the orchestrator finishes. The orche
 |---|---|---|---|
 | `types` | object | `{ “generic”: “subagent-orchestrator-generic” }` | **Required.** Maps type names to base channel IDs |
 | `defaultType` | string | `”generic”` | Type used when the AI omits the `type` argument |
-| `specialistToolName` | string | `”getSpecialists”` | Optional local tool name injected into orchestrator instructions for specialist dispatch |
+| `defaultMode` | string | `”execute”` | Default mode used when the caller omits `mode` |
+| `forceMode` | string | `””` | Optional hard override. When set to `”plan”` or `”execute”`, the caller's requested mode is ignored |
+| `allowPlan` | boolean | `true` | If `false`, requested plan mode is rewritten to execute mode unless `forceMode` is set |
+| `planPromptTemplate` | string | `"PLAN MODE ONLY...\n{prompt}"` | Prompt template used for plan-mode orchestrator calls. Use `{prompt}` and `{specialistToolName}` placeholders. |
+| `executeApprovedPlanTemplate` | string | `"EXECUTION MODE...\n{approvedPlan}\n...\n{prompt}"` | Prompt template used when executing an approved plan. Use `{approvedPlan}`, `{prompt}`, and `{specialistToolName}` placeholders. |
+| `specialistToolName` | string | `”getSpecialists”` | Optional local tool name injected into orchestrator instructions for specialist dispatch. If omitted, the runtime resolves it dynamically from the active channel tool set when possible |
 | `apiUrl` | string | `”http://localhost:3400”` | Internal API base URL |
 | `apiSecret` | string | `”API_SECRET”` | Bearer token placeholder (resolved from `bot_secrets`) |
 | `timeoutMs` | number | `604800000` | Maximum wait time in milliseconds (default: 7 days) |
+
+**Design note:** These keys are the intended place for channel-specific orchestration policy. Example: a D&D DM channel can set `forceMode: "execute"` so file and context lookups never drift into plan mode, while the generic `core-ai-*` modules stay unchanged.
 
 #### getSpecialists
 
@@ -581,6 +594,8 @@ Parallel specialist dispatcher. Runs multiple specialist workers concurrently in
 | `maxConcurrent` | number | `3` | Concurrent specialists per batch |
 | `paginationContinuationTemplate` | string | `"The previous getSpecialists result is incomplete.\n...\n{pendingItems}"` | Optional follow-up instruction template returned when specialist pagination is still pending. Use `{pendingItems}` as a placeholder for the generated pending-window list. |
 | `retryContinuationTemplate` | string | `"Some specialist workers failed transiently...\n{retryItems}"` | Optional follow-up instruction template returned when retryable specialist failures remain. Use `{retryItems}` as a placeholder for the generated retry list. |
+
+The continuation fields returned by `getSpecialists` are part of a generic contract consumed by all `core-ai-*` loops. The AI runners do not special-case this tool name; any tool may use the same follow-up fields.
 
 #### getBan
 
@@ -655,6 +670,85 @@ No `toolsconfig` keys required.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `url` | string | Yes | Absolute http/https URL of the file to read (must be a text file) |
+
+#### getFileList
+
+Lists files and subdirectories in a user document directory. Text files can include a short preview so the AI can choose the correct file before reading it fully.
+
+No `toolsconfig` keys required.
+
+```json
+"getFileList": {}
+```
+
+**Returns:** `{ ok, directory, entries[] }`.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | Yes | Relative directory below the user document root |
+| `previewWords` | number | No | Approximate preview size per text file |
+| `includeHidden` | boolean | No | Whether dotfiles should be listed |
+
+#### getFileSearch
+
+Searches text recursively inside a user document directory and returns matching files with short snippets. Useful for location, NPC, landmark, and phrase lookup when the exact filename is unknown.
+
+No `toolsconfig` keys required.
+
+```json
+"getFileSearch": {}
+```
+
+**Returns:** `{ ok, directory, query, matches[] }`.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | Yes | Relative directory below the user document root |
+| `query` | string | Yes | Search phrase |
+| `maxResults` | number | No | Maximum number of returned matches |
+
+#### getDnDBeyondCharacter
+
+Loads a D&D Beyond character sheet into structured turn data. The result can include profile data, stats, and campaign-relevant notes such as backstory, allies, enemies, organizations, and other notes when present on the sheet.
+
+No `toolsconfig` keys required.
+
+```json
+"getDnDBeyondCharacter": {}
+```
+
+**Returns:** Structured character data.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `characterId` | string | No | D&D Beyond character ID |
+| `url` | string | No | D&D Beyond character URL |
+
+At least one of `characterId` or `url` is required.
+
+#### getRoll
+
+Performs DM-side dice rolls and returns structured results. Use it for NPCs, monsters, random tables, and other server-side mechanics.
+
+No `toolsconfig` keys required.
+
+```json
+"getRoll": {}
+```
+
+**Returns:** Structured roll output including total and roll details.
+
+**Manifest parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `formula` | string | Yes | Dice formula such as `1d20+5` or `8d6` |
 
 #### getZIP
 
@@ -2274,7 +2368,7 @@ Jenny can call remote MCP servers from normal conversations through two tools:
 | `getMcpTools` | Discover remote tools and input schemas from configured MCP servers | `workingObject.toolsconfig.getMcpTools` |
 | `getMcp` | Execute one discovered remote MCP tool | `workingObject.toolsconfig.getMcp` |
 
-Each tool has its own isolated `toolsconfig` section. Do not rely on shared server lists between the two tools. If both tools should access the same MCP server, define that server in both arrays. `getMcpTools.executorToolName` can point discovery hints at a different local execution tool; if omitted, it defaults to `getMcp`.
+Each tool has its own isolated `toolsconfig` section. Do not rely on shared server lists between the two tools. If both tools should access the same MCP server, define that server in both arrays. `getMcpTools.executorToolName` can point discovery hints at a different local execution tool. If it is omitted, the runtime resolves the execution tool dynamically from the active channel tool set.
 
 ```jsonc
 "tools": [
@@ -2339,7 +2433,7 @@ For Jenny's own HTTP MCP server, forward the active channel dynamically:
 ]
 ```
 
-There is no special `channelId` key in MCP client tool configuration. `getMcpTools` returns remote MCP tools as namespaced names such as `mcp.jenny-mcp.getTime`; execute those names through the configured MCP execution tool, which defaults to `getMcp`.
+There is no special `channelId` key in MCP client tool configuration. `getMcpTools` returns remote MCP tools as namespaced names such as `mcp.jenny-mcp.getTime`; execute those names through the MCP execution tool available in the current channel.
 
 ---
 

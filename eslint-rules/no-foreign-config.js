@@ -7,12 +7,12 @@
  * the key does not match the module's own config key (derived from filename).
  *
  * Examples flagged (in module 00050-discord-admin-commands.js):
- *   coreData?.config?.["core-channel-config"]   ← foreign key → error
- *   config["webpage-chat"]                       ← foreign key → error
+ *   coreData?.config?.["core-channel-config"]   <- foreign key -> error
+ *   config["webpage-chat"]                      <- foreign key -> error
  *
  * Allowed:
- *   coreData?.config?.["discord-admin-commands"] ← own key    → ok
- *   coreData?.config?.[MODULE_NAME]              ← variable   → ok (not a literal)
+ *   coreData?.config?.["discord-admin-commands"] <- own key -> ok
+ *   coreData?.config?.[MODULE_NAME]              <- variable -> ok (not a literal)
  */
 
 import path from "node:path";
@@ -22,14 +22,14 @@ export default {
     type: "problem",
     docs: {
       description: "Modules must only access their own config section in coreData.config",
-      category: "Architecture",
+      category: "Architecture"
     },
     messages: {
       foreignConfig:
-        "Config isolation: this module (\"{{own}}\") must not access config[\"{{foreign}}\"] — " +
-        "only config[\"{{own}}\"] is allowed.",
+        "Config isolation: this module (\"{{own}}\") must not access config[\"{{foreign}}\"] - " +
+        "only config[\"{{own}}\"] is allowed."
     },
-    schema: [],
+    schema: []
   },
 
   create(context) {
@@ -47,28 +47,25 @@ export default {
         if (typeof node.property.value !== "string") return;
 
         const accessedKey = node.property.value;
-
         if (!isConfigAccess(node.object)) return;
-
         if (accessedKey === moduleKey) return;
 
         context.report({
           node,
           messageId: "foreignConfig",
-          data: { own: moduleKey, foreign: accessedKey },
+          data: { own: moduleKey, foreign: accessedKey }
         });
-      },
+      }
     };
-  },
+  }
 };
-
 
 /**
  * Returns true if the node represents access to a property named "config".
  * Covers:
- *   config                    — bare Identifier
- *   something.config          — MemberExpression, non-computed
- *   something?.config         — optional MemberExpression (inside ChainExpression)
+ *   config - bare Identifier
+ *   something.config - MemberExpression, non-computed
+ *   something?.config - optional MemberExpression (inside ChainExpression)
  */
 function isConfigAccess(node) {
   if (node.type === "Identifier" && node.name === "config") return true;
