@@ -1954,13 +1954,32 @@ function buildActorFullStats(actor) {
   for (const item of Array.from(actor.items || [])) {
     if (!item.system?.activation?.type) continue;
     if (!["weapon", "spell", "feat"].includes(item.type)) continue;
-    const damageParts = (item.system?.damage?.parts || []).map((p) => p.join(" ")).join(" + ");
-    const labelDamage = (item.labels?.damages || []).map((d) => d.label).join(" + ");
+
+    // toHit: try labels first (dnd5e v2/v3), then compute fallback from ability mods (dnd5e v4+)
+    let toHit = item.labels?.toHit || null;
+    if (!toHit && item.type === "weapon") {
+      const prof = item.system?.proficient !== false ? (sys.attributes?.prof ?? 0) : 0;
+      // Determine the relevant ability (explicit > finesse dex > str)
+      const abilityKey = item.system?.ability
+        || (item.system?.properties?.fin ? "dex" : null)
+        || "str";
+      const abilityMod = sys.abilities?.[abilityKey]?.mod ?? sys.abilities?.str?.mod ?? 0;
+      const extraBonus = Number(item.system?.attack?.bonus ?? item.system?.attackBonus ?? 0);
+      const total = prof + abilityMod + extraBonus;
+      toHit = total >= 0 ? `+${total}` : String(total);
+    }
+
+    // damage: try labels (various dnd5e versions) then raw parts
+    const labelDamage = (item.labels?.damages || []).map((d) => d.label || d.formula || "").filter(Boolean).join(" + ")
+      || (typeof item.labels?.damage === "string" ? item.labels.damage : "")
+      || (item.labels?.derivedDamage || []).map((d) => d.formula || "").filter(Boolean).join(" + ");
+    const rawDamageParts = (item.system?.damage?.parts || []).map((p) => Array.isArray(p) ? p.join("") : String(p)).filter(Boolean).join(" + ");
+
     attacks.push({
       name: item.name,
       type: item.type,
-      toHit: item.labels?.toHit || null,
-      damage: labelDamage || damageParts || null,
+      toHit,
+      damage: labelDamage || rawDamageParts || null,
       range: item.system?.range?.value || null
     });
   }
