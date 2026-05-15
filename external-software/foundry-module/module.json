@@ -2,7 +2,7 @@
   "id": "jenny-foundry-bridge",
   "title": "Jenny Foundry Bridge",
   "description": "Bridge module for Jenny bot integration with Foundry VTT. Provides roll, character, and campaign information handlers for external automation.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "authors": [
     {
       "name": "Bullseye / Codex"

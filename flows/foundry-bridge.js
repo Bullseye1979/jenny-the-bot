@@ -452,9 +452,11 @@ async function initializeFoundrySession(baseCore, runFlow, createRunCore, workin
   await writePartyCharacterFiles(baseCore, runFlow, createRunCore, workingObject, session);
   let state = createInitialRoundState(session);
   state.lastScene = await getCampaignBubble(baseCore, runFlow, createRunCore, state, "Build the opening local story bubble for the current campaign state.");
+  // Anchor currentBeat from the campaign bubble so the first director call has something to follow from.
+  state.currentBeat = normalize(state.lastScene?.summary || state.lastScene?.location || session.currentLocation || "the current location");
   await writeFoundryMarkdownState(workingObject, state);
   state = await writeRoundState(workingObject, state);
-  const openBeat = normalize(state.currentBeat || state.lastScene?.summary || state.lastScene?.location || state.session?.progress?.currentLocation || "the current location");
+  const openBeat = normalize(state.currentBeat || state.lastScene?.location || session.currentLocation || "the current location");
   const sceneOpener = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "You are opening an exploration round for a multiplayer D&D session.",
     "RULES: Describe ONLY what is immediately in front of the party. Do not summarize the campaign or describe future events.",
@@ -462,6 +464,12 @@ async function initializeFoundrySession(baseCore, runFlow, createRunCore, workin
     `CURRENT BEAT (authoritative — base your narration on this): ${openBeat}`,
     "Write 1 to 3 short plain-text sentences describing only the immediate playable situation."
   ].join("\n"));
+  // Store the narrator's exact opening text as the authoritative currentBeat so the first
+  // director call in resolveExplorationRound knows where the story actually left off.
+  if (sceneOpener) {
+    state.currentBeat = sceneOpener;
+    await writeRoundState(workingObject, state);
+  }
   const opener = buildExplorationTurnPrompt(state, sceneOpener);
   return { state, opener, contextSync };
 }
@@ -577,6 +585,12 @@ async function advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, 
     resolutionText ? `What just happened: ${resolutionText}` : "",
     "Write at most 2 short plain-text sentences that set the scene as described in the current beat."
   ].filter(Boolean).join("\n"));
+  // Keep currentBeat anchored to what was just narrated so the next director call
+  // continues from here rather than drifting to a new scene.
+  if (scenePrompt) {
+    state.currentBeat = scenePrompt;
+    await writeRoundState(workingObject, state);
+  }
   return buildExplorationTurnPrompt(state, scenePrompt);
 }
 
@@ -595,6 +609,7 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
   } catch { /* non-fatal — director works without it */ }
 
   const currentLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "unknown location");
+  const currentBeatForDirector = normalize(state.currentBeat || state.lastScene?.summary || currentLocation);
   const director = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
     "Resolve a multiplayer D&D exploration round. ADVANCE THE STORY ONE BEAT AT A TIME.",
     "",
@@ -606,6 +621,9 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     "5. sceneUpdate.location must remain the CURRENT location unless the party has literally just finished traveling in THIS beat.",
     "6. Set modeSwitch='initiative' ONLY if an enemy is actively hostile and physically present RIGHT NOW. Surrendered, fleeing, or already defeated enemies do NOT count. If the player tries to attack surrendered enemies, resolve it narratively without combat mode.",
     "7. For 'enemies' and 'allies' fields: use ONLY names from the available Foundry actors list below. If you need multiple of the same type (e.g. 3 cultists), repeat the name 3 times. If no actor list is provided, use your best guess.",
+    "8. Your 'currentBeat' response must be the DIRECT NEXT STEP from the current authoritative beat below. Never open a new scene or storyline.",
+    "",
+    `CURRENT AUTHORITATIVE BEAT (this is what the party was just told — your resolution continues from here): ${currentBeatForDirector}`,
     "",
     availableActorNames ? `Available Foundry actors (EXACT names — only pick from this list): ${availableActorNames}` : "",
     `Current party location: ${currentLocation}`,
@@ -1044,61 +1062,79 @@ async function continueInitiativeCollection(baseCore, runFlow, createRunCore, wo
 // ─── COMBAT LOOP ───────────────────────────────────────────────────────────────
 
 /**
- * Auto-advances through NPC turns until a player combatant is active.
- * For each NPC: narrates the turn via AI, then advances in Foundry.
+ * Checks the currently active combatant:
+ * - If it's a player: emits the turn prompt and returns.
+ * - If it's an NPC: fires startNpcCombatTurn which runs the same attack/reaction
+ *   timer chain as a player turn. The chain self-advances via fireCombatDamageAndAdvance.
+ * - If no active binding exists: emits a warning with !dm guidance.
  */
 async function advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state) {
-  const messages = [];
-  const maxSteps = Math.max(1, (Array.isArray(state?.initiative?.turnOrder) ? state.initiative.turnOrder.length : 0) + 2);
+  const activeBinding = getActiveCombatantBinding(state);
 
-  for (let step = 0; step < maxSteps; step += 1) {
-    const activeBinding = getActiveCombatantBinding(state);
-    if (!activeBinding) break;
-
-    if (isPlayerControlledCombatant(state, activeBinding)) {
-      const promptText = buildCombatTurnPrompt(state, {
-        name: activeBinding.characterName || activeBinding.userName
-      });
-      messages.push({ text: promptText, type: "bot" });
-      await writeRoundState(workingObject, state);
-      return { state, messages };
+  if (!activeBinding) {
+    const hasAnyPlayerInTracker = Array.isArray(state.initiative?.actorBindings) &&
+      state.initiative.actorBindings.some((b) => isPlayerControlledCombatant(state, b));
+    await writeRoundState(workingObject, state);
+    if (!hasAnyPlayerInTracker) {
+      return {
+        state,
+        messages: [{
+          text: "⚠️ Kein Spieler-Combatant im Combat Tracker gefunden. Mögliche Ursachen: Actor existiert nicht in game.actors, oder session-sync wurde ohne actorId durchgeführt. Nutze '!dm skip' um zur nächsten Runde zu springen, oder '!dm reset' um zurück zu Exploration zu gehen.",
+          type: "bot"
+        }]
+      };
     }
-
-    // NPC turn: AI narrates, Foundry advances
-    const npcName = normalize(activeBinding.characterName || activeBinding.userName || "Enemy");
-    const npcText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
-      "Resolve an NPC or enemy combat turn in one short plain-text sentence.",
-      `Combatant: ${npcName}`,
-      `Actor snapshot JSON:\n${JSON.stringify(activeBinding.actorSnapshot || {}, null, 2)}`,
-      "Describe only the immediate hostile or tactical action. No markdown. Do NOT end with a question."
-    ].join("\n")) || `${npcName} acts.`;
-    messages.push({ text: npcText, type: "bot" });
-
-    const nextRes = await invokeFoundryAction(workingObject, "initiative", {
-      channelKey: state.session.channelKey,
-      operation: "next",
-      combatRef: state.initiative.combatId || state.initiative.combatName
-    });
-    syncInitiativeStateFromResult(state, nextRes, state.session.players);
+    return { state, messages: [{ text: "Alle Kämpfer haben diese Runde agiert.", type: "bot" }] };
   }
 
-  // Fell off the end — either all combatants acted or the active player has no turn in the tracker.
-  // Check whether any player binding exists in the turn order at all.
-  const hasAnyPlayerInTracker = Array.isArray(state.initiative?.actorBindings) &&
-    state.initiative.actorBindings.some((b) => isPlayerControlledCombatant(state, b));
-
-  if (!hasAnyPlayerInTracker) {
-    // Player was not found in the combat tracker — give GM actionable guidance.
-    messages.push({
-      text: "⚠️ Kein Spieler-Combatant im Combat Tracker gefunden. Mögliche Ursachen: Actor existiert nicht in game.actors, oder session-sync wurde ohne actorId durchgeführt. Nutze '!dm skip' um zur nächsten Runde zu springen, oder '!dm reset' um zurück zu Exploration zu gehen.",
-      type: "bot"
+  if (isPlayerControlledCombatant(state, activeBinding)) {
+    const promptText = buildCombatTurnPrompt(state, {
+      name: activeBinding.characterName || activeBinding.userName
     });
-    // Keep phase at combat_turn_prompt so !dm commands still work
-  } else {
-    messages.push({ text: "Alle Kämpfer haben diese Runde agiert.", type: "bot" });
+    await writeRoundState(workingObject, state);
+    return { state, messages: [{ text: promptText, type: "bot" }] };
   }
-  await writeRoundState(workingObject, state);
-  return { state, messages };
+
+  // NPC turn: run the same attack/reaction/damage timer chain as a player turn
+  return await startNpcCombatTurn(baseCore, runFlow, createRunCore, workingObject, state, activeBinding);
+}
+
+/**
+ * Drives an NPC's combat turn through the full attack/reaction/damage chain.
+ * The NPC's action is decided by the director AI; then startCombatResolution
+ * handles rolls, posts messages, and schedules the 10 s reaction timers exactly
+ * as it does for player turns. fireCombatDamageAndAdvance → advanceCombatUntilPlayerTurn
+ * continues the chain automatically.
+ */
+async function startNpcCombatTurn(baseCore, runFlow, createRunCore, workingObject, state, activeBinding) {
+  const npcName = normalize(activeBinding.characterName || activeBinding.userName || "Enemy");
+
+  // Ask the director what the NPC does this turn
+  const npcActionDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
+    "Decide what action an NPC takes on their D&D 5e combat turn.",
+    `NPC: ${npcName}`,
+    `Actor snapshot: ${JSON.stringify(activeBinding.actorSnapshot || {}, null, 2)}`,
+    `Combat turn order (current index ${state.initiative.currentTurnIndex}): ${JSON.stringify((state.initiative.turnOrder || []).map((c) => c.name), null, 2)}`,
+    `Current beat: ${normalize(state.currentBeat || state.lastScene?.summary || "ongoing combat")}`,
+    "Return JSON only:",
+    '{ "action": "What the NPC does — attack description, target name, and approach (1–2 sentences)", "targetName": "name of primary target" }'
+  ].join("\n")) || {};
+
+  const actionText = normalize(npcActionDir?.action) || `${npcName} attacks!`;
+
+  // Wire up lastPlayerAction exactly as commitCombatAction does for player turns
+  state.initiative.lastPlayerAction = {
+    combatantId: normalize(activeBinding.combatantId),
+    actorId: normalize(activeBinding.actorId),
+    name: npcName,
+    text: actionText,
+    isNpc: true,
+    createdAt: new Date().toISOString()
+  };
+  state.initiative.turnFollowupHistory = [];
+
+  // Delegate to the shared resolution chain (rolls → pre-reaction window → hit → post-reaction window → damage → advance)
+  return await startCombatResolution(baseCore, runFlow, createRunCore, workingObject, state);
 }
 
 /**
