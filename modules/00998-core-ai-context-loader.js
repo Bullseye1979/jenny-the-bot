@@ -1,7 +1,7 @@
 /**************************************************************/
-/* filename: "00999-core-ai-context-loader.js"                      */
+/* filename: "00998-core-ai-context-loader.js"                */
 /* Version 1.0                                               */
-/* Purpose: Pipeline module implementation.                 */
+/* Purpose: Preload context for downstream AI modules.       */
 /**************************************************************/
 import { getContext } from "../core/context.js";
 import { getPrefixedLogger } from "../core/logging.js";

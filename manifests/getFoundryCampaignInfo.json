@@ -1,0 +1,29 @@
+{
+  "name": "getFoundryCampaignInfo",
+  "description": "Query campaign information from Foundry VTT through the Foundry bridge plugin. Use this for campaign canon, journals, world lore, active scenes, NPC information, and other Foundry-backed data instead of markdown files when Foundry is the authoritative source.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "What campaign information is needed from Foundry."
+      },
+      "scope": {
+        "type": "string",
+        "description": "Optional search scope hint for the plugin, for example any, journal, scene, actor, item, or table."
+      },
+      "limit": {
+        "type": "number",
+        "description": "Optional maximum number of results to return when the plugin supports multiple matches."
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional override for the Foundry bridge channel key. Normally taken from toolsconfig.getFoundryBridge.channelKey."
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "additionalProperties": false
+  }
+}

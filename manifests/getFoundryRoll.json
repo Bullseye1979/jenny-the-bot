@@ -1,0 +1,46 @@
+{
+  "name": "getFoundryRoll",
+  "description": "Execute a dice roll inside Foundry VTT through the Foundry bridge plugin and return the result. Use this instead of local dice rolling whenever the roll should be authoritative in Foundry. Suitable for initiative, attack rolls, damage, saving throws, ability checks, and skill checks handled by Foundry.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "notation": {
+        "type": "string",
+        "description": "Dice notation in NdS+M format, for example '1d20+5', '2d6', or '4d6+3'. Optional when rollType is initiative and actorRef is provided."
+      },
+      "label": {
+        "type": "string",
+        "description": "Optional short label describing the roll, for example 'Goblin attack' or 'Stealth check'."
+      },
+      "actorRef": {
+        "type": "string",
+        "description": "Optional Foundry actor reference used by the plugin, such as an actor ID or exact actor name."
+      },
+      "rollType": {
+        "type": "string",
+        "description": "Optional semantic roll type, for example initiative. When set to initiative and actorRef points to a real Foundry actor, the bridge may derive the initiative formula from the actor's stats."
+      },
+      "advantage": {
+        "type": "boolean",
+        "description": "If true, request an advantage roll when supported by the Foundry plugin."
+      },
+      "disadvantage": {
+        "type": "boolean",
+        "description": "If true, request a disadvantage roll when supported by the Foundry plugin."
+      },
+      "emitChatMessage": {
+        "type": "boolean",
+        "description": "If true or omitted, create an actual Foundry chat roll message so Dice So Nice and similar chat-bound dice modules can trigger. Set false only when you explicitly do not want a chat message."
+      },
+      "visibility": {
+        "type": "string",
+        "description": "Optional Foundry roll visibility mode, for example publicroll, gmroll, blindroll, or selfroll."
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional override for the Foundry bridge channel key. Normally taken from toolsconfig.getFoundryBridge.channelKey."
+      }
+    },
+    "additionalProperties": false
+  }
+}

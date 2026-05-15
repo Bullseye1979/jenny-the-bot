@@ -45,6 +45,17 @@ function getExtractContent(r) {
 }
 
 
+function getExtractAuthorName(r) {
+  if (!r?.json) return null;
+  try {
+    const j = typeof r.json === "string" ? JSON.parse(r.json) : r.json;
+    const authorName = j?.authorName;
+    if (typeof authorName === "string" && authorName.trim()) return authorName.trim();
+  } catch {}
+  return null;
+}
+
+
 function getPadString(n) { return String(n).padStart(2, "0"); }
 
 
@@ -461,6 +472,7 @@ async function getHistoryInvoke(args, coreData) {
   const outRows = [];
   for (const r of rows) {
     const content = getExtractContent(r);
+    const authorName = getExtractAuthorName(r);
     const roleLc = String(r.role || "").toLowerCase();
     if (roleLc === "assistant" && !content) continue;
     const row = {
@@ -468,7 +480,8 @@ async function getHistoryInvoke(args, coreData) {
       ts: getISO(r.ts),
       channelId: r.id,
       role: r.role ?? null,
-      text: content ?? ""
+      text: content ?? "",
+      authorName: authorName ?? ""
     };
     if (includeJson) row.json = r.json;
     outRows.push(row);

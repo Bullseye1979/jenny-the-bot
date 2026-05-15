@@ -3426,7 +3426,7 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 ### getHistory
 
 **File:** `tools/getHistory.js`
-**Purpose:** Retrieve raw message rows from the conversation log for a given UTC time range. Returns results ordered chronologically. Supports pagination via `startCtxId`.
+**Purpose:** Retrieve raw message rows from the conversation log for a given UTC time range. Returns results ordered chronologically. Supports pagination via `startCtxId`. Each returned row includes `authorName` when present in the stored context JSON.
 
 **LLM parameters:**
 
@@ -3460,6 +3460,8 @@ Configuration goes in `workingObject.toolsconfig.<toolName>`.
 | `dumpMaxChars` | number | `40000` | Character budget for returned row text. Rows are dropped from the end once the budget is reached, and `has_more` is set. |
 | `includeToolRows` | boolean | `false` | Include rows with `role = "tool"` in results |
 | `includeJson` | boolean | `false` | Include the raw stored JSON payload in each row |
+
+**Returned row fields:** `ctx_id`, `ts`, `channelId`, `role`, `text`, `authorName`, and optionally `json` when `includeJson=true`.
 
 ---
 

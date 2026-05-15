@@ -14,7 +14,7 @@
             "type": {
               "type": "string",
               "description": "The specialist type.",
-              "enum": ["coding", "file-edit", "image-video", "content-search", "context-research", "document-generate", "atlassian", "microsoft"]
+              "enum": ["coding", "file-edit", "image-video", "content-search", "context-research", "foundry-journal", "document-generate", "atlassian", "microsoft"]
             },
             "jobID": {
               "type": "integer",

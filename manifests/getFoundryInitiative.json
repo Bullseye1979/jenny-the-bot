@@ -1,0 +1,69 @@
+{
+  "name": "getFoundryInitiative",
+  "description": "Work with the active Foundry VTT initiative tracker through the Foundry bridge plugin. Use this to read combat order, create or ensure a standard Jenny combat, populate it with party and NPC combatants from actor instances or the current scene, write initiative values into the tracker, roll initiative into the tracker, and remove the combat again when it ends.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "operation": {
+        "type": "string",
+        "description": "Optional operation. Use read to inspect the tracker, ensure to create or populate the standard Jenny combat, set to write explicit initiative values into the tracker, roll to populate and roll initiative into the tracker, or end to delete the combat after it ends."
+      },
+      "scope": {
+        "type": "string",
+        "description": "Optional scope for operation=roll. Supported values include unset, all, players, npcs, unset-players, and unset-npcs."
+      },
+      "mode": {
+        "type": "string",
+        "description": "Optional view mode, for example summary, active, or full."
+      },
+      "combatRef": {
+        "type": "string",
+        "description": "Optional combat ID or name when the world has multiple combats."
+      },
+      "actorRefs": {
+        "type": "array",
+        "description": "Optional explicit actor refs to create or target combatants from existing Foundry actors.",
+        "items": {
+          "type": "string"
+        }
+      },
+      "npcNames": {
+        "type": "array",
+        "description": "Optional NPC or monster names for theater-of-the-mind combat. The bridge will create temporary actor instances for these names and add them to Jenny Combat.",
+        "items": {
+          "type": "string"
+        }
+      },
+      "initiatives": {
+        "type": "array",
+        "description": "Optional list of initiative assignments for operation=set. Each item should contain a numeric initiative plus a combatantRef, actorRef, tokenRef, or name that identifies the combatant.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "combatantRef": {
+              "type": "string"
+            },
+            "actorRef": {
+              "type": "string"
+            },
+            "tokenRef": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "initiative": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional override for the Foundry bridge channel key. Normally taken from toolsconfig.getFoundryBridge.channelKey."
+      }
+    },
+    "additionalProperties": false
+  }
+}

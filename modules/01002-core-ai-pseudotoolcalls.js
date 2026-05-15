@@ -11,7 +11,6 @@ import { getStr, getNum }                           from "../core/utils.js";
 import { putItem }                                  from "../core/registry.js";
 import { getPrefixedLogger }                        from "../core/logging.js";
 import { fetchWithTimeout }                         from "../core/fetch.js";
-import { applyAiFallbackOverrides }                 from "../core/ai-fallback.js";
 import {
   getAssistantAuthorName,
   getRequestHeaders,
@@ -429,9 +428,6 @@ async function getExecToolCall(toolModules, toolCall, coreData, toolSpecsByName)
 export default async function getCoreAi(coreData) {
   let wo  = coreData.workingObject;
   const log = getPrefixedLogger(wo, import.meta.url);
-  wo = await applyAiFallbackOverrides(wo, { log, moduleName: MODULE_NAME, endpoint: wo?.endpoint });
-  coreData.workingObject = wo;
-
   if (!getShouldRunForThisModule(wo)) {
     log(`Skipped: useAiModule="${String(wo?.useAiModule ?? "").trim()}" != "pseudotoolcalls"`, "info");
     return coreData;

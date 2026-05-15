@@ -12,7 +12,6 @@ import { saveFile }                                 from "../core/file.js";
 import { getPrefixedLogger }                        from "../core/logging.js";
 import { getSecret }                                from "../core/secrets.js";
 import { fetchWithTimeout }                         from "../core/fetch.js";
-import { applyAiFallbackOverrides }                 from "../core/ai-fallback.js";
 import {
   getAssistantAuthorName,
   getAuthHeaders,
@@ -37,7 +36,8 @@ import {
   setEnsureFinalSynthesisPrompt,
   getParseArtifactsBlock,
   getExpandedToolArgs,
-  getSystemContentText
+  getSystemContentText,
+  getUserContentWithAuthor
 } from "../shared/ai/utils.js";
 import fs            from "node:fs";
 import path          from "node:path";
@@ -743,6 +743,17 @@ function getSnapshotMappedToChat(rows, options = {}) {
   const includeSystem        = getBool(options?.includeHistorySystemMessages, false);
   let   lastAssistantCallIds = new Set();
 
+  function getPromptContentWithAuthor(row, payload) {
+    const content = typeof payload === "string" ? payload : "";
+    const authorName =
+      typeof row?.authorName === "string" && row.authorName.trim().length
+        ? row.authorName.trim()
+        : "";
+    if (!authorName || !content) return content;
+    if (content.startsWith("[authorName:")) return content;
+    return `[authorName: ${authorName}]\n${content}`;
+  }
+
   for (const r of rows || []) {
     const role    = r?.role;
     const payload = getPayload(r);
@@ -750,10 +761,10 @@ function getSnapshotMappedToChat(rows, options = {}) {
     if (role === "system") {
       if (includeSystem) out.push({ role: "system", content: payload });
     } else if (role === "user") {
-      out.push({ role: "user", content: payload });
+      out.push({ role: "user", content: getPromptContentWithAuthor(r, payload) });
       lastAssistantCallIds = new Set();
     } else if (role === "assistant") {
-      const msg = { role: "assistant", content: payload };
+      const msg = { role: "assistant", content: getPromptContentWithAuthor(r, payload) };
       if (Array.isArray(r?.tool_calls) && r.tool_calls.length) {
         msg.tool_calls = r.tool_calls
           .map((tc) => ({
@@ -842,13 +853,62 @@ function getToolsForCurrentStep(toolDefs, responseToolsNormalized, toolsMode) {
   return getToolsForResponses(toolDefs, responseToolsNormalized, false);
 }
 
+async function getRunFinalSynthesisTurn({
+  endpoint,
+  model,
+  apiKey,
+  timeoutMs,
+  maxTokens,
+  sys,
+  messages,
+  reasoningEnabled,
+  reasoningEffort,
+  log,
+  debugOn
+}) {
+  const body = {
+    model,
+    input: getResponsesInputFromMessages(messages),
+    instructions: sys,
+    tools: [],
+    tool_choice: "none",
+    ...(reasoningEnabled ? { reasoning: { effort: reasoningEffort, summary: "auto" } } : {}),
+    ...(maxTokens ? { max_output_tokens: maxTokens } : {})
+  };
+
+  setLogBig("responses-final-synthesis-request", {
+    endpoint,
+    model,
+    tool_choice: body.tool_choice,
+    tools: body.tools,
+    input: body.input,
+    instructions: body.instructions,
+    reasoning: body.reasoning
+  }, { toFile: debugOn });
+
+  const headers = getAuthHeaders(apiKey, { "Content-Type": "application/json" });
+  const res = await fetchWithTimeout(endpoint, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
+  const rawText = await res.text();
+
+  setLogBig("responses-final-synthesis-status", { status: res.status, statusText: res.statusText }, { toFile: debugOn });
+  setLogBig("responses-final-synthesis-payload-raw", rawText.length > 8000 ? rawText.slice(0, 8000) + ` ...[+${rawText.length - 8000} chars truncated]` : rawText, { toFile: debugOn });
+
+  if (!res.ok) {
+    log(`Final synthesis turn failed with HTTP ${res.status}`, "warn");
+    return { ok: false, status: res.status, text: "" };
+  }
+
+  const data = getTryParseJSON(rawText, {});
+  setLogBig("responses-final-synthesis-payload-json", data, { toFile: debugOn });
+  const parsed = getParsedResponsesOutput(data);
+  const text = String(parsed?.text || "").trim();
+  return { ok: true, text, data };
+}
+
 
 export default async function getCoreAi(coreData) {
   let wo  = coreData?.workingObject ?? {};
   const log = getPrefixedLogger(wo, import.meta.url);
-  wo = await applyAiFallbackOverrides(wo, { log, moduleName: MODULE_NAME, endpoint: wo?.endpointResponses || wo?.endpoint });
-  coreData.workingObject = wo;
-
   const gate = String(wo?.useAiModule ?? "").trim().toLowerCase();
   if (gate && gate !== "responses") {
     log(`Skipped: useAiModule="${gate}" != "responses"`, "info");
@@ -902,7 +962,7 @@ export default async function getCoreAi(coreData) {
   const sys                = getSystemContentText(wo, { earliestTimestamps, moduleCfg });
 
   const fromDb          = getSnapshotMappedToChat(Array.isArray(snapshot) ? snapshot : [], { includeHistorySystemMessages });
-  const userPayloadRaw  = getToString(wo?.payload ?? "");
+  const userPayloadRaw  = getUserContentWithAuthor(getToString(wo?.payload ?? ""), wo);
   if (!userPayloadRaw.trim()) {
     log("Skipped: empty payload", "info");
     return coreData;
@@ -1152,15 +1212,6 @@ export default async function getCoreAi(coreData) {
         log("Persisted assistant tool_call request + tool output pair for context continuity.", "info");
       }
 
-      const emptyAssistantTurn = !assistantText && !hasToolCalls;
-      if (emptyAssistantTurn && !toolsDisabled) {
-        log("Empty assistant turn with tools still enabled - stopping loop without rescue turn.", "warn", {
-          finishReason: finish ?? null,
-          loop: iter + 1
-        });
-        break;
-      }
-
       const truncated   = getWasTruncatedOutput(data);
       const looksCutOff = getLooksCutOff(assistantText);
       const cutOff      = !wo.__noContinuation && (truncated || looksCutOff);
@@ -1217,6 +1268,34 @@ export default async function getCoreAi(coreData) {
 
   if (!finalText && !hitMaxToolCalls && messages.length && messages[messages.length - 1]?.role !== "assistant") {
     hitMaxLoops = true;
+  }
+
+  if (!finalText && wo?.__aiFallbackApplied === true && toolCallLog.length > 0) {
+    try {
+      log("Fallback responses path ended without final text after tool use; running one final synthesis turn without tools.", "warn");
+      setEnsureFinalSynthesisPrompt(messages, wo);
+      const synth = await getRunFinalSynthesisTurn({
+        endpoint,
+        model,
+        apiKey,
+        timeoutMs,
+        maxTokens,
+        sys,
+        messages,
+        reasoningEnabled,
+        reasoningEffort,
+        log,
+        debugOn
+      });
+      if (synth?.ok && String(synth.text || "").trim()) {
+        finalText = String(synth.text || "").trim();
+        const msg = { role: "assistant", authorName: getAssistantAuthorName(wo), content: finalText };
+        if (msg.authorName == null) delete msg.authorName;
+        wo._contextPersistQueue.push(getWithTurnId(msg, wo));
+      }
+    } catch (error) {
+      log(`Final synthesis turn failed: ${error?.message || String(error)}`, "warn");
+    }
   }
 
   wo.toolCallLog = toolCallLog;

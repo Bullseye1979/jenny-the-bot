@@ -1,0 +1,22 @@
+{
+  "name": "getFoundryStoryNavigation",
+  "description": "High-level Foundry VTT campaign navigation helper. Use this when a smaller model needs a compact campaign map instead of stitching together many low-level journal calls. Returns likely playable entrypoints, anchor candidates for the current query, a chapter map, orientation/reference journals, and recommended journals to read next.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Optional current location, hook, scene hint, or story question. If provided, the tool prioritizes anchor candidates and recommended next journals around that query."
+      },
+      "limit": {
+        "type": "number",
+        "description": "Optional maximum number of entrypoints, anchors, orientation entries, and recommended next journal refs to return. Chapter map still covers the whole journal corpus."
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional override for the Foundry bridge channel key. Normally taken from toolsconfig.getFoundryBridge.channelKey."
+      }
+    },
+    "additionalProperties": false
+  }
+}

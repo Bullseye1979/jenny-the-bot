@@ -1,0 +1,19 @@
+{
+  "name": "getFoundryPlayerBubble",
+  "description": "Query the dedicated Foundry player specialist context. Use this for party membership, character identity, DnDBeyond-bound characters, and player capability lookups without bringing campaign journal context into the turn.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "description": "The player or party question."
+      },
+      "channelId": {
+        "type": "string",
+        "description": "Optional base Foundry channel ID. Defaults to the active Foundry bridge channel."
+      }
+    },
+    "required": ["prompt"],
+    "additionalProperties": false
+  }
+}

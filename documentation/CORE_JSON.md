@@ -442,13 +442,15 @@ YouTube search and transcript fetcher.
 
 #### getHistory
 
-Date-range history retrieval directly from the database. Returns raw rows ordered chronologically within the requested time window.
+ Date-range history retrieval directly from the database. Returns raw rows ordered chronologically within the requested time window. Each returned row includes `authorName` when present in the stored context JSON.
 
 | Key | Type | Example | Description |
 |---|---|---|---|
 | `maxRows` | number | `300` | Maximum number of raw rows returned per call |
 | `includeToolRows` | boolean | `false` | Include tool-call rows in results |
 | `includeJson` | boolean | `false` | Include the raw stored JSON payload in results |
+
+**Returned row fields:** `ctx_id`, `ts`, `channelId`, `role`, `text`, `authorName`, and optionally `json` when `includeJson=true`.
 
 **Tool call parameters** (set by the AI when calling the tool at runtime, not in `toolsconfig`):
 

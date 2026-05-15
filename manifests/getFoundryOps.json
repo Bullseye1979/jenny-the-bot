@@ -1,0 +1,19 @@
+{
+  "name": "getFoundryOps",
+  "description": "Run low-context Foundry operational work in a dedicated specialist context. Use this for initiative handling, combat tracker maintenance, and writing Foundry MD status files without loading the campaign journals.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "description": "The operational task to perform."
+      },
+      "channelId": {
+        "type": "string",
+        "description": "Optional base Foundry channel ID. Defaults to the active Foundry bridge channel."
+      }
+    },
+    "required": ["prompt"],
+    "additionalProperties": false
+  }
+}

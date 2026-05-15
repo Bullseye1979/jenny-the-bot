@@ -58,6 +58,22 @@ function getSafePath(rawFilename) {
   return { dir: segments.join("/"), base };
 }
 
+function getPositiveIntOrNull(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1) return NaN;
+  return Math.floor(n);
+}
+
+function getChunkMeta(chunkIndex, totalChunks) {
+  if (chunkIndex == null || totalChunks == null) return {};
+  return {
+    chunkIndex,
+    totalChunks,
+    hasMoreChunks: chunkIndex < totalChunks
+  };
+}
+
 
 async function getInvoke(args, coreData) {
   const _log = getPrefixedLogger(coreData?.workingObject, import.meta.url);
@@ -72,15 +88,40 @@ async function getInvoke(args, coreData) {
   const append      = args?.append    === true;
   const search      = args?.search  != null ? String(args.search)  : null;
   const replace     = args?.replace != null ? String(args.replace) : null;
+  const chunkIndex  = getPositiveIntOrNull(args?.chunkIndex);
+  const totalChunks = getPositiveIntOrNull(args?.totalChunks);
 
-  const isAppend  = append && !overwrite && filename;
+  if (Number.isNaN(chunkIndex) || Number.isNaN(totalChunks)) {
+    return { ok: false, error: "chunkIndex and totalChunks must be positive integers when provided" };
+  }
+
+  const hasChunking = chunkIndex != null || totalChunks != null;
+  if (hasChunking && (chunkIndex == null || totalChunks == null)) {
+    return { ok: false, error: "chunkIndex and totalChunks must be provided together" };
+  }
+  if (hasChunking && chunkIndex > totalChunks) {
+    return { ok: false, error: "chunkIndex must be less than or equal to totalChunks" };
+  }
+  if (hasChunking && !filename) {
+    return { ok: false, error: "filename is required for chunked writing" };
+  }
+
+  const effectiveAppend = append || (hasChunking && chunkIndex > 1);
+  const effectiveOverwrite = hasChunking
+    ? (!append && chunkIndex === 1)
+    : overwrite;
+  const isAppend  = effectiveAppend && !effectiveOverwrite && filename;
   const isReplace = search !== null && replace !== null && !overwrite && !append && filename;
 
-  log(`invoke: filename=${filename || "(none)"} overwrite=${overwrite} append=${append} isReplace=${isReplace} contentLen=${String(args?.content ?? "").length}`);
+  if (hasChunking && isReplace) {
+    return { ok: false, error: "chunked writing is not supported together with search+replace mode" };
+  }
 
-  if (!isReplace && (args?.content == null || String(args.content).trim() === "")) {
+  log(`invoke: filename=${filename || "(none)"} overwrite=${overwrite} append=${append} effectiveOverwrite=${effectiveOverwrite} effectiveAppend=${effectiveAppend} isReplace=${isReplace} chunkIndex=${chunkIndex ?? "-"} totalChunks=${totalChunks ?? "-"} contentLen=${String(args?.content ?? "").length}`);
+
+  if (!isReplace && args?.content == null) {
     log("rejected: content empty");
-    return { ok: false, error: "content is required and must not be empty or whitespace-only" };
+    return { ok: false, error: "content is required" };
   }
 
   const userRoot = getUserDir(wo);
@@ -132,7 +173,7 @@ async function getInvoke(args, coreData) {
       ? `${baseUrl}/documents/${userId}/${relPath}`
       : `/documents/${userId}/${relPath}`;
 
-    return { ok: true, filename: relPath, url, path: aAbsPath, bytes: stat.size, appended: appendBuffer.length };
+    return { ok: true, filename: relPath, url, path: aAbsPath, bytes: stat.size, appended: appendBuffer.length, ...getChunkMeta(chunkIndex, totalChunks) };
   }
 
   // ── REPLACE (find-and-replace within existing file) ────────────────────
@@ -199,7 +240,7 @@ async function getInvoke(args, coreData) {
   }
 
   let finalName;
-  if (filename && overwrite) {
+  if (filename && effectiveOverwrite) {
     const nameNoExt = baseName.replace(/\.[^.]+$/, "") || "file";
     const safeBase  = nameNoExt.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
     finalName = safeBase + ext;
@@ -249,7 +290,7 @@ async function getInvoke(args, coreData) {
     : `/documents/${userId}/${relPath}`;
 
   log(`write: success relPath=${relPath}`);
-  return { ok: true, filename: relPath, url, path: absPath, bytes: buffer.length };
+  return { ok: true, filename: relPath, url, path: absPath, bytes: buffer.length, ...getChunkMeta(chunkIndex, totalChunks) };
 }
 
 

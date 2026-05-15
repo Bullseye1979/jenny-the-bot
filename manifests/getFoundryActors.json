@@ -1,0 +1,34 @@
+{
+  "name": "getFoundryActors",
+  "description": "List Foundry VTT actors through the Foundry bridge plugin. Use this to find actor IDs and names for player characters, NPCs, and monsters before creating combatants or loading a specific actor.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Optional case-insensitive name filter."
+      },
+      "type": {
+        "type": "string",
+        "description": "Optional Foundry actor type filter, such as character or npc."
+      },
+      "ownedOnly": {
+        "type": "boolean",
+        "description": "When true, only return actors with player ownership."
+      },
+      "combatEligibleOnly": {
+        "type": "boolean",
+        "description": "When true, only return actors that can reasonably be used to create combatants. Defaults to true."
+      },
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of actors to return."
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional override for the Foundry bridge channel key. Normally taken from toolsconfig.getFoundryBridge.channelKey."
+      }
+    },
+    "additionalProperties": false
+  }
+}

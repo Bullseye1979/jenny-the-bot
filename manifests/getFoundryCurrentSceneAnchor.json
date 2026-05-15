@@ -1,0 +1,38 @@
+{
+  "name": "getFoundryCurrentSceneAnchor",
+  "description": "High-level Foundry VTT current-scene anchor resolver. Use this when the model needs the most likely authoritative journal source for the current scene, plus supporting candidates and the next journals to read before narrating concrete details.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Optional free-form current scene hint, location question, or what-is-happening-here query."
+      },
+      "currentLocation": {
+        "type": "string",
+        "description": "Optional current location or place name to strengthen scene-anchor matching."
+      },
+      "chapterHint": {
+        "type": "string",
+        "description": "Optional chapter, act, or section hint to bias the current scene anchor toward the right story segment."
+      },
+      "objective": {
+        "type": "string",
+        "description": "Optional current party objective or immediate goal."
+      },
+      "recentEvent": {
+        "type": "string",
+        "description": "Optional recent confirmed event or transition that should influence the current scene anchor."
+      },
+      "limit": {
+        "type": "number",
+        "description": "Optional maximum number of supporting candidates and follow-up journals to return."
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional override for the Foundry bridge channel key. Normally taken from toolsconfig.getFoundryBridge.channelKey."
+      }
+    },
+    "additionalProperties": false
+  }
+}

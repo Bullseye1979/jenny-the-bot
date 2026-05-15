@@ -1,0 +1,25 @@
+{
+  "name": "getFoundryCharacter",
+  "description": "Fetch character information from Foundry VTT through the Foundry bridge plugin. Use this for characters that are managed in Foundry. The plugin may also apply its own routing or source rules for configured actors.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "characterRef": {
+        "type": "string",
+        "description": "The Foundry character reference, such as an actor ID, exact actor name, or a plugin-defined external key."
+      },
+      "detail": {
+        "type": "string",
+        "description": "Optional detail level or view requested from the plugin, for example summary, combat, inventory, spells, or full."
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional override for the Foundry bridge channel key. Normally taken from toolsconfig.getFoundryBridge.channelKey."
+      }
+    },
+    "required": [
+      "characterRef"
+    ],
+    "additionalProperties": false
+  }
+}

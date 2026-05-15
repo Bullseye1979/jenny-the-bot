@@ -17,6 +17,19 @@ let sharedDsn = "";
 
 const TIMELINE_TABLE = "timeline_periods";
 
+async function hasColumn(pool, tableName, columnName, databaseName) {
+  const [rows] = await pool.query(
+    `SELECT 1
+       FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = ?
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?
+      LIMIT 1`,
+    [databaseName, tableName, columnName]
+  );
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 
 function getContextConfig(workingObject) {
   const ctxCfg = workingObject?.config?.context || {};
@@ -119,6 +132,7 @@ export async function getEnsurePool(workingObject) {
   if (!db) throw new Error("[context] missing db configuration");
   const dsnKey = getDsnKey(db);
   if (sharedPool && sharedDsn === dsnKey) return sharedPool;
+  const databaseName = db.database;
 
   const pool = mysql.createPool({
     host: db.host,
@@ -143,6 +157,7 @@ export async function getEnsurePool(workingObject) {
       role      VARCHAR(32)   NOT NULL DEFAULT 'user',
       turn_id   CHAR(26)      NULL,
       frozen    TINYINT(1)    NOT NULL DEFAULT 0,
+      sticky    TINYINT(1)    NOT NULL DEFAULT 0,
       PRIMARY KEY (ctx_id),
       KEY idx_id_ctx (id, ctx_id),
       KEY idx_role   (role),
@@ -175,6 +190,20 @@ export async function getEnsurePool(workingObject) {
       ALTER TABLE context
         ADD COLUMN IF NOT EXISTS frozen TINYINT(1) NOT NULL DEFAULT 0;
     `);
+  } catch {}
+  try {
+    await pool.query(`
+      ALTER TABLE context
+        ADD COLUMN IF NOT EXISTS sticky TINYINT(1) NOT NULL DEFAULT 0;
+    `);
+  } catch {}
+  try {
+    if (!await hasColumn(pool, "context", "sticky", databaseName)) {
+      await pool.query(`
+        ALTER TABLE context
+          ADD COLUMN sticky TINYINT(1) NOT NULL DEFAULT 0
+      `);
+    }
   } catch {}
   try {
     await pool.query(`
@@ -469,10 +498,11 @@ export async function setContext(workingObject, record) {
 
   const subchannelEolHours = Number.isFinite(Number(workingObject?.config?.context?.subchannelEolHours)) ? Number(workingObject.config.context.subchannelEolHours) : 24;
   const eolTs = subchannel ? new Date(Date.now() + subchannelEolHours * 60 * 60 * 1000) : null;
+  const sticky = normalized?.sticky === true || normalized?.sticky === 1 ? 1 : 0;
 
   await pool.execute(
-    "INSERT INTO context (id, ts, userid, json, text, role, turn_id, frozen, subchannel, eol_ts) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
-    [id, ts, userid, json, text, role, turnId, subchannel, eolTs]
+    "INSERT INTO context (id, ts, userid, json, text, role, turn_id, frozen, sticky, subchannel, eol_ts) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+    [id, ts, userid, json, text, role, turnId, sticky, subchannel, eolTs]
   );
 
   try {
@@ -569,6 +599,18 @@ async function getContextRowsForId(pool, id, nUsers, detailed, subchannel, subch
   const minTs = thresholdRows?.[0]?.min_ts || null;
 
   let rows = [];
+  let stickyRows = [];
+
+  const [stickyCandidateRows] = await pool.query(
+    `SELECT ctx_id, ts, json, text, role, id
+       FROM context
+      WHERE id = ?
+        AND JSON_VALID(json) = 1
+        AND COALESCE(sticky, 0) = 1
+      ORDER BY ts ASC`,
+    [id]
+  );
+  stickyRows = Array.isArray(stickyCandidateRows) ? stickyCandidateRows : [];
 
   if (minTs) {
     const [mainRows] = await pool.query(
@@ -615,8 +657,16 @@ async function getContextRowsForId(pool, id, nUsers, detailed, subchannel, subch
     rows = descRows.slice().reverse();
   }
 
-  rows.sort((a, b) => new Date(a.ts) - new Date(b.ts));
-  return rows;
+  const seen = new Set();
+  const merged = [...stickyRows, ...rows].filter((row) => {
+    const key = String(row?.ctx_id || "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  merged.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  return merged;
 }
 
 

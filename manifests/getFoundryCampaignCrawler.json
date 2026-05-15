@@ -1,0 +1,26 @@
+{
+  "name": "getFoundryCampaignCrawler",
+  "description": "Builds a Foundry campaign navigation tree markdown file by invoking the existing Jenny /api runtime and the foundry-journal specialist. Use this when the campaign is too large for direct journal reasoning and you need a persistent MD tree with folder hierarchy, short summaries, direct journal refs, and page refs.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "outputPath": {
+        "type": "string",
+        "description": "Target markdown path to write, for example dm-notebook/status/foundry-campaign-tree.md."
+      },
+      "query": {
+        "type": "string",
+        "description": "Optional focus hint, such as the current chapter, location, or campaign name."
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional Foundry bridge channel key. Defaults to toolsconfig.getFoundryBridge.channelKey."
+      },
+      "rebuild": {
+        "type": "boolean",
+        "description": "If true or omitted, rebuild the whole file from scratch. Set false only if you explicitly want a conservative update."
+      }
+    },
+    "additionalProperties": false
+  }
+}

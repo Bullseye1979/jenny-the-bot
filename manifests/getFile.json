@@ -1,17 +1,50 @@
 {
   "name": "getFile",
-  "description": "Save, update, or append to a persistent file and return a public URL. Supports subdirectory paths in the filename, e.g. 'notes/campaign.md' — directories are created automatically.\n\nModes (mutually exclusive, evaluated in this order):\n1. append: true — appends content to the end of an existing file (creates it if it does not exist). Requires filename.\n2. search + replace — finds every occurrence of search in the existing file and replaces it with replace. Fails if search is not found. Requires filename.\n3. overwrite: true — overwrites the file at the exact filename. Requires filename.\n4. default — creates a new file. If filename is taken, a unique suffix is added.\n\nNOTEBOOK PATTERN: Use a fixed filename (e.g. 'notes/dm-notebook.md') to maintain a persistent DM notebook across turns. Create with the default mode, add sections with append, and correct specific text with search+replace.\n\nMULTI-WORKER: Multiple agents may write DIFFERENT files in parallel safely. Writing to the SAME filename from multiple agents simultaneously causes data loss — coordinate via the orchestrator.\n\nRequirements:\n- For binary content: set encoding to 'base64' and pass base64-encoded content.\n- For overwriting: set overwrite: true and provide an explicit filename.",
+  "description": "Save, update, or append to a persistent file and return a public URL. Supports subdirectory paths in the filename, e.g. 'notes/campaign.md' - directories are created automatically.\n\nModes (mutually exclusive, evaluated in this order):\n1. append: true - appends content to the end of an existing file (creates it if it does not exist). Requires filename.\n2. search + replace - finds every occurrence of search in the existing file and replaces it with replace. Fails if search is not found. Requires filename.\n3. overwrite: true - overwrites the file at the exact filename. Requires filename.\n4. default - creates a new file. If filename is taken, a unique suffix is added.\n\nCHUNKED WRITING:\n- Use chunkIndex + totalChunks to write large content in ordered parts.\n- chunkIndex=1 initializes the exact target filename as an overwrite by default.\n- chunkIndex>1 appends by default.\n- This keeps backward compatibility with normal overwrite/append usage while allowing orchestrated or manual chunked writes.\n\nNOTEBOOK PATTERN: Use a fixed filename (e.g. 'notes/dm-notebook.md') to maintain a persistent DM notebook across turns. Create with the default mode, add sections with append, and correct specific text with search+replace.\n\nMULTI-WORKER: Multiple agents may write DIFFERENT files in parallel safely. Writing to the SAME filename from multiple agents simultaneously causes data loss unless you intentionally serialize chunk order - coordinate via the orchestrator.\n\nRequirements:\n- For binary content: set encoding to 'base64' and pass base64-encoded content.\n- For overwriting: set overwrite: true and provide an explicit filename.",
   "parameters": {
     "type": "object",
     "properties": {
-      "content":     { "type": "string", "description": "The full text to write, overwrite, or append. MANDATORY for write, overwrite, and append modes — you MUST supply the actual file content here, not a placeholder. Omit only for search+replace mode." },
-      "filename":    { "type": "string", "description": "Filename including optional subdirectory path and extension, e.g. 'notes/campaign.md'. Required for append, search+replace, and overwrite modes." },
-      "encoding":    { "type": "string", "enum": ["text", "base64"], "description": "Content encoding. 'text' (default) writes UTF-8 text; 'base64' decodes as binary before writing. Only applies to write/overwrite/append modes." },
-      "contentType": { "type": "string", "description": "MIME type hint used to determine file extension when filename is omitted, e.g. 'text/markdown', 'application/json'." },
-      "overwrite":   { "type": "boolean", "description": "If true and filename is provided, overwrite the file at that exact path. Default: false." },
-      "append":      { "type": "boolean", "description": "If true, append content to the end of the existing file instead of creating or overwriting it. The file is created if it does not exist. Requires filename." },
-      "search":      { "type": "string", "description": "Exact string to find in the existing file. Every occurrence is replaced with the replace value. Requires replace and filename. The operation fails if search is not found." },
-      "replace":     { "type": "string", "description": "Replacement string for every occurrence of search. Use an empty string to delete all occurrences. Requires search and filename." }
+      "content": {
+        "type": "string",
+        "description": "The full text to write, overwrite, or append. MANDATORY for write, overwrite, append, and chunked-write modes - you MUST supply the actual file content here, not a placeholder. Omit only for search+replace mode."
+      },
+      "filename": {
+        "type": "string",
+        "description": "Filename including optional subdirectory path and extension, e.g. 'notes/campaign.md'. Required for append, search+replace, overwrite, and chunked-write modes."
+      },
+      "encoding": {
+        "type": "string",
+        "enum": ["text", "base64"],
+        "description": "Content encoding. 'text' (default) writes UTF-8 text; 'base64' decodes as binary before writing. Only applies to write/overwrite/append modes."
+      },
+      "contentType": {
+        "type": "string",
+        "description": "MIME type hint used to determine file extension when filename is omitted, e.g. 'text/markdown', 'application/json'."
+      },
+      "overwrite": {
+        "type": "boolean",
+        "description": "If true and filename is provided, overwrite the file at that exact path. Default: false."
+      },
+      "append": {
+        "type": "boolean",
+        "description": "If true, append content to the end of the existing file instead of creating or overwriting it. The file is created if it does not exist. Requires filename."
+      },
+      "search": {
+        "type": "string",
+        "description": "Exact string to find in the existing file. Every occurrence is replaced with the replace value. Requires replace and filename. The operation fails if search is not found."
+      },
+      "replace": {
+        "type": "string",
+        "description": "Replacement string for every occurrence of search. Use an empty string to delete all occurrences. Requires search and filename."
+      },
+      "chunkIndex": {
+        "type": "number",
+        "description": "Optional 1-based chunk number for chunked writing. When used together with totalChunks, chunk 1 overwrites or initializes the exact file by default and later chunks append by default."
+      },
+      "totalChunks": {
+        "type": "number",
+        "description": "Optional total number of chunks for chunked writing. Must be provided together with chunkIndex."
+      }
     },
     "required": [],
     "additionalProperties": false

@@ -1,0 +1,48 @@
+{
+  "name": "getFoundryJournal",
+  "description": "Navigate Foundry VTT journals through the Foundry bridge plugin. Use this to list journals, search across journal content, read a specific journal entry or page, scan journals in ordered chunks, inspect an outline, identify likely entrypoints, resolve likely scene anchors, or use the newer story-navigation operations. Journal reads are paginated so large pages can be processed safely by smaller models.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "operation": {
+        "type": "string",
+        "enum": ["list", "search", "read", "scan", "outline", "entrypoints", "anchors", "storynavigation", "currentsceneanchor"],
+        "description": "Journal operation to perform."
+      },
+      "query": {
+        "type": "string",
+        "description": "Search phrase, scene hint, location, or title hint. Used with search, read, and anchors."
+      },
+      "entryRef": {
+        "type": "string",
+        "description": "Optional exact journal ID, UUID, or title for read operations."
+      },
+      "pageRef": {
+        "type": "string",
+        "description": "Optional exact page ID, UUID, or page title for read operations."
+      },
+      "limit": {
+        "type": "number",
+        "description": "Optional maximum number of list, search, scan, outline, entrypoint, or anchor results."
+      },
+      "cursor": {
+        "type": "number",
+        "description": "Optional scan cursor for continuing through all journals in order."
+      },
+      "offset": {
+        "type": "number",
+        "description": "Optional character offset for paginated read operations. Use the returned nextOffset to continue reading large journal pages."
+      },
+      "maxChars": {
+        "type": "number",
+        "description": "Optional maximum number of characters to return for a read operation. Use a smaller value for tiny models and continue with nextOffset if truncated."
+      },
+      "channelKey": {
+        "type": "string",
+        "description": "Optional override for the Foundry bridge channel key. Normally taken from toolsconfig.getFoundryBridge.channelKey."
+      }
+    },
+    "required": ["operation"],
+    "additionalProperties": false
+  }
+}

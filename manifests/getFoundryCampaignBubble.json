@@ -1,0 +1,19 @@
+{
+  "name": "getFoundryCampaignBubble",
+  "description": "Query the dedicated Foundry campaign specialist context. Use this for campaign lore, local scene context, nearby likely events, and what should be loaded next, without dragging the full campaign journals into the main DM context.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "description": "The campaign question or scene-context request."
+      },
+      "channelId": {
+        "type": "string",
+        "description": "Optional base Foundry channel ID. Defaults to the active Foundry bridge channel."
+      }
+    },
+    "required": ["prompt"],
+    "additionalProperties": false
+  }
+}

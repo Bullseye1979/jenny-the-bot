@@ -977,6 +977,17 @@ export function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
   const includeSystem  = !!kiCfg.includeHistorySystemMessages;
   let lastAssistantToolIds = new Set();
 
+  function getPromptContentWithAuthor(row) {
+    const content = typeof row?.content === "string" ? row.content : "";
+    const authorName =
+      typeof row?.authorName === "string" && row.authorName.trim().length
+        ? row.authorName.trim()
+        : "";
+    if (!authorName || !content) return content;
+    if (content.startsWith("[authorName:")) return content;
+    return `[authorName: ${authorName}]\n${content}`;
+  }
+
   for (let i = 0; i < (rows || []).length; i++) {
     const r    = rows[i] || {};
     const role = r.role;
@@ -987,13 +998,13 @@ export function getPromptFromSnapshot(rows, kiCfg, allowToolHistory = true) {
     }
 
     if (role === "user") {
-      out.push({ role: "user", content: r.content ?? "" });
+      out.push({ role: "user", content: getPromptContentWithAuthor(r) });
       lastAssistantToolIds = new Set();
       continue;
     }
 
     if (role === "assistant") {
-      const msg = { role: "assistant", content: r.content ?? "" };
+      const msg = { role: "assistant", content: getPromptContentWithAuthor(r) };
       if (includeTools && Array.isArray(r.tool_calls) && r.tool_calls.length) {
         msg.tool_calls = r.tool_calls.map(tc => ({
           id:   tc?.id,
@@ -1038,4 +1049,18 @@ export function getAppendedContextBlockToUserContent(baseText, contextObj) {
   if (!contextObj || typeof contextObj !== "object") return baseText ?? "";
   const jsonBlock = "```json\n" + JSON.stringify(contextObj) + "\n```";
   return (baseText ?? "") + "\n\n[context]\n" + jsonBlock;
+}
+
+
+export function getUserContentWithAuthor(baseText, wo) {
+  const content = baseText ?? "";
+  const authorName =
+    typeof wo?.authorDisplayName === "string" && wo.authorDisplayName.trim().length
+      ? wo.authorDisplayName.trim()
+      : typeof wo?.authorName === "string" && wo.authorName.trim().length
+        ? wo.authorName.trim()
+        : "";
+  if (!authorName || !content) return content;
+  if (content.startsWith("[authorName:")) return content;
+  return `[authorName: ${authorName}]\n${content}`;
 }
