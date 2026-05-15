@@ -332,6 +332,132 @@ async function writeFoundryMarkdownState(workingObject, state) {
   await fs.writeFile(path.join(statusDir, "foundry-party-state.md"), buildPartyStateMarkdown(state.session || {}), "utf8");
 }
 
+// ─── Actor stats cache ────────────────────────────────────────────────────────
+
+/**
+ * Formats full actor stats as a compact Markdown block for inline use in AI prompts.
+ * Separates player characters from NPCs/enemies.
+ */
+function buildActorStatsMarkdown(actors = [], sessionPlayers = []) {
+  if (!Array.isArray(actors) || !actors.length) return "";
+  const playerActorIds = new Set((sessionPlayers || []).map((p) => normalize(p.actorId)).filter(Boolean));
+  const pcs = actors.filter((a) => a?.hasPlayerOwner || playerActorIds.has(normalize(a?.id)));
+  const npcs = actors.filter((a) => !a?.hasPlayerOwner && !playerActorIds.has(normalize(a?.id)));
+  const lines = [];
+
+  function formatActor(a) {
+    if (!a) return;
+    const hpStr = `HP: ${a.hp?.value ?? "?"}/${a.hp?.max ?? "?"}${a.hp?.temp ? ` (+${a.hp.temp} temp)` : ""}`;
+    const acStr = `AC: ${a.ac ?? "?"}`;
+    const profStr = a.proficiencyBonus ? `PB: +${a.proficiencyBonus}` : "";
+    const tagStr = a.cr != null ? `CR ${a.cr}` : a.level != null ? `L${a.level}` : "";
+    lines.push(`### ${normalize(a.name) || "Unknown"}${tagStr ? ` [${tagStr}]` : ""} — ${hpStr} | ${acStr}${profStr ? ` | ${profStr}` : ""}`);
+
+    // Ability scores
+    if (a.abilities && Object.keys(a.abilities).length) {
+      const abilParts = Object.entries(a.abilities).map(([k, v]) => {
+        const modStr = v.mod != null ? (v.mod >= 0 ? `+${v.mod}` : `${v.mod}`) : "?";
+        return `${k.toUpperCase()} ${v.value ?? "?"}(${modStr})`;
+      });
+      lines.push(`Abilities: ${abilParts.join(" | ")}`);
+      const saveParts = Object.entries(a.abilities)
+        .filter(([, v]) => v.save != null)
+        .map(([k, v]) => `${k.toUpperCase()} ${v.save >= 0 ? `+${v.save}` : v.save}`);
+      if (saveParts.length) lines.push(`Saves: ${saveParts.join(", ")}`);
+    }
+
+    // Attacks
+    if (Array.isArray(a.attacks) && a.attacks.length) {
+      const atkParts = a.attacks.map((atk) => {
+        const parts = [normalize(atk.name)];
+        if (atk.toHit) parts.push(atk.toHit);
+        if (atk.damage) parts.push(`(${atk.damage})`);
+        if (atk.range) parts.push(`${atk.range} ft`);
+        return parts.join(" ");
+      });
+      lines.push(`Attacks: ${atkParts.join(" | ")}`);
+    }
+
+    // Spell slots
+    if (a.spellSlots && Object.keys(a.spellSlots).length) {
+      const slotParts = Object.entries(a.spellSlots)
+        .map(([k, v]) => `L${k.replace("spell", "")}:${v.value}/${v.max}`);
+      lines.push(`Spell slots: ${slotParts.join(" ")}`);
+    }
+
+    // Conditions
+    if (Array.isArray(a.conditions) && a.conditions.length) {
+      lines.push(`Conditions: ${a.conditions.join(", ")}`);
+    }
+    lines.push("");
+  }
+
+  if (pcs.length) {
+    lines.push("## Player Characters\n");
+    pcs.forEach(formatActor);
+  }
+  if (npcs.length) {
+    lines.push("## NPCs & Enemies\n");
+    npcs.forEach(formatActor);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Fetches full D&D5e stats for all active combatants from Foundry, writes
+ * foundry-combat-actors.md to the status dir, and updates actorSnapshot on
+ * each binding so subsequent AI calls have fresh HP/AC/attack data.
+ * Returns the raw actors array or null on failure.
+ */
+async function fetchAndCacheActorStats(workingObject, state) {
+  const bindings = Array.isArray(state.initiative?.actorBindings) ? state.initiative.actorBindings : [];
+  const actorRefs = bindings
+    .map((b) => normalize(b.actorId) || normalize(b.name))
+    .filter(Boolean);
+  if (!actorRefs.length) return null;
+
+  let actorStats;
+  try {
+    const res = await invokeFoundryAction(workingObject, "actor-stats", {
+      channelKey: state.session.channelKey,
+      actorRefs
+    });
+    if (!Array.isArray(res?.actors) || !res.actors.length) return null;
+    actorStats = res.actors;
+  } catch { return null; }
+
+  // Write markdown file for context
+  const statusDir = getFoundryStatusDir(workingObject);
+  const md = buildActorStatsMarkdown(actorStats, state.session?.players || []);
+  if (md) {
+    await fs.mkdir(statusDir, { recursive: true });
+    await fs.writeFile(path.join(statusDir, "foundry-combat-actors.md"), md, "utf8").catch(() => {});
+  }
+
+  // Update actorBindings with fresh snapshot data
+  for (const binding of bindings) {
+    const fresh = actorStats.find((a) =>
+      (normalize(a?.id) && normalize(a.id) === normalize(binding.actorId))
+      || normalize(a?.name).toLowerCase() === normalize(binding.name).toLowerCase()
+    );
+    if (fresh) {
+      binding.actorSnapshot = {
+        ...(binding.actorSnapshot || {}),
+        hp: fresh.hp,
+        ac: fresh.ac,
+        speed: fresh.speed,
+        conditions: fresh.conditions,
+        abilities: fresh.abilities,
+        attacks: fresh.attacks,
+        spellSlots: fresh.spellSlots,
+        proficiencyBonus: fresh.proficiencyBonus
+      };
+    }
+  }
+
+  return actorStats;
+}
+
 // ─── Character & session init ─────────────────────────────────────────────────
 
 async function writePartyCharacterFiles(baseCore, runFlow, createRunCore, workingObject, session) {
@@ -953,6 +1079,11 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   state.initiative.npcInitiatives = npcInitiatives;
   await writeRoundState(workingObject, state);
 
+  // Fetch and cache full actor stats for all combatants now that the tracker is populated.
+  // This writes foundry-combat-actors.md and enriches actorBinding.actorSnapshot.
+  await fetchAndCacheActorStats(workingObject, state).catch(() => {});
+  await writeRoundState(workingObject, state);
+
   const trackerMsg = state.initiative.combatId
     ? `⚔️ Combat Tracker geöffnet (ID: ${state.initiative.combatId}). Initiative-Runde beginnt!`
     : "⚔️ Combat Tracker wird geöffnet. Initiative-Runde beginnt!";
@@ -1109,16 +1240,42 @@ async function advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, wo
 async function startNpcCombatTurn(baseCore, runFlow, createRunCore, workingObject, state, activeBinding) {
   const npcName = normalize(activeBinding.characterName || activeBinding.userName || "Enemy");
 
+  // Build a compact stat block for this NPC from the cached snapshot
+  const snap = activeBinding.actorSnapshot || {};
+  const npcStatLines = [];
+  if (snap.hp) npcStatLines.push(`HP: ${snap.hp.value ?? "?"}/${snap.hp.max ?? "?"} | AC: ${snap.ac ?? "?"}`);
+  if (snap.abilities) {
+    const ab = snap.abilities;
+    npcStatLines.push(
+      `STR ${ab.str?.value ?? "?"}(${ab.str?.mod != null ? (ab.str.mod >= 0 ? `+${ab.str.mod}` : ab.str.mod) : "?"}) | ` +
+      `DEX ${ab.dex?.value ?? "?"}(${ab.dex?.mod != null ? (ab.dex.mod >= 0 ? `+${ab.dex.mod}` : ab.dex.mod) : "?"}) | ` +
+      `CON ${ab.con?.value ?? "?"}(${ab.con?.mod != null ? (ab.con.mod >= 0 ? `+${ab.con.mod}` : ab.con.mod) : "?"})`
+    );
+  }
+  if (Array.isArray(snap.attacks) && snap.attacks.length) {
+    npcStatLines.push(`Attacks: ${snap.attacks.map((a) => [a.name, a.toHit, a.damage ? `(${a.damage})` : ""].filter(Boolean).join(" ")).join(" | ")}`);
+  }
+  if (Array.isArray(snap.conditions) && snap.conditions.length) {
+    npcStatLines.push(`Conditions: ${snap.conditions.join(", ")}`);
+  }
+
+  // Build target options from combatants that are player-controlled
+  const targetOptions = (state.initiative.actorBindings || [])
+    .filter((b) => isPlayerControlledCombatant(state, b))
+    .map((b) => normalize(b.name));
+
   // Ask the director what the NPC does this turn
   const npcActionDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
     "Decide what action an NPC takes on their D&D 5e combat turn.",
     `NPC: ${npcName}`,
-    `Actor snapshot: ${JSON.stringify(activeBinding.actorSnapshot || {}, null, 2)}`,
+    npcStatLines.length ? `NPC stats:\n${npcStatLines.join("\n")}` : "",
+    targetOptions.length ? `Possible targets (player characters): ${targetOptions.join(", ")}` : "",
     `Combat turn order (current index ${state.initiative.currentTurnIndex}): ${JSON.stringify((state.initiative.turnOrder || []).map((c) => c.name), null, 2)}`,
     `Current beat: ${normalize(state.currentBeat || state.lastScene?.summary || "ongoing combat")}`,
+    "Use the NPC's actual listed attacks if available. Pick the most tactically appropriate one.",
     "Return JSON only:",
-    '{ "action": "What the NPC does — attack description, target name, and approach (1–2 sentences)", "targetName": "name of primary target" }'
-  ].join("\n")) || {};
+    '{ "action": "What the NPC does — which attack, against which target, and any tactical detail (1–2 sentences)", "targetName": "name of primary target" }'
+  ].filter(Boolean).join("\n")) || {};
 
   const actionText = normalize(npcActionDir?.action) || `${npcName} attacks!`;
 
@@ -1224,20 +1381,40 @@ async function startCombatResolution(baseCore, runFlow, createRunCore, workingOb
   const activeBinding = getActiveCombatantBinding(state);
   const lastAction = state.initiative.lastPlayerAction;
 
+  // Build compact attacker stat block from cached snapshot
+  const snap = activeBinding?.actorSnapshot || {};
+  const snapLines = [];
+  if (snap.hp) snapLines.push(`HP: ${snap.hp.value ?? "?"}/${snap.hp.max ?? "?"} | AC: ${snap.ac ?? "?"} | PB: ${snap.proficiencyBonus != null ? `+${snap.proficiencyBonus}` : "?"}`);
+  if (snap.abilities) {
+    const ab = snap.abilities;
+    const mods = ["str", "dex", "con", "int", "wis", "cha"]
+      .map((k) => `${k.toUpperCase()} ${ab[k]?.mod != null ? (ab[k].mod >= 0 ? `+${ab[k].mod}` : ab[k].mod) : "?"}`)
+      .join(" | ");
+    snapLines.push(`Modifiers: ${mods}`);
+  }
+  if (Array.isArray(snap.attacks) && snap.attacks.length) {
+    snapLines.push(`Known attacks: ${snap.attacks.map((a) => [a.name, a.toHit, a.damage ? `(${a.damage})` : ""].filter(Boolean).join(" ")).join(" | ")}`);
+  }
+  if (snap.spellSlots && Object.keys(snap.spellSlots).length) {
+    const slots = Object.entries(snap.spellSlots).map(([k, v]) => `L${k.replace("spell", "")}:${v.value}/${v.max}`).join(" ");
+    snapLines.push(`Spell slots: ${slots}`);
+  }
+
   const combatDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
-    "You are resolving a D&D 5e combat action. Determine what dice rolls are needed.",
+    "You are resolving a D&D 5e combat action. Determine the exact dice rolls needed.",
+    "RULE: Use the attacker's actual listed attacks and modifiers below. Do NOT invent notation — derive it from the stats.",
     `Active combatant: ${normalize(activeBinding?.characterName || activeBinding?.userName)}`,
-    `Actor snapshot: ${JSON.stringify(activeBinding?.actorSnapshot || {}, null, 2)}`,
+    snapLines.length ? `Attacker stats:\n${snapLines.join("\n")}` : "",
     `Declared action: ${normalize(lastAction?.text)}`,
     `Combat turn order (current index ${state.initiative.currentTurnIndex}): ${JSON.stringify(state.initiative.turnOrder?.map((c) => c.name), null, 2)}`,
     "Return JSON only:",
     `{`,
-    `  "attackRolls": [{"notation":"1d20+5","label":"Attack roll","visibility":"public"}],`,
+    `  "attackRolls": [{"notation":"1d20+5","label":"Longsword attack","visibility":"public"}],`,
     `  "damageRolls": [{"notation":"1d8+3","label":"Longsword damage","visibility":"public"}],`,
     `  "attackAnnouncement": "One sentence announcing the attack (present tense, dramatic)",`,
     `  "combatEnds": false`,
     `}`
-  ].join("\n")) || {};
+  ].filter(Boolean).join("\n")) || {};
 
   // Make attack rolls immediately so the numbers exist for the hit announcement
   const attackRollResults = [];
@@ -1355,12 +1532,15 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
     damageRollResults.push({ spec: rollSpec, result: rollRes });
   }
 
+  // Re-fetch actor stats so HP changes from this attack are reflected in the next turn
+  await fetchAndCacheActorStats(capturedWo, state).catch(() => {});
+
   const damageText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "Describe the final outcome of a D&D 5e combat attack.",
     `Attacker: ${normalize(lastAction.name)}, action: ${normalize(lastAction.text)}`,
     `Damage roll results: ${JSON.stringify(damageRollResults, null, 2)}`,
     reactions.length ? `Post-hit reactions: ${JSON.stringify(reactions, null, 2)}` : "",
-    "Write 1-2 short plain-text sentences describing the damage and any dramatic effects."
+    "Write 1-2 short plain-text sentences describing the damage and any dramatic effects. Mention the total damage dealt."
   ].filter(Boolean).join("\n"));
 
   // Check if combat ends (all non-player combatants defeated, or director flagged it)
