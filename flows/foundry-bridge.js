@@ -209,7 +209,7 @@ async function postBotMessagesToFoundry(baseWo, messages = []) {
       type: normalize(entry?.type || "botmessage"),
       meta: entry?.meta || {}
     }))
-    .filter((entry) => entry.text);
+    .filter((entry) => entry.text && entry.text.length > 0);
   if (!channelKey || !cleanMessages.length) return;
   const { enqueueFoundryBridgeRequest } = await import("../shared/foundry-bridge.js");
   await enqueueFoundryBridgeRequest(baseWo, "botmessage", { messages: cleanMessages }, {
@@ -856,6 +856,11 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   state.initiative.turnFollowupHistory = [];
 
   const actorRefs = state.session.players.map((entry) => normalize(entry.actorId)).filter(Boolean);
+  // Players without actorId: send by name so Foundry can find them via fuzzy match on game.actors
+  const playerNamesForEnsure = state.session.players
+    .filter((entry) => !normalize(entry.actorId))
+    .map((entry) => normalize(entry.characterName || entry.userName))
+    .filter(Boolean);
   // Support both old "combatants" and new split "enemies"/"allies" from director
   const enemyNames = Array.isArray(director?.enemies)
     ? director.enemies.map((e) => normalize(e)).filter(Boolean)
@@ -869,6 +874,7 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
     channelKey: state.session.channelKey,
     operation: "ensure",
     actorRefs,
+    playerNames: playerNamesForEnsure,
     npcNames: allNpcNames
   });
   syncInitiativeStateFromResult(state, ensureRes, state.session.players);
@@ -1079,13 +1085,14 @@ async function advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, wo
     }
 
     // NPC turn: AI narrates, Foundry advances
+    const npcName = normalize(activeBinding.characterName || activeBinding.userName || "Enemy");
     const npcText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
       "Resolve an NPC or enemy combat turn in one short plain-text sentence.",
-      `Combatant: ${normalize(activeBinding.characterName || activeBinding.userName)}`,
+      `Combatant: ${npcName}`,
       `Actor snapshot JSON:\n${JSON.stringify(activeBinding.actorSnapshot || {}, null, 2)}`,
       "Describe only the immediate hostile or tactical action. No markdown. Do NOT end with a question."
-    ].join("\n"));
-    if (npcText) messages.push({ text: npcText, type: "bot" });
+    ].join("\n")) || `${npcName} acts.`;
+    messages.push({ text: npcText, type: "bot" });
 
     const nextRes = await invokeFoundryAction(workingObject, "initiative", {
       channelKey: state.session.channelKey,
@@ -1095,8 +1102,21 @@ async function advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, wo
     syncInitiativeStateFromResult(state, nextRes, state.session.players);
   }
 
-  // Fell off the end - all combatants acted or no player found
-  messages.push({ text: "All combatants have acted this round.", type: "bot" });
+  // Fell off the end — either all combatants acted or the active player has no turn in the tracker.
+  // Check whether any player binding exists in the turn order at all.
+  const hasAnyPlayerInTracker = Array.isArray(state.initiative?.actorBindings) &&
+    state.initiative.actorBindings.some((b) => isPlayerControlledCombatant(state, b));
+
+  if (!hasAnyPlayerInTracker) {
+    // Player was not found in the combat tracker — give GM actionable guidance.
+    messages.push({
+      text: "⚠️ Kein Spieler-Combatant im Combat Tracker gefunden. Mögliche Ursachen: Actor existiert nicht in game.actors, oder session-sync wurde ohne actorId durchgeführt. Nutze '!dm skip' um zur nächsten Runde zu springen, oder '!dm reset' um zurück zu Exploration zu gehen.",
+      type: "bot"
+    });
+    // Keep phase at combat_turn_prompt so !dm commands still work
+  } else {
+    messages.push({ text: "Alle Kämpfer haben diese Runde agiert.", type: "bot" });
+  }
   await writeRoundState(workingObject, state);
   return { state, messages };
 }
@@ -1796,7 +1816,9 @@ export default async function getFoundryBridgeFlow(baseCore, runFlow, createRunC
           service: "foundry-bridge",
           channelId,
           accepted: result?.accepted === true,
-          messages: Array.isArray(result?.messages) ? result.messages : []
+          messages: Array.isArray(result?.messages)
+            ? result.messages.filter((m) => normalize(m?.text))
+            : []
         });
       } catch (e) {
         return getJson(res, 500, { ok: false, error: "foundry_round_input_failed", reason: e?.message || String(e) });
