@@ -1931,6 +1931,90 @@ function summarizeActorReference(actor) {
   };
 }
 
+/**
+ * Returns full D&D 5e combat stats for one actor — abilities, attacks, spell slots, conditions.
+ * Used by the bot to build the foundry-combat-actors.md context file and inline AI prompts.
+ */
+function buildActorFullStats(actor) {
+  if (!actor) return null;
+  const sys = actor.system || {};
+
+  // Ability scores + modifiers + saves
+  const abilities = {};
+  for (const [key, abil] of Object.entries(sys.abilities || {})) {
+    abilities[key] = {
+      value: abil.value ?? null,
+      mod: abil.mod ?? null,
+      save: abil.save ?? null
+    };
+  }
+
+  // Activated items: weapons, spells, feats with an activation type
+  const attacks = [];
+  for (const item of Array.from(actor.items || [])) {
+    if (!item.system?.activation?.type) continue;
+    if (!["weapon", "spell", "feat"].includes(item.type)) continue;
+    const damageParts = (item.system?.damage?.parts || []).map((p) => p.join(" ")).join(" + ");
+    const labelDamage = (item.labels?.damages || []).map((d) => d.label).join(" + ");
+    attacks.push({
+      name: item.name,
+      type: item.type,
+      toHit: item.labels?.toHit || null,
+      damage: labelDamage || damageParts || null,
+      range: item.system?.range?.value || null
+    });
+  }
+
+  // Spell slots that have a maximum
+  const spellSlots = {};
+  for (let lvl = 1; lvl <= 9; lvl++) {
+    const slot = sys.spells?.[`spell${lvl}`];
+    if (slot?.max) spellSlots[`spell${lvl}`] = { value: slot.value ?? 0, max: slot.max };
+  }
+
+  return {
+    id: actor.id || null,
+    uuid: actor.uuid || null,
+    name: actor.name || null,
+    type: actor.type || null,
+    hasPlayerOwner: actor.hasPlayerOwner === true,
+    hp: {
+      value: sys.attributes?.hp?.value ?? null,
+      max: sys.attributes?.hp?.max ?? null,
+      temp: sys.attributes?.hp?.temp ?? null
+    },
+    ac: sys.attributes?.ac?.value ?? null,
+    speed: sys.attributes?.movement?.walk ?? null,
+    proficiencyBonus: sys.attributes?.prof ?? null,
+    level: sys.details?.level ?? null,
+    cr: sys.details?.cr ?? null,
+    abilities,
+    attacks,
+    spellSlots,
+    conditions: getActorConditionLabels(actor)
+  };
+}
+
+async function handleActorStats(payload) {
+  const actorRefs = Array.isArray(payload?.actorRefs) ? payload.actorRefs : [];
+  const seen = new Set();
+  const results = [];
+  for (const ref of actorRefs) {
+    const actor = getActorByRef(normalize(ref));
+    if (!actor || seen.has(actor.id)) continue;
+    seen.add(actor.id);
+    const stats = buildActorFullStats(actor);
+    if (stats) results.push(stats);
+  }
+  return {
+    ok: true,
+    source: "foundry",
+    action: "actor-stats",
+    count: results.length,
+    actors: results
+  };
+}
+
 async function handleActors(payload) {
   const query = normalize(payload?.query).toLowerCase();
   const type = normalize(payload?.type).toLowerCase();
@@ -2025,6 +2109,8 @@ async function handleRequest(request = {}) {
       return handleCharacter(payload);
     case "actors":
       return handleActors(payload);
+    case "actor-stats":
+      return handleActorStats(payload);
     case "initiative":
       return handleInitiative(payload);
     case "journal":
