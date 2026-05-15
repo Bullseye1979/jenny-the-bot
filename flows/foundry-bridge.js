@@ -474,13 +474,13 @@ async function initializeFoundrySession(baseCore, runFlow, createRunCore, workin
   state.lastScene = await getCampaignBubble(baseCore, runFlow, createRunCore, state, "Build the opening local story bubble for the current campaign state.");
   await writeFoundryMarkdownState(workingObject, state);
   state = await writeRoundState(workingObject, state);
-  const openLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "the current location");
+  const openBeat = normalize(state.currentBeat || state.lastScene?.summary || state.lastScene?.location || state.session?.progress?.currentLocation || "the current location");
   const sceneOpener = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "You are opening an exploration round for a multiplayer D&D session.",
-    "RULE: Describe ONLY where the party is RIGHT NOW and what is immediately in front of them. Do not summarize the campaign or describe what will happen later.",
-    `Current party location: ${openLocation}`,
-    `Scene bubble JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
-    "Write 1 to 3 short plain-text sentences describing only the immediate playable situation at the current location."
+    "RULES: Describe ONLY what is immediately in front of the party. Do not summarize the campaign or describe future events.",
+    "Do NOT end with a question like 'What do you do?' — the system adds the player prompt automatically.",
+    `CURRENT BEAT (authoritative — base your narration on this): ${openBeat}`,
+    "Write 1 to 3 short plain-text sentences describing only the immediate playable situation."
   ].join("\n"));
   const opener = buildExplorationTurnPrompt(state, sceneOpener);
   return { state, opener, contextSync };
@@ -588,20 +588,32 @@ async function advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, 
   state.round.actionFollowupHistory = [];
   await writeFoundryMarkdownState(workingObject, state);
   await writeRoundState(workingObject, state);
-  const nowLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "current location");
+  const nowBeat = normalize(state.currentBeat || state.lastScene?.summary || state.lastScene?.location || state.session?.progress?.currentLocation || "current location");
   const scenePrompt = await runNarratorText(baseCore, runFlow, createRunCore, state, [
-    "You are the DM narrator for a multiplayer D&D session. Your job is to describe ONLY the immediate situation at the party's current location.",
-    "RULE: Do NOT advance the story to a future location or skip narrative steps. If the party is traveling, describe only this moment of travel — not the destination.",
-    `Current party location: ${nowLocation}`,
+    "You are the DM narrator for a multiplayer D&D session.",
+    "RULES: Your narration must match the current beat exactly. Do NOT advance to a future location. Do NOT contradict what already happened.",
+    "Do NOT end with a question like 'What do you do?' — the system adds the player prompt automatically.",
+    `CURRENT BEAT (authoritative — do not override): ${nowBeat}`,
     resolutionText ? `What just happened: ${resolutionText}` : "",
-    `Current scene JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
-    "Write at most 2 short plain-text sentences about what the party sees and hears RIGHT NOW at their current location."
+    "Write at most 2 short plain-text sentences that set the scene as described in the current beat."
   ].filter(Boolean).join("\n"));
   return buildExplorationTurnPrompt(state, scenePrompt);
 }
 
 async function resolveExplorationRound(baseCore, runFlow, createRunCore, workingObject, state) {
   const actions = Array.isArray(state?.round?.acceptedActions) ? state.round.acceptedActions : [];
+  // Query available Foundry actors so the director can use exact names
+  let availableActorNames = "";
+  try {
+    const actorsRes = await invokeFoundryAction(workingObject, "actors", {
+      channelKey: state.session.channelKey,
+      limit: 80
+    });
+    if (Array.isArray(actorsRes?.actors) && actorsRes.actors.length) {
+      availableActorNames = actorsRes.actors.map((a) => normalize(a?.name)).filter(Boolean).join(", ");
+    }
+  } catch { /* non-fatal — director works without it */ }
+
   const currentLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "unknown location");
   const director = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
     "Resolve a multiplayer D&D exploration round. ADVANCE THE STORY ONE BEAT AT A TIME.",
@@ -612,8 +624,10 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     "3. NPCs at other locations cannot speak, react, or interact. Only NPCs physically present at the current location can act.",
     "4. Quest progression is gradual: receive quest → discuss → prepare → begin travel → travel → arrive → etc. Never jump steps.",
     "5. sceneUpdate.location must remain the CURRENT location unless the party has literally just finished traveling in THIS beat.",
-    "6. Set modeSwitch='initiative' ONLY if an enemy appears and attacks or blocks the party RIGHT NOW at their current position.",
+    "6. Set modeSwitch='initiative' ONLY if an enemy is actively hostile and physically present RIGHT NOW. Surrendered, fleeing, or already defeated enemies do NOT count. If the player tries to attack surrendered enemies, resolve it narratively without combat mode.",
+    "7. For 'enemies' and 'allies' fields: use ONLY names from the available Foundry actors list below. If you need multiple of the same type (e.g. 3 cultists), repeat the name 3 times. If no actor list is provided, use your best guess.",
     "",
+    availableActorNames ? `Available Foundry actors (EXACT names — only pick from this list): ${availableActorNames}` : "",
     `Current party location: ${currentLocation}`,
     `Current scene JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
     `Party roster JSON:\n${JSON.stringify(state.session.players, null, 2)}`,
@@ -622,11 +636,13 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     "Return JSON only with keys:",
     "{",
     '  "modeSwitch": "exploration" | "initiative",',
+    '  "currentBeat": "1-2 sentences describing EXACTLY where the party is and what is happening right now — this becomes the authoritative scene anchor for the next turn",',
     '  "summary": "DM-only summary of what happens NOW (one beat, current location only)",',
     '  "activeThreats": "short threat summary or empty string",',
     '  "clarifications": [{"userId":"","userName":"","prompt":"","rollNeeded":"","dc":"","reason":""}],',
     '  "npcRolls": [{"label":"","notation":"","visibility":"gmroll"}],',
-    '  "combatants": ["enemy 1", "enemy 2"],',
+    '  "enemies": ["exact Foundry token name of hostile combatant 1", "..."],',
+    '  "allies": ["exact Foundry token name of allied NPC 1", "..."],',
     '  "sceneUpdate": {"location":"current location — only change if party just finished traveling","objective":"","chapter":"","summary":"what is immediately visible/audible NOW","nearbyEvents":"","nearbyNpcs":"","nearbyHazards":"","nextBeats":"","drift":"","loadNext":"","sourceAnchor":""}',
     "}"
   ].join("\n")) || {};
@@ -655,6 +671,10 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     }))
     .filter((entry) => entry.userId && entry.prompt);
 
+  if (director.currentBeat) {
+    state.currentBeat = normalize(director.currentBeat);
+  }
+
   state.lastResolution = {
     summary: normalize(director.summary),
     activeThreats: normalize(director.activeThreats),
@@ -682,14 +702,15 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     };
   }
 
-  const resLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "the current location");
+  const resBeat = normalize(director.currentBeat || state.currentBeat || state.lastScene?.summary || state.lastScene?.location || "the current location");
   const resolutionText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "Present the resolution of a D&D exploration round in plain text for Foundry chat.",
-    "RULE: Only describe what is happening RIGHT NOW at the party's current location. Do not jump to a destination. Do not summarize a whole journey in one sentence.",
-    `Current party location: ${resLocation}`,
-    `Director's resolution summary (one beat only):\n${normalize(director.summary) || "-"}`,
+    "RULES: Your narration must match the current beat exactly. Do NOT jump to a destination or skip story steps. Do NOT contradict what the director summary says.",
+    "Do NOT end with a question like 'What do you do?' — the system adds the player prompt automatically.",
+    `CURRENT BEAT (authoritative): ${resBeat}`,
+    `Director resolution summary:\n${normalize(director.summary) || "-"}`,
     `NPC roll results JSON:\n${JSON.stringify(npcRollResults, null, 2)}`,
-    "Write 2 to 4 short sentences describing what happens at the current location right now."
+    "Write 2 to 4 short sentences narrating exactly this beat."
   ].join("\n"));
 
   if (normalize(director.modeSwitch).toLowerCase() === "initiative") {
@@ -779,15 +800,15 @@ async function continueClarificationRound(baseCore, runFlow, createRunCore, work
     };
   }
 
-  const clarLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "the current location");
+  const clarBeat = normalize(state.currentBeat || state.lastScene?.summary || state.lastScene?.location || "the current location");
   const resolutionText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "Resolve a D&D exploration round after clarification and player roll responses.",
-    "RULE: Only describe what is happening RIGHT NOW at the party's current location. One beat at a time.",
-    `Current party location: ${clarLocation}`,
+    "RULES: Only describe what is happening RIGHT NOW. Do not skip ahead. Do NOT end with a question.",
+    `CURRENT BEAT (authoritative): ${clarBeat}`,
     `Original round actions JSON:\n${JSON.stringify(state.round.acceptedActions, null, 2)}`,
     `Clarification responses JSON:\n${JSON.stringify(pending, null, 2)}`,
     `Director summary:\n${normalize(state?.lastResolution?.summary) || "-"}`,
-    "Write 2 to 4 short plain-text sentences about what happens at the current location right now."
+    "Write 2 to 4 short plain-text sentences."
   ].join("\n"));
 
   const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, resolutionText);
@@ -835,19 +856,59 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   state.initiative.turnFollowupHistory = [];
 
   const actorRefs = state.session.players.map((entry) => normalize(entry.actorId)).filter(Boolean);
-  const npcNames = Array.isArray(director?.combatants) ? director.combatants.map((entry) => normalize(entry)).filter(Boolean) : [];
+  // Support both old "combatants" and new split "enemies"/"allies" from director
+  const enemyNames = Array.isArray(director?.enemies)
+    ? director.enemies.map((e) => normalize(e)).filter(Boolean)
+    : Array.isArray(director?.combatants)
+      ? director.combatants.map((e) => normalize(e)).filter(Boolean)
+      : [];
+  const allyNames = Array.isArray(director?.allies) ? director.allies.map((e) => normalize(e)).filter(Boolean) : [];
+  const allNpcNames = [...enemyNames, ...allyNames];
+
   const ensureRes = await invokeFoundryAction(workingObject, "initiative", {
     channelKey: state.session.channelKey,
     operation: "ensure",
     actorRefs,
-    npcNames
+    npcNames: allNpcNames
   });
   syncInitiativeStateFromResult(state, ensureRes, state.session.players);
 
-  // Warn if Foundry returned no combatants (tracker may not have opened)
+  // Check what Foundry actually added to the tracker
   const combatantsReturned = Array.isArray(ensureRes?.combatants) ? ensureRes.combatants : [];
   if (!state.initiative.combatId && combatantsReturned.length === 0) {
     console.warn("[foundry-bridge] startInitiativeMode: ensure returned no combatants — combat tracker may not be open in Foundry");
+  }
+
+  // Count how many expected NPCs were actually found in the tracker
+  const foundNpcNames = combatantsReturned
+    .filter((c) => !state.session.players.some((p) =>
+      normalize(p.actorId) === normalize(c.actorId) ||
+      getPlayerLabel(p).toLowerCase() === normalize(c.name).toLowerCase()
+    ))
+    .map((c) => normalize(c.name));
+  const missingEnemies = enemyNames.filter((n) => !foundNpcNames.some((f) => f.toLowerCase() === n.toLowerCase()));
+  const missingAllies = allyNames.filter((n) => !foundNpcNames.some((f) => f.toLowerCase() === n.toLowerCase()));
+  const missingAll = [...missingEnemies, ...missingAllies];
+
+  let nscWarning = "";
+  if (missingAll.length > 0) {
+    // Query available actors to show in the warning for debugging
+    let availableHint = "";
+    try {
+      const actorsRes = await invokeFoundryAction(workingObject, "actors", {
+        channelKey: state.session.channelKey,
+        limit: 80
+      });
+      const npcActorNames = (Array.isArray(actorsRes?.actors) ? actorsRes.actors : [])
+        .filter((a) => !a?.hasPlayerOwner)
+        .map((a) => normalize(a?.name))
+        .filter(Boolean);
+      if (npcActorNames.length) availableHint = ` | Verfügbare NPC-Actors in game.actors: ${npcActorNames.join(", ")}`;
+    } catch { /* non-fatal */ }
+    const parts = [];
+    if (missingEnemies.length) parts.push(`Feinde: ${missingEnemies.join(", ")}`);
+    if (missingAllies.length) parts.push(`Verbündete: ${missingAllies.join(", ")}`);
+    nscWarning = `⚠️ NSCs nicht gefunden: ${parts.join(" | ")}${availableHint}`;
   }
 
   // Roll initiative for all NPCs immediately
@@ -895,13 +956,14 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   const npcCount = npcInitiatives.length;
   const rosterMsg = `Kämpfer: ${playerCount} Spieler, ${npcCount} NSC${npcCount !== 1 ? "s" : ""}.`;
 
-  return {
-    messages: [
-      { text: resolutionText, type: "bot" },
-      { text: `${trackerMsg} ${rosterMsg}`, type: "bot" },
-      { text: buildInitiativePrompt(state), type: "bot" }
-    ]
-  };
+  const messages = [
+    { text: resolutionText, type: "bot" },
+    { text: `${trackerMsg} ${rosterMsg}`, type: "bot" }
+  ];
+  if (nscWarning) messages.push({ text: nscWarning, type: "bot" });
+  messages.push({ text: buildInitiativePrompt(state), type: "bot" });
+
+  return { messages };
 }
 
 /** Sets all collected initiatives in Foundry and transitions to the first combat turn. */
@@ -1021,7 +1083,7 @@ async function advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, wo
       "Resolve an NPC or enemy combat turn in one short plain-text sentence.",
       `Combatant: ${normalize(activeBinding.characterName || activeBinding.userName)}`,
       `Actor snapshot JSON:\n${JSON.stringify(activeBinding.actorSnapshot || {}, null, 2)}`,
-      "Describe only the immediate hostile or tactical action. No markdown."
+      "Describe only the immediate hostile or tactical action. No markdown. Do NOT end with a question."
     ].join("\n"));
     if (npcText) messages.push({ text: npcText, type: "bot" });
 
