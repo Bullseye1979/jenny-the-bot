@@ -157,6 +157,42 @@ function extractFirstRollTotal(message) {
   return null;
 }
 
+// ─── Combat math helpers ──────────────────────────────────────────────────────
+
+/** Parses "+5", "-1", "10" etc. → integer or null. */
+function parseAttackBonus(toHit) {
+  if (toHit == null) return null;
+  const n = parseInt(String(toHit).trim().replace(/^\+/, ""), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Finds the best-matching attack in an actorSnapshot by name (fuzzy). Falls back to first. */
+function matchAttack(actorSnapshot, attackName) {
+  const attacks = Array.isArray(actorSnapshot?.attacks) ? actorSnapshot.attacks : [];
+  if (!attacks.length) return null;
+  if (!attackName) return attacks[0];
+  const lower = normalize(attackName).toLowerCase();
+  return attacks.find((a) => normalize(a?.name).toLowerCase() === lower)
+    || attacks.find((a) => normalize(a?.name).toLowerCase().includes(lower))
+    || attacks[0];
+}
+
+/** Returns the AC of a named combatant from state.initiative.actorBindings, or null. */
+function getTargetAC(state, targetName) {
+  if (!targetName) return null;
+  const lower = normalize(targetName).toLowerCase();
+  const b = (state.initiative?.actorBindings || []).find((b) =>
+    normalize(b?.name).toLowerCase() === lower
+    || normalize(b?.characterName).toLowerCase() === lower
+  );
+  return b?.actorSnapshot?.ac ?? null;
+}
+
+/** Doubles the dice count in a damage notation for critical hits: "1d8+3" → "2d8+3". */
+function critDamageNotation(notation) {
+  return String(notation || "").replace(/(\d+)d(\d+)/g, (_, n, d) => `${Number(n) * 2}d${d}`);
+}
+
 // ─── Specialist channels ───────────────────────────────────────────────────────
 
 function getSpecialistChannels(channelId) {
@@ -1400,105 +1436,158 @@ async function startCombatResolution(baseCore, runFlow, createRunCore, workingOb
     snapLines.push(`Spell slots: ${slots}`);
   }
 
+  // Director only picks WHICH attack and WHO to target — the bot handles all dice.
   const combatDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
-    "You are resolving a D&D 5e combat action. Determine the exact dice rolls needed.",
-    "RULE: Use the attacker's actual listed attacks and modifiers below. Do NOT invent notation — derive it from the stats.",
+    "Choose the combat action for a D&D 5e turn. The engine will handle all dice rolls.",
+    "RULE: Pick attackName EXACTLY from the 'Known attacks' list below. Do not invent attack names.",
     `Active combatant: ${normalize(activeBinding?.characterName || activeBinding?.userName)}`,
     snapLines.length ? `Attacker stats:\n${snapLines.join("\n")}` : "",
     `Declared action: ${normalize(lastAction?.text)}`,
-    `Combat turn order (current index ${state.initiative.currentTurnIndex}): ${JSON.stringify(state.initiative.turnOrder?.map((c) => c.name), null, 2)}`,
+    `Active opponents: ${(state.initiative?.actorBindings || []).filter((b) => !isPlayerControlledCombatant(state, b)).map((b) => normalize(b.name)).join(", ") || "none"}`,
+    `Active players: ${(state.initiative?.actorBindings || []).filter((b) => isPlayerControlledCombatant(state, b)).map((b) => normalize(b.name)).join(", ") || "none"}`,
     "Return JSON only:",
     `{`,
-    `  "attackRolls": [{"notation":"1d20+5","label":"Longsword attack","visibility":"public"}],`,
-    `  "damageRolls": [{"notation":"1d8+3","label":"Longsword damage","visibility":"public"}],`,
-    `  "attackAnnouncement": "One sentence announcing the attack (present tense, dramatic)",`,
+    `  "attackName": "exact name from Known attacks list, or empty string for unarmed strike",`,
+    `  "targetName": "name of the target combatant",`,
+    `  "flavor": "One dramatic present-tense sentence describing what the attacker does — NO roll results, NO hit/miss",`,
+    `  "hasAdvantage": false,`,
+    `  "hasDisadvantage": false,`,
     `  "combatEnds": false`,
     `}`
   ].filter(Boolean).join("\n")) || {};
 
-  // Make attack rolls immediately so the numbers exist for the hit announcement
-  const attackRollResults = [];
-  for (const rollSpec of Array.isArray(combatDir.attackRolls) ? combatDir.attackRolls : []) {
-    const rollRes = await invokeFoundryAction(workingObject, "roll", {
-      channelKey: state.session.channelKey,
-      notation: normalize(rollSpec.notation) || "1d20",
-      label: normalize(rollSpec.label) || "Attack",
-      actorRef: activeBinding?.actorId || activeBinding?.characterName,
-      visibility: normalize(rollSpec.visibility) || "public",
-      emitChatMessage: true
-    });
-    attackRollResults.push({ spec: rollSpec, result: rollRes });
-  }
-
-  state.initiative.lastAttackResult = {
-    combatDir,
-    attackRollResults,
-    damageRollResults: []
-  };
+  state.initiative.lastAttackResult = { combatDir, attackRollResult: null, isHit: null, isCrit: false, attack: null };
   state.initiative.pendingReactions = [];
   state.phase = "combat_reaction_pre";
   state.initiative.reactionWindowExpiresAt = Date.now() + 10000;
   await writeRoundState(workingObject, state);
 
-  const announcement = normalize(combatDir.attackAnnouncement) ||
-    `${normalize(activeBinding?.characterName || activeBinding?.userName)} attacks!`;
+  const flavor = normalize(combatDir.flavor) ||
+    `${normalize(activeBinding?.characterName || activeBinding?.userName)} attacks${combatDir.targetName ? ` ${combatDir.targetName}` : ""}!`;
 
-  // Schedule hit announcement after 10 seconds
+  // Timer 1: roll the attack (10 s reaction window first)
   const timerKey = state.session.channelKey || workingObject.channelId;
   clearCombatTimer(timerKey);
   const capturedWo = { ...workingObject };
   combatTimers.set(timerKey, setTimeout(() => {
-    fireCombatHitAnnouncement(baseCore, runFlow, createRunCore, capturedWo, timerKey).catch((err) => {
-      console.error("[foundry-bridge] fireCombatHitAnnouncement error:", err);
+    fireCombatAttackRoll(baseCore, runFlow, createRunCore, capturedWo, timerKey).catch((err) => {
+      console.error("[foundry-bridge] fireCombatAttackRoll error:", err);
     });
   }, 10000));
 
   return {
     accepted: true,
-    messages: [{ text: `${announcement} (Reactions? 10 seconds...)`, type: "bot" }]
+    messages: [{ text: `${flavor} (Reactions? 10 seconds...)`, type: "bot" }]
   };
 }
 
-/** Timer callback: announce hit or miss, open second reaction window. */
-async function fireCombatHitAnnouncement(baseCore, runFlow, createRunCore, capturedWo, timerKey) {
+/**
+ * Timer callback: roll the attack, compare vs target AC, announce hit or miss.
+ * On hit  → opens second reaction window (10 s) → fireCombatDamageAndAdvance.
+ * On miss → advances turn immediately, no damage rolled.
+ */
+async function fireCombatAttackRoll(baseCore, runFlow, createRunCore, capturedWo, timerKey) {
   clearCombatTimer(timerKey);
 
   let state;
   try {
     state = await readRoundState(capturedWo);
   } catch (err) {
-    console.error("[foundry-bridge] fireCombatHitAnnouncement: cannot read state", err);
+    console.error("[foundry-bridge] fireCombatAttackRoll: cannot read state", err);
     return;
   }
-
   if (state.phase !== "combat_reaction_pre") return;
 
   const lastAction = state.initiative.lastPlayerAction || {};
   const lastResult = state.initiative.lastAttackResult || {};
+  const combatDir = lastResult.combatDir || {};
   const reactions = Array.isArray(state.initiative.pendingReactions) ? state.initiative.pendingReactions : [];
 
-  const hitText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
-    "Announce whether a D&D 5e attack hit or missed based on the roll.",
-    `Attacker: ${normalize(lastAction.name)}`,
-    `Declared action: ${normalize(lastAction.text)}`,
-    `Attack roll results: ${JSON.stringify(lastResult.attackRollResults || [], null, 2)}`,
-    reactions.length ? `Pre-attack reactions declared: ${JSON.stringify(reactions, null, 2)}` : "",
-    "Write 1-2 short plain-text sentences. End with '(Reactions? 10 seconds...)'."
+  // Re-read attacker binding (turn index may still be the same)
+  const activeBinding = getActiveCombatantBinding(state);
+  const attack = matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
+  const attackBonus = parseAttackBonus(attack?.toHit);
+  const hasToHitRoll = attackBonus !== null;
+
+  let attackRollResult = null;
+  let isHit = true; // for save-based / no-roll attacks, assume it "hits"
+  let isCrit = false;
+
+  if (hasToHitRoll) {
+    const notation = combatDir.hasAdvantage
+      ? `2d20kh1+${attackBonus}`
+      : combatDir.hasDisadvantage
+        ? `2d20kl1+${attackBonus}`
+        : `1d20+${attackBonus}`;
+    attackRollResult = await invokeFoundryAction(capturedWo, "roll", {
+      channelKey: state.session.channelKey,
+      notation,
+      label: `${attack?.name || "Attack"} — ${normalize(lastAction.name)}`,
+      actorRef: activeBinding?.actorId || activeBinding?.characterName,
+      visibility: "public",
+      emitChatMessage: true
+    });
+    const total = Number(attackRollResult?.total ?? 0);
+    const targetAC = getTargetAC(state, combatDir.targetName);
+    // Critical hit/miss: Foundry returns total including bonus, check for nat-20 via result-minus-bonus
+    const rawD20 = hasToHitRoll ? total - attackBonus : null;
+    isCrit = rawD20 === 20;
+    const isFumble = rawD20 === 1;
+    isHit = isFumble ? false : isCrit ? true : targetAC != null ? total >= targetAC : total >= 12;
+  }
+
+  // Store results
+  lastResult.attackRollResult = attackRollResult;
+  lastResult.isHit = isHit;
+  lastResult.isCrit = isCrit;
+  lastResult.attack = attack;
+  state.initiative.lastAttackResult = lastResult;
+
+  const targetAC = getTargetAC(state, combatDir.targetName);
+  const rollSummary = attackRollResult
+    ? `Rolled ${attackRollResult.total}${targetAC != null ? ` vs AC ${targetAC}` : ""}`
+    : "";
+
+  const resultText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+    "Announce the result of a D&D 5e attack roll in 1 sentence.",
+    `Attacker: ${normalize(lastAction.name)}, attack: ${attack?.name || "strike"}`,
+    rollSummary,
+    `Result: ${isCrit ? "CRITICAL HIT" : isHit ? "HIT" : "MISS"}`,
+    reactions.length ? `Reactions declared: ${JSON.stringify(reactions)}` : "",
+    isHit ? "End the sentence with '(Reactions? 10 seconds...)'" : "Do NOT describe damage."
   ].filter(Boolean).join("\n"));
 
-  state.phase = "combat_reaction_post";
-  state.initiative.reactionWindowExpiresAt = Date.now() + 10000;
-  await writeRoundState(capturedWo, state);
-
-  await postBotMessagesToFoundry(capturedWo, [
-    { text: hitText || "The attack resolves! (Reactions? 10 seconds...)", type: "bot" }
-  ]);
-
-  combatTimers.set(timerKey, setTimeout(() => {
-    fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capturedWo, timerKey).catch((err) => {
-      console.error("[foundry-bridge] fireCombatDamageAndAdvance error:", err);
+  if (isHit) {
+    state.phase = "combat_reaction_post";
+    state.initiative.reactionWindowExpiresAt = Date.now() + 10000;
+    await writeRoundState(capturedWo, state);
+    await postBotMessagesToFoundry(capturedWo, [
+      { text: resultText || `The attack hits! (Reactions? 10 seconds...)`, type: "bot" }
+    ]);
+    combatTimers.set(timerKey, setTimeout(() => {
+      fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capturedWo, timerKey).catch((err) => {
+        console.error("[foundry-bridge] fireCombatDamageAndAdvance error:", err);
+      });
+    }, 10000));
+  } else {
+    // Miss — no damage, advance turn immediately
+    state.phase = "combat_turn_prompt";
+    state.initiative.pendingReactions = [];
+    state.initiative.lastAttackResult = null;
+    state.initiative.turnFollowupHistory = [];
+    const nextRes = await invokeFoundryAction(capturedWo, "initiative", {
+      channelKey: state.session.channelKey,
+      operation: "next",
+      combatRef: state.initiative.combatId || state.initiative.combatName
     });
-  }, 10000));
+    syncInitiativeStateFromResult(state, nextRes, state.session.players);
+    await writeRoundState(capturedWo, state);
+    const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, capturedWo, state);
+    await postBotMessagesToFoundry(capturedWo, [
+      { text: resultText || "The attack misses!", type: "bot" },
+      ...advanced.messages
+    ]);
+  }
 }
 
 /** Timer callback: apply damage, advance turn, prompt next combatant or end combat. */
@@ -1519,28 +1608,33 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
   const lastResult = state.initiative.lastAttackResult || {};
   const reactions = Array.isArray(state.initiative.pendingReactions) ? state.initiative.pendingReactions : [];
 
-  // Make damage rolls
-  const damageRollResults = [];
-  for (const rollSpec of Array.isArray(lastResult.combatDir?.damageRolls) ? lastResult.combatDir.damageRolls : []) {
-    const rollRes = await invokeFoundryAction(capturedWo, "roll", {
-      channelKey: state.session.channelKey,
-      notation: normalize(rollSpec.notation) || "1d6",
-      label: normalize(rollSpec.label) || "Damage",
-      visibility: normalize(rollSpec.visibility) || "public",
-      emitChatMessage: true
-    });
-    damageRollResults.push({ spec: rollSpec, result: rollRes });
-  }
+  // Roll damage using the matched attack's actual notation
+  const attack = lastResult.attack;
+  const isCrit = lastResult.isCrit === true;
+  const damageNotation = attack?.damage
+    ? (isCrit ? critDamageNotation(normalize(attack.damage)) : normalize(attack.damage))
+    : "1d6"; // fallback if no damage info
+  const damageLabel = `${attack?.name || "Damage"} — ${normalize(lastAction.name)}${isCrit ? " (CRIT)" : ""}`;
 
-  // Re-fetch actor stats so HP changes from this attack are reflected in the next turn
+  const damageRollResult = await invokeFoundryAction(capturedWo, "roll", {
+    channelKey: state.session.channelKey,
+    notation: damageNotation,
+    label: damageLabel,
+    visibility: "public",
+    emitChatMessage: true
+  });
+
+  // Re-fetch actor stats so HP changes are reflected in the next turn
   await fetchAndCacheActorStats(capturedWo, state).catch(() => {});
 
+  const totalDamage = Number(damageRollResult?.total ?? 0);
   const damageText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
-    "Describe the final outcome of a D&D 5e combat attack.",
-    `Attacker: ${normalize(lastAction.name)}, action: ${normalize(lastAction.text)}`,
-    `Damage roll results: ${JSON.stringify(damageRollResults, null, 2)}`,
-    reactions.length ? `Post-hit reactions: ${JSON.stringify(reactions, null, 2)}` : "",
-    "Write 1-2 short plain-text sentences describing the damage and any dramatic effects. Mention the total damage dealt."
+    "Describe the outcome of a D&D 5e hit in 1-2 sentences.",
+    `Attacker: ${normalize(lastAction.name)}, attack: ${attack?.name || "strike"}`,
+    `Target: ${lastResult.combatDir?.targetName || "the enemy"}`,
+    `Damage: ${totalDamage}${isCrit ? " (critical hit)" : ""}`,
+    reactions.length ? `Post-hit reactions: ${JSON.stringify(reactions)}` : "",
+    "State the damage total. Describe the effect dramatically. Do NOT say what happens next."
   ].filter(Boolean).join("\n"));
 
   // Check if combat ends (all non-player combatants defeated, or director flagged it)
