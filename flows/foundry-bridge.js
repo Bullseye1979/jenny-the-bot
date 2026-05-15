@@ -129,6 +129,26 @@ function isOkSignal(text) {
 }
 
 /**
+ * Detects which turn components (movement, bonus action) are already present
+ * in a free-form combat declaration so the completion loop only asks about
+ * what is actually missing.
+ *
+ * Returns { hasMovement, hasBonusAction }.
+ */
+function detectTurnComponents(text) {
+  const t = normalize(text).toLowerCase();
+
+  // Movement: German and English movement words/phrases
+  const hasMovement = /\b(geh|gehe|lauf|laufe|beweg|bewege|renn|renne|sprint|dash|move|walk|run|approach|retreat|flee|stepp|trete|näher|heran|heranbeweg|positionier|zurück|vorwärts|seitwärts|towards|toward|away from|schleich|kriech|teleport|misty step|jump|springe)\b/.test(t)
+    || /\b\d+\s*(fuß|foot|feet|ft|meter|felder|squares?|schritt)\b/.test(t); // "30 Fuß" / "6 Felder"
+
+  // Bonus action: German and English bonus-action keywords
+  const hasBonusAction = /\b(bonus|bonusaktion|bonus-aktion|off.?hand|zweite.?hand|nebenhand|cunning action|cunning|zusatz.?aktion|zusätzlich.*(angriff|aktion)|zweiter angriff|doppel.?angriff|schild.?zauber|shield spell|nick|shove|push|grapple als bonus|unarmed bonus|handkante|zweite waffe|handaxt|dolch als bonus)\b/.test(t);
+
+  return { hasMovement, hasBonusAction };
+}
+
+/**
  * Parses a DM override command from a message.
  * Syntax: !dm <command>  or  /dm <command>
  * Returns { command, arg } or null if not an override.
@@ -181,10 +201,27 @@ function matchAttack(actorSnapshot, attackName) {
 function getTargetAC(state, targetName) {
   if (!targetName) return null;
   const lower = normalize(targetName).toLowerCase();
-  const b = (state.initiative?.actorBindings || []).find((b) =>
+  const bindings = state.initiative?.actorBindings || [];
+
+  // 1. Exact match
+  let b = bindings.find((b) =>
     normalize(b?.name).toLowerCase() === lower
     || normalize(b?.characterName).toLowerCase() === lower
   );
+  // 2. Partial / first-word match (handles "Elara Nightwhisper" vs "Elara")
+  if (!b) {
+    b = bindings.find((b) => {
+      const name = normalize(b?.name || b?.characterName).toLowerCase();
+      return name.startsWith(lower) || lower.startsWith(name.split(" ")[0]);
+    });
+  }
+  // 3. Contains match
+  if (!b) {
+    b = bindings.find((b) => {
+      const name = normalize(b?.name || b?.characterName).toLowerCase();
+      return name.includes(lower) || lower.includes(name);
+    });
+  }
   return b?.actorSnapshot?.ac ?? null;
 }
 
@@ -512,11 +549,30 @@ async function fuelSituationChannel(baseCore, runFlow, createRunCore, workingObj
     });
   }
 
-  // Sticky 2: location context from campaign channel
+  // Sticky 2: location context from campaign channel, corrected by world state
+  //
+  // IMPORTANT: The campaign journals describe the world as written (pre-play).
+  // The world-state.md contains what actually happened during the session
+  // (NPC deaths, completed quests, changed relationships, etc.).
+  // The campaign AI must reconcile both: use journals for static location facts,
+  // but override any NPC status, quest state, or faction situation that the
+  // world state contradicts.
   const locationHint = normalize(location || state?.lastScene?.location || state?.session?.progress?.currentLocation || "current location");
   const locationRes = await runApiTurn(baseCore, runFlow, createRunCore, {
     channelId: channels.campaign,
-    payload: `Summarize what the party knows about the current location: "${locationHint}". Include relevant NPCs, hazards, and what is immediately visible or relevant. Max 200 words. Plain text only.`,
+    payload: [
+      `Summarize what the party knows about the current location: "${locationHint}".`,
+      "Include: relevant NPCs present, hazards, what is immediately visible, atmosphere, and any immediately actionable information.",
+      "Max 200 words. Plain text only.",
+      "",
+      "CRITICAL — reconciliation rules:",
+      "1. Use the journal context as the primary source for static location facts (layout, lore, fixed NPCs).",
+      "2. The WORLD STATE below reflects what actually happened during this session. It OVERRIDES the journals on any NPC status, quest completion, faction situation, or any fact that has changed in play.",
+      "3. If the journals say 'NPC X will meet the party' but the world state says 'NPC X is dead', treat NPC X as dead. Do NOT write as if X is still alive.",
+      "4. Never describe future journal events that have already been resolved differently in the world state.",
+      "",
+      worldState ? `CURRENT WORLD STATE (authoritative for what has changed):\n${worldState}` : ""
+    ].filter(Boolean).join("\n"),
     userId: state?.session?.channelId || "foundry-fuel",
     doNotWriteToContext: true,
     callerChannelId: state?.session?.channelId
@@ -1895,10 +1951,34 @@ async function handleCombatTurnPrompt(baseCore, runFlow, createRunCore, workingO
   const actionText = getRoundInputText(message);
   const playerLabel = normalize(activeBinding.characterName || activeBinding.userName);
 
+  // If this looks like a question rather than an action declaration, answer it briefly
+  // and keep the turn prompt open. A question contains "?" or starts with a question word.
+  const isLikelyQuestion = actionText.includes("?")
+    || /^(what|wie|was|warum|why|how|can i|kann ich|darf ich|which|welche|wer|who)\b/i.test(actionText.trim());
+  if (isLikelyQuestion && !isOkSignal(actionText)) {
+    const snap = activeBinding?.actorSnapshot || {};
+    const snapHint = snap.attacks?.length
+      ? `${playerLabel}'s attacks: ${snap.attacks.map((a) => [a.name, a.toHit].filter(Boolean).join(" ")).join(", ")}`
+      : "";
+    const answer = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+      "A player has a question on their combat turn. Answer briefly (1-2 sentences) using the current combat state.",
+      `Player (${playerLabel}) asks: "${actionText}"`,
+      snapHint,
+      `Current combat context: ${normalize(state.currentBeat || state.lastScene?.summary || "ongoing combat")}`,
+      "Answer concisely. Then prompt them to declare their action."
+    ].join("\n"));
+    return {
+      accepted: true,
+      messages: [{ text: answer || `${playerLabel}, what is your action this turn?`, type: "bot" }]
+    };
+  }
+
   if (!isOkSignal(actionText)) {
     const history = [{ role: "player", text: actionText }];
     const evaluation = await runActionEvaluator(baseCore, runFlow, createRunCore, state, "combat_action", playerLabel, history);
     if (!evaluation.accepted) {
+      // Action needs clarification — stay in followup for clarification (not completion)
+      state.initiative.awaitingTurnCompletion = false;
       state.phase = "combat_turn_followup";
       state.initiative.turnFollowupHistory = [
         ...history,
@@ -1909,7 +1989,8 @@ async function handleCombatTurnPrompt(baseCore, runFlow, createRunCore, workingO
     }
   }
 
-  return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
+  // Action is clear — check which components are already present and commit or ask accordingly.
+  return await enterTurnCompletionOrCommit(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
 }
 
 /**
@@ -1923,13 +2004,21 @@ async function handleCombatTurnFollowup(baseCore, runFlow, createRunCore, workin
 
   const inputText = getRoundInputText(message);
   const playerLabel = normalize(activeBinding.characterName || activeBinding.userName);
+
+  // ── Turn completion loop (movement / bonus action) ─────────────────────────
+  if (state.initiative.awaitingTurnCompletion === true) {
+    return await handleTurnCompletion(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, inputText);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   const history = Array.isArray(state.initiative.turnFollowupHistory) ? [...state.initiative.turnFollowupHistory] : [];
   history.push({ role: "player", text: inputText });
 
   if (isOkSignal(inputText)) {
+    // "ok" during clarification — commit the last substantive input, then check missing components
     const substantive = history.slice().reverse().find((e) => e.role === "player" && !isOkSignal(e.text));
     const actionText = substantive?.text || inputText;
-    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
+    return await enterTurnCompletionOrCommit(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
   }
 
   const evaluation = await runActionEvaluator(baseCore, runFlow, createRunCore, state, "combat_action", playerLabel, history);
@@ -1940,7 +2029,99 @@ async function handleCombatTurnFollowup(baseCore, runFlow, createRunCore, workin
     return { accepted: true, messages: [{ text: evaluation.message, type: "bot" }] };
   }
 
-  return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, inputText);
+  // Clarification done — check missing components before entering completion loop
+  return await enterTurnCompletionOrCommit(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, inputText);
+}
+
+/**
+ * Called whenever an action is accepted (from prompt or clarification followup).
+ * Checks which turn components (movement, bonus action) are already in the text.
+ * If everything is covered: commits immediately.
+ * If something is missing: enters the completion loop and asks only about what's missing.
+ */
+async function enterTurnCompletionOrCommit(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText) {
+  const playerLabel = normalize(activeBinding.characterName || activeBinding.userName);
+  const { hasMovement, hasBonusAction } = detectTurnComponents(actionText);
+
+  if (hasMovement && hasBonusAction) {
+    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
+  }
+
+  const missing = [];
+  if (!hasMovement) missing.push("move");
+  if (!hasBonusAction) missing.push("use a bonus action");
+  const completionPrompt = `Got it, ${playerLabel}. Do you also want to ${missing.join(" or ")}? Say 'ready' to resolve now.`;
+
+  state.initiative.awaitingTurnCompletion = true;
+  state.initiative.pendingTurnParts = [actionText];
+  state.initiative.pendingTurnMissing = { hasMovement, hasBonusAction };
+  state.phase = "combat_turn_followup";
+  state.initiative.turnFollowupHistory = [
+    { role: "player", text: actionText },
+    { role: "dm", text: completionPrompt }
+  ];
+  await writeRoundState(workingObject, state);
+  return { accepted: true, messages: [{ text: completionPrompt, type: "bot" }] };
+}
+
+/**
+ * Handles the turn-completion loop after the evaluator has accepted a player's main action.
+ * Gives the player one round to additionally declare movement and/or a bonus action before
+ * the resolution chain starts. Player says 'ready/fertig/ok' to skip or proceed.
+ *
+ * Max 2 additional declarations (action + movement + bonus = 3 total), then auto-commit.
+ */
+async function handleTurnCompletion(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, inputText) {
+  const parts = Array.isArray(state.initiative.pendingTurnParts) ? [...state.initiative.pendingTurnParts] : [];
+  const playerLabel = normalize(activeBinding.characterName || activeBinding.userName);
+
+  if (isOkSignal(inputText)) {
+    // Player is done — commit everything that was collected
+    state.initiative.awaitingTurnCompletion = false;
+    state.initiative.pendingTurnParts = [];
+    state.initiative.pendingTurnMissing = null;
+    const fullAction = parts.join(" + ");
+    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, fullAction || inputText);
+  }
+
+  // Add the new declaration (movement or bonus action)
+  parts.push(inputText);
+  state.initiative.pendingTurnParts = parts;
+
+  // Re-check which components are now covered across all declared parts
+  const allText = parts.join(" ");
+  const { hasMovement, hasBonusAction } = detectTurnComponents(allText);
+
+  if (hasMovement && hasBonusAction) {
+    // All components covered — commit immediately
+    state.initiative.awaitingTurnCompletion = false;
+    state.initiative.pendingTurnParts = [];
+    state.initiative.pendingTurnMissing = null;
+    const fullAction = parts.join(" + ");
+    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, fullAction);
+  }
+
+  // Hard cap: after 2 additional parts (3 total), commit regardless
+  if (parts.length >= 3) {
+    state.initiative.awaitingTurnCompletion = false;
+    state.initiative.pendingTurnParts = [];
+    state.initiative.pendingTurnMissing = null;
+    const fullAction = parts.join(" + ");
+    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, fullAction);
+  }
+
+  // Ask about only what is still missing
+  state.initiative.pendingTurnMissing = { hasMovement, hasBonusAction };
+  await writeRoundState(workingObject, state);
+
+  const stillMissing = [];
+  if (!hasMovement) stillMissing.push("move");
+  if (!hasBonusAction) stillMissing.push("bonus action");
+  const missingStr = stillMissing.length ? stillMissing.join(" or ") : "anything else";
+  return {
+    accepted: true,
+    messages: [{ text: `Noted, ${playerLabel}. ${stillMissing.length ? `Do you also want to ${missingStr}?` : "Anything else?"} Say 'ready' to resolve.`, type: "bot" }]
+  };
 }
 
 /** Commits the player's combat action and enters the attack-resolution chain. */
@@ -1954,6 +2135,8 @@ async function commitCombatAction(baseCore, runFlow, createRunCore, workingObjec
     createdAt: new Date().toISOString()
   };
   state.initiative.turnFollowupHistory = [];
+  state.initiative.awaitingTurnCompletion = false;
+  state.initiative.pendingTurnParts = [];
   // PC turn: player rolls in Foundry → awaiting_attack_roll phase
   // NPC turn (isNpc): bot rolls automatically via startCombatResolution timer chain
   return await startCombatResolutionPc(baseCore, runFlow, createRunCore, workingObject, state);
@@ -1991,6 +2174,17 @@ async function startCombatResolutionPc(baseCore, runFlow, createRunCore, working
     snapLines.push(`Known attacks: ${snap.attacks.map((a) => [a.name, a.toHit, a.damage ? `(${a.damage})` : ""].filter(Boolean).join(" ")).join(" | ")}`);
   }
 
+  // Try to detect which weapon the player explicitly named in their action text.
+  // This becomes a mandatory override so the director cannot substitute a spell.
+  const declaredTextLower = normalize(lastAction?.text).toLowerCase();
+  const attacks = Array.isArray(snap.attacks) ? snap.attacks : [];
+  const playerMentionedAttack = attacks.find((a) => {
+    const aName = normalize(a.name).toLowerCase();
+    // Full name match OR any significant word of the attack name found in the declared text
+    return declaredTextLower.includes(aName)
+      || aName.split(/\s+/).some((w) => w.length > 3 && declaredTextLower.includes(w));
+  }) || null;
+
   const combatDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
     "Choose the combat action for a D&D 5e PLAYER turn. Your ONLY job: pick which attack and which target.",
     "HARD RULES — no exceptions:",
@@ -1998,6 +2192,10 @@ async function startCombatResolutionPc(baseCore, runFlow, createRunCore, working
     "2. Do NOT invent saving throws, skill checks, spell saves, or any other mechanics.",
     "3. Do NOT add conditions, special effects, or house rules.",
     "4. The player rolls all dice — you only pick name + target + flavor sentence.",
+    "5. NEVER substitute a spell (Green Flame Blade, Chill Touch, Fire Bolt, etc.) for a declared physical weapon attack.",
+    playerMentionedAttack
+      ? `MANDATORY OVERRIDE: The player explicitly named "${normalize(playerMentionedAttack.name)}" — attackName MUST be exactly "${normalize(playerMentionedAttack.name)}". Any other value is wrong.`
+      : "If the player named a weapon (e.g. 'rapier', 'sword', 'bow'), find the closest entry in Known attacks. Do NOT rename it to a spell.",
     `Active combatant: ${normalize(activeBinding?.characterName || activeBinding?.userName)}`,
     snapLines.length ? `Attacker stats:\n${snapLines.join("\n")}` : "No snapshot available — use unarmed strike as fallback.",
     `Declared action: ${normalize(lastAction?.text)}`,
@@ -2179,7 +2377,8 @@ async function fireCombatAttackRoll(baseCore, runFlow, createRunCore, capturedWo
     const rawD20 = total - attackBonus;
     isCrit = rawD20 === 20;
     const isFumble = rawD20 === 1;
-    isHit = isFumble ? false : isCrit ? true : targetAC != null ? total >= targetAC : total >= 12;
+    // If targetAC is unknown, default to miss — never guess a hit.
+    isHit = isFumble ? false : isCrit ? true : targetAC != null ? total >= targetAC : false;
     // Apply reaction effects decided by AI (numeric, no hardcoded enum)
     const reactionAcBoost = Number(lastResult.reactionAcBoost ?? 0);
     if (isHit && !isCrit && reactionAcBoost > 0 && targetAC != null) {
@@ -2418,7 +2617,22 @@ async function handleCombatAwaitingAttackRoll(baseCore, runFlow, createRunCore, 
 
   const rollTotal = extractFirstRollTotal(message);
   if (!Number.isFinite(rollTotal)) {
-    return { accepted: true, messages: [{ text: `${normalize(activeBinding.characterName || activeBinding.userName)}, please send your attack roll from Foundry.`, type: "bot" }] };
+    // Player has a question or comment — answer briefly, then re-ask for the roll
+    const inputText = getRoundInputText(message);
+    const charName = normalize(activeBinding.characterName || activeBinding.userName);
+    if (inputText.length > 4) {
+      const lastResult = state.initiative.lastAttackResult || {};
+      const notation = lastResult.pendingNotation || "1d20+bonus";
+      const quickReply = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+        "A player has a question or comment during their attack roll phase. Answer in 1 sentence, then remind them what to roll.",
+        `Player (${charName}) said: "${inputText}"`,
+        `Expected roll: attack roll with notation ${notation}`,
+        `Target: ${lastResult.combatDir?.targetName || "the enemy"}`,
+        "Be concise. Answer the question if possible. End with a reminder to roll."
+      ].join("\n"));
+      return { accepted: true, messages: [{ text: quickReply || `${charName}, roll your attack: \`${notation}\``, type: "bot" }] };
+    }
+    return { accepted: true, messages: [{ text: `${charName}, please send your attack roll from Foundry.`, type: "bot" }] };
   }
 
   const lastResult = state.initiative.lastAttackResult || {};
@@ -2442,7 +2656,8 @@ async function handleCombatAwaitingAttackRoll(baseCore, runFlow, createRunCore, 
   const rawD20 = rollTotal - attackBonus;
   const isCrit = rawD20 === 20;
   const isFumble = rawD20 === 1;
-  const isHit = isFumble ? false : isCrit ? true : targetAC != null ? rollTotal >= targetAC : rollTotal >= 12;
+  // If targetAC is unknown, default to miss — never guess a hit.
+  const isHit = isFumble ? false : isCrit ? true : targetAC != null ? rollTotal >= targetAC : false;
 
   lastResult.attackRollResult = { total: rollTotal };
   lastResult.isHit = isHit;
@@ -2505,7 +2720,21 @@ async function handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, 
 
   const rollTotal = extractFirstRollTotal(message);
   if (!Number.isFinite(rollTotal)) {
-    return { accepted: true, messages: [{ text: `${normalize(activeBinding.characterName || activeBinding.userName)}, please send your damage roll from Foundry.`, type: "bot" }] };
+    // Player has a question or comment — answer briefly, then re-ask for the roll
+    const inputText = getRoundInputText(message);
+    const charName = normalize(activeBinding.characterName || activeBinding.userName);
+    if (inputText.length > 4) {
+      const lastResult = state.initiative.lastAttackResult || {};
+      const damageNotation = lastResult.damageNotation || lastResult.attack?.damage || "damage dice";
+      const quickReply = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+        "A player has a question or comment during their damage roll phase. Answer in 1 sentence, then remind them what to roll.",
+        `Player (${charName}) said: "${inputText}"`,
+        `Expected roll: damage roll with notation ${damageNotation}`,
+        "Be concise. Answer the question if possible. End with a reminder to roll."
+      ].join("\n"));
+      return { accepted: true, messages: [{ text: quickReply || `${charName}, roll your damage: \`${damageNotation}\``, type: "bot" }] };
+    }
+    return { accepted: true, messages: [{ text: `${charName}, please send your damage roll from Foundry.`, type: "bot" }] };
   }
 
   const lastResult = state.initiative.lastAttackResult || {};
