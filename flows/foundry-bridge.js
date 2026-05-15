@@ -1749,7 +1749,14 @@ async function startCombatResolutionPc(baseCore, runFlow, createRunCore, working
   ].filter(Boolean).join("\n")) || {};
 
   const attack = matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
-  const attackBonus = parseAttackBonus(attack?.toHit) ?? 0;
+  let attackBonus = parseAttackBonus(attack?.toHit);
+  if (attackBonus === null) {
+    const snap = activeBinding?.actorSnapshot || {};
+    const pb = snap.proficiencyBonus ?? 2;
+    const strMod = snap.abilities?.str?.mod ?? 0;
+    const dexMod = snap.abilities?.dex?.mod ?? 0;
+    attackBonus = pb + Math.max(strMod, dexMod);
+  }
   const notation = combatDir.hasAdvantage
     ? `2d20kh1+${attackBonus}`
     : combatDir.hasDisadvantage
@@ -1873,14 +1880,21 @@ async function fireCombatAttackRoll(baseCore, runFlow, createRunCore, capturedWo
   // Re-read attacker binding (turn index may still be the same)
   const activeBinding = getActiveCombatantBinding(state);
   const attack = matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
-  const attackBonus = parseAttackBonus(attack?.toHit);
-  const hasToHitRoll = attackBonus !== null;
+  let attackBonus = parseAttackBonus(attack?.toHit);
+  // Fallback: compute bonus from snapshot ability scores when no attack data available
+  if (attackBonus === null) {
+    const snap = activeBinding?.actorSnapshot || {};
+    const pb = snap.proficiencyBonus ?? 2;
+    const strMod = snap.abilities?.str?.mod ?? 0;
+    const dexMod = snap.abilities?.dex?.mod ?? 0;
+    attackBonus = pb + Math.max(strMod, dexMod);
+  }
 
   let attackRollResult = null;
-  let isHit = true; // for save-based / no-roll attacks, assume it "hits"
+  let isHit = false;
   let isCrit = false;
 
-  if (hasToHitRoll) {
+  {
     const notation = combatDir.hasAdvantage
       ? `2d20kh1+${attackBonus}`
       : combatDir.hasDisadvantage
@@ -1896,11 +1910,18 @@ async function fireCombatAttackRoll(baseCore, runFlow, createRunCore, capturedWo
     });
     const total = Number(attackRollResult?.total ?? 0);
     const targetAC = getTargetAC(state, combatDir.targetName);
-    // Critical hit/miss: Foundry returns total including bonus, check for nat-20 via result-minus-bonus
-    const rawD20 = hasToHitRoll ? total - attackBonus : null;
+    // Critical hit/miss: nat-20/1 via total-minus-bonus
+    const rawD20 = total - attackBonus;
     isCrit = rawD20 === 20;
     const isFumble = rawD20 === 1;
     isHit = isFumble ? false : isCrit ? true : targetAC != null ? total >= targetAC : total >= 12;
+    // Apply reaction AC boost (e.g. Shield spell: +5 AC can turn a hit into a miss)
+    const reactionAcBoost = lastResult.reactionAcBoost ?? 0;
+    if (isHit && !isCrit && reactionAcBoost > 0 && targetAC != null) {
+      if (total < targetAC + reactionAcBoost) isHit = false;
+    }
+    // Counterspell: cancel the attack entirely (treat as miss)
+    if (lastResult.reactionCounterspell) isHit = false;
   }
 
   // Store results
@@ -1994,7 +2015,11 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
   // Re-fetch actor stats so HP changes are reflected in the next turn
   await fetchAndCacheActorStats(capturedWo, state).catch(() => {});
 
-  const totalDamage = Number(damageRollResult?.total ?? 0);
+  let totalDamage = Number(damageRollResult?.total ?? 0);
+
+  // Apply half_damage reaction (e.g. Uncanny Dodge, Blur spell)
+  const reactionHalfDamage = lastResult.reactionHalfDamage === true;
+  if (reactionHalfDamage) totalDamage = Math.floor(totalDamage / 2);
 
   // For NPC attacks: let AI decide if any PC has a reaction (Shield spell, Uncanny Dodge, etc.)
   const npcAttackInfo = {
@@ -2033,7 +2058,7 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
     "Describe the outcome of a D&D 5e hit in 1-2 sentences.",
     `Attacker: ${normalize(lastAction.name)}, attack: ${attack?.name || "strike"}`,
     `Target: ${lastResult.combatDir?.targetName || "the enemy"}`,
-    `Damage: ${totalDamage}${isCrit ? " (critical hit)" : ""}`,
+    `Damage: ${totalDamage}${isCrit ? " (critical hit)" : ""}${reactionHalfDamage ? " (halved by reaction)" : ""}`,
     reactions.length ? `Post-hit reactions: ${JSON.stringify(reactions)}` : "",
     reactionLines.length ? `AI-decided reactions: ${reactionLines.join("; ")}` : "",
     "State the damage total. Describe the effect dramatically. Do NOT say what happens next."
@@ -2126,7 +2151,12 @@ async function handleCombatAwaitingAttackRoll(baseCore, runFlow, createRunCore, 
   const lastResult = state.initiative.lastAttackResult || {};
   const combatDir = lastResult.combatDir || {};
   const attack = lastResult.attack;
-  const attackBonus = parseAttackBonus(attack?.toHit) ?? 0;
+  let attackBonus = parseAttackBonus(attack?.toHit);
+  if (attackBonus === null) {
+    const snap = activeBinding?.actorSnapshot || {};
+    const pb = snap.proficiencyBonus ?? 2;
+    attackBonus = pb + Math.max(snap.abilities?.str?.mod ?? 0, snap.abilities?.dex?.mod ?? 0);
+  }
 
   // Plausibility check
   const playerEntry = (state.session?.players || []).find((p) => normalize(p.actorId) === normalize(activeBinding.actorId) || normalize(p.userId) === normalize(activeBinding.userId)) || { characterName: activeBinding.characterName };
@@ -2324,27 +2354,177 @@ async function handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, 
 
 /**
  * Handles any player message during a reaction window.
- * The reaction is stored and factored into the next narration.
- * The timer still fires on schedule — reactions do not reset the clock.
+ *
+ * AI analyses the declared reaction. If it can be resolved immediately (Shield, Uncanny Dodge)
+ * the effect is applied and the timer keeps running. If more information is needed (rolls,
+ * choices) the pending timer is cleared and we enter combat_reaction_followup so the
+ * player can supply what's missing. The timer is restarted with a short delay once the
+ * loop is resolved.
  */
-async function handleCombatReactionWindow(workingObject, state, message) {
+async function handleCombatReactionWindow(baseCore, runFlow, createRunCore, workingObject, state, message) {
   const inputText = getRoundInputText(message);
   const authorName = normalize(message?.speakerAlias || message?.authorName || "Player");
 
   if (!Array.isArray(state.initiative.pendingReactions)) {
     state.initiative.pendingReactions = [];
   }
-  state.initiative.pendingReactions.push({
-    from: authorName,
-    text: inputText,
-    createdAt: new Date().toISOString()
-  });
+
+  const lastAction = state.initiative.lastPlayerAction || {};
+  const originalPhase = state.phase; // "combat_reaction_pre" or "combat_reaction_post"
+
+  const history = [{ role: "player", text: inputText }];
+
+  // AI analyses the reaction and decides whether it needs more info
+  const reactionDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
+    "A player just declared a D&D 5e reaction during combat.",
+    `Reactor: ${authorName}`,
+    `Reaction declared: "${inputText}"`,
+    `Phase: ${originalPhase === "combat_reaction_pre" ? "BEFORE attack roll (Shield boosts AC, Counterspell cancels)" : "AFTER hit — BEFORE damage (Uncanny Dodge halves damage)"}`,
+    `Attacker: ${normalize(lastAction.name)}`,
+    "Determine the effect and whether you need a roll from the player to resolve it.",
+    "Return JSON only:",
+    '{',
+    '  "acknowledgment": "1 short dramatic in-world sentence describing what the character does",',
+    '  "effect": "shield_ac5 | half_damage | ac_boost_3 | counterspell | none",',
+    '  "complete": true,',
+    '  "nextPrompt": "What to ask the player next if complete is false (e.g. Roll Arcana: 1d20+5)",',
+    '  "rollNotation": "e.g. 1d20+5 — only set if the player must roll next"',
+    '}'
+  ].join("\n")).catch(() => null);
+
+  const acknowledgment = normalize(reactionDir?.acknowledgment) || `${authorName} reacts!`;
+  const effect = normalize(reactionDir?.effect || "none");
+  const complete = reactionDir?.complete !== false; // default true if AI doesn't say otherwise
+
+  if (!Array.isArray(state.initiative.lastAttackResult?.pendingReactionEffects)) {
+    if (state.initiative.lastAttackResult) state.initiative.lastAttackResult.pendingReactionEffects = [];
+  }
+
+  if (complete) {
+    // Immediately apply the resolved effect
+    applyReactionEffect(state, effect);
+    state.initiative.pendingReactions.push({ from: authorName, text: inputText, effect, createdAt: new Date().toISOString() });
+    await writeRoundState(workingObject, state);
+    return { accepted: true, messages: [{ text: `⚡ ${acknowledgment}`, type: "bot" }] };
+  }
+
+  // Reaction needs more input — pause the timer and enter the followup loop
+  const timerKey = state.session.channelKey || workingObject.channelId;
+  clearCombatTimer(timerKey);
+
+  history.push({ role: "dm", text: acknowledgment });
+  if (reactionDir?.nextPrompt) history.push({ role: "dm", text: reactionDir.nextPrompt });
+
+  state.initiative.reactionFollowup = {
+    reactorName: authorName,
+    originalPhase,
+    effect,       // best guess so far, may be refined
+    history,
+    timerKey
+  };
+  state.phase = "combat_reaction_followup";
   await writeRoundState(workingObject, state);
 
-  return {
-    accepted: true,
-    messages: [{ text: `${authorName}, reaction noted.`, type: "bot" }]
-  };
+  const messages = [{ text: `⚡ ${acknowledgment}`, type: "bot" }];
+  if (reactionDir?.nextPrompt) messages.push({ text: reactionDir.nextPrompt, type: "bot" });
+  else if (reactionDir?.rollNotation) messages.push({ text: `${authorName}, roll: \`${reactionDir.rollNotation}\``, type: "bot" });
+
+  return { accepted: true, messages };
+}
+
+/** Applies a resolved reaction effect directly onto state.initiative.lastAttackResult. */
+function applyReactionEffect(state, effect) {
+  if (!state.initiative.lastAttackResult) state.initiative.lastAttackResult = {};
+  const r = state.initiative.lastAttackResult;
+  if (effect === "shield_ac5")   r.reactionAcBoost = (r.reactionAcBoost || 0) + 5;
+  else if (effect === "ac_boost_3") r.reactionAcBoost = (r.reactionAcBoost || 0) + 3;
+  else if (effect === "half_damage")  r.reactionHalfDamage = true;
+  else if (effect === "counterspell") r.reactionCounterspell = true;
+}
+
+/**
+ * Handles the combat_reaction_followup phase: one player is mid-reaction, supplying
+ * rolls or choices. The AI evaluates completeness each turn. When complete the effect
+ * is applied and the combat timer is restarted with a short delay.
+ */
+async function handleCombatReactionFollowup(baseCore, runFlow, createRunCore, workingObject, state, message) {
+  const followup = state.initiative.reactionFollowup || {};
+  const { reactorName, originalPhase, timerKey } = followup;
+
+  // Only the reactor can continue their own reaction
+  const authorName = normalize(message?.speakerAlias || message?.authorName || "");
+  if (reactorName && authorName && authorName.toLowerCase() !== reactorName.toLowerCase()) {
+    return { accepted: false, messages: [] };
+  }
+
+  const inputText = getRoundInputText(message);
+  const rollTotal = extractFirstRollTotal(message);
+  const responseText = rollTotal != null ? `Roll: ${rollTotal}` : inputText;
+
+  const history = Array.isArray(followup.history) ? [...followup.history] : [];
+  history.push({ role: "player", text: responseText });
+
+  const lastAction = state.initiative.lastPlayerAction || {};
+
+  // AI decides if enough info has been gathered to resolve the reaction
+  const evalDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
+    "You are resolving a D&D 5e player reaction mid-loop. Evaluate if you have all info needed.",
+    `Reactor: ${reactorName}`,
+    `Phase: ${originalPhase === "combat_reaction_pre" ? "before attack roll" : "after hit — before damage"}`,
+    `Attacker: ${normalize(lastAction.name)}`,
+    `Conversation so far:\n${history.map((e) => `${e.role === "player" ? reactorName : "DM"}: ${e.text}`).join("\n")}`,
+    "Return JSON only:",
+    '{',
+    '  "complete": true,',
+    '  "effect": "shield_ac5 | half_damage | ac_boost_3 | counterspell | none",',
+    '  "resolution": "1 dramatic sentence describing the final outcome of the reaction",',
+    '  "nextPrompt": "What to ask next — only set if complete is false"',
+    '}'
+  ].join("\n")).catch(() => null);
+
+  const complete = evalDir?.complete !== false;
+  const effect = normalize(evalDir?.effect || followup.effect || "none");
+
+  history.push({ role: "dm", text: normalize(evalDir?.resolution || evalDir?.nextPrompt || "") });
+  followup.history = history;
+  followup.effect = effect;
+  state.initiative.reactionFollowup = followup;
+
+  if (!complete) {
+    await writeRoundState(workingObject, state);
+    const nextQ = normalize(evalDir?.nextPrompt) || "Please provide the required information.";
+    return { accepted: true, messages: [{ text: nextQ, type: "bot" }] };
+  }
+
+  // Reaction fully resolved — apply effect, restore phase, restart timer
+  applyReactionEffect(state, effect);
+  state.initiative.pendingReactions.push({
+    from: reactorName,
+    text: history.filter((e) => e.role === "player").map((e) => e.text).join(" / "),
+    effect,
+    createdAt: new Date().toISOString()
+  });
+
+  state.phase = originalPhase;
+  state.initiative.reactionFollowup = null;
+  await writeRoundState(workingObject, state);
+
+  const resolution = normalize(evalDir?.resolution) || `${reactorName}'s reaction is resolved!`;
+
+  // Restart the combat timer with a short delay (3 s) so combat continues
+  const capturedWo = { ...workingObject };
+  const capturedTimerKey = timerKey || state.session.channelKey || workingObject.channelId;
+  clearCombatTimer(capturedTimerKey);
+  combatTimers.set(capturedTimerKey, setTimeout(() => {
+    const nextFn = originalPhase === "combat_reaction_pre"
+      ? fireCombatAttackRoll
+      : fireCombatDamageAndAdvance;
+    nextFn(baseCore, runFlow, createRunCore, capturedWo, capturedTimerKey).catch((err) => {
+      console.error("[foundry-bridge] reaction followup timer error:", err);
+    });
+  }, 3000));
+
+  return { accepted: true, messages: [{ text: `⚡ ${resolution}`, type: "bot" }] };
 }
 
 // ─── DM OVERRIDE ───────────────────────────────────────────────────────────────
@@ -2397,6 +2577,7 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
       state.initiative.pendingReactions = [];
       state.initiative.lastAttackResult = null;
       state.initiative.turnFollowupHistory = [];
+      state.initiative.reactionFollowup = null;
     }
     if (!state.reactions) state.reactions = { available: [], used: [] };
     await writeReactionsMd(workingObject, state).catch(() => {});
@@ -2447,9 +2628,10 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
       return await finalizeInitiativeAndStartCombat(baseCore, runFlow, createRunCore, workingObject, state, [skippedMsg]);
     }
 
-    // In combat turn (any phase): advance to next combatant
+    // In combat turn (any phase, including reaction followup): advance to next combatant
     if (state.mode === "initiative") {
       clearCombatTimer(state.session?.channelKey || workingObject.channelId);
+      state.initiative.reactionFollowup = null;
       const nextRes = await invokeFoundryAction(workingObject, "initiative", {
         channelKey: state.session.channelKey,
         operation: "next",
@@ -2580,7 +2762,11 @@ async function handleRoundInput(baseCore, runFlow, createRunCore, workingObject,
 
   if (state.mode === "initiative" &&
     (state.phase === "combat_reaction_pre" || state.phase === "combat_reaction_post")) {
-    return await handleCombatReactionWindow(workingObject, state, message);
+    return await handleCombatReactionWindow(baseCore, runFlow, createRunCore, workingObject, state, message);
+  }
+
+  if (state.mode === "initiative" && state.phase === "combat_reaction_followup") {
+    return await handleCombatReactionFollowup(baseCore, runFlow, createRunCore, workingObject, state, message);
   }
 
   return { accepted: false, messages: [] };
