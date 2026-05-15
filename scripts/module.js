@@ -2524,7 +2524,7 @@ async function handleSelectedPlayers() {
       return {
         userId: user.id,
         userName: user.name,
-        characterName: normalize(actor?.name || user.character?.name || user.name),
+        characterName: normalize(actor?.name || ""),
         source: "foundry",
         actorId: actor?.id || normalize(binding.actorId || user.character?.id || ""),
         actorSummary: actor ? summarizeActor(actor) : null
