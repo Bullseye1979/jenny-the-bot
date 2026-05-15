@@ -29,6 +29,7 @@
   "JENNY_FOUNDRY_BRIDGE.UI.SourceDnDBeyond": "DnDBeyond ID",
   "JENNY_FOUNDRY_BRIDGE.UI.NoActor": "No actor",
   "JENNY_FOUNDRY_BRIDGE.UI.DnDBeyondPlaceholder": "DnDBeyond character ID",
+  "JENNY_FOUNDRY_BRIDGE.UI.RefreshPanel": "Refresh actors",
   "JENNY_FOUNDRY_BRIDGE.UI.ApplySession": "Apply session",
   "JENNY_FOUNDRY_BRIDGE.UI.EndCampaign": "End campaign",
   "JENNY_FOUNDRY_BRIDGE.UI.ChatModeInfo": "Select journals and players, then apply the session. After that, Foundry chat runs through Jenny's round engine.",

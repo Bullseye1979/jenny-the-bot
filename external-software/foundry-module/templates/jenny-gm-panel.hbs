@@ -42,26 +42,18 @@
           />
           <span class="jenny-gm-panel__binding-user">{{userName}}</span>
         </label>
-        <select name="binding-source-{{userId}}" {{#if ../busy}}disabled{{/if}}>
-          <option value="foundry" {{#if isFoundry}}selected{{/if}}>{{localize "JENNY_FOUNDRY_BRIDGE.UI.SourceFoundry"}}</option>
-          <option value="dndbeyond" {{#if isDnDBeyond}}selected{{/if}}>{{localize "JENNY_FOUNDRY_BRIDGE.UI.SourceDnDBeyond"}}</option>
-        </select>
         <select name="binding-actor-{{userId}}" {{#if ../busy}}disabled{{/if}}>
           <option value="">{{localize "JENNY_FOUNDRY_BRIDGE.UI.NoActor"}}</option>
           {{#each actorOptions}}
             <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
           {{/each}}
         </select>
-        <input
-          type="text"
-          name="binding-dndbeyond-{{userId}}"
-          value="{{dndbeyondId}}"
-          placeholder="{{localize 'JENNY_FOUNDRY_BRIDGE.UI.DnDBeyondPlaceholder'}}"
-          {{#if ../busy}}disabled{{/if}}
-        />
       </article>
     {{/each}}
     <div class="jenny-gm-panel__journal-actions">
+      <button type="button" data-action="refresh-panel" {{#if busy}}disabled{{/if}}>
+        {{localize "JENNY_FOUNDRY_BRIDGE.UI.RefreshPanel"}}
+      </button>
       <button type="button" data-action="apply-session" {{#if busy}}disabled{{/if}}>
         {{localize "JENNY_FOUNDRY_BRIDGE.UI.ApplySession"}}
       </button>

@@ -183,7 +183,7 @@ function normalizeActorLookup(value) {
 function getPlayerBindingRows() {
   const bindings = getPlayerBindings();
   const selectedPlayers = new Set(getSelectedPlayers().map((value) => value.toLowerCase()));
-  const actorOptions = getPlayerActors().map((actor) => ({
+  const actorOptions = getAllActors().map((actor) => ({
     value: actor.id,
     label: actor.name
   }));
@@ -191,15 +191,11 @@ function getPlayerBindingRows() {
   return getPlayerUsers().map((user) => {
     const binding = bindings[user.id] || {};
     const actorId = normalize(binding.actorId || user.character?.id || "");
-    const source = normalize(binding.source || "foundry").toLowerCase() === "dndbeyond" ? "dndbeyond" : "foundry";
     return {
       userId: user.id,
       userName: user.name,
       selected: selectedPlayers.has(String(user.id || "").toLowerCase()),
-      isFoundry: source === "foundry",
-      isDnDBeyond: source === "dndbeyond",
       actorId,
-      dndbeyondId: normalize(binding.dndbeyondId || ""),
       actorOptions: actorOptions.map((option) => ({
         ...option,
         selected: option.value === actorId
@@ -870,7 +866,6 @@ function getCurrentFoundryScene() {
 
 function getBoundPlayerActorIds() {
   return Object.values(getPlayerBindings())
-    .filter((binding) => normalize(binding?.source || "foundry").toLowerCase() !== "dndbeyond")
     .map((binding) => normalize(binding?.actorId))
     .filter(Boolean);
 }
@@ -1219,7 +1214,6 @@ async function handleInitiative(payload) {
 
   if (operation === "roll") {
     const playerBindingActorIds = Object.values(getPlayerBindings())
-      .filter((binding) => normalize(binding?.source || "foundry").toLowerCase() !== "dndbeyond")
       .map((binding) => normalize(binding?.actorId))
       .filter(Boolean);
 
@@ -2403,12 +2397,8 @@ function getPlayerBindingsFromRoot(root) {
   for (const user of getPlayerUsers()) {
     const userId = String(user.id || "");
     const selected = root?.querySelector?.(`[name='selectedPlayer'][value='${userId}']`)?.checked === true;
-    const source = normalize(root?.querySelector?.(`[name='binding-source-${userId}']`)?.value || "foundry").toLowerCase() === "dndbeyond"
-      ? "dndbeyond"
-      : "foundry";
     const actorId = normalize(root?.querySelector?.(`[name='binding-actor-${userId}']`)?.value || "");
-    const dndbeyondId = normalize(root?.querySelector?.(`[name='binding-dndbeyond-${userId}']`)?.value || "");
-    bindings[userId] = { selected, source, actorId, dndbeyondId };
+    bindings[userId] = { selected, actorId };
   }
   return bindings;
 }
@@ -2422,47 +2412,34 @@ async function importPlayerBindingsIntoContext(channelId, bindings, setStatus) {
     const user = users[index];
     const binding = bindings[user.id] || {};
     if (binding.selected !== true) continue;
-    const source = normalize(binding.source || "foundry").toLowerCase() === "dndbeyond" ? "dndbeyond" : "foundry";
-
-    if (source === "foundry") {
-      const actor = binding.actorId ? getActorByRef(binding.actorId) : (user.character || null);
-      if (actor) {
-        if (setStatus) setStatus(`Importing player binding ${index + 1}/${users.length}: ${user.name} -> ${actor.name}`);
-        rosterLines.push([
-          `Player: ${user.name}`,
-          `Foundry user ID: ${user.id}`,
-          "Source: Foundry actor",
-          `Actor: ${actor.name}`,
-          `Actor ID: ${actor.id}`,
-          `Type: ${actor.type || "character"}`,
-          `Race: ${actor.system?.details?.race || "-"}`,
-          `Background: ${actor.system?.details?.background || "-"}`,
-          `Level: ${actor.system?.details?.level ?? "-"}`,
-          `AC: ${actor.system?.attributes?.ac?.value ?? "-"}`,
-          `HP: ${actor.system?.attributes?.hp?.value ?? "-"}/${actor.system?.attributes?.hp?.max ?? "-"}`,
-          `Passive Perception: ${actor.system?.skills?.prc?.passive ?? "-"}`
-        ].join("\n"));
-      } else {
-        if (setStatus) setStatus(`Importing player binding ${index + 1}/${users.length}: ${user.name} -> missing Foundry actor`);
-        rosterLines.push([
-          `Player: ${user.name}`,
-          `Foundry user ID: ${user.id}`,
-          "Source: Foundry actor",
-          "Actor: missing",
-          "Actor ID: missing"
-        ].join("\n"));
-      }
-    } else {
-      const dndbeyondId = normalize(binding.dndbeyondId || "");
-      if (setStatus) setStatus(`Importing player binding ${index + 1}/${users.length}: ${user.name} -> ${dndbeyondId ? `DnDBeyond ${dndbeyondId}` : "missing DnDBeyond ID"}`);
+    const actor = binding.actorId ? getActorByRef(binding.actorId) : (user.character || null);
+    if (actor) {
+      if (setStatus) setStatus(`Importing player binding ${index + 1}/${users.length}: ${user.name} -> ${actor.name}`);
       rosterLines.push([
         `Player: ${user.name}`,
         `Foundry user ID: ${user.id}`,
-        "Source: DnDBeyond",
-        `DnDBeyond character ID: ${dndbeyondId || "missing"}`
+        "Source: Foundry actor",
+        `Actor: ${actor.name}`,
+        `Actor ID: ${actor.id}`,
+        `Type: ${actor.type || "character"}`,
+        `Race: ${actor.system?.details?.race || "-"}`,
+        `Background: ${actor.system?.details?.background || "-"}`,
+        `Level: ${actor.system?.details?.level ?? "-"}`,
+        `AC: ${actor.system?.attributes?.ac?.value ?? "-"}`,
+        `HP: ${actor.system?.attributes?.hp?.value ?? "-"}/${actor.system?.attributes?.hp?.max ?? "-"}`,
+        `Passive Perception: ${actor.system?.skills?.prc?.passive ?? "-"}`
+      ].join("\n"));
+    } else {
+      if (setStatus) setStatus(`Importing player binding ${index + 1}/${users.length}: ${user.name} -> missing Foundry actor`);
+      rosterLines.push([
+        `Player: ${user.name}`,
+        `Foundry user ID: ${user.id}`,
+        "Source: Foundry actor",
+        "Actor: missing",
+        "Actor ID: missing"
       ].join("\n"));
     }
-    imported.push({ userName: user.name, source });
+    imported.push({ userName: user.name, source: "foundry" });
   }
 
   if (!rosterLines.length) return imported;
@@ -2543,17 +2520,13 @@ async function handleSelectedPlayers() {
     .filter((user) => selectedUsers.has(String(user.id || "").toLowerCase()))
     .map((user) => {
       const binding = bindings[user.id] || {};
-      const source = normalize(binding.source || "foundry").toLowerCase() === "dndbeyond" ? "dndbeyond" : "foundry";
-      const actor = source === "foundry"
-        ? (binding.actorId ? getActorByRef(binding.actorId) : (user.character || null))
-        : null;
+      const actor = binding.actorId ? getActorByRef(binding.actorId) : (user.character || null);
       return {
         userId: user.id,
         userName: user.name,
         characterName: normalize(actor?.name || user.character?.name || user.name),
-        source,
+        source: "foundry",
         actorId: actor?.id || normalize(binding.actorId || user.character?.id || ""),
-        dndbeyondId: normalize(binding.dndbeyondId || ""),
         actorSummary: actor ? summarizeActor(actor) : null
       };
     });
@@ -2690,6 +2663,11 @@ class JennyLegacyGameMasterPanel extends Application {
 
   activateListeners(html) {
     super.activateListeners(html);
+    html.find("button[data-action='refresh-panel']").on("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.render();
+    });
     html.find("button[data-action='apply-session']").on("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -2958,6 +2936,15 @@ Hooks.once("ready", () => {
   Hooks.on("createChatMessage", (message) => {
     handleChatDrivenBotTurn(message).catch((error) => log("Chat-driven bot turn failed", error));
   });
+
+  // Re-render the GM panel when actors are created or deleted so the dropdown stays current
+  const refreshGmPanel = () => {
+    Object.values(ui.windows || {}).forEach((app) => {
+      if (app?.id === `${MODULE_ID}-gm-panel`) app.render();
+    });
+  };
+  Hooks.on("createActor", refreshGmPanel);
+  Hooks.on("deleteActor", refreshGmPanel);
 
   startPolling();
   log("Ready");

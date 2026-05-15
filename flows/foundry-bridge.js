@@ -340,7 +340,7 @@ async function writePartyCharacterFiles(baseCore, runFlow, createRunCore, workin
   for (const player of players) {
     const fileSlug = getSlug(player?.characterName || player?.userName || player?.userId, "character");
     player.fileSlug = fileSlug;
-    if (player.source === "foundry" && player.actorSummary) {
+    if (player.actorSummary) {
       const markdown = buildCharacterMarkdown(player, {
         name: player.actorSummary?.name,
         classSummary: player.actorSummary?.type,
@@ -351,34 +351,14 @@ async function writePartyCharacterFiles(baseCore, runFlow, createRunCore, workin
         passivePerception: player.actorSummary?.system?.skills?.prc?.passive,
         notes: [
           `Foundry actor: ${normalize(player.actorSummary?.name) || "-"}`,
-          `Actor type: ${normalize(player.actorSummary?.type) || "-"}`
+          `Actor ID: ${normalize(player.actorId) || "-"}`
         ]
       });
       await writeCharacterMarkdown(workingObject, player, markdown);
       continue;
     }
-    if (player.source === "dndbeyond" && normalize(player.dndbeyondId)) {
-      const prompt = [
-        `Load DnDBeyond character ${normalize(player.dndbeyondId)} for player ${normalize(player.userName)}.`,
-        "Use getDnDBeyondCharacter and return compact markdown only.",
-        "Include: Character name, classes, level, race, AC, HP, main ability modifiers, saving throws, passive perception, notable features, spellcasting highlights, and equipment highlights."
-      ].join("\n");
-      const res = await runApiTurn(baseCore, runFlow, createRunCore, {
-        channelId: channels.party,
-        payload: prompt,
-        userId: session?.channelId || "foundry-party-loader",
-        doNotWriteToContext: true,
-        callerChannelId: session?.channelId
-      });
-      const markdown = buildCharacterMarkdown(player, {
-        rawMarkdown: normalize(res?.response) || `DnDBeyond character ${normalize(player.dndbeyondId)} could not be loaded.`,
-        notes: [`DnDBeyond character ID: ${normalize(player.dndbeyondId)}`]
-      });
-      await writeCharacterMarkdown(workingObject, player, markdown);
-      continue;
-    }
     const markdown = buildCharacterMarkdown(player, {
-      notes: ["No actor or DnDBeyond character was available during session sync."]
+      notes: ["No Foundry actor was linked for this player during session sync."]
     });
     await writeCharacterMarkdown(workingObject, player, markdown);
   }
