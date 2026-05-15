@@ -368,6 +368,169 @@ async function writeFoundryMarkdownState(workingObject, state) {
   await fs.writeFile(path.join(statusDir, "foundry-party-state.md"), buildPartyStateMarkdown(state.session || {}), "utf8");
 }
 
+// ─── Situation / History / Characters / Reactions writers ─────────────────────
+
+async function writeSituationMd(workingObject, state) {
+  const statusDir = getFoundryStatusDir(workingObject);
+  await fs.mkdir(statusDir, { recursive: true });
+  const sit = state.situation || {};
+  const lines = [
+    "# Current Situation\n",
+    `**Round:** ${state.round?.number || 1} | **Mode:** ${state.mode || "exploration"}`,
+    `**Updated:** ${sit.generatedAt || new Date().toISOString()}`,
+    "",
+    "## What Is Happening Right Now",
+    normalize(sit.current) || "_Not yet determined._",
+    "",
+    "## What Is Possible Next",
+    ...(Array.isArray(sit.nextPossible) && sit.nextPossible.length
+      ? sit.nextPossible.map((s, i) => `${i + 1}. ${s}`)
+      : ["_Not yet determined._"])
+  ];
+  await fs.writeFile(path.join(statusDir, "foundry-situation.md"), lines.join("\n"), "utf8");
+}
+
+async function appendHistoryMd(workingObject, entry) {
+  const statusDir = getFoundryStatusDir(workingObject);
+  await fs.mkdir(statusDir, { recursive: true });
+  const filePath = path.join(statusDir, "foundry-history.md");
+  const line = `[${new Date().toISOString()}] Round ${entry?.round || "?"} (${entry?.mode || "?"}) — ${normalize(entry?.text)}\n`;
+  await fs.appendFile(filePath, line, "utf8");
+}
+
+async function writeCharactersMd(workingObject, actorStats = [], sessionPlayers = []) {
+  const statusDir = getFoundryStatusDir(workingObject);
+  await fs.mkdir(statusDir, { recursive: true });
+  const md = buildActorStatsMarkdown(actorStats, sessionPlayers);
+  await fs.writeFile(
+    path.join(statusDir, "foundry-characters.md"),
+    `# Current Characters\n_Updated: ${new Date().toISOString()}_\n\n${md || "_No character data loaded._"}`,
+    "utf8"
+  );
+}
+
+async function writeReactionsMd(workingObject, state) {
+  const statusDir = getFoundryStatusDir(workingObject);
+  await fs.mkdir(statusDir, { recursive: true });
+  const rx = state.reactions || { available: [], used: [] };
+  const lines = [
+    "# Reactions",
+    `_Round ${state.round?.number || "?"} — Turn ${state.initiative?.currentTurnIndex ?? "?"}_`,
+    "",
+    `**Available:** ${rx.available.length ? rx.available.join(", ") : "none"}`,
+    `**Used this round:** ${rx.used.length ? rx.used.map((r) => `${r.character} (${r.action})`).join(", ") : "none"}`
+  ];
+  await fs.writeFile(path.join(statusDir, "foundry-reactions.md"), lines.join("\n"), "utf8");
+}
+
+// ─── Situation analysis + roll validator + NPC reaction decider ────────────────
+
+/**
+ * AI analyses the current state and returns:
+ *   current      — 1–3 sentences describing what is happening right now
+ *   nextPossible — array of 2–5 concrete next-step options (prevents story jumping)
+ *   involvedActorRefs — actor IDs/names currently in the scene
+ */
+async function runSituationAnalysis(baseCore, runFlow, createRunCore, state, actions = []) {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+  const currentLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "unknown location");
+  const prompt = [
+    "Analyse the current D&D session state and return structured JSON.",
+    `Current location: ${currentLocation}`,
+    `Last known beat: ${normalize(state.currentBeat || state.lastScene?.summary || "")}`,
+    actions.length ? `Latest player actions:\n${actions.map((a) => `- ${a.characterName || a.userName}: ${a.text}`).join("\n")}` : "",
+    "Return JSON only:",
+    "{",
+    '  "current": "1-3 sentences — what is literally happening right now at the current location",',
+    '  "nextPossible": ["option 1", "option 2", "option 3"],',
+    '  "involvedActorRefs": ["exact actor name or ID currently present in the scene"]',
+    "}",
+    "RULES:",
+    "- nextPossible must be concrete immediate possibilities, NOT multi-step future events",
+    "- nextPossible options must all be reachable from the CURRENT location in the next 5 minutes",
+    "- Do NOT include options that require travel or preparation not yet done",
+    "- involvedActorRefs: only characters physically present right now"
+  ].filter(Boolean).join("\n");
+  const res = await runApiTurn(baseCore, runFlow, createRunCore, {
+    channelId: channels.director,
+    payload: prompt,
+    userId: state?.session?.channelId || "foundry-situation",
+    doNotWriteToContext: true,
+    callerChannelId: state?.session?.channelId
+  });
+  return safeParseJson(res?.response, { current: "", nextPossible: [], involvedActorRefs: [] });
+}
+
+/**
+ * Validates a player's dice roll against their character stats.
+ * rollType: "initiative" | "attack" | "damage" | "skill" | "save"
+ * Returns { valid, message }.
+ */
+async function runRollValidator(baseCore, runFlow, createRunCore, state, player, rollType, rollTotal, notation) {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+  const charName = normalize(player?.characterName || player?.userName || "Player");
+  // Read characters.md for context (non-fatal if missing)
+  let charContext = "";
+  try {
+    const statusDir = getFoundryStatusDir({ channelId: state?.session?.channelId });
+    charContext = await fs.readFile(path.join(statusDir, "foundry-characters.md"), "utf8");
+  } catch { /* no character file yet */ }
+
+  const prompt = [
+    "Validate a D&D 5e dice roll for plausibility against the character's stats.",
+    `Character: ${charName}`,
+    `Roll type: ${rollType}`,
+    `Notation: ${notation}`,
+    `Reported total: ${rollTotal}`,
+    charContext ? `Character stats (from foundry-characters.md):\n${charContext.slice(0, 1500)}` : "",
+    "Return JSON only: { \"valid\": true|false, \"message\": \"\" }",
+    "valid=true if the total is within the possible range for this notation + character modifier.",
+    "valid=false with a friendly message if clearly impossible (e.g. 1d20+3 cannot produce 25).",
+    "If character stats are unavailable, default to valid=true."
+  ].filter(Boolean).join("\n");
+  const res = await runApiTurn(baseCore, runFlow, createRunCore, {
+    channelId: channels.director,
+    payload: prompt,
+    userId: state?.session?.channelId || "foundry-validator",
+    doNotWriteToContext: true,
+    callerChannelId: state?.session?.channelId
+  });
+  const parsed = safeParseJson(res?.response, null);
+  if (parsed && typeof parsed.valid === "boolean") return parsed;
+  return { valid: true, message: "" }; // default allow
+}
+
+/**
+ * For PC turns: AI immediately decides if any NPC has a valid reaction to the PC's action.
+ * Returns array of reactions to execute (may be empty).
+ */
+async function runNpcReactionDecider(baseCore, runFlow, createRunCore, state, attackInfo) {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+  const available = (state.reactions?.available || []).filter((name) => {
+    const b = (state.initiative?.actorBindings || []).find((b) => normalize(b.name).toLowerCase() === name.toLowerCase());
+    return b && !isPlayerControlledCombatant(state, b);
+  });
+  if (!available.length) return [];
+  const prompt = [
+    "Decide if any NPC should use their reaction to a player's attack in D&D 5e.",
+    `Available NPCs with reactions: ${available.join(", ")}`,
+    `Attack: ${normalize(attackInfo?.attacker)} → ${normalize(attackInfo?.target)}, action: ${normalize(attackInfo?.action)}`,
+    `Result: ${attackInfo?.isHit ? "HIT" : "MISS"}${attackInfo?.damage ? `, ${attackInfo.damage} damage` : ""}`,
+    "Return JSON only: { \"reactions\": [{ \"character\": \"\", \"action\": \"\", \"notation\": \"\" }] }",
+    "Only include NPCs with a meaningful reaction ability (Parry, Shield spell, Counterspell, etc.).",
+    "Return empty reactions array if no NPC has a valid reaction here."
+  ].filter(Boolean).join("\n");
+  const res = await runApiTurn(baseCore, runFlow, createRunCore, {
+    channelId: channels.director,
+    payload: prompt,
+    userId: state?.session?.channelId || "foundry-reaction-decider",
+    doNotWriteToContext: true,
+    callerChannelId: state?.session?.channelId
+  });
+  const parsed = safeParseJson(res?.response, null);
+  return Array.isArray(parsed?.reactions) ? parsed.reactions : [];
+}
+
 // ─── Actor stats cache ────────────────────────────────────────────────────────
 
 /**
@@ -613,24 +776,44 @@ async function initializeFoundrySession(baseCore, runFlow, createRunCore, workin
   const contextSync = await syncCampaignStickyContext(workingObject, session);
   await writePartyCharacterFiles(baseCore, runFlow, createRunCore, workingObject, session);
   let state = createInitialRoundState(session);
+  // ── Neue Architektur: Zusatz-State-Felder ──────────────────────────────────
+  state.situation = { current: "", nextPossible: [], generatedAt: "" };
+  state.history = [];
+  state.reactions = { available: [], used: [] };
+  state.round.pendingPlayerRolls = [];
+  // ──────────────────────────────────────────────────────────────────────────
   state.lastScene = await getCampaignBubble(baseCore, runFlow, createRunCore, state, "Build the opening local story bubble for the current campaign state.");
-  // Anchor currentBeat from the campaign bubble so the first director call has something to follow from.
   state.currentBeat = normalize(state.lastScene?.summary || state.lastScene?.location || session.currentLocation || "the current location");
+  // Run situation analysis so foundry-situation.md is populated from the start
+  const initSituation = await runSituationAnalysis(baseCore, runFlow, createRunCore, state, []).catch(() => null);
+  if (initSituation?.current) {
+    state.situation = { current: initSituation.current, nextPossible: initSituation.nextPossible || [], generatedAt: new Date().toISOString() };
+    state.currentBeat = initSituation.current;
+  }
+  // Fetch + write initial character stats
+  const initActorRefs = [...session.players.map((p) => normalize(p.actorId) || normalize(p.characterName)).filter(Boolean)];
+  if (initActorRefs.length) {
+    try {
+      const statsRes = await invokeFoundryAction(workingObject, "actor-stats", { channelKey: session.channelKey, actorRefs: initActorRefs });
+      if (Array.isArray(statsRes?.actors)) await writeCharactersMd(workingObject, statsRes.actors, session.players);
+    } catch { /* non-fatal */ }
+  }
   await writeFoundryMarkdownState(workingObject, state);
+  await writeSituationMd(workingObject, state);
   state = await writeRoundState(workingObject, state);
+  // Opener narration anchored to situation
   const openBeat = normalize(state.currentBeat || state.lastScene?.location || session.currentLocation || "the current location");
   const sceneOpener = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "You are opening an exploration round for a multiplayer D&D session.",
-    "RULES: Describe ONLY what is immediately in front of the party. Do not summarize the campaign or describe future events.",
+    "RULES: Describe ONLY what is immediately in front of the party. Do not summarize the campaign.",
     "Do NOT end with a question like 'What do you do?' — the system adds the player prompt automatically.",
-    `CURRENT BEAT (authoritative — base your narration on this): ${openBeat}`,
+    `CURRENT SITUATION (authoritative): ${openBeat}`,
     "Write 1 to 3 short plain-text sentences describing only the immediate playable situation."
   ].join("\n"));
-  // Store the narrator's exact opening text as the authoritative currentBeat so the first
-  // director call in resolveExplorationRound knows where the story actually left off.
   if (sceneOpener) {
     state.currentBeat = sceneOpener;
     await writeRoundState(workingObject, state);
+    await appendHistoryMd(workingObject, { round: 1, mode: "exploration", text: `Session gestartet: ${sceneOpener}` });
   }
   const opener = buildExplorationTurnPrompt(state, sceneOpener);
   return { state, opener, contextSync };
@@ -736,8 +919,10 @@ async function advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, 
   state.round.pendingClarifications = [];
   state.round.openReactionWindow = null;
   state.round.actionFollowupHistory = [];
+  state.round.pendingPlayerRolls = [];
   await writeFoundryMarkdownState(workingObject, state);
   await writeRoundState(workingObject, state);
+  await writeSituationMd(workingObject, state);
   const nowBeat = normalize(state.currentBeat || state.lastScene?.summary || state.lastScene?.location || state.session?.progress?.currentLocation || "current location");
   const scenePrompt = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "You are the DM narrator for a multiplayer D&D session.",
@@ -752,6 +937,7 @@ async function advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, 
   if (scenePrompt) {
     state.currentBeat = scenePrompt;
     await writeRoundState(workingObject, state);
+    await appendHistoryMd(workingObject, { round: state.round.number, mode: "exploration", text: scenePrompt });
   }
   return buildExplorationTurnPrompt(state, scenePrompt);
 }
@@ -801,6 +987,7 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     '  "activeThreats": "short threat summary or empty string",',
     '  "clarifications": [{"userId":"","userName":"","prompt":"","rollNeeded":"","dc":"","reason":""}],',
     '  "npcRolls": [{"label":"","notation":"","visibility":"gmroll"}],',
+    '  "pendingPlayerRolls": [{"userId":"","characterName":"","type":"skill|save|attack|check","notation":"e.g. 1d20+3","dc":"10","label":"Perception Check"}],',
     '  "enemies": ["exact Foundry token name of hostile combatant 1", "..."],',
     '  "allies": ["exact Foundry token name of allied NPC 1", "..."],',
     '  "sceneUpdate": {"location":"current location — only change if party just finished traveling","objective":"","chapter":"","summary":"what is immediately visible/audible NOW","nearbyEvents":"","nearbyNpcs":"","nearbyHazards":"","nextBeats":"","drift":"","loadNext":"","sourceAnchor":""}',
@@ -834,6 +1021,19 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
   if (director.currentBeat) {
     state.currentBeat = normalize(director.currentBeat);
   }
+
+  // Collect player rolls requested by the director
+  const pendingPlayerRolls = (Array.isArray(director.pendingPlayerRolls) ? director.pendingPlayerRolls : [])
+    .map((entry) => ({
+      userId: normalize(entry?.userId),
+      characterName: normalize(entry?.characterName),
+      type: normalize(entry?.type) || "check",
+      notation: normalize(entry?.notation) || "1d20",
+      dc: normalize(entry?.dc),
+      label: normalize(entry?.label) || "Roll",
+      response: null
+    }))
+    .filter((entry) => entry.userId && entry.notation);
 
   state.lastResolution = {
     summary: normalize(director.summary),
@@ -875,6 +1075,22 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
 
   if (normalize(director.modeSwitch).toLowerCase() === "initiative") {
     return await startInitiativeMode(baseCore, runFlow, createRunCore, workingObject, state, director, resolutionText);
+  }
+
+  // If the director requests player rolls, enter awaiting_player_dice before advancing
+  if (pendingPlayerRolls.length > 0) {
+    state.phase = "awaiting_player_dice";
+    state.round.pendingPlayerRolls = pendingPlayerRolls;
+    state.round.activePlayerIndex = 0;
+    await writeRoundState(workingObject, state);
+    const first = pendingPlayerRolls[0];
+    const dcText = first.dc ? ` (DC ${first.dc})` : "";
+    return {
+      messages: [
+        { text: resolutionText, type: "bot" },
+        { text: `${first.characterName || first.userId}, roll ${first.label}: \`${first.notation}\`${dcText}`, type: "bot" }
+      ]
+    };
   }
 
   const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, resolutionText);
@@ -979,6 +1195,79 @@ async function continueClarificationRound(baseCore, runFlow, createRunCore, work
       { text: nextPrompt, type: "bot" }
     ]
   };
+}
+
+/**
+ * Handles awaiting_player_dice phase: director requested one or more player rolls.
+ * Players roll in Foundry → round-input arrives → validate → advance to next or resolve.
+ */
+async function handlePlayerDiceRoll(baseCore, runFlow, createRunCore, workingObject, state, message) {
+  const rolls = Array.isArray(state.round?.pendingPlayerRolls) ? state.round.pendingPlayerRolls : [];
+  const current = rolls.find((r) => r.response == null);
+  if (!current) {
+    // All done — continue to narrator + next prompt
+    const resText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+      "Resolve a D&D exploration round after all requested player rolls.",
+      "RULES: Only describe what is happening RIGHT NOW. Do not skip ahead. Do NOT end with a question.",
+      `CURRENT BEAT (authoritative): ${normalize(state.currentBeat || state.lastScene?.summary || "the current location")}`,
+      `Director summary: ${normalize(state?.lastResolution?.summary) || "-"}`,
+      `Player roll results: ${JSON.stringify(rolls, null, 2)}`,
+      "Write 2 to 4 short plain-text sentences."
+    ].join("\n"));
+    const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, resText);
+    return { accepted: true, messages: [{ text: resText, type: "bot" }, { text: nextPrompt, type: "bot" }] };
+  }
+
+  if (!doesMessageBelongToPlayer(message, { userId: current.userId, userName: current.characterName, characterName: current.characterName })) {
+    return { accepted: false, messages: [] };
+  }
+
+  const rollTotal = extractFirstRollTotal(message);
+  if (!Number.isFinite(rollTotal)) {
+    return {
+      accepted: true,
+      messages: [{ text: `${current.characterName}, please send your roll as a Foundry dice roll or number.`, type: "bot" }]
+    };
+  }
+
+  // Run plausibility validator
+  const validation = await runRollValidator(baseCore, runFlow, createRunCore, state, current, current.type, rollTotal, current.notation).catch(() => ({ valid: true, message: "" }));
+  if (!validation.valid) {
+    return {
+      accepted: true,
+      messages: [{ text: validation.message || `${current.characterName}, that roll looks off — please check and re-roll.`, type: "bot" }]
+    };
+  }
+
+  current.response = rollTotal;
+  await appendHistoryMd(workingObject, { round: state.round.number, mode: "exploration", text: `${current.characterName} rolled ${current.label}: ${rollTotal}` });
+
+  // Check for next pending roll
+  const next = rolls.find((r) => r.response == null);
+  if (next) {
+    state.round.pendingPlayerRolls = rolls;
+    await writeRoundState(workingObject, state);
+    const dcText = next.dc ? ` (DC ${next.dc})` : "";
+    return {
+      accepted: true,
+      messages: [{ text: `${next.characterName || next.userId}, roll ${next.label}: \`${next.notation}\`${dcText}`, type: "bot" }]
+    };
+  }
+
+  // All rolls done — narrate outcome + advance
+  state.round.pendingPlayerRolls = rolls;
+  await writeRoundState(workingObject, state);
+
+  const resText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+    "Resolve a D&D exploration round after all requested player rolls.",
+    "RULES: Only describe what is happening RIGHT NOW. Do not skip ahead. Do NOT end with a question.",
+    `CURRENT BEAT (authoritative): ${normalize(state.currentBeat || state.lastScene?.summary || "the current location")}`,
+    `Director summary: ${normalize(state?.lastResolution?.summary) || "-"}`,
+    `Player roll results: ${JSON.stringify(rolls, null, 2)}`,
+    "Write 2 to 4 short plain-text sentences."
+  ].join("\n"));
+  const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, resText);
+  return { accepted: true, messages: [{ text: resText, type: "bot" }, { text: nextPrompt, type: "bot" }] };
 }
 
 // ─── INITIATIVE LOOP ───────────────────────────────────────────────────────────
@@ -1164,6 +1453,15 @@ async function finalizeInitiativeAndStartCombat(baseCore, runFlow, createRunCore
   state.phase = "combat_turn_prompt";
   state.initiative.turnFollowupHistory = [];
   syncInitiativeStateFromResult(state, setRes, state.session.players);
+
+  // Init reactions: all combatants start with reactions available
+  const allCombatantNames = (Array.isArray(state.initiative.turnOrder) ? state.initiative.turnOrder : [])
+    .map((c) => normalize(c.name))
+    .filter(Boolean);
+  if (!state.reactions) state.reactions = { available: [], used: [] };
+  state.reactions.available = allCombatantNames;
+  state.reactions.used = [];
+  await writeReactionsMd(workingObject, state).catch(() => {});
 
   const turnOrderSummary = state.initiative.turnOrder
     .map((c, i) => `${i + 1}. ${normalize(c.name)} (${c.initiative ?? "?"})`)
@@ -1402,11 +1700,80 @@ async function commitCombatAction(baseCore, runFlow, createRunCore, workingObjec
     createdAt: new Date().toISOString()
   };
   state.initiative.turnFollowupHistory = [];
-  return await startCombatResolution(baseCore, runFlow, createRunCore, workingObject, state);
+  // PC turn: player rolls in Foundry → awaiting_attack_roll phase
+  // NPC turn (isNpc): bot rolls automatically via startCombatResolution timer chain
+  return await startCombatResolutionPc(baseCore, runFlow, createRunCore, workingObject, state);
 }
 
 /**
- * COMBAT RESOLUTION CHAIN (hardcoded, AI-narrated):
+ * PC COMBAT RESOLUTION: Director picks attack + flavor, bot asks player to roll in Foundry.
+ * Player rolls attack → combat_awaiting_attack_roll → hit/miss check → combat_awaiting_damage_roll
+ * This keeps player dice in player hands while the bot handles all math.
+ */
+async function startCombatResolutionPc(baseCore, runFlow, createRunCore, workingObject, state) {
+  const activeBinding = getActiveCombatantBinding(state);
+  const lastAction = state.initiative.lastPlayerAction;
+
+  // Build compact attacker stat block from cached snapshot
+  const snap = activeBinding?.actorSnapshot || {};
+  const snapLines = [];
+  if (snap.hp) snapLines.push(`HP: ${snap.hp.value ?? "?"}/${snap.hp.max ?? "?"} | AC: ${snap.ac ?? "?"} | PB: ${snap.proficiencyBonus != null ? `+${snap.proficiencyBonus}` : "?"}`);
+  if (snap.abilities) {
+    const ab = snap.abilities;
+    const mods = ["str", "dex", "con", "int", "wis", "cha"]
+      .map((k) => `${k.toUpperCase()} ${ab[k]?.mod != null ? (ab[k].mod >= 0 ? `+${ab[k].mod}` : ab[k].mod) : "?"}`)
+      .join(" | ");
+    snapLines.push(`Modifiers: ${mods}`);
+  }
+  if (Array.isArray(snap.attacks) && snap.attacks.length) {
+    snapLines.push(`Known attacks: ${snap.attacks.map((a) => [a.name, a.toHit, a.damage ? `(${a.damage})` : ""].filter(Boolean).join(" ")).join(" | ")}`);
+  }
+
+  const combatDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
+    "Choose the combat action for a D&D 5e PLAYER turn. The player will roll all dice.",
+    "RULE: Pick attackName EXACTLY from the 'Known attacks' list below. Do not invent attack names.",
+    `Active combatant: ${normalize(activeBinding?.characterName || activeBinding?.userName)}`,
+    snapLines.length ? `Attacker stats:\n${snapLines.join("\n")}` : "",
+    `Declared action: ${normalize(lastAction?.text)}`,
+    `Active opponents: ${(state.initiative?.actorBindings || []).filter((b) => !isPlayerControlledCombatant(state, b)).map((b) => normalize(b.name)).join(", ") || "none"}`,
+    `Active players: ${(state.initiative?.actorBindings || []).filter((b) => isPlayerControlledCombatant(state, b)).map((b) => normalize(b.name)).join(", ") || "none"}`,
+    "Return JSON only:",
+    `{`,
+    `  "attackName": "exact name from Known attacks list, or empty string for unarmed strike",`,
+    `  "targetName": "name of the target combatant",`,
+    `  "flavor": "One dramatic present-tense sentence describing what the attacker does — NO roll results, NO hit/miss",`,
+    `  "hasAdvantage": false,`,
+    `  "hasDisadvantage": false,`,
+    `  "combatEnds": false`,
+    `}`
+  ].filter(Boolean).join("\n")) || {};
+
+  const attack = matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
+  const attackBonus = parseAttackBonus(attack?.toHit) ?? 0;
+  const notation = combatDir.hasAdvantage
+    ? `2d20kh1+${attackBonus}`
+    : combatDir.hasDisadvantage
+      ? `2d20kl1+${attackBonus}`
+      : `1d20+${attackBonus}`;
+
+  state.initiative.lastAttackResult = { combatDir, attackRollResult: null, isHit: null, isCrit: false, attack, pendingNotation: notation };
+  state.initiative.pendingReactions = [];
+  state.phase = "combat_awaiting_attack_roll";
+  await writeRoundState(workingObject, state);
+
+  const flavor = normalize(combatDir.flavor) ||
+    `${normalize(activeBinding?.characterName || activeBinding?.userName)} attacks${combatDir.targetName ? ` ${combatDir.targetName}` : ""}!`;
+  const targetAcHint = getTargetAC(state, combatDir.targetName);
+  const acHint = targetAcHint != null ? ` (target AC: ${targetAcHint})` : "";
+
+  return {
+    accepted: true,
+    messages: [{ text: `${flavor}\n🎲 **${normalize(activeBinding?.characterName || activeBinding?.userName)}**, roll attack: \`${notation}\`${acHint}`, type: "bot" }]
+  };
+}
+
+/**
+ * COMBAT RESOLUTION CHAIN (NPC / auto-rolled):
  * 1. Director determines rolls needed.
  * 2. Attack rolls are made via Foundry immediately.
  * 3. Attack announcement posted → reaction window opens (10s).
@@ -1628,12 +1995,47 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
   await fetchAndCacheActorStats(capturedWo, state).catch(() => {});
 
   const totalDamage = Number(damageRollResult?.total ?? 0);
+
+  // For NPC attacks: let AI decide if any PC has a reaction (Shield spell, Uncanny Dodge, etc.)
+  const npcAttackInfo = {
+    attackerName: normalize(lastAction.name),
+    targetName: lastResult.combatDir?.targetName || "",
+    attackName: attack?.name || "attack",
+    damage: totalDamage,
+    isCrit
+  };
+  const npcTurnReactions = await runNpcReactionDecider(baseCore, runFlow, createRunCore, state, npcAttackInfo).catch(() => []);
+  const reactionLines = [];
+  for (const reaction of npcTurnReactions) {
+    const rName = normalize(reaction?.characterName);
+    const rText = normalize(reaction?.action);
+    if (!rName || !rText) continue;
+    if (state.reactions) {
+      state.reactions.available = (state.reactions.available || []).filter((n) => n !== rName);
+      if (!state.reactions.used.includes(rName)) state.reactions.used.push(rName);
+    }
+    reactionLines.push(`⚡ **${rName}** reacts: ${rText}`);
+    if (reaction.notation) {
+      const rr = await invokeFoundryAction(capturedWo, "roll", {
+        channelKey: state.session.channelKey,
+        notation: normalize(reaction.notation),
+        label: `${rName} reaction`,
+        visibility: "public",
+        emitChatMessage: true
+      }).catch(() => null);
+      if (rr?.total != null) reactionLines.push(`${rName} rolled: ${rr.total}`);
+    }
+  }
+  await writeReactionsMd(capturedWo, state).catch(() => {});
+  await appendHistoryMd(capturedWo, { round: state.round?.number, mode: "initiative", text: `${normalize(lastAction.name)} → ${lastResult.combatDir?.targetName || "target"} HIT for ${totalDamage}` }).catch(() => {});
+
   const damageText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "Describe the outcome of a D&D 5e hit in 1-2 sentences.",
     `Attacker: ${normalize(lastAction.name)}, attack: ${attack?.name || "strike"}`,
     `Target: ${lastResult.combatDir?.targetName || "the enemy"}`,
     `Damage: ${totalDamage}${isCrit ? " (critical hit)" : ""}`,
     reactions.length ? `Post-hit reactions: ${JSON.stringify(reactions)}` : "",
+    reactionLines.length ? `AI-decided reactions: ${reactionLines.join("; ")}` : "",
     "State the damage total. Describe the effect dramatically. Do NOT say what happens next."
   ].filter(Boolean).join("\n"));
 
@@ -1659,11 +2061,15 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
     state.phase = "awaiting_action";
     state.initiative.pendingReactions = [];
     state.initiative.lastAttackResult = null;
+    state.reactions = { available: [], used: [] };
+    await writeReactionsMd(capturedWo, state).catch(() => {});
+    await appendHistoryMd(capturedWo, { round: state.round?.number, mode: "initiative", text: "Kampf beendet." }).catch(() => {});
     await writeRoundState(capturedWo, state);
 
     const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, capturedWo, state, endText);
     await postBotMessagesToFoundry(capturedWo, [
       { text: damageText || "The attack lands.", type: "bot" },
+      ...reactionLines.map((t) => ({ text: t, type: "bot" })),
       { text: endText || "Combat ends.", type: "bot" },
       { text: nextPrompt, type: "bot" }
     ]);
@@ -1678,6 +2084,14 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
   });
   syncInitiativeStateFromResult(state, nextRes, state.session.players);
 
+  // Reset the attacker's reaction for the next round
+  const attackerName = normalize(lastAction.name);
+  if (state.reactions) {
+    if (!state.reactions.available.includes(attackerName)) state.reactions.available.push(attackerName);
+    state.reactions.used = (state.reactions.used || []).filter((n) => n !== attackerName);
+  }
+  await writeReactionsMd(capturedWo, state).catch(() => {});
+
   state.phase = "combat_turn_prompt";
   state.initiative.pendingReactions = [];
   state.initiative.lastAttackResult = null;
@@ -1687,8 +2101,223 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
   const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, capturedWo, state);
   await postBotMessagesToFoundry(capturedWo, [
     { text: damageText || "The attack lands.", type: "bot" },
+    ...reactionLines.map((t) => ({ text: t, type: "bot" })),
     ...advanced.messages
   ]);
+}
+
+// ─── PC ROLL PHASES ────────────────────────────────────────────────────────────
+
+/**
+ * Handles combat_awaiting_attack_roll: player has rolled attack in Foundry.
+ * Validates the roll, compares vs target AC, posts hit/miss, transitions to
+ * combat_awaiting_damage_roll on hit or advances turn on miss.
+ */
+async function handleCombatAwaitingAttackRoll(baseCore, runFlow, createRunCore, workingObject, state, message) {
+  const activeBinding = getActiveCombatantBinding(state);
+  if (!activeBinding) return { accepted: false, messages: [] };
+  if (!doesMessageBelongToPlayer(message, activeBinding)) return { accepted: false, messages: [] };
+
+  const rollTotal = extractFirstRollTotal(message);
+  if (!Number.isFinite(rollTotal)) {
+    return { accepted: true, messages: [{ text: `${normalize(activeBinding.characterName || activeBinding.userName)}, please send your attack roll from Foundry.`, type: "bot" }] };
+  }
+
+  const lastResult = state.initiative.lastAttackResult || {};
+  const combatDir = lastResult.combatDir || {};
+  const attack = lastResult.attack;
+  const attackBonus = parseAttackBonus(attack?.toHit) ?? 0;
+
+  // Plausibility check
+  const playerEntry = (state.session?.players || []).find((p) => normalize(p.actorId) === normalize(activeBinding.actorId) || normalize(p.userId) === normalize(activeBinding.userId)) || { characterName: activeBinding.characterName };
+  const validation = await runRollValidator(baseCore, runFlow, createRunCore, state, playerEntry, "attack", rollTotal, lastResult.pendingNotation || `1d20+${attackBonus}`).catch(() => ({ valid: true, message: "" }));
+  if (!validation.valid) {
+    return { accepted: true, messages: [{ text: validation.message || `${normalize(activeBinding.characterName)}, that attack roll looks off — please check and re-roll.`, type: "bot" }] };
+  }
+
+  const targetAC = getTargetAC(state, combatDir.targetName);
+  const rawD20 = rollTotal - attackBonus;
+  const isCrit = rawD20 === 20;
+  const isFumble = rawD20 === 1;
+  const isHit = isFumble ? false : isCrit ? true : targetAC != null ? rollTotal >= targetAC : rollTotal >= 12;
+
+  lastResult.attackRollResult = { total: rollTotal };
+  lastResult.isHit = isHit;
+  lastResult.isCrit = isCrit;
+  state.initiative.lastAttackResult = lastResult;
+
+  const rollSummary = `Rolled ${rollTotal}${targetAC != null ? ` vs AC ${targetAC}` : ""}`;
+  const resultText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+    "Announce the result of a D&D 5e attack roll in 1 sentence.",
+    `Attacker: ${normalize(activeBinding.characterName || activeBinding.userName)}, attack: ${attack?.name || "strike"}`,
+    rollSummary,
+    `Result: ${isCrit ? "CRITICAL HIT" : isHit ? "HIT" : "MISS"}`,
+    isHit ? "Do NOT describe damage yet. End the sentence with the hit result." : "Do NOT describe damage."
+  ].filter(Boolean).join("\n"));
+
+  if (isHit) {
+    // Determine damage notation
+    const damageNotation = attack?.damage
+      ? (isCrit ? critDamageNotation(normalize(attack.damage)) : normalize(attack.damage))
+      : "1d6";
+    lastResult.damageNotation = damageNotation;
+    state.initiative.lastAttackResult = lastResult;
+    state.phase = "combat_awaiting_damage_roll";
+    await writeRoundState(workingObject, state);
+    const critTag = isCrit ? " **(CRITICAL HIT!)**" : "";
+    return {
+      accepted: true,
+      messages: [
+        { text: resultText || "The attack hits!", type: "bot" },
+        { text: `${critTag}\n🎲 **${normalize(activeBinding.characterName || activeBinding.userName)}**, roll damage: \`${damageNotation}\``, type: "bot" }
+      ]
+    };
+  } else {
+    // Miss — advance turn immediately
+    await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: `${normalize(activeBinding.characterName)} attacked ${combatDir.targetName || "target"} — MISS (${rollTotal})` });
+    state.phase = "combat_turn_prompt";
+    state.initiative.pendingReactions = [];
+    state.initiative.lastAttackResult = null;
+    state.initiative.turnFollowupHistory = [];
+    const nextRes = await invokeFoundryAction(workingObject, "initiative", {
+      channelKey: state.session.channelKey,
+      operation: "next",
+      combatRef: state.initiative.combatId || state.initiative.combatName
+    });
+    syncInitiativeStateFromResult(state, nextRes, state.session.players);
+    await writeRoundState(workingObject, state);
+    const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state);
+    return { accepted: true, messages: [{ text: resultText || "The attack misses!", type: "bot" }, ...advanced.messages] };
+  }
+}
+
+/**
+ * Handles combat_awaiting_damage_roll: player has rolled damage in Foundry.
+ * Validates, narrates, runs NPC reaction decider, updates reactions.md, advances turn.
+ */
+async function handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, workingObject, state, message) {
+  const activeBinding = getActiveCombatantBinding(state);
+  if (!activeBinding) return { accepted: false, messages: [] };
+  if (!doesMessageBelongToPlayer(message, activeBinding)) return { accepted: false, messages: [] };
+
+  const rollTotal = extractFirstRollTotal(message);
+  if (!Number.isFinite(rollTotal)) {
+    return { accepted: true, messages: [{ text: `${normalize(activeBinding.characterName || activeBinding.userName)}, please send your damage roll from Foundry.`, type: "bot" }] };
+  }
+
+  const lastResult = state.initiative.lastAttackResult || {};
+  const combatDir = lastResult.combatDir || {};
+  const attack = lastResult.attack;
+  const isCrit = lastResult.isCrit === true;
+  const damageNotation = lastResult.damageNotation || (attack?.damage ? (isCrit ? critDamageNotation(normalize(attack.damage)) : normalize(attack.damage)) : "1d6");
+
+  // Plausibility check
+  const playerEntry = (state.session?.players || []).find((p) => normalize(p.actorId) === normalize(activeBinding.actorId) || normalize(p.userId) === normalize(activeBinding.userId)) || { characterName: activeBinding.characterName };
+  const validation = await runRollValidator(baseCore, runFlow, createRunCore, state, playerEntry, "damage", rollTotal, damageNotation).catch(() => ({ valid: true, message: "" }));
+  if (!validation.valid) {
+    return { accepted: true, messages: [{ text: validation.message || `${normalize(activeBinding.characterName)}, that damage roll looks off — please check and re-roll.`, type: "bot" }] };
+  }
+
+  await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: `${normalize(activeBinding.characterName)} → ${combatDir.targetName || "target"} HIT for ${rollTotal} (${attack?.name || "attack"})` });
+
+  const damageText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+    "Describe the outcome of a D&D 5e hit in 1-2 sentences.",
+    `Attacker: ${normalize(activeBinding.characterName || activeBinding.userName)}, attack: ${attack?.name || "strike"}`,
+    `Target: ${combatDir.targetName || "the enemy"}`,
+    `Damage: ${rollTotal}${isCrit ? " (critical hit)" : ""}`,
+    "State the damage total. Describe the effect dramatically. Do NOT say what happens next."
+  ].filter(Boolean).join("\n"));
+
+  // NPC reaction decider: AI decides if any NPC reacts to this PC attack
+  const attackInfo = {
+    attackerName: normalize(activeBinding.characterName || activeBinding.userName),
+    targetName: combatDir.targetName || "",
+    attackName: attack?.name || "attack",
+    damage: rollTotal,
+    isCrit
+  };
+  const npcReactions = await runNpcReactionDecider(baseCore, runFlow, createRunCore, state, attackInfo).catch(() => []);
+  const reactionMessages = [];
+  for (const reaction of npcReactions) {
+    const reactionName = normalize(reaction?.characterName);
+    const reactionText = normalize(reaction?.action);
+    if (!reactionName || !reactionText) continue;
+    // Mark NPC reaction as used
+    if (state.reactions) {
+      state.reactions.available = (state.reactions.available || []).filter((n) => n !== reactionName);
+      if (!state.reactions.used.includes(reactionName)) state.reactions.used.push(reactionName);
+    }
+    reactionMessages.push({ text: `⚡ **${reactionName}** reacts: ${reactionText}`, type: "bot" });
+    if (reaction.notation) {
+      const reactRollRes = await invokeFoundryAction(workingObject, "roll", {
+        channelKey: state.session.channelKey,
+        notation: normalize(reaction.notation),
+        label: `${reactionName} reaction`,
+        visibility: "public",
+        emitChatMessage: true
+      }).catch(() => null);
+      if (reactRollRes?.total != null) {
+        reactionMessages.push({ text: `${reactionName} rolled: ${reactRollRes.total}`, type: "bot" });
+      }
+    }
+  }
+  await writeReactionsMd(workingObject, state).catch(() => {});
+
+  // Re-fetch actor stats so HP changes are reflected
+  await fetchAndCacheActorStats(workingObject, state).catch(() => {});
+
+  // Check combat end
+  const activeNpcs = Array.isArray(state.initiative.turnOrder)
+    ? state.initiative.turnOrder.filter((c) => !c.defeated && !c.hasPlayerOwner)
+    : [];
+  const combatShouldEnd = activeNpcs.length === 0 || lastResult.combatDir?.combatEnds === true;
+
+  if (combatShouldEnd) {
+    await invokeFoundryAction(workingObject, "initiative", {
+      channelKey: state.session.channelKey,
+      operation: "end",
+      combatRef: state.initiative.combatId || state.initiative.combatName
+    }).catch(() => {});
+    const endText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+      "Combat has ended. Write 2-3 sentences describing the aftermath.",
+      "The players are victorious (or the enemies have fled). Transition back to exploration."
+    ].join("\n"));
+    state.mode = "exploration";
+    state.phase = "awaiting_action";
+    state.initiative.pendingReactions = [];
+    state.initiative.lastAttackResult = null;
+    state.reactions = { available: [], used: [] };
+    await writeReactionsMd(workingObject, state).catch(() => {});
+    await writeRoundState(workingObject, state);
+    await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: "Kampf beendet." });
+    const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, endText);
+    return { accepted: true, messages: [{ text: damageText || "The attack lands.", type: "bot" }, ...reactionMessages, { text: endText || "Combat ends.", type: "bot" }, { text: nextPrompt, type: "bot" }] };
+  }
+
+  // Advance to next combatant
+  const nextRes = await invokeFoundryAction(workingObject, "initiative", {
+    channelKey: state.session.channelKey,
+    operation: "next",
+    combatRef: state.initiative.combatId || state.initiative.combatName
+  });
+  syncInitiativeStateFromResult(state, nextRes, state.session.players);
+
+  // Reset active combatant's reaction (they used their turn action)
+  const activeName = normalize(activeBinding.characterName || activeBinding.userName);
+  if (state.reactions) {
+    if (!state.reactions.available.includes(activeName)) state.reactions.available.push(activeName);
+    state.reactions.used = (state.reactions.used || []).filter((n) => n !== activeName);
+  }
+  await writeReactionsMd(workingObject, state).catch(() => {});
+
+  state.phase = "combat_turn_prompt";
+  state.initiative.pendingReactions = [];
+  state.initiative.lastAttackResult = null;
+  state.initiative.turnFollowupHistory = [];
+  await writeRoundState(workingObject, state);
+
+  const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state);
+  return { accepted: true, messages: [{ text: damageText || "The attack lands.", type: "bot" }, ...reactionMessages, ...advanced.messages] };
 }
 
 // ─── REACTION LOOP ─────────────────────────────────────────────────────────────
@@ -1737,12 +2366,19 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
     const pendingInits = (Array.isArray(state.initiative?.pendingInitiatives) ? state.initiative.pendingInitiatives : [])
       .filter((e) => e.initiative == null)
       .map((e) => getPlayerLabel(e));
+    const pendingRolls = (Array.isArray(state.round?.pendingPlayerRolls) ? state.round.pendingPlayerRolls : [])
+      .filter((r) => r.response == null)
+      .map((r) => `${r.characterName}: ${r.label}`);
+    const reactionsAvail = Array.isArray(state.reactions?.available) ? state.reactions.available.join(", ") : "-";
     const lines = [
       `mode: ${state.mode}, phase: ${state.phase}`,
       `players: ${state.session?.players?.length || 0}`,
       `combatId: ${state.initiative?.combatId || "-"}`,
       `turnIndex: ${state.initiative?.currentTurnIndex ?? "-"}`,
-      pendingInits.length ? `awaiting initiative: ${pendingInits.join(", ")}` : ""
+      pendingInits.length ? `awaiting initiative: ${pendingInits.join(", ")}` : "",
+      pendingRolls.length ? `awaiting rolls: ${pendingRolls.join(", ")}` : "",
+      `reactions available: ${reactionsAvail}`,
+      state.situation?.current ? `situation: ${state.situation.current.slice(0, 80)}…` : ""
     ].filter(Boolean);
     return { accepted: true, messages: [{ text: `🎲 DM Status:\n${lines.join("\n")}`, type: "bot" }] };
   }
@@ -1756,11 +2392,14 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
     state.round.acceptedActions = [];
     state.round.pendingClarifications = [];
     state.round.actionFollowupHistory = [];
+    state.round.pendingPlayerRolls = [];
     if (state.initiative) {
       state.initiative.pendingReactions = [];
       state.initiative.lastAttackResult = null;
       state.initiative.turnFollowupHistory = [];
     }
+    if (!state.reactions) state.reactions = { available: [], used: [] };
+    await writeReactionsMd(workingObject, state).catch(() => {});
     await writeRoundState(workingObject, state);
     const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, "");
     return {
@@ -1907,6 +2546,10 @@ async function handleRoundInput(baseCore, runFlow, createRunCore, workingObject,
     return await continueClarificationRound(baseCore, runFlow, createRunCore, workingObject, state, message);
   }
 
+  if (state.mode === "exploration" && state.phase === "awaiting_player_dice") {
+    return await handlePlayerDiceRoll(baseCore, runFlow, createRunCore, workingObject, state, message);
+  }
+
   // ── Initiative loop ─────────────────────────────────────────────────────────
 
   if (state.mode === "initiative" && state.phase === "awaiting_player_initiative") {
@@ -1921,6 +2564,16 @@ async function handleRoundInput(baseCore, runFlow, createRunCore, workingObject,
 
   if (state.mode === "initiative" && state.phase === "combat_turn_followup") {
     return await handleCombatTurnFollowup(baseCore, runFlow, createRunCore, workingObject, state, message);
+  }
+
+  // ── PC roll phases ───────────────────────────────────────────────────────────
+
+  if (state.mode === "initiative" && state.phase === "combat_awaiting_attack_roll") {
+    return await handleCombatAwaitingAttackRoll(baseCore, runFlow, createRunCore, workingObject, state, message);
+  }
+
+  if (state.mode === "initiative" && state.phase === "combat_awaiting_damage_roll") {
+    return await handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, workingObject, state, message);
   }
 
   // ── Reaction loop ────────────────────────────────────────────────────────────
