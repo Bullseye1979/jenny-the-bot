@@ -1,0 +1,77 @@
+<section class="jenny-gm-panel">
+  <header class="jenny-gm-panel__header">
+    <div>
+      <h2>{{title}}</h2>
+      <p class="jenny-gm-panel__meta">Channel: {{channelId}} | User: {{userName}}</p>
+    </div>
+  </header>
+
+  <div class="jenny-gm-panel__status">{{statusText}}</div>
+
+  <div class="jenny-gm-panel__journal-import">
+    <label class="jenny-gm-panel__journal-label">
+      {{localize "JENNY_FOUNDRY_BRIDGE.UI.JournalSelector"}}
+    </label>
+    <div class="jenny-gm-panel__journal-list">
+      {{#each journalOptions}}
+        <label class="jenny-gm-panel__check-row">
+          <input
+            type="checkbox"
+            name="journalEntries"
+            value="{{value}}"
+            {{#if selected}}checked{{/if}}
+            {{#if ../busy}}disabled{{/if}}
+          />
+          <span>{{label}}</span>
+        </label>
+      {{/each}}
+    </div>
+  </div>
+
+  <div class="jenny-gm-panel__bindings">
+    <h3>{{localize "JENNY_FOUNDRY_BRIDGE.UI.PlayerBindings"}}</h3>
+    {{#each playerBindings}}
+      <article class="jenny-gm-panel__binding-row" data-user-id="{{userId}}">
+        <label class="jenny-gm-panel__binding-toggle">
+          <input
+            type="checkbox"
+            name="selectedPlayer"
+            value="{{userId}}"
+            {{#if selected}}checked{{/if}}
+            {{#if ../busy}}disabled{{/if}}
+          />
+          <span class="jenny-gm-panel__binding-user">{{userName}}</span>
+        </label>
+        <select name="binding-source-{{userId}}" {{#if ../busy}}disabled{{/if}}>
+          <option value="foundry" {{#if isFoundry}}selected{{/if}}>{{localize "JENNY_FOUNDRY_BRIDGE.UI.SourceFoundry"}}</option>
+          <option value="dndbeyond" {{#if isDnDBeyond}}selected{{/if}}>{{localize "JENNY_FOUNDRY_BRIDGE.UI.SourceDnDBeyond"}}</option>
+        </select>
+        <select name="binding-actor-{{userId}}" {{#if ../busy}}disabled{{/if}}>
+          <option value="">{{localize "JENNY_FOUNDRY_BRIDGE.UI.NoActor"}}</option>
+          {{#each actorOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+        <input
+          type="text"
+          name="binding-dndbeyond-{{userId}}"
+          value="{{dndbeyondId}}"
+          placeholder="{{localize 'JENNY_FOUNDRY_BRIDGE.UI.DnDBeyondPlaceholder'}}"
+          {{#if ../busy}}disabled{{/if}}
+        />
+      </article>
+    {{/each}}
+    <div class="jenny-gm-panel__journal-actions">
+      <button type="button" data-action="apply-session" {{#if busy}}disabled{{/if}}>
+        {{localize "JENNY_FOUNDRY_BRIDGE.UI.ApplySession"}}
+      </button>
+      <button type="button" data-action="end-campaign" {{#if busy}}disabled{{/if}}>
+        {{localize "JENNY_FOUNDRY_BRIDGE.UI.EndCampaign"}}
+      </button>
+    </div>
+  </div>
+
+  <div class="jenny-gm-panel__info">
+    <p>{{localize "JENNY_FOUNDRY_BRIDGE.UI.ChatModeInfo"}}</p>
+  </div>
+</section>

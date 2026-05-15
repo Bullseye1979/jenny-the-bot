@@ -1,0 +1,45 @@
+name: Sync Foundry Module
+
+on:
+  push:
+    branches: [codex]
+    paths:
+      - "external-software/foundry-module/**"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Copy module files to temp
+        run: |
+          cp -r external-software/foundry-module /tmp/foundry-module
+
+      - name: Push to foundry-release branch
+        run: |
+          git fetch origin foundry-release 2>/dev/null && \
+            git checkout -B foundry-release origin/foundry-release || \
+            git checkout --orphan foundry-release
+
+          # Clear everything
+          git rm -rf . --quiet || true
+
+          # Place module files at root
+          cp -r /tmp/foundry-module/. .
+
+          git add -A
+          git diff --staged --quiet && echo "No changes" && exit 0
+
+          git commit -m "chore: sync foundry module from codex [skip ci]"
+          git push origin foundry-release --force

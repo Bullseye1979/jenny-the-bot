@@ -14,10 +14,14 @@ tmp/
 *.log
 *.bak
 
+# Nested repos — must not be tracked by repo-codex
+repo-foundry-jenny-bridge/
+
 # Dot directories (instance-specific config, IDE, OS)
 .codex/
 .claude/
 .*/
+!.github/
 
 # Assets — instance-specific files (use git add -f for any example files inside)
 assets/**
