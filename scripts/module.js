@@ -1955,16 +1955,25 @@ function buildActorFullStats(actor) {
     if (!item.system?.activation?.type) continue;
     if (!["weapon", "spell", "feat"].includes(item.type)) continue;
 
-    // toHit: try labels first (dnd5e v2/v3), then compute fallback from ability mods (dnd5e v4+)
+    // toHit: try labels first (dnd5e v2/v3), then compute from system data (dnd5e v4+)
     let toHit = item.labels?.toHit || null;
     if (!toHit && item.type === "weapon") {
       const prof = item.system?.proficient !== false ? (sys.attributes?.prof ?? 0) : 0;
-      // Determine the relevant ability (explicit > finesse dex > str)
-      const abilityKey = item.system?.ability
-        || (item.system?.properties?.fin ? "dex" : null)
-        || "str";
-      const abilityMod = sys.abilities?.[abilityKey]?.mod ?? sys.abilities?.str?.mod ?? 0;
-      const extraBonus = Number(item.system?.attack?.bonus ?? item.system?.attackBonus ?? 0);
+      // dnd5e v4: item.system.properties is a Set<string>, not a plain object
+      const propSet = item.system?.properties;
+      const isFinesse = propSet instanceof Set ? propSet.has("fin") : !!(propSet?.fin);
+      // Determine the relevant ability: explicit > finesse (max str/dex) > str
+      let abilityKey = item.system?.ability || null;
+      if (!abilityKey && isFinesse) {
+        const strMod = sys.abilities?.str?.mod ?? 0;
+        const dexMod = sys.abilities?.dex?.mod ?? 0;
+        abilityKey = dexMod >= strMod ? "dex" : "str";
+      }
+      abilityKey = abilityKey || "str";
+      const abilityMod = sys.abilities?.[abilityKey]?.mod ?? 0;
+      // attackBonus may be a roll formula ("0", "@prof", "2") — extract numeric part only
+      const rawBonus = item.system?.attack?.bonus ?? item.system?.attackBonus ?? 0;
+      const extraBonus = Number.isFinite(Number(rawBonus)) ? Number(rawBonus) : 0;
       const total = prof + abilityMod + extraBonus;
       toHit = total >= 0 ? `+${total}` : String(total);
     }
