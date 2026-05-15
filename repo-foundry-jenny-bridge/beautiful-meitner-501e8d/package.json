@@ -1,0 +1,10 @@
+{
+  "name": "repo-foundry-jenny-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Foundry VTT bridge module for Jenny bot integration.",
+  "scripts": {
+    "check": "node --check scripts/module.js"
+  }
+}
