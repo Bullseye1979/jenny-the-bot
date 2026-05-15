@@ -128,6 +128,18 @@ function isOkSignal(text) {
   return /^(ok|okay|ready|fertig|weiter|go|proceed|ja|yes|done|continue|los|bereit|skip)[!.]*$/.test(t);
 }
 
+/**
+ * Parses a DM override command from a message.
+ * Syntax: !dm <command>  or  /dm <command>
+ * Returns { command, arg } or null if not an override.
+ */
+function parseOverrideCommand(text) {
+  const t = normalize(text);
+  const match = t.match(/^[!/]dm\s+(\S+)(?:\s+(.*))?$/i);
+  if (!match) return null;
+  return { command: match[1].toLowerCase(), arg: normalize(match[2] || "") };
+}
+
 function getRoundInputText(payload) {
   if (typeof payload?.content === "string" && payload.content.trim()) return payload.content.trim();
   if (typeof payload?.payload === "string" && payload.payload.trim()) return payload.payload.trim();
@@ -462,10 +474,13 @@ async function initializeFoundrySession(baseCore, runFlow, createRunCore, workin
   state.lastScene = await getCampaignBubble(baseCore, runFlow, createRunCore, state, "Build the opening local story bubble for the current campaign state.");
   await writeFoundryMarkdownState(workingObject, state);
   state = await writeRoundState(workingObject, state);
+  const openLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "the current location");
   const sceneOpener = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "You are opening an exploration round for a multiplayer D&D session.",
+    "RULE: Describe ONLY where the party is RIGHT NOW and what is immediately in front of them. Do not summarize the campaign or describe what will happen later.",
+    `Current party location: ${openLocation}`,
     `Scene bubble JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
-    "Write 1 to 3 short plain-text sentences describing only the immediate playable situation."
+    "Write 1 to 3 short plain-text sentences describing only the immediate playable situation at the current location."
   ].join("\n"));
   const opener = buildExplorationTurnPrompt(state, sceneOpener);
   return { state, opener, contextSync };
@@ -573,31 +588,46 @@ async function advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, 
   state.round.actionFollowupHistory = [];
   await writeFoundryMarkdownState(workingObject, state);
   await writeRoundState(workingObject, state);
+  const nowLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "current location");
   const scenePrompt = await runNarratorText(baseCore, runFlow, createRunCore, state, [
-    "You are continuing an exploration round for a multiplayer D&D session.",
-    resolutionText ? `Previous resolution:\n${resolutionText}` : "",
+    "You are the DM narrator for a multiplayer D&D session. Your job is to describe ONLY the immediate situation at the party's current location.",
+    "RULE: Do NOT advance the story to a future location or skip narrative steps. If the party is traveling, describe only this moment of travel — not the destination.",
+    `Current party location: ${nowLocation}`,
+    resolutionText ? `What just happened: ${resolutionText}` : "",
     `Current scene JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
-    "Write at most 2 short plain-text sentences describing only the updated immediate situation."
+    "Write at most 2 short plain-text sentences about what the party sees and hears RIGHT NOW at their current location."
   ].filter(Boolean).join("\n"));
   return buildExplorationTurnPrompt(state, scenePrompt);
 }
 
 async function resolveExplorationRound(baseCore, runFlow, createRunCore, workingObject, state) {
   const actions = Array.isArray(state?.round?.acceptedActions) ? state.round.acceptedActions : [];
+  const currentLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "unknown location");
   const director = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
-    "Resolve a multiplayer D&D exploration round.",
+    "Resolve a multiplayer D&D exploration round. ADVANCE THE STORY ONE BEAT AT A TIME.",
+    "",
+    "HARD RULES — follow these without exception:",
+    "1. Only describe what happens in the next 1-5 in-game minutes at the CURRENT location. Never skip ahead.",
+    "2. Travel is NOT instant. If players decide to go somewhere, the next beat is 'they set out' or 'they are en route' — NOT 'they arrive'.",
+    "3. NPCs at other locations cannot speak, react, or interact. Only NPCs physically present at the current location can act.",
+    "4. Quest progression is gradual: receive quest → discuss → prepare → begin travel → travel → arrive → etc. Never jump steps.",
+    "5. sceneUpdate.location must remain the CURRENT location unless the party has literally just finished traveling in THIS beat.",
+    "6. Set modeSwitch='initiative' ONLY if an enemy appears and attacks or blocks the party RIGHT NOW at their current position.",
+    "",
+    `Current party location: ${currentLocation}`,
     `Current scene JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
     `Party roster JSON:\n${JSON.stringify(state.session.players, null, 2)}`,
     `Player action submissions JSON:\n${JSON.stringify(actions, null, 2)}`,
+    "",
     "Return JSON only with keys:",
     "{",
     '  "modeSwitch": "exploration" | "initiative",',
-    '  "summary": "short DM-only summary of what happens",',
-    '  "activeThreats": "short threat summary",',
+    '  "summary": "DM-only summary of what happens NOW (one beat, current location only)",',
+    '  "activeThreats": "short threat summary or empty string",',
     '  "clarifications": [{"userId":"","userName":"","prompt":"","rollNeeded":"","dc":"","reason":""}],',
     '  "npcRolls": [{"label":"","notation":"","visibility":"gmroll"}],',
     '  "combatants": ["enemy 1", "enemy 2"],',
-    '  "sceneUpdate": {"location":"","objective":"","chapter":"","summary":"","nearbyEvents":"","nearbyNpcs":"","nearbyHazards":"","nextBeats":"","drift":"","loadNext":"","sourceAnchor":""}',
+    '  "sceneUpdate": {"location":"current location — only change if party just finished traveling","objective":"","chapter":"","summary":"what is immediately visible/audible NOW","nearbyEvents":"","nearbyNpcs":"","nearbyHazards":"","nextBeats":"","drift":"","loadNext":"","sourceAnchor":""}',
     "}"
   ].join("\n")) || {};
 
@@ -652,12 +682,14 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     };
   }
 
+  const resLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "the current location");
   const resolutionText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
-    "Present the resolution of an exploration round in plain text for Foundry chat.",
-    `Scene before resolution JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
-    `Director summary:\n${normalize(director.summary) || "-"}`,
+    "Present the resolution of a D&D exploration round in plain text for Foundry chat.",
+    "RULE: Only describe what is happening RIGHT NOW at the party's current location. Do not jump to a destination. Do not summarize a whole journey in one sentence.",
+    `Current party location: ${resLocation}`,
+    `Director's resolution summary (one beat only):\n${normalize(director.summary) || "-"}`,
     `NPC roll results JSON:\n${JSON.stringify(npcRollResults, null, 2)}`,
-    "Write 2 to 4 short sentences, describe what happens now."
+    "Write 2 to 4 short sentences describing what happens at the current location right now."
   ].join("\n"));
 
   if (normalize(director.modeSwitch).toLowerCase() === "initiative") {
@@ -747,13 +779,15 @@ async function continueClarificationRound(baseCore, runFlow, createRunCore, work
     };
   }
 
+  const clarLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "the current location");
   const resolutionText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
-    "Resolve an exploration round after clarification and player roll responses.",
-    `Current scene JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
+    "Resolve a D&D exploration round after clarification and player roll responses.",
+    "RULE: Only describe what is happening RIGHT NOW at the party's current location. One beat at a time.",
+    `Current party location: ${clarLocation}`,
     `Original round actions JSON:\n${JSON.stringify(state.round.acceptedActions, null, 2)}`,
     `Clarification responses JSON:\n${JSON.stringify(pending, null, 2)}`,
     `Director summary:\n${normalize(state?.lastResolution?.summary) || "-"}`,
-    "Write 2 to 4 short plain-text sentences."
+    "Write 2 to 4 short plain-text sentences about what happens at the current location right now."
   ].join("\n"));
 
   const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, resolutionText);
@@ -769,6 +803,22 @@ async function continueClarificationRound(baseCore, runFlow, createRunCore, work
 // ─── INITIATIVE LOOP ───────────────────────────────────────────────────────────
 
 async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObject, state, director, resolutionText) {
+  // Guard: if no players are registered for this session, we cannot open a combat tracker
+  if (!Array.isArray(state.session.players) || state.session.players.length === 0) {
+    state.mode = "exploration";
+    state.phase = "awaiting_action";
+    await writeRoundState(workingObject, state);
+    const noPlayerMsg = "Kein Spieler ist in der aktuellen Szene registriert — der Combat Tracker wurde nicht geöffnet. Bitte stelle sicher, dass Spieler in der Szene sind und synchronisiere die Session erneut (session-sync).";
+    const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, resolutionText);
+    return {
+      messages: [
+        { text: resolutionText, type: "bot" },
+        { text: noPlayerMsg, type: "bot" },
+        { text: nextPrompt, type: "bot" }
+      ]
+    };
+  }
+
   state.mode = "initiative";
   state.phase = "awaiting_player_initiative";
   state.initiative.pendingInitiatives = state.session.players.map((entry) => ({
@@ -784,13 +834,21 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   state.initiative.lastPlayerAction = null;
   state.initiative.turnFollowupHistory = [];
 
+  const actorRefs = state.session.players.map((entry) => normalize(entry.actorId)).filter(Boolean);
+  const npcNames = Array.isArray(director?.combatants) ? director.combatants.map((entry) => normalize(entry)).filter(Boolean) : [];
   const ensureRes = await invokeFoundryAction(workingObject, "initiative", {
     channelKey: state.session.channelKey,
     operation: "ensure",
-    actorRefs: state.session.players.map((entry) => normalize(entry.actorId)).filter(Boolean),
-    npcNames: Array.isArray(director?.combatants) ? director.combatants.map((entry) => normalize(entry)).filter(Boolean) : []
+    actorRefs,
+    npcNames
   });
   syncInitiativeStateFromResult(state, ensureRes, state.session.players);
+
+  // Warn if Foundry returned no combatants (tracker may not have opened)
+  const combatantsReturned = Array.isArray(ensureRes?.combatants) ? ensureRes.combatants : [];
+  if (!state.initiative.combatId && combatantsReturned.length === 0) {
+    console.warn("[foundry-bridge] startInitiativeMode: ensure returned no combatants — combat tracker may not be open in Foundry");
+  }
 
   // Roll initiative for all NPCs immediately
   const npcInitiatives = [];
@@ -830,10 +888,62 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   state.initiative.npcInitiatives = npcInitiatives;
   await writeRoundState(workingObject, state);
 
+  const trackerMsg = state.initiative.combatId
+    ? `⚔️ Combat Tracker geöffnet (ID: ${state.initiative.combatId}). Initiative-Runde beginnt!`
+    : "⚔️ Combat Tracker wird geöffnet. Initiative-Runde beginnt!";
+  const playerCount = state.initiative.pendingInitiatives.length;
+  const npcCount = npcInitiatives.length;
+  const rosterMsg = `Kämpfer: ${playerCount} Spieler, ${npcCount} NSC${npcCount !== 1 ? "s" : ""}.`;
+
   return {
     messages: [
       { text: resolutionText, type: "bot" },
+      { text: `${trackerMsg} ${rosterMsg}`, type: "bot" },
       { text: buildInitiativePrompt(state), type: "bot" }
+    ]
+  };
+}
+
+/** Sets all collected initiatives in Foundry and transitions to the first combat turn. */
+async function finalizeInitiativeAndStartCombat(baseCore, runFlow, createRunCore, workingObject, state, prefixMessages = []) {
+  const pending = Array.isArray(state.initiative?.pendingInitiatives) ? state.initiative.pendingInitiatives : [];
+  const allInitiatives = [
+    ...pending.map((entry) => ({
+      actorRef: normalize(entry.actorId) || getPlayerLabel(entry),
+      name: getPlayerLabel(entry),
+      initiative: entry.initiative ?? 0
+    })),
+    ...(Array.isArray(state?.initiative?.npcInitiatives) ? state.initiative.npcInitiatives.map((e) => ({
+      combatantRef: normalize(e.combatantRef),
+      name: normalize(e.name),
+      initiative: e.initiative
+    })) : [])
+  ];
+
+  const setRes = await invokeFoundryAction(workingObject, "initiative", {
+    channelKey: state.session.channelKey,
+    operation: "set",
+    combatRef: state.initiative.combatId || state.initiative.combatName,
+    initiatives: allInitiatives,
+    activateHighest: true
+  });
+
+  state.phase = "combat_turn_prompt";
+  state.initiative.turnFollowupHistory = [];
+  syncInitiativeStateFromResult(state, setRes, state.session.players);
+
+  const turnOrderSummary = state.initiative.turnOrder
+    .map((c, i) => `${i + 1}. ${normalize(c.name)} (${c.initiative ?? "?"})`)
+    .join(", ");
+  const orderMsg = turnOrderSummary ? `Initiative order: ${turnOrderSummary}` : "Initiative is set!";
+
+  const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state);
+  return {
+    accepted: true,
+    messages: [
+      ...prefixMessages.map((text) => ({ text, type: "bot" })),
+      { text: orderMsg, type: "bot" },
+      ...(advanced.messages.length ? advanced.messages : [{ text: "Combat begins. First combatant, you're up!", type: "bot" }])
     ]
   };
 }
@@ -879,45 +989,8 @@ async function continueInitiativeCollection(baseCore, runFlow, createRunCore, wo
     return { accepted: true, messages: [{ text: buildInitiativePrompt(state), type: "bot" }] };
   }
 
-  // All players have rolled - finalize turn order
-  const allInitiatives = [
-    ...pending.map((entry) => ({
-      actorRef: normalize(entry.actorId) || getPlayerLabel(entry),
-      name: getPlayerLabel(entry),
-      initiative: entry.initiative
-    })),
-    ...(Array.isArray(state?.initiative?.npcInitiatives) ? state.initiative.npcInitiatives.map((e) => ({
-      combatantRef: normalize(e.combatantRef),
-      name: normalize(e.name),
-      initiative: e.initiative
-    })) : [])
-  ];
-
-  const setRes = await invokeFoundryAction(workingObject, "initiative", {
-    channelKey: state.session.channelKey,
-    operation: "set",
-    combatRef: state.initiative.combatId || state.initiative.combatName,
-    initiatives: allInitiatives,
-    activateHighest: true
-  });
-
-  state.phase = "combat_turn_prompt";
-  state.initiative.turnFollowupHistory = [];
-  syncInitiativeStateFromResult(state, setRes, state.session.players);
-
-  const turnOrderSummary = state.initiative.turnOrder
-    .map((c, i) => `${i + 1}. ${normalize(c.name)} (${c.initiative ?? "?"})`)
-    .join(", ");
-  const orderMsg = turnOrderSummary ? `Initiative order: ${turnOrderSummary}` : "Initiative is set!";
-
-  const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state);
-  return {
-    accepted: true,
-    messages: [
-      { text: orderMsg, type: "bot" },
-      ...(advanced.messages.length ? advanced.messages : [{ text: "Combat begins. First combatant, you're up!", type: "bot" }])
-    ]
-  };
+  // All players have rolled — finalize and start combat
+  return await finalizeInitiativeAndStartCombat(baseCore, runFlow, createRunCore, workingObject, state);
 }
 
 // ─── COMBAT LOOP ───────────────────────────────────────────────────────────────
@@ -1273,10 +1346,163 @@ async function handleCombatReactionWindow(workingObject, state, message) {
   };
 }
 
+// ─── DM OVERRIDE ───────────────────────────────────────────────────────────────
+
+/**
+ * Handles !dm <command> override messages. Bypasses all player-ownership checks.
+ *
+ * Commands:
+ *   !dm status  — show current mode/phase/state
+ *   !dm reset   — return to exploration mode, clear combat state
+ *   !dm skip    — skip stuck player: in initiative → assign initiative 10; in combat → advance turn; in exploration → skip player
+ *   !dm next    — alias for skip in combat turns
+ */
+async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject, state, override) {
+  const { command } = override;
+
+  // ── !dm status ─────────────────────────────────────────────────────────────
+  if (command === "status") {
+    const pendingInits = (Array.isArray(state.initiative?.pendingInitiatives) ? state.initiative.pendingInitiatives : [])
+      .filter((e) => e.initiative == null)
+      .map((e) => getPlayerLabel(e));
+    const lines = [
+      `mode: ${state.mode}, phase: ${state.phase}`,
+      `players: ${state.session?.players?.length || 0}`,
+      `combatId: ${state.initiative?.combatId || "-"}`,
+      `turnIndex: ${state.initiative?.currentTurnIndex ?? "-"}`,
+      pendingInits.length ? `awaiting initiative: ${pendingInits.join(", ")}` : ""
+    ].filter(Boolean);
+    return { accepted: true, messages: [{ text: `🎲 DM Status:\n${lines.join("\n")}`, type: "bot" }] };
+  }
+
+  // ── !dm reset / !dm explore ────────────────────────────────────────────────
+  if (command === "reset" || command === "explore") {
+    clearCombatTimer(state.session?.channelKey || workingObject.channelId);
+    state.mode = "exploration";
+    state.phase = "awaiting_action";
+    state.round.activePlayerIndex = 0;
+    state.round.acceptedActions = [];
+    state.round.pendingClarifications = [];
+    state.round.actionFollowupHistory = [];
+    if (state.initiative) {
+      state.initiative.pendingReactions = [];
+      state.initiative.lastAttackResult = null;
+      state.initiative.turnFollowupHistory = [];
+    }
+    await writeRoundState(workingObject, state);
+    const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, "");
+    return {
+      accepted: true,
+      messages: [
+        { text: "🎲 DM Override: Kampfmodus beendet — zurück zu Exploration.", type: "bot" },
+        { text: nextPrompt, type: "bot" }
+      ]
+    };
+  }
+
+  // ── !dm skip / !dm next ────────────────────────────────────────────────────
+  if (command === "skip" || command === "next") {
+    // In initiative collection: skip the current pending player (assign initiative 10)
+    if (state.mode === "initiative" && state.phase === "awaiting_player_initiative") {
+      const pending = Array.isArray(state.initiative?.pendingInitiatives) ? state.initiative.pendingInitiatives : [];
+      const current = pending.find((e) => e.initiative == null);
+      if (!current) {
+        return { accepted: true, messages: [{ text: "🎲 DM Override: Alle Initiative-Würfe bereits erfasst.", type: "bot" }] };
+      }
+      current.initiative = 10;
+      const skippedMsg = `🎲 DM Override: ${getPlayerLabel(current)} Initiative auf 10 gesetzt (übersprungen).`;
+
+      // Also push a minimal set-call to Foundry so the tracker updates
+      await invokeFoundryAction(workingObject, "initiative", {
+        channelKey: state.session.channelKey,
+        operation: "set",
+        combatRef: state.initiative.combatId || state.initiative.combatName,
+        initiatives: [{ actorRef: normalize(current.actorId) || getPlayerLabel(current), name: getPlayerLabel(current), initiative: 10 }],
+        activateHighest: false
+      }).catch(() => {});
+
+      const next = pending.find((e) => e.initiative == null);
+      if (next) {
+        await writeRoundState(workingObject, state);
+        return {
+          accepted: true,
+          messages: [
+            { text: skippedMsg, type: "bot" },
+            { text: buildInitiativePrompt(state), type: "bot" }
+          ]
+        };
+      }
+      // All players done — finalize and start combat
+      return await finalizeInitiativeAndStartCombat(baseCore, runFlow, createRunCore, workingObject, state, [skippedMsg]);
+    }
+
+    // In combat turn (any phase): advance to next combatant
+    if (state.mode === "initiative") {
+      clearCombatTimer(state.session?.channelKey || workingObject.channelId);
+      const nextRes = await invokeFoundryAction(workingObject, "initiative", {
+        channelKey: state.session.channelKey,
+        operation: "next",
+        combatRef: state.initiative.combatId || state.initiative.combatName
+      });
+      syncInitiativeStateFromResult(state, nextRes, state.session.players);
+      state.phase = "combat_turn_prompt";
+      state.initiative.pendingReactions = [];
+      state.initiative.lastAttackResult = null;
+      state.initiative.turnFollowupHistory = [];
+      await writeRoundState(workingObject, state);
+      const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state);
+      return {
+        accepted: true,
+        messages: [
+          { text: "🎲 DM Override: Aktuellen Zug übersprungen.", type: "bot" },
+          ...advanced.messages
+        ]
+      };
+    }
+
+    // In exploration: skip current player's action slot
+    if (state.mode === "exploration" && (state.phase === "awaiting_action" || state.phase === "awaiting_action_followup")) {
+      const activePlayer = getActivePlayer(state);
+      const skippedName = getPlayerLabel(activePlayer);
+      state.phase = "awaiting_action";
+      const result = await commitExplorationAction(
+        baseCore, runFlow, createRunCore, workingObject, state,
+        activePlayer || { userId: "dm-skip", userName: "Übersprungen", characterName: "Übersprungen" },
+        "[übersprungen]"
+      );
+      return {
+        ...result,
+        messages: [
+          { text: `🎲 DM Override: ${skippedName} übersprungen.`, type: "bot" },
+          ...(Array.isArray(result.messages) ? result.messages : [])
+        ]
+      };
+    }
+
+    return { accepted: true, messages: [{ text: `🎲 DM Override: Skip in Phase '${state.phase}' nicht anwendbar.`, type: "bot" }] };
+  }
+
+  // ── Unknown command ────────────────────────────────────────────────────────
+  return {
+    accepted: true,
+    messages: [{
+      text: "🎲 DM Override — verfügbare Befehle: !dm status | !dm reset | !dm skip | !dm next",
+      type: "bot"
+    }]
+  };
+}
+
 // ─── MAIN ROUND INPUT ROUTER ───────────────────────────────────────────────────
 
 async function handleRoundInput(baseCore, runFlow, createRunCore, workingObject, message) {
   const state = await readRoundState(workingObject);
+
+  // ── DM Override (checked before all phase routing) ──────────────────────────
+  const inputText = getRoundInputText(message);
+  const override = parseOverrideCommand(inputText);
+  if (override) {
+    return await handleDmOverride(baseCore, runFlow, createRunCore, workingObject, state, override);
+  }
 
   // ── Encounter loop ──────────────────────────────────────────────────────────
 
