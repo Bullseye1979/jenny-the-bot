@@ -198,12 +198,25 @@ function critDamageNotation(notation) {
 function getSpecialistChannels(channelId) {
   const base = getSlug(channelId);
   return {
-    campaign: `subagent-foundry-campaign-${base}`,
-    party: `subagent-foundry-party-${base}`,
-    ops: `subagent-foundry-ops-${base}`,
-    director: `subagent-foundry-director-${base}`,
-    narrator: `subagent-foundry-narrator-${base}`
+    campaign:  `subagent-foundry-campaign-${base}`,
+    party:     `subagent-foundry-party-${base}`,
+    ops:       `subagent-foundry-ops-${base}`,
+    director:  `subagent-foundry-director-${base}`,
+    narrator:  `subagent-foundry-narrator-${base}`,
+    situation: `subagent-foundry-situation-${base}`,
+    combat:    `subagent-foundry-combat-${base}`
   };
+}
+
+/**
+ * Returns the appropriate specialist channel for AI calls based on current mode.
+ * exploration / undefined → situation channel
+ * initiative (combat)    → combat channel
+ */
+function getContextChannel(state) {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+  if (state?.mode === "initiative") return channels.combat;
+  return channels.situation;
 }
 
 // ─── State sync ───────────────────────────────────────────────────────────────
@@ -297,10 +310,10 @@ async function runApiTurn(baseCore, runFlow, createRunCore, options = {}) {
   };
 }
 
-async function runDirectorJson(baseCore, runFlow, createRunCore, state, prompt) {
-  const channels = getSpecialistChannels(state?.session?.channelId);
+async function runDirectorJson(baseCore, runFlow, createRunCore, state, prompt, channelOverride = null) {
+  const channelId = channelOverride || getContextChannel(state);
   const res = await runApiTurn(baseCore, runFlow, createRunCore, {
-    channelId: channels.director,
+    channelId,
     payload: prompt,
     userId: state?.session?.channelId || "foundry-director",
     doNotWriteToContext: true,
@@ -309,10 +322,10 @@ async function runDirectorJson(baseCore, runFlow, createRunCore, state, prompt) 
   return safeParseJson(res?.response, null);
 }
 
-async function runNarratorText(baseCore, runFlow, createRunCore, state, prompt) {
-  const channels = getSpecialistChannels(state?.session?.channelId);
+async function runNarratorText(baseCore, runFlow, createRunCore, state, prompt, channelOverride = null) {
+  const channelId = channelOverride || getContextChannel(state);
   const res = await runApiTurn(baseCore, runFlow, createRunCore, {
-    channelId: channels.narrator,
+    channelId,
     payload: prompt,
     userId: state?.session?.channelId || "foundry-narrator",
     doNotWriteToContext: true,
@@ -342,7 +355,7 @@ async function runActionEvaluator(baseCore, runFlow, createRunCore, state, conte
     "Accept if the action type and target are roughly clear. Reject only if truly ambiguous."
   ].join("\n");
   const res = await runApiTurn(baseCore, runFlow, createRunCore, {
-    channelId: channels.director,
+    channelId: getContextChannel(state),
     payload: prompt,
     userId: state?.session?.channelId || "foundry-evaluator",
     doNotWriteToContext: true,
@@ -423,6 +436,209 @@ async function writeReactionsMd(workingObject, state) {
   await fs.writeFile(path.join(statusDir, "foundry-reactions.md"), lines.join("\n"), "utf8");
 }
 
+// ─── World-state + channel fuel functions ─────────────────────────────────────
+
+/** Reads foundry-world-state.md from the status dir. Returns empty string if not found. */
+async function readWorldState(workingObject) {
+  const statusDir = getFoundryStatusDir(workingObject);
+  try {
+    return await fs.readFile(path.join(statusDir, "foundry-world-state.md"), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/** Writes foundry-world-state.md to the status dir. */
+async function writeWorldState(workingObject, content) {
+  const statusDir = getFoundryStatusDir(workingObject);
+  await fs.mkdir(statusDir, { recursive: true });
+  await fs.writeFile(path.join(statusDir, "foundry-world-state.md"), content, "utf8");
+}
+
+/**
+ * AI regenerates the compact world-state.md document.
+ * Uses the campaign channel (has full journal context) to stay grounded.
+ * event: 1-sentence description of what just changed (location leave, NPC death, etc.).
+ */
+async function runWorldStateUpdate(baseCore, runFlow, createRunCore, workingObject, state, event = "") {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+  const current = await readWorldState(workingObject);
+  const prompt = [
+    "You are maintaining a compact living world-state document for an active D&D session.",
+    "Update the document to reflect the latest event. Be concise — max 300 words.",
+    "Keep permanent facts (named NPCs, locations, faction relations) and REMOVE outdated transient details.",
+    current ? `CURRENT WORLD STATE:\n${current}` : "No previous world state — create a new compact summary.",
+    event ? `LATEST EVENT: ${event}` : "",
+    `Session location: ${normalize(state?.lastScene?.location || state?.session?.progress?.currentLocation || "unknown")}`,
+    "Return ONLY the updated world-state markdown — no preamble, no explanation."
+  ].filter(Boolean).join("\n\n");
+  const res = await runApiTurn(baseCore, runFlow, createRunCore, {
+    channelId: channels.campaign,
+    payload: prompt,
+    userId: state?.session?.channelId || "foundry-world-state",
+    doNotWriteToContext: true,
+    callerChannelId: state?.session?.channelId
+  });
+  const updated = normalize(res?.response);
+  if (updated) {
+    await writeWorldState(
+      workingObject,
+      `# World State\n_Updated: ${new Date().toISOString()}_\n\n${updated}`
+    );
+  }
+  return updated;
+}
+
+/**
+ * Purges the situation channel and refuels it with:
+ *   1. world-state.md as the first sticky block
+ *   2. Campaign-derived context for the current location as a second sticky block
+ */
+async function fuelSituationChannel(baseCore, runFlow, createRunCore, workingObject, state, location = "") {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+  const sitChannelId = channels.situation;
+  const sitWo = { ...workingObject, channelId: sitChannelId, contextChannelId: sitChannelId };
+
+  await setPurgeContext(sitWo);
+
+  // Sticky 1: world state
+  const worldState = await readWorldState(workingObject);
+  if (worldState) {
+    await setContext(sitWo, {
+      role: "user",
+      userId: "foundry-fuel",
+      content: worldState,
+      sticky: true
+    });
+  }
+
+  // Sticky 2: location context from campaign channel
+  const locationHint = normalize(location || state?.lastScene?.location || state?.session?.progress?.currentLocation || "current location");
+  const locationRes = await runApiTurn(baseCore, runFlow, createRunCore, {
+    channelId: channels.campaign,
+    payload: `Summarize what the party knows about the current location: "${locationHint}". Include relevant NPCs, hazards, and what is immediately visible or relevant. Max 200 words. Plain text only.`,
+    userId: state?.session?.channelId || "foundry-fuel",
+    doNotWriteToContext: true,
+    callerChannelId: state?.session?.channelId
+  });
+  const locationContext = normalize(locationRes?.response);
+  if (locationContext) {
+    await setContext(sitWo, {
+      role: "user",
+      userId: "foundry-fuel",
+      content: `## Current Location: ${locationHint}\n\n${locationContext}`,
+      sticky: true
+    });
+  }
+}
+
+/**
+ * Hardcoded (no AI selection): reads all messages from the situation channel
+ * and appends them as a scene archive entry in the campaign channel.
+ * Then triggers a world-state update.
+ */
+async function writeSituationToCampaign(baseCore, runFlow, createRunCore, workingObject, state, event = "") {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+
+  // Read situation channel messages
+  const sitWo = { ...workingObject, channelId: channels.situation, contextChannelId: channels.situation, contextSize: 100 };
+  const messages = await getContext(sitWo).catch(() => []);
+
+  if (messages.length) {
+    const summary = messages
+      .map((m) => normalize(m?.content || m?.text || ""))
+      .filter(Boolean)
+      .join("\n\n---\n\n");
+
+    if (summary) {
+      const campWo = { ...workingObject, channelId: channels.campaign, contextChannelId: channels.campaign };
+      const location = normalize(state?.lastScene?.location || state?.session?.progress?.currentLocation || "unknown location");
+      await setContext(campWo, {
+        role: "user",
+        userId: "foundry-archive",
+        content: `## Scene Archive — ${location} [${new Date().toISOString()}]\n\n${summary}`,
+        sticky: true
+      });
+    }
+  }
+
+  // Update world state (non-blocking on failure)
+  if (event) {
+    await runWorldStateUpdate(baseCore, runFlow, createRunCore, workingObject, state, event).catch(() => {});
+  }
+}
+
+/**
+ * Purges the combat channel and refuels it with:
+ *   1. world-state.md sticky
+ *   2. Situation channel messages (last 5) as sticky context
+ *   3. Combatant stats sticky
+ */
+async function fuelCombatChannel(baseCore, runFlow, createRunCore, workingObject, state) {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+  const combatChannelId = channels.combat;
+  const combatWo = { ...workingObject, channelId: combatChannelId, contextChannelId: combatChannelId };
+
+  await setPurgeContext(combatWo);
+
+  // Sticky 1: world state
+  const worldState = await readWorldState(workingObject);
+  if (worldState) {
+    await setContext(combatWo, {
+      role: "user",
+      userId: "foundry-fuel",
+      content: worldState,
+      sticky: true
+    });
+  }
+
+  // Sticky 2: last 5 situation channel messages as pre-combat context
+  const sitWo = { ...workingObject, channelId: channels.situation, contextChannelId: channels.situation, contextSize: 20 };
+  const sitMessages = await getContext(sitWo).catch(() => []);
+  const sitContext = sitMessages
+    .map((m) => normalize(m?.content || m?.text || ""))
+    .filter(Boolean)
+    .slice(-5)
+    .join("\n\n---\n\n");
+  if (sitContext) {
+    await setContext(combatWo, {
+      role: "user",
+      userId: "foundry-fuel",
+      content: `## Pre-Combat Situation\n\n${sitContext}`,
+      sticky: true
+    });
+  }
+
+  // Sticky 3: combatant stats
+  const actorStats = await fetchAndCacheActorStats(workingObject, state).catch(() => null);
+  const statsMarkdown = buildActorStatsMarkdown(actorStats || [], state.session?.players || []);
+  if (statsMarkdown) {
+    await setContext(combatWo, {
+      role: "user",
+      userId: "foundry-fuel",
+      content: `## Combatant Stats\n\n${statsMarkdown}`,
+      sticky: true
+    });
+  }
+}
+
+/**
+ * Writes the combat outcome back to the situation channel as a regular message
+ * and triggers a world-state update (non-blocking).
+ */
+async function writeCombatResultToSituation(baseCore, runFlow, createRunCore, workingObject, state, result = "") {
+  const channels = getSpecialistChannels(state?.session?.channelId);
+  const sitWo = { ...workingObject, channelId: channels.situation, contextChannelId: channels.situation };
+  const content = `## Combat Result — Round ${state.round?.number || "?"} [${new Date().toISOString()}]\n\n${normalize(result) || "Combat concluded."}`;
+  await setContext(sitWo, {
+    role: "user",
+    userId: "foundry-combat-result",
+    content,
+    sticky: false
+  });
+  await runWorldStateUpdate(baseCore, runFlow, createRunCore, workingObject, state, result).catch(() => {});
+}
+
 // ─── Situation analysis + roll validator + NPC reaction decider ────────────────
 
 /**
@@ -433,6 +649,7 @@ async function writeReactionsMd(workingObject, state) {
  */
 async function runSituationAnalysis(baseCore, runFlow, createRunCore, state, actions = []) {
   const channels = getSpecialistChannels(state?.session?.channelId);
+  // Situation analysis always belongs in the situation channel (exploration context)
   const currentLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "unknown location");
   const prompt = [
     "Analyse the current D&D session state and return structured JSON.",
@@ -452,7 +669,7 @@ async function runSituationAnalysis(baseCore, runFlow, createRunCore, state, act
     "- involvedActorRefs: only characters physically present right now"
   ].filter(Boolean).join("\n");
   const res = await runApiTurn(baseCore, runFlow, createRunCore, {
-    channelId: channels.director,
+    channelId: channels.situation,
     payload: prompt,
     userId: state?.session?.channelId || "foundry-situation",
     doNotWriteToContext: true,
@@ -489,7 +706,7 @@ async function runRollValidator(baseCore, runFlow, createRunCore, state, player,
     "If character stats are unavailable, default to valid=true."
   ].filter(Boolean).join("\n");
   const res = await runApiTurn(baseCore, runFlow, createRunCore, {
-    channelId: channels.director,
+    channelId: getContextChannel(state),
     payload: prompt,
     userId: state?.session?.channelId || "foundry-validator",
     doNotWriteToContext: true,
@@ -521,7 +738,7 @@ async function runNpcReactionDecider(baseCore, runFlow, createRunCore, state, at
     "Return empty reactions array if no NPC has a valid reaction here."
   ].filter(Boolean).join("\n");
   const res = await runApiTurn(baseCore, runFlow, createRunCore, {
-    channelId: channels.director,
+    channelId: getContextChannel(state),
     payload: prompt,
     userId: state?.session?.channelId || "foundry-reaction-decider",
     doNotWriteToContext: true,
@@ -767,6 +984,8 @@ async function initializeFoundrySession(baseCore, runFlow, createRunCore, workin
   session.campaignChannelId = channels.campaign;
   session.partyChannelId = channels.party;
   session.opsChannelId = channels.ops;
+  session.situationChannelId = channels.situation;
+  session.combatChannelId = channels.combat;
   session.progress = {
     currentLocation: session.currentLocation,
     currentObjective: session.currentObjective,
@@ -784,6 +1003,16 @@ async function initializeFoundrySession(baseCore, runFlow, createRunCore, workin
   // ──────────────────────────────────────────────────────────────────────────
   state.lastScene = await getCampaignBubble(baseCore, runFlow, createRunCore, state, "Build the opening local story bubble for the current campaign state.");
   state.currentBeat = normalize(state.lastScene?.summary || state.lastScene?.location || session.currentLocation || "the current location");
+  // Build initial world state (non-fatal)
+  await runWorldStateUpdate(baseCore, runFlow, createRunCore, workingObject, state,
+    `Session started at: ${normalize(session.currentLocation || state.lastScene?.location || "unknown location")}`
+  ).catch(() => {});
+
+  // Fuel the situation channel with world state + location context
+  await fuelSituationChannel(baseCore, runFlow, createRunCore, workingObject, state,
+    normalize(session.currentLocation || state.lastScene?.location || "")
+  ).catch(() => {});
+
   // Run situation analysis so foundry-situation.md is populated from the start
   const initSituation = await runSituationAnalysis(baseCore, runFlow, createRunCore, state, []).catch(() => null);
   if (initSituation?.current) {
@@ -944,7 +1173,6 @@ async function advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, 
 
 async function resolveExplorationRound(baseCore, runFlow, createRunCore, workingObject, state) {
   const actions = Array.isArray(state?.round?.acceptedActions) ? state.round.acceptedActions : [];
-  // Query available Foundry actors so the director can use exact names
   let availableActorNames = "";
   try {
     const actorsRes = await invokeFoundryAction(workingObject, "actors", {
@@ -954,7 +1182,7 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     if (Array.isArray(actorsRes?.actors) && actorsRes.actors.length) {
       availableActorNames = actorsRes.actors.map((a) => normalize(a?.name)).filter(Boolean).join(", ");
     }
-  } catch { /* non-fatal — director works without it */ }
+  } catch { /* non-fatal */ }
 
   const currentLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "unknown location");
   const currentBeatForDirector = normalize(state.currentBeat || state.lastScene?.summary || currentLocation);
@@ -982,6 +1210,7 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     "Return JSON only with keys:",
     "{",
     '  "modeSwitch": "exploration" | "initiative",',
+    '  "leaveLocation": false,',
     '  "currentBeat": "1-2 sentences describing EXACTLY where the party is and what is happening right now — this becomes the authoritative scene anchor for the next turn",',
     '  "summary": "DM-only summary of what happens NOW (one beat, current location only)",',
     '  "activeThreats": "short threat summary or empty string",',
@@ -991,7 +1220,8 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     '  "enemies": ["exact Foundry token name of hostile combatant 1", "..."],',
     '  "allies": ["exact Foundry token name of allied NPC 1", "..."],',
     '  "sceneUpdate": {"location":"current location — only change if party just finished traveling","objective":"","chapter":"","summary":"what is immediately visible/audible NOW","nearbyEvents":"","nearbyNpcs":"","nearbyHazards":"","nextBeats":"","drift":"","loadNext":"","sourceAnchor":""}',
-    "}"
+    "}",
+    "leaveLocation: set to true ONLY when the party has JUST completed travel to a new location in THIS beat (they have arrived, not just decided to go)."
   ].join("\n")) || {};
 
   const npcRollResults = [];
@@ -1046,6 +1276,14 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     state.lastScene = { ...state.lastScene, ...director.sceneUpdate, generatedAt: new Date().toISOString() };
   }
 
+  // leaveLocation: dump situation to campaign, update world state, refuel situation channel
+  if (director.leaveLocation === true) {
+    const leaveEvent = `Party moved to: ${normalize(state.lastScene?.location || "new location")}. ${normalize(director.currentBeat || "")}`;
+    // Non-blocking — session continues regardless
+    writeSituationToCampaign(baseCore, runFlow, createRunCore, workingObject, state, leaveEvent).catch(() => {});
+    fuelSituationChannel(baseCore, runFlow, createRunCore, workingObject, state, normalize(state.lastScene?.location || "")).catch(() => {});
+  }
+
   if (clarifications.length) {
     state.phase = "awaiting_clarification";
     state.round.step = "clarification";
@@ -1063,6 +1301,11 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
   }
 
   const resBeat = normalize(director.currentBeat || state.currentBeat || state.lastScene?.summary || state.lastScene?.location || "the current location");
+  const switchingToInitiative = normalize(director.modeSwitch).toLowerCase() === "initiative";
+
+  const enemyNames = Array.isArray(director.enemies) ? [...new Set(director.enemies.map((e) => normalize(e)).filter(Boolean))] : [];
+  const allyNames = Array.isArray(director.allies) ? [...new Set(director.allies.map((e) => normalize(e)).filter(Boolean))] : [];
+
   const resolutionText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "Present the resolution of a D&D exploration round in plain text for Foundry chat.",
     "RULES: Your narration must match the current beat exactly. Do NOT jump to a destination or skip story steps. Do NOT contradict what the director summary says.",
@@ -1070,11 +1313,18 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
     `CURRENT BEAT (authoritative): ${resBeat}`,
     `Director resolution summary:\n${normalize(director.summary) || "-"}`,
     `NPC roll results JSON:\n${JSON.stringify(npcRollResults, null, 2)}`,
+    switchingToInitiative && enemyNames.length
+      ? `Combat is starting. NAME the following enemies explicitly in your narration: ${enemyNames.join(", ")}. Do not call them 'assailants' or 'attackers' — use their names.`
+      : "",
     "Write 2 to 4 short sentences narrating exactly this beat."
-  ].join("\n"));
+  ].filter(Boolean).join("\n"));
 
-  if (normalize(director.modeSwitch).toLowerCase() === "initiative") {
-    return await startInitiativeMode(baseCore, runFlow, createRunCore, workingObject, state, director, resolutionText);
+  if (switchingToInitiative) {
+    // Build a clear combatant announcement before initiative rolls
+    const enemyLine = enemyNames.length ? `⚔️ Feinde: ${enemyNames.join(", ")}` : "";
+    const allyLine = allyNames.length ? `🛡️ Verbündete: ${allyNames.join(", ")}` : "";
+    const combatantAnnouncement = ["Kampf beginnt!", enemyLine, allyLine].filter(Boolean).join("\n");
+    return await startInitiativeMode(baseCore, runFlow, createRunCore, workingObject, state, director, resolutionText, combatantAnnouncement);
   }
 
   // If the director requests player rolls, enter awaiting_player_dice before advancing
@@ -1272,7 +1522,7 @@ async function handlePlayerDiceRoll(baseCore, runFlow, createRunCore, workingObj
 
 // ─── INITIATIVE LOOP ───────────────────────────────────────────────────────────
 
-async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObject, state, director, resolutionText) {
+async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObject, state, director, resolutionText, combatantAnnouncement = "") {
   // Guard: if no players are registered for this session, we cannot open a combat tracker
   if (!Array.isArray(state.session.players) || state.session.players.length === 0) {
     state.mode = "exploration";
@@ -1409,6 +1659,9 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   await fetchAndCacheActorStats(workingObject, state).catch(() => {});
   await writeRoundState(workingObject, state);
 
+  // Fuel combat channel with world state + situation context + combatant stats
+  await fuelCombatChannel(baseCore, runFlow, createRunCore, workingObject, state).catch(() => {});
+
   const trackerMsg = state.initiative.combatId
     ? `⚔️ Combat Tracker geöffnet (ID: ${state.initiative.combatId}). Initiative-Runde beginnt!`
     : "⚔️ Combat Tracker wird geöffnet. Initiative-Runde beginnt!";
@@ -1417,9 +1670,10 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   const rosterMsg = `Kämpfer: ${playerCount} Spieler, ${npcCount} NSC${npcCount !== 1 ? "s" : ""}.`;
 
   const messages = [
-    { text: resolutionText, type: "bot" },
-    { text: `${trackerMsg} ${rosterMsg}`, type: "bot" }
+    { text: resolutionText, type: "bot" }
   ];
+  if (combatantAnnouncement) messages.push({ text: combatantAnnouncement, type: "bot" });
+  messages.push({ text: `${trackerMsg} ${rosterMsg}`, type: "bot" });
   if (nscWarning) messages.push({ text: nscWarning, type: "bot" });
   messages.push({ text: buildInitiativePrompt(state), type: "bot" });
 
@@ -2103,6 +2357,13 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
     await appendHistoryMd(capturedWo, { round: state.round?.number, mode: "initiative", text: "Kampf beendet." }).catch(() => {});
     await writeRoundState(capturedWo, state);
 
+    // Write combat result to situation channel + purge combat channel
+    const combatResultSummary = normalize(endText || "Combat concluded. Party victorious.");
+    await writeCombatResultToSituation(baseCore, runFlow, createRunCore, capturedWo, state, combatResultSummary).catch(() => {});
+    const channels = getSpecialistChannels(state?.session?.channelId);
+    const combatWo = { ...capturedWo, channelId: channels.combat, contextChannelId: channels.combat };
+    await setPurgeContext(combatWo).catch(() => {});
+
     const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, capturedWo, state, endText);
     await postBotMessagesToFoundry(capturedWo, [
       { text: damageText || "The attack lands.", type: "bot" },
@@ -2332,6 +2593,14 @@ async function handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, 
     await writeReactionsMd(workingObject, state).catch(() => {});
     await writeRoundState(workingObject, state);
     await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: "Kampf beendet." });
+
+    // Write combat result to situation channel + purge combat channel
+    const combatResultSummary = normalize(endText || "Combat concluded. Party victorious.");
+    await writeCombatResultToSituation(baseCore, runFlow, createRunCore, workingObject, state, combatResultSummary).catch(() => {});
+    const channels = getSpecialistChannels(state?.session?.channelId);
+    const combatWo = { ...workingObject, channelId: channels.combat, contextChannelId: channels.combat };
+    await setPurgeContext(combatWo).catch(() => {});
+
     const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, endText);
     return { accepted: true, messages: [{ text: damageText || "The attack lands.", type: "bot" }, ...reactionMessages, { text: endText || "Combat ends.", type: "bot" }, { text: nextPrompt, type: "bot" }] };
   }
@@ -2604,6 +2873,10 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
   // ── !dm reset / !dm explore ────────────────────────────────────────────────
   if (command === "reset" || command === "explore") {
     clearCombatTimer(state.session?.channelKey || workingObject.channelId);
+    // Purge combat channel context when resetting to exploration
+    const resetChannels = getSpecialistChannels(state?.session?.channelId);
+    const combatResetWo = { ...workingObject, channelId: resetChannels.combat, contextChannelId: resetChannels.combat };
+    await setPurgeContext(combatResetWo).catch(() => {});
     state.mode = "exploration";
     state.phase = "awaiting_action";
     state.round.activePlayerIndex = 0;
