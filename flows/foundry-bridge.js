@@ -1989,8 +1989,9 @@ async function handleCombatTurnPrompt(baseCore, runFlow, createRunCore, workingO
     }
   }
 
-  // Action is clear — check which components are already present and commit or ask accordingly.
-  return await enterTurnCompletionOrCommit(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
+  // Action is clear — commit immediately. Remaining turn components (move/bonus) are
+  // offered as the OUTER loop after the attack + damage resolve, not before.
+  return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
 }
 
 /**
@@ -2005,20 +2006,14 @@ async function handleCombatTurnFollowup(baseCore, runFlow, createRunCore, workin
   const inputText = getRoundInputText(message);
   const playerLabel = normalize(activeBinding.characterName || activeBinding.userName);
 
-  // ── Turn completion loop (movement / bonus action) ─────────────────────────
-  if (state.initiative.awaitingTurnCompletion === true) {
-    return await handleTurnCompletion(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, inputText);
-  }
-  // ──────────────────────────────────────────────────────────────────────────
-
   const history = Array.isArray(state.initiative.turnFollowupHistory) ? [...state.initiative.turnFollowupHistory] : [];
   history.push({ role: "player", text: inputText });
 
   if (isOkSignal(inputText)) {
-    // "ok" during clarification — commit the last substantive input, then check missing components
+    // "ok" during clarification — commit the last substantive input
     const substantive = history.slice().reverse().find((e) => e.role === "player" && !isOkSignal(e.text));
     const actionText = substantive?.text || inputText;
-    return await enterTurnCompletionOrCommit(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
+    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
   }
 
   const evaluation = await runActionEvaluator(baseCore, runFlow, createRunCore, state, "combat_action", playerLabel, history);
@@ -2029,99 +2024,92 @@ async function handleCombatTurnFollowup(baseCore, runFlow, createRunCore, workin
     return { accepted: true, messages: [{ text: evaluation.message, type: "bot" }] };
   }
 
-  // Clarification done — check missing components before entering completion loop
-  return await enterTurnCompletionOrCommit(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, inputText);
+  // Clarification done — commit (outer loop for move/bonus runs after resolution)
+  return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, inputText);
 }
 
 /**
- * Called whenever an action is accepted (from prompt or clarification followup).
- * Checks which turn components (movement, bonus action) are already in the text.
- * If everything is covered: commits immediately.
- * If something is missing: enters the completion loop and asks only about what's missing.
+ * After the PC's attack (and optional damage) resolves, advance the turn and prompt next combatant.
+ * Resets the active combatant's reaction availability.
+ * prefixMessages: messages to prepend before the next-turn prompt.
  */
-async function enterTurnCompletionOrCommit(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText) {
-  const playerLabel = normalize(activeBinding.characterName || activeBinding.userName);
-  const { hasMovement, hasBonusAction } = detectTurnComponents(actionText);
-
-  if (hasMovement && hasBonusAction) {
-    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, actionText);
+async function finalizePcTurnAndAdvance(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, prefixMessages = []) {
+  // Restore reaction for the active combatant (their turn is done)
+  const activeName = normalize(activeBinding.characterName || activeBinding.userName);
+  if (state.reactions) {
+    if (!state.reactions.available.includes(activeName)) state.reactions.available.push(activeName);
+    state.reactions.used = (state.reactions.used || []).filter((n) => n !== activeName);
   }
+  await writeReactionsMd(workingObject, state).catch(() => {});
 
-  const missing = [];
-  if (!hasMovement) missing.push("move");
-  if (!hasBonusAction) missing.push("use a bonus action");
-  const completionPrompt = `Got it, ${playerLabel}. Do you also want to ${missing.join(" or ")}? Say 'ready' to resolve now.`;
+  const nextRes = await invokeFoundryAction(workingObject, "initiative", {
+    channelKey: state.session.channelKey,
+    operation: "next",
+    combatRef: state.initiative.combatId || state.initiative.combatName
+  });
+  syncInitiativeStateFromResult(state, nextRes, state.session.players);
 
-  state.initiative.awaitingTurnCompletion = true;
-  state.initiative.pendingTurnParts = [actionText];
-  state.initiative.pendingTurnMissing = { hasMovement, hasBonusAction };
-  state.phase = "combat_turn_followup";
-  state.initiative.turnFollowupHistory = [
-    { role: "player", text: actionText },
-    { role: "dm", text: completionPrompt }
-  ];
+  state.phase = "combat_turn_prompt";
+  state.initiative.pendingReactions = [];
+  state.initiative.lastAttackResult = null;
+  state.initiative.turnFollowupHistory = [];
+  state.initiative.turnEndMissing = null;
   await writeRoundState(workingObject, state);
-  return { accepted: true, messages: [{ text: completionPrompt, type: "bot" }] };
+
+  const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state);
+  return { accepted: true, messages: [...prefixMessages, ...advanced.messages] };
 }
 
 /**
- * Handles the turn-completion loop after the evaluator has accepted a player's main action.
- * Gives the player one round to additionally declare movement and/or a bonus action before
- * the resolution chain starts. Player says 'ready/fertig/ok' to skip or proceed.
+ * OUTER TURN LOOP — phase: combat_awaiting_turn_end
  *
- * Max 2 additional declarations (action + movement + bonus = 3 total), then auto-commit.
+ * After the PC's action has been fully resolved (attack + damage, or miss), ask ONCE
+ * whether they want to use remaining turn resources (move, bonus action).
+ * Player says 'ready/fertig/ok' to end immediately, or declares what they want to do.
+ * After one additional declaration the turn always advances (ask at most once).
+ * Questions are answered and the phase stays open.
  */
-async function handleTurnCompletion(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, inputText) {
-  const parts = Array.isArray(state.initiative.pendingTurnParts) ? [...state.initiative.pendingTurnParts] : [];
+async function handleCombatAwaitingTurnEnd(baseCore, runFlow, createRunCore, workingObject, state, message) {
+  const activeBinding = getActiveCombatantBinding(state);
+  if (!activeBinding) return { accepted: false, messages: [] };
+  if (!doesMessageBelongToPlayer(message, activeBinding)) return { accepted: false, messages: [] };
+
+  const inputText = getRoundInputText(message);
   const playerLabel = normalize(activeBinding.characterName || activeBinding.userName);
 
+  // "ready/ok/fertig" → end turn immediately
   if (isOkSignal(inputText)) {
-    // Player is done — commit everything that was collected
-    state.initiative.awaitingTurnCompletion = false;
-    state.initiative.pendingTurnParts = [];
-    state.initiative.pendingTurnMissing = null;
-    const fullAction = parts.join(" + ");
-    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, fullAction || inputText);
+    return await finalizePcTurnAndAdvance(baseCore, runFlow, createRunCore, workingObject, state, activeBinding);
   }
 
-  // Add the new declaration (movement or bonus action)
-  parts.push(inputText);
-  state.initiative.pendingTurnParts = parts;
-
-  // Re-check which components are now covered across all declared parts
-  const allText = parts.join(" ");
-  const { hasMovement, hasBonusAction } = detectTurnComponents(allText);
-
-  if (hasMovement && hasBonusAction) {
-    // All components covered — commit immediately
-    state.initiative.awaitingTurnCompletion = false;
-    state.initiative.pendingTurnParts = [];
-    state.initiative.pendingTurnMissing = null;
-    const fullAction = parts.join(" + ");
-    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, fullAction);
+  // Question → answer briefly, stay in turn-end phase
+  const isQuestion = inputText.includes("?")
+    || /^(what|wie|was|warum|why|how|can i|kann ich|darf ich|which|welche|wer|who)\b/i.test(inputText.trim());
+  if (isQuestion) {
+    const remaining = [];
+    const miss = state.initiative.turnEndMissing || {};
+    if (!miss.hasMovement) remaining.push("movement");
+    if (!miss.hasBonusAction) remaining.push("bonus action");
+    const answer = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+      "A player has a question during their turn-end phase in D&D combat.",
+      `Player (${playerLabel}) asks: "${inputText}"`,
+      remaining.length ? `Remaining available: ${remaining.join(", ")}` : "Their turn resources are expended.",
+      "Answer briefly in 1-2 sentences, then remind them they can declare remaining actions or say 'ready' to end their turn."
+    ].join("\n"));
+    return { accepted: true, messages: [{ text: answer || `${playerLabel}, declare your remaining action or say 'ready'.`, type: "bot" }] };
   }
 
-  // Hard cap: after 2 additional parts (3 total), commit regardless
-  if (parts.length >= 3) {
-    state.initiative.awaitingTurnCompletion = false;
-    state.initiative.pendingTurnParts = [];
-    state.initiative.pendingTurnMissing = null;
-    const fullAction = parts.join(" + ");
-    return await commitCombatAction(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, fullAction);
-  }
+  // Player declared an additional action (movement, bonus action, etc.)
+  // Narrate it briefly, then always advance — the outer loop fires at most once.
+  const supplementalNarration = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+    `${playerLabel} also does: "${inputText}"`,
+    "Narrate this in 1 dramatic present-tense sentence. No roll results, no hit/miss."
+  ].join("\n"));
 
-  // Ask about only what is still missing
-  state.initiative.pendingTurnMissing = { hasMovement, hasBonusAction };
-  await writeRoundState(workingObject, state);
-
-  const stillMissing = [];
-  if (!hasMovement) stillMissing.push("move");
-  if (!hasBonusAction) stillMissing.push("bonus action");
-  const missingStr = stillMissing.length ? stillMissing.join(" or ") : "anything else";
-  return {
-    accepted: true,
-    messages: [{ text: `Noted, ${playerLabel}. ${stillMissing.length ? `Do you also want to ${missingStr}?` : "Anything else?"} Say 'ready' to resolve.`, type: "bot" }]
-  };
+  return await finalizePcTurnAndAdvance(
+    baseCore, runFlow, createRunCore, workingObject, state, activeBinding,
+    supplementalNarration ? [{ text: supplementalNarration, type: "bot" }] : []
+  );
 }
 
 /** Commits the player's combat action and enters the attack-resolution chain. */
@@ -2135,10 +2123,6 @@ async function commitCombatAction(baseCore, runFlow, createRunCore, workingObjec
     createdAt: new Date().toISOString()
   };
   state.initiative.turnFollowupHistory = [];
-  state.initiative.awaitingTurnCompletion = false;
-  state.initiative.pendingTurnParts = [];
-  // PC turn: player rolls in Foundry → awaiting_attack_roll phase
-  // NPC turn (isNpc): bot rolls automatically via startCombatResolution timer chain
   return await startCombatResolutionPc(baseCore, runFlow, createRunCore, workingObject, state);
 }
 
@@ -2211,7 +2195,9 @@ async function startCombatResolutionPc(baseCore, runFlow, createRunCore, working
     `}`
   ].filter(Boolean).join("\n")) || {};
 
-  const attack = matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
+  // Code-level override: if the player explicitly named a weapon, use it regardless of what the
+  // director returned. AI cannot hallucinate a different attack when the weapon is detected here.
+  const attack = playerMentionedAttack || matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
   let attackBonus = parseAttackBonus(attack?.toHit);
   if (attackBonus === null) {
     const snap = activeBinding?.actorSnapshot || {};
@@ -2691,21 +2677,37 @@ async function handleCombatAwaitingAttackRoll(baseCore, runFlow, createRunCore, 
       ]
     };
   } else {
-    // Miss — advance turn immediately
+    // Miss — outer loop: ask about remaining turn components before advancing
     await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: `${normalize(activeBinding.characterName)} attacked ${combatDir.targetName || "target"} — MISS (${rollTotal})` });
-    state.phase = "combat_turn_prompt";
     state.initiative.pendingReactions = [];
     state.initiative.lastAttackResult = null;
     state.initiative.turnFollowupHistory = [];
-    const nextRes = await invokeFoundryAction(workingObject, "initiative", {
-      channelKey: state.session.channelKey,
-      operation: "next",
-      combatRef: state.initiative.combatId || state.initiative.combatName
-    });
-    syncInitiativeStateFromResult(state, nextRes, state.session.players);
-    await writeRoundState(workingObject, state);
-    const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state);
-    return { accepted: true, messages: [{ text: resultText || "The attack misses!", type: "bot" }, ...advanced.messages] };
+
+    const declaredOnMiss = normalize(state.initiative.lastPlayerAction?.text || "");
+    const { hasMovement: missMov, hasBonusAction: missBonus } = detectTurnComponents(declaredOnMiss);
+    const missMissing = [];
+    if (!missMov) missMissing.push("move");
+    if (!missBonus) missMissing.push("use a bonus action");
+
+    if (missMissing.length > 0) {
+      state.phase = "combat_awaiting_turn_end";
+      state.initiative.turnEndMissing = { hasMovement: missMov, hasBonusAction: missBonus };
+      await writeRoundState(workingObject, state);
+      const attackerName = normalize(activeBinding.characterName || activeBinding.userName);
+      return {
+        accepted: true,
+        messages: [
+          { text: resultText || "The attack misses!", type: "bot" },
+          { text: `${attackerName}, do you also want to ${missMissing.join(" or ")}? Say **'ready'** to end your turn.`, type: "bot" }
+        ]
+      };
+    }
+
+    // All components covered — advance immediately
+    return await finalizePcTurnAndAdvance(
+      baseCore, runFlow, createRunCore, workingObject, state, activeBinding,
+      [{ text: resultText || "The attack misses!", type: "bot" }]
+    );
   }
 }
 
@@ -2834,30 +2836,37 @@ async function handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, 
     return { accepted: true, messages: [{ text: damageText || "The attack lands.", type: "bot" }, ...reactionMessages, { text: endText || "Combat ends.", type: "bot" }, { text: nextPrompt, type: "bot" }] };
   }
 
-  // Advance to next combatant
-  const nextRes = await invokeFoundryAction(workingObject, "initiative", {
-    channelKey: state.session.channelKey,
-    operation: "next",
-    combatRef: state.initiative.combatId || state.initiative.combatName
-  });
-  syncInitiativeStateFromResult(state, nextRes, state.session.players);
-
-  // Reset active combatant's reaction (they used their turn action)
-  const activeName = normalize(activeBinding.characterName || activeBinding.userName);
-  if (state.reactions) {
-    if (!state.reactions.available.includes(activeName)) state.reactions.available.push(activeName);
-    state.reactions.used = (state.reactions.used || []).filter((n) => n !== activeName);
-  }
-  await writeReactionsMd(workingObject, state).catch(() => {});
-
-  state.phase = "combat_turn_prompt";
+  // Outer loop: ask about remaining turn components before advancing
   state.initiative.pendingReactions = [];
   state.initiative.lastAttackResult = null;
   state.initiative.turnFollowupHistory = [];
-  await writeRoundState(workingObject, state);
 
-  const advanced = await advanceCombatUntilPlayerTurn(baseCore, runFlow, createRunCore, workingObject, state);
-  return { accepted: true, messages: [{ text: damageText || "The attack lands.", type: "bot" }, ...reactionMessages, ...advanced.messages] };
+  const declaredOnHit = normalize(state.initiative.lastPlayerAction?.text || "");
+  const { hasMovement: hitMov, hasBonusAction: hitBonus } = detectTurnComponents(declaredOnHit);
+  const hitMissing = [];
+  if (!hitMov) hitMissing.push("move");
+  if (!hitBonus) hitMissing.push("use a bonus action");
+
+  if (hitMissing.length > 0) {
+    state.phase = "combat_awaiting_turn_end";
+    state.initiative.turnEndMissing = { hasMovement: hitMov, hasBonusAction: hitBonus };
+    await writeRoundState(workingObject, state);
+    const attackerNameForEnd = normalize(activeBinding.characterName || activeBinding.userName);
+    return {
+      accepted: true,
+      messages: [
+        { text: damageText || "The attack lands.", type: "bot" },
+        ...reactionMessages,
+        { text: `${attackerNameForEnd}, do you also want to ${hitMissing.join(" or ")}? Say **'ready'** to end your turn.`, type: "bot" }
+      ]
+    };
+  }
+
+  // All components already covered in original declaration — advance immediately
+  return await finalizePcTurnAndAdvance(
+    baseCore, runFlow, createRunCore, workingObject, state, activeBinding,
+    [{ text: damageText || "The attack lands.", type: "bot" }, ...reactionMessages]
+  );
 }
 
 // ─── REACTION LOOP ─────────────────────────────────────────────────────────────
@@ -3094,6 +3103,7 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
       pendingInits.length ? `awaiting initiative: ${pendingInits.join(", ")}` : "",
       pendingRolls.length ? `awaiting rolls: ${pendingRolls.join(", ")}` : "",
       `reactions available: ${reactionsAvail}`,
+      state.initiative?.turnEndMissing ? `turn-end pending: ${[!state.initiative.turnEndMissing.hasMovement ? "move" : "", !state.initiative.turnEndMissing.hasBonusAction ? "bonus action" : ""].filter(Boolean).join(", ")}` : "",
       state.situation?.current ? `situation: ${state.situation.current.slice(0, 80)}…` : ""
     ].filter(Boolean);
     return { accepted: true, messages: [{ text: `🎲 DM Status:\n${lines.join("\n")}`, type: "bot" }] };
@@ -3172,6 +3182,7 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
     if (state.mode === "initiative") {
       clearCombatTimer(state.session?.channelKey || workingObject.channelId);
       state.initiative.reactionFollowup = null;
+      state.initiative.turnEndMissing = null;
       const nextRes = await invokeFoundryAction(workingObject, "initiative", {
         channelKey: state.session.channelKey,
         operation: "next",
@@ -3296,6 +3307,12 @@ async function handleRoundInput(baseCore, runFlow, createRunCore, workingObject,
 
   if (state.mode === "initiative" && state.phase === "combat_awaiting_damage_roll") {
     return await handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, workingObject, state, message);
+  }
+
+  // ── Outer turn loop (move / bonus action after resolution) ───────────────────
+
+  if (state.mode === "initiative" && state.phase === "combat_awaiting_turn_end") {
+    return await handleCombatAwaitingTurnEnd(baseCore, runFlow, createRunCore, workingObject, state, message);
   }
 
   // ── Reaction loop ────────────────────────────────────────────────────────────
