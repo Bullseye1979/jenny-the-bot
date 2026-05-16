@@ -1949,14 +1949,38 @@ function buildActorFullStats(actor) {
     };
   }
 
-  // Activated items: weapons, spells, feats with an activation type
+  // Activated items: weapons, spells, feats with an activation type.
+  // Handles both dnd5e v3 (system.activation.type) and dnd5e v4 (system.activities Collection).
   const attacks = [];
   for (const item of Array.from(actor.items || [])) {
-    if (!item.system?.activation?.type) continue;
     if (!["weapon", "spell", "feat"].includes(item.type)) continue;
 
-    // toHit: try labels first (dnd5e v2/v3), then compute from system data (dnd5e v4+)
+    // dnd5e v3: activation stored at system.activation.type
+    const hasV3Activation = !!item.system?.activation?.type;
+    // dnd5e v4: activation stored in system.activities (DataCollection / Map / plain object)
+    const acts = item.system?.activities;
+    const hasV4Activities = acts instanceof Map
+      ? acts.size > 0
+      : (acts && typeof acts === "object" && Object.keys(acts).length > 0);
+    if (!hasV3Activation && !hasV4Activities) continue;
+
+    // toHit: labels (pre-computed by Foundry, works across all versions) → fallback computation
     let toHit = item.labels?.toHit || null;
+
+    // dnd5e v4 activity-based toHit (first attack activity)
+    if (!toHit && hasV4Activities) {
+      const activityList = acts instanceof Map
+        ? [...acts.values()]
+        : Object.values(acts);
+      const firstAttackAct = activityList.find((a) => a?.type === "attack") || activityList[0];
+      // Some v4 activities expose a computed toHit on the activity object
+      if (firstAttackAct?.toHit != null) {
+        const n = Number(firstAttackAct.toHit);
+        toHit = Number.isFinite(n) ? (n >= 0 ? `+${n}` : String(n)) : null;
+      }
+    }
+
+    // Fallback: manual computation for weapons (works v3 and v4)
     if (!toHit && item.type === "weapon") {
       const prof = item.system?.proficient !== false ? (sys.attributes?.prof ?? 0) : 0;
       // dnd5e v4: item.system.properties is a Set<string>, not a plain object
@@ -1978,7 +2002,7 @@ function buildActorFullStats(actor) {
       toHit = total >= 0 ? `+${total}` : String(total);
     }
 
-    // damage: try labels (various dnd5e versions) then raw parts
+    // damage: labels first (Foundry pre-computes these), then raw system data
     const labelDamage = (item.labels?.damages || []).map((d) => d.label || d.formula || "").filter(Boolean).join(" + ")
       || (typeof item.labels?.damage === "string" ? item.labels.damage : "")
       || (item.labels?.derivedDamage || []).map((d) => d.formula || "").filter(Boolean).join(" + ");
@@ -2028,7 +2052,16 @@ async function handleActorStats(payload) {
   const seen = new Set();
   const results = [];
   for (const ref of actorRefs) {
-    const actor = getActorByRef(normalize(ref));
+    const normalized = normalize(ref);
+    // 1. UUID lookup (handles unlinked token actors — fromUuidSync returns the token's actor clone)
+    let actor = null;
+    if (normalized.includes(".")) {
+      try { actor = fromUuidSync?.(normalized) ?? null; } catch { actor = null; }
+      // fromUuidSync on a TokenDocument returns the token, not its actor — unwrap if needed
+      if (actor && actor.documentName === "Token") actor = actor.actor ?? null;
+    }
+    // 2. Fallback: regular game.actors / name lookup
+    if (!actor) actor = getActorByRef(normalized);
     if (!actor || seen.has(actor.id)) continue;
     seen.add(actor.id);
     const stats = buildActorFullStats(actor);
