@@ -198,6 +198,22 @@ function matchAttack(actorSnapshot, attackName) {
 }
 
 /** Returns the AC of a named combatant from state.initiative.actorBindings, or null. */
+function markReactionUsed(state, name) {
+  if (!state.reactions) return;
+  state.reactions.available = (state.reactions.available || []).filter((n) => n !== name);
+  if (!(state.reactions.used || []).includes(name)) {
+    state.reactions.used = [...(state.reactions.used || []), name];
+  }
+}
+
+function restoreReaction(state, name) {
+  if (!state.reactions) return;
+  if (!(state.reactions.available || []).includes(name)) {
+    state.reactions.available = [...(state.reactions.available || []), name];
+  }
+  state.reactions.used = (state.reactions.used || []).filter((n) => n !== name);
+}
+
 function getTargetAC(state, targetName) {
   if (!targetName) return null;
   const lower = normalize(targetName).toLowerCase();
@@ -468,7 +484,7 @@ async function writeReactionsMd(workingObject, state) {
     `_Round ${state.round?.number || "?"} — Turn ${state.initiative?.currentTurnIndex ?? "?"}_`,
     "",
     `**Available:** ${rx.available.length ? rx.available.join(", ") : "none"}`,
-    `**Used this round:** ${rx.used.length ? rx.used.map((r) => `${r.character} (${r.action})`).join(", ") : "none"}`
+    `**Used this round:** ${rx.used.length ? rx.used.join(", ") : "none"}`
   ];
   await fs.writeFile(path.join(statusDir, "foundry-reactions.md"), lines.join("\n"), "utf8");
 }
@@ -561,17 +577,37 @@ async function fuelSituationChannel(baseCore, runFlow, createRunCore, workingObj
   const locationRes = await runApiTurn(baseCore, runFlow, createRunCore, {
     channelId: channels.campaign,
     payload: [
-      `Summarize what the party knows about the current location: "${locationHint}".`,
-      "Include: relevant NPCs present, hazards, what is immediately visible, atmosphere, and any immediately actionable information.",
-      "Max 200 words. Plain text only.",
+      `Build a complete DM situation brief for the current location: "${locationHint}".`,
+      "This brief is the authoritative context for ALL decisions in this location — exploration AND combat.",
+      "Cover ALL of the following sections. Use headings. Be thorough — this is a reference document, not a summary.",
       "",
-      "CRITICAL — reconciliation rules:",
-      "1. Use the journal context as the primary source for static location facts (layout, lore, fixed NPCs).",
-      "2. The WORLD STATE below reflects what actually happened during this session. It OVERRIDES the journals on any NPC status, quest completion, faction situation, or any fact that has changed in play.",
-      "3. If the journals say 'NPC X will meet the party' but the world state says 'NPC X is dead', treat NPC X as dead. Do NOT write as if X is still alive.",
-      "4. Never describe future journal events that have already been resolved differently in the world state.",
+      "## Static Location Facts",
+      "Layout, notable features, atmosphere, lighting, terrain, exits, locked doors, traps.",
       "",
-      worldState ? `CURRENT WORLD STATE (authoritative for what has changed):\n${worldState}` : ""
+      "## NPCs Present",
+      "For each NPC: name, role, current status (alive/dead/fled), motivation, disposition toward party, what they know.",
+      "",
+      "## Encounter Rules (CRITICAL for combat)",
+      "Any special rules that apply if combat breaks out here:",
+      "- Reinforcements: who arrives, when (e.g. 'after 3 rounds'), from where",
+      "- Retreat conditions: when do enemies flee or surrender",
+      "- Environmental hazards during combat (collapsing floor, fire, traps that can be triggered)",
+      "- Ambush positions or surprise conditions",
+      "- Any timed events (alarm bells, patrol returning, etc.)",
+      "If no special encounter rules exist, write: none.",
+      "",
+      "## Quest / Objective Relevance",
+      "What quests or objectives can be advanced here. What the party is looking for.",
+      "",
+      "## Immediately Actionable",
+      "What the party can do right now without travel or preparation.",
+      "",
+      "RECONCILIATION RULES (mandatory):",
+      "1. Use journal context as primary source for static facts.",
+      "2. The WORLD STATE below reflects what actually happened in play. It OVERRIDES journals on NPC status, quest state, faction situation.",
+      "3. Dead NPCs stay dead. Completed quests stay completed. Do not contradict the world state.",
+      "",
+      worldState ? `CURRENT WORLD STATE (authoritative):\n${worldState}` : ""
     ].filter(Boolean).join("\n"),
     userId: state?.session?.channelId || "foundry-fuel",
     doNotWriteToContext: true,
@@ -582,7 +618,7 @@ async function fuelSituationChannel(baseCore, runFlow, createRunCore, workingObj
     await setContext(sitWo, {
       role: "user",
       userId: "foundry-fuel",
-      content: `## Current Location: ${locationHint}\n\n${locationContext}`,
+      content: `## Location Brief: ${locationHint}\n\n${locationContext}`,
       sticky: true
     });
   }
@@ -630,7 +666,7 @@ async function writeSituationToCampaign(baseCore, runFlow, createRunCore, workin
  *   2. Situation channel messages (last 5) as sticky context
  *   3. Combatant stats sticky
  */
-async function fuelCombatChannel(baseCore, runFlow, createRunCore, workingObject, state) {
+async function fuelCombatChannel(baseCore, runFlow, createRunCore, workingObject, state, director = {}) {
   const channels = getSpecialistChannels(state?.session?.channelId);
   const combatChannelId = channels.combat;
   const combatWo = { ...workingObject, channelId: combatChannelId, contextChannelId: combatChannelId };
@@ -648,59 +684,32 @@ async function fuelCombatChannel(baseCore, runFlow, createRunCore, workingObject
     });
   }
 
-  // Sticky 2: compressed pre-combat brief from full exploration history
-  // Read the full situation channel (up to 400 messages) and summarize into a compact DM brief.
-  // This ensures the combat director knows NPC traits, discovered weaknesses, party decisions, etc.
-  // even when they happened many messages ago.
-  const sitWo = { ...workingObject, channelId: channels.situation, contextChannelId: channels.situation, contextSize: 400 };
-  const sitMessages = await getContext(sitWo).catch(() => []);
-  const sitRaw = sitMessages
-    .map((m) => normalize(m?.content || m?.text || ""))
-    .filter(Boolean)
-    .join("\n\n---\n\n");
+  // Sticky 2: compact combat brief — built directly from the director output that triggered
+  // this combat. No AI call, no channel read. The director already decided what's happening.
+  const briefParts = [];
+  const location = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "");
+  if (location) briefParts.push(`**Location:** ${location}`);
+  const beat = normalize(director.currentBeat || state.currentBeat || state.lastScene?.summary || "");
+  if (beat) briefParts.push(`**Situation:** ${beat}`);
+  const enemyNames = Array.isArray(director.enemies) ? director.enemies.map((e) => normalize(e)).filter(Boolean) : [];
+  const allyNames = Array.isArray(director.allies) ? director.allies.map((e) => normalize(e)).filter(Boolean) : [];
+  if (enemyNames.length) briefParts.push(`**Enemies:** ${enemyNames.join(", ")}`);
+  if (allyNames.length) briefParts.push(`**Allies:** ${allyNames.join(", ")}`);
+  const threats = normalize(director.activeThreats || "");
+  if (threats) briefParts.push(`**Active threats:** ${threats}`);
+  // Terrain / nearby hazards from scene
+  const hazards = normalize(state.lastScene?.nearbyHazards || "");
+  const events = normalize(state.lastScene?.nearbyEvents || "");
+  if (hazards) briefParts.push(`**Hazards:** ${hazards}`);
+  if (events) briefParts.push(`**Ongoing events:** ${events}`);
 
-  if (sitRaw) {
-    let preCombatBrief = "";
-    try {
-      const briefRes = await runApiTurn(baseCore, runFlow, createRunCore, {
-        channelId: channels.situation,
-        payload: [
-          "Summarize the following D&D exploration log into a compact pre-combat brief for the Dungeon Master.",
-          "Include ONLY facts relevant to the upcoming combat:",
-          "- NPC names, traits, known weaknesses, motivations",
-          "- Environmental details (terrain, lighting, obstacles, hazards)",
-          "- Party decisions and resources spent (spells, abilities used, items consumed)",
-          "- Active threats, unresolved tensions, ambush positions",
-          "- Any information players discovered about the enemies",
-          "Max 300 words. Plain text only. Factual, no narration, no fluff.",
-          "",
-          "## Exploration Log",
-          sitRaw
-        ].join("\n"),
-        userId: "foundry-combat-fuel",
-        doNotWriteToContext: true,
-        callerChannelId: state?.session?.channelId
-      });
-      preCombatBrief = normalize(briefRes?.response || "");
-    } catch { /* non-fatal — fall back to raw tail */ }
-
-    // Fallback: if summarizer failed, use last 10 raw messages
-    if (!preCombatBrief) {
-      preCombatBrief = sitMessages
-        .map((m) => normalize(m?.content || m?.text || ""))
-        .filter(Boolean)
-        .slice(-10)
-        .join("\n\n---\n\n");
-    }
-
-    if (preCombatBrief) {
-      await setContext(combatWo, {
-        role: "user",
-        userId: "foundry-fuel",
-        content: `## Pre-Combat Brief\n\n${preCombatBrief}`,
-        sticky: true
-      });
-    }
+  if (briefParts.length) {
+    await setContext(combatWo, {
+      role: "user",
+      userId: "foundry-fuel",
+      content: `## Combat Situation\n\n${briefParts.join("\n")}`,
+      sticky: true
+    });
   }
 
   // Sticky 3: combatant stats
@@ -778,8 +787,26 @@ async function runSituationAnalysis(baseCore, runFlow, createRunCore, state, act
  * Returns { valid, message }.
  */
 async function runRollValidator(baseCore, runFlow, createRunCore, state, player, rollType, rollTotal, notation) {
-  const channels = getSpecialistChannels(state?.session?.channelId);
   const charName = normalize(player?.characterName || player?.userName || "Player");
+
+  // Code-first range check — skip AI for obvious impossibilities
+  const simpleMatch = String(notation || "").trim().match(/^(\d+)d(\d+)([+-]\d+)?$/i);
+  if (simpleMatch && Number.isFinite(rollTotal)) {
+    const numDice = Number(simpleMatch[1]);
+    const dieSize = Number(simpleMatch[2]);
+    const modifier = simpleMatch[3] ? Number(simpleMatch[3]) : 0;
+    const minPossible = numDice + modifier;
+    const maxPossible = numDice * dieSize + modifier;
+    if (rollTotal < minPossible - 1 || rollTotal > maxPossible + 1) {
+      return {
+        valid: false,
+        message: `${charName}, a roll of ${rollTotal} is outside the possible range for \`${notation}\` (${minPossible}–${maxPossible}). Please check and re-roll.`
+      };
+    }
+    // Within range — no need to call AI
+    return { valid: true, message: "" };
+  }
+
   // Read characters.md for context (non-fatal if missing)
   let charContext = "";
   try {
@@ -1282,46 +1309,70 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
 
   const currentLocation = normalize(state.lastScene?.location || state.session?.progress?.currentLocation || "unknown location");
   const currentBeatForDirector = normalize(state.currentBeat || state.lastScene?.summary || currentLocation);
-  // Read freshest world-state directly from file to bypass potentially stale channel stickies
-  const liveWorldState = await readWorldState(workingObject).catch(() => "");
-  const director = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
+
+  // ── Call 1: fast decision — mode, beat, threats, combatants ─────────────────
+  // Kept small so small models can focus. Returns 7 keys only.
+  const directorDecision = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
     "Resolve a multiplayer D&D exploration round. ADVANCE THE STORY ONE BEAT AT A TIME.",
     "",
     "HARD RULES — follow these without exception:",
     "1. Only describe what happens in the next 1-5 in-game minutes at the CURRENT location. Never skip ahead.",
     "2. Travel is NOT instant. If players decide to go somewhere, the next beat is 'they set out' or 'they are en route' — NOT 'they arrive'.",
-    "3. NPCs at other locations cannot speak, react, or interact. Only NPCs physically present at the current location can act.",
-    "4. Quest progression is gradual: receive quest → discuss → prepare → begin travel → travel → arrive → etc. Never jump steps.",
-    "5. sceneUpdate.location must remain the CURRENT location unless the party has literally just finished traveling in THIS beat.",
-    "6. Set modeSwitch='initiative' ONLY if an enemy is actively hostile and physically present RIGHT NOW. Surrendered, fleeing, or already defeated enemies do NOT count. If the player tries to attack surrendered enemies, resolve it narratively without combat mode.",
-    "7. For 'enemies' and 'allies' fields: use ONLY names from the available Foundry actors list below. If you need multiple of the same type (e.g. 3 cultists), repeat the name 3 times. If no actor list is provided, use your best guess.",
-    "8. Your 'currentBeat' response must be the DIRECT NEXT STEP from the current authoritative beat below. Never open a new scene or storyline.",
+    "3. NPCs at other locations cannot speak, react, or interact. Only NPCs physically present can act.",
+    "4. Quest progression is gradual — never jump steps.",
+    "5. Set modeSwitch='initiative' ONLY if an enemy is actively hostile and physically present RIGHT NOW.",
+    "6. For 'enemies' and 'allies': use ONLY names from the available Foundry actors list. Repeat names for multiples.",
+    "7. 'currentBeat' must be the DIRECT NEXT STEP from the authoritative beat below. Never open a new scene.",
     "",
-    `CURRENT AUTHORITATIVE BEAT (this is what the party was just told — your resolution continues from here): ${currentBeatForDirector}`,
+    `CURRENT AUTHORITATIVE BEAT: ${currentBeatForDirector}`,
     "",
-    liveWorldState ? `CURRENT WORLD STATE (live — use this for NPC status, quest progress, killed enemies, etc.):\n${liveWorldState}` : "",
-    availableActorNames ? `Available Foundry actors (EXACT names — only pick from this list): ${availableActorNames}` : "",
+    availableActorNames ? `Available Foundry actors (EXACT names): ${availableActorNames}` : "",
     `Current party location: ${currentLocation}`,
-    `Current scene JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
-    `Party roster JSON:\n${JSON.stringify(state.session.players, null, 2)}`,
     `Player action submissions JSON:\n${JSON.stringify(actions, null, 2)}`,
     "",
-    "Return JSON only with keys:",
+    "Return JSON only — 7 keys, nothing else:",
     "{",
     '  "modeSwitch": "exploration" | "initiative",',
     '  "leaveLocation": false,',
-    '  "currentBeat": "1-2 sentences describing EXACTLY where the party is and what is happening right now — this becomes the authoritative scene anchor for the next turn",',
-    '  "summary": "DM-only summary of what happens NOW (one beat, current location only)",',
+    '  "currentBeat": "1-2 sentences: EXACTLY where the party is and what is happening right now",',
+    '  "summary": "DM-only summary of what happens NOW (one beat)",',
     '  "activeThreats": "short threat summary or empty string",',
-    '  "clarifications": [{"userId":"","userName":"","prompt":"","rollNeeded":"","dc":"","reason":""}],',
-    '  "npcRolls": [{"label":"","notation":"","visibility":"gmroll"}],',
-    '  "pendingPlayerRolls": [{"userId":"","characterName":"","type":"skill|save|attack|check","notation":"e.g. 1d20+3","dc":"10","label":"Perception Check"}],',
-    '  "enemies": ["exact Foundry token name of hostile combatant 1", "..."],',
-    '  "allies": ["exact Foundry token name of allied NPC 1", "..."],',
-    '  "sceneUpdate": {"location":"current location — only change if party just finished traveling","objective":"","chapter":"","summary":"what is immediately visible/audible NOW","nearbyEvents":"","nearbyNpcs":"","nearbyHazards":"","nextBeats":"","drift":"","loadNext":"","sourceAnchor":""}',
+    '  "enemies": ["exact Foundry token name"],',
+    '  "allies": ["exact Foundry token name"]',
     "}",
-    "leaveLocation: set to true ONLY when the party has JUST completed travel to a new location in THIS beat (they have arrived, not just decided to go)."
+    "leaveLocation: true ONLY when the party has JUST completed travel to a new location in THIS beat."
   ].join("\n")) || {};
+
+  const switchingToInitiative = normalize(directorDecision.modeSwitch).toLowerCase() === "initiative";
+
+  // ── Call 2: details — only when staying in exploration ──────────────────────
+  // Skipped entirely on mode-switch to keep combat startup fast.
+  let directorDetails = {};
+  if (!switchingToInitiative) {
+    directorDetails = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
+      "You are completing the details phase of a D&D exploration round resolution.",
+      "The beat has already been decided. Your job: decide if any player rolls or clarifications are needed.",
+      "",
+      `CURRENT BEAT (already decided): ${normalize(directorDecision.currentBeat || currentBeatForDirector)}`,
+      `Director summary: ${normalize(directorDecision.summary || "")}`,
+      `Current party location: ${currentLocation}`,
+      `Party roster JSON:\n${JSON.stringify(state.session.players, null, 2)}`,
+      `Player action submissions JSON:\n${JSON.stringify(actions, null, 2)}`,
+      `Current scene JSON:\n${JSON.stringify(state.lastScene, null, 2)}`,
+      "",
+      "Return JSON only — 4 keys, nothing else:",
+      "{",
+      '  "clarifications": [{"userId":"","userName":"","prompt":"","rollNeeded":"","dc":"","reason":""}],',
+      '  "npcRolls": [{"label":"","notation":"","visibility":"gmroll"}],',
+      '  "pendingPlayerRolls": [{"userId":"","characterName":"","type":"skill|save|attack|check","notation":"e.g. 1d20+3","dc":"10","label":"Perception Check"}],',
+      '  "sceneUpdate": {"location":"current location — only change if party just finished traveling","objective":"","chapter":"","summary":"what is immediately visible/audible NOW","nearbyEvents":"","nearbyNpcs":"","nearbyHazards":"","nextBeats":"","drift":"","loadNext":"","sourceAnchor":""}',
+      "}",
+      "Leave clarifications, npcRolls, pendingPlayerRolls as empty arrays if not needed."
+    ].join("\n")) || {};
+  }
+
+  // Merge into a unified director object so the rest of the function is unchanged
+  const director = { ...directorDecision, ...directorDetails };
 
   const npcRollResults = [];
   for (const rollSpec of Array.isArray(director.npcRolls) ? director.npcRolls : []) {
@@ -1353,15 +1404,21 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
 
   // Collect player rolls requested by the director
   const pendingPlayerRolls = (Array.isArray(director.pendingPlayerRolls) ? director.pendingPlayerRolls : [])
-    .map((entry) => ({
-      userId: normalize(entry?.userId),
-      characterName: normalize(entry?.characterName),
-      type: normalize(entry?.type) || "check",
-      notation: normalize(entry?.notation) || "1d20",
-      dc: normalize(entry?.dc),
-      label: normalize(entry?.label) || "Roll",
-      response: null
-    }))
+    .map((entry) => {
+      const rawDc = Number(entry?.dc);
+      return {
+        userId: normalize(entry?.userId),
+        characterName: normalize(entry?.characterName),
+        type: normalize(entry?.type) || "check",
+        notation: normalize(entry?.notation) || "1d20",
+        // Clamp DC to valid D&D range; leave empty if not provided
+        dc: Number.isFinite(rawDc) && rawDc > 0
+          ? String(Math.max(5, Math.min(30, rawDc)))
+          : "",
+        label: normalize(entry?.label) || "Roll",
+        response: null
+      };
+    })
     .filter((entry) => entry.userId && entry.notation);
 
   state.lastResolution = {
@@ -1400,7 +1457,7 @@ async function resolveExplorationRound(baseCore, runFlow, createRunCore, working
   }
 
   const resBeat = normalize(director.currentBeat || state.currentBeat || state.lastScene?.summary || state.lastScene?.location || "the current location");
-  const switchingToInitiative = normalize(director.modeSwitch).toLowerCase() === "initiative";
+  // switchingToInitiative already declared above from Call 1
 
   const enemyNames = Array.isArray(director.enemies) ? [...new Set(director.enemies.map((e) => normalize(e)).filter(Boolean))] : [];
   const allyNames = Array.isArray(director.allies) ? [...new Set(director.allies.map((e) => normalize(e)).filter(Boolean))] : [];
@@ -1758,8 +1815,8 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   await fetchAndCacheActorStats(workingObject, state).catch(() => {});
   await writeRoundState(workingObject, state);
 
-  // Fuel combat channel with world state + situation context + combatant stats
-  await fuelCombatChannel(baseCore, runFlow, createRunCore, workingObject, state).catch(() => {});
+  // Fuel combat channel with world state + combat situation brief + combatant stats
+  await fuelCombatChannel(baseCore, runFlow, createRunCore, workingObject, state, director).catch(() => {});
 
   const trackerMsg = state.initiative.combatId
     ? `⚔️ Combat Tracker geöffnet (ID: ${state.initiative.combatId}). Initiative-Runde beginnt!`
@@ -1775,6 +1832,14 @@ async function startInitiativeMode(baseCore, runFlow, createRunCore, workingObje
   messages.push({ text: `${trackerMsg} ${rosterMsg}`, type: "bot" });
   if (nscWarning) messages.push({ text: nscWarning, type: "bot" });
   messages.push({ text: buildInitiativePrompt(state), type: "bot" });
+
+  // Start 60s auto-assign timer for first pending player
+  const initTimerKey = state.session.channelKey || workingObject.channelId;
+  clearCombatTimer(initTimerKey);
+  const capturedInitWo = { ...workingObject };
+  combatTimers.set(initTimerKey, setTimeout(() => {
+    fireAutoAssignInitiative(baseCore, runFlow, createRunCore, capturedInitWo, initTimerKey).catch(console.error);
+  }, 60000));
 
   return { messages };
 }
@@ -1843,8 +1908,17 @@ async function continueInitiativeCollection(baseCore, runFlow, createRunCore, wo
   if (!current) return { accepted: false, messages: [] };
   if (!doesMessageBelongToPlayer(message, current)) return { accepted: false, messages: [] };
 
+  // Player responded — clear the auto-assign timer
+  const initTimerKey = state.session.channelKey || workingObject.channelId;
+  clearCombatTimer(initTimerKey);
+
   const initiative = extractFirstRollTotal(message);
   if (!Number.isFinite(initiative)) {
+    // Invalid input — restart timer and re-ask
+    const capturedWo = { ...workingObject };
+    combatTimers.set(initTimerKey, setTimeout(() => {
+      fireAutoAssignInitiative(baseCore, runFlow, createRunCore, capturedWo, initTimerKey).catch(console.error);
+    }, 60000));
     return {
       accepted: true,
       messages: [{ text: `${getPlayerLabel(current)}, please send your initiative as a roll or a number.`, type: "bot" }]
@@ -1870,11 +1944,67 @@ async function continueInitiativeCollection(baseCore, runFlow, createRunCore, wo
   const next = pending.find((entry) => entry.initiative == null);
   if (next) {
     await writeRoundState(workingObject, state);
+    // Start timer for the next pending player
+    const capturedWo = { ...workingObject };
+    combatTimers.set(initTimerKey, setTimeout(() => {
+      fireAutoAssignInitiative(baseCore, runFlow, createRunCore, capturedWo, initTimerKey).catch(console.error);
+    }, 60000));
     return { accepted: true, messages: [{ text: buildInitiativePrompt(state), type: "bot" }] };
   }
 
-  // All players have rolled — finalize and start combat
+  // All players have rolled — finalize and start combat (timer already cleared above)
   return await finalizeInitiativeAndStartCombat(baseCore, runFlow, createRunCore, workingObject, state);
+}
+
+/**
+ * Timer callback: auto-assign initiative for a player who didn't respond within 60s.
+ * Rolls 1d20 + DEX modifier from their snapshot, or uses 10 as a neutral fallback.
+ * Restarts the timer for the next pending player, or finalizes combat if all are done.
+ */
+async function fireAutoAssignInitiative(baseCore, runFlow, createRunCore, capturedWo, timerKey) {
+  clearCombatTimer(timerKey);
+  let state;
+  try {
+    state = await readRoundState(capturedWo);
+  } catch { return; }
+  if (state.mode !== "initiative" || state.phase !== "awaiting_player_initiative") return;
+
+  const pending = Array.isArray(state.initiative?.pendingInitiatives) ? state.initiative.pendingInitiatives : [];
+  const current = pending.find((e) => e.initiative == null);
+  if (!current) return;
+
+  const binding = (state.initiative.actorBindings || []).find((b) =>
+    normalize(b.userId) === normalize(current.userId) ||
+    normalize(b.characterName).toLowerCase() === normalize(current.characterName || current.userName).toLowerCase()
+  );
+  const dexMod = binding?.actorSnapshot?.abilities?.dex?.mod ?? 0;
+  const autoInitiative = Math.max(1, Math.floor(Math.random() * 20) + 1 + dexMod);
+  current.initiative = autoInitiative;
+
+  await invokeFoundryAction(capturedWo, "initiative", {
+    channelKey: state.session.channelKey,
+    operation: "set",
+    combatRef: state.initiative.combatId || state.initiative.combatName,
+    initiatives: [{ actorRef: normalize(current.actorId) || getPlayerLabel(current), name: getPlayerLabel(current), initiative: autoInitiative }],
+    activateHighest: false
+  }).catch(() => {});
+
+  const skipMsg = `⏱️ ${getPlayerLabel(current)}: keine Initiative-Antwort — automatisch ${autoInitiative} zugewiesen.`;
+  const next = pending.find((e) => e.initiative == null);
+  if (next) {
+    await writeRoundState(capturedWo, state);
+    clearCombatTimer(timerKey);
+    combatTimers.set(timerKey, setTimeout(() => {
+      fireAutoAssignInitiative(baseCore, runFlow, createRunCore, capturedWo, timerKey).catch(console.error);
+    }, 60000));
+    await postBotMessagesToFoundry(capturedWo, [
+      { text: skipMsg, type: "bot" },
+      { text: buildInitiativePrompt(state), type: "bot" }
+    ]);
+  } else {
+    const result = await finalizeInitiativeAndStartCombat(baseCore, runFlow, createRunCore, capturedWo, state, [skipMsg]);
+    await postBotMessagesToFoundry(capturedWo, Array.isArray(result.messages) ? result.messages : []);
+  }
 }
 
 // ─── COMBAT LOOP ───────────────────────────────────────────────────────────────
@@ -1951,9 +2081,6 @@ async function startNpcCombatTurn(baseCore, runFlow, createRunCore, workingObjec
     .filter((b) => isPlayerControlledCombatant(state, b))
     .map((b) => normalize(b.name));
 
-  // Read freshest world-state to bypass potentially stale channel stickies
-  const npcLiveWorldState = await readWorldState(workingObject).catch(() => "");
-
   // Ask the director what the NPC does this turn
   const npcActionDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
     "Decide what action an NPC takes on their D&D 5e combat turn.",
@@ -1962,7 +2089,6 @@ async function startNpcCombatTurn(baseCore, runFlow, createRunCore, workingObjec
     targetOptions.length ? `Possible targets (player characters): ${targetOptions.join(", ")}` : "",
     `Combat turn order (current index ${state.initiative.currentTurnIndex}): ${JSON.stringify((state.initiative.turnOrder || []).map((c) => c.name), null, 2)}`,
     `Current beat: ${normalize(state.currentBeat || state.lastScene?.summary || "ongoing combat")}`,
-    npcLiveWorldState ? `Current world state (live — reflects defeated enemies, HP changes, conditions):\n${npcLiveWorldState}` : "",
     "Use the NPC's actual listed attacks if available. Pick the most tactically appropriate one.",
     "Return JSON only:",
     '{ "action": "What the NPC does — which attack, against which target, and any tactical detail (1–2 sentences)", "targetName": "name of primary target" }'
@@ -2083,10 +2209,7 @@ async function handleCombatTurnFollowup(baseCore, runFlow, createRunCore, workin
 async function finalizePcTurnAndAdvance(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, prefixMessages = []) {
   // Restore reaction for the active combatant (their turn is done)
   const activeName = normalize(activeBinding.characterName || activeBinding.userName);
-  if (state.reactions) {
-    if (!state.reactions.available.includes(activeName)) state.reactions.available.push(activeName);
-    state.reactions.used = (state.reactions.used || []).filter((n) => n !== activeName);
-  }
+  restoreReaction(state, activeName);
   await writeReactionsMd(workingObject, state).catch(() => {});
 
   const nextRes = await invokeFoundryAction(workingObject, "initiative", {
@@ -2553,10 +2676,7 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
     const rName = normalize(reaction?.characterName);
     const rText = normalize(reaction?.action);
     if (!rName || !rText) continue;
-    if (state.reactions) {
-      state.reactions.available = (state.reactions.available || []).filter((n) => n !== rName);
-      if (!state.reactions.used.includes(rName)) state.reactions.used.push(rName);
-    }
+    markReactionUsed(state, rName);
     reactionLines.push(`⚡ **${rName}** reacts: ${rText}`);
     if (reaction.notation) {
       const rr = await invokeFoundryAction(capturedWo, "roll", {
@@ -2636,10 +2756,7 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
 
   // Reset the attacker's reaction for the next round
   const attackerName = normalize(lastAction.name);
-  if (state.reactions) {
-    if (!state.reactions.available.includes(attackerName)) state.reactions.available.push(attackerName);
-    state.reactions.used = (state.reactions.used || []).filter((n) => n !== attackerName);
-  }
+  restoreReaction(state, attackerName);
   await writeReactionsMd(capturedWo, state).catch(() => {});
 
   state.phase = "combat_turn_prompt";
@@ -2843,11 +2960,7 @@ async function handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, 
     const reactionName = normalize(reaction?.characterName);
     const reactionText = normalize(reaction?.action);
     if (!reactionName || !reactionText) continue;
-    // Mark NPC reaction as used
-    if (state.reactions) {
-      state.reactions.available = (state.reactions.available || []).filter((n) => n !== reactionName);
-      if (!state.reactions.used.includes(reactionName)) state.reactions.used.push(reactionName);
-    }
+    markReactionUsed(state, reactionName);
     reactionMessages.push({ text: `⚡ **${reactionName}** reacts: ${reactionText}`, type: "bot" });
     if (reaction.notation) {
       const reactRollRes = await invokeFoundryAction(workingObject, "roll", {
@@ -2962,10 +3075,11 @@ async function handleCombatReactionWindow(baseCore, runFlow, createRunCore, work
     return { accepted: true, messages: [{ text: `${authorName}, you have already used your reaction this turn.`, type: "bot" }] };
   }
 
-  // Plausibility: is this actually a reaction declaration? Reject chat noise silently.
+  // Plausibility: is this actually a reaction declaration?
   const looksLikeReaction = inputText.length > 2 && !/^(ok|yes|no|lol|haha|\?|!)$/i.test(inputText.trim());
   if (!looksLikeReaction) {
-    return { accepted: false, messages: [] }; // timer keeps running — it's noise
+    // Give the player a nudge — timer keeps running, they still have a few seconds
+    return { accepted: true, messages: [{ text: `${authorName}: react now (e.g. "Shield", "Uncanny Dodge") or let it pass.`, type: "bot" }] };
   }
 
   // PAUSE the combat timer as soon as a real reaction attempt arrives.
@@ -3118,6 +3232,14 @@ async function resolveReaction(baseCore, runFlow, createRunCore, workingObject, 
     state.initiative.reactionFollowup = followup;
     await writeRoundState(workingObject, state);
     const nextQ = normalize(evalDir?.nextPrompt) || "Please provide the required information.";
+    // Safety timeout: if the player never responds, advance after 60s
+    const capturedKeyIncomplete = timerKey || state.session.channelKey || workingObject.channelId;
+    const capturedWoIncomplete = { ...workingObject };
+    clearCombatTimer(capturedKeyIncomplete);
+    combatTimers.set(capturedKeyIncomplete, setTimeout(() => {
+      const nextFn = originalPhase === "combat_reaction_pre" ? fireCombatAttackRoll : fireCombatDamageAndAdvance;
+      nextFn(baseCore, runFlow, createRunCore, capturedWoIncomplete, capturedKeyIncomplete).catch(console.error);
+    }, 60000));
     return { accepted: true, messages: [{ text: nextQ, type: "bot" }] };
   }
 
@@ -3233,6 +3355,7 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
   if (command === "skip" || command === "next") {
     // In initiative collection: skip the current pending player (assign initiative 10)
     if (state.mode === "initiative" && state.phase === "awaiting_player_initiative") {
+      clearCombatTimer(state.session?.channelKey || workingObject.channelId);
       const pending = Array.isArray(state.initiative?.pendingInitiatives) ? state.initiative.pendingInitiatives : [];
       const current = pending.find((e) => e.initiative == null);
       if (!current) {
@@ -3253,6 +3376,12 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
       const next = pending.find((e) => e.initiative == null);
       if (next) {
         await writeRoundState(workingObject, state);
+        // Restart 60s timer for the next pending player
+        const dmSkipTimerKey = state.session?.channelKey || workingObject.channelId;
+        const capturedDmWo = { ...workingObject };
+        combatTimers.set(dmSkipTimerKey, setTimeout(() => {
+          fireAutoAssignInitiative(baseCore, runFlow, createRunCore, capturedDmWo, dmSkipTimerKey).catch(console.error);
+        }, 60000));
         return {
           accepted: true,
           messages: [
@@ -3261,7 +3390,7 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
           ]
         };
       }
-      // All players done — finalize and start combat
+      // All players done — finalize and start combat (timer already cleared)
       return await finalizeInitiativeAndStartCombat(baseCore, runFlow, createRunCore, workingObject, state, [skippedMsg]);
     }
 
@@ -3326,7 +3455,15 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
 // ─── MAIN ROUND INPUT ROUTER ───────────────────────────────────────────────────
 
 async function handleRoundInput(baseCore, runFlow, createRunCore, workingObject, message) {
-  const state = await readRoundState(workingObject);
+  let state;
+  try {
+    state = await readRoundState(workingObject);
+  } catch {
+    return { accepted: true, messages: [{ text: "⚠️ Session state could not be read. Use `!dm reset` to reinitialize or re-run session-sync.", type: "bot" }] };
+  }
+  if (!state || !state.mode) {
+    return { accepted: true, messages: [{ text: "⚠️ No active session found. Please run session-sync first.", type: "bot" }] };
+  }
 
   // ── DM Override (checked before all phase routing) ──────────────────────────
   const inputText = getRoundInputText(message);
