@@ -241,6 +241,14 @@ function getTargetAC(state, targetName) {
   return b?.actorSnapshot?.ac ?? null;
 }
 
+/**
+ * Returns true for attacks that are bonus damage sources rather than standalone weapon attacks.
+ * These should never be chosen as the primary attack name — they are rolled after the weapon.
+ */
+function isBonusDamageAttack(name) {
+  return /sneak attack|divine smite|hunter.?s mark|hex|colossus slayer|piercer|crusher|slasher|great weapon fighting|sharpshooter/i.test(String(name || ""));
+}
+
 /** Doubles the dice count in a damage notation for critical hits: "1d8+3" → "2d8+3". */
 function critDamageNotation(notation) {
   return String(notation || "").replace(/(\d+)d(\d+)/g, (_, n, d) => `${Number(n) * 2}d${d}`);
@@ -462,6 +470,13 @@ async function appendHistoryMd(workingObject, entry) {
   const filePath = path.join(statusDir, "foundry-history.md");
   const line = `[${new Date().toISOString()}] Round ${entry?.round || "?"} (${entry?.mode || "?"}) — ${normalize(entry?.text)}\n`;
   await fs.appendFile(filePath, line, "utf8");
+}
+
+function bridgeLog(workingObject, ...lines) {
+  const ts = new Date().toISOString().replace("T", " ").slice(0, 19);
+  const entries = lines.filter(Boolean).map((line) => `[${ts}] ${String(line)}`);
+  if (!entries.length) return;
+  invokeFoundryAction(workingObject, "log", { operation: "append", entries }).catch(() => {});
 }
 
 async function writeCharactersMd(workingObject, actorStats = [], sessionPlayers = []) {
@@ -867,6 +882,51 @@ async function runNpcReactionDecider(baseCore, runFlow, createRunCore, state, at
   });
   const parsed = safeParseJson(res?.response, null);
   return Array.isArray(parsed?.reactions) ? parsed.reactions : [];
+}
+
+/**
+ * After a PC hits and rolls primary damage, checks whether additional damage rolls are needed
+ * (Sneak Attack, Divine Smite, Hunter's Mark, Hex, etc.).
+ * Returns an array of { label, notation, prompt } objects, or [] if none apply.
+ * Skips the AI call entirely when the character has no known bonus damage sources.
+ */
+async function runBonusDamageCheck(baseCore, runFlow, createRunCore, state, activeBinding, attackName, isCrit) {
+  const snap = activeBinding?.actorSnapshot || {};
+  const allAttacks = Array.isArray(snap.attacks) ? snap.attacks : [];
+  const bonusSources = allAttacks.filter((a) => isBonusDamageAttack(normalize(a.name)));
+  const hasSpellSlots = snap.spellSlots && Object.keys(snap.spellSlots).some(
+    (k) => (snap.spellSlots[k]?.value ?? 0) > 0
+  );
+  // Quick exit: no known bonus damage sources → skip AI call
+  if (!bonusSources.length && !hasSpellSlots) return [];
+
+  const bonusStr = bonusSources.map((a) => `${a.name}: ${a.damage || "?"}`).join(", ");
+  const slotsStr = hasSpellSlots
+    ? Object.entries(snap.spellSlots)
+        .filter(([, v]) => v.value > 0)
+        .map(([k, v]) => `L${k.replace("spell", "")}:${v.value}`)
+        .join(" ")
+    : "";
+
+  const prompt = [
+    "Determine if additional damage rolls are needed after this D&D 5e weapon attack hit.",
+    `Attacker: ${normalize(activeBinding.characterName || activeBinding.userName)}`,
+    `Weapon used: ${attackName}`,
+    isCrit ? "This was a CRITICAL HIT — bonus dice are doubled." : "",
+    bonusStr ? `Bonus damage sources: ${bonusStr}` : "",
+    slotsStr ? `Spell slots available: ${slotsStr}` : "",
+    "RULES:",
+    "- Sneak Attack: only if the player confirms sneak attack conditions are met",
+    "- Divine Smite: only if the paladin chooses to expend a spell slot (they decide after the hit)",
+    "- Hunter's Mark / Hex: automatic if the target is marked — include without asking",
+    "- Only include rolls that are applicable to THIS attack",
+    "Return JSON only:",
+    '{ "bonusRolls": [{ "label": "Sneak Attack", "notation": "3d6", "prompt": "Does Sneak Attack apply? If yes, roll sneak attack damage." }] }',
+    "Return empty bonusRolls array if no bonus damage applies to this specific attack."
+  ].filter(Boolean).join("\n");
+
+  const res = await runDirectorJson(baseCore, runFlow, createRunCore, state, prompt).catch(() => null);
+  return Array.isArray(res?.bonusRolls) ? res.bonusRolls.filter((r) => r.notation && r.label) : [];
 }
 
 // ─── Actor stats cache ────────────────────────────────────────────────────────
@@ -2329,27 +2389,29 @@ async function startCombatResolutionPc(baseCore, runFlow, createRunCore, working
   }
 
   // Try to detect which weapon the player explicitly named in their action text.
-  // This becomes a mandatory override so the director cannot substitute a spell.
+  // Bonus damage abilities (Sneak Attack, Divine Smite, etc.) are excluded — they are
+  // rolled AFTER the weapon attack, never chosen as the primary attack.
   const declaredTextLower = normalize(lastAction?.text).toLowerCase();
   const attacks = Array.isArray(snap.attacks) ? snap.attacks : [];
-  const playerMentionedAttack = attacks.find((a) => {
+  const weaponAttacks = attacks.filter((a) => !isBonusDamageAttack(normalize(a.name)));
+  const playerMentionedAttack = weaponAttacks.find((a) => {
     const aName = normalize(a.name).toLowerCase();
-    // Full name match OR any significant word of the attack name found in the declared text
     return declaredTextLower.includes(aName)
       || aName.split(/\s+/).some((w) => w.length > 3 && declaredTextLower.includes(w));
   }) || null;
+  const weaponAttackNames = weaponAttacks.map((a) => `"${normalize(a.name)}"`).join(", ");
 
   const combatDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
     "Choose the combat action for a D&D 5e PLAYER turn. Your ONLY job: pick which attack and which target.",
     "HARD RULES — no exceptions:",
-    "1. Pick attackName EXACTLY from the Known attacks list. If the list is empty, use empty string (unarmed).",
-    "2. Do NOT invent saving throws, skill checks, spell saves, or any other mechanics.",
-    "3. Do NOT add conditions, special effects, or house rules.",
+    "1. Pick attackName EXACTLY from the VALID WEAPON ATTACKS list. Do NOT pick bonus damage abilities.",
+    "2. NEVER pick Sneak Attack, Divine Smite, Hunter's Mark, Hex, or similar as attackName — these are bonus damage, not standalone attacks.",
+    "3. Do NOT invent saving throws, skill checks, spell saves, or any other mechanics.",
     "4. The player rolls all dice — you only pick name + target + flavor sentence.",
-    "5. NEVER substitute a spell (Green Flame Blade, Chill Touch, Fire Bolt, etc.) for a declared physical weapon attack.",
+    "5. NEVER substitute a spell for a declared physical weapon attack.",
     playerMentionedAttack
       ? `MANDATORY OVERRIDE: The player explicitly named "${normalize(playerMentionedAttack.name)}" — attackName MUST be exactly "${normalize(playerMentionedAttack.name)}". Any other value is wrong.`
-      : "If the player named a weapon (e.g. 'rapier', 'sword', 'bow'), find the closest entry in Known attacks. Do NOT rename it to a spell.",
+      : `VALID WEAPON ATTACKS (only these are allowed): ${weaponAttackNames || "none — use empty string"}`,
     `Active combatant: ${normalize(activeBinding?.characterName || activeBinding?.userName)}`,
     snapLines.length ? `Attacker stats:\n${snapLines.join("\n")}` : "No snapshot available — use unarmed strike as fallback.",
     `Declared action: ${normalize(lastAction?.text)}`,
@@ -2366,8 +2428,12 @@ async function startCombatResolutionPc(baseCore, runFlow, createRunCore, working
   ].filter(Boolean).join("\n")) || {};
 
   // Code-level override: if the player explicitly named a weapon, use it regardless of what the
-  // director returned. AI cannot hallucinate a different attack when the weapon is detected here.
-  const attack = playerMentionedAttack || matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
+  // director returned. If director returned a bonus-damage ability, fall back to first weapon.
+  const directorAttack = matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
+  const attack = playerMentionedAttack
+    || (directorAttack && !isBonusDamageAttack(normalize(directorAttack.name)) ? directorAttack : null)
+    || weaponAttacks[0]
+    || directorAttack;
   let attackBonus = parseAttackBonus(attack?.toHit);
   if (attackBonus === null) {
     const snap = activeBinding?.actorSnapshot || {};
@@ -2436,36 +2502,41 @@ async function startCombatResolution(baseCore, runFlow, createRunCore, workingOb
   const snapAttacksForNpc = Array.isArray(snap.attacks) ? snap.attacks : [];
   const preferredNpcAttack = snapAttacksForNpc.length > 0 ? snapAttacksForNpc[0] : null;
 
+  // Build exact attack name list for the prompt — prevents hallucination entirely
+  const npcAttackNames = snapAttacksForNpc.map((a) => normalize(a.name));
+
   // Director only picks WHICH attack and WHO to target — the bot handles all dice.
   const combatDir = await runDirectorJson(baseCore, runFlow, createRunCore, state, [
     "Choose the combat action for a D&D 5e turn. The engine will handle all dice rolls.",
     "RULES — no exceptions:",
-    "1. Pick attackName EXACTLY from the Known attacks list. Do NOT invent weapon names.",
-    "2. The flavor sentence MUST use the exact weapon name from Known attacks. No substitutions.",
+    "1. attackName MUST be EXACTLY one of the names in the VALID ATTACK NAMES list. Copy it character-for-character.",
+    "2. Do NOT invent or rephrase weapon names. If in doubt, use the first name in the list.",
+    "3. The flavor sentence MUST use the exact weapon name. No substitutions.",
     `Active combatant: ${normalize(activeBinding?.characterName || activeBinding?.userName)}`,
     snapLines.length ? `Attacker stats:\n${snapLines.join("\n")}` : "",
-    preferredNpcAttack
-      ? `PRIMARY WEAPON (use this name verbatim): "${preferredNpcAttack.name}" — to-hit: ${preferredNpcAttack.toHit ?? "?"}, damage: ${preferredNpcAttack.damage ?? "?"}`
-      : "No weapon data available — describe the attack generically without inventing a weapon name.",
+    npcAttackNames.length
+      ? `VALID ATTACK NAMES (only these are allowed — copy exactly): ${npcAttackNames.map((n) => `"${n}"`).join(", ")}`
+      : "No weapon data available — use empty string for attackName.",
     `Declared action: ${normalize(lastAction?.text)}`,
     `Active opponents: ${(state.initiative?.actorBindings || []).filter((b) => !isPlayerControlledCombatant(state, b)).map((b) => normalize(b.name)).join(", ") || "none"}`,
     `Active players: ${(state.initiative?.actorBindings || []).filter((b) => isPlayerControlledCombatant(state, b)).map((b) => normalize(b.name)).join(", ") || "none"}`,
     "Return JSON only:",
     `{`,
-    `  "attackName": "exact name from Known attacks list, or empty string for unarmed strike",`,
+    `  "attackName": "exact name from VALID ATTACK NAMES list, or empty string",`,
     `  "targetName": "name of the target combatant",`,
-    `  "flavor": "One dramatic present-tense sentence describing what the attacker does — NO roll results, NO hit/miss",`,
+    `  "flavor": "One dramatic present-tense sentence — NO roll results, NO hit/miss",`,
     `  "hasAdvantage": false,`,
     `  "hasDisadvantage": false,`,
     `  "combatEnds": false`,
     `}`
   ].filter(Boolean).join("\n")) || {};
 
-  // Code-level override: pre-store the pre-resolved attack so fireCombatAttackRoll
-  // doesn't have to re-resolve from potentially-hallucinated attackName.
-  const preResolvedAttack = preferredNpcAttack
-    ? (matchAttack(activeBinding?.actorSnapshot, combatDir.attackName) || preferredNpcAttack)
-    : matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
+  // Strict exact-name match — prevents the director from hallucinating attack names.
+  // Only fall back to preferredNpcAttack (attacks[0]) if director returns unknown name.
+  const exactMatch = snapAttacksForNpc.find(
+    (a) => normalize(a.name).toLowerCase() === normalize(combatDir.attackName || "").toLowerCase()
+  );
+  const preResolvedAttack = exactMatch || preferredNpcAttack || matchAttack(activeBinding?.actorSnapshot, combatDir.attackName);
 
   state.initiative.lastAttackResult = { combatDir, attackRollResult: null, isHit: null, isCrit: false, attack: preResolvedAttack };
   state.initiative.pendingReactions = [];
@@ -2547,7 +2618,36 @@ async function fireCombatAttackRoll(baseCore, runFlow, createRunCore, capturedWo
       visibility: "public",
       emitChatMessage: true
     });
-    const total = Number(attackRollResult?.total ?? 0);
+    let total = Number(attackRollResult?.total ?? 0);
+
+    // Silvery Barbs / forced reroll: roll again and take the LOWER result
+    if (lastResult.reactionForceReroll === true) {
+      const rerollRes = await invokeFoundryAction(capturedWo, "roll", {
+        channelKey: state.session.channelKey,
+        notation,
+        label: `${attack?.name || "Attack"} (forced reroll) — ${normalize(lastAction.name)}`,
+        actorRef: activeBinding?.actorId || activeBinding?.characterName,
+        visibility: "public",
+        emitChatMessage: true
+      }).catch(() => null);
+      const rerollTotal = Number(rerollRes?.total ?? Infinity);
+      if (Number.isFinite(rerollTotal) && rerollTotal < total) {
+        total = rerollTotal;
+        attackRollResult = { ...attackRollResult, total };
+      }
+    }
+
+    // Attacker check roll (e.g. high-level Counterspell ability save) — informational only
+    if (lastResult.reactionAttackerRollNotation) {
+      await invokeFoundryAction(capturedWo, "roll", {
+        channelKey: state.session.channelKey,
+        notation: lastResult.reactionAttackerRollNotation,
+        label: `${normalize(lastAction.name)} — reaction check`,
+        visibility: "public",
+        emitChatMessage: true
+      }).catch(() => null);
+    }
+
     const targetAC = getTargetAC(state, combatDir.targetName);
     // Critical hit/miss: nat-20/1 via total-minus-bonus
     const rawD20 = total - attackBonus;
@@ -2661,6 +2761,18 @@ async function fireCombatDamageAndAdvance(baseCore, runFlow, createRunCore, capt
   if (reactionHalfDamage) totalDamage = Math.floor(totalDamage / 2);
   const reactionDamageReduction = Number(lastResult.reactionDamageReduction ?? 0);
   if (reactionDamageReduction > 0) totalDamage = Math.max(0, totalDamage - reactionDamageReduction);
+
+  // Apply damage to the target's HP in Foundry
+  const npcDmgTarget = lastResult.combatDir?.targetName;
+  if (npcDmgTarget) {
+    const applyRes = await invokeFoundryAction(capturedWo, "apply-damage", {
+      channelKey: state.session.channelKey,
+      targetRef: npcDmgTarget,
+      damage: totalDamage,
+      isCrit
+    }).catch(() => null);
+    bridgeLog(capturedWo, `[npc_damage] ${normalize(lastAction.name)} → ${npcDmgTarget}: ${totalDamage} dmg${isCrit ? " CRIT" : ""}${applyRes?.hpAfter != null ? ` | HP now: ${applyRes.hpAfter}` : ""}${applyRes?.ok === false ? ` | ERR: ${applyRes.error}` : ""}`);
+  }
 
   // For NPC attacks: let AI decide if any PC has a reaction (Shield spell, Uncanny Dodge, etc.)
   const npcAttackInfo = {
@@ -2834,6 +2946,8 @@ async function handleCombatAwaitingAttackRoll(baseCore, runFlow, createRunCore, 
   lastResult.isCrit = isCrit;
   state.initiative.lastAttackResult = lastResult;
 
+  bridgeLog(workingObject, `[attack_roll] ${normalize(activeBinding.characterName)} rolled ${rollTotal}${targetAC != null ? ` vs AC ${targetAC}` : ""} → ${isCrit ? "CRIT HIT" : isHit ? "HIT" : "MISS"} | ${attack?.name || "attack"} → ${combatDir.targetName || "?"}`);
+
   const rollSummary = `Rolled ${rollTotal}${targetAC != null ? ` vs AC ${targetAC}` : ""}`;
   const resultText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "Announce the result of a D&D 5e attack roll in 1 sentence.",
@@ -2938,53 +3052,147 @@ async function handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, 
 
   await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: `${normalize(activeBinding.characterName)} → ${combatDir.targetName || "target"} HIT for ${rollTotal} (${attack?.name || "attack"})` });
 
+  // Check for bonus damage sources (Sneak Attack, Divine Smite, etc.)
+  const bonusRolls = await runBonusDamageCheck(baseCore, runFlow, createRunCore, state, activeBinding, attack?.name || "attack", isCrit).catch(() => []);
+  if (bonusRolls.length > 0) {
+    lastResult.pendingBonusDamageRolls = bonusRolls;
+    lastResult.primaryDamage = rollTotal;
+    state.initiative.lastAttackResult = lastResult;
+    state.phase = "combat_awaiting_bonus_damage";
+    await writeRoundState(workingObject, state);
+    const first = bonusRolls[0];
+    const firstNotation = isCrit ? critDamageNotation(first.notation) : first.notation;
+    const charName = normalize(activeBinding.characterName || activeBinding.userName);
+    return { accepted: true, messages: [{ text: `${charName}, ${normalize(first.prompt) || `roll ${first.label}: \`${firstNotation}\``}`, type: "bot" }] };
+  }
+
+  return finalizeDamageAndAdvance(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, rollTotal, lastResult);
+}
+
+// ─── PC BONUS DAMAGE PHASE ────────────────────────────────────────────────────
+
+/**
+ * Handles combat_awaiting_bonus_damage: collects additional damage rolls (Sneak Attack,
+ * Divine Smite, etc.) after the primary damage roll. Validates each, then narrates and
+ * advances the turn with the combined total.
+ */
+async function handleCombatAwaitingBonusDamage(baseCore, runFlow, createRunCore, workingObject, state, message) {
+  const activeBinding = getActiveCombatantBinding(state);
+  if (!activeBinding) return { accepted: false, messages: [] };
+  if (!doesMessageBelongToPlayer(message, activeBinding)) return { accepted: false, messages: [] };
+
+  const lastResult = state.initiative.lastAttackResult || {};
+  const bonusRolls = Array.isArray(lastResult.pendingBonusDamageRolls) ? lastResult.pendingBonusDamageRolls : [];
+  const current = bonusRolls.find((r) => r.response == null);
+  const charName = normalize(activeBinding.characterName || activeBinding.userName);
+
+  // No pending roll — shouldn't happen, but advance cleanly
+  if (!current) {
+    const totalDamage = (lastResult.primaryDamage || 0) + bonusRolls.reduce((s, r) => s + (r.response || 0), 0);
+    return finalizeDamageAndAdvance(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, totalDamage, lastResult);
+  }
+
+  const rollTotal = extractFirstRollTotal(message);
+  if (!Number.isFinite(rollTotal)) {
+    const inputText = getRoundInputText(message);
+    if (inputText.length > 4) {
+      const answer = await runNarratorText(baseCore, runFlow, createRunCore, state, [
+        `Player (${charName}) said: "${inputText}" during their bonus damage roll phase.`,
+        `Expected roll: ${current.label} (${current.notation})`,
+        "Answer briefly in 1 sentence, then ask them to roll."
+      ].join("\n"));
+      return { accepted: true, messages: [{ text: answer || `${charName}, roll ${current.label}: \`${current.notation}\``, type: "bot" }] };
+    }
+    return { accepted: true, messages: [{ text: `${charName}, please send your ${current.label} roll from Foundry.`, type: "bot" }] };
+  }
+
+  // Plausibility check
+  const playerEntry = (state.session?.players || []).find((p) =>
+    normalize(p.actorId) === normalize(activeBinding.actorId) || normalize(p.userId) === normalize(activeBinding.userId)
+  ) || { characterName: activeBinding.characterName };
+  const validation = await runRollValidator(baseCore, runFlow, createRunCore, state, playerEntry, "damage", rollTotal, current.notation).catch(() => ({ valid: true, message: "" }));
+  if (!validation.valid) {
+    return { accepted: true, messages: [{ text: validation.message || `${charName}, that ${current.label} roll looks off — please check and re-roll.`, type: "bot" }] };
+  }
+
+  current.response = rollTotal;
+  await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: `${charName} ${current.label}: ${rollTotal}` }).catch(() => {});
+
+  const next = bonusRolls.find((r) => r.response == null);
+  if (next) {
+    state.initiative.lastAttackResult = lastResult;
+    await writeRoundState(workingObject, state);
+    const isCritNext = lastResult.isCrit === true;
+    const notation = isCritNext ? critDamageNotation(next.notation) : next.notation;
+    return { accepted: true, messages: [{ text: `${charName}, ${normalize(next.prompt) || `roll ${next.label}: \`${notation}\``}`, type: "bot" }] };
+  }
+
+  // All bonus rolls collected — compute total and advance
+  const totalDamage = (lastResult.primaryDamage || 0) + bonusRolls.reduce((s, r) => s + (r.response || 0), 0);
+  const bonusSummary = bonusRolls.map((r) => `${r.label}: ${r.response}`).join(", ");
+  await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: `${charName} total damage: ${totalDamage} (${bonusSummary})` }).catch(() => {});
+  return finalizeDamageAndAdvance(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, totalDamage, lastResult, bonusSummary);
+}
+
+/**
+ * Shared end-of-damage resolution: narrate, NPC reactions, combat-end check, advance turn.
+ * Used by both handleCombatAwaitingDamageRoll and handleCombatAwaitingBonusDamage.
+ */
+async function finalizeDamageAndAdvance(baseCore, runFlow, createRunCore, workingObject, state, activeBinding, totalDamage, lastResult, bonusSummary = "") {
+  const combatDir = lastResult.combatDir || {};
+  const attack = lastResult.attack;
+  const isCrit = lastResult.isCrit === true;
+  const charName = normalize(activeBinding.characterName || activeBinding.userName);
+
+  // Apply damage to the target's HP in Foundry
+  if (combatDir.targetName) {
+    const applyRes = await invokeFoundryAction(workingObject, "apply-damage", {
+      channelKey: state.session.channelKey,
+      targetRef: combatDir.targetName,
+      damage: totalDamage,
+      isCrit
+    }).catch(() => null);
+    bridgeLog(workingObject, `[pc_damage] ${charName} → ${combatDir.targetName}: ${totalDamage} dmg${isCrit ? " CRIT" : ""}${applyRes?.hpAfter != null ? ` | HP now: ${applyRes.hpAfter}` : ""}${applyRes?.ok === false ? ` | ERR: ${applyRes.error}` : ""}`);
+  }
+
   const damageText = await runNarratorText(baseCore, runFlow, createRunCore, state, [
     "Describe the outcome of a D&D 5e hit in 1-2 sentences.",
-    `Attacker: ${normalize(activeBinding.characterName || activeBinding.userName)}, attack: ${attack?.name || "strike"}`,
+    `Attacker: ${charName}, attack: ${attack?.name || "strike"}`,
     `Target: ${combatDir.targetName || "the enemy"}`,
-    `Damage: ${rollTotal}${isCrit ? " (critical hit)" : ""}`,
-    "State the damage total. Describe the effect dramatically. Do NOT say what happens next."
+    `Damage: ${totalDamage}${isCrit ? " (critical hit)" : ""}`,
+    bonusSummary ? `Bonus damage breakdown: ${bonusSummary}` : "",
+    "State the total damage. Describe the effect dramatically. Do NOT say what happens next."
   ].filter(Boolean).join("\n"));
 
-  // NPC reaction decider: AI decides if any NPC reacts to this PC attack
-  const attackInfo = {
-    attackerName: normalize(activeBinding.characterName || activeBinding.userName),
-    targetName: combatDir.targetName || "",
-    attackName: attack?.name || "attack",
-    damage: rollTotal,
-    isCrit
-  };
+  // NPC reaction decider
+  const attackInfo = { attackerName: charName, targetName: combatDir.targetName || "", attackName: attack?.name || "attack", damage: totalDamage, isCrit };
   const npcReactions = await runNpcReactionDecider(baseCore, runFlow, createRunCore, state, attackInfo).catch(() => []);
   const reactionMessages = [];
   for (const reaction of npcReactions) {
-    const reactionName = normalize(reaction?.characterName);
-    const reactionText = normalize(reaction?.action);
-    if (!reactionName || !reactionText) continue;
-    markReactionUsed(state, reactionName);
-    reactionMessages.push({ text: `⚡ **${reactionName}** reacts: ${reactionText}`, type: "bot" });
+    const rName = normalize(reaction?.characterName);
+    const rText = normalize(reaction?.action);
+    if (!rName || !rText) continue;
+    markReactionUsed(state, rName);
+    reactionMessages.push({ text: `⚡ **${rName}** reacts: ${rText}`, type: "bot" });
     if (reaction.notation) {
-      const reactRollRes = await invokeFoundryAction(workingObject, "roll", {
+      const rr = await invokeFoundryAction(workingObject, "roll", {
         channelKey: state.session.channelKey,
         notation: normalize(reaction.notation),
-        label: `${reactionName} reaction`,
+        label: `${rName} reaction`,
         visibility: "public",
         emitChatMessage: true
       }).catch(() => null);
-      if (reactRollRes?.total != null) {
-        reactionMessages.push({ text: `${reactionName} rolled: ${reactRollRes.total}`, type: "bot" });
-      }
+      if (rr?.total != null) reactionMessages.push({ text: `${rName} rolled: ${rr.total}`, type: "bot" });
     }
   }
   await writeReactionsMd(workingObject, state).catch(() => {});
-
-  // Re-fetch actor stats so HP changes are reflected
   await fetchAndCacheActorStats(workingObject, state).catch(() => {});
 
   // Check combat end
   const activeNpcs = Array.isArray(state.initiative.turnOrder)
     ? state.initiative.turnOrder.filter((c) => !c.defeated && !c.hasPlayerOwner)
     : [];
-  const combatShouldEnd = activeNpcs.length === 0 || lastResult.combatDir?.combatEnds === true;
+  const combatShouldEnd = activeNpcs.length === 0 || combatDir.combatEnds === true;
 
   if (combatShouldEnd) {
     await invokeFoundryAction(workingObject, "initiative", {
@@ -3004,45 +3212,37 @@ async function handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, 
     await writeReactionsMd(workingObject, state).catch(() => {});
     await writeRoundState(workingObject, state);
     await appendHistoryMd(workingObject, { round: state.round?.number, mode: "initiative", text: "Kampf beendet." });
-
-    // Write combat result to situation channel + purge combat channel
     const combatResultSummary = normalize(endText || "Combat concluded. Party victorious.");
     await writeCombatResultToSituation(baseCore, runFlow, createRunCore, workingObject, state, combatResultSummary).catch(() => {});
     const channels = getSpecialistChannels(state?.session?.channelId);
-    const combatWo = { ...workingObject, channelId: channels.combat, contextChannelId: channels.combat };
-    await setPurgeContext(combatWo).catch(() => {});
-
+    await setPurgeContext({ ...workingObject, channelId: channels.combat, contextChannelId: channels.combat }).catch(() => {});
     const nextPrompt = await advanceToNextExplorationPrompt(baseCore, runFlow, createRunCore, workingObject, state, endText);
     return { accepted: true, messages: [{ text: damageText || "The attack lands.", type: "bot" }, ...reactionMessages, { text: endText || "Combat ends.", type: "bot" }, { text: nextPrompt, type: "bot" }] };
   }
 
-  // Outer loop: ask about remaining turn components before advancing
+  // Outer loop: remaining turn components
   state.initiative.pendingReactions = [];
   state.initiative.lastAttackResult = null;
   state.initiative.turnFollowupHistory = [];
+  const declaredText = normalize(state.initiative.lastPlayerAction?.text || "");
+  const { hasMovement, hasBonusAction } = detectTurnComponents(declaredText);
+  const missing = [];
+  if (!hasMovement) missing.push("move");
+  if (!hasBonusAction) missing.push("use a bonus action");
 
-  const declaredOnHit = normalize(state.initiative.lastPlayerAction?.text || "");
-  const { hasMovement: hitMov, hasBonusAction: hitBonus } = detectTurnComponents(declaredOnHit);
-  const hitMissing = [];
-  if (!hitMov) hitMissing.push("move");
-  if (!hitBonus) hitMissing.push("use a bonus action");
-
-  if (hitMissing.length > 0) {
+  if (missing.length > 0) {
     state.phase = "combat_awaiting_turn_end";
-    state.initiative.turnEndMissing = { hasMovement: hitMov, hasBonusAction: hitBonus };
+    state.initiative.turnEndMissing = { hasMovement, hasBonusAction };
     await writeRoundState(workingObject, state);
-    const attackerNameForEnd = normalize(activeBinding.characterName || activeBinding.userName);
     return {
       accepted: true,
       messages: [
         { text: damageText || "The attack lands.", type: "bot" },
         ...reactionMessages,
-        { text: `${attackerNameForEnd}, do you also want to ${hitMissing.join(" or ")}? Say **'ready'** to end your turn.`, type: "bot" }
+        { text: `${charName}, do you also want to ${missing.join(" or ")}? Say **'ready'** to end your turn.`, type: "bot" }
       ]
     };
   }
-
-  // All components already covered in original declaration — advance immediately
   return await finalizePcTurnAndAdvance(
     baseCore, runFlow, createRunCore, workingObject, state, activeBinding,
     [{ text: damageText || "The attack lands.", type: "bot" }, ...reactionMessages]
@@ -3068,9 +3268,29 @@ async function handleCombatReactionWindow(baseCore, runFlow, createRunCore, work
     state.initiative.pendingReactions = [];
   }
 
+  // Resolve authorName → canonical binding name (handles "Elara" vs "Elara Nightwhisper")
+  const senderBinding = (state.initiative.actorBindings || []).find((b) => {
+    const bName = normalize(b.name || b.characterName).toLowerCase();
+    const aLower = authorName.toLowerCase();
+    return bName === aLower
+      || bName.startsWith(aLower)
+      || aLower.startsWith(bName.split(" ")[0]);
+  });
+  const canonicalName = senderBinding ? normalize(senderBinding.name || senderBinding.characterName) : authorName;
+
+  // Gate: only allow if this character has a reaction available this round.
+  // This prevents out-of-turn interference and non-combatants from reacting.
+  const hasReactionAvailable = (state.reactions?.available || []).some(
+    (n) => n.toLowerCase() === canonicalName.toLowerCase()
+  );
+  if (!hasReactionAvailable) {
+    return { accepted: false, messages: [] };
+  }
+
   // Check: has this character already used their reaction this turn?
-  const reactionsUsed = Array.isArray(state.reactions?.used) ? state.reactions.used : [];
-  const alreadyReacted = reactionsUsed.some((n) => n.toLowerCase() === authorName.toLowerCase());
+  const alreadyReacted = (state.reactions?.used || []).some(
+    (n) => n.toLowerCase() === canonicalName.toLowerCase()
+  );
   if (alreadyReacted) {
     return { accepted: true, messages: [{ text: `${authorName}, you have already used your reaction this turn.`, type: "bot" }] };
   }
@@ -3078,7 +3298,6 @@ async function handleCombatReactionWindow(baseCore, runFlow, createRunCore, work
   // Plausibility: is this actually a reaction declaration?
   const looksLikeReaction = inputText.length > 2 && !/^(ok|yes|no|lol|haha|\?|!)$/i.test(inputText.trim());
   if (!looksLikeReaction) {
-    // Give the player a nudge — timer keeps running, they still have a few seconds
     return { accepted: true, messages: [{ text: `${authorName}: react now (e.g. "Shield", "Uncanny Dodge") or let it pass.`, type: "bot" }] };
   }
 
@@ -3151,7 +3370,7 @@ async function handleCombatReactionWindow(baseCore, runFlow, createRunCore, work
 
   // Reaction accepted — enter followup to resolve it (timer stays paused until resolveReaction restarts it)
   history.push({ role: "dm", text: acknowledgment });
-  state.initiative.reactionFollowup = { reactorName: authorName, originalPhase, history, timerKey };
+  state.initiative.reactionFollowup = { reactorName: canonicalName, originalPhase, history, timerKey };
   state.phase = "combat_reaction_followup";
   await writeRoundState(workingObject, state);
 
@@ -3219,6 +3438,8 @@ async function resolveReaction(baseCore, runFlow, createRunCore, workingObject, 
     '  "complete": true,',
     '  "resolution": "1 dramatic sentence describing the final outcome",',
     '  "nextPrompt": "what to ask next — only set if complete is false",',
+    '  "forceAttackerReroll": false,',
+    '  "attackerRollNotation": "",',
     '  "acBoost": 0,',
     '  "halfDamage": false,',
     '  "cancelAttack": false,',
@@ -3246,10 +3467,12 @@ async function resolveReaction(baseCore, runFlow, createRunCore, workingObject, 
   // Apply whatever the AI decided — no enums, pure numbers/booleans
   if (!state.initiative.lastAttackResult) state.initiative.lastAttackResult = {};
   const r = state.initiative.lastAttackResult;
-  if (Number(evalDir?.acBoost) > 0)       r.reactionAcBoost = (r.reactionAcBoost || 0) + Number(evalDir.acBoost);
-  if (evalDir?.halfDamage === true)        r.reactionHalfDamage = true;
-  if (evalDir?.cancelAttack === true)      r.reactionCounterspell = true;
-  if (Number(evalDir?.damageReduction) > 0) r.reactionDamageReduction = (r.reactionDamageReduction || 0) + Number(evalDir.damageReduction);
+  if (Number(evalDir?.acBoost) > 0)         r.reactionAcBoost = (r.reactionAcBoost || 0) + Number(evalDir.acBoost);
+  if (evalDir?.halfDamage === true)          r.reactionHalfDamage = true;
+  if (evalDir?.cancelAttack === true)        r.reactionCounterspell = true;
+  if (Number(evalDir?.damageReduction) > 0)  r.reactionDamageReduction = (r.reactionDamageReduction || 0) + Number(evalDir.damageReduction);
+  if (evalDir?.forceAttackerReroll === true) r.reactionForceReroll = true;
+  if (normalize(evalDir?.attackerRollNotation)) r.reactionAttackerRollNotation = normalize(evalDir.attackerRollNotation);
 
   state.initiative.pendingReactions.push({
     from: reactorName,
@@ -3261,8 +3484,12 @@ async function resolveReaction(baseCore, runFlow, createRunCore, workingObject, 
     createdAt: new Date().toISOString()
   });
 
+  // Mark this character's reaction as used so they can't react a second time this round
+  markReactionUsed(state, reactorName);
+
   state.phase = originalPhase;
   state.initiative.reactionFollowup = null;
+  await writeReactionsMd(workingObject, state).catch(() => {});
   await writeRoundState(workingObject, state);
 
   const resolution = normalize(evalDir?.resolution) || `${reactorName}'s reaction resolves!`;
@@ -3321,6 +3548,8 @@ async function handleDmOverride(baseCore, runFlow, createRunCore, workingObject,
   // ── !dm reset / !dm explore ────────────────────────────────────────────────
   if (command === "reset" || command === "explore") {
     clearCombatTimer(state.session?.channelKey || workingObject.channelId);
+    // Clear the Foundry log journal on session reset
+    await invokeFoundryAction(workingObject, "log", { operation: "clear" }).catch(() => {});
     // Purge combat channel context when resetting to exploration
     const resetChannels = getSpecialistChannels(state?.session?.channelId);
     const combatResetWo = { ...workingObject, channelId: resetChannels.combat, contextChannelId: resetChannels.combat };
@@ -3467,6 +3696,7 @@ async function handleRoundInput(baseCore, runFlow, createRunCore, workingObject,
 
   // ── DM Override (checked before all phase routing) ──────────────────────────
   const inputText = getRoundInputText(message);
+  bridgeLog(workingObject, `[${state.mode}/${state.phase}] "${inputText.slice(0, 100)}" from="${message?.speakerAlias || message?.authorName || "?"}" rolls=${JSON.stringify((message?.rolls || []).map((r) => r?.total))}`);
   const override = parseOverrideCommand(inputText);
   if (override) {
     return await handleDmOverride(baseCore, runFlow, createRunCore, workingObject, state, override);
@@ -3531,6 +3761,10 @@ async function handleRoundInput(baseCore, runFlow, createRunCore, workingObject,
 
   if (state.mode === "initiative" && state.phase === "combat_awaiting_damage_roll") {
     return await handleCombatAwaitingDamageRoll(baseCore, runFlow, createRunCore, workingObject, state, message);
+  }
+
+  if (state.mode === "initiative" && state.phase === "combat_awaiting_bonus_damage") {
+    return await handleCombatAwaitingBonusDamage(baseCore, runFlow, createRunCore, workingObject, state, message);
   }
 
   // ── Outer turn loop (move / bonus action after resolution) ───────────────────
