@@ -1111,17 +1111,21 @@ async function getInitiativeSeeds(scope, actorRefs = [], npcNames = [], playerNa
 }
 
 async function ensureCombatantsOnCombat(combat, seeds) {
-  const existingKeys = new Set(
-    Array.from(combat?.combatants ?? [])
-      .map((combatant) => getCombatantMatchKey(combatant))
-      .filter(Boolean)
-  );
+  // Include both tokenId and actorId of each existing combatant so seeds that only
+  // carry actorId (no tokenId) are correctly recognised as already present.
+  const existingKeys = new Set();
+  for (const combatant of Array.from(combat?.combatants ?? [])) {
+    if (combatant.tokenId) existingKeys.add(normalize(combatant.tokenId));
+    if (combatant.actorId) existingKeys.add(normalize(combatant.actorId));
+    if (combatant.actor?.id) existingKeys.add(normalize(combatant.actor.id));
+  }
 
   const toCreate = seeds
     .filter((seed) => !seed.defeated)
     .filter((seed) => {
-      const key = getCombatantMatchKey(seed);
-      return key && !existingKeys.has(key);
+      if (seed.tokenId && existingKeys.has(normalize(seed.tokenId))) return false;
+      if (seed.actorId && existingKeys.has(normalize(seed.actorId))) return false;
+      return true;
     })
     .map((seed) => ({
       tokenId: seed.tokenId || null,
@@ -2140,6 +2144,88 @@ async function handleCampaignInfo(payload) {
   };
 }
 
+async function handleApplyDamage(payload) {
+  const targetRef = normalize(payload?.targetRef);
+  const damage = Number(payload?.damage ?? 0);
+  const isCrit = payload?.isCrit === true;
+
+  if (!targetRef) return { ok: false, source: "foundry", error: "missing targetRef" };
+  if (!Number.isFinite(damage) || damage <= 0) return { ok: false, source: "foundry", error: `invalid damage: ${damage}` };
+
+  const actor = getActorByRef(targetRef);
+  if (!actor) return { ok: false, source: "foundry", error: `actor not found: ${targetRef}` };
+
+  let hpBefore = null;
+  let hpAfter = null;
+  try {
+    hpBefore = actor.system?.attributes?.hp?.value ?? null;
+    if (typeof actor.applyDamage === "function") {
+      await actor.applyDamage(damage);
+    } else {
+      const hp = actor.system?.attributes?.hp;
+      if (hp != null) {
+        const newValue = Math.max(0, (Number(hp.value) || 0) - damage);
+        await actor.update({ "system.attributes.hp.value": newValue });
+      }
+    }
+    const refreshed = game.actors?.get(actor.id);
+    hpAfter = refreshed?.system?.attributes?.hp?.value ?? actor.system?.attributes?.hp?.value ?? null;
+  } catch (err) {
+    return { ok: false, source: "foundry", error: String(err?.message || err), actorName: actor.name };
+  }
+
+  return {
+    ok: true,
+    source: "foundry",
+    action: "apply-damage",
+    actorId: actor.id,
+    actorName: actor.name,
+    damage,
+    isCrit,
+    hpBefore,
+    hpAfter
+  };
+}
+
+const LOG_JOURNAL_NAME = "Jenny Bridge Log";
+
+async function handleLog(payload) {
+  const operation = normalize(payload?.operation || "append").toLowerCase();
+
+  if (operation === "clear") {
+    const journal = game.journal?.find((j) => j.name === LOG_JOURNAL_NAME);
+    if (journal) {
+      const page = journal.pages?.contents?.[0];
+      if (page) await page.update({ "text.content": "" }).catch(() => {});
+    }
+    return { ok: true, source: "foundry", action: "log", operation: "clear" };
+  }
+
+  const entries = Array.isArray(payload?.entries)
+    ? payload.entries.map((e) => normalize(e)).filter(Boolean)
+    : (normalize(payload?.entry) ? [normalize(payload.entry)] : []);
+  if (!entries.length) return { ok: true, source: "foundry", action: "log", count: 0 };
+
+  let journal = game.journal?.find((j) => j.name === LOG_JOURNAL_NAME);
+  if (!journal) {
+    journal = await JournalEntry.create({ name: LOG_JOURNAL_NAME, ownership: { default: 0 } });
+  }
+
+  let page = journal.pages?.contents?.[0];
+  if (!page) {
+    await journal.createEmbeddedDocuments("JournalEntryPage", [{ name: "Log", type: "text", text: { content: "" } }]);
+    page = journal.pages?.contents?.[0];
+  }
+  if (!page) return { ok: false, source: "foundry", error: "failed to create log page" };
+
+  const existing = normalize(page.text?.content || "");
+  const newLines = entries.map((e) => escapeHtml(e)).join("<br>\n");
+  const updated = existing ? `${existing}<br>\n${newLines}` : newLines;
+  await page.update({ "text.content": updated }).catch(() => {});
+
+  return { ok: true, source: "foundry", action: "log", operation: "append", count: entries.length };
+}
+
 async function handleRequest(request = {}) {
   const action = normalize(request?.action).toLowerCase();
   const payload = request?.payload || {};
@@ -2182,6 +2268,10 @@ async function handleRequest(request = {}) {
       return handleSelectedPlayers(payload);
     case "campaigninfo":
       return handleCampaignInfo(payload);
+    case "apply-damage":
+      return handleApplyDamage(payload);
+    case "log":
+      return handleLog(payload);
     default:
       return { ok: false, error: `Unsupported action '${action}'.` };
   }
